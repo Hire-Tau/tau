@@ -553,7 +553,7 @@ export interface AgentType {
   name: string
   description: string | null
   systemPrompt: string
-  /** Ordered ids of shared prompt includes composed after systemPrompt at runtime. */
+  /** Ordered ids of shared prompts composed after systemPrompt at runtime. */
   includes: string[]
   /** systemPrompt + enabled includes, exactly as agents receive it (read-only, API detail only). */
   resolvedSystemPrompt?: string
@@ -571,7 +571,7 @@ export interface AgentType {
   updatedAt: Date
 }
 
-export interface PromptInclude {
+export interface SharedPrompt {
   id: string
   name: string
   description: string | null

@@ -23,8 +23,8 @@ import {
   type ModelTierConfig,
   deleteModelTier,
 } from '../../api/config'
-import { IncludePicker } from './IncludePicker'
-import { PromptIncludesTab } from './PromptIncludesTab'
+import { SharedPromptPicker } from './SharedPromptPicker'
+import { SharedPromptsTab } from './SharedPromptsTab'
 import { TemplateDiffDialog } from './TemplateDiffDialog'
 import { TemplateFieldActions } from './TemplateFieldActions'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -577,7 +577,7 @@ function AgentTypeRow({
                 rows={8}
                 actions={fieldActions('systemPrompt')}
               />
-              <IncludePicker
+              <SharedPromptPicker
                 value={form.includes}
                 onChange={(includes) => setForm({ ...form, includes })}
                 actions={fieldActions('includes')}
@@ -1395,7 +1395,7 @@ export function AgentTypesSection() {
               tab === 'includes' ? 'bg-accent/10 text-accent-light' : 'text-muted hover:bg-surface-secondary'
             )}
           >
-            Prompt includes
+            Shared prompts
           </button>
         </div>
       </div>
@@ -1408,7 +1408,7 @@ export function AgentTypesSection() {
           }}
         />
       )}
-      {tab === 'includes' && <PromptIncludesTab />}
+      {tab === 'includes' && <SharedPromptsTab />}
     </div>
   )
 }

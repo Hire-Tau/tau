@@ -18,7 +18,7 @@ import { eventEmitter } from '../../lib/infra/event-emitter'
 import { Subagent } from '../Subagent'
 import { filterToolsByPolicy } from '../../lib/tools'
 import * as workflowExecution from '../../services/workflows/execution'
-import { PromptInclude } from '../PromptInclude'
+import { SharedPrompt } from '../SharedPrompt'
 
 const TEST_SQUAD_ID = '00000000-0000-4000-8000-000000000102'
 
@@ -223,10 +223,10 @@ describe('SquadWorkerRunner artifact tool registration', () => {
     expect(agent.runnerType).toBe('artifact-builder')
   })
 
-  it('composes an enabled prompt include into the built system prompt, after the agent type prompt', async () => {
+  it('composes an enabled shared prompt into the built system prompt, after the agent type prompt', async () => {
     const includeId = `test-include-${crypto.randomUUID()}`
-    await PromptInclude.upsert({ id: includeId, name: 'Test Include', content: 'INCLUDE-CONTENT-MARKER' })
-    PromptInclude.invalidateCache()
+    await SharedPrompt.upsert({ id: includeId, name: 'Test Include', content: 'INCLUDE-CONTENT-MARKER' })
+    SharedPrompt.invalidateCache()
     try {
       const agent = makeTestAgent({ agentTypeId: 'worker', squadId: TEST_SQUAD_ID })
       const agentType = makeAgentType({
@@ -244,7 +244,7 @@ describe('SquadWorkerRunner artifact tool registration', () => {
       expect(ownIndex).toBeGreaterThanOrEqual(0)
       expect(includeIndex).toBeGreaterThan(ownIndex)
     } finally {
-      await PromptInclude.delete(includeId)
+      await SharedPrompt.delete(includeId)
     }
   })
 

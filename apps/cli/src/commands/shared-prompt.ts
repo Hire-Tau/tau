@@ -3,7 +3,7 @@ import type { Command } from 'commander'
 import { apiGet, apiPost, apiPut } from '../client'
 import { isJsonMode, output, outputError, outputTable } from '../output'
 
-interface PromptInclude {
+interface SharedPrompt {
   id: string
   name: string
   description: string | null
@@ -15,18 +15,18 @@ interface PromptInclude {
   updatedAt: string
 }
 
-export function registerPromptIncludeCommands(program: Command) {
-  const promptInclude = program
-    .command('prompt-include')
-    .alias('prompt-includes')
-    .description('Manage shared prompt blocks included by agent types')
+export function registerSharedPromptCommands(program: Command) {
+  const sharedPrompt = program
+    .command('shared-prompt')
+    .alias('shared-prompts')
+    .description('Manage shared prompts included by agent types')
 
-  promptInclude
+  sharedPrompt
     .command('list')
-    .description('List prompt includes')
+    .description('List shared prompts')
     .action(async () => {
       try {
-        const includes = await apiGet<PromptInclude[]>('/api/prompt-includes')
+        const includes = await apiGet<SharedPrompt[]>('/api/shared-prompts')
         if (isJsonMode()) return output(includes)
         outputTable(
           includes.map((i) => ({
@@ -42,50 +42,50 @@ export function registerPromptIncludeCommands(program: Command) {
       }
     })
 
-  promptInclude
+  sharedPrompt
     .command('get <id>')
     .alias('info')
-    .description('Get prompt include details')
+    .description('Get shared prompt details')
     .action(async (id) => {
       try {
-        output(await apiGet<PromptInclude>(`/api/prompt-includes/${id}`))
+        output(await apiGet<SharedPrompt>(`/api/shared-prompts/${id}`))
       } catch (error) {
         outputError(error as Error)
       }
     })
 
-  promptInclude
+  sharedPrompt
     .command('update <id>')
-    .description('Update a prompt include content')
+    .description('Update a shared prompt content')
     .requiredOption('--file <path>', 'Read new content from file')
     .action(async (id, options) => {
       try {
         const content = await readFile(options.file, 'utf-8')
-        const result = await apiPut(`/api/prompt-includes/${id}`, { content })
+        const result = await apiPut(`/api/shared-prompts/${id}`, { content })
         output(result)
       } catch (error) {
         outputError(error as Error)
       }
     })
 
-  promptInclude
+  sharedPrompt
     .command('disable <id>')
-    .description('Disable a prompt include')
+    .description('Disable a shared prompt')
     .action(async (id) => {
       try {
-        const result = await apiPost(`/api/prompt-includes/${id}/disable`)
+        const result = await apiPost(`/api/shared-prompts/${id}/disable`)
         output(result)
       } catch (error) {
         outputError(error as Error)
       }
     })
 
-  promptInclude
+  sharedPrompt
     .command('enable <id>')
-    .description('Enable a prompt include')
+    .description('Enable a shared prompt')
     .action(async (id) => {
       try {
-        const result = await apiPost(`/api/prompt-includes/${id}/enable`)
+        const result = await apiPost(`/api/shared-prompts/${id}/enable`)
         output(result)
       } catch (error) {
         outputError(error as Error)

@@ -3,7 +3,7 @@ import yaml from 'js-yaml'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
 import { AgentTypeSync, composeFromYaml } from './agent-type-sync'
-import { loadIncludeFiles } from './prompt-include-sync'
+import { loadIncludeFiles } from './shared-prompt-sync'
 
 const repoRoot = join(import.meta.dir, '../../../../../')
 

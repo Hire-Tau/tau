@@ -327,10 +327,10 @@ export async function exportNotificationConfigYaml(): Promise<string> {
 }
 
 // ============================================================================
-// Prompt Includes
+// Shared Prompts
 // ============================================================================
 
-export interface PromptIncludeConfig {
+export interface SharedPromptConfig {
   id: string
   name: string
   description: string | null
@@ -342,52 +342,52 @@ export interface PromptIncludeConfig {
   updatedAt: string
 }
 
-export async function getPromptIncludes(): Promise<PromptIncludeConfig[]> {
-  return apiFetch<PromptIncludeConfig[]>('/prompt-includes')
+export async function getSharedPrompts(): Promise<SharedPromptConfig[]> {
+  return apiFetch<SharedPromptConfig[]>('/shared-prompts')
 }
 
-export async function getPromptInclude(id: string): Promise<PromptIncludeConfig> {
-  return apiFetch<PromptIncludeConfig>(`/prompt-includes/${id}`)
+export async function getSharedPrompt(id: string): Promise<SharedPromptConfig> {
+  return apiFetch<SharedPromptConfig>(`/shared-prompts/${id}`)
 }
 
-export async function createPromptInclude(data: {
+export async function createSharedPrompt(data: {
   id: string
   name: string
   content: string
   description?: string | null
-}): Promise<PromptIncludeConfig> {
-  return apiFetch<PromptIncludeConfig>('/prompt-includes', { method: 'POST', body: JSON.stringify(data) })
+}): Promise<SharedPromptConfig> {
+  return apiFetch<SharedPromptConfig>('/shared-prompts', { method: 'POST', body: JSON.stringify(data) })
 }
 
-export async function updatePromptInclude(
+export async function updateSharedPrompt(
   id: string,
   data: { content: string; name?: string; description?: string | null }
-): Promise<PromptIncludeConfig> {
-  return apiFetch<PromptIncludeConfig>(`/prompt-includes/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+): Promise<SharedPromptConfig> {
+  return apiFetch<SharedPromptConfig>(`/shared-prompts/${id}`, { method: 'PUT', body: JSON.stringify(data) })
 }
 
-export async function deletePromptInclude(id: string): Promise<void> {
-  await apiFetch<void>(`/prompt-includes/${id}`, { method: 'DELETE' })
+export async function deleteSharedPrompt(id: string): Promise<void> {
+  await apiFetch<void>(`/shared-prompts/${id}`, { method: 'DELETE' })
 }
 
-export async function disablePromptInclude(id: string): Promise<void> {
-  await apiFetch<void>(`/prompt-includes/${id}/disable`, { method: 'POST' })
+export async function disableSharedPrompt(id: string): Promise<void> {
+  await apiFetch<void>(`/shared-prompts/${id}/disable`, { method: 'POST' })
 }
 
-export async function enablePromptInclude(id: string): Promise<void> {
-  await apiFetch<void>(`/prompt-includes/${id}/enable`, { method: 'POST' })
+export async function enableSharedPrompt(id: string): Promise<void> {
+  await apiFetch<void>(`/shared-prompts/${id}/enable`, { method: 'POST' })
 }
 
-export async function getPromptIncludeTemplateDiff(id: string): Promise<TemplateDiff> {
-  return apiFetch<TemplateDiff>(`/prompt-includes/${id}/template-diff`)
+export async function getSharedPromptTemplateDiff(id: string): Promise<TemplateDiff> {
+  return apiFetch<TemplateDiff>(`/shared-prompts/${id}/template-diff`)
 }
 
-export async function revertPromptInclude(id: string): Promise<void> {
-  await apiFetch<void>(`/prompt-includes/${id}/revert-to-template`, { method: 'POST' })
+export async function revertSharedPrompt(id: string): Promise<void> {
+  await apiFetch<void>(`/shared-prompts/${id}/revert-to-template`, { method: 'POST' })
 }
 
-export async function revertPromptIncludeFields(id: string, fields: string[]): Promise<void> {
-  await apiFetch<void>(`/prompt-includes/${id}/revert-template-fields`, {
+export async function revertSharedPromptFields(id: string, fields: string[]): Promise<void> {
+  await apiFetch<void>(`/shared-prompts/${id}/revert-template-fields`, {
     method: 'POST',
     body: JSON.stringify({ fields }),
   })

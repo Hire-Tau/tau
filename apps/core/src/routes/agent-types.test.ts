@@ -1,15 +1,15 @@
 import { describe, test, expect, beforeEach, beforeAll, afterAll } from 'bun:test'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
-import { db, agentTypes, modelTiers, promptIncludes, skills } from '../db'
+import { db, agentTypes, modelTiers, sharedPrompts, skills } from '../db'
 import { AgentType } from '../entities/AgentType'
-import { PromptInclude } from '../entities/PromptInclude'
+import { SharedPrompt } from '../entities/SharedPrompt'
 import { Skill } from '../entities/Skill'
 import { agentTypesRoutes } from './agent-types'
 import { identityMiddleware } from '../middleware/identity'
 import { createTestAdmin, createTestUser, authHeaders, cleanupTestRbac } from '../test-utils'
 import type { TestUser } from '../test-utils/rbac'
-import { agentTypeSync, promptIncludeSync, modelTierSync, skillSync } from '../services/config-sync'
+import { agentTypeSync, sharedPromptSync, modelTierSync, skillSync } from '../services/config-sync'
 
 // ── Shared app with identity middleware ──
 const app = new Hono()
@@ -46,9 +46,9 @@ describe('agent type route validation', () => {
     AgentType.invalidateCache()
     Skill.invalidateCache()
     await Skill.upsert({ id: 'custom-skill', name: 'Custom Skill', content: '# Custom Skill' })
-    await db.delete(promptIncludes)
-    PromptInclude.invalidateCache()
-    await PromptInclude.upsert({ id: 'shared-block', name: 'Shared Block', content: '# Shared Block' })
+    await db.delete(sharedPrompts)
+    SharedPrompt.invalidateCache()
+    await SharedPrompt.upsert({ id: 'shared-block', name: 'Shared Block', content: '# Shared Block' })
   })
 
   async function current(id: string) {
@@ -142,7 +142,7 @@ describe('agent type route validation', () => {
     })
   })
 
-  test('rejects unknown and duplicated prompt includes', async () => {
+  test('rejects unknown and duplicated shared prompts', async () => {
     const post = (includes: unknown) =>
       app.request('/api/agent-types', {
         method: 'POST',
@@ -152,7 +152,7 @@ describe('agent type route validation', () => {
 
     let res = await post(['nope'])
     expect(res.status).toBe(400)
-    expect(await res.json()).toMatchObject({ error: "Unknown prompt include 'nope'" })
+    expect(await res.json()).toMatchObject({ error: "Unknown shared prompt 'nope'" })
 
     res = await post(['shared-block', 'shared-block'])
     expect(res.status).toBe(400)
@@ -163,7 +163,7 @@ describe('agent type route validation', () => {
     expect(await res.json()).toMatchObject({ error: 'includes must be an array' })
   })
 
-  test('creates an agent type carrying a prompt include list', async () => {
+  test('creates an agent type carrying a shared prompt list', async () => {
     const res = await app.request('/api/agent-types', {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...authHeaders(funcAdmin.token) },
@@ -204,7 +204,7 @@ describe('agent type route validation', () => {
   })
 
   test('detail returns the include list and the resolved prompt agents receive', async () => {
-    await promptIncludeSync.sync()
+    await sharedPromptSync.sync()
     await agentTypeSync.sync()
     const res = await app.request('/api/agent-types/sysops', {
       headers: authHeaders(funcAdmin.token),
@@ -217,7 +217,7 @@ describe('agent type route validation', () => {
   })
 
   test('PUT validates include ids and records an includes override', async () => {
-    await promptIncludeSync.sync()
+    await sharedPromptSync.sync()
     await agentTypeSync.sync()
     // sysops carries tier: standard and several bundled skills in its template;
     // PUT re-validates both, so seed model tiers and skills too (the route
@@ -241,7 +241,7 @@ describe('agent type route validation', () => {
   })
 
   test('PUT omitting includes preserves the existing list instead of clearing it', async () => {
-    await promptIncludeSync.sync()
+    await sharedPromptSync.sync()
     await agentTypeSync.sync()
     await modelTierSync.sync()
     await skillSync.sync()

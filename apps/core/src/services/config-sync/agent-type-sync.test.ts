@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach } from 'bun:test'
 import { db, agentTypes } from '../../db'
 import { eq } from 'drizzle-orm'
 import { AgentTypeSync, composeFromYaml } from './agent-type-sync'
-import { loadIncludeFiles } from './prompt-include-sync'
+import { loadIncludeFiles } from './shared-prompt-sync'
 
 const sync = new AgentTypeSync()
 

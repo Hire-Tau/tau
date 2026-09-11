@@ -83,13 +83,13 @@ export async function validateAgentTypeConfig(input: any): Promise<void> {
   }
   if (input.includes != null) {
     if (!Array.isArray(input.includes)) throw new Error('includes must be an array')
-    const { PromptInclude } = await import('../../entities/PromptInclude')
+    const { SharedPrompt } = await import('../../entities/SharedPrompt')
     const seen = new Set<string>()
     for (const id of input.includes) {
       if (typeof id !== 'string' || !id) throw new Error('includes must contain non-empty ids')
       if (seen.has(id)) throw new Error(`includes lists '${id}' twice`)
       seen.add(id)
-      if (!(await PromptInclude.find(id))) throw new Error(`Unknown prompt include '${id}'`)
+      if (!(await SharedPrompt.find(id))) throw new Error(`Unknown shared prompt '${id}'`)
     }
   }
 }

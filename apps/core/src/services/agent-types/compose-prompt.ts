@@ -1,4 +1,4 @@
-import { PromptInclude } from '../../entities/PromptInclude'
+import { SharedPrompt } from '../../entities/SharedPrompt'
 import { createLogger } from '../../lib/infra/logger'
 
 const log = createLogger('agent-types')
@@ -16,12 +16,12 @@ export async function composeAgentTypePrompt(agentType: {
 }): Promise<string> {
   const ids = agentType.includes ?? []
   if (ids.length === 0) return agentType.systemPrompt
-  const found = await PromptInclude.findMany(ids)
+  const found = await SharedPrompt.findMany(ids)
   const parts: string[] = [agentType.systemPrompt]
   for (const id of ids) {
     const include = found.get(id)
     if (!include) {
-      log.warn(`agent type '${agentType.id}' lists unknown prompt include '${id}'; skipping`)
+      log.warn(`agent type '${agentType.id}' lists unknown shared prompt '${id}'; skipping`)
       continue
     }
     if (include.disabled) continue

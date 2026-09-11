@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { Command } from 'commander'
 import { apiGet, apiPost, apiPut } from '../client'
 import { isJsonMode, output, outputTable, setOutputOptions } from '../output'
-import { registerPromptIncludeCommands } from './prompt-include'
+import { registerSharedPromptCommands } from './shared-prompt'
 
 const includes = [
   { id: 'rules', name: 'Rules', description: null, disabled: false, yamlFieldOverrides: null },
@@ -15,7 +15,7 @@ const includes = [
 const tempDirs: string[] = []
 
 async function makeTempFile(content: string): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'tau-prompt-include-test-'))
+  const dir = await mkdtemp(join(tmpdir(), 'tau-shared-prompt-test-'))
   tempDirs.push(dir)
   const file = join(dir, 'content.md')
   await writeFile(file, content, 'utf-8')
@@ -28,11 +28,11 @@ async function run(args: string[]): Promise<void> {
   program.option('--json')
   program.option('--quiet')
   program.hook('preAction', (command) => setOutputOptions(command.optsWithGlobals()))
-  registerPromptIncludeCommands(program)
+  registerSharedPromptCommands(program)
   await program.parseAsync(['--quiet', ...args], { from: 'user' })
 }
 
-describe('tau prompt-include', () => {
+describe('tau shared-prompt', () => {
   beforeEach(() => {
     ;(apiGet as ReturnType<typeof mock>).mockClear().mockResolvedValue(includes)
     ;(apiPut as ReturnType<typeof mock>).mockClear().mockResolvedValue({ id: 'rules' })
@@ -46,10 +46,10 @@ describe('tau prompt-include', () => {
     await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
   })
 
-  it('list fetches all prompt includes and prints their ids', async () => {
-    await run(['prompt-include', 'list'])
+  it('list fetches all shared prompts and prints their ids', async () => {
+    await run(['shared-prompt', 'list'])
 
-    expect(apiGet).toHaveBeenCalledWith('/api/prompt-includes')
+    expect(apiGet).toHaveBeenCalledWith('/api/shared-prompts')
     // outputTable is mocked, so assert on the mock call args directly to
     // confirm the printed rows actually contain both ids.
     const rows = (outputTable as ReturnType<typeof mock>).mock.calls.at(-1)?.[0]
@@ -59,42 +59,42 @@ describe('tau prompt-include', () => {
   it('list passes the raw array through output unchanged in JSON mode', async () => {
     ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(true)
 
-    await run(['prompt-include', 'list'])
+    await run(['shared-prompt', 'list'])
 
     expect(output).toHaveBeenCalledWith(includes)
     expect(outputTable).not.toHaveBeenCalled()
   })
 
-  it('get fetches one prompt include by id', async () => {
+  it('get fetches one shared prompt by id', async () => {
     ;(apiGet as ReturnType<typeof mock>).mockResolvedValue(includes[0])
 
-    await run(['prompt-include', 'get', 'rules'])
+    await run(['shared-prompt', 'get', 'rules'])
 
-    expect(apiGet).toHaveBeenCalledWith('/api/prompt-includes/rules')
+    expect(apiGet).toHaveBeenCalledWith('/api/shared-prompts/rules')
     expect(output).toHaveBeenCalledWith(includes[0])
   })
 
   it('update reads the file and PUTs its content', async () => {
     const file = await makeTempFile('New shared block content')
 
-    await run(['prompt-include', 'update', 'rules', '--file', file])
+    await run(['shared-prompt', 'update', 'rules', '--file', file])
 
-    expect(apiPut).toHaveBeenCalledWith('/api/prompt-includes/rules', { content: 'New shared block content' })
+    expect(apiPut).toHaveBeenCalledWith('/api/shared-prompts/rules', { content: 'New shared block content' })
   })
 
   it('update requires --file', async () => {
-    await expect(run(['prompt-include', 'update', 'rules'])).rejects.toThrow()
+    await expect(run(['shared-prompt', 'update', 'rules'])).rejects.toThrow()
   })
 
   it('disable posts to the disable endpoint', async () => {
-    await run(['prompt-include', 'disable', 'rules'])
+    await run(['shared-prompt', 'disable', 'rules'])
 
-    expect(apiPost).toHaveBeenCalledWith('/api/prompt-includes/rules/disable')
+    expect(apiPost).toHaveBeenCalledWith('/api/shared-prompts/rules/disable')
   })
 
   it('enable posts to the enable endpoint', async () => {
-    await run(['prompt-include', 'enable', 'rules'])
+    await run(['shared-prompt', 'enable', 'rules'])
 
-    expect(apiPost).toHaveBeenCalledWith('/api/prompt-includes/rules/enable')
+    expect(apiPost).toHaveBeenCalledWith('/api/shared-prompts/rules/enable')
   })
 })

@@ -4,14 +4,14 @@ import { Modal } from '../Modal'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import {
-  createPromptInclude,
-  deletePromptInclude,
-  disablePromptInclude,
-  enablePromptInclude,
-  revertPromptInclude,
-  revertPromptIncludeFields,
-  updatePromptInclude,
-  type PromptIncludeConfig,
+  createSharedPrompt,
+  deleteSharedPrompt,
+  disableSharedPrompt,
+  enableSharedPrompt,
+  revertSharedPrompt,
+  revertSharedPromptFields,
+  updateSharedPrompt,
+  type SharedPromptConfig,
 } from '../../api/config'
 import { TemplateFieldActions } from './TemplateFieldActions'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -33,20 +33,20 @@ export function deleteErrorMessage(error: unknown): string {
 }
 
 /** Pure list of include cards — rendered by the tab, testable without a query client. */
-export function PromptIncludeList({
+export function SharedPromptList({
   includes,
   onEdit,
   onToggle,
   onDelete,
   canWrite,
 }: {
-  includes: PromptIncludeConfig[]
-  onEdit: (include: PromptIncludeConfig) => void
-  onToggle: (include: PromptIncludeConfig) => void
-  onDelete: (include: PromptIncludeConfig) => void
+  includes: SharedPromptConfig[]
+  onEdit: (include: SharedPromptConfig) => void
+  onToggle: (include: SharedPromptConfig) => void
+  onDelete: (include: SharedPromptConfig) => void
   canWrite: boolean
 }) {
-  if (!includes.length) return <p className="py-8 text-center text-muted">No prompt includes configured.</p>
+  if (!includes.length) return <p className="py-8 text-center text-muted">No shared prompts configured.</p>
   return (
     <div className="space-y-3">
       {includes.map((include) => (
@@ -94,10 +94,10 @@ export function PromptIncludeList({
 
 type IncludeDraft = { id: string; name: string; description: string; content: string }
 
-export function PromptIncludesTab() {
+export function SharedPromptsTab() {
   const queryClient = useQueryClient()
-  const { data: includes = [], isLoading } = useQuery(queries.promptIncludes.list())
-  const loadingCardCount = useLoadingShapeCount('settings:prompt-includes', isLoading ? undefined : includes.length, {
+  const { data: includes = [], isLoading } = useQuery(queries.sharedPrompts.list())
+  const loadingCardCount = useLoadingShapeCount('settings:shared-prompts', isLoading ? undefined : includes.length, {
     fallbackCount: 4,
     maxCount: 10,
   })
@@ -109,27 +109,27 @@ export function PromptIncludesTab() {
 
   const existing = editing && !isNew ? includes.find((include) => include.id === editing.id) : undefined
   const editingDiffQuery = useQuery({
-    ...queries.promptIncludes.templateDiff(existing?.hasTemplate ? existing.id : ''),
+    ...queries.sharedPrompts.templateDiff(existing?.hasTemplate ? existing.id : ''),
     enabled: !!existing?.hasTemplate,
   })
 
   // Include content feeds every agent type's resolved prompt, so refresh the
   // agent type caches alongside the include list.
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: queryKeys.promptIncludes.all })
+    queryClient.invalidateQueries({ queryKey: queryKeys.sharedPrompts.all })
     queryClient.invalidateQueries({ queryKey: queryKeys.agentTypes.all })
   }
 
   const save = useMutation({
     mutationFn: (draft: IncludeDraft) =>
       isNew
-        ? createPromptInclude({
+        ? createSharedPrompt({
             id: draft.id.trim(),
             name: draft.name.trim(),
             content: draft.content,
             description: draft.description.trim() || null,
           })
-        : updatePromptInclude(draft.id, {
+        : updateSharedPrompt(draft.id, {
             content: draft.content,
             name: draft.name.trim(),
             description: draft.description.trim() || null,
@@ -141,13 +141,13 @@ export function PromptIncludesTab() {
   })
 
   const toggle = useMutation({
-    mutationFn: (include: PromptIncludeConfig) =>
-      include.disabled ? enablePromptInclude(include.id) : disablePromptInclude(include.id),
+    mutationFn: (include: SharedPromptConfig) =>
+      include.disabled ? enableSharedPrompt(include.id) : disableSharedPrompt(include.id),
     onSuccess: invalidate,
   })
 
   const remove = useMutation({
-    mutationFn: (include: PromptIncludeConfig) => deletePromptInclude(include.id),
+    mutationFn: (include: SharedPromptConfig) => deleteSharedPrompt(include.id),
     onSuccess: () => {
       setDeleteError('')
       invalidate()
@@ -156,18 +156,18 @@ export function PromptIncludesTab() {
   })
 
   const revertAll = useMutation({
-    mutationFn: (id: string) => revertPromptInclude(id),
+    mutationFn: (id: string) => revertSharedPrompt(id),
     onSuccess: (_data, id) => {
       invalidate()
-      queryClient.invalidateQueries({ queryKey: queryKeys.promptIncludes.templateDiff(id) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.sharedPrompts.templateDiff(id) })
     },
   })
 
   const revertFields = useMutation({
-    mutationFn: ({ id, fields }: { id: string; fields: string[] }) => revertPromptIncludeFields(id, fields),
+    mutationFn: ({ id, fields }: { id: string; fields: string[] }) => revertSharedPromptFields(id, fields),
     onSuccess: (_data, variables) => {
       invalidate()
-      queryClient.invalidateQueries({ queryKey: queryKeys.promptIncludes.templateDiff(variables.id) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.sharedPrompts.templateDiff(variables.id) })
     },
   })
 
@@ -194,7 +194,7 @@ export function PromptIncludesTab() {
       />
     ) : null
 
-  const openEditor = (include: PromptIncludeConfig) => {
+  const openEditor = (include: SharedPromptConfig) => {
     save.reset()
     setIsNew(false)
     setEditing({
@@ -211,7 +211,7 @@ export function PromptIncludesTab() {
     setEditing({ id: '', name: '', description: '', content: '' })
   }
 
-  if (isLoading) return <CollectionSkeleton label="Loading prompt includes" count={loadingCardCount} layout="cards" />
+  if (isLoading) return <CollectionSkeleton label="Loading shared prompts" count={loadingCardCount} layout="cards" />
 
   return (
     <div className="space-y-4">
@@ -224,20 +224,20 @@ export function PromptIncludesTab() {
             className="tau-button tau-button-primary shrink-0 px-3 py-1.5 text-sm bg-accent text-white rounded-md"
             onClick={openNew}
           >
-            New include
+            New shared prompt
           </button>
         )}
       </div>
 
       {deleteError && <div className="text-sm text-red-600 dark:text-red-400">{deleteError}</div>}
 
-      <PromptIncludeList
+      <SharedPromptList
         includes={includes}
         onEdit={openEditor}
         onToggle={(include) => toggle.mutate(include)}
         onDelete={(include) => {
           setDeleteError('')
-          if (window.confirm(`Delete prompt include "${include.name}"? This cannot be undone.`)) remove.mutate(include)
+          if (window.confirm(`Delete shared prompt "${include.name}"? This cannot be undone.`)) remove.mutate(include)
         }}
         canWrite={canWrite}
       />
@@ -246,7 +246,7 @@ export function PromptIncludesTab() {
         <Modal
           isOpen
           onClose={() => setEditing(null)}
-          title={isNew ? 'New prompt include' : `Edit ${editing.name}`}
+          title={isNew ? 'New shared prompt' : `Edit ${editing.name}`}
           maxWidth="wide"
         >
           <form

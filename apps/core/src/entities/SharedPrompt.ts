@@ -1,11 +1,11 @@
 import { eq } from 'drizzle-orm'
 import type { InferSelectModel } from 'drizzle-orm'
-import type { PromptInclude as PromptIncludeJson } from '@tau/shared'
-import { db, promptIncludes } from '../db'
+import type { SharedPrompt as SharedPromptJson } from '@tau/shared'
+import { db, sharedPrompts } from '../db'
 
-export type PromptIncludeRow = InferSelectModel<typeof promptIncludes>
+export type SharedPromptRow = InferSelectModel<typeof sharedPrompts>
 
-export interface UpsertPromptIncludeInput {
+export interface UpsertSharedPromptInput {
   id: string
   name: string
   description?: string | null
@@ -16,7 +16,7 @@ export interface UpsertPromptIncludeInput {
  * A shared prompt block. Cached like AgentType/Skill: runners compose the
  * system prompt on every turn, so lookups must not hit Postgres each time.
  */
-export class PromptInclude implements PromptIncludeRow {
+export class SharedPrompt implements SharedPromptRow {
   declare id: string
   declare name: string
   declare description: string | null
@@ -27,12 +27,12 @@ export class PromptInclude implements PromptIncludeRow {
   declare createdAt: Date
   declare updatedAt: Date
 
-  private static cache = new Map<string, PromptInclude>()
-  private static allCached: PromptInclude[] | null = null
+  private static cache = new Map<string, SharedPrompt>()
+  private static allCached: SharedPrompt[] | null = null
   private static lastCacheRefresh = 0
   private static cacheTimeout = 60_000
 
-  constructor(row: PromptIncludeRow) {
+  constructor(row: SharedPromptRow) {
     Object.assign(this, row)
   }
 
@@ -46,10 +46,10 @@ export class PromptInclude implements PromptIncludeRow {
     this.lastCacheRefresh = 0
   }
 
-  static async list(options: { includeDisabled?: boolean } = {}): Promise<PromptInclude[]> {
+  static async list(options: { includeDisabled?: boolean } = {}): Promise<SharedPrompt[]> {
     if (!this.isCacheValid() || !this.allCached) {
-      const rows = await db.select().from(promptIncludes).orderBy(promptIncludes.id)
-      this.allCached = rows.map((row) => new PromptInclude(row))
+      const rows = await db.select().from(sharedPrompts).orderBy(sharedPrompts.id)
+      this.allCached = rows.map((row) => new SharedPrompt(row))
       this.cache.clear()
       for (const item of this.allCached) this.cache.set(item.id, item)
       this.lastCacheRefresh = Date.now()
@@ -57,24 +57,24 @@ export class PromptInclude implements PromptIncludeRow {
     return options.includeDisabled ? this.allCached : this.allCached.filter((i) => !i.disabled)
   }
 
-  static async find(id: string): Promise<PromptInclude | null> {
+  static async find(id: string): Promise<SharedPrompt | null> {
     if (this.isCacheValid() && this.cache.has(id)) return this.cache.get(id)!
-    const [row] = await db.select().from(promptIncludes).where(eq(promptIncludes.id, id))
+    const [row] = await db.select().from(sharedPrompts).where(eq(sharedPrompts.id, id))
     if (!row) return null
-    const item = new PromptInclude(row)
+    const item = new SharedPrompt(row)
     this.cache.set(id, item)
     return item
   }
 
-  static async mustFind(id: string): Promise<PromptInclude> {
+  static async mustFind(id: string): Promise<SharedPrompt> {
     const item = await this.find(id)
-    if (!item) throw new Error(`Prompt include ${id} not found`)
+    if (!item) throw new Error(`Shared prompt ${id} not found`)
     return item
   }
 
   /** Preserves the caller's order; missing ids are simply absent from the map. */
-  static async findMany(ids: string[]): Promise<Map<string, PromptInclude>> {
-    const result = new Map<string, PromptInclude>()
+  static async findMany(ids: string[]): Promise<Map<string, SharedPrompt>> {
+    const result = new Map<string, SharedPrompt>()
     if (ids.length === 0) return result
     const all = await this.list({ includeDisabled: true })
     const byId = new Map(all.map((i) => [i.id, i]))
@@ -85,7 +85,7 @@ export class PromptInclude implements PromptIncludeRow {
     return result
   }
 
-  static async upsert(input: UpsertPromptIncludeInput): Promise<void> {
+  static async upsert(input: UpsertSharedPromptInput): Promise<void> {
     // `description` is left out of the update set entirely when the caller
     // omits it, so a content-only edit doesn't blow away an existing
     // description (which would otherwise show up as a spurious field
@@ -93,10 +93,10 @@ export class PromptInclude implements PromptIncludeRow {
     // still clears it.
     const hasDescription = Object.hasOwn(input, 'description')
     await db
-      .insert(promptIncludes)
+      .insert(sharedPrompts)
       .values({ id: input.id, name: input.name, description: input.description ?? null, content: input.content })
       .onConflictDoUpdate({
-        target: promptIncludes.id,
+        target: sharedPrompts.id,
         set: {
           name: input.name,
           ...(hasDescription ? { description: input.description ?? null } : {}),
@@ -108,11 +108,11 @@ export class PromptInclude implements PromptIncludeRow {
   }
 
   static async delete(id: string): Promise<void> {
-    await db.delete(promptIncludes).where(eq(promptIncludes.id, id))
+    await db.delete(sharedPrompts).where(eq(sharedPrompts.id, id))
     this.invalidateCache()
   }
 
-  toJson(): PromptIncludeJson {
+  toJson(): SharedPromptJson {
     return {
       id: this.id,
       name: this.name,

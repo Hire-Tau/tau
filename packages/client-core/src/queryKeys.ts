@@ -52,11 +52,11 @@ export const queryKeys = {
     templateDiff: (id: string) => [...queryKeys.skills.all, 'templateDiff', id] as const,
   },
 
-  promptIncludes: {
-    all: ['promptIncludes'] as const,
-    list: () => [...queryKeys.promptIncludes.all, 'list'] as const,
-    detail: (id: string) => [...queryKeys.promptIncludes.all, 'detail', id] as const,
-    templateDiff: (id: string) => [...queryKeys.promptIncludes.all, 'templateDiff', id] as const,
+  sharedPrompts: {
+    all: ['sharedPrompts'] as const,
+    list: () => [...queryKeys.sharedPrompts.all, 'list'] as const,
+    detail: (id: string) => [...queryKeys.sharedPrompts.all, 'detail', id] as const,
+    templateDiff: (id: string) => [...queryKeys.sharedPrompts.all, 'templateDiff', id] as const,
   },
 
   agentTypes: {

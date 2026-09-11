@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { queries } from '../../queryOptions'
 
-/** The subset of a prompt include the picker needs — keeps the view testable without the full record. */
+/** The subset of a shared prompt the picker needs — keeps the view testable without the full record. */
 export interface IncludeOption {
   id: string
   name: string
@@ -16,7 +16,7 @@ export interface IncludeOption {
  *
  * Pure: takes the full catalog as a prop so it renders without a query client.
  */
-export function IncludePickerView({
+export function SharedPromptPickerView({
   value,
   all,
   onChange,
@@ -50,7 +50,7 @@ export function IncludePickerView({
   return (
     <div>
       <label className="text-xs text-muted flex items-center gap-2 mb-1">
-        <span>Includes</span>
+        <span>Shared prompts</span>
         {actions}
       </label>
       <div className="border border-th-border rounded bg-surface-secondary p-2 space-y-1">
@@ -111,7 +111,11 @@ export function IncludePickerView({
           className="tau-field mt-1 w-full border border-th-border bg-surface px-2 py-1 text-sm"
         >
           <option value="">
-            {loading ? 'Loading includes…' : addable.length ? 'Add include…' : 'No more includes available'}
+            {loading
+              ? 'Loading shared prompts…'
+              : addable.length
+                ? 'Add shared prompt…'
+                : 'No more shared prompts available'}
           </option>
           {addable.map((include) => (
             <option key={include.id} value={include.id}>
@@ -124,8 +128,8 @@ export function IncludePickerView({
   )
 }
 
-/** `IncludePickerView` bound to the prompt-include catalog. */
-export function IncludePicker({
+/** `SharedPromptPickerView` bound to the shared-prompt catalog. */
+export function SharedPromptPicker({
   value,
   onChange,
   actions,
@@ -134,6 +138,8 @@ export function IncludePicker({
   onChange: (next: string[]) => void
   actions?: ReactNode
 }) {
-  const { data: includes = [], isPending } = useQuery(queries.promptIncludes.list())
-  return <IncludePickerView value={value} all={includes} onChange={onChange} actions={actions} loading={isPending} />
+  const { data: includes = [], isPending } = useQuery(queries.sharedPrompts.list())
+  return (
+    <SharedPromptPickerView value={value} all={includes} onChange={onChange} actions={actions} loading={isPending} />
+  )
 }

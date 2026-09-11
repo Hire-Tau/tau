@@ -1,12 +1,12 @@
 import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
-import { promptIncludes } from '../../db'
-import { PromptInclude } from '../../entities/PromptInclude'
+import { sharedPrompts } from '../../db'
+import { SharedPrompt } from '../../entities/SharedPrompt'
 import { AGENT_TYPE_INCLUDES_DIR } from '../../lib/paths'
 import { assertConfigId, assertNonEmptyString } from '../../lib/validation/config-ids'
 import { ConfigSync } from './ConfigSync'
 
-export interface PromptIncludeMarkdown {
+export interface SharedPromptMarkdown {
   id: string
   name: string
   description?: string
@@ -14,8 +14,8 @@ export interface PromptIncludeMarkdown {
 }
 
 /** Name = first markdown heading (any level) or the id; description = first non-heading paragraph line. */
-export function parsePromptIncludeMarkdown(content: string, id: string): PromptIncludeMarkdown {
-  assertConfigId(id, 'prompt include id')
+export function parseSharedPromptMarkdown(content: string, id: string): SharedPromptMarkdown {
+  assertConfigId(id, 'shared prompt id')
   assertNonEmptyString(content, 'content')
   const lines = content.split(/\r?\n/)
   const headingIndex = lines.findIndex((line) => /^#{1,6}\s+\S/.test(line))
@@ -43,31 +43,31 @@ export async function loadIncludeFiles(dir: string = AGENT_TYPE_INCLUDES_DIR): P
   return out
 }
 
-export class PromptIncludeSync extends ConfigSync<PromptIncludeMarkdown> {
-  readonly name = 'prompt-includes'
+export class SharedPromptSync extends ConfigSync<SharedPromptMarkdown> {
+  readonly name = 'shared-prompts'
   readonly directory = AGENT_TYPE_INCLUDES_DIR
-  readonly table = promptIncludes
-  readonly idColumn = promptIncludes.id
-  readonly yamlTemplateColumn = promptIncludes.yamlTemplate
-  readonly yamlFieldOverridesColumn = promptIncludes.yamlFieldOverrides
-  readonly updatedAtColumn = promptIncludes.updatedAt
-  readonly disabledColumn = promptIncludes.disabled
+  readonly table = sharedPrompts
+  readonly idColumn = sharedPrompts.id
+  readonly yamlTemplateColumn = sharedPrompts.yamlTemplate
+  readonly yamlFieldOverridesColumn = sharedPrompts.yamlFieldOverrides
+  readonly updatedAtColumn = sharedPrompts.updatedAt
+  readonly disabledColumn = sharedPrompts.disabled
 
-  async loadFromDir(): Promise<PromptIncludeMarkdown[]> {
+  async loadFromDir(): Promise<SharedPromptMarkdown[]> {
     const files = await loadIncludeFiles(this.directory)
     if (files.size === 0) this.log.warn(`Directory empty or missing: ${this.directory}`)
-    return [...files.entries()].map(([id, content]) => parsePromptIncludeMarkdown(content, id))
+    return [...files.entries()].map(([id, content]) => parseSharedPromptMarkdown(content, id))
   }
 
-  parse(content: string, filename: string): PromptIncludeMarkdown {
-    return parsePromptIncludeMarkdown(content, filename.replace(/\.md$/i, ''))
+  parse(content: string, filename: string): SharedPromptMarkdown {
+    return parseSharedPromptMarkdown(content, filename.replace(/\.md$/i, ''))
   }
 
-  toRecord(parsed: PromptIncludeMarkdown): Record<string, unknown> {
+  toRecord(parsed: SharedPromptMarkdown): Record<string, unknown> {
     return { id: parsed.id, name: parsed.name, description: parsed.description ?? null, content: parsed.content }
   }
 
-  getId(parsed: PromptIncludeMarkdown): string {
+  getId(parsed: SharedPromptMarkdown): string {
     return parsed.id
   }
 
@@ -80,6 +80,6 @@ export class PromptIncludeSync extends ConfigSync<PromptIncludeMarkdown> {
   }
 
   async afterSync(): Promise<void> {
-    PromptInclude.invalidateCache()
+    SharedPrompt.invalidateCache()
   }
 }

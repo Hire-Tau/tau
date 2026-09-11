@@ -1,22 +1,22 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { eq, inArray } from 'drizzle-orm'
-import { db, promptIncludes } from '../../db'
-import { PromptInclude } from '../../entities/PromptInclude'
+import { db, sharedPrompts } from '../../db'
+import { SharedPrompt } from '../../entities/SharedPrompt'
 import { composeAgentTypePrompt } from './compose-prompt'
 
 const ids = ['cp-alpha', 'cp-beta', 'cp-off']
 
 describe('composeAgentTypePrompt', () => {
   beforeAll(async () => {
-    await PromptInclude.upsert({ id: 'cp-alpha', name: 'A', content: '## Alpha\nalpha' })
-    await PromptInclude.upsert({ id: 'cp-beta', name: 'B', content: '## Beta\nbeta' })
-    await PromptInclude.upsert({ id: 'cp-off', name: 'Off', content: '## Off\noff' })
-    await db.update(promptIncludes).set({ disabled: true }).where(eq(promptIncludes.id, 'cp-off'))
-    PromptInclude.invalidateCache()
+    await SharedPrompt.upsert({ id: 'cp-alpha', name: 'A', content: '## Alpha\nalpha' })
+    await SharedPrompt.upsert({ id: 'cp-beta', name: 'B', content: '## Beta\nbeta' })
+    await SharedPrompt.upsert({ id: 'cp-off', name: 'Off', content: '## Off\noff' })
+    await db.update(sharedPrompts).set({ disabled: true }).where(eq(sharedPrompts.id, 'cp-off'))
+    SharedPrompt.invalidateCache()
   })
   afterAll(async () => {
-    await db.delete(promptIncludes).where(inArray(promptIncludes.id, ids))
-    PromptInclude.invalidateCache()
+    await db.delete(sharedPrompts).where(inArray(sharedPrompts.id, ids))
+    SharedPrompt.invalidateCache()
   })
 
   test('joins own prompt and includes in list order with blank lines', async () => {

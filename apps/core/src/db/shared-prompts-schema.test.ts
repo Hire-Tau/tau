@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test'
 import { getTableColumns } from 'drizzle-orm'
-import { agentTypes, promptIncludes } from './schema'
+import { agentTypes, sharedPrompts } from './schema'
 
-describe('prompt includes schema', () => {
-  test('prompt_includes carries the template/override columns every synced domain has', () => {
-    const cols = Object.keys(getTableColumns(promptIncludes))
+describe('shared prompts schema', () => {
+  test('shared_prompts carries the template/override columns every synced domain has', () => {
+    const cols = Object.keys(getTableColumns(sharedPrompts))
     for (const c of [
       'id',
       'name',

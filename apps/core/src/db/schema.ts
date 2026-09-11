@@ -261,7 +261,7 @@ export const skills = pgTable('skills', {
  * config/agent-types/includes/*.md with the same template/override model as
  * skills, so admins can edit a block once for every type that includes it.
  */
-export const promptIncludes = pgTable('prompt_includes', {
+export const sharedPrompts = pgTable('shared_prompts', {
   id: varchar('id', { length: 100 }).primaryKey(),
   name: varchar('name', { length: 200 }).notNull(),
   description: text('description'),
@@ -294,7 +294,7 @@ export const agentTypes = pgTable('agent_types', {
   model: varchar('model', { length: 500 }).notNull(),
   tier: varchar('tier', { length: 100 }),
   systemPrompt: text('system_prompt').notNull(),
-  /** Ordered prompt_includes ids composed after systemPrompt at runtime. */
+  /** Ordered shared_prompts ids composed after systemPrompt at runtime. */
   includes: text('includes').array().notNull().default([]),
   skills: text('skills').array(),
   extensions: text('extensions').array(),

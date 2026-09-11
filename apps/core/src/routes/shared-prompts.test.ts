@@ -1,35 +1,35 @@
 import { describe, test, expect, beforeAll, beforeEach, afterAll } from 'bun:test'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
-import { db, promptIncludes, agentTypes } from '../db'
-import { PromptInclude } from '../entities/PromptInclude'
+import { db, sharedPrompts, agentTypes } from '../db'
+import { SharedPrompt } from '../entities/SharedPrompt'
 import { AgentType } from '../entities/AgentType'
-import { promptIncludesRoutes } from './prompt-includes'
-import { promptIncludeSync } from '../services/config-sync'
+import { sharedPromptsRoutes } from './shared-prompts'
+import { sharedPromptSync } from '../services/config-sync'
 import { identityMiddleware } from '../middleware/identity'
 import { createTestAdmin, createTestUser, authHeaders, cleanupTestRbac, type TestUser } from '../test-utils'
 
 // ── Apps ──────────────────────────────────────────────────────────────────────
 
 /**
- * Functional test app: real identityMiddleware + promptIncludesRoutes.
+ * Functional test app: real identityMiddleware + sharedPromptsRoutes.
  * All functional tests authenticate as admin.
  */
 const app = new Hono()
 app.use('*', identityMiddleware)
-app.route('/api/prompt-includes', promptIncludesRoutes)
+app.route('/api/shared-prompts', sharedPromptsRoutes)
 
 /**
  * Guard test app: same setup, used for RBAC denial tests.
  */
 const guardApp = new Hono()
 guardApp.use('*', identityMiddleware)
-guardApp.route('/api/prompt-includes', promptIncludesRoutes)
+guardApp.route('/api/shared-prompts', sharedPromptsRoutes)
 
 // ── Shared RBAC state ─────────────────────────────────────────────────────────
 
-const funcPrefix = `prompt-includes-func-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-const guardPrefix = `prompt-includes-guard-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+const funcPrefix = `shared-prompts-func-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+const guardPrefix = `shared-prompts-guard-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 let funcAdmin: TestUser
 let unprivileged: TestUser
 
@@ -77,37 +77,37 @@ async function guardFetch(
 
 // ── Functional tests ──────────────────────────────────────────────────────────
 
-describe('prompt include routes', () => {
+describe('shared prompt routes', () => {
   beforeEach(async () => {
-    await db.delete(promptIncludes).where(eq(promptIncludes.id, 'custom-inc'))
-    PromptInclude.invalidateCache()
+    await db.delete(sharedPrompts).where(eq(sharedPrompts.id, 'custom-inc'))
+    SharedPrompt.invalidateCache()
   })
 
   test('creates, updates, disables, enables and deletes a custom include', async () => {
     let res = await app.request(
-      '/api/prompt-includes',
+      '/api/shared-prompts',
       adminJson('POST', { id: 'custom-inc', name: 'Custom', content: 'Be terse.' })
     )
     expect(res.status).toBe(201)
     res = await app.request(
-      '/api/prompt-includes/custom-inc',
+      '/api/shared-prompts/custom-inc',
       adminJson('PUT', { name: 'Custom', content: 'Be very terse.' })
     )
     expect(res.status).toBe(200)
     expect((await res.json()).content).toBe('Be very terse.')
-    res = await app.request('/api/prompt-includes/custom-inc/disable', adminReq('POST'))
+    res = await app.request('/api/shared-prompts/custom-inc/disable', adminReq('POST'))
     expect(res.status).toBe(200)
-    expect((await (await app.request('/api/prompt-includes/custom-inc', adminReq('GET'))).json()).disabled).toBe(true)
-    res = await app.request('/api/prompt-includes/custom-inc/enable', adminReq('POST'))
+    expect((await (await app.request('/api/shared-prompts/custom-inc', adminReq('GET'))).json()).disabled).toBe(true)
+    res = await app.request('/api/shared-prompts/custom-inc/enable', adminReq('POST'))
     expect(res.status).toBe(200)
-    res = await app.request('/api/prompt-includes/custom-inc', adminReq('DELETE'))
+    res = await app.request('/api/shared-prompts/custom-inc', adminReq('DELETE'))
     expect(res.status).toBe(200)
   })
 
   test('refuses to delete an include an agent type still references', async () => {
-    await app.request('/api/prompt-includes', adminJson('POST', { id: 'custom-inc', name: 'Custom', content: 'x' }))
+    await app.request('/api/shared-prompts', adminJson('POST', { id: 'custom-inc', name: 'Custom', content: 'x' }))
     await AgentType.upsert({ id: 'inc-user', name: 'Inc user', systemPrompt: 'hi', includes: ['custom-inc'] })
-    const res = await app.request('/api/prompt-includes/custom-inc', adminReq('DELETE'))
+    const res = await app.request('/api/shared-prompts/custom-inc', adminReq('DELETE'))
     expect(res.status).toBe(409)
     expect((await res.json()).referencedBy).toEqual(['inc-user'])
     await db.delete(agentTypes).where(eq(agentTypes.id, 'inc-user'))
@@ -115,43 +115,43 @@ describe('prompt include routes', () => {
   })
 
   test('template-diff and revert work for a bundled include', async () => {
-    await promptIncludeSync.sync()
+    await sharedPromptSync.sync()
     // The bundled `rules` include's template name comes from its markdown heading
     // ("## Operational Rules"), not the id — keep this equal to the template so
     // only `content` drifts, which is what this test is asserting.
     let res = await app.request(
-      '/api/prompt-includes/rules',
+      '/api/shared-prompts/rules',
       adminJson('PUT', { name: 'Operational Rules', content: 'edited' })
     )
     expect(res.status).toBe(200)
-    const diff = await (await app.request('/api/prompt-includes/rules/template-diff', adminReq('GET'))).json()
+    const diff = await (await app.request('/api/shared-prompts/rules/template-diff', adminReq('GET'))).json()
     expect(diff.hasDrift).toBe(true)
     expect(diff.fieldOverrides).toEqual(['content'])
-    res = await app.request('/api/prompt-includes/rules/revert-to-template', adminReq('POST'))
+    res = await app.request('/api/shared-prompts/rules/revert-to-template', adminReq('POST'))
     expect(res.status).toBe(200)
-    expect(
-      (await (await app.request('/api/prompt-includes/rules', adminReq('GET'))).json()).yamlFieldOverrides
-    ).toEqual([])
+    expect((await (await app.request('/api/shared-prompts/rules', adminReq('GET'))).json()).yamlFieldOverrides).toEqual(
+      []
+    )
   })
 
   test('PUT omitting name preserves the existing name; an explicit blank name is rejected', async () => {
-    await promptIncludeSync.sync()
+    await sharedPromptSync.sync()
     // Content-only update: `name` is omitted entirely, so the existing (template)
     // name must survive untouched and only `content` should show as drift.
-    let res = await app.request('/api/prompt-includes/rules', adminJson('PUT', { content: 'edited' }))
+    let res = await app.request('/api/shared-prompts/rules', adminJson('PUT', { content: 'edited' }))
     expect(res.status).toBe(200)
     expect((await res.json()).name).toBe('Operational Rules')
-    const diff = await (await app.request('/api/prompt-includes/rules/template-diff', adminReq('GET'))).json()
+    const diff = await (await app.request('/api/shared-prompts/rules/template-diff', adminReq('GET'))).json()
     expect(diff.fieldOverrides).toEqual(['content'])
 
-    res = await app.request('/api/prompt-includes/rules', adminJson('PUT', { name: '   ', content: 'x' }))
+    res = await app.request('/api/shared-prompts/rules', adminJson('PUT', { name: '   ', content: 'x' }))
     expect(res.status).toBe(400)
 
-    await app.request('/api/prompt-includes/rules/revert-to-template', adminReq('POST'))
+    await app.request('/api/shared-prompts/rules/revert-to-template', adminReq('POST'))
   })
 
   test('denies writes without agent-types:update', async () => {
-    const res = await guardFetch(unprivileged.token, '/api/prompt-includes', {
+    const res = await guardFetch(unprivileged.token, '/api/shared-prompts', {
       method: 'POST',
       body: JSON.stringify({ id: 'nope', name: 'n', content: 'c' }),
       headers: { 'content-type': 'application/json' },

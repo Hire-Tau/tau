@@ -1,4 +1,4 @@
-CREATE TABLE "prompt_includes" (
+CREATE TABLE "shared_prompts" (
 	"id" varchar(100) PRIMARY KEY NOT NULL,
 	"name" varchar(200) NOT NULL,
 	"description" text,

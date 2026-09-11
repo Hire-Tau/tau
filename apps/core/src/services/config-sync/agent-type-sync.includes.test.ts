@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm'
 import { agentTypes, db } from '../../db'
 import { AgentType } from '../../entities/AgentType'
 import { AgentTypeSync, composeFromYaml, stripLegacyIncludeSuffix } from './agent-type-sync'
-import { loadIncludeFiles } from './prompt-include-sync'
+import { loadIncludeFiles } from './shared-prompt-sync'
 
 const sync = new AgentTypeSync()
 

@@ -6,7 +6,7 @@ import { AGENT_TYPES_DIR } from '../../lib/paths'
 import { validateModelSpecList } from '../../lib/utils/model-spec'
 import { AgentType } from '../../entities/AgentType'
 import { ConfigSync, type SyncResult } from './ConfigSync'
-import { loadIncludeFiles } from './prompt-include-sync'
+import { loadIncludeFiles } from './shared-prompt-sync'
 import { INTEGRATION_CAPABILITIES, type AgentTypeIntegrationPolicyV1 } from '@tau/shared'
 
 // ---------------------------------------------------------------------------

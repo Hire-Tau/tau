@@ -81,9 +81,9 @@ import {
   getSkills,
   getSkill,
   getSkillTemplateDiff,
-  getPromptIncludes,
-  getPromptInclude,
-  getPromptIncludeTemplateDiff,
+  getSharedPrompts,
+  getSharedPrompt,
+  getSharedPromptTemplateDiff,
 } from './api/config'
 import {
   listSquads,
@@ -186,21 +186,21 @@ export const queries = {
       }),
   },
 
-  promptIncludes: {
+  sharedPrompts: {
     list: () =>
       queryOptions({
-        queryKey: queryKeys.promptIncludes.list(),
-        queryFn: getPromptIncludes,
+        queryKey: queryKeys.sharedPrompts.list(),
+        queryFn: getSharedPrompts,
       }),
     detail: (id: string) =>
       queryOptions({
-        queryKey: queryKeys.promptIncludes.detail(id),
-        queryFn: () => getPromptInclude(id),
+        queryKey: queryKeys.sharedPrompts.detail(id),
+        queryFn: () => getSharedPrompt(id),
       }),
     templateDiff: (id: string) =>
       queryOptions({
-        queryKey: queryKeys.promptIncludes.templateDiff(id),
-        queryFn: () => getPromptIncludeTemplateDiff(id),
+        queryKey: queryKeys.sharedPrompts.templateDiff(id),
+        queryFn: () => getSharedPromptTemplateDiff(id),
       }),
   },
 
