@@ -7,12 +7,22 @@ import { requirePermission } from '../middleware'
 
 const promptIncludesRoutes = new Hono()
 
-function validateBody(body: any, id: string) {
+// `fallbackName` is only used when the caller omits `name` entirely — on create that's
+// the id, on update it's the existing record's name, so a content-only PUT can't
+// silently rename an include. An explicitly empty/whitespace `name` is always rejected.
+function validateBody(body: any, id: string, fallbackName: string) {
   assertConfigId(id, 'prompt include id')
   assertNonEmptyString(body.content, 'content')
+  let name: string
+  if (Object.hasOwn(body, 'name')) {
+    assertNonEmptyString(body.name, 'name')
+    name = body.name.trim()
+  } else {
+    name = fallbackName
+  }
   return {
     id,
-    name: (body.name?.trim() || id) as string,
+    name,
     // `description` is only included when the caller sent it, so PromptInclude.upsert
     // (which special-cases an absent key) leaves an existing description untouched.
     ...(Object.hasOwn(body, 'description') ? { description: body.description?.trim() || null } : {}),
@@ -34,7 +44,7 @@ promptIncludesRoutes.get('/:id', requirePermission('agent-types:read'), async (c
 promptIncludesRoutes.post('/', requirePermission('agent-types:update'), async (c) => {
   try {
     const body = await c.req.json()
-    const input = validateBody(body, body.id)
+    const input = validateBody(body, body.id, body.id)
     if (await PromptInclude.find(input.id)) return c.json({ error: `Prompt include "${input.id}" already exists` }, 409)
     await PromptInclude.upsert(input)
     return c.json((await PromptInclude.mustFind(input.id)).toJson(), 201)
@@ -46,8 +56,9 @@ promptIncludesRoutes.post('/', requirePermission('agent-types:update'), async (c
 promptIncludesRoutes.put('/:id', requirePermission('agent-types:update'), async (c) => {
   try {
     const id = c.req.param('id')
-    if (!(await PromptInclude.find(id))) return c.json({ error: 'Prompt include not found' }, 404)
-    const input = validateBody(await c.req.json(), id)
+    const existing = await PromptInclude.find(id)
+    if (!existing) return c.json({ error: 'Prompt include not found' }, 404)
+    const input = validateBody(await c.req.json(), id, existing.name)
     await PromptInclude.upsert(input)
     await promptIncludeSync.recomputeFieldOverrides(id)
     PromptInclude.invalidateCache()

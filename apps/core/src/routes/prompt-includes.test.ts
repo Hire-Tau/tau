@@ -135,6 +135,22 @@ describe('prompt include routes', () => {
     ).toEqual([])
   })
 
+  test('PUT omitting name preserves the existing name; an explicit blank name is rejected', async () => {
+    await promptIncludeSync.sync()
+    // Content-only update: `name` is omitted entirely, so the existing (template)
+    // name must survive untouched and only `content` should show as drift.
+    let res = await app.request('/api/prompt-includes/rules', adminJson('PUT', { content: 'edited' }))
+    expect(res.status).toBe(200)
+    expect((await res.json()).name).toBe('Operational Rules')
+    const diff = await (await app.request('/api/prompt-includes/rules/template-diff', adminReq('GET'))).json()
+    expect(diff.fieldOverrides).toEqual(['content'])
+
+    res = await app.request('/api/prompt-includes/rules', adminJson('PUT', { name: '   ', content: 'x' }))
+    expect(res.status).toBe(400)
+
+    await app.request('/api/prompt-includes/rules/revert-to-template', adminReq('POST'))
+  })
+
   test('denies writes without agent-types:update', async () => {
     const res = await guardFetch(unprivileged.token, '/api/prompt-includes', {
       method: 'POST',
