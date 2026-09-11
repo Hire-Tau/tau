@@ -1,3 +1,4 @@
+/* global Module, HEAPF32, runtimeInitialized, module, console */
 // Replacement for upstream dtln-rs's dtln_post.js, overlaid by the Tau
 // denoiser build (apps/web/scripts/dtln/Dockerfile). Emscripten appends it to
 // the generated glue, so it runs in the module's scope. Differences from
@@ -41,6 +42,8 @@ if (typeof module !== 'undefined') {
 Module.postRun = [
   () => {
     console.log(`Finished loading DTLN plugin!!!`)
+    // Upstream's expression form, kept verbatim so the built glue is unchanged.
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     DtlnPlugin.postRun && DtlnPlugin.postRun.forEach((fn) => fn())
   },
 ]
