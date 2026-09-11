@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY "idx_messages_chat_source_page" ON "messages" USING btree ("activity_execution_id","created_at") WHERE "messages"."role" = 'assistant' AND "messages"."metadata" ? 'executionId';

@@ -1,0 +1,55 @@
+name: Documentation
+
+on:
+  pull_request:
+    paths:
+      - 'apps/docs/**'
+      - 'docs/**'
+      - 'SETUP.md'
+      - 'AGENTS.md'
+      - 'README.md'
+      - 'apps/cli/src/docs-links.test.ts'
+      - 'bun.lock'
+      - 'package.json'
+      - '.github/workflows/docs.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/docs/**'
+      - 'docs/**'
+      - 'SETUP.md'
+      - 'AGENTS.md'
+      - 'README.md'
+      - 'apps/cli/src/docs-links.test.ts'
+      - 'bun.lock'
+      - 'package.json'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    name: Build and check documentation
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 10
+    env:
+      ASTRO_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.8'
+      # Docs need no submodules, extensions, database, application credentials,
+      # or root postinstall hooks. Nothing is deployed or uploaded by this job.
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run check:docs
+      - name: Check repository documentation links
+        working-directory: apps/cli
+        run: bun test src/docs-links.test.ts

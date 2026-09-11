@@ -1,0 +1,82 @@
+---
+title: Complete your first task
+description: Create a squad and use the Assistant to turn a short brief into a finished deliverable.
+prev:
+  label: Choose your setup
+  link: /
+---
+
+This walkthrough produces a one-page event plan from a short brief. It gives you a complete trip through Tau without needing GitHub, a website, or live voice.
+
+## Before you start
+
+Finish [Cloud setup](/start/cloud/) or [self-hosted setup](/start/self-host/), sign in to the workspace, and [connect a model provider](/configure/models/). You need permission to create a squad and run its agents. If controls are missing, ask your workspace administrator for access.
+
+The Assistant can use text without live voice. When Realtime is not configured or your account does not have Realtime access, its text-only User Assistant handles requests. Your squad's agents still need working model credentials.
+
+## 1. Create a practice squad
+
+1. Open **Squads**, then **Create Squad**.
+2. Leave **Team preset** on **Build your own squad** for this example.
+3. Choose **Solo** as the workflow. One worker is enough for a short plan.
+4. Name the squad **Workshop planning**. Set its purpose to **Plan small community workshops and prepare clear materials for organizers**.
+5. If **Working directory (optional)** appears, leave it blank to use Tau's new squad directory. Choose **Create Squad**.
+
+Tau opens the squad and creates its manager. **Build your own squad** skips a team preset's additional default agents; it does not remove the manager. The squad gives future conversations a shared purpose and workspace. You do not need to create individual workers: the workflow starts them when needed.
+
+## 2. Start from the Assistant
+
+Open **Assistant** in the app header, or press **⌘K / Ctrl K**. Search for **Workshop planning**, then select the squad result. The input now searches within that squad and can start a new conversation there.
+
+Paste this brief into that input and press **Enter** while the start-conversation button is highlighted:
+
+> Create a work stream using the Solo workflow. Prepare a one-page plan for a free, two-hour beginner drawing workshop for 12 adults. Use these facts: we have a room with tables, paper and pencils, one facilitator, and a materials budget of $60. Include a timed agenda, a supplies checklist, and three questions to confirm with the venue. Save the plan as workshop-plan.md in the squad workspace and summarize the result here. Do not contact anyone, buy anything, or publish it.
+
+A consultant conversation opens inside the Assistant. The consultant can clarify the brief and create a tracked work stream. Ask for the work-stream link if its response does not include one.
+
+:::tip[Search or send?]
+Typing filters results. **Enter** asks or starts a conversation by default. Press **↓** first when you want to open a matching result; press **↑** from the first result to return to the ask/start button.
+:::
+
+## 3. Follow the work
+
+Open the work-stream link. Its preview shows the work's status and participating conversations. Open a worker's conversation to see progress or ask a follow-up; use **Back** to return to the work stream.
+
+You can also close the Assistant and look under **Active work** in the Feed, or open the squad's **Work** tab. A queued stream has not been admitted to run; check whether it needs capacity, a dependency, or an explicit resume. Active work can show more detail, such as a current step or a blocker.
+
+<ol class="docs-workflow" aria-label="Task workflow">
+  <li>
+    <strong>Brief</strong>
+    <span>Describe the result</span>
+  </li>
+  <li>
+    <strong>Work stream</strong>
+    <span>Track one deliverable</span>
+  </li>
+  <li>
+    <strong>Work and input</strong>
+    <span>Follow progress; answer questions</span>
+  </li>
+  <li>
+    <strong>Done</strong>
+    <span>Inspect the result</span>
+  </li>
+</ol>
+
+## 4. Answer if Tau needs you
+
+If a question appears in **Needs you**, expand it and answer that question's controls. For example, you might confirm that no previous drawing experience is expected. The answer goes back to the asking agent.
+
+Some work can continue while another part waits. A question is not automatically an approval of the finished result. Read the [review and intervention guide](/use/review-and-intervene/) if you see a review request or a paused stream.
+
+If there is a provider or runtime error instead, open the error details and correct the reported setup issue before continuing. Do not keep starting duplicate tasks to retry the same work.
+
+## 5. Check the completed result
+
+When the stream becomes **Done**, open its final conversation and follow the file or workspace reference. You can also open **Workspace** from the squad's **More** menu to find `workshop-plan.md`.
+
+Check that the plan contains a two-hour agenda, fits the supplied materials budget, and lists three venue questions. Agent output still needs your judgment; a Done status means Tau's completion conditions were satisfied, not that every claim is independently guaranteed.
+
+If something needs revision, reply in the conversation with the exact correction. Ask the consultant to track a new revision if the earlier stream is already complete. Keep the original brief and result available as context.
+
+You have now used the Assistant to start a conversation, followed a work stream, and inspected a deliverable. For larger tasks, choose a [workflow with independent review](/use/workflows/). For code work, first [connect GitHub](/connect/github/) and specify the repository, branch, and merge expectations in your brief.

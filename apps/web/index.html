@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Tau</title>
+
+    <!-- PWA manifest link is injected at build time by vite-plugin-pwa
+         (base-path aware manifest.webmanifest). -->
+
+    <!-- Theme Color: initial light surface; the flash-prevention script below and
+         ThemeProvider keep it in sync with the active theme's surface color. -->
+    <meta name="theme-color" content="#ffffff" />
+
+    <!-- iOS PWA Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <!-- 'default' on purpose: on iOS 26 the translucent style shortens the webview
+         by the status-bar height at the BOTTOM (viewport 812 on an 874pt screen),
+         double-reports safe-area insets, and overlays an uncontrollable gray
+         legibility scrim (with a visible hairline edge) on the top strip.
+         'default' gives a full-height webview below an opaque bar that iOS colors
+         from the system appearance / dynamic theme-color meta. NOTE: iOS snapshots
+         this at Add-to-Home-Screen; changes require reinstalling the app icon. -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Tau" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+
+    <!-- iOS Splash Screens (generated for common device sizes) -->
+    <link
+      rel="apple-touch-startup-image"
+      href="/icons/icon-512x512.png"
+      media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)"
+    />
+
+    <!-- Favicons -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png" />
+
+    <!-- Microsoft Tile -->
+    <meta name="msapplication-TileColor" content="#7c3aed" />
+    <meta name="msapplication-TileImage" content="/icons/icon-144x144.png" />
+
+    <!-- Description for SEO and sharing -->
+    <meta name="description" content="AI-powered task management and automation" />
+
+    <!-- Prevent telephone number detection on iOS -->
+    <meta name="format-detection" content="telephone=no" />
+
+    <!-- Flash prevention script for dark mode -->
+    <script>
+      ;(function () {
+        var theme = localStorage.getItem('tau-theme')
+        if (theme === 'dark') {
+          document.documentElement.classList.add('dark')
+        }
+        var surface = localStorage.getItem('tau-surface-color')
+        if (surface) {
+          document.documentElement.style.backgroundColor = surface
+          var meta = document.querySelector("meta[name='theme-color']")
+          if (meta) meta.setAttribute('content', surface)
+        }
+      })()
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

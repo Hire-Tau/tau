@@ -1,0 +1,69 @@
+# Production-style Core deployment. Docker socket access is effectively host-root authority.
+# Use the file provider instead when that privilege is unacceptable.
+#
+# CROSS-PROCESS EVENTS: tau-api and tau-worker exchange agent control signals
+# (stop / abort-tool), event forwarding, and secret cache invalidation over an
+# authenticated HTTP transport (apps/core/src/lib/infra/local-events.ts). It
+# defaults to loopback for the single-host systemd topology; separate
+# containers have separate loopback interfaces, so this file points both sides
+# at container-network addresses instead. Get this wrong and the failure is
+# quiet: "stop" simply never reaches a running turn.
+#
+# Every post is authenticated, and both services already share
+# TAU_ENCRYPTION_KEY, from which the transport derives the same shared token on
+# each side — so no extra secret is needed here. Keep the worker's event
+# listener on the private container network only; never publish port 3003.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: tau
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tau}
+      POSTGRES_DB: tau
+    volumes: [postgres-data:/var/lib/postgresql/data]
+  tau-api:
+    build: .
+    container_name: tau-api
+    command: bun run apps/core/dist/index.js
+    ports: ['3000:3000']
+    environment:
+      DATABASE_URL: postgres://tau:${POSTGRES_PASSWORD:-tau}@postgres:5432/tau
+      WORKER_URL: http://tau-worker:3002
+      TAU_SYSTEM_LOG_PROVIDER: docker
+      TAU_DOCKER_API_CONTAINER: tau-api
+      TAU_DOCKER_WORKER_CONTAINER: tau-worker
+      # Mandatory and explicit (no default, no auto-detection): both processes
+      # refuse to boot without it. docker-socket is the runtime this file is
+      # built for — the host docker socket is mounted below. NOTE: only tau-api
+      # gets that mount today; the worker is given the same runtime so it boots
+      # and agrees with the api about which runtime is configured.
+      TAU_SANDBOX_RUNTIME: docker-socket
+      TAU_PASSWORD: ${TAU_PASSWORD:?set TAU_PASSWORD}
+      TAU_ENCRYPTION_KEY: ${TAU_ENCRYPTION_KEY:?set TAU_ENCRYPTION_KEY}
+      # api -> worker events (see the header note)
+      TAU_WORKER_EVENT_URL: http://tau-worker:3003/internal/events
+    volumes:
+      - core-data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on: [postgres, tau-worker]
+  tau-worker:
+    build: .
+    container_name: tau-worker
+    command: bun run apps/core/dist/worker.js
+    environment:
+      DATABASE_URL: postgres://tau:${POSTGRES_PASSWORD:-tau}@postgres:5432/tau
+      TAU_PASSWORD: ${TAU_PASSWORD:?set TAU_PASSWORD}
+      TAU_ENCRYPTION_KEY: ${TAU_ENCRYPTION_KEY:?set TAU_ENCRYPTION_KEY}
+      # The worker's stream server binds loopback by default (#1348); the api
+      # reaches it over the container network, so bind all interfaces here.
+      HOST: 0.0.0.0
+      # Reachable from tau-api's container, not from the host: port 3003 is
+      # deliberately NOT published in `ports:` above.
+      TAU_WORKER_EVENT_BIND: 0.0.0.0
+      TAU_SANDBOX_RUNTIME: docker-socket
+      TAU_API_EVENT_URL: http://tau-api:3000/internal/events
+    volumes: [core-data:/data]
+    depends_on: [postgres]
+volumes:
+  postgres-data:
+  core-data:

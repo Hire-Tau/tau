@@ -1,0 +1,1 @@
+ALTER TABLE "agent_types" ADD COLUMN "in_flight_margin_tokens" integer;

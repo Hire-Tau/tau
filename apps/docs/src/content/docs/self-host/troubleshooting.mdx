@@ -1,0 +1,111 @@
+---
+title: Troubleshoot a self-hosted instance
+description: Identify setup, login, runtime and update failures using local status and component logs.
+---
+
+Start by finding whether the problem is installation, the web/API service, the worker, authentication or the agent runtime. Restarting everything can hide the first useful error, so read status and recent logs first.
+
+## Collect the first useful evidence
+
+```sh
+tau server list
+tau server status
+tau server logs -n 100
+```
+
+If you have several local instances, add `--instance <label>` to each status or log command. Confirm the checkout root and URL are the ones you meant to inspect.
+
+Narrow the logs when needed:
+
+```sh
+tau server logs -c api -n 100
+tau server logs -c worker -n 100
+tau server logs -f
+```
+
+Stop following with Ctrl+C. This leaves Tau running. For the default port, `curl -i http://localhost:3000/health` checks whether Core answers. An unauthenticated request to a protected `/api/` route can return 401 even when the service is healthy.
+
+## Setup stops before it finishes
+
+### Docker is unavailable
+
+Run `docker info`. If it fails, start Docker Desktop or the Docker daemon and rerun setup from the same checkout. Host runtime still needs Docker when you use setup's managed PostgreSQL database. Choosing `host` only removes the container requirement for agent commands.
+
+An existing PostgreSQL server is supported through `--database-url`; it must already be reachable. Do not delete a database container or volume to fix a connection error.
+
+### No runtime was chosen
+
+A noninteractive install needs an explicit runtime. `--yes` alone is insufficient:
+
+```sh
+tau server install --runtime host --yes
+```
+
+For an existing checkout:
+
+```sh
+bun run setup -- --runtime host
+```
+
+If setup says `k8s` or `vm` needs a separate deployment, follow the [runtime choices](/self-host/runtime-and-access/) instead of substituting an arbitrary environment value.
+
+### The service manager is unavailable
+
+On macOS, the default launchd setup requires a logged-in desktop session. On Linux, the default systemd-user setup requires a working user bus. Run setup in that user's session rather than under a different account. Check any linger warning if services disappear after logout.
+
+Use `tau server setup --help` to inspect the supported supervisor options. An existing installation cannot switch supervisors in place: unregister it with `tau server uninstall`, then rerun setup with the new supervisor. Unregistering preserves its data.
+
+### A port is already in use
+
+Check `tau server list` for another installation first. For a fresh checkout, select another base port:
+
+```sh
+bun run setup -- --runtime host --port 3100
+```
+
+Setup also derives the worker and event ports from that base. To run a second permanent instance, use a separate checkout and an instance label; changing only the browser port is not enough to separate databases and data directories.
+
+## The page does not open
+
+If status reports stopped services, run `tau server start`, then inspect the API logs. If they exit again, fix the reported startup error before retrying.
+
+If `/health` responds but the browser page is absent, check `TAU_SERVE_WEB` and the web build. From the correct checkout:
+
+```sh
+bun run build:web
+tau server restart
+```
+
+For remote access, confirm the proxy reaches the API and forwards `/ws` as well as `/ws/*`. See [runtime and access](/self-host/runtime-and-access/). Worker ports are not substitutes for the browser endpoint.
+
+## Login or CLI authentication fails
+
+- **The initial password no longer works:** after an administrator registers a passkey, use passkey login. The setup password is a bootstrap credential.
+- **Passkey registration fails behind a proxy:** verify the HTTPS address and `TAU_WEB_ORIGIN`. The setting must contain an origin with no path.
+- **The CLI returns 401:** run `tau auth status` to see its backend and credential source, then authorize a device again:
+
+  ```sh
+  tau auth login local --api-url http://localhost:3000
+  ```
+
+  Use your actual instance URL. Clear an explicitly exported stale `TAU_PASSWORD` before browser authorization.
+
+- **The CLI returns 403:** your account may be signed in but lack permission for that action. Reinstalling the server does not grant a user additional permissions.
+
+Do not clear authentication variables or create another instance as a way to recover an existing account.
+
+## The app works but agents cannot run
+
+Check worker logs and the selected runtime. If the instance is under maintenance, inspect **Settings → System → Maintenance pause** or run `tau system pause-status`. Release only your administrator hold when its maintenance work is complete.
+
+If the agent reports a provider error, check **Settings → AI Providers** and [model setup](/configure/models/). Saving a provider credential requires the instance's encryption key. If logs say `TAU_ENCRYPTION_KEY not configured`, restore the installation's existing key from configuration or backup; do not generate a replacement for a database that already contains encrypted credentials.
+
+For host-mode browser errors, install a Chromium-family browser or set `TAU_BROWSER_EXECUTABLE_PATH` to its executable, then restart. Missing `tmux` affects host-mode local deployments. Container runtimes need their Docker image/runtime available independently of the web app.
+
+## An update failed
+
+Run `tau update status --offline` from the local checkout and inspect recent service logs. The local updater refuses uncommitted source changes; review them before trying again. Preserve them rather than using a destructive Git reset as a repair.
+
+Use `tau server update` for the local installation when the API is down. An authentication failure against a remote backend is a separate problem; it does not authorize an offline update on your laptop.
+
+If you need help, include the command, error text, OS, runtime, local status and relevant log excerpt. Remove credentials, first-run links, `.env` contents and private workspace material before sharing.

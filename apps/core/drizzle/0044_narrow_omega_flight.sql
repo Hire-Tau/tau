@@ -1,0 +1,1 @@
+ALTER TABLE "agents" ADD COLUMN "pending_termination_at" timestamp;

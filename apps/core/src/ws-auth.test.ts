@@ -1,0 +1,166 @@
+import { afterEach, describe, expect, test } from 'bun:test'
+import { authenticateWsRequest, authorizeSystemLogsRequest, authorizeTerminalRequest } from './index'
+import { assignRole, cleanupTestRbac, createTestAdmin, createTestRole, createTestUser } from './test-utils/rbac'
+
+const prefix = 'ws-auth'
+const squadId = '11111111-1111-4111-8111-111111111111'
+const otherSquadId = '22222222-2222-4222-8222-222222222222'
+
+afterEach(async () => {
+  await cleanupTestRbac(prefix)
+})
+
+describe('websocket handshake auth', () => {
+  test('rejects missing and invalid tokens', async () => {
+    expect(await authenticateWsRequest('http://localhost/ws')).toBeNull()
+    expect(await authenticateWsRequest('http://localhost/ws?token=invalid')).toBeNull()
+  })
+
+  test('resolves valid identity token', async () => {
+    const admin = await createTestAdmin({ canonicalAdmin: true, prefix })
+    expect(await authenticateWsRequest(`http://localhost/ws?token=${admin.token}`)).toEqual({
+      identity: { type: 'user', userId: admin.id },
+      deviceTokenId: null,
+    })
+  })
+
+  test('preserves device provenance for direct and ticket authentication', async () => {
+    const { createDeviceToken } = await import('./services/auth/device-tokens')
+    const { createWsTicket } = await import('./services/auth/ws-ticket')
+    const user = await createTestUser({ prefix })
+    const device = await createDeviceToken({ userId: user.id, name: 'CLI', platform: 'cli' })
+
+    const expected = {
+      identity: { type: 'user' as const, userId: user.id },
+      deviceTokenId: device.id,
+    }
+    expect(await authenticateWsRequest(`http://localhost/ws?token=${device.token}`)).toEqual(expected)
+    const ticket = await createWsTicket(user.id, device.id)
+    expect(await authenticateWsRequest(`http://localhost/ws?ticket=${ticket}`)).toEqual(expected)
+  })
+
+  test('resolves a single-use ?ticket= to the minting user and rejects reuse', async () => {
+    const { createWsTicket } = await import('./services/auth/ws-ticket')
+    const user = await createTestUser({ prefix })
+    const ticket = await createWsTicket(user.id)
+    expect(await authenticateWsRequest(`http://localhost/ws?ticket=${ticket}`)).toEqual({
+      identity: { type: 'user', userId: user.id },
+      deviceTokenId: null,
+    })
+    // single-use: the same ticket cannot be replayed
+    expect(await authenticateWsRequest(`http://localhost/ws?ticket=${ticket}`)).toBeNull()
+  })
+})
+
+describe('system logs websocket auth', () => {
+  test('rejects missing and invalid tokens', async () => {
+    expect(await authorizeSystemLogsRequest('http://localhost/ws/system/logs')).toEqual({ ok: false, status: 401 })
+    expect(await authorizeSystemLogsRequest('http://localhost/ws/system/logs?token=invalid')).toEqual({
+      ok: false,
+      status: 401,
+    })
+  })
+
+  test('rejects identities without system logs permission', async () => {
+    const user = await createTestUser({ prefix })
+
+    expect(await authorizeSystemLogsRequest(`http://localhost/ws/system/logs?token=${user.token}`)).toEqual({
+      ok: false,
+      status: 403,
+    })
+  })
+
+  test('rejects squad-scoped sandbox:logs for system logs', async () => {
+    const user = await createTestUser({ prefix })
+    const role = await createTestRole({ prefix, permissions: ['sandbox:logs'] })
+    await assignRole({ userId: user.id, roleId: role.id, scope: 'squad', squadId })
+
+    expect(await authorizeSystemLogsRequest(`http://localhost/ws/system/logs?token=${user.token}`)).toEqual({
+      ok: false,
+      status: 403,
+    })
+  })
+
+  test('allows admins and users with system logs permission at system scope', async () => {
+    const admin = await createTestAdmin({ canonicalAdmin: true, prefix })
+    const user = await createTestUser({ prefix })
+    const role = await createTestRole({ prefix, permissions: ['system:logs'] })
+    await assignRole({ userId: user.id, roleId: role.id, scope: 'system' })
+
+    await expect(
+      authorizeSystemLogsRequest(`http://localhost/ws/system/logs?token=${admin.token}`)
+    ).resolves.toMatchObject({
+      ok: true,
+      identity: { type: 'user', userId: admin.id },
+      authContext: { identity: { type: 'user', userId: admin.id }, deviceTokenId: null },
+    })
+    await expect(
+      authorizeSystemLogsRequest(`http://localhost/ws/system/logs?token=${user.token}`)
+    ).resolves.toMatchObject({
+      ok: true,
+      identity: { type: 'user', userId: user.id },
+      authContext: { identity: { type: 'user', userId: user.id }, deviceTokenId: null },
+    })
+  })
+})
+
+describe('terminal websocket auth', () => {
+  test('rejects missing and invalid tokens', async () => {
+    expect(await authorizeTerminalRequest(`http://localhost/ws/terminal?sandboxId=squad_${squadId}`)).toEqual({
+      ok: false,
+      status: 401,
+    })
+    expect(
+      await authorizeTerminalRequest(`http://localhost/ws/terminal?sandboxId=squad_${squadId}&token=invalid`)
+    ).toEqual({
+      ok: false,
+      status: 401,
+    })
+  })
+
+  test('rejects identities without terminal access for the target squad', async () => {
+    const user = await createTestUser({ prefix })
+
+    expect(
+      await authorizeTerminalRequest(`http://localhost/ws/terminal?sandboxId=squad_${squadId}&token=${user.token}`)
+    ).toEqual({ ok: false, status: 403 })
+  })
+
+  test('rejects identities with terminal access on another squad', async () => {
+    const user = await createTestUser({ prefix })
+    const role = await createTestRole({ prefix, permissions: ['terminal:access'] })
+    await assignRole({ userId: user.id, roleId: role.id, scope: 'squad', squadId: otherSquadId })
+
+    expect(
+      await authorizeTerminalRequest(`http://localhost/ws/terminal?sandboxId=squad_${squadId}&token=${user.token}`)
+    ).toEqual({ ok: false, status: 403 })
+  })
+
+  test('allows admins and users with terminal access on the target squad', async () => {
+    const admin = await createTestAdmin({ canonicalAdmin: true, prefix })
+    const user = await createTestUser({ prefix })
+    const role = await createTestRole({ prefix, permissions: ['terminal:access'] })
+    await assignRole({ userId: user.id, roleId: role.id, scope: 'squad', squadId })
+
+    await expect(
+      authorizeTerminalRequest(`http://localhost/ws/terminal?sandboxId=squad_${squadId}&token=${admin.token}`)
+    ).resolves.toMatchObject({ ok: true, params: { sandboxId: `squad_${squadId}`, sessionId: null } })
+    await expect(
+      authorizeTerminalRequest(`http://localhost/ws/terminal?sandboxId=squad_${squadId}&token=${user.token}`)
+    ).resolves.toMatchObject({ ok: true, params: { sandboxId: `squad_${squadId}`, sessionId: null } })
+  })
+
+  test('requires system-scope terminal access when sandbox squad cannot be resolved', async () => {
+    const admin = await createTestAdmin({ canonicalAdmin: true, prefix })
+    const user = await createTestUser({ prefix })
+    const role = await createTestRole({ prefix, permissions: ['terminal:access'] })
+    await assignRole({ userId: user.id, roleId: role.id, scope: 'squad', squadId })
+
+    expect(
+      await authorizeTerminalRequest(`http://localhost/ws/terminal?sandboxId=unknown-runtime&token=${user.token}`)
+    ).toEqual({ ok: false, status: 403 })
+    await expect(
+      authorizeTerminalRequest(`http://localhost/ws/terminal?sandboxId=unknown-runtime&token=${admin.token}`)
+    ).resolves.toMatchObject({ ok: true, params: { sandboxId: 'unknown-runtime', sessionId: null } })
+  })
+})

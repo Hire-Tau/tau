@@ -1,0 +1,1 @@
+ALTER TABLE "sandbox_previews" ADD COLUMN "archived_at" timestamp;

@@ -1,0 +1,47 @@
+id: security-review
+description: Assess security risks and independently validate the findings without automatically modifying the target.
+definition:
+  schemaVersion: 1
+  name: Security Review
+  participants:
+    builder:
+      agentTypeId: reviewer
+      session: reuse-within-stream
+    reviewer:
+      agentTypeId: reviewer
+      session: reuse-within-stream
+  entry: build
+  routing:
+    mode: flexible
+    returnTo: earlier-steps
+    delegation: disabled
+  limits:
+    maxDelegations: 0
+    onLimit: request-owner-input
+  steps:
+    - id: build
+      participant: builder
+      instructions: >-
+        Review the authorized target and threat model. Inspect trust boundaries, authentication,
+        authorization, data handling, and relevant dependencies. Stay within the approved scope. Keep the
+        target unchanged; use safe tests and report reproducible findings with severity, evidence, and
+        remediation advice.
+      output: A security assessment with reproducible findings, risk, mitigations, and coverage limits.
+      outcomes:
+        completed:
+          next: review
+    - id: review
+      participant: reviewer
+
+      instructions: >-
+        Independently validate the reported findings, exploit prerequisites, severity, and suggested
+        mitigations. Distinguish confirmed issues from hypotheses. Request corrections or approve an
+        evidence-backed report; do not automatically implement fixes.
+      output: Validated security report and residual uncertainty.
+      outcomes:
+        approved:
+          next: finish
+        changes-requested:
+          returnTo: build
+  completion:
+    mode: deliverable

@@ -1,0 +1,57 @@
+---
+title: Review and intervene
+description: Answer questions, review results, correct a running agent, and pause or resume work.
+---
+
+Use **Needs you** in the Feed, or find the pending action through the Assistant, when Tau asks for a decision. Each action has its own controls and target. Read the request before choosing how to respond.
+
+## Answer a question
+
+Expand the action and answer using its choices or response field. Include the decision the agent needs, not just an acknowledgment. For example, **Use the supplied dataset only; leave missing values marked unknown** gives a useful boundary.
+
+Your answer is saved before delivery continues in the background. If delivery fails and Tau offers a retry, retry the saved answer rather than submitting a conflicting second answer. The question can also remain visible in the agent conversation's history.
+
+A blocking question may hold a single workflow step, while unrelated branches keep working. An ordinary question may be nonblocking. Answering a question is not approval of a completed deliverable.
+
+Dismiss a question only when it is no longer relevant. Dismissal closes it without sending an answer to the asking agent. If the agent needs a new direction, send that direction explicitly.
+
+## Review a result
+
+Open the work or conversation referenced by the review request. Read the deliverable, the requirements, and the verification evidence.
+
+- **Approve** when the requested checkpoint or delivery is satisfied.
+- **Send back** when something must change. Give specific feedback and state what should be reviewed again.
+
+Some approvals are checkpoints and work continues afterward. Others complete delivery. For a workflow with a human decision step, open the full work-stream view, enter **Decision and evidence**, and choose that step's named outcome. Its buttons follow the configured outcomes and may differ from a generic review request. A generic unblock action cannot replace its verdict.
+
+You may see a read-only action if your account can view it but cannot respond. Ask an authorized person to make the decision rather than trying to change the same state through another page.
+
+## Clear a blocker
+
+Read what is missing: it could be a credential, a decision, a dependency, or an external action. Correct the cause, then use the response control for that exact blocker.
+
+Dependencies are resolved by the system when their prerequisite work completes. Questions are resolved through their question controls. Do not clear an unrelated wait merely because it belongs to the same work stream.
+
+## Correct an agent while it works
+
+Open the relevant conversation. A follow-up adds context for subsequent work; an interruption asks the running agent to change course sooner. Available controls depend on whether the agent is currently running and your permissions.
+
+Be explicit about what changes and what still applies:
+
+> Keep the comparison criteria, but remove the enterprise-only option. Do not edit the published report yet; update the draft and show the differences.
+
+If an agent is halted after an error, fix the reported cause before choosing **Continue**. Bulk continuation is appropriate only when the shared cause is resolved for the listed agents.
+
+## Pause and resume work
+
+Open the full work-stream controls and choose **Pause work** when you need current work to stop and wait for you. Add a reason and, if wanted, an auto-park delay, then choose **Pause now**.
+
+Pause requests cancellation of current and queued executions for the stream's assigned agents. It preserves the work stream for resumption. It cannot undo an external action already completed, and cancellation must settle before work can resume. Check the stream and agent status before assuming everything has stopped.
+
+A paused stream normally keeps its admission slot. **Park while paused**, or an optional auto-park delay, releases that capacity. Parking and pausing are separate: a paused, parked stream still needs an explicit **Resume**.
+
+When ready, choose **Resume work**. If it needs capacity, the stream may queue before starting again. Merely sending a conversational acknowledgment or ending the live Assistant microphone is not a substitute for pausing or resuming work.
+
+## Find the action again
+
+The Feed badge and Needs you list are scoped to your account. Opening a chat does not automatically subscribe you to every future action in that squad. Configure [notifications](/connect/notifications/) for ongoing attention, and use [access settings](/configure/access/) if a needed action or response control is unavailable.

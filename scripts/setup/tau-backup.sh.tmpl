@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+# tau-backup.sh — Rendered by scripts/setup/setup-host.sh (phase_backup); do
+# not edit the installed copy by hand — re-run setup-host.sh instead.
+#
+# Nightly encrypted backup: pg_dump the tau database, tar it together with
+# HOME_DIR (the agent workspace/memory tree) and <dest>/.env (which carries
+# TAU_ENCRYPTION_KEY — the design requires the key travel INSIDE the backup
+# envelope, never in the platform's tenant registry), encrypt the tarball
+# with a passphrase, and upload it to S3-compatible storage. Prunes local
+# temp files and enforces a 14-object retention window under the configured
+# prefix. Standalone — runs under systemd (Type=oneshot, triggered by
+# tau-backup.timer) or manually; not sourced from lib.sh so it has no
+# dependency on the source checkout still being present at @DEST@ (beyond
+# reading its .env / running its DB container).
+#
+# Exits non-zero on ANY failure so systemd flags the unit as failed.
+#
+# Test seams (env vars):
+#   TAU_BACKUP_DRY_RUN=1          stop after encryption, before upload AND
+#                                  retention — the encrypted artifact is left
+#                                  on disk under TAU_BACKUP_WORKDIR (or the
+#                                  script's own mktemp dir) for inspection.
+#                                  This is the ONLY case where WORKDIR survives
+#                                  the script's exit.
+#   TAU_BACKUP_PG_DUMP_CMD=<cmd>  replaces the real pg_dump invocation; <cmd>
+#                                  is run as `"$TAU_BACKUP_PG_DUMP_CMD" <output
+#                                  file path>` and must write a dump to that
+#                                  path — lets tests exercise tar/encrypt/
+#                                  decrypt/untar without a live postgres.
+#   TAU_BACKUP_WORKDIR=<dir>      use this directory for staging instead of a
+#                                  fresh mktemp dir. The cleanup trap removes
+#                                  it (and everything in it — the unencrypted
+#                                  intermediates AND the encrypted artifact) on
+#                                  every exit path — success, `die`, or signal
+#                                  — except under TAU_BACKUP_DRY_RUN=1. Without
+#                                  this, a failed upload under the nightly
+#                                  timer (which always uses a fresh mktemp dir)
+#                                  would leak an encrypted tarball into /tmp on
+#                                  every failed run, unboundedly.
+set -euo pipefail
+
+DEST='@DEST@'
+HOME_DIR='@HOME_DIR@'
+DB_MODE='@DB_MODE@'
+DB_CONTAINER='@DB_CONTAINER@'
+S3_ENDPOINT='@S3_ENDPOINT@'
+S3_REGION='@S3_REGION@'
+S3_BUCKET='@S3_BUCKET@'
+S3_PREFIX='@S3_PREFIX@'
+BACKUP_ENV_FILE='@BACKUP_ENV_FILE@'
+
+log_info() { printf '%s tau-backup: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >&2; }
+die() {
+  printf '%s tau-backup: ERROR %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*" >&2
+  exit 1
+}
+
+[[ -n ${DEST} && -n ${HOME_DIR} && -n ${DB_MODE} ]] ||
+  die "template tokens not substituted (DEST/HOME_DIR/DB_MODE empty) — this file must be rendered by setup-host.sh, not run directly from the .tmpl"
+
+[[ -f ${BACKUP_ENV_FILE} ]] || die "${BACKUP_ENV_FILE} not found — was phase_backup run?"
+# shellcheck disable=SC1090
+source "${BACKUP_ENV_FILE}"
+[[ -n ${TAU_BACKUP_PASSPHRASE:-} ]] || die "${BACKUP_ENV_FILE} did not set TAU_BACKUP_PASSPHRASE"
+
+# curl config-file credentials, never argv (ps-visible) — same convention as
+# lib.sh's _api_curl_auth_config. Escapes \ and " for the curl config quoted
+# string.
+_s3_curl_user_config() { # ACCESS SECRET
+  local a=${1//\\/\\\\} s=${2//\\/\\\\}
+  a=${a//\"/\\\"}
+  s=${s//\"/\\\"}
+  printf 'user = "%s:%s"\n' "${a}" "${s}"
+}
+
+WORKDIR=${TAU_BACKUP_WORKDIR:-}
+if [[ -z ${WORKDIR} ]]; then
+  WORKDIR=$(mktemp -d -t tau-backup.XXXXXX)
+fi
+mkdir -p "${WORKDIR}"
+chmod 700 "${WORKDIR}"
+
+PASSFILE=$(mktemp)
+# KEEP_ARTIFACT is set only on the TAU_BACKUP_DRY_RUN success path, right
+# before its `exit 0` — that is the sole case where WORKDIR (and the
+# encrypted artifact under it) must survive. Every other exit — success,
+# `die`, or an unhandled signal — removes WORKDIR entirely, so a failed
+# upload can never leak an encrypted tarball (or the unencrypted dump/tar
+# intermediates) on disk.
+KEEP_ARTIFACT=0
+cleanup() {
+  rm -f "${PASSFILE}"
+  [[ ${KEEP_ARTIFACT} -eq 1 ]] && return
+  rm -rf "${WORKDIR}"
+}
+trap cleanup EXIT
+printf '%s' "${TAU_BACKUP_PASSPHRASE}" >"${PASSFILE}"
+chmod 600 "${PASSFILE}"
+
+DATE=$(date -u '+%Y-%m-%d')
+DUMP_FILE="${WORKDIR}/db.dump"
+TAR_FILE="${WORKDIR}/backup.tar.gz"
+ENC_FILE="${WORKDIR}/${DATE}.tar.gz.enc"
+
+# ---------------------------------------------------------------- pg_dump
+log_info "dumping database (mode=${DB_MODE})"
+if [[ -n ${TAU_BACKUP_PG_DUMP_CMD:-} ]]; then
+  "${TAU_BACKUP_PG_DUMP_CMD}" "${DUMP_FILE}" || die "test pg-dump seam (\$TAU_BACKUP_PG_DUMP_CMD) failed"
+elif [[ ${DB_MODE} == container ]]; then
+  docker exec "${DB_CONTAINER}" pg_dump -U postgres -Fc tau >"${DUMP_FILE}" ||
+    die "pg_dump via 'docker exec ${DB_CONTAINER}' failed"
+else
+  dsn_line=$(grep -E '^DATABASE_URL=' "${DEST}/.env" | tail -n 1) ||
+    die "DATABASE_URL not found in ${DEST}/.env (database.mode=external)"
+  dsn=${dsn_line#DATABASE_URL=}
+  [[ -n ${dsn} ]] || die "DATABASE_URL in ${DEST}/.env is empty"
+  pg_dump -Fc "${dsn}" >"${DUMP_FILE}" || die "pg_dump against the external DSN failed"
+fi
+[[ -s ${DUMP_FILE} ]] || die "pg_dump produced an empty file"
+
+# ---------------------------------------------------------- tar HOME_DIR + .env
+[[ -f ${DEST}/.env ]] || die "${DEST}/.env not found — cannot include it in the backup envelope"
+mkdir -p "${HOME_DIR}"
+
+log_info "archiving HOME_DIR (${HOME_DIR}) + ${DEST}/.env + db dump"
+tar -czf "${TAR_FILE}" \
+  -C "$(dirname "${DUMP_FILE}")" "$(basename "${DUMP_FILE}")" \
+  -C "$(dirname "${HOME_DIR}")" "$(basename "${HOME_DIR}")" \
+  -C "${DEST}" '.env' ||
+  die "tar archive failed"
+
+# ------------------------------------------------------------------- encrypt
+log_info "encrypting archive"
+openssl enc -aes-256-cbc -pbkdf2 -salt -pass "file:${PASSFILE}" -in "${TAR_FILE}" -out "${ENC_FILE}" ||
+  die "openssl encryption failed"
+# Prune the unencrypted intermediates now — no need to keep them around for
+# the upload window (the final cleanup trap would remove them too, but doing
+# it here shrinks the exposure/disk-usage window).
+rm -f "${TAR_FILE}" "${DUMP_FILE}"
+
+if [[ ${TAU_BACKUP_DRY_RUN:-0} == 1 ]]; then
+  KEEP_ARTIFACT=1
+  log_info "TAU_BACKUP_DRY_RUN=1 — stopping before upload/retention; encrypted artifact left at ${ENC_FILE}"
+  exit 0
+fi
+
+# -------------------------------------------------------------------- upload
+[[ -n ${TAU_BACKUP_S3_ACCESS_KEY:-} ]] || die "${BACKUP_ENV_FILE} did not set TAU_BACKUP_S3_ACCESS_KEY"
+[[ -n ${TAU_BACKUP_S3_SECRET_KEY:-} ]] || die "${BACKUP_ENV_FILE} did not set TAU_BACKUP_S3_SECRET_KEY"
+[[ -n ${S3_ENDPOINT} && -n ${S3_REGION} && -n ${S3_BUCKET} ]] || die "backup S3 endpoint/region/bucket not rendered — was phase_backup run with a complete backup.* config?"
+
+UPLOAD_HEADERS=()
+if [[ -n ${TAU_TERMINATION_BACKUP_EFFECT_ID:-} ]]; then
+  [[ ${TAU_TERMINATION_BACKUP_EFFECT_ID} =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]] ||
+    die "TAU_TERMINATION_BACKUP_EFFECT_ID must be a canonical UUID"
+  OBJECT_KEY="${S3_PREFIX:+${S3_PREFIX%/}/}terminations/${TAU_TERMINATION_BACKUP_EFFECT_ID}.tar.gz.enc"
+  UPLOAD_HEADERS=(-H "x-amz-meta-tau-termination-backup-effect-id:${TAU_TERMINATION_BACKUP_EFFECT_ID}")
+else
+  OBJECT_KEY="${S3_PREFIX:+${S3_PREFIX%/}/}${DATE}.tar.gz.enc"
+fi
+UPLOAD_URL="${S3_ENDPOINT%/}/${S3_BUCKET}/${OBJECT_KEY}"
+log_info "uploading to ${OBJECT_KEY}"
+curl -fsS --aws-sigv4 "aws:amz:${S3_REGION}:s3" \
+  --config <(_s3_curl_user_config "${TAU_BACKUP_S3_ACCESS_KEY}" "${TAU_BACKUP_S3_SECRET_KEY}") \
+  "${UPLOAD_HEADERS[@]}" -X PUT --upload-file "${ENC_FILE}" "${UPLOAD_URL}" ||
+  die "upload to S3 failed (endpoint=${S3_ENDPOINT} bucket=${S3_BUCKET} key=${OBJECT_KEY})"
+log_info "upload complete"
+
+# -------------------------------------------------------- retention (last 14)
+KEY_PREFIX="${S3_PREFIX:+${S3_PREFIX%/}/}"
+# Defense-in-depth (belt-and-suspenders on top of phase_backup's
+# backup.s3_prefix validation): retention must NEVER touch an object outside
+# this backup's own `<prefix>/<YYYY-MM-DD>.tar.gz.enc` naming shape. A
+# mis-rendered/empty prefix or a listing that (for any reason) includes
+# objects outside our prefix must never turn "prune old backups" into "prune
+# the bucket". ERE anchored on the literal prefix — escape ERE metacharacters
+# in KEY_PREFIX so a prefix containing e.g. a literal '.' can't widen the
+# match.
+KEY_SHAPE_RE="^$(printf '%s' "${KEY_PREFIX}" | sed -e 's/[.[\*^$(){}+?|]/\\&/g')[0-9]{4}-[0-9]{2}-[0-9]{2}\.tar\.gz\.enc\$"
+LIST_URL="${S3_ENDPOINT%/}/${S3_BUCKET}?list-type=2&prefix=${KEY_PREFIX}"
+list_body=$(curl -fsS --aws-sigv4 "aws:amz:${S3_REGION}:s3" \
+  --config <(_s3_curl_user_config "${TAU_BACKUP_S3_ACCESS_KEY}" "${TAU_BACKUP_S3_SECRET_KEY}") \
+  "${LIST_URL}") || die "listing S3 objects for retention (prefix ${S3_PREFIX}) failed"
+keys=$(printf '%s' "${list_body}" | grep -oE '<Key>[^<]*</Key>' | sed -e 's#<Key>##' -e 's#</Key>##' | grep -E "${KEY_SHAPE_RE}") || true
+total=$(printf '%s\n' "${keys}" | grep -c . || true)
+if [[ ${total} -gt 14 ]]; then
+  to_delete=$(printf '%s\n' "${keys}" | sort | head -n $((total - 14)))
+  while IFS= read -r key; do
+    [[ -z ${key} ]] && continue
+    # Second, independent shape check right at the destructive call — belt
+    # AND suspenders, in case `keys`/`to_delete` were ever reached by a path
+    # that skipped the filter above.
+    [[ ${key} =~ ${KEY_SHAPE_RE} ]] || die "retention: refusing to delete a key that doesn't match this backup's <prefix>/<YYYY-MM-DD>.tar.gz.enc shape: ${key}"
+    curl -fsS --aws-sigv4 "aws:amz:${S3_REGION}:s3" \
+      --config <(_s3_curl_user_config "${TAU_BACKUP_S3_ACCESS_KEY}" "${TAU_BACKUP_S3_SECRET_KEY}") \
+      -X DELETE "${S3_ENDPOINT%/}/${S3_BUCKET}/${key}" ||
+      die "failed to delete old backup object during retention: ${key}"
+    log_info "retention: deleted ${key}"
+  done <<<"${to_delete}"
+else
+  log_info "retention: ${total} matching-shape object(s) under prefix, within the 14-object window"
+fi
+
+# ------------------------------------------------------------------ prune
+# The cleanup trap (EXIT) removes WORKDIR — and the encrypted artifact under
+# it — on the way out; nothing to do here.
+log_info "backup complete"

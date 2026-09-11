@@ -1,0 +1,38 @@
+# Dependencies - exclude all node_modules to prevent overwriting bun install results
+node_modules/
+apps/*/node_modules/
+packages/*/node_modules/
+
+# Build outputs
+dist/
+.next/
+out/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker files (don't copy into context)
+Dockerfile*
+docker-compose*.yml
+
+# Test artifacts
+coverage/
+.nyc_output/
+
+# Core ships release-matched static documentation; docs/ is a build input.
+
+# Environment files (we set env vars in compose)
+.env
+.env.local
+.env.*.local

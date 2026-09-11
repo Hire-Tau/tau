@@ -1,0 +1,222 @@
+import { useEffect, useRef, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import QRCode from 'qrcode'
+import { queryKeys } from '../../queryKeys'
+import { approveDeviceAuthorization, revokeDevice, startPairing } from '../../api/devices'
+import { queries } from '../../queryOptions'
+import { getApiUrl } from '../../api/client'
+import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
+import { CollectionSkeleton } from '../loading/Skeleton'
+import { DeviceAuthorizationApproval } from './DeviceAuthorizationApproval'
+import {
+  approveDeviceRequest,
+  deviceApprovalErrorMessage,
+  devicePlatformLabel,
+  parseDeviceRequest,
+} from './deviceAuthorizationApprovalLogic'
+
+interface PendingQr {
+  dataUrl: string
+  /** tau://pair?url=…&code=… — tap on the same phone to open the app and pair. */
+  deepLink: string
+  code: string
+  expiresAt: number
+}
+
+// The deep link only resolves on a phone with the Tau app installed; hide it on desktop.
+const IS_MOBILE = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+
+function getDeviceRequest(): string {
+  return typeof window === 'undefined' ? '' : parseDeviceRequest(window.location.hash)
+}
+
+export function DevicesSection() {
+  const queryClient = useQueryClient()
+  const [qr, setQr] = useState<PendingQr | null>(null)
+  const [now, setNow] = useState(() => Date.now())
+  const [error, setError] = useState<string | null>(null)
+  const [deviceRequest] = useState(getDeviceRequest)
+  // Device ids present when the QR was generated, so we can detect a newly-paired one.
+  const baselineIds = useRef<Set<string>>(new Set())
+
+  const {
+    data: devices = [],
+    isLoading,
+    isSuccess,
+  } = useQuery({
+    ...queries.devices.list(),
+    // While a pairing QR is up, poll so the list reflects a successful pair within ~2.5s.
+    refetchInterval: qr ? 2500 : false,
+  })
+  const authorization = useQuery(queries.devices.authorization(deviceRequest))
+  const deviceSkeletonCount = useLoadingShapeCount('settings:paired-devices', isSuccess ? devices.length : undefined, {
+    fallbackCount: 2,
+    maxCount: 8,
+  })
+
+  // Tick the countdown while a QR is active; clear it when it expires.
+  useEffect(() => {
+    if (!qr) return
+    const interval = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(interval)
+  }, [qr])
+
+  const secondsLeft = qr ? Math.max(0, Math.round((qr.expiresAt - now) / 1000)) : 0
+  useEffect(() => {
+    if (qr && secondsLeft === 0) setQr(null)
+  }, [qr, secondsLeft])
+
+  // When a new device appears while the QR is up, the phone paired → close the QR.
+  useEffect(() => {
+    if (!qr) return
+    if (devices.some((d) => !baselineIds.current.has(d.id))) setQr(null)
+  }, [qr, devices])
+
+  const startMutation = useMutation({
+    mutationFn: () => startPairing(),
+    onSuccess: async ({ code, serverUrl, expiresAt }) => {
+      setError(null)
+      baselineIds.current = new Set(devices.map((d) => d.id))
+      // The mobile app scans this JSON: { url, code }.
+      const dataUrl = await QRCode.toDataURL(JSON.stringify({ url: serverUrl, code }), { width: 240, margin: 1 })
+      const deepLink = `tau://pair?url=${encodeURIComponent(serverUrl)}&code=${encodeURIComponent(code)}`
+      setNow(Date.now())
+      setQr({ dataUrl, deepLink, code, expiresAt: new Date(expiresAt).getTime() })
+    },
+    onError: (e) => setError(e instanceof Error ? e.message : 'Failed to start pairing'),
+  })
+
+  const approveMutation = useMutation({
+    mutationFn: () =>
+      approveDeviceRequest({
+        verificationCode: deviceRequest,
+        approve: approveDeviceAuthorization,
+        clearFragment: () =>
+          window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`),
+      }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.devices.all }),
+  })
+
+  const revokeMutation = useMutation({
+    mutationFn: (id: string) => revokeDevice(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.devices.all }),
+  })
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-semibold text-primary">Paired Devices</h2>
+        <p className="text-sm text-muted mt-1">
+          Connect the Tau CLI or mobile app. Each paired client gets its own access token you can revoke here.
+        </p>
+      </div>
+
+      {deviceRequest && (
+        <DeviceAuthorizationApproval
+          preview={authorization.data}
+          isLoading={authorization.isLoading}
+          invalid={authorization.isError}
+          isPending={approveMutation.isPending}
+          isSuccess={approveMutation.isSuccess}
+          error={approveMutation.isError ? deviceApprovalErrorMessage(approveMutation.error) : null}
+          onApprove={() => approveMutation.mutate()}
+        />
+      )}
+
+      <div className="border-b border-panel-border last:border-b-0 p-4 space-y-2">
+        <h3 data-setting-target="connect-the-tau-cli" className="text-sm font-medium text-primary">
+          Connect the Tau CLI
+        </h3>
+        <p className="text-sm text-muted">Run this command, then approve the request opened in your browser.</p>
+        <code className="block rounded bg-surface-hover p-2 text-xs select-all">
+          tau auth login --api-url {getApiUrl()}
+        </code>
+      </div>
+
+      {/* Pair */}
+      <div className="border-b border-panel-border last:border-b-0 p-4 space-y-3">
+        <h3 data-setting-target="pair-the-tau-mobile-app" className="text-sm font-medium text-primary">
+          Pair the Tau mobile app
+        </h3>
+        {qr ? (
+          <div className="flex flex-col items-center gap-2">
+            <img src={qr.dataUrl} alt="Pairing QR code" className="rounded bg-white p-2" width={240} height={240} />
+            <p className="text-xs text-muted">
+              Scan with the Tau app. Expires in <span className="font-mono">{secondsLeft}s</span>.
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="rounded bg-surface-hover px-2 py-1 text-xs select-all">{qr.code}</code>
+              <button
+                className="tau-button text-xs text-secondary"
+                onClick={() => navigator.clipboard.writeText(qr.code)}
+              >
+                Copy code
+              </button>
+            </div>
+            {IS_MOBILE && (
+              <a
+                href={qr.deepLink}
+                className="px-3 py-1.5 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-hover"
+              >
+                Open in the Tau app
+              </a>
+            )}
+            <button
+              onClick={() => startMutation.mutate()}
+              disabled={startMutation.isPending}
+              className="tau-button text-xs text-secondary hover:text-primary"
+            >
+              Regenerate
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => startMutation.mutate()}
+            disabled={startMutation.isPending}
+            className="tau-button tau-button-primary px-3 py-1.5 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+          >
+            {startMutation.isPending ? 'Generating…' : 'Generate pairing QR'}
+          </button>
+        )}
+        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+      </div>
+
+      {/* List */}
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium text-primary">Paired devices</h3>
+        {isLoading ? (
+          <CollectionSkeleton label="Loading paired devices" count={deviceSkeletonCount} />
+        ) : devices.length === 0 ? (
+          <p className="text-sm text-muted italic">No paired devices.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {devices.map((d) => (
+              <div
+                key={d.id}
+                className="border-b border-panel-border last:border-b-0 flex items-center justify-between gap-3 p-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-primary">
+                    {d.name}
+                    <span className="ml-2 text-xs font-normal text-muted">({devicePlatformLabel(d.platform)})</span>
+                  </p>
+                  <p className="text-xs text-placeholder mt-0.5">
+                    Paired {new Date(d.createdAt).toLocaleDateString()}
+                    {d.lastUsedAt ? ` · last used ${new Date(d.lastUsedAt).toLocaleDateString()}` : ' · never used'}
+                  </p>
+                </div>
+                <button
+                  onClick={() => revokeMutation.mutate(d.id)}
+                  disabled={revokeMutation.isPending}
+                  className="tau-button px-2 py-1 text-xs font-medium text-red-600 dark:text-red-400 border border-th-border rounded hover:bg-surface-hover disabled:opacity-50 shrink-0"
+                >
+                  Revoke
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

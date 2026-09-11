@@ -1,0 +1,513 @@
+import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stream'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { and, eq, inArray, sql } from 'drizzle-orm'
+import { db } from '../../db'
+import { agents, agentTypes, inbox, squads, workStreams } from '../../db/schema'
+import { Agent } from '../../entities/Agent'
+import { AgentType } from '../../entities/AgentType'
+import { Squad } from '../../entities/Squad'
+import { cleanupTestRbac, createTestUser, type TestUser } from '../../test-utils'
+import { subscribeToWorkStream } from '../work-streams/subscriptions'
+import { subscribeToSquad } from './subscriptions'
+import {
+  findExistingWorkStreamInbox,
+  notifyWorkStreamBlocked,
+  notifyWorkStreamCanceled,
+  notifyWorkStreamDependencyCanceled,
+  notifyWorkStreamDone,
+  notifyWorkStreamPersistentIdle,
+  notifyWorkStreamOwnerOfNewStream,
+  notifyWorkStreamReopened,
+  notifyWorkStreamResponded,
+  notifyWorkStreamReview,
+  setWorkStreamNotificationBeforePersistHookForTests,
+} from './work-stream-notifications'
+
+describe('work-stream notifications', () => {
+  let typeId: string
+  let squadId: string
+  let agentId: string
+  let assigneeId: string
+  let managerId: string
+  let streamWatcher: TestUser
+  let squadWatcher: TestUser
+  let dualWatcher: TestUser
+
+  beforeEach(async () => {
+    typeId = `wsnotify-${crypto.randomUUID()}`
+    await AgentType.create({
+      id: typeId,
+      model: 'anthropic:claude-sonnet-4-5',
+      name: 'Notification test agent',
+      systemPrompt: 'Test prompt',
+    })
+    agentId = (await Agent.create({ agentTypeId: typeId })).id
+    assigneeId = (await Agent.create({ agentTypeId: typeId })).id
+    const squad = await Squad.create({ name: typeId, purpose: typeId })
+    squadId = squad.id
+    managerId = squad.managerAgentId!
+    streamWatcher = await createTestUser({ prefix: typeId })
+    squadWatcher = await createTestUser({ prefix: typeId })
+    dualWatcher = await createTestUser({ prefix: typeId })
+  })
+
+  afterEach(async () => {
+    setWorkStreamNotificationBeforePersistHookForTests()
+    await db
+      .delete(inbox)
+      .where(
+        inArray(inbox.recipientId, [agentId, assigneeId, managerId, streamWatcher.id, squadWatcher.id, dualWatcher.id])
+      )
+    await db.delete(workStreams).where(eq(workStreams.squadId, squadId))
+    await db.delete(squads).where(eq(squads.id, squadId))
+    await db.delete(agents).where(eq(agents.agentTypeId, typeId))
+    await db.delete(agentTypes).where(eq(agentTypes.id, typeId))
+    await cleanupTestRbac(typeId)
+  })
+
+  it('returns false when no matching row exists', async () => {
+    const exists = await findExistingWorkStreamInbox({
+      recipientId: agentId,
+      subject: 'nope',
+      workStreamId: crypto.randomUUID(),
+      event: 'blocked',
+      transitionAt: new Date().toISOString(),
+    })
+
+    expect(exists).toBe(false)
+  })
+
+  it('persists the exact wait and Action Center identity for blocked inbox notifications', async () => {
+    const workStream = await storedLegacyWorkStream({
+      squadId,
+      title: `${typeId} exact blocked target`,
+      ownerAgentId: agentId,
+    })
+    const wait = await workStream.block({ message: 'Need exact input' })
+    await notifyWorkStreamBlocked(workStream, {
+      waitId: wait.id,
+      actionId: `workstream-blocked:${workStream.id}:${wait.id}`,
+    })
+
+    const rows = await db.select().from(inbox).where(eq(inbox.recipientId, agentId))
+    const message = rows.find((row) => String(row.subject).includes('blocked'))
+    expect(message?.metadata).toMatchObject({
+      workStreamId: workStream.id,
+      waitId: wait.id,
+      actionId: `workstream-blocked:${workStream.id}:${wait.id}`,
+    })
+  })
+
+  it('delivers the operator resolution note to the assignee on unblock (not the legacy response column)', async () => {
+    const workStream = await storedLegacyWorkStream({
+      squadId,
+      title: `${typeId} note stream`,
+      assigneeAgentId: agentId,
+      agentIds: [agentId],
+    })
+    await notifyWorkStreamResponded(workStream, 'manual', 'Deploy is done — resume and re-run the gate')
+
+    // Select the UNBLOCK message specifically — the create-time notification can
+    // land asynchronously at any point, so filtering (not row-order or delete
+    // timing) is the only race-free way to find our message in a full-suite run.
+    const rows = await db.select().from(inbox).where(eq(inbox.recipientId, agentId))
+    const msg = rows.find((row) => String(row.subject ?? '').includes('unblocked'))
+    expect(msg).toBeDefined()
+    const content = String(msg!.content)
+    expect(content).toContain('Deploy is done — resume and re-run the gate')
+    // Regression: it must NOT be the empty "Response:" body the legacy path produced.
+    expect(content).not.toMatch(/Response:\s*$/)
+  })
+
+  it('announces checkpoint approvals as approved, never as send-back feedback', async () => {
+    const workStream = await storedLegacyWorkStream({
+      squadId,
+      title: `${typeId} checkpoint stream`,
+      assigneeAgentId: agentId,
+      agentIds: [agentId],
+    })
+    await notifyWorkStreamResponded(workStream, 'review', 'Ship it — gate passed', 'approved')
+
+    const rows = await db.select().from(inbox).where(eq(inbox.recipientId, agentId))
+    const msg = rows.find((row) => String(row.subject ?? '').includes('Checkpoint approved'))
+    expect(msg).toBeDefined()
+    const content = String(msg!.content)
+    expect(content).toContain('APPROVED')
+    expect(content).toContain('Ship it — gate passed')
+    // The defect this guards: approved checkpoints previously rendered the
+    // send-back branch's wording.
+    expect(content).not.toContain('needs further work')
+  })
+
+  it('keeps send-back wording for review resolutions that are not approvals', async () => {
+    const workStream = await storedLegacyWorkStream({
+      squadId,
+      title: `${typeId} sendback stream`,
+      assigneeAgentId: agentId,
+      agentIds: [agentId],
+    })
+    // Default (no resolution passed) must stay the send-back wording — the
+    // event-fallback path calls without one.
+    await notifyWorkStreamResponded(workStream, 'review', 'Fix the flaky test first')
+
+    const rows = await db.select().from(inbox).where(eq(inbox.recipientId, agentId))
+    const msg = rows.find((row) => String(row.subject ?? '').includes('Review feedback'))
+    expect(msg).toBeDefined()
+    const content = String(msg!.content)
+    expect(content).toContain('needs further work')
+    expect(content).toContain('Fix the flaky test first')
+  })
+
+  it('shows requester attribution at agent-facing lifecycle boundaries, not handoffs', async () => {
+    const workStream = await storedLegacyWorkStream({
+      squadId,
+      title: `${typeId} attributed stream`,
+      ownerAgentId: agentId,
+      creatorAgentId: assigneeId,
+      requestingUserId: streamWatcher.id,
+      agentIds: [assigneeId],
+    })
+
+    await notifyWorkStreamOwnerOfNewStream(workStream)
+    await workStream.update({
+      assigneeAgentId: assigneeId,
+      handoffMessage: 'Continue the implementation.',
+    })
+    await subscribeToWorkStream(workStream.id, streamWatcher.id)
+
+    const created = (await db.select().from(inbox).where(eq(inbox.recipientId, agentId))).find(
+      (row) => (row.metadata as Record<string, unknown>).event === 'created'
+    )
+    const assigned = (await db.select().from(inbox).where(eq(inbox.recipientId, assigneeId))).find(
+      (row) => (row.metadata as Record<string, unknown>).event === 'assigned'
+    )
+    expect(created?.content).toContain('Requested by:')
+    expect(assigned?.content).not.toContain('Requested by:')
+
+    await notifyWorkStreamDone(workStream)
+    await notifyWorkStreamCanceled(workStream, [assigneeId])
+
+    const ownerRows = await db.select().from(inbox).where(eq(inbox.recipientId, agentId))
+    const done = ownerRows.find((row) => (row.metadata as Record<string, unknown>).event === 'done')
+    const canceled = ownerRows.find((row) => (row.metadata as Record<string, unknown>).event === 'canceled')
+    const crewCanceled = (await db.select().from(inbox).where(eq(inbox.recipientId, assigneeId))).find(
+      (row) => (row.metadata as Record<string, unknown>).event === 'canceled'
+    )
+    const watcherDone = (await db.select().from(inbox).where(eq(inbox.recipientId, streamWatcher.id))).find(
+      (row) => (row.metadata as Record<string, unknown>).event === 'done'
+    )
+    expect(done?.content).toContain('Requested by:')
+    expect(canceled?.content).toContain('Requested by:')
+    expect(crewCanceled?.content).toContain('Requested by:')
+    expect(watcherDone?.content).not.toContain('Requested by:')
+  })
+
+  async function countLifecycleInbox(
+    workStreamId: string,
+    event: string,
+    recipientType: 'user' | 'agent',
+    recipientId: string
+  ): Promise<number> {
+    const rows = await db
+      .select({ id: inbox.id })
+      .from(inbox)
+      .where(
+        and(
+          eq(inbox.recipientType, recipientType),
+          eq(inbox.recipientId, recipientId),
+          sql`${inbox.metadata}->>'workStreamId' = ${workStreamId}`,
+          sql`${inbox.metadata}->>'event' = ${event}`
+        )
+      )
+    return rows.length
+  }
+
+  it('keeps quiet lifecycle events out of human watcher inboxes while notifying operational agents', async () => {
+    const workStream = await storedLegacyWorkStream({
+      squadId,
+      title: `${typeId} quiet stream`,
+      ownerAgentId: agentId,
+      assigneeAgentId: assigneeId,
+      agentIds: [agentId, assigneeId],
+    })
+    await subscribeToWorkStream(workStream.id, streamWatcher.id)
+    await subscribeToSquad(squadId, squadWatcher.id)
+    await subscribeToWorkStream(workStream.id, dualWatcher.id)
+    await subscribeToSquad(squadId, dualWatcher.id)
+
+    const quietCases = [
+      ['blocked', () => notifyWorkStreamBlocked(workStream)],
+      ['canceled', () => notifyWorkStreamCanceled(workStream, [assigneeId])],
+      ['reopened', () => notifyWorkStreamReopened(workStream)],
+      ['dependency_canceled', () => notifyWorkStreamDependencyCanceled(workStream)],
+    ] as const
+
+    for (const [event, notify] of quietCases) {
+      await notify()
+      for (const watcher of [streamWatcher, squadWatcher, dualWatcher]) {
+        expect(await countLifecycleInbox(workStream.id, event, 'user', watcher.id)).toBe(0)
+      }
+      expect(await countLifecycleInbox(workStream.id, event, 'agent', agentId)).toBe(1)
+    }
+    expect(await countLifecycleInbox(workStream.id, 'canceled', 'agent', assigneeId)).toBe(1)
+    expect(await countLifecycleInbox(workStream.id, 'reopened', 'agent', assigneeId)).toBe(1)
+
+    const fallback = await storedLegacyWorkStream({ squadId, title: `${typeId} fallback stream` })
+    await subscribeToWorkStream(fallback.id, streamWatcher.id)
+    await subscribeToSquad(squadId, squadWatcher.id)
+    await notifyWorkStreamResponded(fallback, 'manual', 'continue')
+    await notifyWorkStreamResponded(fallback, 'review', 'changes')
+    for (const event of ['unblocked', 'reviewed']) {
+      expect(await countLifecycleInbox(fallback.id, event, 'user', streamWatcher.id)).toBe(0)
+      expect(await countLifecycleInbox(fallback.id, event, 'user', squadWatcher.id)).toBe(0)
+      expect(await countLifecycleInbox(fallback.id, event, 'agent', managerId)).toBe(1)
+    }
+
+    await workStream.update({ title: `${typeId} updated title` })
+    const ordinaryRows = await db
+      .select({ id: inbox.id })
+      .from(inbox)
+      .where(
+        and(
+          eq(inbox.recipientType, 'user'),
+          sql`${inbox.metadata}->>'workStreamId' = ${workStream.id}`,
+          sql`${inbox.metadata}->>'event' = 'updated'`
+        )
+      )
+    expect(ordinaryRows).toHaveLength(0)
+  })
+
+  it('notifies each human watcher and the owner exactly once for review and done', async () => {
+    const workStream = await storedLegacyWorkStream({
+      squadId,
+      title: `${typeId} signal stream`,
+      ownerAgentId: agentId,
+      assigneeAgentId: assigneeId,
+      agentIds: [agentId, assigneeId],
+      metadata: { nextSteps: 'Monitor the rollout' },
+    })
+    await subscribeToWorkStream(workStream.id, streamWatcher.id)
+    await subscribeToSquad(squadId, squadWatcher.id)
+    await subscribeToWorkStream(workStream.id, dualWatcher.id)
+    await subscribeToSquad(squadId, dualWatcher.id)
+
+    await notifyWorkStreamReview(workStream)
+    await notifyWorkStreamReview(workStream)
+    await notifyWorkStreamDone(workStream, { approvalNote: 'ship it' })
+    await notifyWorkStreamDone(workStream, { approvalNote: 'ship it' })
+
+    for (const watcher of [streamWatcher, squadWatcher, dualWatcher]) {
+      expect(await countLifecycleInbox(workStream.id, 'review', 'user', watcher.id)).toBe(1)
+      expect(await countLifecycleInbox(workStream.id, 'done', 'user', watcher.id)).toBe(1)
+    }
+    expect(await countLifecycleInbox(workStream.id, 'review', 'agent', agentId)).toBe(1)
+    expect(await countLifecycleInbox(workStream.id, 'done', 'agent', agentId)).toBe(1)
+
+    const [completion] = await db
+      .select()
+      .from(inbox)
+      .where(
+        and(
+          eq(inbox.recipientType, 'user'),
+          eq(inbox.recipientId, streamWatcher.id),
+          sql`${inbox.metadata}->>'workStreamId' = ${workStream.id}`,
+          sql`${inbox.metadata}->>'event' = 'done'`
+        )
+      )
+    expect(completion.content).toContain('Approval note: ship it')
+    expect((completion.metadata as Record<string, unknown>).nextSteps).toBe('Monitor the rollout')
+  })
+
+  it('records one persistent idle notice for the owner without notifying subscribers', async () => {
+    const workStream = await storedLegacyWorkStream({
+      squadId,
+      title: `${typeId} persistent idle`,
+      ownerAgentId: agentId,
+      assigneeAgentId: agentId,
+      agentIds: [agentId],
+    })
+    await subscribeToWorkStream(workStream.id, streamWatcher.id)
+    await subscribeToSquad(squadId, squadWatcher.id)
+    const endedAt = new Date()
+    const input = { generation: 4, normalExecutionId: crypto.randomUUID(), endedAt }
+
+    await Promise.all([
+      notifyWorkStreamPersistentIdle(workStream, input),
+      notifyWorkStreamPersistentIdle(workStream, input),
+    ])
+
+    const rows = await db
+      .select()
+      .from(inbox)
+      .where(
+        and(
+          eq(inbox.recipientId, agentId),
+          sql`${inbox.metadata}->>'workStreamId' = ${workStream.id}`,
+          sql`${inbox.metadata}->>'event' = 'idle'`
+        )
+      )
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      recipientType: 'agent',
+      recipientId: agentId,
+      senderType: 'system',
+      deliveredAt: null,
+    })
+    expect(rows[0]?.metadata).toMatchObject({
+      event: 'idle',
+      workStreamId: workStream.id,
+      generation: 4,
+      normalExecutionId: input.normalExecutionId,
+      normalExecutionEndedAt: endedAt.toISOString(),
+    })
+    for (const watcher of [streamWatcher, squadWatcher]) {
+      expect(await countLifecycleInbox(workStream.id, 'idle', 'user', watcher.id)).toBe(0)
+    }
+  })
+
+  it('falls back to the squad manager for a persistent idle notice', async () => {
+    const workStream = await storedLegacyWorkStream({ squadId, title: `${typeId} manager idle fallback` })
+    await notifyWorkStreamPersistentIdle(workStream, {
+      generation: 2,
+      normalExecutionId: crypto.randomUUID(),
+      endedAt: new Date(),
+    })
+
+    expect(await countLifecycleInbox(workStream.id, 'idle', 'agent', managerId)).toBe(1)
+  })
+
+  it('atomically deduplicates concurrent lifecycle sends', async () => {
+    const workStream = await storedLegacyWorkStream({
+      squadId,
+      title: `${typeId} stream`,
+      assigneeAgentId: agentId,
+      agentIds: [agentId],
+    })
+    const bothEntered = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    let entrants = 0
+    setWorkStreamNotificationBeforePersistHookForTests(async () => {
+      entrants += 1
+      if (entrants === 2) bothEntered.resolve()
+      await release.promise
+    })
+
+    const sends = Promise.all([
+      notifyWorkStreamResponded(workStream, 'manual', 'continue'),
+      notifyWorkStreamResponded(workStream, 'manual', 'continue'),
+    ])
+    await bothEntered.promise
+    release.resolve()
+    await sends
+
+    const rows = await db
+      .select()
+      .from(inbox)
+      .where(eq(inbox.subject, `Work stream unblocked: ${workStream.title}`))
+    expect(rows).toHaveLength(1)
+  })
+  // ── Self-notification suppression ──────────────────────────────────────
+  //
+  // An agent is never told about its own action. Before this, a manager that
+  // cancelled five streams it owned interrupted itself five times with news it
+  // already had. The rule generalizes the creation-time guard (a manager
+  // opening a stream it owns is not announced to itself) to every transition.
+
+  const inboxFor = async (recipientId: string, subjectFragment: string) => {
+    const rows = await db.select().from(inbox).where(eq(inbox.recipientId, recipientId))
+    return rows.filter((row) => String(row.subject ?? '').includes(subjectFragment))
+  }
+
+  it('does not tell an owner about a transition the owner itself triggered', async () => {
+    const workStream = await storedLegacyWorkStream({
+      squadId,
+      title: `${typeId} self-cancel`,
+      ownerAgentId: agentId,
+    })
+    await notifyWorkStreamCanceled(workStream, [], agentId)
+
+    expect(await inboxFor(agentId, 'canceled')).toHaveLength(0)
+  })
+
+  it('DOES tell an owner about the same transition when another agent triggered it', async () => {
+    const workStream = await storedLegacyWorkStream({
+      squadId,
+      title: `${typeId} other-cancel`,
+      ownerAgentId: agentId,
+    })
+    await notifyWorkStreamCanceled(workStream, [], assigneeId)
+
+    expect(await inboxFor(agentId, 'canceled')).toHaveLength(1)
+  })
+
+  it('DOES tell an owner when a user or the system triggered it (no actor)', async () => {
+    const workStream = await storedLegacyWorkStream({
+      squadId,
+      title: `${typeId} operator-cancel`,
+      ownerAgentId: agentId,
+    })
+    // Undefined actor is the historical behavior and the safe default: every
+    // path that has not been taught to pass an actor keeps notifying.
+    await notifyWorkStreamCanceled(workStream, [])
+
+    expect(await inboxFor(agentId, 'canceled')).toHaveLength(1)
+  })
+
+  it('still notifies human watchers when the acting agent is the owner', async () => {
+    const workStream = await storedLegacyWorkStream({
+      squadId,
+      title: `${typeId} watcher-visible`,
+      ownerAgentId: agentId,
+    })
+    await subscribeToWorkStream(workStream.id, streamWatcher.id)
+    await notifyWorkStreamDone(workStream, { actorAgentId: agentId })
+
+    // The agent's own copy is redundant; a human watching the stream still
+    // wants to see that it completed.
+    expect(await inboxFor(agentId, 'done')).toHaveLength(0)
+    expect(await inboxFor(streamWatcher.id, 'done')).toHaveLength(1)
+  })
+
+  it('drops the acting agent from the cancellation crew broadcast but keeps the rest', async () => {
+    const workStream = await storedLegacyWorkStream({
+      squadId,
+      title: `${typeId} crew-cancel`,
+      ownerAgentId: managerId,
+      agentIds: [agentId, assigneeId],
+    })
+    // The crew broadcast is a STEER — it interrupts mid-turn. The agent that
+    // pressed cancel does not need to be interrupted and told to stop.
+    await notifyWorkStreamCanceled(workStream, [agentId, assigneeId], agentId)
+
+    expect(await inboxFor(agentId, 'Work stream canceled')).toHaveLength(0)
+    expect(await inboxFor(assigneeId, 'Work stream canceled')).toHaveLength(1)
+  })
+
+  it('does not steer a wait resolution back at the assignee that resolved it', async () => {
+    const workStream = await storedLegacyWorkStream({
+      squadId,
+      title: `${typeId} self-unblock`,
+      assigneeAgentId: agentId,
+      agentIds: [agentId],
+    })
+    await notifyWorkStreamResponded(workStream, 'manual', 'resuming', 'sent_back', agentId)
+    expect(await inboxFor(agentId, 'unblocked')).toHaveLength(0)
+
+    // Resolved by anyone else, the assignee must still be told.
+    await notifyWorkStreamResponded(workStream, 'manual', 'resuming', 'sent_back', assigneeId)
+    expect(await inboxFor(agentId, 'unblocked')).toHaveLength(1)
+  })
+
+  it('does not announce a reopen to the agent that reopened it', async () => {
+    const workStream = await storedLegacyWorkStream({
+      squadId,
+      title: `${typeId} self-reopen`,
+      ownerAgentId: agentId,
+    })
+    await notifyWorkStreamReopened(workStream, agentId)
+    expect(await inboxFor(agentId, 'reopened')).toHaveLength(0)
+
+    await notifyWorkStreamReopened(workStream, assigneeId)
+    expect(await inboxFor(agentId, 'reopened')).toHaveLength(1)
+  })
+})

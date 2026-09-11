@@ -1,0 +1,89 @@
+import { afterEach, describe, expect, it } from 'bun:test'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { getDotenvEnv, getExplicitEnv, loadEnv } from './env'
+
+const dirs: string[] = []
+const originalPassword = process.env.TAU_PASSWORD
+
+afterEach(() => {
+  if (originalPassword === undefined) delete process.env.TAU_PASSWORD
+  else process.env.TAU_PASSWORD = originalPassword
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+})
+
+describe('loadEnv', () => {
+  it('loads only the runtime CWD dotenv rather than compiled source ancestry', () => {
+    const root = mkdtempSync(join(tmpdir(), 'tau-env-'))
+    dirs.push(root)
+    const runtime = join(root, 'runtime')
+    const compiled = join(root, 'compiled', 'source')
+    mkdirSync(runtime, { recursive: true })
+    mkdirSync(compiled, { recursive: true })
+    writeFileSync(join(runtime, '.env'), 'TAU_PASSWORD=runtime-stale\n')
+    writeFileSync(join(root, 'compiled', '.env'), 'TAU_PASSWORD=compiled-stale\n')
+    const env: NodeJS.ProcessEnv = {}
+
+    loadEnv({ cwd: runtime, env })
+
+    expect(env.TAU_PASSWORD).toBe('runtime-stale')
+    expect(Object.values(env)).not.toContain('compiled-stale')
+  })
+
+  it('does not replace explicit values', () => {
+    const root = mkdtempSync(join(tmpdir(), 'tau-env-'))
+    dirs.push(root)
+    writeFileSync(join(root, '.env'), 'TAU_PASSWORD=dotenv\n')
+    const env: NodeJS.ProcessEnv = { TAU_PASSWORD: 'explicit' }
+
+    loadEnv({ cwd: root, env })
+
+    expect(env.TAU_PASSWORD).toBe('explicit')
+  })
+
+  it('distinguishes process values injected by dotenv from runtime overrides', () => {
+    const root = mkdtempSync(join(tmpdir(), 'tau-env-'))
+    dirs.push(root)
+    writeFileSync(join(root, '.env'), 'TAU_PASSWORD=dotenv\n')
+    delete process.env.TAU_PASSWORD
+
+    loadEnv({ cwd: root })
+    expect(getDotenvEnv('TAU_PASSWORD')).toBe('dotenv')
+    expect(getExplicitEnv('TAU_PASSWORD')).toBeUndefined()
+
+    process.env.TAU_PASSWORD = 'explicit'
+    expect(getExplicitEnv('TAU_PASSWORD')).toBe('explicit')
+    expect(getDotenvEnv('TAU_PASSWORD')).toBeUndefined()
+  })
+
+  // The shipped CLI is dist/tau.js with `#!/usr/bin/env bun`, and Bun auto-loads ./.env into
+  // process.env BEFORE any user code runs. loadEnv() therefore finds the key already set and
+  // injects nothing — but the value is still the dotenv file's, not something the user chose.
+  // Classifying it as "explicit" is what let a stale repo .env outrank the auth store.
+  it('treats a value Bun already auto-loaded from the cwd dotenv as implicit', () => {
+    const root = mkdtempSync(join(tmpdir(), 'tau-env-'))
+    dirs.push(root)
+    // A value unique to this file: bookkeeping left behind by an earlier test must not be
+    // what makes this pass.
+    writeFileSync(join(root, '.env'), 'TAU_PASSWORD=bun-preloaded-secret\n')
+    process.env.TAU_PASSWORD = 'bun-preloaded-secret'
+
+    loadEnv({ cwd: root })
+
+    expect(getExplicitEnv('TAU_PASSWORD')).toBeUndefined()
+    expect(getDotenvEnv('TAU_PASSWORD')).toBe('bun-preloaded-secret')
+  })
+
+  it('keeps a runtime value that differs from the dotenv file explicit', () => {
+    const root = mkdtempSync(join(tmpdir(), 'tau-env-'))
+    dirs.push(root)
+    writeFileSync(join(root, '.env'), 'TAU_PASSWORD=file-secret\n')
+    process.env.TAU_PASSWORD = 'exported-by-the-user'
+
+    loadEnv({ cwd: root })
+
+    expect(getExplicitEnv('TAU_PASSWORD')).toBe('exported-by-the-user')
+    expect(getDotenvEnv('TAU_PASSWORD')).toBeUndefined()
+  })
+})

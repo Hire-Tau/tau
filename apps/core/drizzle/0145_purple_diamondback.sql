@@ -1,0 +1,2 @@
+CREATE INDEX "idx_schedules_next_trigger_due" ON "schedules" USING btree ("next_trigger_at") WHERE "schedules"."enabled" = true AND "schedules"."next_trigger_at" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "idx_schedules_schedule_expires_at" ON "schedules" USING btree (("schedule"->>'expiresAt'));

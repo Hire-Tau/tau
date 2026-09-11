@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX CONCURRENTLY "idx_messages_agent_client_id_unique" ON "messages" USING btree ("agent_id",("metadata"->>'clientId')) WHERE "messages"."role" = 'human' AND ("messages"."metadata"->>'clientId') IS NOT NULL;

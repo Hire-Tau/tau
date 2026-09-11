@@ -1,0 +1,1 @@
+ALTER TABLE "local_deployments" DROP COLUMN "url_path_or_host";

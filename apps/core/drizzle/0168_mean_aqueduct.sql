@@ -1,0 +1,2 @@
+ALTER TABLE "assistant_conversations" ADD COLUMN "inbox_consumer_id" uuid;--> statement-breakpoint
+ALTER TABLE "assistant_conversations" ADD COLUMN "inbox_consumer_expires_at" timestamp with time zone;

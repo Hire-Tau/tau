@@ -1,0 +1,2 @@
+ALTER TABLE "squad_activity_maintenance_leases" ADD COLUMN "last_incremental_scan_to" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "squad_activity_maintenance_leases" ADD COLUMN "last_full_scan_to" timestamp with time zone;

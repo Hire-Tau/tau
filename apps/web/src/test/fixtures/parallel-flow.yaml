@@ -1,0 +1,76 @@
+id: parallel-review
+description: Build a deliverable, review correctness and audience fit in parallel, then consolidate the findings.
+definition:
+  schemaVersion: 1
+  name: Parallel Review
+  participants:
+    builder:
+      agentTypeId: general
+      session: reuse-within-stream
+    correctness:
+      agentTypeId: general
+      session: reuse-within-stream
+    audience:
+      agentTypeId: general
+      session: reuse-within-stream
+  entry: build
+  routing:
+    mode: flexible
+    returnTo: earlier-steps
+    delegation: disabled
+  limits:
+    maxStepAttempts: 4
+    maxDelegations: 0
+    maxParallelAttempts: 2
+    onLimit: request-owner-input
+  steps:
+    - id: build
+      participant: builder
+      instructions: Produce the requested deliverable and record its requirements and verification evidence.
+      output: A draft ready for independent review.
+
+      outcomes:
+        completed:
+          parallel:
+            - correctness
+            - audience
+          join: consolidate
+    - id: correctness
+      participant: correctness
+
+      instructions: >-
+        Review accuracy, evidence, requirements, and risks. Keep the review read-only while the sibling review
+        is running. If changes are needed, coordinate file ownership before requesting rework and require
+        return to this review.
+      output: An evidence-backed verdict.
+      outcomes:
+        approved:
+          next: consolidate
+        changes-requested:
+          returnTo: build
+          afterRework: return-to-requester
+    - id: audience
+      participant: audience
+
+      instructions: >-
+        Review clarity, usability, and suitability for the intended audience. Keep the review read-only while
+        the sibling review is running. If changes are needed, coordinate file ownership before requesting
+        rework and require return to this review.
+      output: An audience-focused verdict.
+      outcomes:
+        approved:
+          next: consolidate
+        changes-requested:
+          returnTo: build
+          afterRework: return-to-requester
+    - id: consolidate
+      participant: builder
+      instructions: >-
+        Read both review results, reconcile any discrepancies, and verify the final deliverable. Request
+        targeted re-review when a correction needs it.
+      output: Final deliverable and a concise account of verification.
+      outcomes:
+        completed:
+          next: finish
+  completion:
+    mode: deliverable

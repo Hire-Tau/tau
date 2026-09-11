@@ -1,0 +1,33 @@
+id: engineering
+name: Engineering Squad
+description: |
+  Software development team for building and maintaining code.
+purpose: "Software development and maintenance for ..."
+defaultAgents: []
+scheduleTemplates: []
+workflows:
+  default:
+    kind: preset
+    id: solo-coding
+  guidance: >-
+    Use the least expensive flow that fits the risk and scope. Start with Solo Coding for routine changes;
+    choose an independent review or architectural planning when the work calls for it. Security Review
+    produces a report on risks and mitigations. Recommendations do not start
+    agents.
+  choices:
+    - when: Routine implementation and fixes that one engineer can verify.
+      source:
+        kind: preset
+        id: solo-coding
+    - when: Changes that need an independent implementation review.
+      source:
+        kind: preset
+        id: reviewed-coding
+    - when: Changes that need architectural planning before implementation.
+      source:
+        kind: preset
+        id: engineering
+    - when: A focused assessment of security risks and mitigations.
+      source:
+        kind: preset
+        id: security-review

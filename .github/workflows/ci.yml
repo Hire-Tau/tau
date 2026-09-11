@@ -1,0 +1,1231 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  merge_group:
+    types: [checks_requested]
+  schedule:
+    - cron: '17 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Cancel a PR's superseded runs, and ONLY a PR's.
+#
+# Without this, every push to a branch started another full ~21 job-minute run
+# and the previous one kept burning a runner to completion. Measured over four
+# days: branches were accumulating 5-10 CI runs each and ~17% of pull_request
+# runs were still in flight when their successor started.
+#
+# cancel-in-progress is deliberately conditional rather than a flat `true`. A
+# run on main, in the merge queue, or from the nightly schedule is not
+# superseded by anything — it is the record for that commit, and on main it is
+# what deploy and the artifact build key off. Cancelling those would trade a
+# CI bill for a hole in the history.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  macos-paths:
+    name: Classify macOS portability paths
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    outputs:
+      run_macos: ${{ steps.classify.outputs.run_macos }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.8
+      - id: classify
+        name: Classify Darwin-relevant changes
+        run: bun .github/macos-ci-gate.ts classify
+
+  macos-portability-suite:
+    name: macOS portability suite
+    needs: macos-paths
+    if: ${{ needs.macos-paths.result == 'success' && needs.macos-paths.outputs.run_macos == 'true' }}
+    runs-on: macos-14
+    # Expo prebuild plus the real TauWidget simulator target compile can exceed the former 15-minute budget on a cold runner.
+    timeout-minutes: 25
+    env:
+      # Expo SDK 56 generates an Xcode 16 project (PBXFileSystemSynchronizedRootGroup);
+      # the image default is Xcode 15.4, which aborts on open.
+      DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v7
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.8
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Run native local launchd lifecycle
+        working-directory: .github
+        run: bun test native-local-supervisor-launchd.test.ts
+      - name: Run real exe lobby subprocess lifecycle tests
+        # Run from .github so ITS bunfig.toml is the one Bun loads — Bun reads
+        # `bunfig.toml` from the cwd only, and does not walk up, so the root
+        # bunfig's Core/platform preloads (which need the ParadeDB container,
+        # unavailable here) are skipped. This hermetic suite exercises real
+        # /bin/sh + subprocess behavior on Darwin.
+        run: bun test exe-lifecycle-config-probe.test.ts ../apps/core/src/services/machines/providers/exe-api-exec.test.ts
+        working-directory: .github
+      - name: Run portable attachment materialization tests
+        # Exercise the real Darwin libc descriptor-relative syscalls. Running
+        # from .github avoids Core's database preload, unavailable in this job.
+        working-directory: .github
+        run: |
+          set -o pipefail
+          bun test ../apps/core/src/services/attachments/materialize.test.ts ../apps/core/src/services/attachments/blob-storage.test.ts 2>&1 | tee /tmp/attachment-materialization-macos.log
+          grep -E '^[[:space:]]*[0-9]+ (pass|fail|skip)' /tmp/attachment-materialization-macos.log >> "$GITHUB_STEP_SUMMARY"
+          if grep -qE '^[[:space:]]*[1-9][0-9]* skip' /tmp/attachment-materialization-macos.log; then
+            echo "Portable attachment materialization tests must not skip on macOS." >&2
+            exit 1
+          fi
+      # No test here may skip. main's platform-version-lock.ts calls flock(2)
+      # through bun:ffi rather than spawning util-linux's flock(1), so every one
+      # of these runs on macOS exactly as it does on Linux — that portability is
+      # the whole point of this job, and a skip would silently retire it.
+  macos-portability-required:
+    name: macOS portability
+    needs: [macos-paths, macos-portability-suite]
+    if: ${{ always() }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v7
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.8
+      - name: Require requested Darwin coverage
+        env:
+          CLASSIFIER_RESULT: ${{ needs.macos-paths.result }}
+          RUN_MACOS: ${{ needs.macos-paths.outputs.run_macos }}
+          MACOS_RESULT: ${{ needs.macos-portability-suite.result }}
+        run: bun .github/macos-ci-gate.ts verify-result
+
+  test-gates:
+    # Workflow + shell gates and the setup helper suites. No database: nothing here
+    # touches Postgres, so a gate failure can no longer sit behind a six-minute core
+    # suite (or hide one).
+    name: test / gates
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history. The control-plane self-update compatibility floor is a
+          # fixed commit (see services/platform-updates/compatibility.ts), and
+          # the admin `platform-updates/check` route proves the target descends
+          # from it by fetching both commits out of PLATFORM_SOURCE_REPO — which
+          # the route test points at this checkout. Under the default shallow
+          # (depth 1) checkout the floor commit is absent, ancestry cannot be
+          # proven, and the route correctly fails closed with 400 — a CI-only
+          # failure of a genuinely-correct implementation. The pack is ~35 MiB.
+          fetch-depth: 0
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # Keep in lockstep with .bun-version (enforced by
+          # .github/bun-version-gate.test.ts). Bun 1.3.11 segfaults loading this
+          # repo's test graph (exit 133, main-thread trap) before any test runs
+          # — the AMTP node-conformance suite (apps/core/src/services/amtp/
+          # node-conformance-readiness.test.ts) is the canary. Validate any bump
+          # against that suite before moving the pin. See
+          # docs/wiki/testing/bun-platform-tests.md.
+          bun-version: 1.3.8
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      # Warning: Failed to save: <h2>Our services aren't available right now</h2><p>We're working to restore all services as soon as possible. Please check back soon.</p>0IwKiaQAAAADjh/+FNX7BTYMVk1Vx8z1mQ0hHRURHRTE3MTYARWRnZQ==
+      # Cache Docker images
+      # - name: Cache Docker images
+      #   uses: ScribeMD/docker-cache@0.5.0
+      #   with:
+      #     key: docker-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
+
+      # Start PostgreSQL container (allows caching the image)
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Prove cross-user Node shim immunity
+        run: sudo env "PATH=$PATH" bash scripts/setup/bun-node-cross-user.test.sh
+
+      - name: Run setup helper suite
+        run: |
+          sudo env "PATH=$PATH" bash -c 'source scripts/setup/lib.sh; ensure_yq'
+          set -o pipefail
+          status=0
+          out=$(bash scripts/setup/lib.test.sh 2>&1) || status=$?
+          printf '%s\n' "${out}"
+          # Gate on the summary line itself, not just the exit code: a set -e
+          # abort mid-suite exits WITHOUT printing "N passed, 0 failed", and an
+          # exit-code mask must not be able to turn that green. Never mask
+          # platform failures — no || true anywhere.
+          tail -n 1 <<<"${out}" | grep -Eq '^[0-9]+ passed, 0 failed$' || {
+            echo '::error::lib.test.sh ended without a clean "N passed, 0 failed" summary.'
+            exit 1
+          }
+          if (( status != 0 )); then exit $(( status )); fi
+
+      # The suite above runs unprivileged, so its root-install sections
+      # (ensure_system_bun_node, ensure_swapfile — `install -o root -g root`)
+      # self-skip via the capability probe and those ~30 assertions have
+      # NEVER executed anywhere. Run the same suite as root so they do; expect
+      # real failures to surface here and fix them honestly, never mask them.
+      - name: Run setup helper suite (root install)
+        run: |
+          set -o pipefail
+          status=0
+          out=$(sudo env "PATH=$PATH" bash scripts/setup/lib.test.sh 2>&1) || status=$?
+          printf '%s\n' "${out}"
+          # Same summary-line gate as the unprivileged run: a set -e abort
+          # mid-suite exits without printing it, and must be red even if the
+          # exit code were ever masked. Never mask platform failures.
+          tail -n 1 <<<"${out}" | grep -Eq '^[0-9]+ passed, 0 failed$' || {
+            echo '::error::lib.test.sh (root) ended without a clean "N passed, 0 failed" summary.'
+            exit 1
+          }
+          # POSITIVE execution gate: the whole point of running under sudo is
+          # that the root-install sections actually execute. lib.test.sh
+          # prints the marker line only when its capability probe passed, so a
+          # run where they self-skipped again — for any reason — fails here
+          # even with a green summary. Positive on purpose: gating on the
+          # absence of a skip warning would silently break when the warning
+          # is ever reworded; the marker is a contract.
+          grep -Fq 'TAU root-install sections: ENABLED' <<<"${out}" || {
+            echo '::error::lib.test.sh (root) skipped the root-install sections (no "TAU root-install sections: ENABLED" marker) — this step exists to execute them.'
+            exit 1
+          }
+          if (( status != 0 )); then exit $(( status )); fi
+
+      # Cache downloaded packages only. Installed module trees are worktree/layout-specific.
+      - name: Verify deterministic Pi patch regeneration has no drift
+        run: |
+          git clone --quiet https://github.com/earendil-works/pi.git "$RUNNER_TEMP/pi-mono"
+          git -C "$RUNNER_TEMP/pi-mono" checkout --quiet --detach d981de1229ef899957bbe968bc8dcda02a21f477
+          PI_MONO_DIR="$RUNNER_TEMP/pi-mono" bash scripts/regenerate-pi-coding-agent-patch.sh
+
+      - name: Validate macOS portability gate
+        run: bun test ./macos-ci-gate.test.ts
+        working-directory: .github
+
+      - name: Validate setup helper CI gate
+        run: bun test ./setup-shell-ci-gate.test.ts
+        working-directory: .github
+
+      - name: Validate CLI publish gate
+        run: bun test ./cli-publish-gate.test.ts ./cla-workflow.test.ts
+        working-directory: .github
+
+      - name: Validate subprocess lane membership
+        run: bun test ./subprocess-lane-gate.test.ts
+        working-directory: .github
+
+      - name: Validate PR rewind fork-point gate
+        run: bun test ./pr-rewind-gate.test.ts
+        working-directory: .github
+
+      - name: Validate test lane aggregation
+        run: bun test ./lane-gate.test.ts ./test-runner.test.ts ./test-completion-gate.test.ts ./core-test-plan.test.ts ./ci-notification-state.test.ts ./test-schema-cache.test.ts
+        working-directory: .github
+
+      - name: Validate typecheck diagnostics evidence gate
+        run: bun test ./typecheck-diagnostics-gate.test.ts
+        working-directory: .github
+
+      - name: Verify CI stability mutation proofs
+        run: bun scripts/test-ci-stability-mutations.ts
+
+      - name: Validate CI web test gate
+        run: bun test ./ci-web-test-gate.test.ts
+        working-directory: .github
+
+      - name: Validate sterile secret-boundary gate
+        run: bun test ./ci-secret-boundary-gate.test.ts
+        working-directory: .github
+
+      - name: Validate Pi patch gate
+        run: bun test ./ci-pi-patch-gate.test.ts
+        working-directory: .github
+
+      - name: Validate sandbox executor CI gate
+        run: bun test ./ci-sandbox-executor-gate.test.ts
+        working-directory: .github
+
+      - name: Validate CI typecheck gate
+        run: bun test ./ci-typecheck-gate.test.ts
+        working-directory: .github
+
+      # Fails closed if .bun-version drifts from the bun-version every workflow
+      # pins into oven-sh/setup-bun. The advertised developer/sandbox runtime
+      # and the runtime CI validates must move together. Runs from .github so
+      # ITS bunfig.toml applies (root preloads need the ParadeDB container).
+      - name: Validate bun version pin
+        run: bun test ./bun-version-gate.test.ts
+        working-directory: .github
+
+      # Pins core-artifact.yml's push-only channel-pointer guard, its
+      # five-secret publish guard, tarball->sig->manifest upload order, and
+      # the already-published head-object guard. Runs from .github so ITS
+      # bunfig.toml applies (root preloads need the ParadeDB container).
+      - name: Run sandbox executor tests
+        run: bun run test
+        working-directory: packages/k8s-sandbox
+
+  test-typecheck:
+    # Typecheck and the production builds. Its own lane because a type error aborts
+    # the step it runs in: while typecheck shared a job with the suites, one bad
+    # signature (#1389) suppressed EVERY test result on that PR.
+    name: test / typecheck
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history. The control-plane self-update compatibility floor is a
+          # fixed commit (see services/platform-updates/compatibility.ts), and
+          # the admin `platform-updates/check` route proves the target descends
+          # from it by fetching both commits out of PLATFORM_SOURCE_REPO — which
+          # the route test points at this checkout. Under the default shallow
+          # (depth 1) checkout the floor commit is absent, ancestry cannot be
+          # proven, and the route correctly fails closed with 400 — a CI-only
+          # failure of a genuinely-correct implementation. The pack is ~35 MiB.
+          fetch-depth: 0
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # Keep in lockstep with .bun-version (enforced by
+          # .github/bun-version-gate.test.ts). Bun 1.3.11 segfaults loading this
+          # repo's test graph (exit 133, main-thread trap) before any test runs
+          # — the AMTP node-conformance suite (apps/core/src/services/amtp/
+          # node-conformance-readiness.test.ts) is the canary. Validate any bump
+          # against that suite before moving the pin. See
+          # docs/wiki/testing/bun-platform-tests.md.
+          bun-version: 1.3.8
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      # Warning: Failed to save: <h2>Our services aren't available right now</h2><p>We're working to restore all services as soon as possible. Please check back soon.</p>0IwKiaQAAAADjh/+FNX7BTYMVk1Vx8z1mQ0hHRURHRTE3MTYARWRnZQ==
+      # Cache Docker images
+      # - name: Cache Docker images
+      #   uses: ScribeMD/docker-cache@0.5.0
+      #   with:
+      #     key: docker-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
+
+      # Start PostgreSQL container (allows caching the image)
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Report typecheck memory context
+        run: |
+          grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo
+          cgroup_context=false
+          for file in /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory.current; do
+            if [[ -r "$file" ]]; then
+              echo "$file=$(cat "$file")"
+              cgroup_context=true
+            fi
+          done
+          if [[ "$cgroup_context" == false ]]; then
+            echo 'cgroup_memory_context=unavailable (memory.max/current not readable)'
+          fi
+          NODE_OPTIONS=--max-old-space-size=6144 node -e "const v8 = require('node:v8'); console.log('v8_heap_size_limit=' + v8.getHeapStatistics().heap_size_limit)"
+
+      # Every package, not just @tau/shared. `bun build` (used for the CLI and
+      # for apps/core) transpiles without type-checking, so before this step the
+      # only code CI ever type-checked was @tau/shared — which is how main once
+      # shipped a TS2677 error in apps/core that no test could catch. Each
+      # package's typecheck is `tsc --noEmit`, so this builds nothing and the
+      # step it replaced ("Build shared package") never built anything either.
+      # Blacksmith reported 16,169,252 kB (15.42 GiB) of host memory and an
+      # effective 6,492,782,592-byte V8 ceiling, leaving 9.37 GiB outside it.
+      # Bun runs dependency-independent workspace scripts concurrently, so the
+      # Core-only variable avoids multiplying that ceiling across every tsc.
+      - name: Typecheck all packages
+        env:
+          CORE_TYPECHECK_NODE_OPTIONS: --max-old-space-size=6144
+        run: bun run typecheck
+
+      - name: Build CLI
+        run: bun run build:cli
+
+      - name: Build core
+        # Use the package's own build script so the externals it declares
+        # (bun-pty, jsdom, playwright-core, …) match what a deployment builds —
+        # an ad-hoc `bun build` here failed to resolve playwright-core's
+        # internals once the host-runtime browser backend landed.
+        run: bun run --filter core build
+
+      # Tenant provisioning BUILDS THE WEB APP ON THE TENANT VM
+      # (scripts/setup/setup-host.sh's build phase), so a broken web build is a
+      # broken tenant — provisioning fails after the customer has paid. Nothing
+      # here built apps/web, which is how a node builtin reaching the browser
+      # bundle (`@tau/shared` re-exporting ./crypto) shipped to main and blocked
+      # every provision. Build it in CI so that class of break is caught here.
+      - name: Build web
+        run: bun run --filter web build
+
+  # Dedicated runner for the real-subprocess flake family: these apps/core
+  # test files spawn real bun subprocesses / real builds / full migration
+  # runs. They have 8-25x local headroom but flake under CI scheduling
+  # jitter when packed onto the shared `test` runner alongside everything
+  # else, so they run here alone (only postgres beside them) and are
+  # skipped in the main sweep via TAU_TEST_SKIP_SUBPROCESS=1 (see the
+  # `test` job's "Run tests" step). No `needs:` — runs in parallel with
+  # `test`.
+
+  test-core:
+    # apps/core, the sterile secret-boundary suite, and the persistent-restart proof.
+    # Needs Postgres.
+    name: test / core
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history. The control-plane self-update compatibility floor is a
+          # fixed commit (see services/platform-updates/compatibility.ts), and
+          # the admin `platform-updates/check` route proves the target descends
+          # from it by fetching both commits out of PLATFORM_SOURCE_REPO — which
+          # the route test points at this checkout. Under the default shallow
+          # (depth 1) checkout the floor commit is absent, ancestry cannot be
+          # proven, and the route correctly fails closed with 400 — a CI-only
+          # failure of a genuinely-correct implementation. The pack is ~35 MiB.
+          fetch-depth: 0
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # Keep in lockstep with .bun-version (enforced by
+          # .github/bun-version-gate.test.ts). Bun 1.3.11 segfaults loading this
+          # repo's test graph (exit 133, main-thread trap) before any test runs
+          # — the AMTP node-conformance suite (apps/core/src/services/amtp/
+          # node-conformance-readiness.test.ts) is the canary. Validate any bump
+          # against that suite before moving the pin. See
+          # docs/wiki/testing/bun-platform-tests.md.
+          bun-version: 1.3.8
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      # Warning: Failed to save: <h2>Our services aren't available right now</h2><p>We're working to restore all services as soon as possible. Please check back soon.</p>0IwKiaQAAAADjh/+FNX7BTYMVk1Vx8z1mQ0hHRURHRTE3MTYARWRnZQ==
+      # Cache Docker images
+      # - name: Cache Docker images
+      #   uses: ScribeMD/docker-cache@0.5.0
+      #   with:
+      #     key: docker-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
+
+      # Start PostgreSQL container (allows caching the image)
+      - name: Start PostgreSQL
+        run: |
+          docker run -d \
+            --name postgres-test \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=tau_test \
+            -p 5433:5432 \
+            --health-cmd "pg_isready -U postgres -d tau_test" \
+            --health-interval 2s \
+            --health-timeout 5s \
+            --health-retries 10 \
+            paradedb/paradedb:latest
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in {1..60}; do
+            if docker exec postgres-test pg_isready -U postgres -d tau_test && \
+               PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -d tau_test -c "SELECT 1;" >/dev/null 2>&1; then
+              echo "PostgreSQL is ready"
+              exit 0
+            fi
+            echo "Waiting for PostgreSQL... ($i/60)"
+            docker ps --filter name=postgres-test
+            sleep 2
+          done
+          echo "PostgreSQL failed to start"
+          docker logs postgres-test
+          exit 1
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Create database extensions
+        run: |
+          for i in {1..10}; do
+            if docker exec postgres-test psql -U postgres -d tau_test -c "CREATE EXTENSION IF NOT EXISTS vector;" && \
+               docker exec postgres-test psql -U postgres -d tau_test -c "CREATE EXTENSION IF NOT EXISTS pg_search;"; then
+              exit 0
+            fi
+            echo "Extension creation failed; retrying ($i/10)"
+            docker logs --tail 100 postgres-test
+            sleep 3
+          done
+          docker logs postgres-test
+          exit 1
+
+      # Pins the step below so it cannot be silently weakened — scoped back to
+      # one package, made conditional, or marked continue-on-error. Runs from
+      # .github so ITS bunfig.toml applies and the root preloads (which need
+      # the ParadeDB container) are skipped.
+      - name: Build CLI
+        run: bun run build:cli
+
+      - name: Run tests
+        # The tee + summary gate exists because a test (or app code a test
+        # loads) that calls process.exit(0) mid-suite kills bun with a SUCCESS
+        # code before the remaining files run — observed 2026-08-27: a SIGTERM
+        # emitted by the activity-repair CLI test hit worker.ts's then
+        # module-level shutdown handler, the suite died at file ~176 of ~674,
+        # and CI stayed green while ~500 files went unexecuted for two days.
+        # bun prints its "Ran N tests across M files" summary ONLY when the run
+        # actually completes, so requiring it (plus bun's own exit code, kept by
+        # pipefail) turns any future early-exit into a red build.
+        shell: bash
+        run: |
+          set -o pipefail
+          # Sorted, explicit file list: bun's default discovery runs files in
+          # readdir order, which differs per filesystem/host — cross-file state
+          # leaks then fail DIFFERENT tests on every runner (the order
+          # lottery). A deterministic order makes green reproducible and any
+          # pollution failure bisectable.
+          bun run test 2>&1 | tee /tmp/bun-test-core.log
+          echo "--- summary gate"
+          grep -E 'Ran [0-9]+ tests across [0-9]+ files' /tmp/bun-test-core.log || {
+            echo '::error::bun test ended without its final summary line — the process exited early (see the log above for a mid-suite process.exit).'
+            exit 1
+          }
+        working-directory: apps/core
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5433/tau_test
+          TAU_TEST_SKIP_SUBPROCESS: '1'
+
+      - name: Create isolated sterile secret-boundary database
+        run: |
+          docker exec postgres-test psql -v ON_ERROR_STOP=1 -U postgres -c "CREATE DATABASE tau_secret_boundary_test;"
+          docker exec postgres-test psql -v ON_ERROR_STOP=1 -U postgres -d tau_secret_boundary_test -c "CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_search;"
+
+      - name: Run sterile secret-boundary tests
+        run: bash .github/run-secret-boundary-tests.sh
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5433/tau_secret_boundary_test
+          SECRET_BOUNDARY_REQUIRE_ISOLATED_DB: '1'
+
+      - name: Run Core persistent restart test
+        run: bun run test:core:fifo-restart
+
+  test-web:
+    # The full web gate and the DOM-order gate. Split from mobile deliberately: they
+    # shared a job, and on 2026-09-04 the web gate's failure aborted the job before
+    # the mobile suite ran at all, hiding a second break for hours.
+    name: test / web
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history. The control-plane self-update compatibility floor is a
+          # fixed commit (see services/platform-updates/compatibility.ts), and
+          # the admin `platform-updates/check` route proves the target descends
+          # from it by fetching both commits out of PLATFORM_SOURCE_REPO — which
+          # the route test points at this checkout. Under the default shallow
+          # (depth 1) checkout the floor commit is absent, ancestry cannot be
+          # proven, and the route correctly fails closed with 400 — a CI-only
+          # failure of a genuinely-correct implementation. The pack is ~35 MiB.
+          fetch-depth: 0
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # Keep in lockstep with .bun-version (enforced by
+          # .github/bun-version-gate.test.ts). Bun 1.3.11 segfaults loading this
+          # repo's test graph (exit 133, main-thread trap) before any test runs
+          # — the AMTP node-conformance suite (apps/core/src/services/amtp/
+          # node-conformance-readiness.test.ts) is the canary. Validate any bump
+          # against that suite before moving the pin. See
+          # docs/wiki/testing/bun-platform-tests.md.
+          bun-version: 1.3.8
+
+      - name: Cache Bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      # Warning: Failed to save: <h2>Our services aren't available right now</h2><p>We're working to restore all services as soon as possible. Please check back soon.</p>0IwKiaQAAAADjh/+FNX7BTYMVk1Vx8z1mQ0hHRURHRTE3MTYARWRnZQ==
+      # Cache Docker images
+      # - name: Cache Docker images
+      #   uses: ScribeMD/docker-cache@0.5.0
+      #   with:
+      #     key: docker-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
+
+      # Start PostgreSQL container (allows caching the image)
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Run full web test gate
+        run: bun run --cwd apps/web test:ci
+
+      - name: Run web DOM order gate
+        run: bun run --cwd apps/web test:dom-order:ci
+
+
+  test:
+    # The required check. It runs no tests itself: it fails unless every lane
+    # succeeded, so splitting the suites did not quietly narrow what blocks a
+    # merge. Branch protection keeps pointing at `test` and needs no change.
+    #
+    # `if: always()` so this still reports when a lane fails or is cancelled --
+    # without it a failed lane would leave the required check pending forever.
+    # The verdict lives in a script rather than inline bash so it is testable
+    # (.github/lane-gate.test.ts), matching macos-portability-required.
+    name: test
+    needs: [test-gates, test-typecheck, test-core, test-web]
+    if: ${{ always() }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/checkout@v7
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.8
+      - name: Require every test lane
+        env:
+          LANE_RESULTS: ${{ join(needs.*.result, ',') }}
+          LANE_NAMES: test-gates,test-typecheck,test-core,test-web
+        run: bun .github/lane-gate.ts verify-result
+
+  subprocess-tests:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # cli-bundle.test.ts stamps real commit info from git, which needs
+          # full history — see the `test` job's identical checkout step.
+          fetch-depth: 0
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # Keep in lockstep with .bun-version (enforced by
+          # .github/bun-version-gate.test.ts) and the `test` job's pin.
+          bun-version: 1.3.8
+
+      # Same Node the `test` job pins. The AMTP node-conformance suite is this
+      # repo's canary for the Node version (see that job's step comment), and it
+      # runs in THIS lane — a lane hosting real-subprocess tests must supply the
+      # same runtime the main job does, or moving a test here silently changes
+      # what it runs against.
+      #
+      # Kept for that reason ALONE. It was added believing it explained a
+      # subprocess-tests failure on this branch; the log later showed the
+      # failure was `attemptPickup … restarts real worker incarnations`, a
+      # pre-existing flake in this lane (3 failures / 60 main runs, two of them
+      # that same test family). The pin did not fix that and does not claim to.
+      # Cache downloaded packages only. Installed module trees are worktree/layout-specific.
+      - name: Cache Bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      # Start PostgreSQL container (allows caching the image)
+      - name: Start PostgreSQL
+        run: |
+          docker run -d \
+            --name postgres-test \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=tau_test \
+            -p 5433:5432 \
+            --health-cmd "pg_isready -U postgres -d tau_test" \
+            --health-interval 2s \
+            --health-timeout 5s \
+            --health-retries 10 \
+            paradedb/paradedb:latest
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in {1..60}; do
+            if docker exec postgres-test pg_isready -U postgres -d tau_test && \
+               PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -d tau_test -c "SELECT 1;" >/dev/null 2>&1; then
+              echo "PostgreSQL is ready"
+              exit 0
+            fi
+            echo "Waiting for PostgreSQL... ($i/60)"
+            docker ps --filter name=postgres-test
+            sleep 2
+          done
+          echo "PostgreSQL failed to start"
+          docker logs postgres-test
+          exit 1
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Create database extensions
+        run: |
+          for i in {1..10}; do
+            if docker exec postgres-test psql -U postgres -d tau_test -c "CREATE EXTENSION IF NOT EXISTS vector;" && \
+               docker exec postgres-test psql -U postgres -d tau_test -c "CREATE EXTENSION IF NOT EXISTS pg_search;"; then
+              exit 0
+            fi
+            echo "Extension creation failed; retrying ($i/10)"
+            docker logs --tail 100 postgres-test
+            sleep 3
+          done
+          docker logs postgres-test
+          exit 1
+
+      # Membership is enforced by .github/subprocess-lane-gate.test.ts — a test
+      # file that spawns a real bun subprocess must be listed here. Adding one
+      # to apps/core without adding it here fails that gate, which is what
+      # stops the silent drift back into the contended `test` job.
+      - name: Run real-subprocess tests
+        run: >-
+          bun ../../scripts/run-core-tests.ts --subprocess
+          src/services/work-streams/repository-setup.test.ts
+          src/services/execution/pickup.test.ts
+          src/services/machines/cli-bundle.test.ts
+          src/db/model-tiers-migration.test.ts
+          src/db/migrate-bundle.test.ts
+          src/db/load-root-env.test.ts
+          src/tools/k8s-sandbox.real-edit.test.ts
+          src/index.test.ts
+          src/worker.test.ts
+          src/lib/paths.test.ts
+          src/lib/utils/cli-help.test.ts
+          src/routes/deployments.integration.test.ts
+          src/services/amtp/node-conformance-registration.test.ts
+          src/services/amtp/node-conformance-attachment-upload.test.ts
+          src/services/amtp/node-conformance-cli.test.ts
+          src/services/amtp/node-conformance-process.test.ts
+          src/services/amtp/node-conformance-whoami.test.ts
+          src/services/amtp/node-conformance.test.ts
+          src/services/integrations/notion/cli.e2e.test.ts
+          src/services/integrations/notion/core-lifecycle.e2e.test.ts
+          src/test-utils/captured-process.test.ts
+          src/services/machines/artifact-extension-smoke.test.ts
+          src/services/model-selection/openai-compatible.test.ts
+          src/services/sandbox/k8s/constants.test.ts
+          src/services/sandbox/k8s/kubeconfig.test.ts
+          src/services/secrets/store-hermetic.test.ts
+        working-directory: apps/core
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5433/tau_test
+
+  # End-to-end proof that `bun run setup` produces a running, self-updatable
+  # local install (docs/history/superpowers/specs/2026-09-02-local-setup-installer-design.md §9).
+  local-setup:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    # Two full installs (the second instance has its own checkout, install and
+    # build) plus an in-app update apply.
+    timeout-minutes: 40
+    # Checkout/offline update use the repository-scoped Actions token. The
+    # in-app updater reads an encrypted integration fixture seeded after setup;
+    # native service units do not inherit credentials from this job environment.
+    env:
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history — see the `test` job's identical checkout step for why
+          # (platform-updates ancestry proof needs it).
+          fetch-depth: 0
+          # The in-app updater fetches with its own bearer extraheader; a persisted
+          # checkout credential would make git send two Authorization headers (400).
+          persist-credentials: false
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # Keep in lockstep with .bun-version (enforced by
+          # .github/bun-version-gate.test.ts) and the `test`/`subprocess-tests` pin.
+          bun-version: 1.3.8
+
+      # Cache downloaded packages only. Installed module trees are worktree/layout-specific.
+      - name: Cache Bun dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            bun-${{ runner.os }}-
+
+      # Start PostgreSQL container (allows caching the image)
+      - name: Start PostgreSQL
+        run: |
+          docker run -d \
+            --name postgres-test \
+            -e POSTGRES_USER=postgres \
+            -e POSTGRES_PASSWORD=postgres \
+            -e POSTGRES_DB=tau_test \
+            -p 5433:5432 \
+            --health-cmd "pg_isready -U postgres -d tau_test" \
+            --health-interval 2s \
+            --health-timeout 5s \
+            --health-retries 10 \
+            paradedb/paradedb:latest
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in {1..60}; do
+            if docker exec postgres-test pg_isready -U postgres -d tau_test && \
+               PGPASSWORD=postgres psql -h localhost -p 5433 -U postgres -d tau_test -c "SELECT 1;" >/dev/null 2>&1; then
+              echo "PostgreSQL is ready"
+              exit 0
+            fi
+            echo "Waiting for PostgreSQL... ($i/60)"
+            docker ps --filter name=postgres-test
+            sleep 2
+          done
+          echo "PostgreSQL failed to start"
+          docker logs postgres-test
+          exit 1
+
+      - name: Create database extensions
+        run: |
+          for i in {1..10}; do
+            if docker exec postgres-test psql -U postgres -d tau_test -c "CREATE EXTENSION IF NOT EXISTS vector;" && \
+               docker exec postgres-test psql -U postgres -d tau_test -c "CREATE EXTENSION IF NOT EXISTS pg_search;"; then
+              exit 0
+            fi
+            echo "Extension creation failed; retrying ($i/10)"
+            docker logs --tail 100 postgres-test
+            sleep 3
+          done
+          docker logs postgres-test
+          exit 1
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Configure git credentials via gh
+        # persist-credentials is off above; plain git (the offline update's
+        # `git fetch`) still needs auth for this private repo. gh's helper
+        # serves GH_TOKEN (job env) and does not add a second header.
+        run: gh auth setup-git
+
+      # Unit-level coverage for the setup toolkit itself, run once here rather
+      # than as part of the full apps/cli suite (which has known
+      # order-dependent failures unrelated to this work) — this is exactly the
+      # slice of files the steps below exercise end-to-end.
+      - name: Run local-setup unit suites
+        shell: bash
+        # The root-level `bun test` loads apps/core's preload, which spins up a
+        # docker compose test database unless DATABASE_URL already points at a
+        # reachable `tau_test` — the Postgres service above is exactly that.
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5433/tau_test
+        run: |
+          (cd apps/cli && bun test src/local-server src/commands/server.test.ts src/commands/update.test.ts src/docs-links.test.ts)
+          bun test scripts/setup.test.ts scripts/pm2-name.test.ts
+          bun test ./.github/local-setup-integration.test.ts
+
+      - name: Dry run (docker-socket) changes nothing
+        run: |
+          bun run setup -- --dry-run --runtime docker-socket --yes
+          test ! -f .env
+          test ! -f ecosystem.config.js
+
+      # Non-default port (3100): proves the .env PORT is honoured by the
+      # recorded supervisor, not just a value matching a process default.
+      - name: Create a fresh database for setup
+        # The unit-suite step's core preload pushes the schema into tau_test
+        # (drizzle push, no migrations table), so `db:migrate` there fails with
+        # "type already exists". Setup gets its own empty database.
+        run: |
+          docker exec postgres-test psql -U postgres -c "CREATE DATABASE tau_local_setup;"
+          docker exec postgres-test psql -U postgres -d tau_local_setup -c "CREATE EXTENSION IF NOT EXISTS vector;"
+          docker exec postgres-test psql -U postgres -d tau_local_setup -c "CREATE EXTENSION IF NOT EXISTS pg_search;"
+
+      - name: Setup (host runtime) against the CI database
+        shell: bash
+        run: |
+          bun run setup -- --runtime host --database-url postgres://postgres:postgres@localhost:5433/tau_local_setup --port 3100 --yes 2>&1 | tee /tmp/setup.log
+          grep -q 'Tau is running at http://localhost:3100' /tmp/setup.log
+          grep -q 'TAU_SANDBOX_RUNTIME=host' .env
+          grep -Eq '^TAU_ENCRYPTION_KEY=[0-9a-f]{64}$' .env
+
+      # This private repository cannot use an unauthenticated updater. Seed a
+      # disposable integration connection with the job token; interactive user
+      # OAuth is covered separately. Never restore host gh-auth fallback here.
+      - name: Seed GitHub integration for the in-app updater
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5433/tau_local_setup
+        run: bun apps/core/src/scripts/seed-local-setup-github.ts
+
+      - name: Health, status, and API-native updater support
+        shell: bash
+        run: |
+          # /health is the core's public liveness route and answers 200 here.
+          # 401 is still accepted: a reverse proxy in front of an instance may
+          # gate it, and a rejection can only come from something answering.
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3100/health || true)
+          [ "$code" = 200 ] || [ "$code" = 401 ] || { echo "health=$code"; exit 1; }
+
+          bun apps/cli/src/index.ts server status --json | tee /tmp/status.json
+          node -e "const s=require('/tmp/status.json'); if (s.health!=='ok' || s.supervisor!=='systemd-user') { console.error(JSON.stringify(s)); process.exit(1) } for (const n of ['tau-api','tau-worker']) if (!s.processes.find(p=>p.name===n&&p.status==='online')) { console.error('not online: '+n); process.exit(1) }"
+
+          PW=$(grep '^TAU_PASSWORD=' .env | cut -d= -f2-)
+
+          # Point the in-app updater at the exact code under test. On
+          # pull_request runs the tree is the PR merge commit; targeting
+          # configured 'main' makes apply either no-op with a misleading sha
+          # or fail --ff-only when main advanced (the same flake hits a
+          # workflow_dispatch run from a diverged feature branch). Rewind to
+          # the merge base first, so apply is a REAL fast-forward whose diff is
+          # this change's own files and whose end state is the code under test.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            # Rewind to this branch's FORK POINT -- the merge-base of the merge
+            # commit's two parents -- not `merge-base HEAD base.sha`. On a
+            # pull_request event HEAD is the merge commit and base.sha IS its
+            # first parent, so that form returns base.sha itself: main's tip.
+            # The moment main advances past the fork, applying the PR head from
+            # main's tip is not a fast-forward, the updater correctly reports
+            # `skipped` with changedFiles: [], and the afterSha assertion below
+            # fails a PR that is perfectly healthy. Observed on #1421 (twice)
+            # and #1414, each time cleared only by a branch update.
+            git checkout --quiet --detach "$(git merge-base HEAD^1 HEAD^2)"
+            # Assert the precondition here, where it is one line of output, rather
+            # than letting it surface 600s later as an unexplained `skipped` with
+            # an empty changedFiles array. --is-ancestor returns 1 for "no" and
+            # >1 for a real error; both are fatal here, so one branch covers both.
+            if ! git merge-base --is-ancestor HEAD '${{ github.event.pull_request.head.sha }}'; then
+              echo "::error::rewind target $(git rev-parse HEAD) is not an ancestor of PR head ${{ github.event.pull_request.head.sha }} — the apply below cannot fast-forward"
+              exit 1
+            fi
+            curl -sS -o /tmp/patch-settings.json -w 'patch-settings HTTP %{http_code}\n' -X PATCH \
+              -H "Authorization: Bearer $PW" -H 'Content-Type: application/json' \
+              -d '{"branch":"${{ github.event.pull_request.head.sha }}"}' \
+              http://localhost:3100/api/updates/settings
+            grep -q '"branch":"${{ github.event.pull_request.head.sha }}"' /tmp/patch-settings.json
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Same idea for manually dispatched runs: rewind to the merge base
+            # with main and target the dispatched sha (the pushed branch head).
+            git checkout --quiet --detach "$(git merge-base HEAD origin/main)"
+            curl -sS -o /tmp/patch-settings.json -w 'patch-settings HTTP %{http_code}\n' -X PATCH \
+              -H "Authorization: Bearer $PW" -H 'Content-Type: application/json' \
+              -d "{\"branch\":\"$GITHUB_SHA\"}" http://localhost:3100/api/updates/settings
+            grep -q "\"branch\":\"$GITHUB_SHA\"" /tmp/patch-settings.json
+          elif [ "${{ github.event_name }}" = "merge_group" ]; then
+            # Detached test-merge sha resolves in-repo; a clean 'already up to
+            # date' beats racing main. (Merge-group runs do not rewind.)
+            curl -sS -o /dev/null -X PATCH -H "Authorization: Bearer $PW" -H 'Content-Type: application/json' \
+              -d "{\"branch\":\"$GITHUB_SHA\"}" http://localhost:3100/api/updates/settings
+          fi
+          # push runs (trusted main): untouched — settings stay on the configured branch.
+
+          # Bootstrap bearer holds updates:* until the first admin exists. If
+          # the route rejects it, fall back to the CLI form (same assertions).
+          CHECK_STATUS=$(curl -s -o /tmp/check.json -w '%{http_code}' -X POST -H "Authorization: Bearer $PW" http://localhost:3100/api/updates/check)
+          echo "check HTTP $CHECK_STATUS:"; cat /tmp/check.json
+          if [ "$CHECK_STATUS" -lt 200 ] || [ "$CHECK_STATUS" -ge 300 ]; then
+            echo "curl /api/updates/check rejected the bootstrap bearer — falling back to the CLI"
+            TAU_PASSWORD="$PW" bun apps/cli/src/index.ts update check --json | tee /tmp/check.json
+          fi
+          node -e "const r=require('/tmp/check.json'); if (r.supported!==true || r.flavor.supervisor!=='systemd-user' || r.flavor.source!=='git-checkout') { console.error(JSON.stringify(r)); process.exit(1) }"
+
+          APPLY_STATUS=$(curl -s -o /tmp/apply.json -w '%{http_code}' -X POST -H "Authorization: Bearer $PW" http://localhost:3100/api/updates/apply)
+          echo "apply HTTP $APPLY_STATUS:"; cat /tmp/apply.json
+          if [ "$APPLY_STATUS" -lt 200 ] || [ "$APPLY_STATUS" -ge 300 ]; then
+            echo "curl /api/updates/apply rejected the bootstrap bearer — falling back to the CLI"
+            TAU_PASSWORD="$PW" bun apps/cli/src/index.ts update apply --json | tee /tmp/apply.json
+          fi
+
+          # /api/updates/apply returns the run the instant the background job
+          # starts (commands: [] at that point, and this run is un-awaited) —
+          # poll /api/updates/status until it actually settles instead of
+          # trusting that snapshot, and only then trust its commands array.
+          #
+          # On pull_request/merge_group runs the plan is real work (PR diff vs
+          # main -> build:cli, build:core, then reload:worker, reload:api) and
+          # reload:api restarts the very process this poll is talking to — so
+          # mid-poll the connection WILL drop. `|| true` keeps a transport
+          # failure from aborting the assignment under -o pipefail; 000/empty/
+          # any 5xx just means "not settled yet, probably mid-restart" and the
+          # loop keeps going. Only 401/403/404 (a real auth/routing problem,
+          # not a restart) is fatal.
+          SETTLED=0
+          for i in $(seq 1 300); do
+            POLL_STATUS=$(curl -s -o /tmp/update-status.json -w '%{http_code}' -H "Authorization: Bearer $PW" http://localhost:3100/api/updates/status || true)
+            case "$POLL_STATUS" in
+              401|403|404)
+                echo "status check HTTP $POLL_STATUS (fatal):"; cat /tmp/update-status.json
+                exit 1
+                ;;
+              200)
+                if node -e "
+                  const s = require('/tmp/update-status.json');
+                  process.exit(s.active === false && s.latest && ['succeeded', 'failed', 'skipped'].includes(s.latest.status) ? 0 : 1);
+                "; then
+                  SETTLED=1
+                fi
+                ;;
+              *)
+                echo "status check HTTP ${POLL_STATUS:-000} — not settled yet (likely mid-restart); retrying"
+                ;;
+            esac
+            [ "$SETTLED" = "1" ] && break
+            sleep 2
+          done
+          if [ "$SETTLED" != "1" ]; then
+            echo "update apply did not settle within 600s:"; cat /tmp/update-status.json
+            exit 1
+          fi
+          cat /tmp/update-status.json
+          node -e "
+            const s = require('/tmp/update-status.json');
+            const failedCommand = (s.latest.commands || []).some((c) => c.status === 'failed');
+            if (s.latest.status === 'failed' || failedCommand) { console.error(JSON.stringify(s.latest)); process.exit(1); }
+          "
+          # On PR runs the apply must have landed the PR HEAD specifically —
+          # not main's tip, and not a no-op against the merge commit. A
+          # manually dispatched run must land the dispatched sha.
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            node -e "
+              const s = require('/tmp/update-status.json');
+              if (s.latest.status !== 'succeeded' || s.latest.afterSha !== '${{ github.event.pull_request.head.sha }}') {
+                console.error('apply did not land the PR head: ' + JSON.stringify(s.latest)); process.exit(1);
+              }
+            "
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            node -e "
+              const s = require('/tmp/update-status.json');
+              if (s.latest.status !== 'succeeded' || s.latest.afterSha !== '$GITHUB_SHA') {
+                console.error('apply did not land the dispatched sha: ' + JSON.stringify(s.latest)); process.exit(1);
+              }
+            "
+          fi
+
+      # An instance is a CHECKOUT: .env and ecosystem.config.js belong to one
+      # label, and setup refuses to relabel a checkout that already carries
+      # another (TAU_INSTANCE=tau is in the .env the step above wrote). So the
+      # second instance gets its own clone. --shared points the clone at the
+      # workspace's object store, and --no-checkout + an explicit detach is the
+      # only order that works for every event: on pull_request the commit under
+      # test is reachable from HEAD alone, so a plain clone would check out
+      # nothing.
+      - name: Second checkout and database for instance ci2
+        shell: bash
+        run: |
+          docker exec postgres-test psql -U postgres -c "CREATE DATABASE tau_local_setup2;"
+          docker exec postgres-test psql -U postgres -d tau_local_setup2 -c "CREATE EXTENSION IF NOT EXISTS vector;"
+          docker exec postgres-test psql -U postgres -d tau_local_setup2 -c "CREATE EXTENSION IF NOT EXISTS pg_search;"
+          git clone --shared --no-checkout "$GITHUB_WORKSPACE" /tmp/tau-ci2
+          # The event's sha, not the workspace HEAD: on pull_request runs the
+          # health step rewound the workspace to the merge base so the updater
+          # apply is a real fast-forward, and ci2 must still test the PR head.
+          git -C /tmp/tau-ci2 checkout --detach "$GITHUB_SHA"
+
+      # Every per-instance name follows the label: tau-ci2-api /
+      # tau-ci2-worker, PORT 3300 (worker 3302, events 3303), HOME_DIR
+      # ~/.tau-ci2. The database is passed in, so this instance manages no
+      # container of its own — postgres-test above is CI's.
+      - name: Setup the second instance (ci2)
+        shell: bash
+        working-directory: /tmp/tau-ci2
+        run: |
+          bun install --frozen-lockfile
+          bun run setup -- --instance ci2 --runtime host --port 3300 --database-url postgres://postgres:postgres@localhost:5433/tau_local_setup2 --yes 2>&1 | tee /tmp/setup-ci2.log
+          grep -q 'Tau is running at http://localhost:3300' /tmp/setup-ci2.log
+
+      - name: Two instances coexist
+        shell: bash
+        run: |
+          bun apps/cli/src/index.ts server list --json | tee /tmp/list.json
+          # Both instances registered, and each one's own supervisor pair is
+          # online: names derive from the label, proving that a second instance
+          # did not take over the first one's services.
+          node -e "
+            const list = require('/tmp/list.json');
+            const byLabel = Object.fromEntries(list.instances.map((i) => [i.label, i]));
+            for (const [label, api, worker] of [
+              ['tau', 'tau-api', 'tau-worker'],
+              ['ci2', 'tau-ci2-api', 'tau-ci2-worker'],
+            ]) {
+              const instance = byLabel[label];
+              if (!instance) { console.error('instance missing from list: ' + label); process.exit(1); }
+              for (const name of [api, worker]) {
+                const p = instance.processes.find((x) => x.name === name);
+                if (!p || p.status !== 'online') { console.error(label + ': ' + name + ' is ' + (p ? p.status : 'not registered')); process.exit(1); }
+              }
+            }
+          "
+
+          # Both APIs answer (200, or 401 behind a gate — see the health step above).
+          for port in 3100 3300; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:$port/health" || true)
+            [ "$code" = 200 ] || [ "$code" = 401 ] || { echo "health($port)=$code"; exit 1; }
+          done
+
+          # --instance resolves to the second checkout from inside the first one.
+          bun apps/cli/src/index.ts server status --instance ci2 --json | tee /tmp/status-ci2.json
+          node -e "
+            const s = require('/tmp/status-ci2.json');
+            if (s.instance !== 'ci2' || s.port !== 3300) { console.error('--instance ci2 resolved elsewhere: ' + JSON.stringify(s)); process.exit(1); }
+            if (s.health !== 'ok') { console.error('ci2 health: ' + s.health); process.exit(1); }
+          "
+          bun apps/cli/src/index.ts server stop --instance ci2
+
+      - name: Offline update path and shutdown
+        shell: bash
+        run: |
+          bun apps/cli/src/index.ts server status --instance tau --json | tee /tmp/status-before-offline.json
+          # PR/merge-group checkouts are detached HEAD; --ref pins the offline
+          # updater to the exact commit under test instead of trying (and
+          # failing) to resolve a branch to fast-forward.
+          bun apps/cli/src/index.ts update apply --offline --ref "$(git rev-parse HEAD)" 2>&1 | tee /tmp/offline.log
+          grep -q 'Already at' /tmp/offline.log
+          bun apps/cli/src/index.ts server status --instance tau --json | tee /tmp/status-after-offline.json
+          node -e "
+            const before = require('/tmp/status-before-offline.json');
+            const after = require('/tmp/status-after-offline.json');
+            for (const name of ['tau-api', 'tau-worker']) {
+              const b = before.processes.find((p) => p.name === name);
+              const a = after.processes.find((p) => p.name === name);
+              if (!b || !a) { console.error('process not found in status: ' + name); process.exit(1); }
+              if (b.pid === a.pid) { console.error(name + ' pid unchanged across offline apply (recorded supervisor did not restart it): ' + b.pid); process.exit(1); }
+            }
+          "
+          bun apps/cli/src/index.ts server stop --instance tau
+          bun apps/cli/src/index.ts server status --instance tau --json | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{const s=JSON.parse(d); if (s.health!=='unreachable') { console.error('expected unreachable, got: '+s.health); process.exit(1) }})"
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          bun apps/cli/src/index.ts server logs --instance tau --lines 200 || true
+          bun apps/cli/src/index.ts server logs --instance ci2 --lines 200 || true
+          systemctl --user status tau-api.service tau-worker.service tau-ci2-api.service tau-ci2-worker.service --no-pager || true
+          tail -n 200 ~/.tau/logs/tau-api.log ~/.tau/logs/tau-worker.log ~/.tau/logs/tau-ci2-api.log ~/.tau/logs/tau-ci2-worker.log 2>/dev/null || true
+
+  # Manual-only incident evidence. All three revisions run sequentially on the
+  # same worker image with a clean dependency install and the production heap
+  # ceiling, so their TypeScript diagnostics are directly comparable.
+  # Manual only, and deliberately so: this measures Core typecheck memory across
+  # revisions and is far too expensive for normal PR CI.
+  #
+  # A SKIPPED RUN OF THIS JOB IS NOT EVIDENCE. On pull_request the `if` below
+  # is false, GitHub reports conclusion "skipped", and a skipped check renders
+  # alongside the passing ones — so the colour says nothing about whether a
+  # comparison ever ran. The job NAME carries that, and the step summary below
+  # names the exact SHA and artifact, because authoritative evidence is artifact
+  # contents plus the job's execution state, never the check colour
+  # (docs/history/design/ci-stability-and-flake-eradication.md, D2).
+  core-typecheck-diagnostics:
+    name: core-typecheck-diagnostics (manual only; a skipped run is not evidence)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.8
+      - name: Measure Core typecheck revisions
+        shell: bash
+        run: |
+          cp .github/core-typecheck-diagnostics.sh "$RUNNER_TEMP/core-typecheck-diagnostics.sh"
+          bash "$RUNNER_TEMP/core-typecheck-diagnostics.sh"
+      - name: Upload Core typecheck diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: core-typecheck-diagnostics-${{ github.sha }}
+          path: ${{ runner.temp }}/core-typecheck-*.log
+          if-no-files-found: error
+      # Reached only when the job actually ran, so its presence in the summary
+      # is itself the execution evidence a skipped check cannot fake.
+      - name: Record what this run measured
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### Core typecheck diagnostics"
+            echo
+            echo "Executed on \`${GITHUB_SHA}\` (run ${GITHUB_RUN_ID}, attempt ${GITHUB_RUN_ATTEMPT})."
+            echo "Artifact: \`core-typecheck-diagnostics-${GITHUB_SHA}\`."
+            echo
+            echo "A skipped run of this job produces no summary and no artifact."
+          } >> "$GITHUB_STEP_SUMMARY"

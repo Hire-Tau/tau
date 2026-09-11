@@ -1,0 +1,46 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+.DS_Store
+*.tsbuildinfo
+apps/cli/src/build-info.generated.ts
+# cli-bundle.ts's build-time move-aside of the file above (restored after each
+# build; a crashed run can leave it behind)
+apps/cli/src/build-info.generated.ts.artifactbuild.bak
+apps/amtp/src/build-info.generated.ts
+vite.config.d.ts
+vite.config.js
+data/
+ecosystem.config.js
+vapid.json
+google-cloud-tts-service-account.json
+.worktrees/
+.tmp/
+.test-db-port
+.tau/
+.tau-build-stamp
+config/agent/auth.json
+config/agent/extensions/**/bun.lock
+config/channels/*.yaml
+!config/channels/example-*.yaml
+!config/channels/*.example.yaml
+.nfs*
+node_modules
+
+.superpowers/
+.pi/
+.claude/
+
+# Deterministic web DOM order gate output
+apps/web/.test-artifacts/
+
+# artifact-builder output: prebuilt machine-host bundles (never commit)
+/machine/
+
+# editor swap files
+*.swp
+
+# Static documentation bundled with each Core release.
+apps/core/docs-dist/

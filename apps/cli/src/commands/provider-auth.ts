@@ -1,0 +1,89 @@
+import { Command } from 'commander'
+import { apiGet, apiPut, apiDelete } from '../client'
+import { output, outputTable, outputError, isJsonMode } from '../output'
+
+export function registerProviderAuthCommands(program: Command) {
+  const auth = program.command('provider-auth').alias('pa').description('Manage AI provider credentials')
+
+  // tau provider-auth list
+  auth
+    .command('list')
+    .description('List all configured providers')
+    .action(async () => {
+      try {
+        const providers = await apiGet<any[]>('/api/provider-auth')
+        if (isJsonMode()) {
+          output(providers)
+        } else {
+          if (providers.length === 0) {
+            console.log('No provider credentials configured')
+            return
+          }
+          outputTable(providers, ['provider', 'type', 'hasCredential'])
+        }
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+
+  // tau provider-auth get <provider>
+  auth
+    .command('get <provider>')
+    .description('Check auth status for a provider')
+    .action(async (provider) => {
+      try {
+        const result = await apiGet<any>(`/api/provider-auth/${provider}`)
+        output(result)
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+
+  // tau provider-auth set <provider> <key>
+  auth
+    .command('set <provider> <key>')
+    .description('Set an API key for a provider')
+    .action(async (provider, key) => {
+      try {
+        const result = await apiPut<any>(`/api/provider-auth/${provider}`, { key })
+        output(result, `Set API key for provider "${provider}"`)
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+
+  // tau provider-auth delete <provider>
+  auth
+    .command('delete <provider>')
+    .alias('rm')
+    .description('Remove auth for a provider')
+    .action(async (provider) => {
+      try {
+        await apiDelete(`/api/provider-auth/${provider}`)
+        output({ provider, deleted: true }, `Removed auth for provider "${provider}"`)
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+
+  // tau provider-auth oauth-providers
+  auth
+    .command('oauth-providers')
+    .description('List available OAuth providers')
+    .action(async () => {
+      try {
+        const providers = await apiGet<any[]>('/api/provider-auth/oauth/providers')
+        if (isJsonMode()) {
+          output(providers)
+        } else {
+          if (providers.length === 0) {
+            console.log('No OAuth providers available')
+            return
+          }
+          outputTable(providers, ['id', 'name'])
+        }
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+}

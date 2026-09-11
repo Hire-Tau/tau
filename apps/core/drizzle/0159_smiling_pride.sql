@@ -1,0 +1,1 @@
+ALTER TABLE "messages" ADD COLUMN "activity_execution_id" text GENERATED ALWAYS AS (metadata->>'executionId') STORED;

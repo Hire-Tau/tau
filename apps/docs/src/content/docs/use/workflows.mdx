@@ -1,0 +1,122 @@
+---
+title: Choose a workflow
+description: Select the process and completion conditions for a task, from one worker to independent reviews.
+---
+
+A workflow defines how a work stream gets done: who works on it, which steps run, how feedback returns, and what counts as delivery. Your squad defines the shared context; the workflow defines the process for a particular deliverable.
+
+## Pick the smallest process that fits
+
+Tau ships these starting workflows. An administrator can customize or disable them, so inspect the available workflows in your workspace.
+
+| Workflow        | Process                                                   | Good starting point for                   |
+| --------------- | --------------------------------------------------------- | ----------------------------------------- |
+| Solo            | One worker produces and verifies the result               | A bounded task or investigation           |
+| With Review     | A builder works, then an independent reviewer checks it   | A deliverable needing a second assessment |
+| Solo Coding     | One engineer implements, validates, and prepares delivery | Routine changes and fixes                 |
+| Reviewed Coding | Implementation followed by independent code review        | Changes needing a second pair of eyes     |
+| Planned Coding  | Architecture, implementation, and independent review      | Changes needing design decisions          |
+| Research Brief  | Research and an independent source/evidence review        | A decision supported by cited findings    |
+| Security Review | Security assessment and independent finding validation    | A report on risks and mitigations         |
+
+These are ordinary workflows in **Administration → Workflows**, not a separate kind of configuration. Their participants start only when needed. Additional delegation is disabled in the shipped presets; you can enable it in a customized workflow.
+
+In Planned Coding, a reviewer-requested redesign goes back to the architect, then through implementation and review again. Targeted implementation changes go to the engineer, whose normal next step is review. All shipped presets follow their ordinary graph after rework.
+
+Solo Coding, Reviewed Coding, and Planned Coding wait for a human to merge their change request. The other shipped workflows deliver a report or artifact. Security Review does not automatically implement fixes. Choose the delivery policy separately from the number of agents.
+
+## Build your own flow
+
+In **Administration → Workflows**, choose **New workflow**, **Edit**, or **Duplicate**. Describe what you want in the conversation. The interactive canvas stays visible beside the conversation on wider screens, or below it on smaller screens. You and the assistant edit the same draft. Select a step to focus the conversation on it; each new message includes your current draft and selection, including manual changes. The name and description stay visible and can be edited by either of you. The preset ID is shown during creation; after saving, find it in the workflow list. Drag cards to arrange the canvas. Drag empty canvas space with a mouse or one finger to pan; pinch with a trackpad or two fingers to zoom around that point. **Fit** restores the full graph view. The canvas height stays within the viewport on small screens. The compact **Start** node has one connection to the first step. Reconnect its handle to change where work begins. The matching **Finish** node checks completion conditions; it is not another agent step. Select Finish to edit its completion policy. Draw an arrow by dragging an outcome handle onto another card, or click the two handles. Valid drop targets highlight and the arrow tip snaps to the entry handle before you release. Select a card to edit its instructions, expected result, and agent type; select an arrow to highlight and edit that handoff. The inspector shows only the selected item’s controls; **Flow settings** opens the workflow’s settings. Press **Delete** or **Backspace**, or use **Remove connection** in the inspector, to remove the selected connection without deleting either step. Deleting one parallel branch connection leaves the other branches intact. Undo restores it. Undo and redo cover graph edits and settings; name and description edits stay separate and are preserved when you undo. Cards stay in place when you delete steps or connections. The canvas arranges and fits the flow when the editor first opens. A vertical toolbar at the bottom left keeps undo/redo, add agent step, add approval, settings, arrange, fit, and zoom buttons visible. Hover over an icon for its label. Select a step to show its trash button in the card’s top-right corner. Zoom buttons animate in 10% steps, with no percentage readout. **Auto arrange** places Start at the top left and Finish at the bottom right, grouping parallel branches in rows that read left to right. It smoothly restores this layout and fits the workflow into view (without animation when reduced motion is enabled). Warnings appear inside the canvas without moving the editor. New workflow drafts, including their canvas positions, are saved in this browser until you save or discard them. Closing the editor keeps the draft; reopening it restores your work. The new-workflow URL also reopens the editor on refresh. Editing an existing workflow uses `?section=workflows&editWorkflow=<workflow-id>`, so you can bookmark or share a link to its editor. Unsaved edits to existing workflows are not persisted across refreshes. The saved flow is defined by its connections. You can add agent steps and human approvals, run reviews in parallel, choose where they join, and send work back for revisions. Parallel branches share one outcome handle with a branch count. Drag from that handle to add a branch; select individual arrows to edit or remove them. Drawing another arrow from an outcome starts parallel branches. Where active parallel paths meet, the shared destination waits for their results and runs once; a small **Waits for N branches** label marks it. Alternative outcomes and rework do not create waits for paths that were not taken. There is no separate join card or join selector. Use separate step cards for independent executions, even if they share an agent type and instructions. Tracks may stay separate through Finish, which waits for all active work. Removing one branch’s completion connection does not remove the group or its other branches: reconnect the path or undo the change before saving. A blue corner dot marks a step changed by the assistant; it clears when you inspect that step or edit the draft again. **Escape** clears the selection and closes its inspector; the purple border marks the selected step. Flow settings include routing, limits, and integration events. **Code hosting** bundles the bound provider’s change updates. Drag its output handle to an agent step or choose **Send code hosting events to**. Point it to **Finish** for automatic delivery ownership. **Advanced event configuration** keeps individual events, such as Linear issue assigned, available without requiring you to configure each code-host event. Under **Advanced limits**, **Attempts per step** and **Maximum parallel steps** are optional and blank by default. Unlimited attempts let agents rework a step as needed. An attempt cap includes the initial attempt and asks the owner for input when exhausted. A parallel-step cap queues extra steps until an active attempt finishes; global agent capacity still applies either way.
+
+Start with the assistant to explore ideas together. For example:
+
+> Help me design a research process. I want independent source checking, but I'd like to keep the number of agents small. What are the tradeoffs?
+
+Then ask for the changes you want:
+
+> Use one researcher and one reviewer. Let the reviewer send it back twice, then ask me if it still needs work.
+
+You can type or talk when Realtime is available. Otherwise, type to your user assistant. The conversation knows which step you selected. It can discuss options without changing the flow.
+
+The assistant edits your draft directly. Use **Undo** and **Redo** beside the preview to move through your editing history. Your edits and the assistant’s edits share the same history; you can also ask the assistant to undo or redo. Brainstorming alone does not change the flow. **Save workflow** publishes the finished preset for new work streams. Existing work keeps its original flow, and adding steps in this editor does not start agents.
+
+For complete YAML examples and every setting—including participants, routing, parallel joins, limits, and events—see [Build a workflow](/reference/workflow-definition/). You can give that reference to an agent authoring a flow.
+
+## Choose it for a task
+
+When starting a work stream through a consultant, name the workflow in your brief:
+
+> Use With Review for this comparison. The reviewer should check that every recommendation follows from the supplied evidence.
+
+You can also select a preset in the work-stream creation controls. Inspect its steps and completion policy before starting. A saved preset is copied into the new stream as a snapshot; later preset edits do not silently rewrite an already running task.
+
+## Set a squad default
+
+The Engineering squad preset starts new squads with Solo Coding and recommends all four engineering workflows above. A squad preset can choose a default and a collection of alternatives without defining the flows itself. Editing a squad preset does not change existing squads. Creating a squad copies its settings and provisions any declared persistent members and schedules; flow workers still start only when needed.
+
+Every new work stream uses a flow. Without an explicit choice, it inherits the squad default. Engineering copies Solo Coding as its squad default at creation. If a squad has no saved default, Tau uses Solo. Running streams retain their saved flow when defaults change.
+
+Open the squad's **More → Settings → Workflows**. Choose a default and describe when alternatives should be used. For example:
+
+> Default to Solo for short research. Use With Review for recommendations that will go to the whole team. Ask before using Planned Coding.
+
+This guidance helps the manager choose; it is not an automatic classifier that guarantees a workflow based on text alone. Name a workflow explicitly when the choice matters.
+
+## Understand reviews and returns
+
+Workers start when their steps become active. A reviewer can request changes and return work to an earlier step. In parallel review, separate reviewers can run at once, while the final join waits for the required branches.
+
+**Rework step** is where corrections happen. **After rework** chooses what happens next: **Follow graph** (the default) runs that step’s normal outgoing arrows again, including any intervening reviews and parallel branches. **Return to requester** sends the corrected result directly back to the step that requested changes, skipping the correction step’s normal arrows for that attempt. A two-way rework arrow marks this direct return; hover over it to see the route. There is no separate resume destination. The handoff type comes from the connections: an arrow back to an earlier step requests rework, and multiple forward arrows from one outcome start parallel branches.
+
+The graph defines mandatory work. To require revisions before publishing, connect Revisions before Publish on every successful path. Alternative outcomes may skip steps; Finish waits for the paths actually started, direct-return requests, and its completion policy. There is no additional required-step checkbox.
+
+A question can hold one attempt while other work continues. Ask for another review when a correction invalidates earlier evidence; the existence of an old approved review is not proof that later changes were checked.
+
+## Bring in help or adjust a running flow
+
+Each worker's assignment lists its allowed handoffs, additional return paths, delegation budget, and authority to revise the flow. Workers can inspect the current run again after another branch advances it.
+
+When delegation is enabled, a worker can request a specialist through the flow command interface. Tau starts that participant on demand and returns the result to the requesting step. In the visual editor, set **Delegation limit** to `0` to disable specialist help or a positive number to enable it. Guided routing keeps this at `0`.
+
+Delegation is bounded across the entire flow; it does not grant permission to bypass a required review or start an unrelated crew. When disabled or exhausted, the worker asks the manager to adjust the plan.
+
+An adaptive flow also lets its active worker revise future work within the existing checks and limits. More extensive changes need a manager with `workstreams:revise-flow`. Revisions belong to the running stream and do not edit the saved preset. An active attempt keeps its instructions and handoffs unless an authorized revision explicitly restarts it.
+
+## Choose when delivery is complete
+
+A process can end with a verified deliverable, require human approval, or require a verified merge. Automatic or direct merge policies need explicit squad permission; they are not enabled merely because an agent can access GitHub.
+
+For a human gate, use the decision controls attached to that step. Enter the requested **Decision and evidence**, then select its configured outcome. Answering an ordinary question or clearing a blocker is not the same as approving delivery.
+
+## Customize after your first task
+
+Manage shared definitions in **Administration → Workflows**; select them in squad settings. The workflow editor supports participant settings, steps, routing, completion, and a graph preview. Start by adapting a working preset rather than creating a large process before you know what review you need.
+
+Open **Participants** in the graph toolbar to create or edit shared agent settings and see which steps use them. Each step separately owns its instructions, expected result, and outcomes. Use the **Agent work / Human approval** switch to choose what kind of step it is.
+
+With **Reuse within work stream**, sequential steps using the same participant reuse a session and its context. Parallel branches each get a separate session; the main track continues in its own session after they join. **Fresh each attempt** starts a new session for each step attempt.
+
+A one-off inline flow belongs to its stream; a saved workflow can be reused. Agent-type changes affect which model, tools, and instructions a participant receives. Coordinate those changes with [agent configuration](/configure/agents/).
+
+The [CLI reference](/reference/cli/) includes commands for listing and inspecting workflows. The [review guide](/use/review-and-intervene/) explains how to respond while a flow runs.
+
+## Use the same workflow with different code hosts
+
+Coding workflows describe the process independently of the repository provider. A work stream binds its repository and change request through `codeHost` metadata. Its integration connection supplies access; the binding itself does not grant permissions.
+
+**GitHub is the supported code-hosting adapter today.** GitLab and Bitbucket need their own adapters before they can be used, but will not need duplicate coding workflows. Existing GitHub metadata remains supported.
+
+The **Follow code changes** option routes review, CI, and merge updates to the current delivery owner. The flow preview shows the code-hosting connection. Updates do not approve work or bypass pauses and waits.
+
+## Human reviewers
+
+Approval steps default to **Assigned reviewers**: any one person assigned to the work stream with `workstreams:review` permission for the squad can decide. If nobody is assigned, any reviewer is allowed. Choose **Any reviewer** to allow anyone with that permission, regardless of assignment.
+
+In the work stream UI, use **Assigned reviewers** to add or remove people. Updating assignments requires `workstreams:update`; review permission alone does not allow self-assignment. The CLI supports the same controls:
+
+```bash
+tau workstream reviewers --squad <squad-id>
+tau workstream update <stream-id> --reviewer <user-id> --reviewer <another-user-id>
+tau workstream update <stream-id> --clear-reviewers
+```

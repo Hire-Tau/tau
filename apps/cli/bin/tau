@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Dev entry point — runs CLI from TypeScript source directly
+exec bun "$(dirname "$0")/../src/index.ts" "$@"

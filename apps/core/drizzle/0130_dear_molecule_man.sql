@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY "idx_integration_dispatch_activity_scan" ON "integration_event_polling_dispatches" USING btree ("provider_key","event_occurred_at","activity_id") WHERE "integration_event_polling_dispatches"."completed_at" IS NOT NULL AND "integration_event_polling_dispatches"."event_fact" IS NOT NULL AND "integration_event_polling_dispatches"."activity_id" IS NOT NULL;

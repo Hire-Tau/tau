@@ -1,0 +1,1 @@
+ALTER TABLE "execution_admission_reservations" ADD CONSTRAINT "execution_admission_reservation_nonqueue_owner_required" CHECK ("execution_admission_reservations"."state" IN ('queued', 'waiting-maintenance', 'released', 'revoked') OR "execution_admission_reservations"."owner_id" IS NOT NULL);

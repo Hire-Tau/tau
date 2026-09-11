@@ -1,0 +1,370 @@
+import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'fs'
+import { homedir } from 'os'
+import { dirname, isAbsolute, join, resolve } from 'path'
+import { expandTilde } from '@tau/shared/node'
+import { DEFAULT_INSTANCE, normalizeLabel } from './instance'
+import { LOCAL_SUPERVISORS, type LocalSupervisor } from './types'
+
+/** One installed instance: the checkout it lives in and the port it serves on. */
+export interface InstanceRecord {
+  root: string
+  port: number
+  supervisor: LocalSupervisor
+  createdAt: string
+  updatedAt: string
+}
+
+/**
+ * Every instance installed on this machine, plus the one `tau server`
+ * commands act on when nothing else says which. Version 1 was a single
+ * bare record ({ root, port, … }) — it reads as the `tau` instance.
+ */
+export interface LocalServerRegistry {
+  version: 3
+  default?: string
+  instances: Record<string, InstanceRecord>
+}
+
+export const REGISTRY_VERSION = 3
+
+/**
+ * A registry this CLI refuses to mutate: unreadable, a version this code does
+ * not know, or carrying a record that fails validation. Read-only commands
+ * (list) still answer with an empty view; anything that would write, dispatch,
+ * or uninstall must stop instead of silently adopting the surviving subset.
+ */
+export class InvalidRegistryError extends Error {
+  constructor(reason: string, path: string) {
+    super(`${reason} in ${path} — fix or remove the file (see \`tau server list\`) before changing instances`)
+    this.name = 'InvalidRegistryError'
+  }
+}
+
+/** The filesystem identity of a root: its realpath when it exists, else the resolved path. */
+export function canonicalRoot(dir: string): string {
+  try {
+    return realpathSync(dir)
+  } catch {
+    return resolve(dir)
+  }
+}
+
+export class NoRootError extends Error {
+  constructor(detail: string) {
+    super(
+      `No local tau checkout found (${detail}). Run \`tau server install\`, pass --root <dir>, set TAU_SERVER_ROOT, or run from inside a checkout.`
+    )
+    this.name = 'NoRootError'
+  }
+}
+
+export class UnknownInstanceError extends Error {
+  constructor(label: string, known: string[]) {
+    super(
+      `unknown instance "${label}" — ${
+        known.length > 0 ? `known instances: ${known.join(', ')}` : 'no instances are registered'
+      } (see \`tau server list\`)`
+    )
+    this.name = 'UnknownInstanceError'
+  }
+}
+
+export function getStatePath(env: Record<string, string | undefined> = process.env): string {
+  return expandTilde(env.TAU_LOCAL_SERVER_STATE || join(homedir(), '.tau', 'cli', 'local-server.json'))
+}
+
+function emptyRegistry(): LocalServerRegistry {
+  return { version: REGISTRY_VERSION, instances: {} }
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+/** A record is only usable if it satisfies its complete persisted schema. */
+function toRecord(value: unknown, legacy: boolean): InstanceRecord | null {
+  if (!isPlainObject(value)) return null
+  const v = value as Partial<InstanceRecord>
+  if (
+    typeof v.root !== 'string' ||
+    v.root.trim() === '' ||
+    (!legacy && !isAbsolute(v.root)) ||
+    !Number.isInteger(v.port) ||
+    (v.port as number) < 1 ||
+    (v.port as number) > 65_532
+  )
+    return null
+  const supervisor = legacy ? 'pm2' : v.supervisor
+  if (!supervisor || !(LOCAL_SUPERVISORS as readonly string[]).includes(supervisor)) return null
+  if (!legacy && (typeof v.createdAt !== 'string' || typeof v.updatedAt !== 'string')) return null
+  return {
+    root: v.root,
+    port: v.port as number,
+    supervisor,
+    createdAt: typeof v.createdAt === 'string' ? v.createdAt : '',
+    updatedAt: typeof v.updatedAt === 'string' ? v.updatedAt : '',
+  }
+}
+
+function validRegistryLabel(label: string): boolean {
+  try {
+    return normalizeLabel(label) === label
+  } catch {
+    return false
+  }
+}
+
+/**
+ * The registry as it is on disk, migrated forward. A file this CLI cannot make
+ * sense of reads as an empty registry rather than throwing: `tau server` must
+ * stay usable (with --root) when the registry is damaged. Mutating paths use
+ * {@link readRegistryStrict}, which fails closed instead.
+ */
+export function readRegistry(path = getStatePath()): LocalServerRegistry {
+  return parseRegistryFile(path).registry
+}
+
+/** The same read, but a damaged/unknown registry is an error, never an empty one. */
+export function readRegistryStrict(path = getStatePath()): LocalServerRegistry {
+  const parsed = parseRegistryFile(path)
+  if (parsed.strictError) throw new InvalidRegistryError(parsed.strictError, path)
+  return parsed.registry
+}
+
+/**
+ * One parse, two views: `registry` is the permissive view read-only commands
+ * use (drop what does not validate, empty for a version this code does not
+ * know), while `strictError` names the first reason a mutating command must
+ * refuse to touch the file at all.
+ */
+function parseRegistryFile(path: string): { registry: LocalServerRegistry; strictError?: string } {
+  if (!existsSync(path)) return { registry: emptyRegistry() }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(readFileSync(path, 'utf8'))
+  } catch {
+    return { registry: emptyRegistry(), strictError: 'registry is unreadable (invalid JSON)' }
+  }
+  if (!isPlainObject(parsed)) return { registry: emptyRegistry(), strictError: 'registry is unreadable (wrong shape)' }
+  const object = parsed as { version?: unknown; default?: unknown; instances?: unknown }
+
+  // v1: one bare record without an explicit registry version. A literally
+  // empty object carries no claim at all, so it stays an empty registry.
+  if (object.version === undefined) {
+    const v1 = toRecord(parsed, true)
+    if (v1)
+      return {
+        registry: {
+          version: REGISTRY_VERSION,
+          default: DEFAULT_INSTANCE,
+          instances: { [DEFAULT_INSTANCE]: v1 },
+        },
+      }
+    if (Object.keys(object).length === 0) return { registry: emptyRegistry() }
+    return { registry: emptyRegistry(), strictError: 'registry is unreadable (v1 record is invalid)' }
+  }
+  if (object.version !== 2 && object.version !== REGISTRY_VERSION)
+    return {
+      registry: emptyRegistry(),
+      strictError: `registry version ${String(object.version)} is not supported`,
+    }
+
+  const legacy = object.version === 2
+  if (!isPlainObject(object.instances)) {
+    return { registry: emptyRegistry(), strictError: 'registry is unreadable (instances must be an object)' }
+  }
+  const instances: Record<string, InstanceRecord> = {}
+  let invalid = false
+  for (const [label, value] of Object.entries(object.instances)) {
+    if (!validRegistryLabel(label)) {
+      invalid = true
+      continue
+    }
+    const record = toRecord(value, legacy)
+    if (record) instances[label] = record
+    else invalid = true
+  }
+  let fallback: string | undefined
+  if (object.default !== undefined) {
+    if (typeof object.default === 'string' && validRegistryLabel(object.default) && instances[object.default]) {
+      fallback = object.default
+    } else {
+      invalid = true
+    }
+  }
+  const registry: LocalServerRegistry = {
+    version: REGISTRY_VERSION,
+    ...(fallback ? { default: fallback } : {}),
+    instances,
+  }
+  return invalid ? { registry, strictError: 'registry has an invalid record or default' } : { registry }
+}
+
+/**
+ * Replace the registry in one step: a half-written file would read as an empty
+ * registry and orphan every instance, so the new content lands under a
+ * temporary name in the same directory and is renamed over the target. The
+ * chmod comes after the rename so a file that already existed with looser
+ * permissions is tightened too (it holds nothing secret, but it decides which
+ * checkout `tau server` acts on).
+ */
+export function writeRegistry(registry: LocalServerRegistry, path = getStatePath()): void {
+  mkdirSync(dirname(path), { recursive: true })
+  const tmp = `${path}.${process.pid}.tmp`
+  writeFileSync(tmp, JSON.stringify(registry, null, 2) + '\n', { mode: 0o600 })
+  renameSync(tmp, path)
+  chmodSync(path, 0o600)
+}
+
+/** The instance a bare `tau server` command acts on when nothing names one. */
+export function defaultLabel(registry: LocalServerRegistry): string | undefined {
+  if (registry.default && registry.instances[registry.default]) return registry.default
+  // A hand-edited file can lose its `default` line; the instances are still real.
+  return Object.keys(registry.instances).sort()[0]
+}
+
+export function upsertInstance(
+  label: string,
+  record: InstanceRecord,
+  options: { makeDefault?: boolean } = {},
+  path = getStatePath()
+): void {
+  const registry = readRegistryStrict(path)
+  // A registry with instances always has a default: the first install wins it,
+  // and a later one only takes it when it asks (--default).
+  const hadDefault = defaultLabel(registry) !== undefined
+  registry.instances[label] = record
+  if (options.makeDefault || !hadDefault) registry.default = label
+  writeRegistry(registry, path)
+}
+
+/** Drop an instance; the default moves to whatever is left, or goes away. */
+export function removeInstance(label: string, path = getStatePath()): void {
+  const registry = readRegistryStrict(path)
+  if (!(label in registry.instances) && registry.default !== label) return
+  delete registry.instances[label]
+  if (registry.default === label) {
+    const next = Object.keys(registry.instances).sort()[0]
+    if (next) registry.default = next
+    else delete registry.default
+  }
+  writeRegistry(registry, path)
+}
+
+export function findInstanceByRoot(
+  root: string,
+  path = getStatePath()
+): { label: string; record: InstanceRecord } | undefined {
+  const target = canonicalRoot(root)
+  const registry = readRegistryStrict(path)
+  for (const [label, record] of Object.entries(registry.instances)) {
+    if (canonicalRoot(record.root) === target) return { label, record }
+  }
+  return undefined
+}
+
+export function isCheckout(dir: string): boolean {
+  try {
+    if (!existsSync(join(dir, '.git'))) return false
+    const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { name?: string }
+    return pkg.name === 'tau'
+  } catch {
+    return false
+  }
+}
+
+function walkUp(start: string): string | null {
+  let dir = resolve(start)
+  for (;;) {
+    if (isCheckout(dir)) return dir
+    const parent = dirname(dir)
+    if (parent === dir) return null
+    dir = parent
+  }
+}
+
+/** A label from the ambient environment: unusable ones are simply not a selection. */
+function optionalLabel(raw: string): string | undefined {
+  try {
+    return normalizeLabel(raw)
+  } catch {
+    return undefined
+  }
+}
+
+/** --root, then TAU_SERVER_ROOT. Either, when given, must be a checkout. */
+function explicitRoot(flag: string | undefined, env: Record<string, string | undefined>): string | null {
+  const candidates: { source: string; dir: string }[] = []
+  if (flag) candidates.push({ source: '--root', dir: resolve(expandTilde(flag)) })
+  if (env.TAU_SERVER_ROOT)
+    candidates.push({ source: 'TAU_SERVER_ROOT', dir: resolve(expandTilde(env.TAU_SERVER_ROOT)) })
+  for (const c of candidates) {
+    if (isCheckout(c.dir)) return canonicalRoot(c.dir)
+    throw new NoRootError(`${c.source}=${c.dir} is not a tau checkout`)
+  }
+  return null
+}
+
+/**
+ * --root > TAU_SERVER_ROOT > --instance / TAU_INSTANCE > the checkout the cwd
+ * is in > the registry default. A named instance outranks the cwd (you asked
+ * for it by name), and the cwd outranks the default (the checkout you are
+ * standing in is the one you mean). Flag/env roots must be checkouts.
+ */
+export function resolveRoot(options: {
+  flag?: string
+  env: Record<string, string | undefined>
+  instance?: string
+  statePath?: string
+  cwd?: string
+}): string {
+  const explicit = explicitRoot(options.flag, options.env)
+  if (explicit) return explicit
+  const registry = readRegistryStrict(options.statePath ?? getStatePath(options.env))
+  // --instance is a request: honour it or refuse. TAU_INSTANCE is ambient — a
+  // checkout's own .env puts it in the environment — so a label it names that
+  // this machine cannot use is ignored rather than turned into a failure of an
+  // otherwise perfectly answerable command.
+  const fromFlag = options.instance !== undefined
+  const asked = options.instance ?? options.env.TAU_INSTANCE
+  if (asked) {
+    const label = fromFlag ? normalizeLabel(asked) : optionalLabel(asked)
+    const record = label === undefined ? undefined : registry.instances[label]
+    if (record && isCheckout(record.root)) return canonicalRoot(record.root)
+    // Only the flag reports why it could not be honoured. Every way the
+    // environment's label can fail — unparsable, unregistered, or registered
+    // at a checkout that has since been deleted — leaves resolution to carry
+    // on as if TAU_INSTANCE had not been set at all.
+    if (fromFlag) {
+      if (!record) throw new UnknownInstanceError(label as string, Object.keys(registry.instances).sort())
+      throw new NoRootError(`instance "${label}" is registered at ${record.root}, which is not a checkout`)
+    }
+  }
+  const walked = walkUp(options.cwd ?? process.cwd())
+  if (walked) return canonicalRoot(walked)
+  const label = defaultLabel(registry)
+  const record = label ? registry.instances[label] : undefined
+  if (record && isCheckout(record.root)) return canonicalRoot(record.root)
+  throw new NoRootError(
+    record ? `instance "${label}" is registered at ${record.root}, which is not a checkout` : 'no instances registered'
+  )
+}
+
+/**
+ * Root resolution for `setup` only: --root > TAU_SERVER_ROOT > walk up from cwd.
+ * The registry is deliberately NOT consulted — once an install exists, using it
+ * would make `bun run setup` inside a second checkout configure, migrate and
+ * pm2-start the FIRST one. Management commands (start/stop/status/…) act on "the
+ * installed instance" and do use it (resolveRoot).
+ */
+export function resolveSetupRoot(options: {
+  flag?: string
+  env: Record<string, string | undefined>
+  cwd?: string
+}): string {
+  const explicit = explicitRoot(options.flag, options.env)
+  if (explicit) return explicit
+  const walked = walkUp(options.cwd ?? process.cwd())
+  if (walked) return canonicalRoot(walked)
+  throw new NoRootError('not inside a tau checkout')
+}

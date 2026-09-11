@@ -1,0 +1,1 @@
+ALTER TABLE "machines" ADD COLUMN "egress_policy" boolean DEFAULT false NOT NULL;

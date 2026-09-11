@@ -1,0 +1,60 @@
+---
+title: Create and organize squads
+description: Give related work a shared purpose, instructions, workspace, and tools.
+---
+
+A squad groups work that needs the same context and tools. Create one for a project, a recurring responsibility, or a subject area. You can use several workflows inside the same squad.
+
+## Create a squad
+
+Open **Squads → Create Squad**. Choose a **Preset**, or leave **Build your own squad** selected. Give the squad a specific name and purpose, then choose a default workflow.
+
+For example, a **Product research** squad could have the purpose **Compare product ideas, summarize evidence, and prepare short decision briefs**. That tells agents more than a broad name such as “General.”
+
+An avatar is optional. On the host runtime, **Working directory (optional)** lets you choose an absolute path on the Tau host. Leave it blank to use Tau's default directory for the new squad. Tau creates the directory if needed. Choose an override deliberately, especially when pointing at an existing checkout.
+
+Create the squad and open its page. Tau creates its standing manager. A squad preset can also supply default agents and schedule templates; **Build your own squad** leaves out that preset. Workflow participants are created when their steps start, so creating a squad does not mean every possible worker is already running.
+
+Squad presets are starting points, not live templates. The squad keeps its original preset ID for reference, but later preset edits or deletion do not change it. See [Squad presets](/configure/squad-presets/) for what gets copied.
+
+## Add instructions that carry between tasks
+
+Open the squad's **More → Settings → Instructions**. Record context that should apply to many conversations: the project's purpose, preferred output format, important references, and decisions that require you.
+
+Useful instructions are concrete:
+
+> Write decision briefs with a recommendation, alternatives, and supporting sources. Keep drafts in the workspace. Ask before changing shared project settings or contacting people.
+
+Put task-specific requirements in the conversation or work-stream brief. Avoid growing shared instructions into a transcript of every previous task.
+
+Under **Settings → Workflows**, choose the default process and any selection guidance. Under **Settings → Integrations**, attach the accounts this squad needs. An account connected in workspace Settings is not automatically the squad's chosen integration.
+
+## Start and resume conversations
+
+Open the Assistant, search for the squad, and select it. Enter a question or task into the squad-scoped field to start a consultant conversation. Search or select a recent conversation to resume it.
+
+The squad's **Chats** tab provides the full conversation view. The **manager** is the standing coordinator; a **consultant** is a focused conversation with you. Use a consultant for a new topic so the manager's ongoing coordination does not dominate your chat.
+
+The consultant can turn a brief into a work stream and hand ongoing coordination to the manager. You can return to the consultant to discuss the result while the work remains tracked separately.
+
+## Find the squad's tools
+
+The primary tabs are **Home**, **Chats**, **Work**, and **Activity**. Additional tools are in **More**; what you can see depends on your access.
+
+| Tool                   | Use it for                                                                   |
+| ---------------------- | ---------------------------------------------------------------------------- |
+| Workspace              | Inspect files produced or used by the squad                                  |
+| Memory                 | Review shared notes and retained context                                     |
+| Apps                   | Open apps associated with the squad                                          |
+| Schedules and Monitors | Inspect recurring and watched work                                           |
+| Relationships          | Describe coordination with other squads                                      |
+| Sharing                | Manage available sharing controls                                            |
+| Settings               | Change instructions, workflows, integrations, workspace, and remote access |
+
+## Keep boundaries clear
+
+Use a new squad when work needs a different workspace, permission boundary, or set of integrations. Use a new consultant conversation when it is only a new topic in the same project. Use a new work stream when you need a separately tracked deliverable.
+
+Archiving a squad is different from pausing one task. Before archiving, review its active work and recurring activity. To temporarily stop a deliverable, use [Pause](/use/review-and-intervene/#pause-and-resume-work) on that work stream.
+
+Next, [configure agent types](/configure/agents/) or [connect the squad's tools](/connect/project-tools/).

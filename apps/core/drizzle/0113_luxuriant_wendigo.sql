@@ -1,0 +1,1 @@
+ALTER TABLE "machine_boxes" ADD COLUMN "reconcilable_spec_hash" text;

@@ -1,0 +1,1 @@
+ALTER TABLE "messages" ALTER COLUMN "enqueue_order" SET DEFAULT nextval('message_enqueue_order_seq'::regclass);

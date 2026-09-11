@@ -1,0 +1,156 @@
+# Tau webapp visual design guide
+
+Approved direction, September 5, 2026. This guide covers `apps/web`; the coverage ledger distinguishes source changes from browser verification.
+
+## Direction
+
+Tau is a focused workspace with flat content, frosted framing, softly rounded controls, restrained purple accents, and quiet supporting information. Keep useful density for work, settings, and diagnostics. Give conversations and page sections room to breathe. Information should be grouped by headings, spacing, and occasional separators rather than stacks of raised cards.
+
+Local layout improvements are authorized. Broader navigation changes require a concrete proposal; the approved changes are recorded in information architecture.
+
+## Surfaces
+
+| Role                    | Treatment                                        | Use                                                                      |
+| ----------------------- | ------------------------------------------------ | ------------------------------------------------------------------------ |
+| Canvas                  | Quiet, opaque light or dark background           | Page content                                                             |
+| Section (`tau-section`) | Transparent, no border or shadow                 | Settings groups, ordinary page sections                                  |
+| Panel (`tau-panel`)     | Thin boundary, 12px corners, no shadow           | Conversation workspace, navigation sidebar, distinct interactive regions |
+| Inset (`tau-inset`)     | Subtle tonal fill, 8px corners, no shadow        | An open editor or a locally grouped control                              |
+| Overlay (`tau-overlay`) | Opaque reading surface, thin border, soft shadow | Menus, dialogs, floating tools                                           |
+
+Ordinary tables and lists sit on the page. Avoid gray header bars over white rows, outlined cards around every setting, and double dividers between adjacent groups. Rows use a subtle hover fill; selection uses a restrained purple wash. A status or attention callout can retain a semantic fill when it conveys information.
+
+Glass belongs on app framing and sidebars. Use an approximately 88% surface fill and 16px backdrop blur, with opaque fallbacks for unsupported filtering or reduced transparency. Do not blur every row, nest blur boundaries, or animate blur strength. Reading surfaces, inputs, code, and terminal content remain sufficiently opaque.
+
+## Tokens and implementation
+
+`src/index.css` defines semantic colors; `tailwind.config.js` exposes them to components; `src/design-system.css` contains explicit shared component roles. Change these tokens before introducing local colors.
+
+The light canvas is nearly white (`#faf9fc`), with a white reading surface and muted lavender-neutral secondary fill. Dark mode uses a near-black canvas (`#090a12`), a subtle navy-neutral surface, and lighter control fills. Purple remains the primary action and selection color. Use the light accent token for foreground links in dark mode; filled controls keep white text.
+
+Use `tau-field`, `tau-button`, `tau-button-primary`, `tau-nav-item`, and `tau-table` for their corresponding roles. These classes define appearance; layout utilities remain local. Ordinary `shadow-theme` is disabled. Reserve elevation for overlays and transient drag affordances.
+
+## Hierarchy and spacing
+
+- Page titles: approximately 22px, semibold, slight negative tracking.
+- Section headings: 12–14px, medium or semibold, sentence case, secondary color where appropriate.
+- Body: readable proportional type; 13–14px for operational rows and metadata. Keep monospaced type for code, identifiers, and logs that benefit from alignment.
+- Use one consistent content gutter within each page. Status dots, disclosure arrows, and titles have deliberate fixed-width slots.
+- Prefer 16–24px between related groups and 24–32px between major sections. Avoid both excessive padding inside former cards and uninterrupted expanses of unrelated text.
+- Primary content such as squad Home stays aligned with the full page width. Settings forms retain a readable column.
+
+## Controls and rows
+
+Give all actionable buttons, links, pills, navigation items, menu choices, and clickable rows pointer cursors. Disabled controls use a default cursor and remain visibly disabled. Static badges are not actionable and should not acquire a pointer cursor merely because they look like pills.
+
+Use quiet hover and visible keyboard focus states. Keep status colors meaningful: blue for working, amber for attention, red for failure/destruction, green for success, neutral for idle. Pair colors with labels or accessible context.
+
+Keep compact, useful filters visible: Feed status/squad pills and Work status pills do not need a separate Filters dropdown. Long filter sets can wrap; ensure they remain reachable on narrow screens.
+
+The primary action sits at the trailing side of its heading/toolbar. Avoid competing filled actions. Secondary and overflow actions are quieter. Keep actions in a group aligned in height; the desktop chat search and activity toggle are both 26px high.
+
+## Conversations and squad Home
+
+Consultants are the main research, design, and brainstorming entry point. The manager coordinates ongoing squad work and remains available to inspect or talk to.
+
+Home presents a conversation entry point, active work, recent chats, and a labeled **Squad coordinator** row. The coordinator description explains its role. Keep Active and Recent chats headings on the same title gutter. Recent consultant rows retain idle dots so they read as clickable agents, even in the flat presentation.
+
+The chat picker keeps the manager, search, and New chat action accessible. The pulse toggle starts enabled and limits the worker list to live/non-idle agents, hiding empty categories. Consultant recents remain available. Show **No active agents** when the filtered worker region is empty.
+
+The picker shows up to ten unarchived recent consultants, ordered by the last human message or creation time, without a fixed age cutoff. Home shows three. Browsing/search gives access to older chats.
+
+Titles use `Manager (Name)`, `Purpose (Type • Name)`, or `Type (Name)` when there is no purpose. Display types in title case.
+
+Initial agent-history loading uses message-shaped skeletons in the transcript, retaining the real header and composer. Do not replace existing messages with skeletons during background refresh. Empty-state copy appears only after loading resolves.
+
+## Action Center
+
+Needs you actions use a subtle neutral surface without colored frames or shadows. Keep semantic color on the small status icon; identify the squad and requester in a quiet subtitle. Use purple for the primary action, a neutral outline for secondary choices, and quiet text for navigation or dismissal. Embedded question forms share the surrounding action's surface and padding.
+
+A single review, blocked-work item, or halted agent opens with its details visible and no redundant category heading. Question forms remain collapsed until opened so landing on the Feed does not trigger the keyboard. Keep approval confirmations, permissions, retry states, and dismissal behavior intact. Bare GitHub pull-request URLs in action messages may display as `PR #123`, preserving the destination and explicitly authored link labels.
+
+## Settings
+
+Use grouped navigation and explicit page/section headings. Keep forms flat, with quiet separators where needed. Do not wrap each checkbox or setting in a raised card.
+
+Search includes page titles, section names, field labels, and aliases. Results show a breadcrumb and set a stable `setting` URL parameter. Destination anchors scroll, focus, and briefly highlight the target. Delayed query-backed content is observed until available. An explicitly marked local editor may open to reveal the field, without saving anything. If a field depends on enabling a feature or creating an entity, link to its explanatory group; never enable it or create an entity as a search side effect.
+
+Search only indexes available pages; permission and runtime gates remain authoritative. Do not index secret values or generate a result for an arbitrary user/provider record.
+
+## Responsive web behavior
+
+This is a responsive webapp, including installed web experiences. Preserve browser navigation, deep links, safe areas, draft state, and keyboard behavior.
+
+At narrow widths, use a section chooser for settings and More for secondary squad destinations. Keep important content and actions reachable. Use full viewport chat layouts on phones, accounting for the visual viewport when the software keyboard opens. Inputs should avoid accidental mobile browser zoom.
+
+Workspace panes share the available height; a default terminal size must not consume the entire file browser. Dense tables can scroll inside their region rather than causing page overflow.
+
+## Motion and accessibility
+
+Hover/color transitions take approximately 120–160ms. Overlay entrances use a 160ms fade with at most 4px translation and 1% scale. Exit transitions take approximately 120ms. Avoid springs, bounce, repeated decorative movement, and layout shifts.
+
+`Presence` retains a mounted surface briefly for exit, immediately sets it inert and hides it from assistive technology, and cleans up on animation completion with a bounded timeout fallback. Reopening cancels the pending exit. Shared menus and controlled dialogs use it. A dialog whose parent immediately unmounts the whole subtree cannot retain an exit; use controlled presence when adding or refactoring such a caller. Never delay a destructive action to animate its button.
+
+Respect `prefers-reduced-motion` and `prefers-reduced-transparency`. Skeleton pulses are motion-safe. Preserve meaningful progress indicators. Shared focus-visible outlines remain visible; local focus rings may replace them when equally clear.
+
+Target WCAG 2.2 AA, without treating this guide as a compliance certification. Normal text requires 4.5:1 contrast and qualifying large text 3:1; check the composited result for glass. See [W3C contrast guidance](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html). Keep focus visible and aim for comfortable touch targets; WCAG's [minimum target size criterion](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html) is 24 CSS pixels subject to its exceptions, while 44px is a useful product target for primary phone controls.
+
+## Specialized content
+
+Terminal themes, ANSI colors, syntax highlighting, code/diff meaning, graph canvases, voice visualization, and user-authored artifacts retain functional conventions. Their application framing, menus, and buttons use the shared language. Do not rewrite embedded user content or recolor semantic outputs merely to match the canvas.
+
+## Verification
+
+Run formatting, typechecking, the web build, and the web package's completion-checked test gate. Verify routing, query state, permissions, focus, and loading behavior alongside screenshots. Review representative light/dark and narrow/wide layouts, including long content, overflow, menus, and reduced-height windows. Record actual observations and limits in the coverage ledger rather than claiming every state was visually tested.
+
+Active navigation and settings pages use a tinted background and accent text, without a selected border or inset shadow. Keep keyboard focus outlines distinct from selection. The mobile settings chooser stays open when switching Personal and Administration; choosing a page dismisses it.
+
+## Loading and stable layouts
+
+Render known navigation, headings, filters, and toolbars immediately. Keep the real layout mounted and use `LoadingContent` around only the data-dependent region. Skeletons share the content's gutters, row heights, typography line boxes, and responsive structure; use inline `SkeletonText` for unknown values inside headings or labels. Avoid separate page-shaped early returns that drift from the real layout.
+
+Treat independently fetched regions independently. Active and completed work may resolve at different times; neither an empty response from one nor a disabled query means the whole list is empty. Preserve cached content during background refresh, and show empty-state copy only after the relevant initial requests settle.
+
+Feed begins with its title and a persistent compact Needs you status line; keep the label and its status adjacent. Pending actions expand below it; an empty inbox reads “You’re all caught up.” Loading changes the status value, without inserting a temporary action card above the page title.
+
+## Workspace and Assistant
+
+Workspace and Memory use quiet file rows with consistent line icons, restrained selection, and separated panes. Keep file navigation, refresh, search, and upload controls mounted while data loads. Code previews share a continuous background. Terminal framing follows the app palette while ANSI output retains its meaning.
+
+Assistant opens as a centered command bar from the navigation sparkles or Cmd/Ctrl+K. Search accessible squads, work streams, recent consultant conversations, pending action items, pages, and settings. Do not index individual worker agents; expose their conversations within the relevant work preview. Squad previews pin the Manager conversation row above their content. It supports arrow-key navigation and appears in scoped search. The input and its Start action create consultant chats; there is no separate New conversation row. Keep root search global and scope the input to conversations/work when a squad preview is selected, with an icon-only Ask/Start button inline beside the input. Enter opens the first matching result by default; with no results it starts a chat. Squad and work previews expand in place, with lightweight conversations and a route back to the prior preview or search. Preserve search query, selection, scroll, and chat drafts when moving between these views. Keep the search query and ordered navigation identifiers in the URL, without prompts or message contents; Back and Escape remove the current level. Resolve restored conversation purposes from agent data and keep the full-conversation link in the same breadcrumb row. The first result is the default highlighted Enter target, including when results arrive after loading. Changing the query resets selection to the first result. With no results, the enabled Ask/Start action is highlighted instead. Up from the first result selects the action target; Down returns to the first result. Arrow navigation stops at both ends without wrapping. Enter opens an explicitly selected result; Escape steps back before closing.
+
+Work results reuse the Feed status pills. Balance title relevance with lifecycle and recency: similar unfinished work ranks ahead of completed work, recent completions remain competitive, and exact titles stay first. The landing list includes unfinished work followed by completions from the last week. Inline work and conversation regions use content-shaped skeletons only for initial loads; retain cached content during refreshes.
+
+Assistant message receipts show a conversation row that opens the recipient inside the command bar. Back returns to the Assistant with its transcript, scroll position, and unsent draft intact. Suggested conversations are links; explicit requests to open a conversation use the same nested navigation immediately, while explicit page navigation still changes pages. Opening an agent chat does not transfer live voice: speech still addresses Assistant, while the selected agent’s composer sends directly to that agent. The header identifies both recipients when voice remains active.
+
+General Assistant conversations share saved text and live voice history. Typed turns receive silent text replies even during live voice; spoken turns receive audio replies. Use per-response output modes without changing the system instructions. Realtime handles everyday interaction and delegates deeper tasks to the User Assistant (`system-manager` internally). Use the direct text User Assistant only when Realtime is not configured or is unavailable to the current identity; a failed configured connection stays in the same conversation with connection progress and queued-message retry, rather than switching assistants. Suggestions start a new conversation immediately and show the user message while creation is pending. Keep saved Assistant conversations accessible from search, omit the legacy system-manager chat list, and hide all framing when closed.
+
+Guides size to their content. Phone conversations use the available visual viewport; keep controls reachable above the software keyboard. Search has one continuous focus indicator. Mobile dock destinations include Settings directly when it is the only secondary destination.
+
+The live voice control stays visible; disable it with an explanatory tooltip until configuration and permission are confirmed. On insecure or unsupported browsers, explain why starting is unavailable. Show connection progress on the control. A connected call automatically compacts into a small strip: the mic toggles mute, a status label explains the current phase, and icon controls end the call or expand the transcript. Listening means the microphone is ready; a soft mic halo pulses when speech is detected, respecting reduced motion. Connection and error state belong inside Assistant. Keep motion restrained and respect reduced motion.
+
+Inbox rows use plain sender text, wrapping subjects, quieter previews and timestamps, and light separators. Expanded details and attachments remain accessible without outlined cards around each message.
+
+Agent models use safe catalog metadata from the runtime registry when available, retaining custom IDs as a fallback. Model tier editors allow registry selection and custom entry. Agent type editing uses a dialog for long prompts and skill selection; integration-specific controls require the corresponding enabled feature.
+
+Assistant starts horizontally centered in the upper third, with that position available in its positioning control. Its search viewport has a stable height; filtering scrolls results without repositioning the search field. Previews and conversations expand downward from the same anchor, bounded by the visual viewport. The last position selected from the pin control or by dragging is saved in local storage and restored whenever Assistant opens, including live voice. The header drags expanded views; the compact voice strip background drags without intercepting its controls. Six edge docking positions cover top/bottom left, center, and right, alongside the upper-center command anchor. Voice navigation instructions derive from the same squad tabs and settings definitions as the app.
+
+Conversation rows show the shared agent activity indicator for non-idle states. Dormant and terminated agents are excluded from general command-bar conversation lists and Realtime search. Work previews omit owner-only conversations and show assigned agents, followed by the originating consultant under “Started here.” This origin is deduplicated from assigned rows, may be dormant or terminated, and always opens read-only; preserve that mode in URL navigation. Full-conversation links open the squad's Chats tab with the agent selected, using the squad slug mapping.
+
+Squad command previews keep completed work in a default-collapsed “Recently completed” section. Offer 7-day (default) and 30-day windows based on completion date, newest first. Preserve the disclosure and period when opening work and returning to the squad.
+
+Keep the command search field fixed above squad previews. In a squad, it filters that squad’s conversations and work (including completed work); Enter with no selected result or the inline action starts a consultant conversation using the entered text. Do not add a separate squad prompt form. Preserve each squad’s query and selection when returning. Work and conversation previews omit search; arrow keys focus work-preview conversation rows and native Enter opens them. From an empty squad search, arrows enter the preview rows and Up from the first row returns to the input.
+
+The shared command footer stays visible in search, squad, work stream, and action previews, with hints matching the active view. It is one compact row with a subtle top divider, keyboard hints on the left, and Assistant conversations on the right. Quick-chat presets appear as a single horizontally scrollable row of pills below the empty global input. They immediately start a chat, disappear while searching or in nested previews, and stay separate from the results and footer. Single-action command previews stay expanded without a disclosure control; their related work stream opens as a nested preview row, not another modal. Feed action cards retain their existing disclosure and modal navigation.
+
+Dragging into the horizontal center lane can snap to the upper-center command anchor as well as top/bottom center, using the nearest vertical anchor. On live-voice compaction, measure the final panel dimensions before paint and animate only its position; do not animate dimensions while recalculating a right/bottom dock on each resize frame.
+
+Assistant conversations show ongoing work in the transcript, independently of the expandable task details. Use brief activity labels while connecting, thinking, responding, or running delegated work. The delegated agent type is named User Assistant; questions and approvals return to the current Assistant conversation rather than opening a separate agent question form.
+
+## Field and container radii
+
+Use the shared `tau-field` role for text inputs, search inputs, selects, and textareas. All use an 8px radius; do not add rounding utilities per page. Checkboxes and radio buttons keep their native control shapes. Assistant and agent chat composers may use a more rounded outer surface, while fields inside them follow the same rule.
+
+Buttons and inset controls use 8px; catalog cards (`tau-panel` or equivalent) and modals (`tau-overlay`) use 12px. Reserve pills for compact badges, chips, and avatars. Search fields are ordinary fields, not pills.
+
+Configuration catalogs—Workflows, Agent Types, Squad Presets, and Skills—use a shared search field, individually bordered surface cards separated by a consistent gap, and explicit Edit/View actions opening a modal. This is an intentional exception to flat settings sections: each card represents an independently managed resource. Long forms use wide dialogs; the workflow co-editor uses the viewport with an interactive canvas and side conversation.

@@ -1,0 +1,570 @@
+# Work Stream CLI Commands
+
+The `tau workstream` (or `tau ws`) command provides functionality for managing work streams - units of work that can be assigned to agents within squads.
+
+## Workflows
+
+New work can use a squad default, `--workflow PRESET_ID`, or `--flow source.yaml` for a saved/customized or inline source. Flow participants are created lazily. Read [Workflows, flows, and squads](../workflows.md) for authoring, parallel joins, scoped waits, pause/resume, and delivery policies. Use `tau workstream flow/advance/finish` for flow-controlled handoffs and completion; the legacy direct assignment commands below apply to non-flow streams.
+
+### Inspect and advance an active flow
+
+```bash
+tau workstream flow STREAM_ID
+tau workstream advance STREAM_ID --file command.json --request-id REQUEST_UUID
+tau workstream finish STREAM_ID --version CURRENT_VERSION
+```
+
+`flow` returns the stream's current steps, attempts, incoming handoff sources,
+evidence, return requests, and version. `advance` submits an outcome or an
+authorized return, delegation, or revision. `finish` checks the completion policy
+once the graph is complete. All three take a **work stream ID**; `tau ws` is an
+alias for `tau workstream`. `tau workflow` manages reusable presets/templates.
+
+## Repository setup
+
+For code-changing work, `--repository` prepares a worktree in the squad's runtime
+before any workflow participant starts and attaches `metadata.git` and detected
+`metadata.codeHost` together with the work stream.
+
+```bash
+tau workstream create 'Fix configuration loading' --squad <squad-id> \
+  --repository llmctl --base-branch main --workflow reviewed-coding
+```
+
+The repository must already be cloned inside the squad workspace. Paths are in
+that workspace, including on remote/container runtimes. Defaults are branch
+`work/<stream-id>`, path `worktrees/<stream-id>`, and remote `origin`.
+`--branch`, `--worktree`, and `--git-remote` override these defaults. Missing worktree
+parent directories are created inside the squad workspace. A path nested inside the
+repository must be Git-ignored to keep its contents out of commits. The base is taken from the
+selected remote's local default-branch ref; supply `--base-branch` if unknown.
+Setup uses existing local refs and does not fetch or clone.
+
+GitHub HTTPS and SSH remotes are detected automatically. This records repository
+identity; authentication still uses the squad-authorized integration connection.
+It does not connect an account, grant permissions, create a PR, or fall back to
+personal credentials. Existing matching code-host metadata and account selection
+are preserved; conflicting identities are rejected. Unsupported hosts need an
+explicit supported adapter binding. `--from-url` is a source citation and does not
+select a repository.
+
+The same options work with `workstream update` for queued or paused streams whose
+agents have never started. Setup never resets an existing branch or switches an
+existing checkout. Reusing an existing worktree requires the matching repository,
+path and branch. Prepared worktrees are retained if a later database operation
+fails; they are never force-deleted. Git fields without `--repository` retain
+their existing metadata-only behavior.
+
+API create/update bodies accept `repository`, `gitRemote`, `worktree`, `branch`,
+and `baseBranch` with the same behavior. No schema migration is required.
+
+## Overview
+
+```bash
+tau workstream|ws [command] [options]
+```
+
+## Commands
+
+### list
+
+List work streams with optional filters.
+
+```bash
+tau workstream list [options]
+```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `-q, --squad <squadId>` | Filter by squad ID |
+| `-t, --task <taskId>` | Filter by task ID |
+| `-s, --status <status>` | Filter by status |
+
+**Examples:**
+
+```bash
+# List all work streams
+tau workstream list
+
+# List work streams for a specific squad
+tau workstream list --squad abc123
+
+# List work streams for a task
+tau ws list --task task-456
+
+# List only blocked work streams
+tau ws list --status blocked
+```
+
+---
+
+### create
+
+Create a new work stream using an explicit workflow or the squad default. Every new stream has a flow; legacy manual staffing flags are rejected.
+
+```bash
+tau workstream create|new [options] <title>
+```
+
+**Arguments:**
+| Argument | Description |
+|----------|-------------|
+| `title` | Title of the work stream |
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `-q, --squad <squadId>` | Squad ID to associate with |
+| `-t, --task <taskId>` | Associated task ID |
+| `-d, --description <desc>` | Description of the work stream |
+| `--workflow <id>` | Saved workflow preset |
+| `--flow <file>` | YAML/JSON workflow source, including an inline definition |
+| `-m, --message <msg>` | Handoff message (included in assignment notifications) |
+| `--depends-on <wsId>` | Dependency work stream ID (can be repeated) |
+
+**Examples:**
+
+```bash
+# Create a basic work stream
+tau workstream create "Implement user authentication"
+
+# Create with full details
+tau workstream create "Build login API" \
+  --squad squad-123 \
+  --task task-456 \
+  --description "Implement JWT-based authentication endpoints"
+
+# Choose an explicit flow; workers start only when their steps are reached
+tau workstream create "Build feature X" \
+  --squad squad-123 --workflow planned-coding \
+  -m "Start with high-level design"
+
+# Use an ephemeral definition for this task
+tau workstream create "Fix bug Y" --squad squad-123 --flow fix.yaml
+
+# Create with dependencies
+tau workstream create "Integration tests" \
+  --depends-on ws-api \
+  --depends-on ws-database
+```
+
+---
+
+### get
+
+Get detailed information about a work stream.
+
+```bash
+tau workstream get|info <id>
+```
+
+**Arguments:**
+| Argument | Description |
+|----------|-------------|
+| `id` | Work stream ID |
+
+**Examples:**
+
+```bash
+# Get work stream details
+tau workstream get ws-123
+
+# Using alias
+tau ws info ws-123
+```
+
+---
+
+### update
+
+Update an existing work stream.
+
+```bash
+tau workstream update|edit [options] <id>
+```
+
+**Arguments:**
+| Argument | Description |
+|----------|-------------|
+| `id` | Work stream ID to update |
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `-s, --status <status>` | New status |
+| `--depends-on <wsId>` | Replace dependencies with these work stream IDs (can be repeated) |
+| `--clear-dependencies` / `--remove-dependency` | Clear all dependencies (removes every dependency; cannot be combined with `--depends-on`) |
+| `--title <title>` | New title |
+| `--description <desc>` | New description |
+| `--assign <agentId>` | Assign to a specific agent |
+| `--unassign` | Remove current assignee |
+
+**Examples:**
+
+```bash
+# Update title
+tau workstream update ws-123 --title "Updated title"
+
+# Assign to an agent
+tau ws update ws-123 --assign agent-456
+
+# Unassign current agent
+tau ws update ws-123 --unassign
+
+# Replace the dependency list
+tau ws update ws-123 --depends-on ws-api --depends-on ws-database
+
+# Clear all dependencies (both spellings are equivalent)
+tau ws update ws-123 --clear-dependencies
+tau ws update ws-123 --remove-dependency
+
+# Multiple updates
+tau ws update ws-123 --title "New title" --description "Updated description"
+```
+
+---
+
+### request-input
+
+Open a manual wait: the work stream needs input/action from the owner/operator.
+
+```bash
+tau workstream request-input [options] <id>
+```
+
+**Arguments:**
+| Argument | Description |
+|----------|-------------|
+| `id` | Work stream ID |
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `-m, --message <msg>` | What input/action is needed (required; the wait message) |
+| `-f, --file <path>` | File to include for context (can be repeated) |
+
+**Examples:**
+
+```bash
+tau workstream request-input ws-123 -m "Need the API key for X"
+```
+
+For flow agents, this defaults to their active attempt. `--scope stream` blocks the whole stream; `--scope attempt --attempt ID` selects an active attempt explicitly. Human/operator requests default to the whole stream. Sibling attempts may continue while one is waiting.
+
+The request is resolved with `unblock`; the resolution note goes to the current attempt that requested it, or to the legacy assignee for non-flow streams. A resolution is input, not step approval.
+
+---
+
+### unblock
+
+Resolve the work stream's open input request (manual wait).
+
+```bash
+tau workstream unblock [options] <id>
+```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `-m, --message <note>` | Resolution note recorded on the cleared wait and delivered to the assignee |
+| `--wait <waitId>` | Wait ID to clear (required when several manual waits are open) |
+
+**Examples:**
+
+```bash
+tau workstream unblock ws-123 -m "API key added to the squad secrets as X_API_KEY"
+```
+
+When more than one manual wait is open, `unblock` refuses to guess — list the
+waits with `tau workstream get ws-123` and pass `--wait <waitId>`. If `--wait`
+names a wait that is already closed (for example the system cleared it when
+the assignee's execution started), the command fails with a non-zero exit and
+names that wait, its recorded resolution, and that the `-m` note was not
+recorded — the note is never silently dropped.
+
+---
+
+### request-review
+
+Open the review wait: the work is ready for someone to review. Approving the
+review completes the stream by default.
+
+```bash
+tau workstream request-review [options] <id>
+```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `-m, --message <msg>` | What to review (required; stored on the review wait) |
+| `-f, --file <path>` | Artifact file to review (can be repeated) |
+| `--no-complete` | Mid-work checkpoint gate: approval resolves the wait only and the stream continues |
+
+**Examples:**
+
+```bash
+# Ready for final review — approval completes the stream
+tau workstream request-review ws-123 -m "API implementation complete, ready for review"
+
+# Mid-work checkpoint gate — approval resolves the gate, work continues
+tau workstream request-review ws-123 -m "checkpoint: schema design" --no-complete
+```
+
+Idempotent while a review wait is already open.
+
+---
+
+### approve
+
+Approve the open review wait. For a default review this completes the stream
+in the same transaction; for a `--no-complete` checkpoint review it resolves
+the wait only and the stream continues.
+
+```bash
+tau workstream approve [options] <id>
+```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `-m, --message <note>` | Approval note recorded on the wait and delivered with the outcome notification (`--note` is an alias) |
+| `--wait <waitId>` | Review wait ID to approve (required when several review waits are open) |
+
+**Examples:**
+
+```bash
+tau workstream approve ws-123
+
+# Approval notes are the durable home for completion-time findings
+tau workstream approve ws-123 -m "Approved. Follow-ups for a future stream: tighten rate limits, add metrics"
+```
+
+---
+
+### send-back
+
+Close the open review wait with required feedback; the stream stays
+schedulable and the closed wait counts as a review round. Alias: `reject`.
+
+```bash
+tau workstream send-back [options] <id>
+```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `-m, --message <feedback>` | Send-back feedback (required; `--note` and `-r/--reason` are aliases) |
+| `--wait <waitId>` | Review wait ID to send back (required when several review waits are open) |
+
+**Examples:**
+
+```bash
+tau workstream send-back ws-123 -m "Missing error handling in edge cases"
+```
+
+---
+
+### handoff
+
+Hand off (reassign) a work stream to another agent. Reassignment only —
+opening a review is `request-review`.
+
+```bash
+tau workstream handoff [options] <id>
+```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `--to <agentId>` | Agent to hand off to (required) |
+| `-m, --message <msg>` | Message explaining what was done and what's next (required) |
+| `-f, --file <path>` | File to include for context (can be repeated) |
+
+**Examples:**
+
+```bash
+tau workstream handoff ws-123 --to agent-456 -m "Implementation complete, ready for review"
+```
+
+Message-only handoff (no `--to`) is an error — use
+`tau workstream request-review <id> -m "<msg>"` to ask for review.
+
+---
+
+### park
+
+Park an admitted work stream (release its concurrency slot). Park's only
+purpose is priority preemption under a full cap: free the slot of a
+LOWER-priority healthy stream so a critical arrival can run. Never park a
+stream because it is waiting — the scheduler's auto-park owns that.
+
+```bash
+tau workstream park [options] <id>
+```
+
+**Options:**
+| Option | Description |
+|--------|-------------|
+| `--preempt-running` | Discard a running turn only when genuinely abandonable; normally ask the agent to stop safely and wait for confirmation first |
+
+---
+
+### reopen
+
+Reopen a done or canceled work stream: it re-enters admission (active if a
+slot is free, else queued), completion is cleared, and dependency waits are
+re-synced.
+
+```bash
+tau workstream reopen <id>
+```
+
+---
+
+### done
+
+Mark a work stream as complete. Completing is rejected while ANY wait is open
+("resolve or cancel the open waits first") — approve the review or `unblock`
+the input request first.
+
+```bash
+tau workstream done <id>
+```
+
+**Arguments:**
+| Argument | Description |
+|----------|-------------|
+| `id` | Work stream ID to mark as done |
+
+**Examples:**
+
+```bash
+tau workstream done ws-123
+
+# Rejected while a wait is open:
+#   Error: Cannot mark this work stream done — resolve or cancel the open waits first (review:wait-abc)
+# Fix: resolve the wait, then complete
+tau workstream approve ws-123        # a completing review approval also marks the stream done
+```
+
+---
+
+### delete
+
+Delete a work stream.
+
+```bash
+tau workstream delete|rm <id>
+```
+
+**Arguments:**
+| Argument | Description |
+|----------|-------------|
+| `id` | Work stream ID to delete |
+
+**Examples:**
+
+```bash
+# Delete a work stream
+tau workstream delete ws-123
+
+# Using alias
+tau ws rm ws-123
+```
+
+---
+
+## Work Stream Statuses
+
+Stored statuses are deliberately small:
+
+| Status     | Description                                                       |
+| ---------- | ----------------------------------------------------------------- |
+| `queued`   | Not admitted under the squad concurrency cap (or parked); no slot |
+| `active`   | Admitted; holds a concurrency slot                                |
+| `done`     | Work stream is complete                                           |
+| `canceled` | Work stream was canceled                                          |
+
+Everything richer is a typed OPEN WAIT record plus a derived display state
+(`ws list`/`ws get` show it): `in_progress` (live execution), `in_review`,
+`waiting_on_answer`, `waiting_on_dependency`, `blocked` (open manual wait),
+and `idle` (active with no execution and no wait — the alarming one). Legacy
+status filters (`pending`, `in_progress`, `blocked`, `review`) still map for
+one release with a deprecation note.
+
+## Common Workflows
+
+### Basic Task Execution Flow
+
+```bash
+# 1. Create work stream for a task
+tau ws create "Implement feature X" --squad squad-123 --task task-456
+
+# 2. Agent picks up and works on it
+# (the derived state shows in_progress while an execution runs)
+
+# 3. If stuck, agent requests input (opens a manual wait)
+tau ws request-input ws-123 -m "Need API credentials"
+
+# 4. Manager resolves the input request (note delivered to the assignee)
+tau ws unblock ws-123 -m "API key: abc123xyz"
+
+# 5. Agent completes and requests review
+tau ws request-review ws-123 -m "Implementation complete"
+
+# 6. Manager approves — completes the stream in one transaction
+tau ws approve ws-123 -m "Approved. Follow-ups for a future stream: add rate-limit metrics"
+```
+
+### Managing metadata
+
+```bash
+tau workstream set-meta <id> ledger.current.sequence 7
+tau workstream get-meta <id> ledger.current.sequence
+tau workstream unset-meta <id> ledger.current.sequence
+```
+
+`set-meta` and `unset-meta` send only the requested dot-path delta. The server recursively merges objects, deletes keys set to `null`, and serializes concurrent updates so unrelated keys are preserved. Arrays replace the whole array; changing one element requires `get-meta`, local modification, and `set-meta` of the entire array key. Concurrent writers to the same key are last-serialized-writer-wins. Empty path segments and `__proto__`, `prototype`, or `constructor` segments are rejected. `get-meta` uses one entity GET, extracts the value client-side, and reports missing paths as errors.
+
+### Code Review Workflow
+
+```bash
+# Engineer submits for review
+tau ws request-review ws-123 \
+  -m "PR ready for review" \
+  --file src/feature.js
+
+# Reviewer approves (completes the stream) or sends back
+tau ws approve ws-123
+# or
+tau ws send-back ws-123 -m "Need more test coverage"
+
+# Mid-work gate that should NOT complete the stream on approval
+tau ws request-review ws-123 -m "checkpoint: schema design" --no-complete
+```
+
+### Managing Dependencies
+
+```bash
+# Create dependent work streams
+tau ws create "Design database schema" --squad s1
+# Returns: ws-schema
+
+tau ws create "Implement data layer" --depends-on ws-schema --squad s1
+# This work stream won't start until ws-schema is done
+```
+
+### Agent Coordination
+
+```bash
+# Manager creates work stream and spawns agent
+tau squad spawn engineer squad-123 --workstream ws-feature
+
+# Agent hands off to the reviewer when done
+tau ws handoff ws-feature --to agent-reviewer -m "Feature complete, ready for review"
+```
+
+## Pause and resume
+
+`tau workstream pause ID --reason "Hold for review"` stops current/queued work and suppresses automatic continuation until `tau workstream resume ID`. Pause retains the slot unless separately parked or auto-parked. Parking a paused stream does not resume it. See [the workflow guide](../workflows.md#pause-park-and-resume).

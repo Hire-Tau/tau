@@ -1,0 +1,2 @@
+ALTER TABLE "auth_settings" ADD COLUMN "default_signup_role_id" uuid;--> statement-breakpoint
+ALTER TABLE "auth_settings" ADD CONSTRAINT "auth_settings_default_signup_role_id_roles_id_fk" FOREIGN KEY ("default_signup_role_id") REFERENCES "public"."roles"("id") ON DELETE set null ON UPDATE no action;

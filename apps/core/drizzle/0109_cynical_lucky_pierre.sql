@@ -1,0 +1,1 @@
+ALTER TABLE "machine_boxes" ADD COLUMN "migration_owner" text;

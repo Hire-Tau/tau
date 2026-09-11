@@ -1,0 +1,27 @@
+diff --git a/dist/api/openai-codex-responses.js b/dist/api/openai-codex-responses.js
+index bf979d4..a14259d 100644
+--- a/dist/api/openai-codex-responses.js
++++ b/dist/api/openai-codex-responses.js
+@@ -49,7 +49,7 @@ function assertSuccessfulOutput(output) {
+ // Retry Helpers
+ // ============================================================================
+ function isTerminalRateLimitError(errorText) {
+-    return /GoUsageLimitError|FreeUsageLimitError|Monthly usage limit reached|available balance|insufficient_quota|out of budget|quota exceeded|billing/i.test(errorText);
++    return /GoUsageLimitError|FreeUsageLimitError|Monthly usage limit reached|available balance|insufficient_quota|out of budget|quota exceeded|billing|limit exhausted|limit will reset/i.test(errorText);
+ }
+ function isRetryableError(status, errorText) {
+     if (status === 429 && isTerminalRateLimitError(errorText)) {
+diff --git a/dist/utils/retry.js b/dist/utils/retry.js
+index ce8c4cb..0cf6c1f 100644
+--- a/dist/utils/retry.js
++++ b/dist/utils/retry.js
+@@ -16,6 +16,9 @@ const NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN = buildProviderErrorPattern([
+     "out of budget",
+     "quota exceeded",
+     "billing",
++    // Tau: exhausted plan windows must fail over without transient retries.
++    "limit exhausted",
++    "limit will reset",
+ ]);
+ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
+     // Generic provider load, HTTP status, and server-side transient failures.

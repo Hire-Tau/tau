@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY "idx_inbox_work_stream_id" ON "inbox" USING btree (("metadata"->>'workStreamId'),"id") WHERE ("inbox"."metadata"->>'workStreamId') IS NOT NULL;

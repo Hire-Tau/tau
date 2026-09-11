@@ -1,0 +1,267 @@
+import { resolveActingUser } from '../rbac'
+import { eq, desc, isNull, and, sql, inArray } from 'drizzle-orm'
+import { db, agents, squads, workStreams, workStreamWaits, workStreamFlowRuns } from '../../db'
+import type {
+  PendingAction,
+  PendingActionType,
+  SquadQuestionActionData,
+  AgentQuestionActionData,
+  AgentErrorActionData,
+  WorkStreamActionData,
+  WorkStreamPrompt,
+  QuestionData,
+} from '@tau/shared'
+import { listActionableAgentQuestions } from './questions'
+import { listErrorHaltedAgents, errorHaltReason, ERROR_HALT_QUESTION_IDS } from './resume'
+import { WorkStream } from '../../entities/WorkStream'
+import type { Identity } from '../rbac'
+import { listUserWatchedWorkStreamIds } from '../work-streams/subscriptions'
+import { listUserWatchedSquadIds } from '../squad/subscriptions'
+import { evaluatePendingAction } from './pending-action-policy'
+import { toWaitJson } from '../work-streams/waits'
+
+// Priority: lower number = higher priority
+const PRIORITY: Record<PendingActionType, number> = {
+  'agent-error': 0,
+  'squad-question': 1,
+  'agent-question': 1,
+  'workstream-review': 2,
+  'workstream-blocked': 3,
+}
+
+/**
+ * List all pending actions that require user attention.
+ *
+ * This aggregates:
+ * - Squad agents waiting for human input (questions)
+ * - Work streams in review or blocked status with prompts
+ */
+export async function listPendingActions(): Promise<PendingAction[]> {
+  const pendingActions: PendingAction[] = []
+
+  // 1. Get squad-bound agents waiting for input (context has squadId)
+  const waitingSquadAgents = await db
+    .select({
+      agent: agents,
+      squad: squads,
+    })
+    .from(agents)
+    .innerJoin(squads, eq(agents.squadId, squads.id))
+    .where(and(eq(agents.status, 'waiting-input'), sql`${agents.questionData} IS NOT NULL`))
+    .orderBy(desc(agents.updatedAt))
+
+  for (const { agent, squad } of waitingSquadAgents) {
+    // Provider-exhaustion / rate-limit halts are surfaced as 'agent-error' (below), not as questions.
+    const qid = (agent.questionData as QuestionData | null)?.questions?.[0]?.id
+    if (qid && ERROR_HALT_QUESTION_IDS.has(qid)) continue
+    const data: SquadQuestionActionData = {
+      agentId: agent.id,
+      agentName: (agent.metadata as Record<string, unknown>)?.name as string | null,
+      agentTypeId: agent.agentTypeId,
+      squadId: squad.id,
+      squadName: squad.name,
+      questionData: agent.questionData as QuestionData,
+    }
+
+    pendingActions.push({
+      id: `squad-question:${agent.id}`,
+      type: 'squad-question',
+      priority: PRIORITY['squad-question'],
+      createdAt: agent.updatedAt.toISOString(),
+      canRespond: false,
+      squadId: squad.id,
+      squadName: squad.name,
+      data,
+    })
+  }
+
+  // 1b. Async agent questions (status open). Scoping to the right user happens in the route.
+  const openQuestions = await listActionableAgentQuestions()
+  if (openQuestions.length > 0) {
+    const agentIds = [...new Set(openQuestions.map((q) => q.agentId))]
+    const agentRows = agentIds.length ? await db.select().from(agents).where(inArray(agents.id, agentIds)) : []
+    const agentMap = new Map(agentRows.map((a) => [a.id, a]))
+    const squadIds = [...new Set(openQuestions.map((q) => q.squadId).filter((id): id is string => Boolean(id)))]
+    const squadRows = squadIds.length ? await db.select().from(squads).where(inArray(squads.id, squadIds)) : []
+    const squadMap = new Map(squadRows.map((s) => [s.id, s]))
+
+    for (const q of openQuestions) {
+      const agent = agentMap.get(q.agentId)
+      const squad = q.squadId ? squadMap.get(q.squadId) : null
+      const data: AgentQuestionActionData = {
+        questionId: q.id,
+        agentId: q.agentId,
+        agentName: ((agent?.metadata as Record<string, unknown>)?.name as string | null) ?? null,
+        agentTypeId: agent?.agentTypeId ?? 'unknown',
+        squadId: q.squadId,
+        squadName: squad?.name ?? null,
+        ownerUserId: q.ownerUserId,
+        questionData: q.questionData,
+        ...(q.answerDelivery ? { answerDelivery: q.answerDelivery } : {}),
+      }
+      pendingActions.push({
+        id: `agent-question:${q.id}`,
+        type: 'agent-question',
+        priority: PRIORITY['agent-question'],
+        createdAt: q.createdAt,
+        canRespond: false,
+        squadId: q.squadId ?? undefined,
+        squadName: squad?.name,
+        data,
+      })
+    }
+  }
+
+  // 1c. Agents halted by a provider/rate-limit error (squad-bound and squad-less). Scoping happens
+  // in the route; these support individual + bulk "Continue".
+  const haltedAgents = await listErrorHaltedAgents()
+  if (haltedAgents.length > 0) {
+    const haltedSquadIds = [...new Set(haltedAgents.map((a) => a.squadId).filter((id): id is string => Boolean(id)))]
+    const haltedSquadRows = haltedSquadIds.length
+      ? await db.select().from(squads).where(inArray(squads.id, haltedSquadIds))
+      : []
+    const haltedSquadMap = new Map(haltedSquadRows.map((s) => [s.id, s]))
+
+    for (const agent of haltedAgents) {
+      const squad = agent.squadId ? haltedSquadMap.get(agent.squadId) : null
+      const data: AgentErrorActionData = {
+        agentId: agent.id,
+        agentName: ((agent.metadata as Record<string, unknown>)?.name as string | null) ?? null,
+        agentTypeId: agent.agentTypeId,
+        squadId: agent.squadId,
+        squadName: squad?.name ?? null,
+        ownerUserId: agent.ownerUserId,
+        reason: errorHaltReason(agent),
+      }
+      pendingActions.push({
+        id: `agent-error:${agent.id}`,
+        type: 'agent-error',
+        priority: PRIORITY['agent-error'],
+        createdAt: agent.updatedAt.toISOString(),
+        canRespond: false,
+        squadId: agent.squadId ?? undefined,
+        squadName: squad?.name,
+        data,
+      })
+    }
+  }
+
+  // 2. Get work streams needing human response: a non-terminal stream with an
+  // open review or manual wait (waits replaced the review/blocked statuses).
+  const actionableWorkStreams = await db
+    .select({
+      ws: workStreams,
+      squad: squads,
+      wait: workStreamWaits,
+    })
+    .from(workStreamWaits)
+    .innerJoin(workStreams, eq(workStreamWaits.workStreamId, workStreams.id))
+    .innerJoin(squads, eq(workStreams.squadId, squads.id))
+    .where(
+      and(
+        isNull(workStreamWaits.closedAt),
+        inArray(workStreamWaits.type, ['review', 'manual']),
+        inArray(workStreams.status, ['active', 'queued'])
+      )
+    )
+    .orderBy(desc(workStreamWaits.openedAt))
+
+  for (const { ws, squad, wait } of actionableWorkStreams) {
+    const isReview = wait.type === 'review'
+    // Synthesize the legacy prompt shape from the wait so the Action Center
+    // respond flows (#970) keep working unchanged.
+    const prompt: WorkStreamPrompt = isReview
+      ? {
+          type: 'select',
+          message: wait.message ?? ws.handoffMessage ?? `Work stream "${ws.title}" is ready for review.`,
+          options: ['Approve', 'Request changes'],
+        }
+      : {
+          type: 'text',
+          message: wait.message ?? `Work stream "${ws.title}" is blocked and needs attention.`,
+        }
+
+    // A sibling may be the stream's current assignee while this attempt waits.
+    let assigneeAgentId = ws.assigneeAgentId
+    if (wait.flowAttemptId != null) {
+      const [run] = await db
+        .select({ attemptAgents: workStreamFlowRuns.attemptAgents })
+        .from(workStreamFlowRuns)
+        .where(eq(workStreamFlowRuns.workStreamId, ws.id))
+      assigneeAgentId = run?.attemptAgents[String(wait.flowAttemptId)] ?? wait.createdByAgentId ?? null
+    }
+    let assigneeName: string | null = null
+    if (assigneeAgentId) {
+      const [assignee] = await db.select().from(agents).where(eq(agents.id, assigneeAgentId))
+      if (assignee) {
+        assigneeName = (assignee.metadata as Record<string, unknown>)?.name as string | null
+      }
+    }
+
+    const data: WorkStreamActionData = {
+      workStreamId: ws.id,
+      workStreamTitle: ws.title,
+      squadId: squad.id,
+      squadName: squad.name,
+      waitId: wait.id,
+      wait: toWaitJson(wait),
+      focus: { kind: 'workstream-wait', workStreamId: ws.id, waitId: wait.id },
+      assigneeAgentId,
+      assigneeName,
+      completionMode: new WorkStream(ws).completionMode,
+      prompt,
+    }
+
+    pendingActions.push({
+      id: `workstream-${isReview ? 'review' : 'blocked'}:${ws.id}:${wait.id}`,
+      type: isReview ? 'workstream-review' : 'workstream-blocked',
+      priority: PRIORITY[isReview ? 'workstream-review' : 'workstream-blocked'],
+      createdAt: wait.openedAt.toISOString(),
+      canRespond: false,
+      squadId: squad.id,
+      squadName: squad.name,
+      data,
+    })
+  }
+
+  // Sort by priority (ascending) then by createdAt (descending - most recent first)
+  pendingActions.sort((a, b) => {
+    if (a.priority !== b.priority) {
+      return a.priority - b.priority
+    }
+    return Date.parse(b.createdAt) - Date.parse(a.createdAt)
+  })
+
+  return pendingActions
+}
+
+export async function listPendingActionsForIdentity(identity: Identity): Promise<PendingAction[]> {
+  identity = (await resolveActingUser(identity)) ?? identity
+  const userId = identity.type === 'user' ? identity.userId : null
+  const [watchedWorkStreamIds, watchedSquadIds] = userId
+    ? await Promise.all([listUserWatchedWorkStreamIds(userId), listUserWatchedSquadIds(userId)])
+    : [[], []]
+  const context = {
+    watchedWorkStreamIds: new Set(watchedWorkStreamIds),
+    watchedSquadIds: new Set(watchedSquadIds),
+  }
+  const visible: PendingAction[] = []
+  for (const action of await listPendingActions()) {
+    const decision = await evaluatePendingAction(identity, action, context)
+    if (decision.visible) {
+      if (action.type === 'agent-question') {
+        const data = action.data as AgentQuestionActionData
+        if (data.answerDelivery?.status === 'failed') {
+          visible.push({
+            ...action,
+            canRespond: decision.canRespond,
+            data: { ...data, answerDelivery: { ...data.answerDelivery, canRetry: decision.canRespond } },
+          })
+          continue
+        }
+      }
+      visible.push({ ...action, canRespond: decision.canRespond })
+    }
+  }
+  return visible
+}

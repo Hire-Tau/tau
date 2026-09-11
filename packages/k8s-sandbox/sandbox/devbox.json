@@ -1,0 +1,25 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.14.0/.schema/devbox.schema.json",
+  "packages": [
+    "nodejs_24@latest",
+    "bun@latest",
+    "python3@latest",
+    "ripgrep@latest",
+    "fd@latest",
+    "jq@latest",
+    "tree@latest",
+    "less@latest",
+    "github:NixOS/nixpkgs/d5dfd8e6716dde34398bc14bc87c10dece9c8c68#gh",
+    "gnumake@latest",
+    "gcc@latest",
+    "diffutils@latest",
+    "patch@latest",
+    "perl@latest",
+    "procps@latest",
+    "tmux@latest"
+  ],
+  "shell": {
+    "init_hook": [],
+    "scripts": {}
+  }
+}

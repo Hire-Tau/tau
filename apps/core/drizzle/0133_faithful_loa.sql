@@ -1,0 +1,1 @@
+ALTER TABLE "webhook_events" ADD COLUMN "activity_squad_ids" uuid[] DEFAULT ARRAY[]::uuid[] NOT NULL;

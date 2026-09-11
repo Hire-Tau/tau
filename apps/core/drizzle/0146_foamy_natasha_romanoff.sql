@@ -1,0 +1,1 @@
+ALTER TABLE "machine_boxes" ADD COLUMN "last_listening_at" timestamp with time zone;

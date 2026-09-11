@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "asset": "dtln.js",
+  "assetSha256": "41444ff0e586a130d659ed9d486d043a885817260faecb7278df8e7d402acf96",
+  "embeddedWasmSha256": "b63233182af792568bd4508581185e38d1e19f7f48ae2c992b01dad48448b639",
+  "embeddedWasmBytes": 6043145,
+  "upstreamReference": {
+    "repository": "https://github.com/DataDog/dtln-rs",
+    "commit": "5bd53c00d3334615f9b03fa7775402ae2a39b616"
+  },
+  "exactBinarySourceCommit": null,
+  "reproducibleBuildVerified": false
+}

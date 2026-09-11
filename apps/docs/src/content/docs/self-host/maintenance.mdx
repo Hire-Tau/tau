@@ -1,0 +1,121 @@
+---
+title: Maintain a self-hosted instance
+description: Check local services, pause execution, update Tau, and preserve the data needed for recovery.
+---
+
+Use `tau server` to manage an installation on the computer where you run the command. These commands work without API login, including when the app is unavailable. Commands such as `tau system pause` and `tau update apply` instead use the CLI's selected backend and your account permissions.
+
+## Confirm which instance you are changing
+
+```sh
+tau server list
+tau server status
+tau auth status
+```
+
+The first two show local installations. The last shows where authenticated API commands go. Those targets can differ.
+
+For a named local installation, add the instance to the subcommand:
+
+```sh
+tau server status --instance lab
+tau server logs --instance lab -f
+```
+
+Outside a checkout, `tau server use lab` chooses the default local instance. Inside a Tau checkout, that checkout still takes precedence unless you supply an explicit instance or root.
+
+## Pause agent execution
+
+When you need to work on an active instance, open **Settings → System → Maintenance pause** and choose **Pause for maintenance**. You need permission to pause the system.
+
+The CLI equivalent is:
+
+```sh
+tau system pause --reason "Scheduled maintenance"
+tau system pause-status
+```
+
+Pause prevents new execution and interrupts active turns into maintenance waiting state. Wait for the reported phase to settle before assuming work is quiescent. The app stays available; this is different from stopping its services or pausing one work stream.
+
+After maintenance, release your administrator hold:
+
+```sh
+tau system resume
+tau system pause-status
+```
+
+An administrator hold and a platform maintenance lease are independent. If a platform lease is still active, releasing your hold does not resume execution. The System page shows both holders; allow the owning operation to complete rather than repeatedly toggling the administrator control.
+
+## Restart or stop local services
+
+```sh
+tau server restart
+tau server status
+```
+
+To take the API and worker down until you explicitly start them again:
+
+```sh
+tau server stop
+tau server start
+```
+
+These commands use the service manager recorded during setup. Use them instead of mixing manual process launches with the registered services. A restart can interrupt an active turn; maintenance pause gives you a visible way to prepare first.
+
+## Update a local installation
+
+Preserve a recoverable backup before updating an instance whose data matters. Check that the checkout has no uncommitted source changes; the offline updater refuses a dirty working tree.
+
+```sh
+tau server update
+tau server status
+tau server logs -n 100
+```
+
+The local updater fetches and rebuilds the checkout, performs its update tasks, and restarts the recorded supervisor. “Offline” means it does not require a running Tau API; fetching source and dependencies still needs network access. A normal update fast-forwards the current branch. If you use a pinned tag or commit, consult `tau server update --help` for the explicit ref option.
+
+If the API is available, the app's **Settings → Updates** or these commands provide the API-based flow:
+
+```sh
+tau update check
+tau update apply
+tau update status
+```
+
+Check `tau auth status` first: this can update a remote backend. The Updates page may be hidden when an external platform manages the installation. An unreachable remote API does not cause Tau to update an unrelated local checkout.
+
+If a local update fails, inspect its recorded result from the checkout:
+
+```sh
+tau update status --offline
+```
+
+Read the failed step before retrying. A source download alone is not proof that a new build is serving requests.
+
+## Back up the data you need to restore
+
+A local install does not become recoverable just because its source is in Git. Preserve these together:
+
+- A PostgreSQL backup of the instance database.
+- The checkout's `.env`, including the existing `TAU_ENCRYPTION_KEY`. Database secrets cannot be recovered by generating a different key.
+- The instance's data directory, selected by `HOME_DIR` and normally `~/.tau` for the default instance.
+- Any workspace data stored outside that directory, including remote VM boxes or cluster volumes used by your runtime.
+
+For the default installer-managed PostgreSQL container and default database, a database-only export is:
+
+```sh
+umask 077
+docker exec postgres-tau pg_dump -U postgres -Fc tau > tau-database.dump
+```
+
+Run it in a protected backup directory. For a named instance, an external database or a custom database name, use that installation's actual connection and container details instead. This command does not copy `.env` or workspace files.
+
+Coordinate a quiet backup window for database and file copies, and test restoration into a separate instance before relying on a backup. Keep copies outside the machine being backed up. Do not replace the encryption key during a restore.
+
+## Unregister without deleting data
+
+```sh
+tau server uninstall
+```
+
+Tau asks for confirmation, removes its service registration and local instance registry entry, and prints what remains. It keeps the checkout, database container/volume and data directory. Review those retained resources separately if your intent is a complete removal.

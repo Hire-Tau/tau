@@ -1,0 +1,51 @@
+.squad-chat-sidebar {
+  background: var(--color-bg-surface);
+  background: color-mix(in srgb, var(--color-bg-surface) 88%, transparent);
+
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.squad-chat-toolbar {
+  background: var(--color-bg-surface-secondary);
+  background: color-mix(in srgb, var(--color-bg-surface-secondary) 72%, transparent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.squad-chat-agent {
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--color-bg-surface-secondary) 55%, transparent);
+  transition: background-color 120ms ease;
+}
+
+.squad-chat-agent:hover {
+  background: var(--color-bg-surface-hover);
+}
+
+.squad-chat-agent.is-selected {
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg-surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+
+.squad-chat-filter[aria-pressed='true'] {
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 9%, var(--color-bg-surface));
+  border-color: color-mix(in srgb, var(--color-primary) 32%, var(--color-border));
+}
+
+.dark .squad-chat-filter[aria-pressed='true'] {
+  color: #c4b5fd;
+}
+
+.squad-chat-category {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .squad-chat-agent {
+    transition: none;
+  }
+}

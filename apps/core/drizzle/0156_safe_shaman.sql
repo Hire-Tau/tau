@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY "idx_agents_top_level_squad_status_created" ON "agents" USING btree ("squad_id","status","created_at","id") WHERE "agents"."parent_agent_id" IS NULL;

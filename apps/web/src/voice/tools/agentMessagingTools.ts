@@ -1,0 +1,121 @@
+import type { Agent, DeliveryMode } from '@tau/shared'
+import { getAgent, sendAgentMessage } from '../../api/agents'
+import { sendInboxMessage } from '../../api/inbox'
+import type { VoiceAssistantTool, VoiceToolExecutor } from './types'
+
+type MessageAgentArgs = {
+  agentId: string
+  content: string
+  mode?: DeliveryMode
+  inReplyTo?: string
+}
+
+function createMessageAgentDefinition() {
+  return {
+    type: 'function' as const,
+    name: 'message_agent',
+    description:
+      'Send a message to a user assistant, squad manager, or squad worker. Also use this to answer an artifact builder only when that artifact builder is already in waiting-input state after asking for human input. Do not use for normal artifact creation or iteration; use request_artifact instead. For new reports or squad-level work, the site Assistant should use message_squad_manager without searching for a work stream. For coordination of an existing work stream, use message_work_stream_manager to resolve the correct squad; never guess a manager after a failed lookup. Use an explicitly requested recipient first. Global or personal Tau settings, environment variables, secrets, and integration accounts go through message_user_assistant using the user’s permissions. Use a squad manager only for clearly squad-owned project work; viewing a squad page does not establish that ownership. Unscoped settings requests go to message_user_assistant for scope resolution. If the agent is idle, this wakes it up. If running, the message steers or follows up based on the mode.',
+    parameters: {
+      type: 'object',
+      properties: {
+        agentId: { type: 'string', description: 'Agent ID to message' },
+        content: {
+          type: 'string',
+          description:
+            "The message content. Be specific — include all relevant details from the user's request. Send message from the user's perspective as if you were the user.",
+        },
+        inReplyTo: { type: 'string', description: 'Full inbox message UUID when replying to an update' },
+        mode: {
+          type: 'string',
+          enum: ['steer', 'follow-up'],
+          description:
+            '"steer" to interrupt the agent with new instructions or corrections (deliver immediately). "follow-up" to add a message to the agent\'s queue to be delivered after its current turn finishes. Defaults to "follow-up". No impact if the agent is idle.',
+        },
+      },
+      required: ['agentId', 'content'],
+    },
+  }
+}
+
+export type AgentMessagingDependencies = {
+  getAgent: typeof getAgent
+  sendAgentMessage: typeof sendAgentMessage
+  sendInboxMessage: typeof sendInboxMessage
+}
+
+export function createAgentMessagingTools(deps: AgentMessagingDependencies) {
+  const directMessageAgentTool: VoiceAssistantTool<VoiceToolExecutor> = {
+    definition: createMessageAgentDefinition(),
+    async execute(args, env) {
+      const { agentId, content, mode = 'follow-up', inReplyTo } = args as MessageAgentArgs
+      const agent = await deps.getAgent(agentId)
+      if (!isAllowedMessageAgentTarget(agent)) return disallowedMessageAgentTargetResult()
+
+      if (env.messageAgent) return env.messageAgent(agent.id, content, mode, inReplyTo)
+      const result = await deps.sendAgentMessage(agent.id, content, undefined, mode)
+      return { ok: result.success, agentStatus: result.status }
+    },
+  }
+
+  const workspaceInboxMessageAgentTool: VoiceAssistantTool<VoiceToolExecutor> = {
+    definition: createMessageAgentDefinition(),
+    async execute(args) {
+      const { agentId, content, mode = 'steer' } = args as MessageAgentArgs
+      const agent = await deps.getAgent(agentId)
+      if (!isAllowedMessageAgentTarget(agent)) return disallowedMessageAgentTargetResult()
+
+      const message = await deps.sendInboxMessage({
+        recipientType: 'agent',
+        recipientId: agent.id,
+        // Author as the user's own voice assistant; the server binds it to workspace:<userId>.
+        asVoiceAssistant: true,
+        content: withWorkspaceVoiceReplyGuidance(content),
+        deliveryMode: mode,
+        metadata: {
+          sourceTool: 'message_agent',
+        },
+      })
+
+      return {
+        ok: true,
+        persisted: true,
+        delivered: Boolean(message.deliveredAt),
+        deliveryMode: message.deliveryMode,
+      }
+    },
+  }
+
+  return { directMessageAgentTool, workspaceInboxMessageAgentTool }
+}
+
+export const { directMessageAgentTool, workspaceInboxMessageAgentTool } = createAgentMessagingTools({
+  getAgent,
+  sendAgentMessage,
+  sendInboxMessage,
+})
+export const messageAgentTool = directMessageAgentTool
+
+export const WORKSPACE_VOICE_REPLY_GUIDANCE =
+  'Reply to the workspace voice assistant through inbox: tau inbox send <this message\'s sender id> "<message>" --recipient-type voice_assistant.'
+
+function withWorkspaceVoiceReplyGuidance(content: string): string {
+  return `${content}\n\n${WORKSPACE_VOICE_REPLY_GUIDANCE}`
+}
+
+export function isAllowedMessageAgentTarget(agent: Agent): boolean {
+  if (agent.agentTypeId === 'artifact-builder-default') return agent.status === 'waiting-input'
+  if (agent.agentTypeId === 'system-manager') return true
+  if (agent.squadId) return true
+  return false
+}
+
+function disallowedMessageAgentTargetResult() {
+  return {
+    ok: false,
+    error:
+      'message_agent can only target user assistants, squad managers, squad workers, or waiting-input artifact builders. Use request_artifact for normal artifact builders and artifact iteration.',
+  }
+}
+
+export const agentMessagingTools = [directMessageAgentTool]

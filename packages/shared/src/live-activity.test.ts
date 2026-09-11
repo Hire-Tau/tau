@@ -1,0 +1,168 @@
+import { describe, expect, test } from 'bun:test'
+import type { WorkStream } from './types'
+import {
+  buildLiveActivityState,
+  buildWorkInterestSnapshot,
+  LIVE_ACTIVITY_TOP_LIMIT,
+  WIDGET_TOP_LIMIT,
+  serializeLiveActivityState,
+  shouldShowLiveActivity,
+  workBucket,
+} from './live-activity'
+
+function stream(overrides: Partial<WorkStream> = {}): WorkStream {
+  return {
+    id: 'ws-1',
+    squadId: 'sq-1',
+    title: 'Ship the widget',
+    description: 'Operator-sensitive prose that must never leave the app',
+    status: 'active',
+    priority: 'normal',
+    assigneeAgentId: 'ag-1',
+    ownerAgentId: null,
+    creatorAgentId: null,
+    requestingUserId: null,
+    updatedAt: new Date('2026-08-29T12:00:00.000Z'),
+    createdAt: new Date('2026-08-29T11:00:00.000Z'),
+    ...overrides,
+  } as WorkStream
+}
+
+const wait = (type: string) => [{ id: 'w-1', type, message: 'secret' }] as WorkStream['openWaits']
+
+// This table is the contract with `bucket(for:)` in targets/widget/TauWorkWidget.swift. If Swift's
+// rules change, these cases must change with them or the Live Activity and the widget will
+// disagree about the same stream.
+describe('workBucket mirrors the widget’s Swift case table', () => {
+  test('1. an open manual/question/review wait wins over everything else', () => {
+    for (const type of ['manual', 'question', 'review']) {
+      expect(workBucket(stream({ openWaits: wait(type), derivedState: 'blocked' }))).toBe('needsYou')
+    }
+  })
+
+  test('2. in_review / waiting_on_answer count as needs-you without an open wait row', () => {
+    expect(workBucket(stream({ derivedState: 'in_review' } as Partial<WorkStream>))).toBe('needsYou')
+    expect(workBucket(stream({ derivedState: 'waiting_on_answer' } as Partial<WorkStream>))).toBe('needsYou')
+  })
+
+  test('3. blocked derived state', () => {
+    expect(workBucket(stream({ derivedState: 'blocked' } as Partial<WorkStream>))).toBe('blocked')
+  })
+
+  test('4. active status with nothing pending is running', () => {
+    expect(workBucket(stream({ status: 'active', derivedState: undefined }))).toBe('running')
+  })
+
+  test('5. everything else is queued', () => {
+    expect(workBucket(stream({ status: 'queued', derivedState: undefined }))).toBe('queued')
+  })
+
+  test('dependency waits and alarming idle project to blocked', () => {
+    expect(workBucket(stream({ openWaits: wait('dependency'), status: 'active' }))).toBe('blocked')
+    expect(workBucket(stream({ derivedState: 'waiting_on_dependency', status: 'active' }))).toBe('blocked')
+    expect(workBucket(stream({ derivedState: 'idle', status: 'active' }))).toBe('blocked')
+  })
+
+  test('an explicit empty wait list overrides stale wait-derived state', () => {
+    expect(workBucket(stream({ status: 'queued', derivedState: 'in_review', openWaits: [] }))).toBe('queued')
+    expect(workBucket(stream({ status: 'active', derivedState: 'in_review', openWaits: [] }))).toBe('blocked')
+  })
+})
+
+describe('buildLiveActivityState', () => {
+  test('counts running and needs-you separately so the two never double-count', () => {
+    const state = buildLiveActivityState([
+      stream({ id: 'a', status: 'active' }),
+      stream({ id: 'b', status: 'active' }),
+      stream({ id: 'c', openWaits: wait('review') }),
+      stream({ id: 'd', status: 'queued', derivedState: undefined }),
+    ])
+    expect(state.activeCount).toBe(2)
+    expect(state.needsYouCount).toBe(1)
+  })
+
+  test('orders needs-you first, then most recently updated', () => {
+    const state = buildLiveActivityState([
+      stream({ id: 'old-running', updatedAt: new Date('2026-08-29T10:00:00.000Z') }),
+      stream({ id: 'new-running', updatedAt: new Date('2026-08-29T13:00:00.000Z') }),
+      stream({ id: 'needs-you', updatedAt: new Date('2026-08-29T09:00:00.000Z'), openWaits: wait('manual') }),
+    ])
+    expect(state.top.map((row) => row.id)).toEqual(['needs-you', 'new-running', 'old-running'])
+  })
+
+  test('caps the top list at what the views can render', () => {
+    const many = Array.from({ length: LIVE_ACTIVITY_TOP_LIMIT + 5 }, (_, index) => stream({ id: `ws-${index}` }))
+    expect(buildLiveActivityState(many).top).toHaveLength(LIVE_ACTIVITY_TOP_LIMIT)
+  })
+
+  test('omits agentId when a stream is unassigned (the view falls back to a work-tab link)', () => {
+    const [row] = buildLiveActivityState([stream({ assigneeAgentId: null })]).top
+    expect(row!.agentId).toBeUndefined()
+    expect(Object.keys(row!).sort()).toEqual(['bucket', 'id', 'squadId', 'title'])
+  })
+})
+
+describe('buildWorkInterestSnapshot', () => {
+  test('computes full counts before capping presentation rows', () => {
+    const many = Array.from({ length: 30 }, (_, index) =>
+      stream({ id: `run-${index}`, updatedAt: new Date(`2026-08-29T12:${String(index).padStart(2, '0')}:00Z`) })
+    )
+    many[29] = stream({
+      id: 'late-review',
+      updatedAt: new Date('2026-08-29T11:00:00Z'),
+      derivedState: 'in_review',
+      openWaits: wait('review'),
+    })
+
+    const snapshot = buildWorkInterestSnapshot(many, new Date('2026-08-30T00:00:00Z'))
+    expect(snapshot.totalCount).toBe(30)
+    expect(snapshot.bucketCounts).toEqual({ needsYou: 1, running: 29, blocked: 0, queued: 0 })
+    expect(snapshot.top).toHaveLength(WIDGET_TOP_LIMIT)
+    expect(snapshot.top[0]!.id).toBe('late-review')
+    expect(snapshot.liveActivity.needsYouCount).toBe(1)
+    expect(snapshot.liveActivity.top).toHaveLength(LIVE_ACTIVITY_TOP_LIMIT)
+  })
+
+  test('projects only safe fields and wait types', () => {
+    const snapshot = buildWorkInterestSnapshot([stream({ openWaits: wait('manual') })])
+    expect(snapshot.top[0]).toEqual({
+      id: 'ws-1',
+      squadId: 'sq-1',
+      title: 'Ship the widget',
+      status: 'active',
+      assigneeAgentId: 'ag-1',
+      openWaitTypes: ['manual'],
+      updatedAt: '2026-08-29T12:00:00.000Z',
+    })
+    expect(JSON.stringify(snapshot)).not.toContain('secret')
+    expect(JSON.stringify(snapshot)).not.toContain('description')
+  })
+})
+
+describe('shouldShowLiveActivity', () => {
+  test('shows while work is running or waiting on the user', () => {
+    expect(shouldShowLiveActivity({ activeCount: 1, needsYouCount: 0, top: [] })).toBe(true)
+    expect(shouldShowLiveActivity({ activeCount: 0, needsYouCount: 1, top: [] })).toBe(true)
+  })
+
+  test('ends rather than lingering as a zeroed-out card', () => {
+    expect(shouldShowLiveActivity({ activeCount: 0, needsYouCount: 0, top: [] })).toBe(false)
+  })
+})
+
+describe('serializeLiveActivityState — rendered outside the app sandbox', () => {
+  test('never carries auth material, wait messages, or stream descriptions', () => {
+    const json = serializeLiveActivityState([stream({ openWaits: wait('manual') })])
+    for (const forbidden of [
+      'token',
+      'serverUrl',
+      'Bearer',
+      'description',
+      'Operator-sensitive',
+      'secret',
+      'message',
+    ]) {
+      expect(json).not.toContain(forbidden)
+    }
+  })
+})

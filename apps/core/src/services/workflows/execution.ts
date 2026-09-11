@@ -1,0 +1,704 @@
+import { deliveryInstructionsForRun } from './completion-prompt'
+import { isWorkflowReviewer } from './reviewers'
+import { flowMessage } from './handoff-prompt'
+import { waitsForAttempt, isCurrentWaitAttempt, flowInboxTargets } from '../work-streams/wait-scope'
+import { checkWorkflowScope } from './access'
+import { createLogger } from '../../lib/infra/logger'
+import { and, eq } from 'drizzle-orm'
+import {
+  activeWorkflowAttempts,
+  type WorkflowAttempt,
+  advanceWorkflowRun,
+  reopenWorkflowRun,
+  createWorkflowRun,
+  workflowCommandSchema,
+  type WorkflowSource,
+  type WorkflowRun,
+} from '@tau/shared'
+import {
+  db,
+  agents,
+  agentTypes,
+  modelTiers,
+  squads,
+  workStreams,
+  workStreamFlowRuns,
+  workStreamFlowTransitions,
+  workflowBindings,
+  inbox,
+  type DbTx,
+} from '../../db'
+import { deliverInboxMessagesToAgent } from '../inbox/inboxDelivery'
+import { Agent } from '../../entities/Agent'
+import { AgentType } from '../../entities/AgentType'
+import { InboxMessage } from '../../entities/InboxMessage'
+import { WorkStream, WorkStreamOpenWaitsError } from '../../entities/WorkStream'
+import { eventEmitter } from '../../lib/infra/event-emitter'
+import { hasPermission, type Identity } from '../rbac'
+import { openWait, closeOpenWaits, listOpenWaits } from '../work-streams/waits'
+import { resetContinuationCycle } from '../work-streams/continuation-state'
+import { resolveStoredWorkflow, validateWorkflowParticipants, WorkflowError, workflowFingerprint } from './catalog'
+import { codeHostingRegistry } from '../integrations/code-hosting'
+
+const log = createLogger('workflows')
+
+function flowWaitReference(id: string, kind: 'human' | 'limit' | 'delivery', version: number) {
+  const hash = workflowFingerprint({ id, kind, version })
+  return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`
+}
+
+type Stream = typeof workStreams.$inferSelect
+type Run = typeof workStreamFlowRuns.$inferSelect
+export const actorKey = (identity: Identity) =>
+  identity.type === 'user'
+    ? `user:${identity.userId}`
+    : identity.type === 'agent'
+      ? `agent:${identity.agentId}`
+      : identity.type === 'system'
+        ? `system:${identity.systemTokenId}`
+        : 'legacy'
+export async function getFlow(id: string) {
+  return (await db.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, id)))[0] ?? null
+}
+
+async function snapshotParticipants(
+  tx: DbTx,
+  definition: WorkflowRun['definition'],
+  previous: Run['participantSnapshots'] = {},
+  previousDefinition?: WorkflowRun['definition']
+) {
+  await validateWorkflowParticipants(definition, tx)
+  const result: Run['participantSnapshots'] = Object.fromEntries(
+    Object.entries(previous).filter(([key]) => key.startsWith('attempt:'))
+  )
+  for (const [id, participant] of Object.entries(definition.participants)) {
+    const old = previous[id]
+    if (
+      old?.id === participant.agentTypeId &&
+      workflowFingerprint(previousDefinition?.participants[id]) === workflowFingerprint(participant)
+    ) {
+      result[id] = old
+      continue
+    }
+    const [row] = await tx.select().from(agentTypes).where(eq(agentTypes.id, participant.agentTypeId))
+    if (!row || row.disabled) throw new WorkflowError('Agent type is unavailable')
+    const [tier] = row.tier ? await tx.select().from(modelTiers).where(eq(modelTiers.slug, row.tier)) : []
+    const model =
+      participant.model || row.model || (tier && !tier.disabled ? tier.chain : '') || process.env.DEFAULT_MODEL || ''
+    if (!model || model.length > 500)
+      throw new WorkflowError(`Agent type '${row.id}' needs a valid model chain of at most 500 characters`)
+    result[id] = { ...row, model, tier: null }
+  }
+  return result
+}
+
+export async function attachFlow(tx: DbTx, stream: Stream, source: WorkflowSource) {
+  await checkWorkflowScope(source, stream.squadId, stream.requestingUserId, tx)
+  const resolved = await resolveStoredWorkflow(source, tx)
+  const participantSnapshots = await snapshotParticipants(tx, resolved.definition)
+  const [run] = await tx
+    .insert(workStreamFlowRuns)
+    .values({
+      workStreamId: stream.id,
+      activated: true,
+      source: resolved,
+      participantSnapshots,
+      state: createWorkflowRun(resolved.definition),
+      createdBy: stream.creatorAgentId
+        ? `agent:${stream.creatorAgentId}`
+        : `user:${stream.requestingUserId ?? 'system'}`,
+      createRequestId: crypto.randomUUID(),
+      createRequestHash: workflowFingerprint(source),
+    })
+    .returning()
+  await tx
+    .update(workStreams)
+    .set({ metadata: { ...(stream.metadata as object), completion: { mode: resolved.definition.completion.mode } } })
+    .where(eq(workStreams.id, stream.id))
+  return run!
+}
+
+/** The inbox row IS the durable dispatch intent, committed with state and bindings. */
+export async function dispatchFlow(tx: DbTx, stream: Stream, run: Run, afterCommit: Array<() => void>) {
+  if (!run.activated || stream.pause || ['done', 'canceled'].includes(stream.status)) return
+  const deliveryReference = flowWaitReference(stream.id, 'delivery', 0)
+  if (run.state.status === 'completion-ready' && run.state.definition.completion.mode === 'review-approval') {
+    if (!(await listOpenWaits(tx, stream.id)).some((wait) => wait.referenceId === deliveryReference))
+      await openWait(tx, {
+        workStreamId: stream.id,
+        type: 'manual',
+        resolutionHandler: 'workflow',
+        referenceId: deliveryReference,
+        message: 'The work is complete and needs human delivery approval. Review the results, then complete delivery.',
+      })
+    return
+  }
+  await closeOpenWaits(tx, { workStreamId: stream.id, referenceId: deliveryReference }, 'cleared', {
+    note: 'Delivery approval no longer applies to this flow.',
+  })
+  if (run.state.status === 'paused') {
+    await tx.update(workStreams).set({ assigneeAgentId: null }).where(eq(workStreams.id, stream.id))
+    const referenceId = flowWaitReference(stream.id, 'limit', run.version)
+    if (!(await listOpenWaits(tx, stream.id)).some((w) => w.referenceId === referenceId))
+      await openWait(tx, {
+        workStreamId: stream.id,
+        type: 'manual',
+        resolutionHandler: 'workflow',
+        referenceId,
+        message: `Flow paused: ${JSON.stringify(run.state.pauseReason)}. An authorized flow revision is required.`,
+      })
+    return
+  }
+  if (run.state.status !== 'running' || stream.status !== 'active') return
+  const previousAssignee = stream.assigneeAgentId
+  for (const attempt of activeWorkflowAttempts(run.state)) {
+    await dispatchFlowAttempt(tx, stream, run, attempt, afterCommit)
+    stream = (await tx.select().from(workStreams).where(eq(workStreams.id, stream.id)))[0]!
+    run = (await tx.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, stream.id)))[0]!
+  }
+  let primary: string | null = null
+  for (const attempt of activeWorkflowAttempts(run.state)) {
+    const agentId = run.attemptAgents[String(attempt.id)]
+    if (agentId && (await waitsForAttempt(tx, stream.id, attempt.id)).length === 0) {
+      primary = agentId
+      break
+    }
+  }
+  await tx.update(workStreams).set({ assigneeAgentId: primary }).where(eq(workStreams.id, stream.id))
+  if (primary && primary !== previousAssignee) await resetContinuationCycle(tx, stream.id, primary)
+}
+async function dispatchFlowAttempt(
+  tx: DbTx,
+  stream: Stream,
+  run: Run,
+  attempt: WorkflowAttempt,
+  afterCommit: Array<() => void>
+) {
+  const step = attempt.step ?? run.state.definition.steps.find((entry) => entry.id === attempt.stepId)!
+  if (step.kind === 'human-approval') {
+    const referenceId = flowWaitReference(stream.id, 'human', attempt.id)
+    if (!(await listOpenWaits(tx, stream.id)).some((w) => w.referenceId === referenceId))
+      await openWait(tx, {
+        workStreamId: stream.id,
+        type: 'manual',
+        resolutionHandler: 'workflow',
+        flowAttemptId: attempt.id,
+        referenceId,
+        message: step.instructions,
+      })
+    await tx.update(workStreams).set({ assigneeAgentId: null }).where(eq(workStreams.id, stream.id))
+    return
+  }
+  if ((await waitsForAttempt(tx, stream.id, attempt.id)).length > 0) return
+  const [sent] = await tx
+    .select({ id: inbox.id })
+    .from(inbox)
+    .where(eq(inbox.idempotencyKey, `flow:${stream.id}:${attempt.id}`))
+  if (sent) return
+  const participant = attempt.participant ?? run.state.definition.participants[step.participant]!
+  const agentSnapshot = run.participantSnapshots[`attempt:${attempt.id}`] ?? run.participantSnapshots[step.participant]!
+  const snapshotKey = workflowFingerprint(agentSnapshot)
+  const restart =
+    run.state.attempts.findLast(
+      (entry) =>
+        entry.freshSession &&
+        entry.step?.kind === 'agent' &&
+        entry.step.participant === step.participant &&
+        JSON.stringify(entry.branch) === JSON.stringify(attempt.branch)
+    )?.id ?? 0
+  const bindingKey = `${attempt.branch ? `branch-${attempt.branch.forkId}-${attempt.branch.branchId}:` : ''}${step.participant}:${snapshotKey}:${participant.session === 'fresh-per-attempt' ? attempt.id : `reuse-${restart}`}`
+  let [binding] = await tx
+    .select()
+    .from(workflowBindings)
+    .where(and(eq(workflowBindings.workStreamId, stream.id), eq(workflowBindings.bindingKey, bindingKey)))
+  if (!binding) {
+    if (!agentSnapshot) throw new WorkflowError('Missing participant snapshot')
+    const [agent] = await tx
+      .insert(agents)
+      .values({
+        agentTypeId: agentSnapshot.id,
+        squadId: stream.squadId,
+        persist: false,
+        modelOverride: agentSnapshot.model,
+        metadata: {
+          name: `${step.participant} · ${stream.title.slice(0, 60)}`,
+          resourceGeneration: crypto.randomUUID(),
+        },
+      })
+      .returning()
+    ;[binding] = await tx
+      .insert(workflowBindings)
+      .values({
+        workStreamId: stream.id,
+        participantId: step.participant,
+        bindingKey,
+        agentId: agent!.id,
+        agentSnapshot,
+      })
+      .returning()
+  }
+  const attemptAgents = { ...run.attemptAgents, [attempt.id]: binding!.agentId }
+  await tx.update(workStreamFlowRuns).set({ attemptAgents }).where(eq(workStreamFlowRuns.workStreamId, stream.id))
+  const crew = [...new Set([...(stream.agentIds ?? []), binding!.agentId])]
+  await tx
+    .update(workStreams)
+    .set({ assigneeAgentId: binding!.agentId, agentIds: crew, updatedAt: new Date() })
+    .where(eq(workStreams.id, stream.id))
+  await InboxMessage.persistSystemAgentOnceInTransaction(
+    tx,
+    {
+      recipientId: binding!.agentId,
+      subject: `Flow step: ${step.id}`,
+      content: flowMessage(stream, run, attempt),
+      metadata: { workStreamId: stream.id, squadId: stream.squadId, source: 'workflow', attemptId: attempt.id },
+      wakeEligible: true,
+      recordOnly: true,
+    },
+    `flow:${stream.id}:${attempt.id}`,
+    afterCommit
+  )
+}
+
+export async function ensureFlowDispatch(id: string): Promise<boolean> {
+  const flow = await getFlow(id)
+  if (!flow?.activated) return false
+  const callbacks: Array<() => void> = []
+  await db.transaction(async (tx) => {
+    const [stream] = await tx.select().from(workStreams).where(eq(workStreams.id, id)).for('update')
+    const [run] = await tx
+      .select()
+      .from(workStreamFlowRuns)
+      .where(eq(workStreamFlowRuns.workStreamId, id))
+      .for('update')
+    if (stream && run) await dispatchFlow(tx, stream, run, callbacks)
+  })
+  callbacks.forEach((callback) => callback())
+  await deliverFlow(id)
+  const { reconcileOutputDeliveries } = await import('../integrations/outputs/runtime')
+  await reconcileOutputDeliveries(id)
+  return true
+}
+
+export async function advanceFlow(id: string, input: unknown, requestId: string, identity: Identity) {
+  const command = workflowCommandSchema.parse(input)
+  const streamBefore = await WorkStream.mustFind(id)
+  const canRevise = await hasPermission(identity, 'workstreams:revise-flow', streamBefore.squadId)
+  const canRespond = await hasPermission(identity, 'workstreams:respond', streamBefore.squadId)
+  const canReview = identity.type === 'user' && (await isWorkflowReviewer(identity.userId, streamBefore.squadId))
+  if (
+    command.action === 'revise'
+      ? !canRevise && !(identity.type === 'agent' && canRespond)
+      : !canReview && !canRespond && !(await hasPermission(identity, 'workstreams:update', streamBefore.squadId))
+  )
+    throw new WorkflowError('Forbidden', 403)
+  const actor = actorKey(identity)
+  const fingerprint = workflowFingerprint({ command, actor })
+  const callbacks: Array<() => void> = []
+  const result = await db.transaction(async (tx) => {
+    await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, streamBefore.squadId)).for('update')
+    const [stream] = await tx.select().from(workStreams).where(eq(workStreams.id, id)).for('update')
+    const [run] = await tx
+      .select()
+      .from(workStreamFlowRuns)
+      .where(eq(workStreamFlowRuns.workStreamId, id))
+      .for('update')
+    if (!stream || !run?.activated) throw new WorkflowError('Flow not found', 404)
+    const [prior] = await tx
+      .select()
+      .from(workStreamFlowTransitions)
+      .where(and(eq(workStreamFlowTransitions.workStreamId, id), eq(workStreamFlowTransitions.requestId, requestId)))
+    if (prior) {
+      if (prior.requestHash !== fingerprint) throw new WorkflowError('Request ID already used', 409)
+      return { version: prior.version, stateStatus: prior.stateStatus, activeAttemptId: prior.activeAttemptId }
+    }
+    if (stream.pause && command.action !== 'revise')
+      throw new WorkflowError('Work stream is paused; resume before advancing', 409)
+    if (['done', 'canceled'].includes(stream.status)) throw new WorkflowError('Stream is terminal', 409)
+    if (command.expectedVersion !== run.version) throw new WorkflowError('Stale flow version', 409)
+    const attempt = run.state.attempts.find((a) => a.id === command.attemptId)
+    const step = attempt?.step ?? run.state.definition.steps.find((s) => s.id === attempt?.stepId)
+    if (stream.status === 'queued' && step?.kind === 'agent' && command.action !== 'revise')
+      throw new WorkflowError('Resume queued work before advancing its active step', 409)
+    if (
+      command.action === 'revise' &&
+      !canRevise &&
+      (identity.type !== 'agent' ||
+        run.state.definition.routing.mode !== 'adaptive' ||
+        run.attemptAgents[String(command.attemptId)] !== identity.agentId)
+    )
+      throw new WorkflowError('Only the active participant of an adaptive flow can revise future work', 403)
+    if (command.action !== 'revise') {
+      if (step?.kind === 'human-approval') {
+        if (
+          identity.type !== 'user' ||
+          !canReview ||
+          (step.approver === 'assigned-reviewers' &&
+            stream.assignedReviewerIds.length > 0 &&
+            !stream.assignedReviewerIds.includes(identity.userId))
+        )
+          throw new WorkflowError('This step requires its designated human approver', 403)
+      } else if (identity.type === 'agent' && run.attemptAgents[String(command.attemptId)] !== identity.agentId)
+        throw new WorkflowError('Only the active participant can advance this attempt', 403)
+      else if (identity.type !== 'agent' && !(await hasPermission(identity, 'workstreams:revise-flow', stream.squadId)))
+        throw new WorkflowError('Flow intervention requires management permission', 403)
+    }
+    if (command.action !== 'revise' && attempt) {
+      const waits = await waitsForAttempt(tx, id, attempt.id)
+      if (
+        waits.some(
+          (wait) =>
+            !(
+              step?.kind === 'human-approval' &&
+              wait.resolutionHandler === 'workflow' &&
+              wait.referenceId === flowWaitReference(id, 'human', attempt.id)
+            )
+        )
+      )
+        throw new WorkflowError('Resolve the waits blocking this attempt before advancing', 409)
+    }
+    let state: WorkflowRun
+    try {
+      state = advanceWorkflowRun(run.state, command)
+    } catch (error) {
+      throw new WorkflowError((error as Error).message, 409)
+    }
+    if (command.action === 'revise' && !canRevise) {
+      const previous = run.state.definition
+      const weakens = previous.steps.some((entry) => {
+        const next = state.definition.steps.find((step) => step.id === entry.id)
+        return (
+          !next ||
+          next.kind !== entry.kind ||
+          (entry.kind === 'agent' &&
+            workflowFingerprint(state.definition.participants[entry.participant]) !==
+              workflowFingerprint(previous.participants[entry.participant])) ||
+          workflowFingerprint({ ...next, outcomes: entry.outcomes }) !== workflowFingerprint(entry)
+        )
+      })
+      if (
+        weakens ||
+        command.active !== 'keep' ||
+        state.definition.completion.mode !== previous.completion.mode ||
+        (state.definition.limits.maxStepAttempts ?? Infinity) > (previous.limits.maxStepAttempts ?? Infinity) ||
+        state.definition.limits.maxDelegations > previous.limits.maxDelegations ||
+        (state.definition.limits.maxParallelAttempts ?? Infinity) > (previous.limits.maxParallelAttempts ?? Infinity) ||
+        state.definition.routing.delegation !== previous.routing.delegation
+      )
+        throw new WorkflowError(
+          'Changing existing steps, active work, limits, or delivery policy requires flow management permission',
+          403
+        )
+    }
+    const participantSnapshots = await snapshotParticipants(
+      tx,
+      state.definition,
+      run.participantSnapshots,
+      run.state.definition
+    )
+    if (command.action === 'revise') {
+      for (const kept of activeWorkflowAttempts(run.state)) {
+        if (kept.id === command.attemptId && command.active === 'restart') continue
+        const keptStep = kept.step ?? run.state.definition.steps.find((entry) => entry.id === kept.stepId)
+        if (keptStep?.kind === 'agent')
+          participantSnapshots[`attempt:${kept.id}`] =
+            run.participantSnapshots[`attempt:${kept.id}`] ?? run.participantSnapshots[keptStep.participant]!
+      }
+      for (const wait of await listOpenWaits(tx, id))
+        if (
+          wait.referenceId === flowWaitReference(id, 'limit', run.version) ||
+          (command.active === 'restart' && attempt && wait.referenceId === flowWaitReference(id, 'human', attempt.id))
+        )
+          await closeOpenWaits(tx, { waitId: wait.id }, 'cleared', { note: command.reason })
+      if (command.active === 'restart' && attempt) {
+        const agentId = run.attemptAgents[String(attempt.id)]
+        if (agentId)
+          await tx
+            .update(inbox)
+            .set({ readAt: new Date() })
+            .where(eq(inbox.idempotencyKey, `flow:${id}:${attempt.id}`))
+      }
+    } else if (step?.kind === 'human-approval')
+      await closeOpenWaits(
+        tx,
+        { workStreamId: id, referenceId: flowWaitReference(id, 'human', attempt!.id) },
+        'approved',
+        {
+          note: command.action === 'complete' ? command.evidence : 'Returned for rework',
+        }
+      )
+    const activeIds = new Set(activeWorkflowAttempts(state).map((entry) => entry.id))
+    for (const wait of await listOpenWaits(tx, id)) {
+      if (wait.flowAttemptId != null && !activeIds.has(wait.flowAttemptId))
+        await closeOpenWaits(tx, { waitId: wait.id }, 'cleared', {
+          note: 'Flow attempt superseded; this wait no longer blocks work.',
+        })
+    }
+    const updated = { ...run, state, participantSnapshots, version: state.version }
+    await tx
+      .update(workStreamFlowRuns)
+      .set({ state, participantSnapshots, version: state.version, updatedAt: new Date() })
+      .where(eq(workStreamFlowRuns.workStreamId, id))
+    await tx
+      .update(workStreams)
+      .set({ metadata: { ...(stream.metadata as object), completion: { mode: state.definition.completion.mode } } })
+      .where(eq(workStreams.id, id))
+    await dispatchFlow(tx, stream, updated, callbacks)
+    const receipt = { version: state.version, stateStatus: state.status, activeAttemptId: state.activeAttemptId }
+    await tx
+      .insert(workStreamFlowTransitions)
+      .values({ workStreamId: id, requestId, requestHash: fingerprint, command, actorKey: actor, ...receipt })
+    return receipt
+  })
+  callbacks.forEach((callback) => callback())
+  await deliverFlow(id)
+  const { reconcileOutputDeliveries } = await import('../integrations/outputs/runtime')
+  await reconcileOutputDeliveries(id)
+  eventEmitter.emit('workStream.updated', { workStreamId: id, squadId: streamBefore.squadId })
+  return result
+}
+
+/** Mandatory at the entity boundary, including callers outside HTTP routes. */
+export async function guardFlowMutation(
+  tx: DbTx,
+  stream: Stream,
+  input: Record<string, unknown>,
+  approval = false,
+  permit?: { version: number; metadataHash: string }
+) {
+  const [run] = await tx.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, stream.id))
+  if (!run?.activated) return
+  if (stream.pause && input.status === 'done') throw new WorkflowError('Resume paused work before completing it', 409)
+  if (
+    approval ||
+    (input.assigneeAgentId !== undefined && input.status !== 'canceled') ||
+    input.agentIds !== undefined ||
+    input.completionMode !== undefined
+  )
+    throw new WorkflowError('Use the flow transition API to change flow ownership or gates', 409)
+  if (input.metadata && typeof input.metadata === 'object' && 'completion' in input.metadata)
+    throw new WorkflowError('Flow completion policy is controlled by its definition', 409)
+  if (input.status === 'done' && run.state.status !== 'completion-ready')
+    throw new WorkflowError('Required flow steps and return obligations must finish first', 409)
+  if (
+    input.status === 'done' &&
+    (!permit || permit.version !== run.version || permit.metadataHash !== workflowFingerprint(stream.metadata))
+  )
+    throw new WorkflowError('Use flow completion to evaluate the configured delivery policy', 409)
+  // The verified finish permit closes only the workflow's delivery approval wait,
+  // in the same transaction as completion. Unrelated blockers still prevent finish.
+  if (input.status === 'done' && permit)
+    await closeOpenWaits(
+      tx,
+      { workStreamId: stream.id, referenceId: flowWaitReference(stream.id, 'delivery', 0) },
+      'approved',
+      { note: 'Human approved delivery.' }
+    )
+}
+
+export async function finishFlow(id: string, version: number, identity: Identity) {
+  const stream = await WorkStream.mustFind(id)
+  if (
+    !(await hasPermission(identity, 'workstreams:update', stream.squadId)) &&
+    !(await hasPermission(identity, 'workstreams:respond', stream.squadId))
+  )
+    throw new WorkflowError('Forbidden', 403)
+  const run = await getFlow(id)
+  if (!run?.activated || run.version !== version || run.state.status !== 'completion-ready')
+    throw new WorkflowError('Flow is not ready for completion or its version changed', 409)
+  if (identity.type === 'agent' && !(stream.agentIds ?? []).includes(identity.agentId))
+    throw new WorkflowError('Only a participant can finish this flow', 403)
+  const mode = run.state.definition.completion.mode
+  const metadata = stream.metadata as Record<string, any>
+  if (mode === 'review-approval' && identity.type !== 'user')
+    throw new WorkflowError('A human must approve delivery', 403)
+  if (['pr-merge', 'pr-auto-merge', 'direct-merge'].includes(mode)) {
+    const binding = codeHostingRegistry.resolve(metadata)
+    if (!binding)
+      throw new WorkflowError(
+        'Set codeHost.integration and codeHost.repository to a supported code hosting integration before completion'
+      )
+    const { reference, adapter } = binding
+    if (mode === 'direct-merge') {
+      const head = metadata.git?.commit,
+        base = metadata.git?.baseBranch
+      if (typeof head !== 'string' || !/^[a-f0-9]{40}$/.test(head) || typeof base !== 'string' || !base.trim())
+        throw new WorkflowError('Direct merge requires codeHost.repository, git.commit (full SHA), and git.baseBranch')
+      if (!(await adapter.containsCommit(reference, stream.squadId, base, head)))
+        throw new WorkflowError('The deliverable commit must be included in the base branch', 409)
+    } else {
+      if (!reference.changeRequest) throw new WorkflowError('Set codeHost.changeRequest.number before completion')
+      const change = await adapter.changeRequest(reference, stream.squadId)
+      if (!change?.merged) throw new WorkflowError('The change request must be merged before completion', 409)
+      if (
+        (metadata.git?.branch && change.headBranch !== metadata.git.branch) ||
+        (metadata.git?.baseBranch && change.baseBranch !== metadata.git.baseBranch)
+      )
+        throw new WorkflowError('Change request does not match this work stream branch', 409)
+    }
+  }
+  try {
+    await stream.update(
+      { status: 'done' },
+      {
+        actorAgentId: identity.type === 'agent' ? identity.agentId : null,
+        flowCompletion: { version, metadataHash: workflowFingerprint(stream.metadata) },
+      }
+    )
+  } catch (error) {
+    if (error instanceof WorkStreamOpenWaitsError) throw new WorkflowError(error.message, 409)
+    throw error
+  }
+  return stream.toJson()
+}
+
+export async function reconcileFlows() {
+  const { reconcileUnmatchedOutputs } = await import('../integrations/outputs/runtime')
+  await reconcileUnmatchedOutputs()
+  const rows = await db
+    .select({ id: workStreamFlowRuns.workStreamId })
+    .from(workStreamFlowRuns)
+    .innerJoin(workStreams, eq(workStreams.id, workStreamFlowRuns.workStreamId))
+    .where(and(eq(workStreamFlowRuns.activated, true), eq(workStreams.status, 'active')))
+  for (const row of rows) {
+    try {
+      await ensureFlowDispatch(row.id)
+    } catch (error) {
+      log.warn(`Flow dispatch deferred for ${row.id}`, error)
+    }
+  }
+}
+
+export async function flowAgentType(agentId: string): Promise<AgentType | null> {
+  const [binding] = await db.select().from(workflowBindings).where(eq(workflowBindings.agentId, agentId))
+  if (!binding) return null
+  const [current] = await db.select().from(agentTypes).where(eq(agentTypes.id, binding.agentSnapshot.id))
+  if (!current || current.disabled) throw new WorkflowError('Flow participant agent type was disabled')
+  const agentSnapshot = {
+    ...binding.agentSnapshot,
+    skills: (binding.agentSnapshot.skills ?? []).filter(
+      (skill) => !['subagent-driven-development', 'executing-plans'].includes(skill)
+    ),
+    toolsAllow: current.toolsAllow
+      ? binding.agentSnapshot.toolsAllow
+        ? binding.agentSnapshot.toolsAllow.filter((tool) => current.toolsAllow!.includes(tool))
+        : current.toolsAllow
+      : binding.agentSnapshot.toolsAllow,
+    toolsDeny: [...new Set([...(binding.agentSnapshot.toolsDeny ?? []), ...(current.toolsDeny ?? [])])],
+  }
+  return new AgentType(agentSnapshot)
+}
+
+export async function flowWorkerContext(agentId: string) {
+  const [binding] = await db.select().from(workflowBindings).where(eq(workflowBindings.agentId, agentId))
+  if (!binding) return null
+  const run = await getFlow(binding.workStreamId)
+  if (!run) return null
+  const stream = await WorkStream.find(binding.workStreamId)
+  return {
+    workStreamId: binding.workStreamId,
+    participantId: binding.participantId,
+    state: run.state,
+    deliveryInstructions: stream ? deliveryInstructionsForRun(stream, run.state, run.version) : undefined,
+  }
+}
+
+export async function forbidUntrackedDelegation(agentId: string) {
+  const [binding] = await db
+    .select({ id: workflowBindings.agentId })
+    .from(workflowBindings)
+    .where(eq(workflowBindings.agentId, agentId))
+  if (binding) throw new WorkflowError('Use the workflow delegate transition so the result and return are tracked')
+}
+
+/** Retry committed inbox intents without creating agents for queued or future work. */
+async function deliverFlow(id: string) {
+  const run = await getFlow(id)
+  if (!run?.activated || run.state.status !== 'running') return
+  for (const canceled of run.state.attempts.filter((entry) => entry.status === 'canceled')) {
+    const oldId = run.attemptAgents[String(canceled.id)]
+    if (!oldId) continue
+    const old = await Agent.find(oldId)
+    const execution = await old?.getActiveExecution()
+    if (execution) {
+      await execution.requestStopWithSignal()
+      if (await old!.getActiveExecution()) return
+    }
+  }
+  const stream = await WorkStream.mustFind(id)
+  if (stream.status !== 'active' || stream.pause) return
+  for (const attempt of activeWorkflowAttempts(run.state)) {
+    const agentId = run.attemptAgents[String(attempt.id)]
+    if (agentId && (await waitsForAttempt(db, id, attempt.id)).length === 0) await deliverInboxMessagesToAgent(agentId)
+  }
+}
+
+export async function isCurrentFlowMessage(message: { id?: string; metadata: unknown; recipientId: string | null }) {
+  const metadata = message.metadata as {
+    source?: string
+    workStreamId?: string
+    attemptId?: number
+    integrationDeliveryId?: string
+  } | null
+  if (metadata?.source === 'integration-output') {
+    if (!metadata.integrationDeliveryId || !message.id || !message.recipientId) return false
+    const { isCurrentIntegrationDelivery } = await import('../integrations/outputs/runtime')
+    return isCurrentIntegrationDelivery(db, metadata.integrationDeliveryId, message.recipientId, message.id)
+  }
+  if (metadata?.source === 'work-stream-resume' && metadata.workStreamId) {
+    const stream = await WorkStream.find(metadata.workStreamId)
+    return !!stream && stream.status === 'active' && !stream.pause
+  }
+  if (metadata?.source === 'agent-question-answer' && message.id && message.recipientId) {
+    for (const target of await flowInboxTargets(db, [message.id]))
+      if (!(await isCurrentWaitAttempt(db, target.workStreamId, target.attemptId, message.recipientId))) return false
+  }
+  if (metadata?.source === 'workflow-wait-resolution')
+    return (
+      !!metadata.workStreamId &&
+      !!metadata.attemptId &&
+      !!message.recipientId &&
+      isCurrentWaitAttempt(db, metadata.workStreamId, metadata.attemptId, message.recipientId)
+    )
+  if (metadata?.source !== 'workflow') return true
+  if (
+    metadata.workStreamId &&
+    metadata.attemptId &&
+    (await waitsForAttempt(db, metadata.workStreamId, metadata.attemptId)).length > 0
+  )
+    return false
+  if (!metadata.workStreamId) return false
+  const run = await getFlow(metadata.workStreamId)
+  const stream = await WorkStream.find(metadata.workStreamId)
+  return !!(
+    run?.activated &&
+    stream?.status === 'active' &&
+    !stream.pause &&
+    run.state.status === 'running' &&
+    activeWorkflowAttempts(run.state).some((attempt) => attempt.id === metadata.attemptId) &&
+    run.attemptAgents[String(metadata.attemptId)] === message.recipientId
+  )
+}
+
+export async function reopenFlow(tx: DbTx, id: string) {
+  const [run] = await tx.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, id)).for('update')
+  if (!run?.activated) return
+  const state = reopenWorkflowRun(run.state)
+  await tx
+    .update(workStreamFlowRuns)
+    .set({ state, version: state.version, updatedAt: new Date() })
+    .where(eq(workStreamFlowRuns.workStreamId, id))
+  await tx.update(workStreams).set({ assigneeAgentId: null }).where(eq(workStreams.id, id))
+}
+
+export async function guardFlowWaitResolution(tx: DbTx, id: string, waitId?: string) {
+  const [run] = await tx.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, id))
+  if (!run?.activated) return
+  const refs = new Set([
+    flowWaitReference(id, 'delivery', 0),
+    flowWaitReference(id, 'limit', run.version),
+    ...activeWorkflowAttempts(run.state).map((attempt) => flowWaitReference(id, 'human', attempt.id)),
+  ])
+  const waits = await listOpenWaits(tx, id)
+  if (waits.some((wait) => (!waitId || wait.id === waitId) && wait.referenceId && refs.has(wait.referenceId)))
+    throw new WorkflowError('Use the workflow decision or revision to resolve this flow wait', 409)
+}

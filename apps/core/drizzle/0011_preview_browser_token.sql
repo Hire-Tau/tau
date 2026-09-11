@@ -1,0 +1,1 @@
+ALTER TABLE "sandbox_previews" ADD COLUMN "browser_access_token" varchar(255);

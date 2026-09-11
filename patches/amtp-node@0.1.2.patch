@@ -1,0 +1,372 @@
+diff --git a/src/blobs.ts b/src/blobs.ts
+index 04a18cc7ee9110824ae77723208d626483c639f0..ee67d3983a325b6acb4172d9c37414844572b6ef 100644
+--- a/src/blobs.ts
++++ b/src/blobs.ts
+@@ -12,6 +12,7 @@
+ import { closeSync, fsyncSync, openSync, renameSync, writeSync } from 'node:fs'
+ import { join } from 'node:path'
+ import { blobsDir, blobsTmpDir, ensureAmtpDirs } from './home'
++import { traceUploadPhase } from './upload-trace'
+
+ /**
+  * Durably write `data` to `<home>/blobs/<finalId>`.
+@@ -37,6 +38,7 @@ export function writeBlobDurable(home: string, finalId: string, data: Uint8Array
+   const finalPath = join(blobsDir(home), finalId)
+
+   // 1. Write + fsync the staged file via its fd.
++  traceUploadPhase('blob-file-fsync:start')
+   const fileFd = openSync(tmpPath, 'w')
+   try {
+     writeSync(fileFd, data)
+@@ -44,16 +46,20 @@ export function writeBlobDurable(home: string, finalId: string, data: Uint8Array
+   } finally {
+     closeSync(fileFd)
+   }
++  traceUploadPhase('blob-file-fsync:done')
+
+   // 2. Atomically rename into place.
+   renameSync(tmpPath, finalPath)
++  traceUploadPhase('blob-rename:done')
+
+   // 3. fsync the containing directory so the rename's directory entry is
+   // durable.
++  traceUploadPhase('blob-dir-fsync:start')
+   const dirFd = openSync(blobsDir(home), 'r')
+   try {
+     fsyncSync(dirFd)
+   } finally {
+     closeSync(dirFd)
+   }
++  traceUploadPhase('blob-dir-fsync:done')
+ }
+diff --git a/src/commands/attach.ts b/src/commands/attach.ts
+index 1007f1db31a0449cf0763f19d168cf87aa07e1f2..0b6c46295a384b1b1510f774c1318ddfd337d5b6 100644
+--- a/src/commands/attach.ts
++++ b/src/commands/attach.ts
+@@ -2,6 +2,7 @@ import { Command } from 'commander'
+ import { getCliHome, openHomeDb } from '../context'
+ import { downloadAttachment, uploadAttachment } from '../ops/attach'
+ import { output, outputError } from '../output'
++import { traceUploadPhase } from '../upload-trace'
+
+ export function registerAttachCommands(program: Command): void {
+   const attach = program.command('attach').description('Stage outbound attachments and download received ones')
+@@ -13,19 +14,26 @@ export function registerAttachCommands(program: Command): void {
+     .option('--filename <name>', 'Override the stored filename (default: the basename of <file>)')
+     .action((file, options) => {
+       try {
++        traceUploadPhase('process:start')
+         const home = getCliHome()
++        traceUploadPhase('sqlite-open:start')
+         const db = openHomeDb(home)
++        traceUploadPhase('sqlite-open:done')
+         try {
+           const result = uploadAttachment(db, home, file, {
+             contentType: options.contentType,
+             filename: options.filename,
+           })
++          traceUploadPhase('response-write:start')
+           output(
+             result,
+             `Staged attachment ${result.attachmentId} (${result.filename}, ${result.byteSize}B, sha256 ${result.sha256})`
+           )
++          traceUploadPhase('response-write:done')
+         } finally {
++          traceUploadPhase('sqlite-close:start')
+           db.close()
++          traceUploadPhase('sqlite-close:done')
+         }
+       } catch (error) {
+         outputError(error as Error)
+diff --git a/src/commands/identity.ts b/src/commands/identity.ts
+index 20c51b381bcb96c1f2d79a365dbaf17605851216..95d22a5027b9b2cbb74d4d4f0f0be49b0ae79c82 100644
+--- a/src/commands/identity.ts
++++ b/src/commands/identity.ts
+@@ -1,6 +1,7 @@
+ import { Command } from 'commander'
+ import { getCliHome, openHomeDb } from '../context'
+ import { getIdentity, getWhoami } from '../ops/identity'
++import { traceLifecyclePhase } from '../lifecycle-trace'
+ import { output, outputError } from '../output'
+
+ export function registerIdentityCommand(program: Command): void {
+@@ -29,11 +30,19 @@ export function registerWhoamiCommand(program: Command): void {
+     .description('Show this instance id and every local handle registration')
+     .action(() => {
+       try {
++        traceLifecyclePhase('whoami', 'process:start')
++        traceLifecyclePhase('whoami', 'sqlite-open:start')
+         const db = openHomeDb(getCliHome())
++        traceLifecyclePhase('whoami', 'sqlite-open:done')
+         try {
+-          output(getWhoami(db))
++          const value = getWhoami(db)
++          traceLifecyclePhase('whoami', 'response-write:start')
++          output(value)
++          traceLifecyclePhase('whoami', 'response-write:done')
+         } finally {
++          traceLifecyclePhase('whoami', 'sqlite-close:start')
+           db.close()
++          traceLifecyclePhase('whoami', 'sqlite-close:done')
+         }
+       } catch (error) {
+         outputError(error as Error)
+diff --git a/src/commands/register.ts b/src/commands/register.ts
+index c9d5f2f47fa2743d2944dad832281b5f61246817..27a93c078be834c2e7ba26969d7b5a346fef58ca 100644
+--- a/src/commands/register.ts
++++ b/src/commands/register.ts
+@@ -4,6 +4,7 @@ import { setCard } from '../ops/cards'
+ import { getIdentity } from '../ops/identity'
+ import { register, setInboundOpen } from '../ops/registrations'
+ import { output, outputError } from '../output'
++import { traceRegisterPhase } from '../register-trace'
+
+ export function registerRegisterCommand(program: Command): void {
+   program
+@@ -17,9 +18,13 @@ export function registerRegisterCommand(program: Command): void {
+     .option('--description <text>', 'Also publish a card with this description')
+     .action((handle, options) => {
+       try {
++        traceRegisterPhase('process:start')
++        traceRegisterPhase('sqlite-open:start')
+         const db = openHomeDb(getCliHome())
++        traceRegisterPhase('sqlite-open:done')
+         try {
+           const identity = getIdentity(db)
++          traceRegisterPhase('identity-read:done')
+           const result = register(db, identity.instanceId, {
+             handle,
+             open: options.open,
+@@ -42,6 +47,7 @@ export function registerRegisterCommand(program: Command): void {
+             )
+           }
+
++          traceRegisterPhase('response-write:start')
+           if (options.name || options.description) {
+             const signedCard = setCard(db, identity.instanceId, {
+               handle,
+@@ -53,8 +59,11 @@ export function registerRegisterCommand(program: Command): void {
+           } else {
+             output(result, lines)
+           }
++          traceRegisterPhase('response-write:done')
+         } finally {
++          traceRegisterPhase('sqlite-close:start')
+           db.close()
++          traceRegisterPhase('sqlite-close:done')
+         }
+       } catch (error) {
+         outputError(error as Error)
+diff --git a/src/index.ts b/src/index.ts
+index 73224e6ad94f884dd2746b265b63949d0c1fca6b..57f66620a0556f08e213353e55e08cad27ad4724 100755
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -19,8 +19,11 @@ import { registerSendCommand } from './commands/send'
+ import { registerServeCommand } from './commands/serve-cli'
+ import { setCliHome } from './context'
+ import { resolveAmtpHome } from './home'
++import { traceLifecyclePhase } from './lifecycle-trace'
+ import { setOutputOptions } from './output'
+
++traceLifecyclePhase('entrypoint', 'module-loaded')
++
+ const program = new Command()
+
+ program
+@@ -53,4 +56,4 @@ registerDrainCommand(program)
+ registerServeCommand(program)
+ registerMcpCommand(program)
+
+-program.parse()
++await program.parseAsync()
+diff --git a/node_modules/amtp-node/src/lifecycle-trace.ts b/src/lifecycle-trace.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..2d1f514c811e97b134ff78134a108fc79200e068
+--- /dev/null
++++ b/src/lifecycle-trace.ts
+@@ -0,0 +1,23 @@
++export type LifecycleTracePhase =
++  | 'module-loaded'
++  | 'process:start'
++  | 'sqlite-open:start'
++  | 'sqlite-open:done'
++  | 'identity-read:start'
++  | 'identity-read:done'
++  | 'registrations-read:start'
++  | 'registrations-read:done'
++  | 'response-write:start'
++  | 'response-write:done'
++  | 'sqlite-close:start'
++  | 'sqlite-close:done'
++
++const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
++
++export function traceLifecyclePhase(operation: 'entrypoint' | 'whoami', phase: LifecycleTracePhase): void {
++  const operationId = process.env.AMTP_CONFORMANCE_OPERATION_ID
++  if (!operationId || !UUID_PATTERN.test(operationId)) return
++  process.stderr.write(
++    `${JSON.stringify({ kind: 'amtp-conformance-phase', operationId, operation, phase })}\n`
++  )
++}
+diff --git a/src/ops/attach.ts b/src/ops/attach.ts
+index 70650401eac7a1cafd276538940b6bfba50d9831..6a3a264cd20308c45d5b11d3972af5ca15009664 100644
+--- a/src/ops/attach.ts
++++ b/src/ops/attach.ts
+@@ -8,6 +8,7 @@ import { basename, join } from 'node:path'
+ import type { Database } from 'bun:sqlite'
+ import { blobsDir } from '../home'
+ import { writeBlobDurable } from '../blobs'
++import { traceUploadPhase } from '../upload-trace'
+
+ /** Strips any directory components from a (possibly hostile) filename; falls
+  *  back to `fallback` if that leaves nothing usable (empty or '.'). */
+@@ -30,18 +31,23 @@ export function uploadAttachment(
+   filePath: string,
+   opts: { filename?: string; contentType?: string } = {}
+ ): UploadResult {
++  traceUploadPhase('source-read:start')
+   const bytes = readFileSync(filePath)
++  traceUploadPhase('source-read:done')
+   const id = randomUUID()
+   const sha256 = createHash('sha256').update(bytes).digest('hex')
++  traceUploadPhase('digest:done')
+   const filename = opts.filename ?? basename(filePath)
+   const contentType = opts.contentType ?? 'application/octet-stream'
+
+   writeBlobDurable(home, id, bytes)
++  traceUploadPhase('attachment-row-insert:start')
+   db.run(
+     `INSERT INTO attachments (id, message_id, direction, filename, content_type, byte_size, sha256, storage_path, created_at)
+      VALUES (?, NULL, 'out', ?, ?, ?, ?, ?, ?)`,
+     [id, filename, contentType, bytes.length, sha256, id, Date.now()]
+   )
++  traceUploadPhase('attachment-row-insert:done')
+
+   return { attachmentId: id, filename, contentType, byteSize: bytes.length, sha256 }
+ }
+diff --git a/src/ops/identity.ts b/src/ops/identity.ts
+index 9ad5db95ababf6cbd7e50aa6179f62c600fbafff..23668ef4813d5fae35d4bf4d5b150b352a63e9da 100644
+--- a/src/ops/identity.ts
++++ b/src/ops/identity.ts
+@@ -2,6 +2,7 @@
+
+ import type { Database } from 'bun:sqlite'
+ import { formatAmtpAddress } from 'amtp-protocol'
++import { traceLifecyclePhase } from '../lifecycle-trace'
+
+ export interface IdentityInfo {
+   instanceId: string
+@@ -48,13 +49,17 @@ function cardName(cardJson: string | null): string | undefined {
+ }
+
+ export function getWhoami(db: Database): WhoamiResult {
++  traceLifecyclePhase('whoami', 'identity-read:start')
+   const identity = getIdentity(db)
++  traceLifecyclePhase('whoami', 'identity-read:done')
++  traceLifecyclePhase('whoami', 'registrations-read:start')
+   const rows = db
+     .query<
+       { handle: string; inbound_open: number; agent_public_key_pem: string; card_json: string | null },
+       []
+     >('SELECT handle, inbound_open, agent_public_key_pem, card_json FROM registrations ORDER BY handle')
+     .all()
++  traceLifecyclePhase('whoami', 'registrations-read:done')
+   return {
+     instanceId: identity.instanceId,
+     registrations: rows.map((r) => {
+diff --git a/src/ops/registrations.ts b/src/ops/registrations.ts
+index 2a5b5a4b4e92e60f7546e291cb57750ba1afc9aa..3370fe6e9059cbac7c4e15b2008782bf11e35045 100644
+--- a/src/ops/registrations.ts
++++ b/src/ops/registrations.ts
+@@ -4,6 +4,7 @@
+
+ import type { Database } from 'bun:sqlite'
+ import { formatAmtpAddress, generateInstanceKeyPair } from 'amtp-protocol'
++import { traceRegisterPhase } from '../register-trace'
+
+ // AMTP.md §3 handle grammar.
+ const HANDLE_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]*$/
+@@ -73,11 +74,14 @@ export interface RegisterResult {
+ export function register(db: Database, instanceId: string, args: RegisterArgs): RegisterResult {
+   validateHandle(args.handle)
+   const existing = getRegistration(db, args.handle)
++  traceRegisterPhase('registration-read:done')
+   const now = Date.now()
+
+   if (existing && !args.regenerate) {
+     if (args.open !== undefined) {
++      traceRegisterPhase('registration-write:start')
+       db.run('UPDATE registrations SET inbound_open = ? WHERE handle = ?', [args.open ? 1 : 0, args.handle])
++      traceRegisterPhase('registration-write:done')
+     }
+     const row = getRegistration(db, args.handle)!
+     return {
+@@ -91,7 +95,10 @@ export function register(db: Database, instanceId: string, args: RegisterArgs):
+   }
+
+   const finalInboundOpen = args.open !== undefined ? args.open : !!existing?.inboundOpen
++  traceRegisterPhase('key-generate:start')
+   const { publicKeyPem, privateKeyPem } = generateInstanceKeyPair()
++  traceRegisterPhase('key-generate:done')
++  traceRegisterPhase('registration-write:start')
+
+   if (existing) {
+     // `--regenerate` rotates the agent keypair, so any previously published
+@@ -107,6 +114,7 @@ export function register(db: Database, instanceId: string, args: RegisterArgs):
+       [args.handle, finalInboundOpen ? 1 : 0, publicKeyPem, privateKeyPem, now]
+     )
+   }
++  traceRegisterPhase('registration-write:done')
+
+   return {
+     handle: args.handle,
+diff --git a/node_modules/amtp-node/src/register-trace.ts b/src/register-trace.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..3e2ac8d87f2a39ef34cbf8e59e973424021391f2
+--- /dev/null
++++ b/src/register-trace.ts
+@@ -0,0 +1,22 @@
++export type RegisterTracePhase =
++  | 'process:start'
++  | 'sqlite-open:start'
++  | 'sqlite-open:done'
++  | 'identity-read:done'
++  | 'registration-read:done'
++  | 'key-generate:start'
++  | 'key-generate:done'
++  | 'registration-write:start'
++  | 'registration-write:done'
++  | 'response-write:start'
++  | 'response-write:done'
++  | 'sqlite-close:start'
++  | 'sqlite-close:done'
++
++export function traceRegisterPhase(phase: RegisterTracePhase): void {
++  const operationId = process.env.AMTP_CONFORMANCE_OPERATION_ID
++  if (!operationId) return
++  process.stderr.write(
++    `${JSON.stringify({ kind: 'amtp-conformance-phase', operationId, operation: 'register', phase })}\n`
++  )
++}
+diff --git a/node_modules/amtp-node/src/upload-trace.ts b/src/upload-trace.ts
+new file mode 100644
+index 0000000000000000000000000000000000000000..0bde83f6be4e40289c4853e400c6bd83e2236a87
+--- /dev/null
++++ b/src/upload-trace.ts
+@@ -0,0 +1,16 @@
++export type UploadTracePhase =
++  | 'process:start'
++  | 'sqlite-open:start' | 'sqlite-open:done'
++  | 'source-read:start' | 'source-read:done'
++  | 'digest:done'
++  | 'blob-file-fsync:start' | 'blob-file-fsync:done'
++  | 'blob-rename:done'
++  | 'blob-dir-fsync:start' | 'blob-dir-fsync:done'
++  | 'attachment-row-insert:start' | 'attachment-row-insert:done'
++  | 'response-write:start' | 'response-write:done'
++  | 'sqlite-close:start' | 'sqlite-close:done'
++
++export function traceUploadPhase(phase: UploadTracePhase): void {
++  if (process.env.AMTP_CONFORMANCE_TRACE_UPLOAD !== '1') return
++  process.stderr.write(`${JSON.stringify({ kind: 'amtp-upload-phase', phase })}\n`)
++}

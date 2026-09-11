@@ -1,0 +1,45 @@
+id: research-brief
+description: Research a question, check the evidence independently, and deliver a sourced brief.
+definition:
+  schemaVersion: 1
+  name: Research Brief
+  participants:
+    builder:
+      agentTypeId: general
+      session: reuse-within-stream
+    reviewer:
+      agentTypeId: general
+      session: reuse-within-stream
+  entry: build
+  routing:
+    mode: flexible
+    returnTo: earlier-steps
+    delegation: disabled
+  limits:
+    maxDelegations: 0
+    onLimit: request-owner-input
+  steps:
+    - id: build
+      participant: builder
+      instructions: >-
+        Clarify the research question and decision it informs. Gather primary sources, compare credible
+        alternatives, distinguish facts from inference, and produce a concise sourced brief with uncertainty
+        and open questions. Do not invent sources.
+      output: A brief with source links, findings, confidence, and recommendations within the requested scope.
+      outcomes:
+        completed:
+          next: review
+    - id: review
+      participant: reviewer
+
+      instructions: >-
+        Check that the cited sources support the claims, the scope answers the question, and uncertainty and
+        contrary evidence are represented fairly. Request targeted corrections or approve the brief.
+      output: A source-checked verdict and any corrections required.
+      outcomes:
+        approved:
+          next: finish
+        changes-requested:
+          returnTo: build
+  completion:
+    mode: deliverable

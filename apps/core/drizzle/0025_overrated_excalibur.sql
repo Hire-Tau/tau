@@ -1,0 +1,1 @@
+ALTER TABLE "channel_instances" DROP COLUMN "linked_squads";

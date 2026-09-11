@@ -1,0 +1,16 @@
+# Headless service enables DNS for individual pods:
+#   <pod-name>.tau-sandboxes.svc.cluster.local
+apiVersion: v1
+kind: Service
+metadata:
+  name: tau-sandboxes
+  namespace: tau-sandboxes
+spec:
+  clusterIP: None
+  selector:
+    app: tau-sandbox
+  ports:
+    - port: 50051
+      targetPort: http
+      protocol: TCP
+      name: http

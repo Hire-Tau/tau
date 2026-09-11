@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX CONCURRENTLY "idx_messages_agent_sandbox_recovery_unique" ON "messages" USING btree ("agent_id",("metadata"->>'sandboxId'),("metadata"->>'recoveryEpisodeId'),("metadata"->>'recoveryNotificationKind')) WHERE "messages"."role" = 'human' AND "messages"."metadata"->>'source' = 'sandbox-recovery';

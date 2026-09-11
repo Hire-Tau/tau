@@ -1,0 +1,344 @@
+# tau-setup.yaml — configuration contract for the tau setup toolkit.
+#
+# Copy to tau-setup.yaml and edit, or generate one interactively:
+#   scripts/setup/setup-host.sh --wizard
+#
+# This file is the non-interactive source of truth for both:
+#   * setup-host.sh    — the ON-TARGET primitive (runs on a fresh Ubuntu 24.04 host)
+#   * provision.sh — the orchestrator (provisions an exe VM, then runs
+#                        setup-host.sh on it over SSH)
+#
+# SECRETS ARE NEVER STORED IN THIS FILE. Secrets are referenced by:
+#   * an environment variable name (e.g. ai.key_env), or
+#   * a filesystem path to a key file (e.g. source.deploy_key_path), or
+#   * an interactive prompt when running on a TTY.
+#
+# Parsing: the toolkit reads this file with mikefarah yq v4
+# (https://github.com/mikefarah/yq). setup-host.sh installs it automatically on
+# the Linux target; on a control machine install it first (`brew install yq`).
+
+# -----------------------------------------------------------------------------
+# Where the tau source comes from.
+# -----------------------------------------------------------------------------
+source:
+  # git-ssh    clone over SSH with a read-only deploy key (recommended).
+  # git-https  clone over HTTPS with a token (GH_TOKEN env var, or prompted).
+  # artifact   fetch, verify and stage a signed prebuilt release bundle — a
+  #            tenant-only seam driven by a cloud control plane. The four
+  #            TAU_ARTIFACT_TARBALL_URL/_MANIFEST_URL/_SIG_URL/_PUBKEY_B64
+  #            inputs arrive via the ENVIRONMENT (secrets.env), never here:
+  #            three are presigned GET credentials, and this file is not
+  #            where credentials belong.
+  mode: git-ssh
+  repo: git@github.com:Hire-Tau/tau.git
+  # Branch, tag, or full/abbreviated commit sha. Recorded metadata even in
+  # artifact mode (there is no checkout to move, but the ref is still logged).
+  ref: main
+  # Where the source is cloned on the target host. Must NOT be /opt/tau: the
+  # prebaked tau-machine image (the default core VM image) owns /opt/tau for its
+  # own tooling. Keep the app in a separate path.
+  dest: /opt/tau-core
+  # git-ssh only: path to the SSH deploy key ON THE MACHINE RUNNING setup-host.sh.
+  # (provision.sh pushes this file to the VM and rewrites the path for you.)
+  # Prompted if empty and running interactively.
+  deploy_key_path: ''
+
+# -----------------------------------------------------------------------------
+# The core API + web UI.
+# -----------------------------------------------------------------------------
+core:
+  # The BROWSER-FACING origin: scheme://host[:port], NO trailing path or slash.
+  # Becomes APP_URL and TAU_WEB_ORIGIN. If this does not exactly match what the
+  # browser shows in the address bar, WebAuthn passkey registration fails
+  # silently — the #1 setup footgun.
+  # For an exe VM this is https://<provision.name>.exe.xyz:<core.port>. For a
+  # hetzner VM behind Caddy + Cloudflare DNS this is portless, e.g.
+  # https://<subdomain>.<dns.zone> — provision.sh derives the DNS record name
+  # (dns.upsert target) from this origin's host.
+  origin: https://my-tau.exe.xyz:3000
+  # Port the core API listens on.
+  port: 3000
+  # Serve the built web UI from the core process (single-origin deployment).
+  serve_web: true
+  # OS user the systemd services run as. Empty = the user running setup-host.sh.
+  # Setup supports a different user by managing root-owned /usr/local/bin/bun
+  # plus /usr/local/bin/node -> /usr/local/bin/bun, then executing a real Node
+  # shebang as run_user. The account must already exist.
+  run_user: ''
+  # Optional passthrough: a flat map of extra env vars appended verbatim to
+  # <dest>/.env, after the built-ins (APP_URL, DATABASE_URL, etc — those
+  # always win; core.env cannot override them, setup dies if it tries). This
+  # is the knob a future cloud control plane uses to inject per-tenant
+  # settings (e.g. tier limits) without a bespoke config field for each one.
+  # Keys must be SCREAMING_SNAKE_CASE. Two forms:
+  #   LITERAL_KEY: value          → rendered verbatim:  LITERAL_KEY=value
+  #   SECRET_KEY_ENV: ENV_VAR     → the *_env secret-indirection convention
+  #                                 used elsewhere in this file (see
+  #                                 secrets.encryption_key_env above): the
+  #                                 yaml names an env var, never the secret
+  #                                 itself, and the rendered line drops the
+  #                                 _ENV suffix and takes $ENV_VAR's content:
+  #                                    SECRET_KEY=<contents of $ENV_VAR>
+  #                                 Setup dies if $ENV_VAR is unset.
+  # Example:
+  #   env:
+  #     TAU_MAX_MACHINES: '10'
+  #     TAU_PLATFORM_INGEST_URL: https://ingest.hiretau.ai
+  #     TAU_PLATFORM_USAGE_TOKEN_ENV: PLATFORM_USAGE_TOKEN
+  env: {}
+
+# -----------------------------------------------------------------------------
+# Optional caddy ingress (off by default). When enabled, setup-host.sh installs
+# caddy and writes /etc/caddy/Caddyfile with a single vhost that terminates TLS
+# for core.origin's host and reverse-proxies to 127.0.0.1:<core.port>. Caddy
+# owns port 443, so core.origin MUST be https with NO port when this is on —
+# this is the shape the cloud control plane renders for tenant VMs
+# (ingress.caddy: true).
+#
+# TLS IS NOT ACME. The certificate is SUPPLIED (a Cloudflare Origin CA cert):
+#   * Let's Encrypt allows 50 certificates per REGISTERED DOMAIN per week,
+#     shared across every subdomain of it. Per-tenant ACME therefore caps
+#     signups at 50/week — and issuance happens AFTER payment, so a failure
+#     there is a paid-but-broken tenant.
+#   * An Origin CA certificate is trusted by Cloudflare's proxy and by no
+#     browser, so the hostname MUST be proxied (orange cloud). provision.sh
+#     creates its A records with proxied:true for exactly this reason.
+# One certificate covers the apex and *.<zone> and is valid for years, so there
+# is no per-host issuance and nothing to renew. Port 80 is neither used nor
+# needed (there is no HTTP-01 challenge to answer).
+# -----------------------------------------------------------------------------
+ingress:
+  caddy: false
+  # Paths to the origin certificate and its private key, on whichever machine
+  # is reading this config. provision.sh pushes both to the VM (0600, exactly
+  # like the deploy key) and rewrites these two values to the pushed locations,
+  # so a control-machine config names control-machine paths. Both are REQUIRED
+  # when `caddy: true`. setup-host.sh installs them to
+  # /etc/caddy/tls/origin.{crt,key} — the key 0600, owned by the caddy service
+  # user. The key's contents are never logged, echoed, or printed by --dry-run.
+  tls_cert_path: ''
+  tls_key_path: ''
+
+# -----------------------------------------------------------------------------
+# Optional nightly encrypted backup (off by default). When enabled, setup
+# installs a systemd timer that nightly: pg_dump's the database, tars it with
+# HOME_DIR (the agent workspace/memory tree) and <dest>/.env (the encryption
+# key travels IN the backup envelope by design — never in the platform's
+# tenant registry), encrypts the tarball, and uploads it to S3-compatible
+# storage under s3_prefix/<YYYY-MM-DD>.tar.gz.enc — keeping the last 14.
+# -----------------------------------------------------------------------------
+backup:
+  enabled: false
+  # S3-compatible endpoint, e.g. https://fsn1.your-objectstorage.com (Hetzner
+  # Object Storage). No trailing slash.
+  s3_endpoint: ''
+  # sigv4 region string for the endpoint (curl --aws-sigv4 "aws:amz:<region>:s3").
+  s3_region: ''
+  s3_bucket: ''
+  # Object key prefix — e.g. tenants/<subdomain> to isolate per-tenant backups
+  # in a shared bucket. REQUIRED (non-empty) when enabled: true — retention
+  # lists/deletes are scoped to this prefix, so an empty prefix would scope
+  # deletes to the whole bucket.
+  s3_prefix: ''
+  # Env vars holding the S3 credentials + encryption passphrase — NEVER the
+  # values themselves. Same *_env indirection convention as secrets.* above.
+  # Rendered into a 0600 root-owned /etc/tau/backup.env; never written into
+  # <dest>/.env (the file the backup itself archives).
+  s3_access_key_env: TAU_BACKUP_S3_ACCESS_KEY
+  s3_secret_key_env: TAU_BACKUP_S3_SECRET_KEY
+  passphrase_env: TAU_BACKUP_PASSPHRASE
+  # Daily run time, HH:MM 24h UTC — becomes the systemd timer's OnCalendar=.
+  schedule: '03:15'
+
+# -----------------------------------------------------------------------------
+# PostgreSQL.
+# -----------------------------------------------------------------------------
+database:
+  # container  run ParadeDB (postgres + pgvector + pg_search) in Docker on the
+  #            target host, with a generated password. Recommended default.
+  # external   use an existing postgres via `dsn`.
+  mode: container
+  # Required when mode=external, e.g. postgres://user:pass@host:5432/tau
+  # (a DSN embeds a password, so prefer supplying it via the
+  #  TAU_SETUP_DATABASE_DSN environment variable instead of writing it here).
+  dsn: ''
+  # Path to the CA certificate that signed the external database server's
+  # certificate — ON THE MACHINE RUNNING THIS SCRIPT. provision.sh scp's it to
+  # the target and rewrites this value; setup-host.sh installs it at
+  # /etc/tau/database-ca.crt, 0644.
+  #
+  # A CA certificate is PUBLIC, so this is not a secret and the path appears in
+  # the config verbatim (same as ingress.tls_cert_path).
+  #
+  # REQUIRED whenever the DSN uses `sslmode=verify-full`, which is the only
+  # mode that actually AUTHENTICATES the server: `require` encrypts but
+  # verifies nothing, so anyone able to intercept the connection can present
+  # their own certificate and take the credentials. Managed providers
+  # (DigitalOcean, Aiven, …) sign with a private CA that is not in any system
+  # trust store, so their CA has to be supplied here. Leave empty for a
+  # plaintext/local database.
+  ca_path: ''
+
+# -----------------------------------------------------------------------------
+# Agent sandbox runtime.
+# -----------------------------------------------------------------------------
+runtime:
+  # REQUIRED — there is no default. Uncomment exactly one value:
+  # docker-sysbox  local Docker containers via sysbox-runc (Linux with sysbox
+  #                installed; strongest Docker isolation).
+  # docker-socket  local Docker containers that mount the host Docker socket
+  #                (any Docker host, including macOS).
+  # k8s            sandbox pods in a Kubernetes cluster (cluster setup NOT
+  #                handled here; see docs/wiki/k8s/deployment.md).
+  # vm             provider VMs per agent/squad (exe.dev boxes) — recommended.
+  # host           no sandbox — agents run directly on this machine as the
+  #                current user (see docs/wiki/host-runtime.md). Zero isolation.
+  # sandbox: <docker-sysbox | docker-socket | k8s | vm | host>   # REQUIRED — no default
+  # Only used when sandbox=vm with exe.dev boxes:
+  exe:
+    # Path to the exe.dev account SSH key ON THE MACHINE RUNNING setup-host.sh.
+    # Seeded into tau's encrypted secret store as `exe-provider-ssh-key`.
+    # Prompted if empty and running interactively.
+    ssh_key_path: ''
+    # Image new agent/squad boxes boot from.
+    machine_image: ghcr.io/hire-tau/tau-machine:latest
+
+# -----------------------------------------------------------------------------
+# Optional initial AI provider + model (off by default — omit this whole
+# section, or leave ai.model empty/unset, and setup-host.sh/seed.sh seed NO
+# provider account at all; instance admins configure a provider later via the
+# in-app onboarding checklist or Settings > AI Providers). Self-hosters who
+# want the toolkit to seed a provider account unattended opt in by supplying
+# ai.model (ai.provider alone is not enough — cfg_require on ai.model is what
+# the toolkit checks for presence of this section).
+# -----------------------------------------------------------------------------
+ai:
+  # openai | anthropic — api-key providers, work headless (recommended).
+  # openai-codex — needs an interactive ChatGPT OAuth login; unattended setup
+  #                will WARN, skip key seeding, and print how to finish in the UI.
+  provider: openai
+  # Name of the environment variable holding the API key. NEVER put the key
+  # itself in this file. Prompted if the variable is unset and running
+  # interactively. Defaults: OPENAI_API_KEY / ANTHROPIC_API_KEY per provider.
+  key_env: OPENAI_API_KEY
+  # Model seeded onto the starter agent, format provider:model[:thinking].
+  # MUST match `provider` above (an api-key provider), e.g.:
+  #   openai:gpt-5.5    anthropic:claude-sonnet-4-6
+  model: openai:gpt-5.5
+
+# -----------------------------------------------------------------------------
+# Optional starter squad + agent (created via the bootstrap bearer; off by
+# default). Omit this whole section, or leave squad.name empty/unset, and
+# seed.sh creates NO squad at all — the instance's first admin creates their
+# first squad via the in-app onboarding checklist instead. Self-hosters who
+# want the toolkit to create a starter squad unattended opt in by supplying
+# squad.name — but the agent it spawns needs a model from SOMEWHERE: either
+# ai.model above (squad.agent.model falls back to it when left empty) or an
+# explicit squad.agent.model. squad.name set with neither is a config error
+# (seed.sh dies fast, before any API call, rather than failing deep inside
+# the squad-create/spawn request).
+# -----------------------------------------------------------------------------
+squad:
+  name: starter
+  purpose: first squad for the new tenant
+  agent:
+    # An agent type id from config/agent-types/ (engineer, manager, reviewer, ...)
+    type: engineer
+    # Model override for the agent. Empty = ai.model above.
+    model: ''
+
+# -----------------------------------------------------------------------------
+# Instance secrets. Both are generated if the named env vars are unset/empty.
+# On re-runs, values already present in <dest>/.env are REUSED (regenerating
+# TAU_ENCRYPTION_KEY would orphan the encrypted secret store).
+# -----------------------------------------------------------------------------
+secrets:
+  # Env var holding a 32-byte hex encryption key for the DB secret store.
+  encryption_key_env: ''
+  # Env var holding the bootstrap password. This is the fully-privileged
+  # bootstrap bearer token — it self-disables the moment the first admin
+  # passkey is created.
+  password_env: ''
+
+# -----------------------------------------------------------------------------
+# Orchestrator-only (provision.sh); ignored by setup-host.sh.
+# -----------------------------------------------------------------------------
+provision:
+  # PROVIDER SEAM: exe (default), hetzner, or digitalocean.
+  # NOTE: Hetzner's cheap shared-vCPU tiers (CX23/CAX11) are frequently
+  # unbuyable — no capacity — which is why digitalocean is the provider the
+  # hosted platform actually uses (see render-config.ts). hetzner is kept
+  # for BYO-Hetzner operators; the provider seam has no preference either way.
+  provider: exe
+  # VM name. For exe, the instance becomes reachable at https://<name>.exe.xyz
+  # and core.origin should be https://<name>.exe.xyz:<core.port>. For hetzner/
+  # digitalocean, this is the server/droplet name (idempotent lookup key — a
+  # same-name server/droplet is reused rather than recreated).
+  name: my-tau
+  # SSH user on the provisioned VM. Default: exedev (exe) / root (hetzner,
+  # digitalocean).
+  ssh_user: exedev
+  # SSH key for the ACCOUNT that creates + logs into the VM (exe.dev account
+  # key, the private half of the hcloud SSH key named in
+  # provision.hetzner.ssh_key_name below, or the private half of the
+  # DigitalOcean SSH key named in provision.digitalocean.ssh_key_id below).
+  # Empty = runtime.exe.ssh_key_path (they are usually the same key for exe).
+  account_key_path: ''
+  # hetzner-only knobs (ignored unless provider: hetzner). Needs $HCLOUD_TOKEN
+  # on the control machine (never forwarded to the target).
+  hetzner:
+    # ~€6.5/mo CX23-class shared vCPU; pass a ccx3x type for the dedicated tier.
+    server_type: cx32
+    location: fsn1
+    image: ubuntu-24.04
+    # Name of an SSH key already uploaded to the hcloud project (operator
+    # setup, once) — its PRIVATE half is provision.account_key_path above.
+    ssh_key_name: platform-deploy
+  # digitalocean-only knobs (ignored unless provider: digitalocean). Needs
+  # $DIGITALOCEAN_TOKEN on the control machine (never forwarded to the
+  # target).
+  digitalocean:
+    size: s-2vcpu-4gb
+    region: nyc3
+    image: ubuntu-24-04-x64
+    # DO ssh_keys entry (numeric id OR fingerprint) already uploaded to the
+    # DO account (operator setup, once) — its PRIVATE half is
+    # provision.account_key_path above.
+    ssh_key_id: '<DO ssh key id or fingerprint>'
+    # OPTIONAL VPC network uuid the droplet is created in. Omit to let DO use
+    # whichever VPC is currently the region's DEFAULT — fine for a standalone
+    # box, WRONG whenever the droplet has to reach something over a private
+    # network (a managed database's private host, other droplets), because
+    # "the default VPC" is a console setting that can change later without
+    # touching this file. Must be a VPC in `region` above.
+    # vpc_uuid: 00000000-0000-0000-0000-000000000000
+    # OPTIONAL DigitalOcean project the droplet is filed under (console
+    # grouping only — no effect on the droplet itself). Droplet-create has no
+    # project field, so this is a separate POST /v2/projects/<id>/resources
+    # after create; the token therefore needs project:read + project:update.
+    # Best-effort by design: if the assignment fails the droplet is already
+    # created and paid for, so provision.sh warns and continues rather than
+    # failing the run. Re-assignment is a no-op, so a re-run retries it.
+    # project_id: 00000000-0000-0000-0000-000000000000
+    # OPTIONAL ordered fallback list, tried in turn after size/region above
+    # on a capacity/availability error (DO 422/503 with a capacity-shaped
+    # message) — a temporarily-out-of-stock size/region must not fail a
+    # paid signup. Not tried on an auth/image/other error. Omit entirely for
+    # no fallback (a capacity error then fails the provision outright).
+    fallbacks:
+      - { size: s-2vcpu-4gb, region: sfo3 }
+      - { size: s-2vcpu-4gb-amd, region: nyc3 }
+      - { size: s-2vcpu-4gb-intel, region: nyc3 }
+
+# -----------------------------------------------------------------------------
+# DNS (optional; orchestrator-only, provision.sh). Pairs with
+# provision.provider: hetzner/digitalocean, whose servers don't have a stable
+# hostname the way exe.dev's *.exe.xyz VMs do. Needs $CLOUDFLARE_API_TOKEN on
+# the control machine (never forwarded to the target).
+# -----------------------------------------------------------------------------
+dns:
+  # PROVIDER SEAM: cloudflare is the only implemented provider today.
+  provider: cloudflare
+  # Zone that owns core.origin's host. provision.sh upserts an unproxied A
+  # record: <host of core.origin> → <provisioned server's IP>.
+  zone: hiretau.ai

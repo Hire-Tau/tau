@@ -1,0 +1,44 @@
+import { expect, test } from 'bun:test'
+import { credentialSetupStatus, connectionSetupStatus } from './setup-status'
+import { channelIntegrationFields } from './channels/settings'
+import { getDeploymentIntegrationSettings, deploymentCredentialProviders } from './deployment/settings'
+
+const account = {
+  credentialConfigured: true,
+  enabled: true,
+  authState: 'authenticated' as const,
+  healthState: 'healthy' as const,
+  materialRevision: 'one',
+  validatedRevision: 'one',
+}
+test('account setup distinguishes missing accounts, disabled accounts, invalid credentials, health, and usable alternatives', () => {
+  expect(connectionSetupStatus([{ ...account, credentialConfigured: false }]).state).toBe('needs_attention')
+  expect(connectionSetupStatus([]).state).toBe('needs_setup')
+  expect(connectionSetupStatus([{ ...account, enabled: false }]).issues).toEqual([
+    'Enable at least one connected account.',
+  ])
+  expect(connectionSetupStatus([{ ...account, authState: 'reauthorization_required' }]).state).toBe('needs_attention')
+  expect(connectionSetupStatus([{ ...account, validatedRevision: 'old' }]).state).toBe('needs_attention')
+  expect(connectionSetupStatus([{ ...account, healthState: 'unreachable' }]).state).toBe('needs_attention')
+  expect(connectionSetupStatus([{ ...account, authState: 'invalid' }, account])).toEqual({
+    state: 'configured',
+    issues: [],
+  })
+})
+test('only missing required fields affect setup and messages contain labels rather than secret values', () => {
+  expect(
+    credentialSetupStatus([
+      { label: 'Contact address', required: true, configured: false },
+      { label: 'Optional setting', configured: false },
+    ])
+  ).toEqual({ state: 'needs_setup', issues: ['Contact address is required.'] })
+  expect(credentialSetupStatus([{ label: 'Saved private key', required: true, configured: true }]).state).toBe(
+    'configured'
+  )
+})
+test('every channel and deployment provider declares its required credential', () => {
+  for (const fields of Object.values(channelIntegrationFields))
+    expect(credentialSetupStatus(fields.map((field) => ({ ...field, configured: false }))).state).toBe('needs_setup')
+  for (const provider of Object.keys(deploymentCredentialProviders))
+    expect(getDeploymentIntegrationSettings(provider).fields[0].required).toBe(true)
+})

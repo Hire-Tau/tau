@@ -1,0 +1,77 @@
+---
+title: People and access
+description: Invite people, assign roles, and manage account and automation credentials.
+---
+
+import ModeContent from '../../../components/ModeContent.astro'
+
+Tau uses roles to control what people can do and where they can do it. A role contains permissions; a role assignment gives those permissions to a person at an instance-wide or squad scope. Configuration pages and actions appear according to your permissions.
+
+## Invite a person
+
+<ModeContent mode="cloud">
+
+Open **Settings → Users** in the workspace you want the person to join. You need user-management access to invite people or change their roles.
+
+</ModeContent>
+
+<ModeContent mode="self-hosted">
+
+Open **Settings → Users** on your instance. If invitation email is not configured, Tau can display an invite link for you to share directly with the intended person. For account setup and server access, see [Runtime and access](/self-host/runtime-and-access/).
+
+</ModeContent>
+
+1. Choose **Invite User**.
+2. Enter their email and, optionally, a display name.
+3. Review the selected role before choosing **Send Invite**. The bundled default is Operator, and the invite flow assigns its selected role at system scope.
+4. Have the person complete the invitation and account setup. Use **Resend Invite** on a pending invitation if they need another link.
+
+The bundled human roles provide these starting points:
+
+| Role     | Starting access                                                                                                    |
+| -------- | ------------------------------------------------------------------------------------------------------------------ |
+| Admin    | All permissions, including access and configuration management.                                                    |
+| Operator | Broad day-to-day control of squads, work, agents, integrations, and environments. It is a powerful operating role. |
+| Viewer   | Read access to the supported work and workspace resources.                                                         |
+
+Operators are not account administrators by default. Agent roles such as Squad Worker and Squad Manager are derived from agent types and are not offered as human invite roles. Custom roles and changed bundled roles can differ from these starting definitions; inspect **Settings → Roles** for the actual permissions.
+
+## Assign access to a squad
+
+In **Settings → Users**, choose **Manage Roles** for the person, select a role and assignment scope, and choose **Assign**. The UI offers **System** and **Squad**; a squad assignment also asks you to select the squad. You may also encounter squad-default assignments created through the API or existing configuration:
+
+| Scope         | Effect                                                                                                    |
+| ------------- | --------------------------------------------------------------------------------------------------------- |
+| System        | Grants the role's permissions across the instance, subject to each resource's checks.                     |
+| Squad default | Supplies permissions for squad-scoped requests when the person has no assignment for that specific squad. |
+| Squad         | Supplies permissions for the selected squad and replaces that person's squad-default permissions there.   |
+
+System permissions still apply when a squad-specific role is present. Adding a narrow squad role does not reduce a broad system grant. For access limited to one squad, review and remove broader assignments that would otherwise grant access elsewhere.
+
+Use the remove control beside a role assignment to remove that assignment. Tau prevents removing the last admin assignment or disabling the last active admin, so someone can still manage the instance.
+
+## Create a custom role
+
+Open **Settings → Roles → Create Role**. Give it a name and unique slug, then select the actions it should allow. You can use an offered existing role as a starting point and adjust its permissions before saving. Assign the new role to people separately in **Users**.
+
+Use the permission descriptions to distinguish similar operations. For example, reading provider status requires `provider-auth:read`, while changing provider accounts requires `provider-auth:write`. A qualifier can narrow a permission: `secrets:read:integration` covers a configured secret group, while bare `secrets:read` also covers its qualified variants. Remove a broader grant before relying on a narrower one.
+
+## Review sessions and devices
+
+Use **Settings → Sessions** for browser sessions and **Settings → Paired Devices** for paired clients such as the CLI. Revoke a device you no longer use. In **Users**, disabling an account prevents that person from signing in; use role assignments when you only want to change what they can access.
+
+The CLI can show your effective permissions for a squad:
+
+```sh
+tau auth introspect --squad "$SQUAD_ID"
+```
+
+Set `SQUAD_ID` to an actual squad ID from `tau squad list`. See [CLI login](/reference/cli/#log-in-to-an-instance) if you have not connected the CLI.
+
+## Give automation its own credential
+
+Use **Settings → System Tokens** for automation that should not depend on a person's login. Choose a descriptive name and explicit permission scopes, then save the token in the automation's secret storage. Tau displays the token value only once at creation.
+
+System token permissions apply across the instance; they are not assignments to a single squad. Resource and ownership checks still apply. Select only the actions the automation needs, and revoke the token when you retire it. A wildcard also grants future actions within its resource.
+
+Agent shells receive their own scoped identity from Tau. They do not need an operator's saved CLI login. For differences in runtime isolation and host access, see [Runtime and access](/self-host/runtime-and-access/).

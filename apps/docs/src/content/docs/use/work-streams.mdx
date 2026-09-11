@@ -1,0 +1,58 @@
+---
+title: Follow work streams
+description: Track a deliverable, understand its state, and find its conversations and result.
+---
+
+A work stream tracks one deliverable from its brief through work, questions, review, and completion. Its conversations may involve several agents, but the deliverable remains the same work stream.
+
+## Start with a clear brief
+
+Use a [squad conversation](/use/assistant/#ask-tau-or-start-a-squad-conversation) and ask for a work stream. State what should be delivered, the relevant inputs, the workflow, and what “done” means.
+
+> Create a Solo work stream to compare these three support tools. Use the requirements in the attached brief, save a comparison table, and recommend one option with reasons. Do not sign up for services.
+
+For code work, include the repository, branch or worktree expectations, test requirements, and whether a human must merge the PR. The [workflow](/use/workflows/) determines the process; a squad name alone does not select it.
+
+If a conversation is just answering a quick question, it may not need tracked work. Ask explicitly for a work stream when you need progress, a durable deliverable, and a clear completion point.
+
+## Find work again
+
+Search by title in the Assistant, use **Active work** in the Feed, or open a squad's **Work** tab. The Assistant opens a compact preview with the description and participating conversations. The full work-stream view has more details and controls.
+
+Recently completed work is a short Feed summary, not the entire archive. Use **See all** for more. In a squad's Assistant preview, expand **Recently completed** and choose **7 days** or **30 days**.
+
+## Read the status
+
+A stream's lifecycle is **Queued**, **Active**, **Done**, or **Canceled**. Its displayed status can be more specific: active work may be idle, running, blocked, or waiting for review. A wait can hold one step or the whole stream; another branch may still be working. Open the wait details to see what it applies to.
+
+| What you see                | What to check                                                                                         |
+| --------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Queued                      | It has not been admitted to run; check capacity, dependencies, and whether it is paused               |
+| In Progress / active step   | Open the current agent conversation for progress and evidence                                         |
+| Idle                        | No current execution or more specific wait is shown; inspect the next step and latest conversation    |
+| Waiting on Answer / Blocked | Read the exact question or blocker; another branch may still be running                               |
+| Waiting on Dependency       | Inspect the prerequisite work; it must complete before dependent work can continue                    |
+| In Review                   | Use the review controls for the requested verdict                                                     |
+| Execution Failed            | Read the failed execution's error and correct its cause before continuing                             |
+| Paused                      | Work is waiting for an explicit resume                                                                |
+| Parked                      | The stream has released its admission slot; check whether it is also paused and needs explicit resume |
+| Done                        | Inspect the final deliverable and completion evidence                                                 |
+| Canceled                    | The stream ended without completing its planned delivery                                              |
+
+Do not infer that a stream is frozen just because no new text is streaming. An agent may be using a tool, waiting on capacity, or waiting for a response. Open its details before sending the same request again.
+
+## Read and reply in context
+
+The Assistant's work preview lists participating conversations with their agent types and activity indicators. **Assigned** identifies an attached assignment. **Started here**, when present, links the originating conversation for context; an inactive origin may be read-only.
+
+Select a conversation to read or reply inline. Use the full-conversation link for the squad's Chats page when you need its additional controls. Use Back or Escape to return to the work preview.
+
+Give corrections to the conversation that is doing the relevant work. For changes to the overall brief or coordination, ask the consultant or squad manager and name the work stream. [Pause](/use/review-and-intervene/#pause-and-resume-work) first if continuing would make the correction harder.
+
+## Check completion
+
+A workflow can finish with a deliverable, require human approval, or wait for a verified PR merge. A worker saying it is finished does not necessarily satisfy the stream's delivery policy.
+
+Read the final summary, open the file or PR, and check the stated verification. If the result is missing or a requirement was misunderstood, reply with the concrete gap. Keep the original stream as context when asking for a follow-up deliverable.
+
+For review controls, questions, and stopping work, see [Review and intervene](/use/review-and-intervene/).

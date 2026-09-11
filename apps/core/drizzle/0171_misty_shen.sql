@@ -1,0 +1,1 @@
+ALTER TABLE "apns_devices" ADD COLUMN "relay_binding_token" text;

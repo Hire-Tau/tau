@@ -1,0 +1,1 @@
+ALTER TABLE "machine_boxes" ADD CONSTRAINT "machine_boxes_machine_id_port_unique" UNIQUE("machine_id","port");

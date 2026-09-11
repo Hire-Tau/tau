@@ -1,0 +1,12 @@
+# Config for the exe-lifecycle-macos CI job, which runs `bun test` with this
+# directory as its cwd.
+#
+# The filename matters: Bun only ever loads `bunfig.toml` from the cwd (plus
+# the global `~/.bunfig.toml`). A descriptively-named `bunfig.<something>.toml`
+# is NOT discovered, and Bun does not walk up to the repo root either — so
+# running from here means the root bunfig's Core/platform preloads (which
+# require the ParadeDB test container) never run, which is exactly what that
+# job needs, and `maxConcurrency` below is actually applied.
+[test]
+preload = ["./exe-lifecycle-preload.ts"]
+maxConcurrency = 1

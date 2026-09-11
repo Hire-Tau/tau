@@ -1,0 +1,59 @@
+name: Publish Images
+"on": 
+  push: 
+    branches: 
+      - main
+    tags: 
+      - v*
+  workflow_dispatch: null
+permissions: 
+  contents: read
+  packages: write
+jobs: 
+  detect-changes: 
+    runs-on: ubuntu-latest
+    outputs: 
+      build: "${{ steps.decide.outputs.build }}"
+    steps: 
+      - uses: actions/checkout@v4
+        with: 
+          fetch-depth: 2
+      - id: decide
+        env: 
+          REF_TYPE: "${{ github.ref_type }}"
+          EVENT_NAME: "${{ github.event_name }}"
+        run: "# A release tag or a manual dispatch always builds — never path-gated.\nif [ \"${REF_TYPE}\" = \"tag\" ] || [ \"${EVENT_NAME}\" = \"workflow_dispatch\" ]; then\n  echo \"build=true\" >> \"$GITHUB_OUTPUT\"\n  exit 0\nfi\n# A branch push builds only when an image source changed. The paths\n# here MUST stay in lockstep with what the Dockerfile COPYs.\nif git diff --name-only HEAD^ HEAD \\\n  | grep -qE '^(packages/machine-image/|scripts/machine/|\\.github/workflows/publish-images\\.yml$)'; then\n  echo \"build=true\" >> \"$GITHUB_OUTPUT\"\nelse\n  echo \"build=false\" >> \"$GITHUB_OUTPUT\"\nfi\n"
+    if: "${{ vars.TAU_RELEASES_ENABLED == 'true' }}"
+  build-machine-image: 
+    needs: detect-changes
+    if: "${{ vars.TAU_RELEASES_ENABLED == 'true' && (needs.detect-changes.outputs.build == 'true') }}"
+    runs-on: ubuntu-latest
+    steps: 
+      - uses: actions/checkout@v4
+      - name: Free disk space
+        run: "sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \\\n  /opt/hostedtoolcache/CodeQL /usr/local/share/boost \\\n  \"${AGENT_TOOLSDIRECTORY:-/opt/hostedtoolcache}\" || true\nsudo docker image prune --all --force || true\ndf -h\n"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with: 
+          registry: ghcr.io
+          username: "${{ github.actor }}"
+          password: "${{ secrets.GITHUB_TOKEN }}"
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with: 
+          images: ghcr.io/hire-tau/tau-machine
+          tags: "type=raw,value=latest,enable={{is_default_branch}}\ntype=ref,event=tag\ntype=sha,prefix=sha-,format=short\n"
+      - name: Build and push tau-machine
+        uses: docker/build-push-action@v6
+        with: 
+          context: "."
+          file: packages/machine-image/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: "${{ steps.meta.outputs.tags }}"
+          labels: "${{ steps.meta.outputs.labels }}"
+          cache-from: "type=gha,scope=machine-image"
+          cache-to: "type=gha,scope=machine-image,mode=max"

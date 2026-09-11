@@ -1,0 +1,1 @@
+ALTER TABLE "machines" DROP COLUMN "server_bundle_version";

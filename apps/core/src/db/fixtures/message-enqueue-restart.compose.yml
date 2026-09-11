@@ -1,0 +1,13 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: fifo_restart
+    ports:
+      - '${FIFO_RESTART_PORT}:5432'
+    volumes:
+      - 'fifo_restart_data:/var/lib/postgresql/data'
+volumes:
+  fifo_restart_data:
+    name: '${FIFO_RESTART_VOLUME}'

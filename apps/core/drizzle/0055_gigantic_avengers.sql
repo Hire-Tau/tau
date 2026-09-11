@@ -1,0 +1,1 @@
+ALTER TABLE "agent_types" ADD COLUMN "early_margin_tokens" integer;

@@ -1,0 +1,117 @@
+import { describe, expect, mock, test } from 'bun:test'
+import type { AgentQuestion } from '@tau/shared'
+import { createAsyncAskHumanTool } from './ask-human-async'
+
+const record: AgentQuestion = {
+  id: 'question-12345678',
+  agentId: 'agent-1',
+  squadId: 'squad-1',
+  ownerUserId: null,
+  executionId: null,
+  audienceResolution: null,
+  questionData: { questions: [] },
+  status: 'open',
+  answer: null,
+  answeredByUserId: null,
+  createdAt: new Date(0).toISOString(),
+  answeredAt: null,
+}
+
+async function executeWith(openedWaitWorkStreamIds: string[]) {
+  const createQuestion = mock(async () => ({ ...record, openedWaitWorkStreamIds }))
+  const tool = createAsyncAskHumanTool(
+    { agentId: 'agent-1', executionId: 'execution-1', flushPersistence: async () => {} },
+    { createQuestion }
+  )
+  const result = await tool.execute(
+    'call-1',
+    {
+      blocking: true,
+      questions: [{ id: 'ship', question: 'Ship it?' }],
+    },
+    undefined,
+    undefined,
+    {} as any
+  )
+  return { result, createQuestion }
+}
+
+describe('async ask_human trusted origin', () => {
+  test('flushes persistence before creating with runner-owned identity', async () => {
+    const order: string[] = []
+    const createQuestion = mock(async () => {
+      order.push('create')
+      return { ...record, openedWaitWorkStreamIds: [] }
+    })
+    const tool = createAsyncAskHumanTool(
+      {
+        agentId: 'agent-1',
+        executionId: 'execution-1',
+        flushPersistence: async () => {
+          order.push('flush')
+        },
+      },
+      { createQuestion }
+    )
+
+    await tool.execute('call-1', { questions: [{ id: 'ship', question: 'Ship it?' }] }, undefined, undefined, {} as any)
+
+    expect(order).toEqual(['flush', 'create'])
+    expect(createQuestion).toHaveBeenCalledWith({ agentId: 'agent-1', executionId: 'execution-1' }, expect.anything(), {
+      blocking: false,
+    })
+    expect(JSON.stringify(tool.parameters)).not.toMatch(/agentId|executionId|recipient|workStreamId/)
+  })
+})
+
+describe('async ask_human unroutable audience', () => {
+  test('records the question and never claims a system-inbox alert', async () => {
+    const createQuestion = mock(async () => ({
+      ...record,
+      audienceResolution: 'unroutable' as const,
+      openedWaitWorkStreamIds: [],
+    }))
+    const tool = createAsyncAskHumanTool(
+      { agentId: 'agent-1', executionId: 'execution-1', flushPersistence: async () => {} },
+      { createQuestion }
+    )
+
+    const result = await tool.execute(
+      'call-1',
+      { questions: [{ id: 'ship', question: 'Ship it?' }] },
+      undefined,
+      undefined,
+      {} as any
+    )
+    const text = result.content[0]?.type === 'text' ? result.content[0].text : ''
+    expect(text).not.toStartWith('Error:')
+    expect(text).toContain('no direct Action Center recipient was found')
+    expect(text).toContain('still visible and answerable')
+    expect(text).not.toContain('system inbox')
+    expect(result.details).toMatchObject({ questionId: record.id, async: true })
+  })
+})
+
+describe('async ask_human blocking reply', () => {
+  test('never claims a wait opened when zero streams were affected', async () => {
+    const { result } = await executeWith([])
+    expect(result.content[0]?.type === 'text' && result.content[0].text).toContain('No work-stream waits were opened')
+    expect(result.details).toMatchObject({ blocking: true, openedWaitCount: 0, openedWaitWorkStreamIds: [] })
+  })
+
+  test('reports the exact single affected stream', async () => {
+    const { result } = await executeWith(['ws-one'])
+    expect(result.content[0]?.type === 'text' && result.content[0].text).toContain(
+      'Opened a wait on 1 work stream: ws-one'
+    )
+    expect(result.details).toMatchObject({ openedWaitCount: 1, openedWaitWorkStreamIds: ['ws-one'] })
+  })
+
+  test('reports the exact count and IDs for multiple affected streams', async () => {
+    const { result } = await executeWith(['ws-one', 'ws-two'])
+    expect(result.content[0]?.type === 'text' && result.content[0].text).toContain(
+      'Opened waits on 2 work streams: ws-one, ws-two'
+    )
+    expect(result.details).toMatchObject({ openedWaitCount: 2, openedWaitWorkStreamIds: ['ws-one', 'ws-two'] })
+  })
+})

@@ -1,0 +1,1 @@
+ALTER TABLE "instance_maintenance_audit" ADD COLUMN "metadata" jsonb;

@@ -1,0 +1,60 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tau-sandbox-policy
+  namespace: tau-sandboxes
+spec:
+  podSelector:
+    matchLabels:
+      app: tau-sandbox
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Only allow HTTP from Core namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              app: tau
+              component: core
+      ports:
+        - port: 50051
+          protocol: TCP
+  egress:
+    # Allow DNS
+    - to: []
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Allow outbound internet for package/git operations on all ports.
+    # Kubernetes NetworkPolicy cannot match FQDNs such as github.com/ssh.github.com portably, so this applies
+    # broadly while excluding private/special-use ranges below (including cloud metadata).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.0.0.0/24
+              - 192.0.2.0/24
+              - 192.168.0.0/16
+              - 198.18.0.0/15
+              - 198.51.100.0/24
+              - 203.0.113.0/24
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+    # Allow access to Core (for tau CLI callbacks)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              app: tau
+              component: core
+      ports:
+        - port: 3000
+          protocol: TCP
