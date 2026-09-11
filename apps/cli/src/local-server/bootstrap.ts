@@ -33,6 +33,12 @@ export async function bootstrap(options: BootstrapOptions, deps: BootstrapDeps):
 
   let env: Record<string, string | undefined> = { ...deps.env }
   if (!deps.which('bun')) {
+    // bun's installer unpacks a zip; stock Ubuntu/Debian images ship without unzip.
+    if (!deps.which('unzip')) {
+      throw new Error(
+        'bun is not installed and its installer needs unzip — install it (Debian/Ubuntu: sudo apt install unzip) and re-run, or install bun yourself first (https://bun.sh).'
+      )
+    }
     deps.log('bun not found — installing it with the official installer (https://bun.sh)')
     const r = await deps.runner(['sh', '-c', 'curl -fsSL https://bun.sh/install | bash'], { inherit: true })
     if (r.code !== 0) throw new Error('bun installation failed')
