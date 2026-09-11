@@ -115,9 +115,9 @@ describe('runSetup', () => {
       'docker inspect -f {{json .}} postgres-tau',
       'docker inspect -f {{.State.Running}} postgres-tau',
       'docker run -d --name postgres-tau --restart unless-stopped -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=tau -p 127.0.0.1:5432:5432 -v tau_postgres-data:/var/lib/postgresql paradedb/paradedb:latest',
-      'docker exec postgres-tau psql -U postgres -tAc SELECT 1',
-      'docker exec postgres-tau psql -U postgres -tAc SELECT 1',
-      'docker exec postgres-tau psql -U postgres -tAc SELECT 1',
+      'docker exec postgres-tau psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
+      'docker exec postgres-tau psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
+      'docker exec postgres-tau psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
       "docker exec postgres-tau psql -U postgres -tAc SELECT 1 FROM pg_database WHERE datname='tau'",
       'bun run db:migrate',
       'bun run build:core',
@@ -223,7 +223,9 @@ describe('runSetup', () => {
     expect(joined).toContain(
       'docker run -d --name postgres-tau-smoke --restart unless-stopped -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=tau -p 127.0.0.1:5433:5432 -v tau-smoke_postgres-data:/var/lib/postgresql paradedb/paradedb:latest'
     )
-    expect(joined.filter((c) => c === 'docker exec postgres-tau-smoke psql -U postgres -tAc SELECT 1')).toHaveLength(3)
+    expect(
+      joined.filter((c) => c === 'docker exec postgres-tau-smoke psql -h 127.0.0.1 -U postgres -tAc SELECT 1')
+    ).toHaveLength(3)
     expect(joined).toContain(
       "docker exec postgres-tau-smoke psql -U postgres -tAc SELECT 1 FROM pg_database WHERE datname='tau'"
     )
@@ -368,7 +370,7 @@ describe('runSetup', () => {
     expect(probed).toEqual([])
     const joined = calls.map((c) => c.command.join(' '))
     expect(joined.some((c) => c.startsWith('docker run'))).toBe(false)
-    expect(joined).toContain('docker exec postgres-tau-smoke psql -U postgres -tAc SELECT 1')
+    expect(joined).toContain('docker exec postgres-tau-smoke psql -h 127.0.0.1 -U postgres -tAc SELECT 1')
     const url = 'postgres://postgres:postgres@localhost:5433/tau'
     expect(readFileSync(join(root, '.env'), 'utf8')).toContain(`DATABASE_URL=${url}\n`)
     expect(calls.find((c) => c.command.join(' ') === 'bun run db:migrate')!.options.env?.DATABASE_URL).toBe(url)
@@ -404,7 +406,7 @@ describe('runSetup', () => {
     d.connect = async () => {}
     await runSetup(opts({ instance: 'smoke', explicit: new Set(['runtime']) }), d)
     const joined = calls.map((c) => c.command.join(' '))
-    expect(joined).toContain('docker exec postgres-tau-smoke psql -U postgres -tAc SELECT 1')
+    expect(joined).toContain('docker exec postgres-tau-smoke psql -h 127.0.0.1 -U postgres -tAc SELECT 1')
     expect(readFileSync(join(root, '.env'), 'utf8')).toContain(
       'DATABASE_URL=postgres://postgres:postgres@localhost:5433/tau\n'
     )

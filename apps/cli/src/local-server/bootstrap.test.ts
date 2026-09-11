@@ -110,6 +110,22 @@ describe('bootstrap', () => {
     const install = calls.find((c) => c.command.join(' ') === 'bun install --frozen-lockfile')!
     expect((install.options.env?.PATH ?? '').startsWith(join(tmp, '.bun', 'bin'))).toBe(true)
   })
+  // bun's installer unpacks a zip and dies with "unzip is required" on a stock
+  // Ubuntu/Debian image; say so before running it, and only when bun is missing.
+  it('requires unzip only when bun has to be installed', async () => {
+    const missingBoth = deps({ which: (cmd) => (cmd === 'bun' || cmd === 'unzip' ? null : `/usr/bin/${cmd}`) })
+    await expect(
+      bootstrap({ root: join(tmp, 'tau'), repo: 'x', ref: 'main', setupArgs: [] }, missingBoth.d)
+    ).rejects.toThrow(/unzip.*apt install unzip/)
+    expect(missingBoth.calls).toHaveLength(0)
+
+    const root = join(tmp, 'tau')
+    mkdirSync(join(root, '.git'), { recursive: true })
+    writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tau' }))
+    const bunPresent = deps({ which: (cmd) => (cmd === 'unzip' ? null : `/usr/bin/${cmd}`) })
+    await bootstrap({ root, repo: 'x', ref: 'main', setupArgs: [] }, bunPresent.d)
+    expect(joined(bunPresent.calls)[0]).toBe('bun install --frozen-lockfile')
+  })
   it('requires git', async () => {
     const { d } = deps({ which: (cmd) => (cmd === 'git' ? null : `/usr/bin/${cmd}`) })
     await expect(bootstrap({ root: join(tmp, 'tau'), repo: 'x', ref: 'main', setupArgs: [] }, d)).rejects.toThrow(/git/)

@@ -90,9 +90,9 @@ describe('tau server', () => {
     await run(['server', 'start'])
     expect(joined(calls)).toEqual([
       'docker inspect -f {{.State.Running}} postgres-tau',
-      'docker exec postgres-tau psql -U postgres -tAc SELECT 1',
-      'docker exec postgres-tau psql -U postgres -tAc SELECT 1',
-      'docker exec postgres-tau psql -U postgres -tAc SELECT 1',
+      'docker exec postgres-tau psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
+      'docker exec postgres-tau psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
+      'docker exec postgres-tau psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
       'bunx pm2 start ecosystem.config.js --only tau-api,tau-worker --update-env',
     ])
     expect(calls.at(-1)?.options.cwd).toBe(root)
@@ -107,9 +107,9 @@ describe('tau server', () => {
     expect(joined(calls)).toEqual([
       'docker inspect -f {{.State.Running}} postgres-tau',
       'docker run -d --name postgres-tau --restart unless-stopped -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=tau -p 127.0.0.1:5433:5432 -v tau_postgres-data:/var/lib/postgresql paradedb/paradedb:latest',
-      'docker exec postgres-tau psql -U postgres -tAc SELECT 1',
-      'docker exec postgres-tau psql -U postgres -tAc SELECT 1',
-      'docker exec postgres-tau psql -U postgres -tAc SELECT 1',
+      'docker exec postgres-tau psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
+      'docker exec postgres-tau psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
+      'docker exec postgres-tau psql -h 127.0.0.1 -U postgres -tAc SELECT 1',
       'bunx pm2 start ecosystem.config.js --only tau-api,tau-worker --update-env',
     ])
     // The pull's progress needs the terminal; the inspect it branches on must not have it.
