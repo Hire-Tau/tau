@@ -292,6 +292,48 @@ describe('tau server', () => {
     expect(error.message).toContain('not registered')
     rmSync(other, { recursive: true, force: true })
   })
+  // A checkout deleted by hand (an old worktree, a scratch dir) leaves a
+  // registry entry nothing can resolve; `--instance` must still be able to
+  // retire it, cleaning the supervisor up as far as it can.
+  it('uninstall --instance retires a registration whose checkout no longer exists', async () => {
+    const gone = join(tmpdir(), `tau-gone-${process.pid}`)
+    upsertInstance(
+      'smoke',
+      { root: gone, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
+      {},
+      statePath
+    )
+    const { run, calls } = make()
+    await run(['server', 'uninstall', '--instance', 'smoke', '--yes'])
+    expect(outputError).not.toHaveBeenCalled()
+    expect(joined(calls)).toEqual(['bunx pm2 delete tau-smoke-api tau-smoke-worker', 'bunx pm2 save'])
+    // pm2 ran somewhere that exists, not in the vanished checkout.
+    expect(calls.every((c) => c.options.cwd !== gone)).toBe(true)
+    expect(readRegistry(statePath).instances).toEqual({
+      tau: expect.objectContaining({ root }),
+    })
+    const [data, message] = (output as ReturnType<typeof mock>).mock.calls.at(-1) as [Record<string, unknown>, string]
+    expect(data.unregistered).toBe('smoke')
+    expect(message).toContain(`removed instance "smoke"`)
+    expect(message).toContain('no longer exists')
+    expect(message).toContain('docker rm -f postgres-tau-smoke && docker volume rm tau-smoke_postgres-data')
+    expect(message).toContain('~/.tau-smoke')
+  })
+  it('uninstall --instance of a vanished checkout still removes the registration when the supervisor cleanup fails', async () => {
+    const gone = join(tmpdir(), `tau-gone-${process.pid}-b`)
+    upsertInstance(
+      'smoke',
+      { root: gone, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
+      {},
+      statePath
+    )
+    const { run } = make({ 'bunx pm2 delete': { code: 1, stderr: 'pm2 is not running' } })
+    await run(['server', 'uninstall', '--instance', 'smoke', '--yes'])
+    expect(outputError).not.toHaveBeenCalled()
+    expect(readRegistry(statePath).instances.smoke).toBeUndefined()
+    const message = (output as ReturnType<typeof mock>).mock.calls.at(-1)?.[1] as string
+    expect(message).toContain('supervisor cleanup failed')
+  })
   it('uninstall refuses to prompt on a non-TTY without --yes', async () => {
     const { run, calls } = make()
     await run(['server', 'uninstall'])

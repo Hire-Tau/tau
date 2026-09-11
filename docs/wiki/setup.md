@@ -260,6 +260,10 @@ prompt, which is required when there is no terminal (it refuses to run
 unattended otherwise). It prints what it deliberately left behind (the
 checkout, the instance's PostgreSQL container and volume, and `HOME_DIR`) with
 the commands to remove them by hand, and says which registry entry it dropped.
+If the checkout itself is already gone (a deleted worktree, a scratch
+directory), `tau server uninstall --instance <label>` still retires the
+registration: it cleans the supervisor up as far as it can, drops the registry
+entry, and lists the container, volume and data directory it left behind.
 
 To update:
 

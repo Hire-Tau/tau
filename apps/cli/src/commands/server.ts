@@ -16,7 +16,7 @@ import {
   parseDatabaseUrl,
   waitForPostgres,
 } from '../local-server/postgres'
-import { instanceNames } from '../local-server/instance'
+import { instanceNames, normalizeLabel } from '../local-server/instance'
 import {
   logsSupervisor,
   makeSupervisorContext,
@@ -35,6 +35,7 @@ import {
   defaultLabel,
   findInstanceByRoot,
   getStatePath,
+  isCheckout,
   readRegistryStrict,
   removeInstance,
   resolveRoot,
@@ -131,6 +132,12 @@ export function registerServerCommands(program: Command, deps: ServerDeps = defa
         which: deps.which,
       })
     return { dir, registered, context, names: instanceNames(registered.label) }
+  }
+  /** The registry record behind an --instance label whose checkout is gone, or undefined when it resolves normally. */
+  const staleRegistration = (instance: string) => {
+    const label = normalizeLabel(instance)
+    const record = readRegistryStrict(deps.statePath).instances[label]
+    return record && !isCheckout(record.root) ? { label, record } : undefined
   }
   const guarded =
     (fn: (...args: unknown[]) => Promise<void>) =>
@@ -507,8 +514,58 @@ Examples:
     .action(
       guarded(async (opts) => {
         const o = opts as { root?: string; instance?: string; yes?: boolean }
-        const { dir, names, context, registered } = managed(o)
         if (!o.yes && !deps.isTTY) throw new Error('uninstall needs a terminal to confirm — pass --yes')
+        // A registration whose checkout was deleted by hand cannot be resolved
+        // to a root, so managed() would refuse it — yet retiring it is exactly
+        // what uninstall is for. Named by --instance, it is handled here.
+        const stale = o.instance !== undefined ? staleRegistration(o.instance) : undefined
+        if (stale) {
+          const { label, record } = stale
+          if (
+            !o.yes &&
+            !(await deps.prompter.confirm(
+              `Instance "${label}" is registered at ${record.root}, which no longer exists. Unregister it from ${record.supervisor}?`
+            ))
+          )
+            return
+          const names = instanceNames(label)
+          // Best effort: the supervisor may still hold the processes/units, but
+          // the checkout they ran from is gone, so run from the current directory
+          // and never let a failure here keep the dead registration alive.
+          let cleanup = `${record.supervisor} registrations removed`
+          try {
+            const context =
+              deps.supervisorContext?.(deps.cwd, label, record.supervisor) ??
+              makeSupervisorContext({
+                supervisor: record.supervisor,
+                root: deps.cwd,
+                label,
+                runner: deps.runner,
+                log: narrate,
+                env: deps.env,
+                which: deps.which,
+              })
+            await uninstallSupervisor(context)
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error)
+            cleanup = `supervisor cleanup failed (${reason}) — remove ${names.api} and ${names.worker} from ${record.supervisor} by hand`
+          }
+          removeInstance(label, deps.statePath)
+          const home = names.homeDir ?? '~/.tau'
+          output(
+            {
+              ok: true,
+              root: record.root,
+              checkoutMissing: true,
+              instance: label,
+              unregistered: label,
+              kept: [names.container, names.volume, home],
+            },
+            `Unregistered. The checkout ${record.root} no longer exists; ${cleanup}. Nothing else was deleted — remove by hand if you want to:\n  database:   docker rm -f ${names.container} && docker volume rm ${names.volume}\n  data:       ${home}\n  registry:   removed instance "${label}"`
+          )
+          return
+        }
+        const { dir, names, context, registered } = managed(o)
         if (!o.yes && !(await deps.prompter.confirm(`Unregister tau (${dir}) from ${registered.record.supervisor}?`)))
           return
         await uninstallSupervisor(context)
