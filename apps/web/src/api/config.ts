@@ -26,6 +26,7 @@ export interface AgentTypeConfig {
   provenance?: string
   description: string | null
   systemPrompt: string
+  includes: string[]
   skills: string[] | null
   extensions: string[] | null
   toolsAllow: string[] | null

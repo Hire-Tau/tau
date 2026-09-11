@@ -399,19 +399,7 @@ function AgentTypeRow({
   )
 
   const handleSave = () => {
-    updateMutation.mutate({
-      systemOnly: form.systemOnly,
-      name: form.name,
-      model: form.model,
-      tier: form.tier || null,
-      description: form.description || null,
-      systemPrompt: form.systemPrompt,
-      skills: form.skills.length ? form.skills : null,
-      extensions: csvToArray(form.extensions),
-      toolsAllow: csvToArray(form.toolsAllow),
-      toolsDeny: csvToArray(form.toolsDeny),
-      integrationCapabilities: integrationPolicy(form.integrationAgentTools, form.integrationConversationExport),
-    })
+    updateMutation.mutate(agentTypeUpdatePayload(form, agentType))
   }
 
   const handleExport = async () => {
@@ -883,6 +871,30 @@ function IntegrationPolicyFields({
     </fieldset>
   )
 }
+
+/**
+ * The PUT body replaces the whole row, so every field the form does not edit
+ * has to be carried through from the loaded type — omitting one stores the
+ * server-side default and records it as a deliberate override.
+ */
+export function agentTypeUpdatePayload(form: AgentTypeForm, agentType: AgentTypeConfig): Partial<AgentTypeConfig> {
+  return {
+    systemOnly: form.systemOnly,
+    name: form.name,
+    model: form.model,
+    tier: form.tier || null,
+    description: form.description || null,
+    systemPrompt: form.systemPrompt,
+    includes: agentType.includes ?? [],
+    skills: form.skills.length ? form.skills : null,
+    extensions: csvToArray(form.extensions),
+    toolsAllow: csvToArray(form.toolsAllow),
+    toolsDeny: csvToArray(form.toolsDeny),
+    integrationCapabilities: integrationPolicy(form.integrationAgentTools, form.integrationConversationExport),
+  }
+}
+
+export type AgentTypeForm = ReturnType<typeof agentTypeToForm>
 
 function agentTypeToForm(at: AgentTypeConfig) {
   return {

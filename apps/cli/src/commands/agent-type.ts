@@ -9,6 +9,7 @@ interface AgentType {
   model: string
   description: string | null
   systemPrompt: string
+  includes: string[] | null
   skills: string[] | null
   extensions: string[] | null
   toolsAllow: string[] | null
@@ -135,6 +136,9 @@ export function registerAgentTypeCommands(program: Command) {
           model: options.model ?? existing.model,
           description: options.description ?? existing.description,
           systemPrompt: systemPrompt ?? existing.systemPrompt,
+          // The PUT replaces the whole row; `includes` has no flag yet, so it
+          // has to ride along or the update clears the type's shared blocks.
+          includes: existing.includes ?? [],
           skills: existing.skills,
           extensions: existing.extensions,
           toolsAllow: existing.toolsAllow,
