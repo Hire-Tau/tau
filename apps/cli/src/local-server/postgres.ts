@@ -166,6 +166,12 @@ const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(r
  * ParadeDB's first boot is initdb → start → install extensions → RESTART, so
  * postgres briefly accepts connections before the restart. Require 3 successes
  * in a row 2 s apart (the toolkit's rule) before declaring it stably ready.
+ *
+ * Probe over TCP (`-h 127.0.0.1`), never the unix socket: the entrypoint's
+ * temporary init server listens on the socket only, for as long as the init
+ * scripts take (~6 s for ParadeDB's extension load), so a socket probe collects
+ * its three successes during init and the migration then lands on the restart
+ * (`read ECONNRESET`). Migrations connect over TCP; so must the probe.
  */
 export async function waitForPostgres(
   runner: Runner,
@@ -177,7 +183,18 @@ export async function waitForPostgres(
   const interval = options.intervalMs ?? 2000
   let streak = 0
   for (let i = 0; i < attempts; i++) {
-    const r = await runner(['docker', 'exec', container, 'psql', '-U', 'postgres', '-tAc', 'SELECT 1'])
+    const r = await runner([
+      'docker',
+      'exec',
+      container,
+      'psql',
+      '-h',
+      '127.0.0.1',
+      '-U',
+      'postgres',
+      '-tAc',
+      'SELECT 1',
+    ])
     streak = r.code === 0 ? streak + 1 : 0
     if (streak >= 3) return
     await sleep(interval)

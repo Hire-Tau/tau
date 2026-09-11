@@ -224,7 +224,21 @@ describe('waitForPostgres', () => {
     }
     await waitForPostgres(runner, 'postgres-tau-smoke', { attempts: 10, sleep: async () => {} })
     expect(i).toBe(7)
-    expect(commands[0]).toEqual(['docker', 'exec', 'postgres-tau-smoke', 'psql', '-U', 'postgres', '-tAc', 'SELECT 1'])
+    // Over TCP, not the unix socket: the entrypoint's temporary init server
+    // (initdb → init scripts → extension install) listens on the socket only,
+    // and a socket probe reports "ready" minutes before the real server is.
+    expect(commands[0]).toEqual([
+      'docker',
+      'exec',
+      'postgres-tau-smoke',
+      'psql',
+      '-h',
+      '127.0.0.1',
+      '-U',
+      'postgres',
+      '-tAc',
+      'SELECT 1',
+    ])
   })
   it('throws after the attempt budget, naming the container to look at', async () => {
     const runner = async () => ({ code: 1, stdout: '', stderr: 'no' })
