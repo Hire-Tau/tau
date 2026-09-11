@@ -86,6 +86,7 @@ function makeAgentType(overrides: Partial<AgentType> = {}): AgentType {
     name: 'Test Agent',
     description: null,
     systemPrompt: 'You are a test agent.',
+    includes: [],
     skills: null,
     extensions: null,
     toolsAllow: null,

@@ -256,6 +256,23 @@ export const skills = pgTable('skills', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 })
 
+/**
+ * Shared prompt blocks appended to agent type prompts at runtime. Synced from
+ * config/agent-types/includes/*.md with the same template/override model as
+ * skills, so admins can edit a block once for every type that includes it.
+ */
+export const promptIncludes = pgTable('prompt_includes', {
+  id: varchar('id', { length: 100 }).primaryKey(),
+  name: varchar('name', { length: 200 }).notNull(),
+  description: text('description'),
+  content: text('content').notNull(),
+  yamlTemplate: jsonb('yaml_template'),
+  yamlFieldOverrides: jsonb('yaml_field_overrides').notNull().default([]),
+  disabled: boolean('disabled').notNull().default(false),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+})
+
 export const modelTiers = pgTable('model_tiers', {
   slug: varchar('slug', { length: 100 }).primaryKey(),
   label: varchar('label', { length: 200 }).notNull(),
@@ -277,6 +294,8 @@ export const agentTypes = pgTable('agent_types', {
   model: varchar('model', { length: 500 }).notNull(),
   tier: varchar('tier', { length: 100 }),
   systemPrompt: text('system_prompt').notNull(),
+  /** Ordered prompt_includes ids composed after systemPrompt at runtime. */
+  includes: text('includes').array().notNull().default([]),
   skills: text('skills').array(),
   extensions: text('extensions').array(),
   toolsAllow: text('tools_allow').array(),

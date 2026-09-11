@@ -553,6 +553,10 @@ export interface AgentType {
   name: string
   description: string | null
   systemPrompt: string
+  /** Ordered ids of shared prompt includes composed after systemPrompt at runtime. */
+  includes: string[]
+  /** systemPrompt + enabled includes, exactly as agents receive it (read-only, API detail only). */
+  resolvedSystemPrompt?: string
   skills: string[] | null
   extensions: string[] | null
   toolsAllow: string[] | null
@@ -560,6 +564,18 @@ export interface AgentType {
   integrationCapabilities?: AgentTypeIntegrationPolicyV1 | null
   earlyMarginTokens: number | null
   inFlightMarginTokens: number | null
+  yamlFieldOverrides: string[]
+  hasTemplate?: boolean
+  disabled: boolean
+  createdAt: Date
+  updatedAt: Date
+}
+
+export interface PromptInclude {
+  id: string
+  name: string
+  description: string | null
+  content: string
   yamlFieldOverrides: string[]
   hasTemplate?: boolean
   disabled: boolean

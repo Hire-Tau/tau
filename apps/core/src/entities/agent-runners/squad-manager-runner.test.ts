@@ -64,6 +64,7 @@ function makeAgentType(overrides: Partial<AgentType> = {}): AgentType {
     name: 'Manager',
     description: null,
     systemPrompt: 'You manage the squad. {{squad.context}}',
+    includes: [],
     skills: null,
     extensions: null,
     toolsAllow: null,

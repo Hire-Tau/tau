@@ -41,6 +41,7 @@ export class AgentType implements AgentTypeRow {
   declare tier: string | null
   declare description: string | null
   declare systemPrompt: string
+  declare includes: string[]
   declare skills: string[] | null
   declare extensions: string[] | null
   declare toolsAllow: string[] | null
@@ -270,6 +271,7 @@ export class AgentType implements AgentTypeRow {
       tier: this.tier,
       description: this.description,
       systemPrompt: this.systemPrompt,
+      includes: this.includes ?? [],
       skills: this.skills,
       extensions: this.extensions,
       toolsAllow: this.toolsAllow,
