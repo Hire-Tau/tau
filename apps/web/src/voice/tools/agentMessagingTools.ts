@@ -3,13 +3,6 @@ import { getAgent, sendAgentMessage, stopAgent } from '../../api/agents'
 import { sendInboxMessage } from '../../api/inbox'
 import type { VoiceAssistantTool, VoiceToolExecutor } from './types'
 
-type MessageAgentArgs = {
-  agentId: string
-  content: string
-  mode?: DeliveryMode
-  inReplyTo?: string
-}
-
 function createMessageAgentDefinition(options: { allowStop: boolean }) {
   return {
     type: 'function' as const,
@@ -36,7 +29,7 @@ function createMessageAgentDefinition(options: { allowStop: boolean }) {
             '"steer" (default) delivers now and interrupts the current turn. "follow-up" queues after the current turn. "stop" halts the agent.',
         },
       },
-      required: ['agentId'],
+      required: options.allowStop ? ['agentId'] : ['agentId', 'content'],
     },
   }
 }
@@ -74,9 +67,15 @@ export function createAgentMessagingTools(deps: AgentMessagingDependencies) {
   const workspaceInboxMessageAgentTool: VoiceAssistantTool<VoiceToolExecutor> = {
     definition: createMessageAgentDefinition({ allowStop: false }),
     async execute(args) {
-      const { agentId, content, mode = 'steer' } = args as MessageAgentArgs
+      const { agentId, content, mode = 'steer' } = args as {
+        agentId: string
+        content?: string
+        mode?: DeliveryMode | 'stop'
+      }
+      if (mode === 'stop') return { error: 'stop is not available in this surface' }
       const agent = await deps.getAgent(agentId)
       if (!isAllowedMessageAgentTarget(agent)) return disallowedMessageAgentTargetResult()
+      if (!content?.trim()) return { error: 'content is required' }
 
       const message = await deps.sendInboxMessage({
         recipientType: 'agent',

@@ -67,6 +67,14 @@ describe('message_agent voice tool', () => {
     expect(calls).toEqual([{ agentId: 'worker', content: 'Now', mode: 'steer' }])
   })
 
+  test('rejects a missing content when mode is not stop', async () => {
+    calls.length = 0
+    agentFixture = { id: 'worker', agentTypeId: 'engineer', squadId: 'squad', status: 'active' }
+    const result = await directMessageAgentTool.execute({ agentId: 'worker' }, {})
+    expect(result).toEqual({ error: 'content is required unless mode is stop' })
+    expect(calls).toEqual([])
+  })
+
   test('direct site-operator tool calls sendAgentMessage with selected delivery mode', async () => {
     calls.length = 0
     inboxCalls.length = 0
@@ -128,6 +136,31 @@ describe('message_agent voice tool', () => {
       workspaceInboxMessageAgentTool.execute({ agentId: 'manager-agent', content: 'Interrupt now' }, {})
     ).resolves.toEqual({ ok: true, persisted: true, delivered: false, deliveryMode: 'steer' })
     inboxDelivered = true
+  })
+
+  test('workspace message_agent rejects a missing content', async () => {
+    calls.length = 0
+    inboxCalls.length = 0
+    agentFixture = { id: 'manager-agent', agentTypeId: 'system-manager', squadId: null, status: 'idle' }
+
+    const result = await workspaceInboxMessageAgentTool.execute({ agentId: 'manager-agent' }, {})
+
+    expect(result).toEqual({ error: 'content is required' })
+    expect(inboxCalls).toEqual([])
+  })
+
+  test('workspace message_agent rejects stop mode without forwarding it as a delivery mode', async () => {
+    calls.length = 0
+    inboxCalls.length = 0
+    agentFixture = { id: 'manager-agent', agentTypeId: 'system-manager', squadId: null, status: 'active' }
+
+    const result = await workspaceInboxMessageAgentTool.execute(
+      { agentId: 'manager-agent', content: 'stop it', mode: 'stop' },
+      {}
+    )
+
+    expect(result).toEqual({ error: 'stop is not available in this surface' })
+    expect(inboxCalls).toEqual([])
   })
 
   test('allows waiting-input artifact builders so voice can answer ask_human questions', async () => {
