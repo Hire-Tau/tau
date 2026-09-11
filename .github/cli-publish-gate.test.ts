@@ -52,6 +52,21 @@ describe('CLI publish gate', () => {
     expect(steps[indexOfStep('Collect release assets')].run).toContain('find dist/packages')
   })
 
+  // `tau skill install <name>` resolves from the archive's skills/ directory,
+  // so every bundled skill under external/skills must be copied — a per-skill
+  // `cp` silently ships an archive on which `tau skill install tau` fails.
+  test('every compile step bundles the whole external/skills directory', () => {
+    const compileSteps = steps.filter((step) => step.run?.includes('--compile'))
+    expect(compileSteps.length).toBe(5)
+    for (const step of compileSteps) {
+      expect({ name: step.name, bundlesAllSkills: step.run?.includes('cp -R external/skills/. ') }).toEqual({
+        name: step.name,
+        bundlesAllSkills: true,
+      })
+      expect(step.run).not.toContain('external/skills/tau-memory')
+    }
+  })
+
   test('the publish job actually has steps (the parser did not silently find nothing)', () => {
     expect(steps.length).toBeGreaterThan(0)
   })

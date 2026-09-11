@@ -24,14 +24,48 @@ describe('tau chat', () => {
     ;(outputError as AnyMock).mockClear()
   })
 
-  it('prints streamed chunks and ignores keepalive pings with empty data', async () => {
+  it('prints streamed text and ignores keepalive pings with empty data', async () => {
+    // The worker streams the reply as `text` events and repeats `agent`/`done`
+    // when the execution settles; the footer must still print once.
     ;(apiPostSSE as AnyMock).mockImplementation(
       async (_path: string, _body: unknown, onEvent: (event: string, data: string) => void) => {
         onEvent('agent', agentEvent)
         onEvent('ping', '')
-        onEvent('chunk', JSON.stringify({ type: 'chunk', text: 'PO' }))
+        onEvent('text', JSON.stringify({ type: 'text', text: 'PO', streamGroupId: 'g1' }))
         onEvent('ping', '')
-        onEvent('chunk', JSON.stringify({ type: 'chunk', text: 'NG' }))
+        onEvent('text', JSON.stringify({ type: 'text', text: 'NG', streamGroupId: 'g1' }))
+        onEvent('done', JSON.stringify({ type: 'done', response: 'PONG' }))
+        onEvent('agent', agentEvent)
+        onEvent('done', JSON.stringify({ type: 'done', response: 'PONG' }))
+      }
+    )
+    const written: string[] = []
+    const stdout = spyOn(process.stdout, 'write').mockImplementation(((chunk: string | Uint8Array) => {
+      written.push(String(chunk))
+      return true
+    }) as typeof process.stdout.write)
+    const log = spyOn(console, 'log').mockImplementation(() => {})
+    let footers = 0
+    try {
+      await run(['chat', 'Reply with PONG'])
+      // mockRestore() discards the recorded calls, so count before restoring.
+      footers = log.mock.calls.filter(([line]) => String(line).includes('[Agent: agent-1]')).length
+    } finally {
+      stdout.mockRestore()
+      log.mockRestore()
+    }
+
+    expect(apiPostSSE).toHaveBeenCalledWith('/api/chat', { message: 'Reply with PONG' }, expect.any(Function))
+    expect(written.join('')).toBe('PONG')
+    expect(footers).toBe(1)
+    expect(outputError).not.toHaveBeenCalled()
+  })
+
+  it('still prints legacy chunk events', async () => {
+    ;(apiPostSSE as AnyMock).mockImplementation(
+      async (_path: string, _body: unknown, onEvent: (event: string, data: string) => void) => {
+        onEvent('agent', agentEvent)
+        onEvent('chunk', JSON.stringify({ type: 'chunk', text: 'hi' }))
         onEvent('done', JSON.stringify({ type: 'done' }))
       }
     )
@@ -42,15 +76,13 @@ describe('tau chat', () => {
     }) as typeof process.stdout.write)
     const log = spyOn(console, 'log').mockImplementation(() => {})
     try {
-      await run(['chat', 'Reply with PONG'])
+      await run(['chat', 'hello'])
     } finally {
       stdout.mockRestore()
       log.mockRestore()
     }
 
-    expect(apiPostSSE).toHaveBeenCalledWith('/api/chat', { message: 'Reply with PONG' }, expect.any(Function))
-    expect(written.join('')).toBe('PONG')
-    expect(outputError).not.toHaveBeenCalled()
+    expect(written.join('')).toBe('hi')
   })
 
   it('ignores events it does not render even when their data is not JSON', async () => {
