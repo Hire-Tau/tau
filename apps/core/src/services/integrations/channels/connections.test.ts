@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { eq, inArray } from 'drizzle-orm'
+import { eq, gte, inArray } from 'drizzle-orm'
 import { channelInstances, db, integrationConnections, secrets, settings, squads } from '../../../db'
+import { integrationCredentialCleanupJobs } from '../../../db/schema'
 import { getSecretStore, resetSecretStore } from '../../secrets'
 import { getSettingsStore, resetSettingsStore } from '../../settings'
 import { createChannelConnections, legacyChannelCredentialKeys, type ChannelConnections } from './connections'
@@ -9,8 +10,14 @@ const providers = ['telegram', 'slack', 'discord'] as const
 const enabledKeys = providers.map((key) => `__integration-enabled:${key}`)
 const priorEnv = new Map<string, string | undefined>()
 let squadId: string
+let startedAt: Date
 
 async function wipe() {
+  // Replacing a credential retires the previous one through a cleanup job; leave
+  // none behind for the cleanup worker's own tests to claim.
+  if (startedAt) {
+    await db.delete(integrationCredentialCleanupJobs).where(gte(integrationCredentialCleanupJobs.createdAt, startedAt))
+  }
   await db.delete(integrationConnections).where(inArray(integrationConnections.providerKey, [...providers]))
   await db.delete(channelInstances).where(inArray(channelInstances.provider, [...providers]))
   await db.delete(secrets).where(inArray(secrets.key, [...legacyChannelCredentialKeys]))
@@ -23,6 +30,7 @@ beforeEach(async () => {
     delete process.env[key]
   }
   process.env.TAU_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+  startedAt = new Date()
   await wipe()
   resetSecretStore()
   resetSettingsStore()
