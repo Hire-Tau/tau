@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY "idx_webhook_events_verified_created_id" ON "webhook_events" USING btree ("provider","created_at","id") WHERE "webhook_events"."verified" = true;

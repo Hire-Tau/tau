@@ -1,0 +1,94 @@
+import process from 'node:process'
+import { unified } from '@astrojs/markdown-remark'
+import { prefixDocsLinks } from './scripts/embedded-links.mjs'
+import { defineConfig } from 'astro/config'
+import starlight from '@astrojs/starlight'
+
+const embedded = process.env.TAU_DOCS_EMBEDDED === '1'
+
+export default defineConfig({
+  base: embedded ? '/docs' : '/',
+  outDir: embedded ? '../core/docs-dist' : './dist',
+  // Core and platform builds may run concurrently in the monorepo.
+  cacheDir: embedded ? './node_modules/.astro-embedded' : './node_modules/.astro',
+  markdown: { processor: unified({ remarkPlugins: embedded ? [prefixDocsLinks] : [] }) },
+  site: embedded ? undefined : 'https://docs.hiretau.ai',
+  output: 'static',
+  trailingSlash: 'always',
+  integrations: [
+    starlight({
+      title: 'Tau Docs',
+      description: 'Practical guides to working with Tau, in the cloud or on your own machine.',
+      logo: { src: './public/favicon.svg' },
+      favicon: '/favicon.svg',
+      customCss: ['./src/styles/tau.css'],
+      components: {
+        Head: './src/components/Head.astro',
+        ThemeSelect: './src/components/ThemeSelect.astro',
+      },
+      // Only approved user content belongs in this collection. Repository docs
+      // and the private review directory are intentionally not imported.
+      sidebar: [
+        { label: 'Welcome to Tau', slug: 'index' },
+        {
+          label: 'Get started',
+          items: [
+            { label: 'Set up Tau Cloud', slug: 'start/cloud' },
+            { label: 'Self-host Tau', slug: 'start/self-host' },
+            { label: 'Complete your first task', slug: 'start/first-task' },
+          ],
+        },
+        {
+          label: 'Work with Tau',
+          items: [
+            { label: 'Use the Assistant', slug: 'use/assistant' },
+            { label: 'Squads', slug: 'use/squads' },
+            { label: 'Work streams', slug: 'use/work-streams' },
+            { label: 'Workflows', slug: 'use/workflows' },
+            { label: 'Review and intervene', slug: 'use/review-and-intervene' },
+          ],
+        },
+        {
+          label: 'Configure your workspace',
+          collapsed: true,
+          items: [
+            { label: 'Models and credentials', slug: 'configure/models' },
+            { label: 'Agent configuration', slug: 'configure/agents' },
+            { label: 'Squad presets', slug: 'configure/squad-presets' },
+            { label: 'Accounts and access', slug: 'configure/access' },
+          ],
+        },
+        {
+          label: 'Connect your tools',
+          collapsed: true,
+          items: [
+            { label: 'GitHub', slug: 'connect/github' },
+            { label: 'Project tools', slug: 'connect/project-tools' },
+            { label: 'Chat channels', slug: 'connect/chat' },
+            { label: 'Notifications', slug: 'connect/notifications' },
+          ],
+        },
+        {
+          label: 'Maintain self-hosted Tau',
+          collapsed: true,
+          items: [
+            { label: 'Runtime and access', slug: 'self-host/runtime-and-access' },
+            { label: 'Updates and backups', slug: 'self-host/maintenance' },
+            { label: 'Troubleshooting', slug: 'self-host/troubleshooting' },
+          ],
+        },
+        {
+          label: 'Reference',
+          collapsed: true,
+          items: [
+            { label: 'CLI', slug: 'reference/cli' },
+            { label: 'Configuration', slug: 'reference/configuration' },
+            { label: 'Workflow definitions', slug: 'reference/workflow-definition' },
+          ],
+        },
+      ],
+      head: [{ tag: 'meta', attrs: { name: 'robots', content: 'noindex, nofollow' } }],
+      credits: false,
+    }),
+  ],
+})

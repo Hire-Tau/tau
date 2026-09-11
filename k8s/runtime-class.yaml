@@ -1,0 +1,8 @@
+# Sysbox RuntimeClass for secure Docker-in-Docker in sandbox pods.
+# Requires sysbox to be installed on K8s worker nodes.
+# See docs/wiki/setup.md for node setup instructions.
+apiVersion: node.k8s.io/v1
+kind: RuntimeClass
+metadata:
+  name: sysbox-runc
+handler: sysbox-runc

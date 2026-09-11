@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Compatibility wrapper. Prefer: tau admin workspace-gc [--apply]
+set -euo pipefail
+
+args=()
+for arg in "$@"; do
+  case "$arg" in
+    -f|--force) args+=(--apply) ;;
+    *) args+=("$arg") ;;
+  esac
+done
+
+exec tau admin workspace-gc "${args[@]}"

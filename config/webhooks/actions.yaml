@@ -1,0 +1,6 @@
+# Optional operator-defined webhook commands (for example, deployment hooks).
+# GitHub/Linear notifications, code-host feedback, and review-request creation
+# run through the native integration event system. No notification scripts needed.
+# Existing bundled script references in older files are ignored on load.
+github: {}
+linear: {}

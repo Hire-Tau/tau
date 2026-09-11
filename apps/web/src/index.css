@@ -1,0 +1,511 @@
+@import './design-system.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================
+   THEME COLOR TOKENS
+   ============================================ */
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    min-height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  html {
+    background-color: var(--color-bg-surface);
+    touch-action: pan-y;
+  }
+
+  body {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+  }
+
+  :root {
+    /* Tell the browser/OS the real scheme so its chrome (iOS glass tint,
+       scrollbars, form controls) matches the page instead of guessing. */
+    color-scheme: light;
+
+    /* Backgrounds */
+    --color-bg-page: #faf9fc;
+    --color-bg-surface: theme('colors.white');
+    --color-bg-surface-secondary: #f7f6fa;
+    --color-bg-pill: #f1f0f5;
+    --color-bg-surface-hover: #f1f0f5;
+    --color-bg-inset: #f1f0f5;
+
+    /* Text */
+    --color-text-primary: #252332;
+    --color-text-secondary: #605c70;
+    --color-text-muted: #726d81;
+    --color-text-placeholder: #726d81;
+
+    /* Borders */
+    --color-border: #e4e1eb;
+    --color-border-hover: #d1cbdc;
+
+    /* Inputs */
+    --color-input-bg: theme('colors.white');
+    --color-input-border: #d1cbdc;
+
+    /* Shadows */
+    --color-shadow: rgba(32, 22, 55, 0.045);
+    --color-shadow-lg: rgba(32, 22, 55, 0.1);
+
+    /* Code blocks */
+    --color-code-bg: #f1f0f5;
+    --color-code-text: theme('colors.gray.700');
+
+    /* Primary brand color */
+    --color-primary: #5b21b6;
+    --color-primary-hover: #6d28d9;
+    --color-primary-active: #4c1d95;
+    --color-primary-light: #6d28d9;
+
+    /* Shared interaction surfaces. Keep them separate from semantic status colors. */
+    --color-selection-bg: #eee8f8;
+    --color-selection-border: #d7c7f0;
+    --color-focus: #7c3aed;
+    --color-panel-border: rgba(94, 75, 132, 0.12);
+    --color-glass: rgba(255, 255, 255, 0.88);
+    --color-overlay: #fdfcff;
+
+    /* iOS PWA status bar scrim: the strip is simply the header surface; the
+       OS picks status-text contrast from color-scheme/theme-color. */
+    --color-status-bar-scrim: var(--color-bg-surface);
+  }
+
+  .dark {
+    color-scheme: dark;
+
+    /* Backgrounds - from splash.html */
+    --color-bg-page: #090a12;
+    --color-bg-surface: #10111c;
+    --color-bg-surface-secondary: #161723;
+    --color-bg-pill: #1e2033;
+    --color-bg-surface-hover: #1b1c2a;
+    --color-bg-inset: #0a0b14;
+
+    /* Text - from splash.html */
+    --color-text-primary: #e2e8f0;
+    --color-text-secondary: #94a3b8;
+    --color-text-muted: #9298ad;
+    --color-text-placeholder: #9298ad;
+
+    /* Borders - from splash.html */
+    --color-border: #2b2d40;
+    --color-border-hover: #3d4663;
+
+    /* Inputs */
+    --color-input-bg: #161724;
+    --color-input-border: rgba(209, 202, 232, 0.16);
+
+    /* Shadows */
+    --color-shadow: rgba(0, 0, 0, 0.14);
+    --color-shadow-lg: rgba(0, 0, 0, 0.3);
+
+    /* Code blocks */
+    --color-code-bg: #1a1b2a;
+    --color-code-text: #9ca3af;
+
+    /* Primary brand color */
+    --color-primary: #5b21b6;
+    --color-primary-hover: #6d28d9;
+    --color-primary-active: #4c1d95;
+    --color-primary-light: #c4b5fd;
+
+    --color-selection-bg: #211a35;
+    --color-selection-border: #44325f;
+    --color-focus: #c4b5fd;
+    --color-panel-border: rgba(190, 181, 215, 0.12);
+    --color-glass: rgba(16, 17, 28, 0.88);
+    --color-overlay: #1a1b29;
+
+    /* The scrim IS the header surface, so the translucent iOS status bar
+       region blends seamlessly with the header (no seam, no color drift). */
+    --color-status-bar-scrim: var(--color-bg-surface);
+  }
+}
+
+/* Safe area padding for iOS devices with notch/home indicator */
+@layer utilities {
+  .safe-area-pb {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .safe-area-pt {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  /* env(safe-area-inset-top) is 0 exactly when the status bar is opaque and
+     outside the webview (browser tabs, PWA installs that predate the
+     black-translucent meta — iOS snapshots that meta at Add-to-Home-Screen
+     time) and the real inset when the bar is translucent. Trust it: forcing a
+     minimum height paints dead padding under opaque bars. */
+  .safe-area-status-bar-scrim::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: env(safe-area-inset-top, 0px);
+    background: var(--color-status-bar-scrim);
+    pointer-events: none;
+  }
+}
+
+/* Improve touch targets on mobile */
+@layer base {
+  @media (max-width: 767px) {
+    button,
+    a {
+      min-height: 1.5rem;
+    }
+  }
+}
+
+/* A shared visible focus treatment for keyboard navigation. */
+@layer base {
+  :where(button, a, input, textarea, select, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 3px;
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    accent-color: var(--color-primary);
+    flex-shrink: 0;
+  }
+
+  :where(
+      button,
+      a[href],
+      summary,
+      select,
+      input[type='checkbox'],
+      input[type='radio'],
+      [role='button'],
+      [role='tab'],
+      [role='menuitem'],
+      [role='option'],
+      label[for]
+    ):not(:disabled):not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+
+  :where(button, select, input):disabled,
+  [aria-disabled='true'] {
+    cursor: default;
+  }
+
+  /* Custom checkbox styling for dark mode */
+  .dark input[type='checkbox'] {
+    appearance: none;
+    width: 1rem;
+    height: 1rem;
+    border: 1px solid var(--color-border);
+    border-radius: 0.25rem;
+    background-color: var(--color-input-bg);
+    cursor: pointer;
+    position: relative;
+  }
+
+  .dark input[type='checkbox']:checked {
+    background-color: var(--color-primary);
+    border-color: var(--color-primary);
+  }
+
+  .dark input[type='checkbox']:checked::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 1px;
+    width: 5px;
+    height: 9px;
+    border: solid white;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+
+  /* Override browser autofill styling */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0 1000px var(--color-input-bg) inset !important;
+    -webkit-text-fill-color: var(--color-text-primary) !important;
+    border-color: var(--color-input-border) !important;
+  }
+}
+
+/* Custom scrollbar for better mobile UX */
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: rgba(156, 163, 175, 0.5);
+    border-radius: 3px;
+  }
+}
+
+/* ============================================
+   ANSI TERMINAL COLORS
+   ============================================
+   Standard terminal colors for rendering ANSI escape codes.
+   Uses a slightly muted palette that works well in both light and dark modes.
+*/
+@layer utilities {
+  /* Standard foreground colors (30-37) - Light mode */
+  .ansi-black {
+    color: #1e1e1e;
+  }
+  .ansi-red {
+    color: #c53030;
+  }
+  .ansi-green {
+    color: #2f855a;
+  }
+  .ansi-yellow {
+    color: #b7791f;
+  }
+  .ansi-blue {
+    color: #2b6cb0;
+  }
+  .ansi-magenta {
+    color: #97266d;
+  }
+  .ansi-cyan {
+    color: #0987a0;
+  }
+  .ansi-white {
+    color: #718096;
+  }
+
+  /* Bright foreground colors (90-97) - Light mode */
+  .ansi-bright-black {
+    color: #4a5568;
+  }
+  .ansi-bright-red {
+    color: #e53e3e;
+  }
+  .ansi-bright-green {
+    color: #38a169;
+  }
+  .ansi-bright-yellow {
+    color: #d69e2e;
+  }
+  .ansi-bright-blue {
+    color: #3182ce;
+  }
+  .ansi-bright-magenta {
+    color: #b83280;
+  }
+  .ansi-bright-cyan {
+    color: #00b5d8;
+  }
+  .ansi-bright-white {
+    color: #1a202c;
+  }
+
+  /* Standard background colors (40-47) - Light mode */
+  .ansi-bg-black {
+    background-color: #1e1e1e;
+    color: #fff;
+  }
+  .ansi-bg-red {
+    background-color: #fc8181;
+  }
+  .ansi-bg-green {
+    background-color: #9ae6b4;
+  }
+  .ansi-bg-yellow {
+    background-color: #faf089;
+  }
+  .ansi-bg-blue {
+    background-color: #90cdf4;
+  }
+  .ansi-bg-magenta {
+    background-color: #fbb6ce;
+  }
+  .ansi-bg-cyan {
+    background-color: #81e6d9;
+  }
+  .ansi-bg-white {
+    background-color: #edf2f7;
+  }
+
+  /* Bright background colors (100-107) - Light mode */
+  .ansi-bg-bright-black {
+    background-color: #4a5568;
+    color: #fff;
+  }
+  .ansi-bg-bright-red {
+    background-color: #feb2b2;
+  }
+  .ansi-bg-bright-green {
+    background-color: #c6f6d5;
+  }
+  .ansi-bg-bright-yellow {
+    background-color: #fefcbf;
+  }
+  .ansi-bg-bright-blue {
+    background-color: #bee3f8;
+  }
+  .ansi-bg-bright-magenta {
+    background-color: #fed7e2;
+  }
+  .ansi-bg-bright-cyan {
+    background-color: #b2f5ea;
+  }
+  .ansi-bg-bright-white {
+    background-color: #f7fafc;
+  }
+
+  /* Dark mode overrides */
+  .dark .ansi-black {
+    color: #4a5568;
+  }
+  .dark .ansi-red {
+    color: #fc8181;
+  }
+  .dark .ansi-green {
+    color: #68d391;
+  }
+  .dark .ansi-yellow {
+    color: #f6e05e;
+  }
+  .dark .ansi-blue {
+    color: #63b3ed;
+  }
+  .dark .ansi-magenta {
+    color: #f687b3;
+  }
+  .dark .ansi-cyan {
+    color: #4fd1c5;
+  }
+  .dark .ansi-white {
+    color: #a0aec0;
+  }
+
+  .dark .ansi-bright-black {
+    color: #718096;
+  }
+  .dark .ansi-bright-red {
+    color: #feb2b2;
+  }
+  .dark .ansi-bright-green {
+    color: #9ae6b4;
+  }
+  .dark .ansi-bright-yellow {
+    color: #faf089;
+  }
+  .dark .ansi-bright-blue {
+    color: #90cdf4;
+  }
+  .dark .ansi-bright-magenta {
+    color: #fbb6ce;
+  }
+  .dark .ansi-bright-cyan {
+    color: #76e4f7;
+  }
+  .dark .ansi-bright-white {
+    color: #e2e8f0;
+  }
+
+  .dark .ansi-bg-black {
+    background-color: #1a202c;
+    color: #e2e8f0;
+  }
+  .dark .ansi-bg-red {
+    background-color: #742a2a;
+    color: #feb2b2;
+  }
+  .dark .ansi-bg-green {
+    background-color: #22543d;
+    color: #c6f6d5;
+  }
+  .dark .ansi-bg-yellow {
+    background-color: #744210;
+    color: #fefcbf;
+  }
+  .dark .ansi-bg-blue {
+    background-color: #2a4365;
+    color: #bee3f8;
+  }
+  .dark .ansi-bg-magenta {
+    background-color: #702459;
+    color: #fed7e2;
+  }
+  .dark .ansi-bg-cyan {
+    background-color: #234e52;
+    color: #b2f5ea;
+  }
+  .dark .ansi-bg-white {
+    background-color: #4a5568;
+    color: #e2e8f0;
+  }
+
+  .dark .ansi-bg-bright-black {
+    background-color: #2d3748;
+    color: #e2e8f0;
+  }
+  .dark .ansi-bg-bright-red {
+    background-color: #9b2c2c;
+    color: #feb2b2;
+  }
+  .dark .ansi-bg-bright-green {
+    background-color: #276749;
+    color: #c6f6d5;
+  }
+  .dark .ansi-bg-bright-yellow {
+    background-color: #975a16;
+    color: #fefcbf;
+  }
+  .dark .ansi-bg-bright-blue {
+    background-color: #2c5282;
+    color: #bee3f8;
+  }
+  .dark .ansi-bg-bright-magenta {
+    background-color: #97266d;
+    color: #fed7e2;
+  }
+  .dark .ansi-bg-bright-cyan {
+    background-color: #285e61;
+    color: #b2f5ea;
+  }
+  .dark .ansi-bg-bright-white {
+    background-color: #718096;
+    color: #1a202c;
+  }
+}
+
+/* Staggered three-dot "agent is working" pulse (see TypingIndicator). */
+@keyframes typing-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.7);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

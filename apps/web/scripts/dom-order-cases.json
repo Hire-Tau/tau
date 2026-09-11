@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    { "name": "copper-otter", "seed": 305419896 },
+    { "name": "violet-comet", "seed": 3735928559 }
+  ]
+}

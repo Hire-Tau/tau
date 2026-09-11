@@ -1,0 +1,5 @@
+[test]
+preload = ["./src/test-setup.ts"]
+# Core route tests share process.env and a single test database; run tests one at a time
+# so global auth bootstrap state cannot leak across concurrently executing files.
+maxConcurrency = 1

@@ -1,0 +1,118 @@
+import js from '@eslint/js'
+import tseslint from 'typescript-eslint'
+import reactHooks from 'eslint-plugin-react-hooks'
+import reactRefresh from 'eslint-plugin-react-refresh'
+import prettierRecommended from 'eslint-plugin-prettier/recommended'
+import unusedImports from 'eslint-plugin-unused-imports'
+
+export default [
+  {
+    ignores: [
+      'node_modules',
+      '**/node_modules',
+      'dist',
+      '**/dist',
+      'apps/docs/.astro/**',
+      '.worktrees',
+      // Local-only Claude scratch + agent worktrees (gitignored, absent in CI).
+      '.claude/**',
+      'data',
+      'apps/web/public/sw.js',
+      'apps/cli/src/build-info.generated.ts',
+      'apps/web/public/voice/dtln/**',
+      'ecosystem.config*.js',
+      'config/agent/extensions',
+      // Artifact-builder output: generated machine-host bundles (gitignored).
+      'machine/**',
+      // Vendored pristine Pi source overlays (patches/pi-coding-agent-0.85.1-source/**):
+      // byte-identical upstream source that the regeneration gate rebuilds the
+      // committed patch from. Reformatting to Tau style would break the byte-match
+      // the no-drift check depends on.
+      'patches/pi-coding-agent-0.85.1-source/**',
+    ],
+  },
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
+  {
+    files: ['apps/**/*.{ts,tsx}', 'packages/**/*.{ts,tsx}'],
+    plugins: {
+      'unused-imports': unusedImports,
+    },
+    rules: {
+      'unused-imports/no-unused-imports': 'error',
+      'unused-imports/no-unused-vars': [
+        'warn',
+        {
+          vars: 'all',
+          varsIgnorePattern: '^_',
+          args: 'after-used',
+          argsIgnorePattern: '^_',
+        },
+      ],
+    },
+  },
+  {
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+      ],
+      '@typescript-eslint/no-explicit-any': 'off',
+    },
+  },
+  {
+    // `pendingFlows` entries own a running OAuth login. Removing one without
+    // retiring it first leaves that login able to persist a credential to an
+    // account the user never chose — five review rounds of PR #980 each found a
+    // different code path with exactly that shape. retireAndRemove() is the one
+    // sanctioned removal (it carries an eslint-disable with a rationale); any
+    // other direct `pendingFlows.delete(...)` must fail lint.
+    //
+    // Scope note: this catches direct member calls only. It does NOT catch an
+    // alias (`const f = pendingFlows; f.delete(...)`), so it is a guard rail, not
+    // a proof — the behavioural tests in provider-auth.test.ts are the real net.
+    files: ['apps/core/src/routes/provider-auth.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "CallExpression[callee.object.name='pendingFlows'][callee.property.name='delete']",
+          message:
+            'Remove pending OAuth flows only via retireAndRemove(), which retires the flow first so its in-flight login can never persist.',
+        },
+      ],
+    },
+  },
+  {
+    files: ['**/*.cjs', 'apps/web/tailwind.config.js', 'apps/web/postcss.config.js'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+      'no-undef': 'off',
+    },
+  },
+  {
+    // Deployed Node CommonJS runtime scripts for the shared per-machine browser
+    // service: embedded verbatim into scripts/machine/bootstrap.sh and COPY'd
+    // into the machine/docker-sandbox images. They run under plain node/bun on
+    // the machine host, NOT inside the TS app graph — allow require()/node
+    // globals and the intentional empty catch blocks (best-effort cleanup).
+    files: ['scripts/machine/browser/*.js'],
+    rules: {
+      '@typescript-eslint/no-require-imports': 'off',
+      'no-undef': 'off',
+      'no-empty': 'off',
+    },
+  },
+  {
+    files: ['apps/web/**/*.{ts,tsx}'],
+    plugins: {
+      'react-hooks': reactHooks,
+      'react-refresh': reactRefresh,
+    },
+    rules: {
+      ...reactHooks.configs.recommended.rules,
+      'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
+    },
+  },
+  prettierRecommended,
+]

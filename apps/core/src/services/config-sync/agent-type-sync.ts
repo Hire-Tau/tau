@@ -1,0 +1,440 @@
+import yaml from 'js-yaml'
+import { readFile } from 'fs/promises'
+import { join } from 'path'
+import { agentTypes } from '../../db'
+import { AGENT_TYPES_DIR } from '../../lib/paths'
+import { validateModelSpecList } from '../../lib/utils/model-spec'
+import { AgentType } from '../../entities/AgentType'
+import { ConfigSync } from './ConfigSync'
+import { INTEGRATION_CAPABILITIES, type AgentTypeIntegrationPolicyV1 } from '@tau/shared'
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export interface HeartbeatYaml {
+  enabled: boolean
+  schedule: {
+    interval?: string
+    cron?: string
+    adaptive?: boolean
+    mode?: 'singleton' | 'broadcast'
+    subject?: string
+    prompt?: string
+  }
+  overrides: Record<string, unknown>
+}
+
+export interface AgentTypeYaml {
+  systemOnly?: boolean
+  id: string
+  model?: string
+  tier?: string
+  name: string
+  description?: string
+  systemPrompt: string
+  includes?: string[]
+  skills?: string[]
+  extensions?: string[]
+  scopes?: string[]
+  integrations?: AgentTypeIntegrationPolicyV1
+  tools?: {
+    allow?: string[]
+    deny?: string[]
+  }
+  earlyMarginTokens?: number
+  inFlightMarginTokens?: number
+  heartbeat?: HeartbeatYaml
+}
+
+// ---------------------------------------------------------------------------
+// Validation helpers
+// ---------------------------------------------------------------------------
+
+class YamlValidationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'YamlValidationError'
+  }
+}
+
+function validateRequired(obj: Record<string, unknown>, fields: string[], context: string): void {
+  for (const field of fields) {
+    if (obj[field] === undefined || obj[field] === null || obj[field] === '') {
+      throw new YamlValidationError(`${context}: Missing required field '${field}'`)
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// AgentTypeSync
+// ---------------------------------------------------------------------------
+
+export class AgentTypeSync extends ConfigSync<AgentTypeYaml> {
+  readonly name = 'agent-types'
+  readonly directory = AGENT_TYPES_DIR
+  readonly table = agentTypes
+  readonly idColumn = agentTypes.id
+  readonly yamlTemplateColumn = agentTypes.yamlTemplate
+  readonly yamlFieldOverridesColumn = agentTypes.yamlFieldOverrides
+  readonly updatedAtColumn = agentTypes.updatedAt
+  readonly disabledColumn = agentTypes.disabled
+
+  /** Per-instance cache for resolved include file contents. */
+  private includeCache: Map<string, string> = new Map()
+
+  // -------------------------------------------------------------------------
+  // Parse
+  // -------------------------------------------------------------------------
+
+  parse(content: string, _filename: string): AgentTypeYaml {
+    const parsed = yaml.load(content) as Record<string, unknown>
+
+    if (!parsed || typeof parsed !== 'object') {
+      throw new YamlValidationError('AgentType: Invalid YAML content - expected an object')
+    }
+
+    validateRequired(parsed, ['id', 'name', 'systemPrompt'], 'AgentType')
+    if (!parsed.model && !parsed.tier) throw new YamlValidationError("AgentType: either 'model' or 'tier' is required")
+
+    if (Object.hasOwn(parsed, 'flowPrompt'))
+      throw new YamlValidationError(
+        'AgentType: flowPrompt was removed; put expertise in systemPrompt and step instructions in the workflow'
+      )
+
+    if (parsed.systemOnly !== undefined && typeof parsed.systemOnly !== 'boolean')
+      throw new YamlValidationError("AgentType: 'systemOnly' must be a boolean")
+    const agentType: AgentTypeYaml = {
+      systemOnly: (parsed.systemOnly as boolean | undefined) ?? false,
+      id: parsed.id as string,
+      model: (parsed.model as string | undefined) ?? '',
+      tier: parsed.tier as string | undefined,
+      name: parsed.name as string,
+      systemPrompt: parsed.systemPrompt as string,
+    }
+
+    if (parsed.description !== undefined) {
+      agentType.description = parsed.description as string
+    }
+
+    if (parsed.model !== undefined && typeof parsed.model !== 'string') {
+      throw new YamlValidationError("AgentType: 'model' must be a string")
+    }
+
+    try {
+      if (parsed.model) validateModelSpecList(parsed.model)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new YamlValidationError(`AgentType: Invalid value for field 'model'. ${message}`)
+    }
+
+    if (parsed.includes !== undefined && parsed.includes !== null) {
+      if (!Array.isArray(parsed.includes)) {
+        throw new YamlValidationError("AgentType: 'includes' must be an array of template names")
+      }
+      for (let i = 0; i < parsed.includes.length; i++) {
+        if (typeof parsed.includes[i] !== 'string') {
+          throw new YamlValidationError(`AgentType: 'includes[${i}]' must be a string`)
+        }
+      }
+      agentType.includes = parsed.includes as string[]
+    }
+
+    if (parsed.skills !== undefined && parsed.skills !== null) {
+      if (!Array.isArray(parsed.skills)) {
+        throw new YamlValidationError("AgentType: 'skills' must be an array of paths")
+      }
+      for (let i = 0; i < parsed.skills.length; i++) {
+        if (typeof parsed.skills[i] !== 'string') {
+          throw new YamlValidationError(`AgentType: 'skills[${i}]' must be a string path`)
+        }
+      }
+      agentType.skills = parsed.skills as string[]
+    }
+
+    if (parsed.extensions !== undefined && parsed.extensions !== null) {
+      if (!Array.isArray(parsed.extensions)) {
+        throw new YamlValidationError("AgentType: 'extensions' must be an array of paths")
+      }
+      for (let i = 0; i < parsed.extensions.length; i++) {
+        if (typeof parsed.extensions[i] !== 'string') {
+          throw new YamlValidationError(`AgentType: 'extensions[${i}]' must be a string path`)
+        }
+      }
+      agentType.extensions = parsed.extensions as string[]
+    }
+
+    if (parsed.scopes !== undefined && parsed.scopes !== null) {
+      if (!Array.isArray(parsed.scopes)) {
+        throw new YamlValidationError("AgentType: 'scopes' must be an array of permission strings")
+      }
+      for (let i = 0; i < parsed.scopes.length; i++) {
+        if (typeof parsed.scopes[i] !== 'string') {
+          throw new YamlValidationError(`AgentType: 'scopes[${i}]' must be a string`)
+        }
+      }
+      agentType.scopes = parsed.scopes as string[]
+    }
+
+    if (parsed.integrations !== undefined && parsed.integrations !== null) {
+      if (typeof parsed.integrations !== 'object' || Array.isArray(parsed.integrations)) {
+        throw new YamlValidationError("AgentType: 'integrations' must be an object")
+      }
+      const integrations = parsed.integrations as Record<string, unknown>
+      if (integrations.version !== 1) {
+        throw new YamlValidationError("AgentType: 'integrations.version' must be 1")
+      }
+      if (!integrations.allow || typeof integrations.allow !== 'object' || Array.isArray(integrations.allow)) {
+        throw new YamlValidationError("AgentType: 'integrations.allow' must be an object")
+      }
+      const allow: AgentTypeIntegrationPolicyV1['allow'] = {}
+      for (const [provider, capabilities] of Object.entries(integrations.allow)) {
+        if (!/^[a-z][a-z0-9_-]{0,63}$/.test(provider)) {
+          throw new YamlValidationError(`AgentType: invalid integration provider '${provider}'`)
+        }
+        if (!Array.isArray(capabilities)) {
+          throw new YamlValidationError(`AgentType: integration '${provider}' capabilities must be an array`)
+        }
+        const normalized = [...new Set(capabilities)]
+        for (const capability of normalized) {
+          if (typeof capability !== 'string' || !(INTEGRATION_CAPABILITIES as readonly string[]).includes(capability)) {
+            throw new YamlValidationError(`AgentType: unknown integration capability '${String(capability)}'`)
+          }
+        }
+        allow[provider] = normalized as AgentTypeIntegrationPolicyV1['allow'][string]
+      }
+      agentType.integrations = { version: 1, allow }
+    }
+
+    if (parsed.tools !== undefined && parsed.tools !== null) {
+      if (typeof parsed.tools !== 'object') {
+        throw new YamlValidationError("AgentType: 'tools' must be an object")
+      }
+
+      const tools = parsed.tools as Record<string, unknown>
+      agentType.tools = {}
+
+      if (tools.allow !== undefined) {
+        if (!Array.isArray(tools.allow)) {
+          throw new YamlValidationError("AgentType: 'tools.allow' must be an array")
+        }
+        agentType.tools.allow = tools.allow as string[]
+      }
+
+      if (tools.deny !== undefined) {
+        if (!Array.isArray(tools.deny)) {
+          throw new YamlValidationError("AgentType: 'tools.deny' must be an array")
+        }
+        agentType.tools.deny = tools.deny as string[]
+      }
+    }
+
+    if (parsed.earlyMarginTokens !== undefined && parsed.earlyMarginTokens !== null) {
+      if (typeof parsed.earlyMarginTokens !== 'number') {
+        throw new YamlValidationError("AgentType: 'earlyMarginTokens' must be a number")
+      }
+      agentType.earlyMarginTokens = parsed.earlyMarginTokens
+    }
+
+    if (parsed.inFlightMarginTokens !== undefined && parsed.inFlightMarginTokens !== null) {
+      if (typeof parsed.inFlightMarginTokens !== 'number') {
+        throw new YamlValidationError("AgentType: 'inFlightMarginTokens' must be a number")
+      }
+      agentType.inFlightMarginTokens = parsed.inFlightMarginTokens
+    }
+
+    if (parsed.heartbeat !== undefined) {
+      if (typeof parsed.heartbeat !== 'object' || parsed.heartbeat === null) {
+        throw new YamlValidationError("AgentType: 'heartbeat' must be an object")
+      }
+
+      const hb = parsed.heartbeat as Record<string, unknown>
+
+      if (typeof hb.enabled !== 'boolean') {
+        throw new YamlValidationError("AgentType: 'heartbeat.enabled' must be a boolean")
+      }
+
+      if (!hb.schedule || typeof hb.schedule !== 'object') {
+        throw new YamlValidationError("AgentType: 'heartbeat.schedule' is required and must be an object")
+      }
+
+      const schedule = hb.schedule as Record<string, unknown>
+
+      if (schedule.mode !== 'singleton' && schedule.mode !== 'broadcast') {
+        throw new YamlValidationError("AgentType: 'heartbeat.schedule.mode' must be 'singleton' or 'broadcast'")
+      }
+
+      if (!schedule.interval && !schedule.cron) {
+        throw new YamlValidationError("AgentType: 'heartbeat.schedule' must include at least 'interval' or 'cron'")
+      }
+
+      if (schedule.interval !== undefined && typeof schedule.interval !== 'string') {
+        throw new YamlValidationError("AgentType: 'heartbeat.schedule.interval' must be a string")
+      }
+
+      if (schedule.cron !== undefined && typeof schedule.cron !== 'string') {
+        throw new YamlValidationError("AgentType: 'heartbeat.schedule.cron' must be a string")
+      }
+
+      if (schedule.adaptive !== undefined && typeof schedule.adaptive !== 'boolean') {
+        throw new YamlValidationError("AgentType: 'heartbeat.schedule.adaptive' must be a boolean")
+      }
+
+      const heartbeat: HeartbeatYaml = {
+        enabled: hb.enabled,
+        schedule,
+        overrides: {},
+      }
+
+      const reservedKeys = new Set(['enabled', 'schedule'])
+      for (const [key, value] of Object.entries(hb)) {
+        if (!reservedKeys.has(key)) {
+          heartbeat.overrides[key] = value
+        }
+      }
+
+      agentType.heartbeat = heartbeat
+    }
+
+    return agentType
+  }
+
+  // -------------------------------------------------------------------------
+  // Include resolution
+  // -------------------------------------------------------------------------
+
+  /**
+   * Override loadFromDir to resolve includes after loading all YAML files.
+   */
+  async loadFromDir(): Promise<AgentTypeYaml[]> {
+    const results = await super.loadFromDir()
+    const includesDir = join(this.directory, 'includes')
+
+    for (const agentType of results) {
+      await this.resolveIncludes(agentType, includesDir)
+    }
+
+    return results
+  }
+
+  /**
+   * Resolve includes for an agent type. Reads `.md` files from the includes
+   * subdirectory and appends their content to the systemPrompt.
+   */
+  private async resolveIncludes(agentType: AgentTypeYaml, includesDir: string): Promise<void> {
+    if (!agentType.includes?.length) return
+
+    const parts: string[] = []
+    for (const name of agentType.includes) {
+      const filePath = join(includesDir, `${name}.md`)
+      let content = this.includeCache.get(filePath)
+      if (content === undefined) {
+        try {
+          content = await readFile(filePath, 'utf-8')
+          this.includeCache.set(filePath, content)
+        } catch {
+          throw new YamlValidationError(`AgentType '${agentType.id}': Include '${name}' not found at ${filePath}`)
+        }
+      }
+      parts.push(content)
+    }
+
+    agentType.systemPrompt = agentType.systemPrompt + '\n\n' + parts.join('\n\n')
+  }
+
+  // -------------------------------------------------------------------------
+  // Record mapping
+  // -------------------------------------------------------------------------
+
+  getId(parsed: AgentTypeYaml): string {
+    return parsed.id
+  }
+
+  toRecord(parsed: AgentTypeYaml): Record<string, unknown> {
+    return {
+      systemOnly: parsed.systemOnly ?? false,
+      id: parsed.id,
+      name: parsed.name,
+      model: parsed.model ?? '',
+      tier: parsed.tier ?? null,
+      description: parsed.description ?? null,
+      systemPrompt: parsed.systemPrompt,
+      skills: parsed.skills ?? null,
+      extensions: parsed.extensions ?? null,
+      toolsAllow: parsed.tools?.allow ?? null,
+      toolsDeny: parsed.tools?.deny ?? null,
+      extraScopes: parsed.scopes ?? null,
+      integrationCapabilities: parsed.integrations ?? null,
+      earlyMarginTokens: parsed.earlyMarginTokens ?? null,
+      inFlightMarginTokens: parsed.inFlightMarginTokens ?? null,
+    }
+  }
+
+  toComparable(row: Record<string, unknown>): Record<string, unknown> {
+    return {
+      systemOnly: row.systemOnly ?? false,
+      id: row.id as string,
+      name: row.name as string,
+      model: row.model as string,
+      tier: (row.tier as string) ?? null,
+      description: (row.description as string) ?? null,
+      systemPrompt: row.systemPrompt as string,
+      skills: (row.skills as string[]) ?? null,
+      extensions: (row.extensions as string[]) ?? null,
+      toolsAllow: (row.toolsAllow as string[]) ?? null,
+      toolsDeny: (row.toolsDeny as string[]) ?? null,
+      extraScopes: (row.extraScopes as string[]) ?? null,
+      integrationCapabilities: (row.integrationCapabilities as AgentTypeIntegrationPolicyV1) ?? null,
+      earlyMarginTokens: (row.earlyMarginTokens as number | null) ?? null,
+      inFlightMarginTokens: (row.inFlightMarginTokens as number | null) ?? null,
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // YAML Export
+  // -------------------------------------------------------------------------
+
+  toYaml(row: Record<string, unknown>): string {
+    const obj: Record<string, unknown> = {
+      id: row.id,
+      name: row.name,
+      model: row.model,
+    }
+    if (row.systemOnly) obj.systemOnly = true
+    if (row.tier) obj.tier = row.tier
+    if (row.description) obj.description = row.description
+    obj.systemPrompt = row.systemPrompt
+    if (row.skills) obj.skills = row.skills
+    if (row.extensions) obj.extensions = row.extensions
+    const earlyMarginTokens = row.earlyMarginTokens as number | null
+    if (earlyMarginTokens != null) obj.earlyMarginTokens = earlyMarginTokens
+    const inFlightMarginTokens = row.inFlightMarginTokens as number | null
+    if (inFlightMarginTokens != null) obj.inFlightMarginTokens = inFlightMarginTokens
+
+    const integrationCapabilities = row.integrationCapabilities as AgentTypeIntegrationPolicyV1 | null
+    if (integrationCapabilities) obj.integrations = integrationCapabilities
+
+    const extraScopes = row.extraScopes as string[] | null
+    if (extraScopes && extraScopes.length > 0) obj.scopes = extraScopes
+
+    // Convert flat toolsAllow/toolsDeny back to nested tools: { allow, deny }
+    const toolsAllow = row.toolsAllow as string[] | null
+    const toolsDeny = row.toolsDeny as string[] | null
+    if (toolsAllow || toolsDeny) {
+      const tools: Record<string, unknown> = {}
+      if (toolsAllow) tools.allow = toolsAllow
+      if (toolsDeny) tools.deny = toolsDeny
+      obj.tools = tools
+    }
+
+    return yaml.dump(obj, { lineWidth: 120, noRefs: true })
+  }
+
+  // -------------------------------------------------------------------------
+  // Hooks
+  // -------------------------------------------------------------------------
+
+  async afterSync(_id: string): Promise<void> {
+    AgentType.invalidateCache()
+  }
+}

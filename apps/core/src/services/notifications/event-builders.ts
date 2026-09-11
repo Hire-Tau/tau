@@ -1,0 +1,365 @@
+import type { NotificationEvent } from '../../channels/provider'
+import { WorkStream } from '../../entities/WorkStream'
+import { Squad } from '../../entities/Squad'
+import { Agent } from '../../entities/Agent'
+import { db } from '../../db'
+import { getAgentQuestion } from '../agents/questions'
+import { listOpenWaits } from '../work-streams/waits'
+
+type EventData = Record<string, unknown>
+
+/** Best-effort: the newest open manual wait's message (why the stream is blocked). */
+async function manualWaitMessage(workStreamId: string): Promise<string | null> {
+  try {
+    return (await listOpenWaits(db, workStreamId)).find((w) => w.type === 'manual')?.message ?? null
+  } catch {
+    return null
+  }
+}
+
+async function exactWaitTarget(
+  data: EventData,
+  workStreamId: string,
+  waitType: 'manual' | 'review'
+): Promise<{ waitId: string; actionId: string; message: string | null } | null> {
+  const waitId = data.waitId
+  if (typeof waitId !== 'string' || !waitId) return null
+  try {
+    const wait = (await listOpenWaits(db, workStreamId)).find(
+      (candidate) => candidate.id === waitId && candidate.type === waitType
+    )
+    if (!wait) return null
+    const actionType = waitType === 'review' ? 'workstream-review' : 'workstream-blocked'
+    return { waitId, actionId: `${actionType}:${workStreamId}:${waitId}`, message: wait.message }
+  } catch {
+    return null
+  }
+}
+type EventBuilder = (data: EventData) => Promise<NotificationEvent | null>
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+// Only set URL if APP_URL is configured - don't default to localhost.
+function buildUrl(path: string): string | undefined {
+  const baseUrl = process.env.APP_URL
+  return baseUrl ? `${baseUrl}${path}` : undefined
+}
+
+/**
+ * This instance's own web origin, derived from APP_URL like buildUrl (lowercase scheme+host,
+ * optional base path, no trailing slash) so a multi-server mobile app can match it against
+ * its paired servers. Undefined when APP_URL isn't set or isn't a URL.
+ */
+export function getAppOrigin(appUrl: string | undefined = process.env.APP_URL): string | undefined {
+  if (!appUrl) return undefined
+  try {
+    const parsed = new URL(appUrl)
+    return `${parsed.origin}${parsed.pathname.replace(/\/+$/, '')}`
+  } catch {
+    return undefined
+  }
+}
+
+export const eventBuilders: Record<string, EventBuilder> = {
+  'agent-question.created': async (data) => {
+    const questionId = data.questionId
+    if (typeof questionId !== 'string' || !questionId) return null
+
+    const question = await getAgentQuestion(questionId)
+    if (!question) return null
+    const agent = await Agent.find(question.agentId)
+    if (!agent) return null
+    const squad = question.squadId ? await Squad.find(question.squadId) : null
+    const agentLabel = (agent.metadata?.name as string | undefined) || agent.agentTypeId
+    const questionText = question.questionData.questions
+      .map((item) => item.question.trim())
+      .filter(Boolean)
+      .join('\n')
+      .slice(0, 300)
+
+    return {
+      type: 'agent-question.created',
+      actionId: `agent-question:${question.id}`,
+      questionId: question.id,
+      agentId: agent.id,
+      squadId: question.squadId ?? undefined,
+      squadName: squad?.name,
+      title: `❓ ${agentLabel} has a question`,
+      body: questionText || 'Open Tau to respond',
+      url: question.squadId ? buildUrl(`/squads/${question.squadId}?agent=${agent.id}`) : buildUrl(`/chat/${agent.id}`),
+      timestamp: new Date(),
+    }
+  },
+
+  'workStream.blocked': async (data) => {
+    const workStreamId = data.workStreamId as string | undefined
+    const squadId = data.squadId as string | undefined
+    if (!workStreamId || !squadId) return null
+
+    const ws = await WorkStream.find(workStreamId)
+    if (!ws || ws.squadId !== squadId) return null
+    const squad = await Squad.find(ws.squadId)
+    if (!squad) return null
+
+    const target = await exactWaitTarget(data, ws.id, 'manual')
+    return {
+      type: 'workStream.blocked',
+      squadId: squad.id,
+      squadName: squad.name,
+      workStreamId: ws.id,
+      ...(target ? { waitId: target.waitId, actionId: target.actionId } : {}),
+      title: `🚫 Blocked: ${ws.title}`,
+      body: (target ? target.message : await manualWaitMessage(ws.id)) || 'Agent needs input to continue',
+      url: buildUrl(`/squads/${squad.id}/work?ws=${ws.id}`),
+      timestamp: new Date(),
+    }
+  },
+
+  'workStream.review': async (data) => {
+    const workStreamId = data.workStreamId as string | undefined
+    const squadId = data.squadId as string | undefined
+    if (!workStreamId || !squadId) return null
+
+    const ws = await WorkStream.find(workStreamId)
+    if (!ws || ws.squadId !== squadId) return null
+    const squad = await Squad.find(ws.squadId)
+    if (!squad) return null
+
+    const target = await exactWaitTarget(data, ws.id, 'review')
+    return {
+      type: 'workStream.review',
+      squadId: squad.id,
+      squadName: squad.name,
+      workStreamId: ws.id,
+      ...(target ? { waitId: target.waitId, actionId: target.actionId } : {}),
+      title: `👀 Ready for review: ${ws.title}`,
+      body: target?.message || ws.handoffMessage || ws.description?.slice(0, 200) || 'No description',
+      url: buildUrl(`/squads/${squad.id}/work?ws=${ws.id}`),
+      timestamp: new Date(),
+    }
+  },
+
+  'workStream.done': async (data) => {
+    const workStreamId = data.workStreamId as string | undefined
+    const squadId = data.squadId as string | undefined
+    if (!workStreamId || !squadId) return null
+
+    const ws = await WorkStream.find(workStreamId)
+    if (!ws || ws.squadId !== squadId) return null
+    const squad = await Squad.find(ws.squadId)
+    if (!squad) return null
+
+    return {
+      type: 'workStream.done',
+      squadId: squad.id,
+      squadName: squad.name,
+      workStreamId: ws.id,
+      title: `✅ Completed: ${ws.title}`,
+      body: ws.description?.slice(0, 200) || 'No description',
+      url: buildUrl(`/squads/${squad.id}/work?ws=${ws.id}`),
+      timestamp: new Date(),
+    }
+  },
+
+  'workStream.canceled': async (data) => {
+    const workStreamId = data.workStreamId as string | undefined
+    const squadId = data.squadId as string | undefined
+    if (!workStreamId || !squadId) return null
+
+    const ws = await WorkStream.find(workStreamId)
+    if (!ws || ws.squadId !== squadId) return null
+    const squad = await Squad.find(ws.squadId)
+    if (!squad) return null
+
+    return {
+      type: 'workStream.canceled',
+      squadId: squad.id,
+      squadName: squad.name,
+      workStreamId: ws.id,
+      title: `⏹️ Canceled: ${ws.title}`,
+      body: 'Work stream was canceled; active assigned executions were asked to stop where possible.',
+      url: buildUrl(`/squads/${squad.id}/work?ws=${ws.id}`),
+      timestamp: new Date(),
+    }
+  },
+
+  'workStream.created': async (data) => {
+    const workStreamId = data.workStreamId as string | undefined
+    const squadId = data.squadId as string | undefined
+    if (!workStreamId || !squadId) return null
+
+    const ws = await WorkStream.find(workStreamId)
+    if (!ws || ws.squadId !== squadId) return null
+    const squad = await Squad.find(ws.squadId)
+    if (!squad) return null
+
+    return {
+      type: 'workStream.created',
+      squadId: squad.id,
+      squadName: squad.name,
+      workStreamId: ws.id,
+      title: `📋 New work stream: ${ws.title}`,
+      body: ws.description?.slice(0, 200) || 'No description',
+      url: buildUrl(`/squads/${squad.id}/work?ws=${ws.id}`),
+      timestamp: new Date(),
+    }
+  },
+
+  'workStream.updated': async (data) => {
+    const workStreamId = data.workStreamId as string | undefined
+    const squadId = data.squadId as string | undefined
+    if (!workStreamId || !squadId) return null
+
+    const ws = await WorkStream.find(workStreamId)
+    if (!ws || ws.squadId !== squadId) return null
+    const squad = await Squad.find(ws.squadId)
+    if (!squad) return null
+
+    return {
+      type: 'workStream.updated',
+      squadId: squad.id,
+      squadName: squad.name,
+      workStreamId: ws.id,
+      title: `📝 Updated: ${ws.title}`,
+      body: ws.description?.slice(0, 200) || 'No description',
+      url: buildUrl(`/squads/${squad.id}/work?ws=${ws.id}`),
+      timestamp: new Date(),
+    }
+  },
+
+  'inbox.messageReceived': async (data) => {
+    const messageId = data.messageId as string | undefined
+    if (!messageId) return null
+
+    const { InboxMessage } = await import('../../entities/InboxMessage')
+    const message = await InboxMessage.find(messageId)
+    if (!message) return null
+
+    // Resolve sender for deep-linking: an agent sender links to that agent's
+    // chat in its squad; non-agent senders (system/user/voice) fall back to Feed.
+    const senderMeta = message.metadata?.sender as { squadId?: string } | undefined
+    const isAgentSender = message.senderType === 'agent' && !!message.senderId
+    const fleetSquadId =
+      typeof message.metadata?.squadId === 'string' && UUID_PATTERN.test(message.metadata.squadId)
+        ? message.metadata.squadId
+        : undefined
+    const isFleetAlert =
+      message.senderType === 'system' &&
+      message.metadata?.source === 'fleet-alert' &&
+      (message.metadata.squadId === undefined || fleetSquadId !== undefined)
+    const fleetSquad = isFleetAlert && fleetSquadId ? await Squad.find(fleetSquadId) : null
+    const trustedMetadata = message.senderType === 'system' ? message.metadata : null
+    const trustedString = (key: 'workStreamId' | 'waitId' | 'questionId' | 'actionId') => {
+      const value = trustedMetadata?.[key]
+      return typeof value === 'string' && value ? value : undefined
+    }
+
+    return {
+      type: 'inbox.messageReceived',
+      source: isFleetAlert ? 'fleet-alert' : undefined,
+      messageId: message.id,
+      workStreamId: trustedString('workStreamId'),
+      waitId: trustedString('waitId'),
+      questionId: trustedString('questionId'),
+      actionId: trustedString('actionId'),
+      agentId: isAgentSender ? message.senderId! : undefined,
+      squadId: isAgentSender ? senderMeta?.squadId : fleetSquad?.id,
+      squadName: fleetSquad?.name,
+      title: message.subject || 'New message',
+      body: message.content.slice(0, 300),
+      url: buildUrl('/inbox'),
+      timestamp: new Date(),
+    }
+  },
+
+  'execution.completed': async (data) => {
+    const executionId = data.executionId as string | undefined
+    const agentId = data.agentId as string | undefined
+    if (!executionId || !agentId) return null
+
+    const { Agent } = await import('../../entities/Agent')
+    const { Execution } = await import('../../entities/Execution')
+
+    const [agent, execution] = await Promise.all([Agent.find(agentId), Execution.find(executionId)])
+    if (!agent || !execution) return null
+
+    const agentName = (agent.metadata as Record<string, unknown>)?.name as string | undefined
+    const agentLabel = agentName || agent.agentTypeId
+
+    // Squad agents link to squad threads tab, system agents link to chat
+    let url: string | undefined
+    let squadId: string | undefined
+    let squadName: string | undefined
+
+    if (agent.squadId) {
+      const squad = await Squad.find(agent.squadId)
+      if (squad) {
+        squadId = squad.id
+        squadName = squad.name
+        url = buildUrl(`/squads/${squad.id}?agent=${agent.id}`)
+      }
+    } else {
+      url = buildUrl(`/chat/${agent.id}`)
+    }
+
+    return {
+      type: 'execution.completed',
+      squadId,
+      squadName,
+      agentId: agent.id,
+      title: `✅ Execution completed`,
+      body: `${agentLabel} agent finished execution`,
+      url,
+      timestamp: new Date(),
+    }
+  },
+
+  'execution.failed': async (data) => {
+    const executionId = data.executionId as string | undefined
+    const agentId = data.agentId as string | undefined
+    if (!executionId || !agentId) return null
+
+    const { Agent } = await import('../../entities/Agent')
+    const { Execution } = await import('../../entities/Execution')
+
+    const [agent, execution] = await Promise.all([Agent.find(agentId), Execution.find(executionId)])
+    if (!agent || !execution) return null
+
+    const agentName = (agent.metadata as Record<string, unknown>)?.name as string | undefined
+    const agentLabel = agentName || agent.agentTypeId
+    const errorMsg = execution.error || 'Unknown error'
+
+    // Squad agents link to squad threads tab, system agents link to chat
+    let url: string | undefined
+    let squadId: string | undefined
+    let squadName: string | undefined
+
+    if (agent.squadId) {
+      const squad = await Squad.find(agent.squadId)
+      if (squad) {
+        squadId = squad.id
+        squadName = squad.name
+        url = buildUrl(`/squads/${squad.id}?agent=${agent.id}`)
+      }
+    } else {
+      url = buildUrl(`/chat/${agent.id}`)
+    }
+
+    return {
+      type: 'execution.failed',
+      squadId,
+      squadName,
+      agentId: agent.id,
+      title: `❌ Execution failed`,
+      body: `${agentLabel} agent failed: ${errorMsg.slice(0, 200)}`,
+      url,
+      timestamp: new Date(),
+    }
+  },
+}
+
+export async function buildNotificationEvent(eventType: string, data: unknown): Promise<NotificationEvent | null> {
+  const builder = eventBuilders[eventType]
+  if (!builder) return null
+  return builder(data as EventData)
+}

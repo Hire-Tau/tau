@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX CONCURRENTLY "idx_messages_enqueue_order_unique" ON "messages" USING btree ("enqueue_order");

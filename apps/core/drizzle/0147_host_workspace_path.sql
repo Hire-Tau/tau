@@ -1,0 +1,1 @@
+ALTER TABLE "squads" ADD COLUMN IF NOT EXISTS "host_workspace_path" text;

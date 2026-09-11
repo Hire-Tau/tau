@@ -1,0 +1,1 @@
+ALTER TYPE "public"."inbox_recipient_type" ADD VALUE 'voice_assistant';

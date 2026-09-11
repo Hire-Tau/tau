@@ -1,0 +1,1 @@
+ALTER TABLE "machine_boxes" ADD COLUMN "auth_token" text;

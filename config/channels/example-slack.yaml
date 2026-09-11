@@ -1,0 +1,64 @@
+# Example Slack Channel Instance
+# Copy this file and modify for your Slack workspace
+#
+# ============================================================================
+# QUICK SETUP (using App Manifest)
+# ============================================================================
+#
+# 1. Go to https://api.slack.com/apps
+# 2. Click "Create New App" → "From an app manifest"
+# 3. Select your workspace
+# 4. Copy the contents of slack-app-manifest.example.yaml in this directory
+# 5. Replace YOUR_DOMAIN with your actual domain in Slash Commands and Event Subscriptions
+# 6. Create the app and install to workspace
+# 7. Copy credentials to .env:
+#    - SLACK_SIGNING_SECRET (Basic Information → App Credentials)
+#    - SLACK_BOT_TOKEN (OAuth & Permissions → OAuth Tokens -> Install)
+#
+# ============================================================================
+# MANUAL SETUP
+# ============================================================================
+#
+# See docs/wiki/setup.md or docs/wiki/channels.md for full manual setup instructions.
+#
+# Required OAuth Scopes:
+#   Commands: commands
+#   Core: chat:write, chat:write.public
+#   History: channels:history, groups:history, im:history, mpim:history
+#   Info: channels:read, groups:read, im:read, mpim:read, users:read
+#   Reactions: reactions:write, reactions:read
+#   Events: app_mentions:read (for @mention support)
+#   Optional: files:write, files:read, im:write
+#
+# Required Events:
+#   message.channels, message.groups, message.im, message.mpim
+#   Optional: app_mention
+#
+# ============================================================================
+# FINDING YOUR TEAM ID
+# ============================================================================
+#
+# Open your Slack workspace in a browser. The URL will look like:
+#   https://app.slack.com/client/T0123ABCD/C01234567
+#
+# The teamId is the part starting with T: T0123ABCD
+#
+# ============================================================================
+
+id: example-slack
+name: Example Slack Workspace
+provider: slack
+
+# Provider-specific configuration
+providerConfig:
+  # Slack Team ID (workspace ID) - starts with T
+  teamId: "T0123ABCD"
+
+# Optional: Map specific Slack channels to specific squads
+# Slack channel IDs start with C (public) or G (private)
+channelSquadMap:
+  "C01234567": "a1b2c3d4-1234-5678-9abc-def012345678"  # #frontend
+  "C12345678": "b2c3d4e5-2345-6789-abcd-ef0123456789"  # #backend
+
+# Default squad for requests not matching a channel mapping
+defaultSquadId: "a1b2c3d4-1234-5678-9abc-def012345678"

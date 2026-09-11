@@ -1,0 +1,23 @@
+# Example Telegram Channel Instance
+# Copy this file and modify for your Telegram bot
+#
+# To set up Telegram:
+# 1. Create bot via @BotFather on Telegram
+# 2. Copy bot token → TELEGRAM_BOT_TOKEN env var
+# 3. Generate webhook secret → TELEGRAM_WEBHOOK_SECRET env var
+# 4. Set bot ID below (the numeric prefix of your bot token, before the colon)
+# 5. Set webhook: curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://your-domain/api/webhooks/channels/telegram&secret_token=<SECRET>"
+# 6. Also set TELEGRAM_BOT_ID env var to match botId below
+
+id: example-telegram
+name: Example Telegram Bot
+provider: telegram
+
+# Provider-specific configuration
+providerConfig:
+  # Bot identifier (the numeric prefix of your bot token, before the colon)
+  # Must match TELEGRAM_BOT_ID env var
+  botId: '123456789'
+
+# Default squad for requests
+defaultSquadId: 'a1b2c3d4-1234-5678-9abc-def012345678'

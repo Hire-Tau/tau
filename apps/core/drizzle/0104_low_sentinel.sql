@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY "idx_executions_waiting_maintenance_fifo" ON "executions" USING btree ("started_at","id") WHERE "executions"."status" = 'waiting-maintenance';

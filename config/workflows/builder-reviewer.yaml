@@ -1,0 +1,42 @@
+id: builder-reviewer
+description: Produce a deliverable and get an independent review, with explicit returns for rework.
+definition:
+  schemaVersion: 1
+  name: With Review
+  participants:
+    builder:
+      agentTypeId: general
+      session: reuse-within-stream
+    reviewer:
+      agentTypeId: general
+      session: reuse-within-stream
+  entry: build
+  routing:
+    mode: flexible
+    returnTo: earlier-steps
+    delegation: disabled
+  limits:
+    maxDelegations: 0
+    onLimit: request-owner-input
+  steps:
+    - id: build
+      participant: builder
+      instructions: Produce the requested deliverable and verify it against the requirements.
+      output: The deliverable and verification evidence.
+
+      outcomes:
+        completed:
+          next: review
+    - id: review
+      participant: reviewer
+
+      instructions: Review the deliverable independently. Approve it or request specific changes and a return to you.
+      output: An evidence-backed verdict or actionable feedback.
+
+      outcomes:
+        approved:
+          next: finish
+        changes-requested:
+          returnTo: build
+  completion:
+    mode: deliverable

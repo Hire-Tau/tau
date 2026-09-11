@@ -1,0 +1,197 @@
+# Tau Core Deployments and Services
+#
+# Two Deployments from the same image (override image via Kustomize or Pulumi):
+#   1. tau-api    — HTTP API server (port 3000)
+#   2. tau-worker — Agent execution, scheduling (port 3002)
+#
+# Web frontend is served via CloudFront + S3 (see cdn.ts).
+#
+# Prerequisites (created separately per environment):
+#   - Namespace: tau-core
+#   - ServiceAccount: tau-core
+#   - ConfigMap: tau-core-config
+#   - Secret: tau-core-secrets
+#
+# Image placeholder: IMAGE_PLACEHOLDER (replaced at deploy time)
+
+---
+# =============================================================================
+# API Server
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tau-api
+  namespace: tau-core
+  labels:
+    app: tau-core
+    component: api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tau-core
+      component: api
+  template:
+    metadata:
+      labels:
+        app: tau-core
+        component: api
+    spec:
+      serviceAccountName: tau-core
+      containers:
+        - name: tau-api
+          image: IMAGE_PLACEHOLDER
+          command: ["bun", "run", "apps/core/dist/index.js"]
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: tau-core-config
+            - secretRef:
+                name: tau-core-secrets
+          env:
+            - name: FORCE_COLOR
+              value: "1"
+            - name: WORKER_URL
+              value: "http://tau-worker:3002"
+            - name: TAU_SANDBOX_RUNTIME
+              value: "k8s"
+            - name: TAU_SYSTEM_LOG_PROVIDER
+              value: "k8s"
+            - name: TAU_SYSTEM_LOG_K8S_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: NODE_EXTRA_CA_CERTS
+              value: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          volumeMounts:
+            - name: core-data
+              mountPath: /data
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+
+---
+# =============================================================================
+# Worker
+# =============================================================================
+# Scale independently. Each replica handles MAX_CONCURRENT_AGENTS agent runs.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tau-worker
+  namespace: tau-core
+  labels:
+    app: tau-core
+    component: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tau-core
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: tau-core
+        component: worker
+    spec:
+      serviceAccountName: tau-core
+      containers:
+        - name: tau-worker
+          image: IMAGE_PLACEHOLDER
+          command: ["bun", "run", "apps/core/dist/worker.js"]
+          ports:
+            - name: worker
+              containerPort: 3002
+          envFrom:
+            - configMapRef:
+                name: tau-core-config
+            - secretRef:
+                name: tau-core-secrets
+          env:
+            - name: FORCE_COLOR
+              value: "1"
+            - name: TAU_SANDBOX_RUNTIME
+              value: "k8s"
+            - name: NODE_EXTRA_CA_CERTS
+              value: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+          volumeMounts:
+            - name: core-data
+              mountPath: /data
+          resources:
+            requests:
+              memory: "512Mi"
+              cpu: "500m"
+            limits:
+              memory: "4Gi"
+              cpu: "4000m"
+          readinessProbe:
+            exec:
+              command: ["bun", "-e", "fetch('http://localhost:3002/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          livenessProbe:
+            exec:
+              command: ["bun", "-e", "fetch('http://localhost:3002/health').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"]
+            initialDelaySeconds: 20
+            periodSeconds: 30
+
+---
+# =============================================================================
+# Services
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: tau-api
+  namespace: tau-core
+  labels:
+    app: tau-core
+    component: api
+spec:
+  type: ClusterIP
+  selector:
+    app: tau-core
+    component: api
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tau-worker
+  namespace: tau-core
+  labels:
+    app: tau-core
+    component: worker
+spec:
+  type: ClusterIP
+  selector:
+    app: tau-core
+    component: worker
+  ports:
+    - name: worker
+      port: 3002
+      targetPort: 3002
+

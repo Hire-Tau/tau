@@ -1,0 +1,2 @@
+ALTER TABLE "work_stream_continuations" ADD COLUMN "progress_execution_id" uuid;--> statement-breakpoint
+ALTER TABLE "work_stream_continuations" ADD COLUMN "normal_attempt_count" integer DEFAULT 0 NOT NULL;

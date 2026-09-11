@@ -1,0 +1,1 @@
+ALTER TABLE "machine_boxes" ADD COLUMN "migrating" boolean DEFAULT false NOT NULL;

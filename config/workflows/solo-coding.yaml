@@ -1,0 +1,31 @@
+id: solo-coding
+description: One engineer implements, verifies, and prepares a change for delivery.
+definition:
+  schemaVersion: 1
+  name: Solo Coding
+  participants:
+    worker:
+      agentTypeId: engineer
+      session: reuse-within-stream
+  entry: execute
+  routing:
+    mode: guided
+    returnTo: declared-only
+    delegation: disabled
+  limits:
+    maxDelegations: 0
+    onLimit: request-owner-input
+  steps:
+    - id: execute
+      participant: worker
+      instructions: >-
+        Implement the requested change in the work-stream workspace. Run appropriate validation, inspect your
+        own diff, and prepare the change request. Work directly without spawning other agents. Ask the owner
+        if the scope requires independent review or a different flow.
+      output: Committed implementation, validation evidence, and a change request ready for delivery.
+      outcomes:
+        completed:
+          next: finish
+  completion:
+    mode: pr-merge
+    followChanges: true

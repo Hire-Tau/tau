@@ -1,0 +1,1 @@
+ALTER TABLE "machines" ADD COLUMN "server_bundle_version" text;

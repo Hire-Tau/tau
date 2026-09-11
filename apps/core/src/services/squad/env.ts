@@ -1,0 +1,367 @@
+import { deploymentProviderForSecret, getDeploymentAwareSecretValue } from '../integrations/deployment/settings'
+import { join } from 'path'
+import { existsSync, mkdirSync, writeFileSync, readFileSync, chmodSync, renameSync, rmSync } from 'fs'
+import { eq, isNull } from 'drizzle-orm'
+import { db, squads, squadSecretExposures, globalSecretExposures } from '../../db'
+import { isManagedSecretKey } from '../secrets'
+import { loadProtectedIntegrationBindings } from '../integrations/projection/protected-env'
+import { getSquadWorkspacePath } from './workspace'
+
+const USER_ENV_FILE = 'env.user'
+const GENERATED_ENV_FILE = '.env'
+const GENERATED_SECRET_MARKER = '# Generated from Tau Secret Store allowlist. Do not edit values here.'
+const GENERATED_INTEGRATION_MARKER = '# Generated protected integration bindings. Do not edit values here.'
+
+/**
+ * Get the .tau directory path for a squad workspace.
+ */
+function getTauDir(squadId: string): string {
+  const workspacePath = getSquadWorkspacePath(squadId)
+  return join(workspacePath, '.tau')
+}
+
+/**
+ * Ensure the .tau directory exists.
+ */
+function ensureTauDir(squadId: string): string {
+  const tauDir = getTauDir(squadId)
+  if (!existsSync(tauDir)) {
+    mkdirSync(tauDir, { recursive: true })
+  }
+
+  // K8s sandboxes can write to the same workspace from container-root. Keep
+  // Tau's private workspace dir group-writable/setgid when Core owns it so
+  // local k3d shared-volume files remain writable by the Core process.
+  try {
+    chmodSync(tauDir, 0o2775)
+  } catch {
+    // If an older sandbox already left this root-owned, the caller will still
+    // get the original write error with path context; local repair is required.
+  }
+
+  return tauDir
+}
+
+function getUserEnvPath(squadId: string): string {
+  return join(getTauDir(squadId), USER_ENV_FILE)
+}
+
+function getGeneratedEnvPath(squadId: string): string {
+  return join(getTauDir(squadId), GENERATED_ENV_FILE)
+}
+
+const ENV_NAME_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+/**
+ * Keys a squad env may never set, each with the reason the writer is told.
+ *
+ * The squad `.tau/.env` is sourced INSIDE every agent shell, so these decide
+ * WHICH instance an agent talks to and AS WHOM. Exact, case-sensitive names —
+ * these are literal env names, not a namespace.
+ */
+const IDENTITY_REASON =
+  "the agent's identity is injected by tau; setting it here would make agents act as a different identity"
+
+export const RESERVED_SQUAD_ENV_KEYS: Readonly<Record<string, string>> = {
+  TAU_TOKEN: IDENTITY_REASON,
+  TAU_API_URL: IDENTITY_REASON,
+  TAU_PASSWORD: IDENTITY_REASON,
+  TAU_AUTH_STORE: IDENTITY_REASON,
+  TAU_AGENT_CONTEXT: IDENTITY_REASON,
+  TAU_AGENT_ID: IDENTITY_REASON,
+  TAU_IDENTITY_API_URL: IDENTITY_REASON,
+  TAU_IDENTITY_TOKEN: IDENTITY_REASON,
+  TAU_IDENTITY_AUTH_STORE: IDENTITY_REASON,
+  TAU_IDENTITY_AGENT_ID: IDENTITY_REASON,
+}
+
+// PATH is deliberately NOT reserved: `PATH=$PATH:/opt/toolchain` is a legitimate
+// squad env, and the host preamble re-prepends the `tau` shim dir after the file
+// is sourced, so squad additions are honoured but cannot displace `tau`.
+
+const ENV_ASSIGNMENT_PATTERN = /^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/
+
+/**
+ * Reserved keys assigned by squad env `content`, in the order they appear.
+ *
+ * This is a line-anchored scan of a file that is later executed as shell, so it
+ * is a guardrail against the accident and against stale/naive content — not a
+ * boundary. The enforcement that holds is the host preamble, which re-asserts
+ * the identity and PATH after the file is sourced.
+ */
+export function findReservedSquadEnvKeys(content: string): string[] {
+  const found: string[] = []
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('#')) continue
+    const key = ENV_ASSIGNMENT_PATTERN.exec(trimmed)?.[1]
+    if (key && key in RESERVED_SQUAD_ENV_KEYS && !found.includes(key)) found.push(key)
+  }
+  return found
+}
+
+/** The 400 message for a rejected write, naming every offending key and why it is refused. */
+export function describeReservedSquadEnvKeys(keys: string[]): string {
+  return keys.map((key) => `Cannot set ${key} in the squad environment: ${RESERVED_SQUAD_ENV_KEYS[key]}.`).join(' ')
+}
+
+function normalizeSecretKeys(keys: string[]): string[] {
+  return Array.from(
+    new Set(
+      keys
+        .map((key) => key.trim())
+        .filter((key) => ENV_NAME_PATTERN.test(key))
+        // Platform-managed credentials must NEVER reach a squad/sandbox env,
+        // even if a tenant names one explicitly in the exposure allowlist. This
+        // is the single chokepoint: every persistence and render path routes
+        // exposure keys through here, so a managed key can neither be stored as
+        // an exposure nor rendered into .tau/.env.
+        .filter((key) => !isManagedSecretKey(key))
+        .filter(
+          (key) =>
+            !/^(?:GH_TOKEN|GITHUB_TOKEN)(?:_|$)/.test(key) &&
+            key !== 'GITHUB_WEBHOOK_SECRET' &&
+            key !== 'GITHUB_USER' &&
+            key !== 'DEPLOY_GITHUB_PAGES_TOKEN'
+        )
+        // Same reasoning for the identity/PATH names: a Secret Store key called
+        // TAU_API_URL would otherwise be RENDERED into .tau/.env and sourced into
+        // every agent shell, which is the very thing the write-time check refuses.
+        .filter((key) => !(key in RESERVED_SQUAD_ENV_KEYS))
+    )
+  ).sort()
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'"'"'`)}'`
+}
+
+function renderSecretExports(keys: string[], getSecretValue: (key: string) => string | undefined): string {
+  const lines = normalizeSecretKeys(keys)
+    .map((key) => {
+      const value = getSecretValue(key)
+      if (value === undefined) return deploymentProviderForSecret(key) ? `unset ${key}` : null
+      return `export ${key}=${shellQuote(value)}`
+    })
+    .filter((line): line is string => line !== null)
+
+  if (lines.length === 0) return ''
+  return [GENERATED_SECRET_MARKER, ...lines].join('\n')
+}
+
+function renderGeneratedEnvContent(
+  content: string,
+  keys: string[],
+  getSecretValue: (key: string) => string | undefined,
+  protectedBindings: readonly (readonly [string, string])[] = []
+): string {
+  const userContent = content.trimEnd()
+  const secretContent = renderSecretExports(keys, getSecretValue)
+  const protectedContent =
+    protectedBindings.length === 0
+      ? ''
+      : [
+          GENERATED_INTEGRATION_MARKER,
+          ...[...protectedBindings]
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([name, value]) => `export ${name}=${shellQuote(value)}`),
+        ].join('\n')
+  // Clear inherited credentials on every shell invocation, including after
+  // a default account is detached. Only current integration bindings restore them.
+  return [
+    userContent,
+    secretContent,
+    GENERATED_INTEGRATION_MARKER,
+    'unset GH_TOKEN GITHUB_TOKEN GITHUB_USER DEPLOY_GITHUB_PAGES_TOKEN',
+    protectedContent,
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+function getUserEnvContentForGeneration(squadId: string): string {
+  const userEnvPath = getUserEnvPath(squadId)
+  if (existsSync(userEnvPath)) return readFileSync(userEnvPath, 'utf-8')
+
+  // First-time migration for squads that only have the pre-env.user .tau/.env file.
+  // Capture legacy user content before generating selected Secret Store exports so
+  // first exposure does not drop existing user variables.
+  const generatedEnvPath = getGeneratedEnvPath(squadId)
+  if (existsSync(generatedEnvPath)) {
+    const legacyContent = readFileSync(generatedEnvPath, 'utf-8')
+    if (legacyContent.includes(GENERATED_SECRET_MARKER) || legacyContent.includes(GENERATED_INTEGRATION_MARKER))
+      return ''
+    writeFileSync(userEnvPath, legacyContent, { mode: 0o600 })
+    return legacyContent
+  }
+
+  return ''
+}
+
+async function writeGeneratedEnvFile(
+  squadId: string,
+  content: string,
+  keys: string[],
+  getSecretValue: (key: string) => string | undefined = getDeploymentAwareSecretValue
+): Promise<void> {
+  const tauDir = ensureTauDir(squadId)
+  const envPath = join(tauDir, GENERATED_ENV_FILE)
+  const tempPath = join(tauDir, `.env.tmp-${crypto.randomUUID()}`)
+  let protectedBindings: readonly (readonly [string, string])[]
+  try {
+    protectedBindings = await loadProtectedIntegrationBindings(squadId)
+  } catch (error) {
+    rmSync(envPath, { force: true })
+    throw error
+  }
+  try {
+    writeFileSync(
+      tempPath,
+      renderGeneratedEnvContent(content, keys, getSecretValue, protectedBindings) +
+        '\n' +
+        githubCommandBindings(squadId),
+      {
+        mode: 0o600,
+      }
+    )
+    chmodSync(tempPath, 0o600)
+    renameSync(tempPath, envPath)
+    chmodSync(envPath, 0o600)
+  } catch (error) {
+    rmSync(tempPath, { force: true })
+    rmSync(envPath, { force: true })
+    throw error
+  }
+}
+
+/**
+ * Get the user-authored squad env content. This intentionally excludes selected
+ * Secret Store values so normal APIs/UI do not leak plaintext secrets.
+ */
+export function getEnvFile(squadId: string): string | null {
+  const userEnvPath = getUserEnvPath(squadId)
+  if (existsSync(userEnvPath)) return readFileSync(userEnvPath, 'utf-8')
+
+  // Backwards compatibility for squads created before env.user existed.
+  // If the generated marker is present, .env may contain plaintext Secret Store values;
+  // never expose those values through normal APIs/UI.
+  const generatedEnvPath = getGeneratedEnvPath(squadId)
+  if (!existsSync(generatedEnvPath)) return null
+  const content = readFileSync(generatedEnvPath, 'utf-8')
+  if (content.includes(GENERATED_SECRET_MARKER) || content.includes(GENERATED_INTEGRATION_MARKER)) return ''
+  return content
+}
+
+/**
+ * Set the user-authored squad env content and regenerate the sandbox .env file.
+ */
+export async function setEnvFile(squadId: string, content: string): Promise<void> {
+  const tauDir = ensureTauDir(squadId)
+  const userEnvPath = join(tauDir, USER_ENV_FILE)
+  writeFileSync(userEnvPath, content, { mode: 0o600 })
+  await writeGeneratedEnvFile(squadId, content, await getEffectiveExposedSecretKeys(squadId))
+}
+
+/** List Secret Store keys explicitly allowed to be rendered into this squad's sandbox env. */
+export async function getExposedSecretKeys(squadId: string): Promise<string[]> {
+  const rows = await db
+    .select({ secretKey: squadSecretExposures.secretKey })
+    .from(squadSecretExposures)
+    .where(eq(squadSecretExposures.squadId, squadId))
+  return normalizeSecretKeys(rows.map((row) => row.secretKey))
+}
+
+export async function getGloballyExposedSecretKeys(): Promise<string[]> {
+  const rows = await db.select({ secretKey: globalSecretExposures.secretKey }).from(globalSecretExposures)
+  return normalizeSecretKeys(rows.map((row) => row.secretKey))
+}
+
+async function getEffectiveExposedSecretKeys(squadId: string, squadKeys?: string[]): Promise<string[]> {
+  const [globalKeys, resolvedSquadKeys] = await Promise.all([
+    getGloballyExposedSecretKeys(),
+    squadKeys ? Promise.resolve(normalizeSecretKeys(squadKeys)) : getExposedSecretKeys(squadId),
+  ])
+  return normalizeSecretKeys([...globalKeys, ...resolvedSquadKeys])
+}
+
+export async function regenerateEnvFileForSquad(squadId: string): Promise<void> {
+  await writeGeneratedEnvFile(squadId, getEnvFile(squadId) ?? '', await getEffectiveExposedSecretKeys(squadId))
+}
+
+export async function setGloballyExposedSecretKeys(keys: string[]): Promise<void> {
+  const normalizedKeys = normalizeSecretKeys(keys)
+
+  await db.delete(globalSecretExposures)
+  if (normalizedKeys.length > 0) {
+    await db.insert(globalSecretExposures).values(
+      normalizedKeys.map((key) => ({
+        secretKey: key,
+        updatedAt: new Date(),
+      }))
+    )
+  }
+
+  const allSquads = await db.select({ id: squads.id }).from(squads).where(isNull(squads.archivedAt))
+  for (const squad of allSquads) {
+    await regenerateEnvFileForSquad(squad.id)
+  }
+}
+
+/**
+ * Set the explicit Secret Store allowlist for a squad and regenerate .tau/.env.
+ * Only selected keys are rendered; unselected secrets are never exposed.
+ */
+export async function setExposedSecretKeys(squadId: string, keys: string[]): Promise<void> {
+  const normalizedKeys = normalizeSecretKeys(keys)
+  const userContent = getUserEnvContentForGeneration(squadId)
+
+  await db.delete(squadSecretExposures).where(eq(squadSecretExposures.squadId, squadId))
+  if (normalizedKeys.length > 0) {
+    await db.insert(squadSecretExposures).values(
+      normalizedKeys.map((key) => ({
+        squadId,
+        secretKey: key,
+        updatedAt: new Date(),
+      }))
+    )
+  }
+
+  await writeGeneratedEnvFile(squadId, userContent, await getEffectiveExposedSecretKeys(squadId, normalizedKeys))
+}
+
+/** Regenerate sandbox env files for squads that expose the changed Secret Store key. */
+export async function regenerateEnvFilesForSecretKey(key: string): Promise<void> {
+  const globalKeys = await getGloballyExposedSecretKeys()
+  const rows = globalKeys.includes(key)
+    ? await db.select({ squadId: squads.id }).from(squads).where(isNull(squads.archivedAt))
+    : await db
+        .select({ squadId: squadSecretExposures.squadId })
+        .from(squadSecretExposures)
+        .where(eq(squadSecretExposures.secretKey, key))
+  for (const { squadId } of rows) {
+    const keys = await getEffectiveExposedSecretKeys(squadId)
+    await writeGeneratedEnvFile(squadId, getEnvFile(squadId) ?? '', keys)
+  }
+}
+
+/** Test helper for rendering selected secrets without touching the real Secret Store. */
+export function renderEnvForSecrets(
+  content: string,
+  keys: string[],
+  getSecretValue: (key: string) => string | undefined,
+  protectedBindings: readonly (readonly [string, string])[] = []
+): string {
+  return renderGeneratedEnvContent(content, keys, getSecretValue, protectedBindings)
+}
+
+/** Resolve credentials on each invocation so long-lived shells see rotation and detach. */
+export function githubCommandBindings(squadId: string): string {
+  const squad = shellQuote(squadId)
+  return (
+    [
+      `gh() { command tau integration exec github --squad ${squad} -- gh "$@"; }`,
+      `git() { command git -c credential.https://github.com.helper= -c ${shellQuote(`credential.https://github.com.helper=!f() { command tau integration exec github --squad ${squad} -- gh auth git-credential "$@"; }; f`)} "$@"; }`,
+      'if [ -n "${BASH_VERSION:-}" ]; then export -f gh git; fi',
+    ].join('\n') + '\n'
+  )
+}

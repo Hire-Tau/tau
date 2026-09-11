@@ -1,0 +1,1 @@
+CREATE INDEX "idx_messages_agent_chat_sender" ON "messages" USING btree ("agent_id","created_at") WHERE "messages"."role" = 'human' AND ("messages"."metadata"->'sender'->>'userId') IS NOT NULL;

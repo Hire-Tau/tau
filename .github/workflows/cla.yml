@@ -1,0 +1,56 @@
+name: CLA
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+  issue_comment:
+    types: [created, edited]
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  checks: write
+concurrency:
+  group: cla-${{ github.event.pull_request.number || github.event.issue.number }}
+  cancel-in-progress: false
+jobs:
+  cla:
+    name: CLA automation
+    if: github.event_name == 'pull_request_target' || github.event.issue.pull_request
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    env:
+      CLA_REGISTRY_OWNER: ${{ github.repository_owner }}
+      CLA_REGISTRY_REPOSITORY: ${{ secrets.CLA_REGISTRY_REPOSITORY }}
+    steps:
+      # Only trusted base-branch code runs with credentials, including on forks.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: overtrue/cla-bot
+          ref: 8d334b53875b8eeef6e65611d60aad8f8a7802d4 # v0.0.10
+          path: .cla-action
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.8
+      - name: Configure CLA action
+        run: bun .github/prepare-cla-action.ts .cla-action/dist/index.js
+      - name: Create registry token
+        id: registry-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.CLA_BOT_APP_ID }}
+          private-key: ${{ secrets.CLA_BOT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ secrets.CLA_REGISTRY_REPOSITORY }}
+          permission-contents: write
+      - name: Check contributor agreements
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          REGISTRY_GITHUB_TOKEN: ${{ steps.registry-token.outputs.token }}
+        run: node .cla-action/dist/index.js

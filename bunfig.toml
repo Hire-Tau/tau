@@ -1,0 +1,28 @@
+[install]
+peer = false
+
+[install.scopes]
+"@tau" = { token = "", url = "" }
+
+[test]
+# Explicit, not inherited. Bun's default is 5000 ms, which was an invisible
+# assertion about how fast the box is — and on the shared CI runner five
+# "unrelated flakes" landed within 135 ms of that line on 2026-09-03
+# (5000.64 / 5003.26 / 5007.91 / 5062.87 / 5134.95). Stating it makes the
+# budget reviewable; it is NOT raised here, because raising a budget to turn a
+# red green hides contention rather than fixing it
+# (docs/history/design/ci-stability-and-flake-eradication.md, requirement 3).
+#
+# A test that genuinely needs longer declares its own budget at the test site
+# with a written reason, so the exception is visible in review rather than
+# global.
+timeout = 5000
+preload = [
+  # The runtime guard imports no application/React modules and must run before setup.
+  "./scripts/check-bun-test-runtime.ts",
+  # Must run before another workspace preload caches hoisted root React.
+  "./apps/web/src/test-setup.ts",
+  "./apps/core/src/test-setup.ts",
+  "./apps/cli/src/test-setup.ts",
+  "./packages/client-react/src/test-setup.ts",
+]

@@ -1,0 +1,219 @@
+# Workflows, flows, and squads
+
+For user and agent authoring instructions, complete YAML examples, and the field reference, see [Build a workflow](../../apps/docs/src/content/docs/reference/workflow-definition.mdx) in the public documentation. This wiki page covers runtime behavior and repository integration.
+
+GitHub account setup, account selection, and credential lifecycle are described in [GitHub integrations](github-integrations.md).
+
+A squad defines a purpose, shared workspace, permissions, integrations, and optional persistent members. A workflow defines how one work stream gets done. The Engineering squad preset is a domain preset; it does not require architect, engineer, and reviewer agents. You can use Solo for a small change, Planned Coding for a larger change, and a custom research or editorial process in the same squad.
+
+## Choose a starting point
+
+Use the squad manager conversation and the `setup-workflows` skill to describe recurring work, cost preferences, approval needs, and delivery expectations. The manager can configure a default and alternatives without creating workers. Squad settings also expose these choices. Manage reusable definitions in **Administration → Workflows**, with search, previews, and an edit modal. Squad settings select workflows and usage guidance; they do not edit the shared definitions. New squads created through the UI start with **Solo** unless their selected squad preset specifies a default (Engineering selects **Solo Coding**). Solo uses one general-purpose worker without delegation. Every new stream resolves its explicit source, then the saved squad default, and finally Solo. Squad presets are copied once at creation. The upgrade snapshots defaults for older squads so they no longer inherit live preset changes. Invalid or disabled defaults produce a setup error, not an unstyled stream. Existing streams retain their flow or manual assignment behavior.
+
+```sh
+tau workflow list
+tau workflow get solo
+tau workstream create "Investigate the issue" --squad SQUAD_ID --workflow solo
+tau workstream create "Build the feature" --squad SQUAD_ID --workflow engineering
+```
+
+A squad's `metadata.workflow` is its default source for new streams. `metadata.workflowSetup` contains human-readable selection guidance and alternatives. The manager uses that guidance; it is not an automatic classifier. Existing legacy streams are not retroactively converted.
+
+## Visual and conversational editing
+
+Open **Administration → Workflows**, then create, edit, or duplicate a workflow. Describe the flow you want or the changes you need in the conversation. The interactive graph is the main editor, with the assistant alongside it. Manual changes, selection, and preset details are included in the next assistant message. Both editors share Undo/Redo history. The graph represents steps, with the participant shown inside each agent step. Drag step cards to arrange the canvas; drag an outcome handle to a destination card to rewire it, or click both handles. Select a node or connection to open its inspector. The inspector shows only that selection; **Flow settings** opens workflow configuration. Selecting an arrow highlights it, and **Delete** or **Backspace** removes that connection rather than its source step. A selected parallel branch can be removed independently of its siblings. Warnings float inside the canvas. Card positions and zoom stay unchanged through deletion; **Auto arrange** explicitly resets the layout. Canvas positions are local to the editor; connections are saved in the definition. Add an agent step or human approval, connect an outcome by selecting its destination on the graph, and configure branches, return paths, participant settings, session reuse, prompts, and results in the inspector. Flow settings contain limits, completion policy, and integration-event subscriptions. The complete JSON definition remains available for advanced editing.
+
+The assistant is the main editing surface. Brainstorm before making changes, describe a whole process, or ask about the selected step. Realtime supports typed messages and voice. Connection failures retry in the same conversation and offer Reconnect; they do not switch to a different assistant or enable the microphone. When Realtime is disabled, the user assistant handles text. The first delegated request starts that assistant; merely opening the editor does not start workers or a manager. The backend assistant has access only to the conversation's draft tools.
+
+Valid assistant edits apply directly to the draft. Undo/Redo covers both assistant and manual changes; **Undo assistant edit** rejects the most recent assistant change while it is still current. Edits based on an earlier revision cannot overwrite a newer edit. A pending edit must be acknowledged by the page before another is accepted, so voice and fallback text use the same revision boundaries. Save validates and publishes the preset separately. Running work streams retain their original snapshots.
+
+## Presets and ad hoc flows
+
+A saved preset has an ID, visibility scope, revision, and definition. Scopes are instance, squad, or private user. Presets participate in configuration synchronization and explicit overrides. Editing a preset does not rewrite a running stream: creation resolves a durable snapshot of the definition and participant settings.
+
+An inline source contains `{ kind: inline, definition: ... }`. It is durable within its stream but does not add a catalog preset. Managers can author one for a single job, inspect it with `tau workflow resolve source.yaml --squad SQUAD_ID`, then use `tau workstream create "Title" --squad SQUAD_ID --flow source.yaml`. Saved presets can also be customized at creation. The web and mobile interfaces support selecting presets and supplying inline definitions; web includes structured editing and a graph preview.
+
+```sh
+tau workflow create preset.yaml
+tau workflow update PRESET_ID preset.yaml --revision REVISION_FROM_GET
+tau workflow export PRESET_ID
+tau workflow template-diff PRESET_ID
+tau workflow revert PRESET_ID --revision REVISION_FROM_GET
+tau workflow disable PRESET_ID --revision REVISION_FROM_GET
+```
+
+## Participants, steps, and handoffs
+
+The Inspector, Participants, and Settings header toggles open their respective panels; clicking the active toggle closes it. Selecting a card or arrow switches to its inspector. Participants lists usage counts and the affected steps. Make separate copies shared agent configuration for one step without changing other assignments. Step display names are independent of their stable connection IDs; the inspector keeps ID editing under Advanced. A step’s Agent work / Human approval switch chooses whether an agent acts or a person approves. Agent steps select a participant; human approvals select an approver. The default is **Assigned reviewers** (`assigned-reviewers`): a human with `workstreams:review` in the squad who is listed in the work stream’s `assignedReviewerIds`. If nobody is assigned, any reviewer is allowed. **Any reviewer** (`reviewers`) allows anyone with that review permission, regardless of assignment. Any one assigned reviewer can decide. Work-stream editors can assign eligible users before or during an approval; an empty assignment allows any human with review permission. Assigning reviewers requires `workstreams:update`; reviewing alone does not permit self-assignment. Squad settings permissions do not authorize workflow reviews. Instructions, expected results, and outcomes belong to each step. Agent type, model override, and session policy belong to the participant; its editor lists every step affected by a change. Participants name the agent roles needed by the process. Agent participants choose an agent type, optional model overrides, and session reuse policy. Two participants can use the same agent type. With reuse enabled, sequential steps on the same track reuse the participant’s session and context. Parallel branches have separate sessions; after a join, work continues in the main track’s session with the branch results handed back. Fresh-per-attempt starts a new session each time a step runs, including revisions. Both policies receive the same activation handoff with step instructions, expected output, up to eight recent recorded results/feedback entries, and open return requests. Reuse additionally retains that session’s conversation history. Workers are created only when their steps become active, including when a parallel branch receives capacity. Saving a preset, configuring a squad, waiting in the queue, and future steps create no workers.
+
+Steps define instructions, expected output, outcomes, and whether they are required. Outcomes can move to another step, fork parallel branches, or reach delivery. Routing policies govern explicit returns and tracked delegation. Agents advance using the current run version and attempt ID; stale commands fail rather than silently advancing a different attempt.
+
+A return records feedback and where work must resume. Earlier reviews remain in history; Tau does not automatically invalidate every downstream check. Request re-review explicitly when the changes need it. Parallel branches have independent attempts and sessions, but share the stream workspace, so agents must coordinate file ownership. Convergence is inferred from forward connections: the first shared destination waits for its active branches and runs once. Its card shows a small wait indicator; there is no separate join card. A second output connection creates parallel branches, while removing all but one restores an ordinary handoff. Tracks with no shared step run separately until Delivery. Internally `join` stores the inferred boundary for durable execution. A concurrency limit queues branch starts without creating their agents early.
+
+```sh
+tau workstream flow STREAM_ID
+tau workstream advance STREAM_ID --file command.json --request-id REQUEST_UUID
+```
+
+Commands can complete, return, delegate, or revise according to the flow and caller's permission. Authorized revisions may keep current attempt snapshots or restart with a new attempt/session. Retrying the same command uses the same request ID. Do not use legacy assignee/status edits to bypass a flow.
+
+## Questions and scoped waits
+
+An ordinary agent question is nonblocking. With `blocking: true`, a question from a flow execution opens a wait on that exact attempt by default. An agent's manual `request-input` similarly targets its current attempt. A security reviewer waiting for a threat-model answer does not prevent QA from continuing, but the join remains held until security finishes.
+
+A relevant open wait prevents advancement and automatic continuance nudges for that attempt. It does not forcibly interrupt the agent's current execution; the agent is instructed to end its turn and await input. Incoming answers and other relevant messages can still be delivered. Answering resumes the same current attempt and is not step approval. Replacing an attempt retires its scoped waits; late answers remain in history and must not wake a replacement session.
+
+Use a whole-stream wait for shared blockers. The async question tool accepts `waitScope: stream`; a manual request accepts `--scope stream`. Human/operator manual requests default to whole-stream unless an attempt is selected explicitly.
+
+```sh
+tau workstream request-input STREAM_ID -m "Confirm the threat model" --scope attempt --attempt ATTEMPT_ID
+tau workstream request-input STREAM_ID -m "Wait for the release freeze to end" --scope stream
+tau workstream unblock STREAM_ID --wait WAIT_ID -m "Use the published threat model"
+```
+
+Resolve questions through their question-answer interface. Dependency waits remain whole-stream and are system-resolved. Human-approval flow steps own their decision waits: use the flow's decision controls, not generic unblock. In parallel flows a human gate holds its branch while unrelated branches continue.
+
+Automatic parking applies only when the whole stream is blocked: either a whole-stream wait exists or all active attempts are waiting. The full grace period starts when the last runnable branch becomes blocked. A single waiting branch does not park its runnable siblings.
+
+## Pause, park, and resume
+
+Pause means stop current work and wait for explicit resume. Tau requests cancellation of current executions, cancels queued work, and prevents assigned flow agents from receiving automatic continuance. Cancellation must settle before resumed work can start; an external side effect already completed is not undone. Inbox messages remain durable while paused.
+
+Pause retains the admission slot unless the stream is parked. Park releases capacity; it is separate from the pause flag. A paused parked stream cannot start merely because capacity becomes available. Optional pause auto-parking releases the slot after the configured delay without resuming work.
+
+```sh
+tau workstream pause STREAM_ID --reason "Hold while I check the result"
+tau workstream resume STREAM_ID
+```
+
+## Delivery policy
+
+Settling all active graph paths and direct-return requests puts the flow at `completion-ready`. Unchosen paths do not block Finish; there is no per-step required flag. Delivery is a separate condition, enforced by `tau workstream finish STREAM_ID --version VERSION_FROM_RUN`.
+
+| Mode              | Delivery condition                                                                                                            |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `deliverable`     | Required work/returns are satisfied and blocking waits are resolved; no intrinsic PR or extra reviewer.                       |
+| `review-approval` | A human approves delivery through flow finish.                                                                                |
+| `pr-merge`        | The human merges the PR; Tau independently verifies it is merged.                                                             |
+| `pr-auto-merge`   | The agent may enable GitHub auto-merge only when the current squad explicitly allows it; Tau still verifies the PR is merged. |
+| `direct-merge`    | Explicit squad permission allows direct merge; Tau checks the recorded commit is included in the remote base branch.          |
+
+These modes preserve the earlier PR policies. `pr-merge` does not mean auto-merge. Denied direct merge requires an authorized policy/flow change; it does not silently bypass the configured policy. Shared instructions explain delivery to every flow participant; completion does not belong intrinsically to a reviewer agent type.
+
+Record repository and PR/commit metadata on the stream for verification and external event matching. Flows can choose their integration consumers with subscriptions; legacy streams keep their previous recipient fallback.
+
+## Integration updates and new-work triggers
+
+Use `tau integration outputs` to list the versioned output catalog. Subscriptions belong to a workflow definition and work equally in saved presets and inline flows. For example, a solo flow can receive PR feedback in its existing worker:
+
+```yaml
+subscriptions:
+  - id: pr-feedback
+    source: { integration: github, output: pull_request.reviewed, version: 1 }
+    match:
+      repository: { streamMetadata: github.repo }
+      pullRequest.number: { streamMetadata: github.pr.number }
+    deliver:
+      to: { participant: worker }
+      whenInactive: retain
+```
+
+All match fields must match with the declared type. Bind `github.repo` to a repository string and `github.pr.number` to a number. Missing metadata leaves the subscription unbound. Setting a binding later does not replay old events. A subscription may alternatively target `{ step: security }`, `active` for all active consumers, or `delivery-owner`. The coding presets use `completion.followChanges: true` to derive delivery-owner subscriptions from their code hosting adapter. Explicit subscriptions remain available for other consumers and custom events.
+
+An inactive consumer retains events until its step starts. No new agent is created just because an update arrives. Pausing retains updates without waking workers. Replies and notifications can inform a waiting agent, but they do not clear waits or approve steps. When the required work is ready for delivery, the chosen completed participant can still receive CI/merge events.
+
+A **squad trigger** handles the case where no work stream exists yet. Put `integrationTriggers` in squad metadata to select a workflow for an incoming event. This example starts the Solo preset when an issue in a specific repository is assigned to a particular GitHub account:
+
+```yaml
+integrationTriggers:
+  - id: assigned-issues
+    source: { integration: github, output: issue.assigned, version: 1 }
+    match:
+      repository: { value: acme/project }
+      assignee: { value: tau-bot }
+    create:
+      workflow: { kind: preset, id: solo }
+      titlePrefix: 'Investigate: '
+      metadata:
+        github.repo: { event: repository }
+        github.issue: { event: issue.number }
+```
+
+This is optional squad policy, not a requirement of its squad preset. A manager can configure a saved preset or an inline flow using the normal squad metadata/configuration tools. Change the trigger source to `pull_request.review_requested`, match `requestedReviewer`, and map `github.pr.number` from `pullRequest.number` to start a configured PR-review flow instead.
+
+The trigger binds metadata atomically and reuses an existing matching nonterminal stream. Repeated events create at most one stream per trigger/resource. A receipt remains even after completion/deletion; starting another stream for the same resource is an explicit action. The selected flow can also declare subscriptions for later updates—for example `issue.updated` and `issue.comment`, matched on `repository` and `issue.number`, sent to its `worker`.
+
+Flow graphs show integrations with dotted connections. Select an integration to see its match rules, consumer, pending deliveries, and event links. Edit subscriptions in the complete YAML/JSON definition or ask the manager to configure them. A flow with GitHub subscriptions owns its GitHub notifications; omitted outputs are not sent through the old reviewer fallback. Integration event subscriptions documents the runtime, compatibility boundary, and current limits.
+
+## Reference
+
+- [Work-stream CLI commands](cli/workstream-commands.md)
+- [Squad CLI commands](cli/squad-commands.md)
+- Workflow runtime design
+- Historical completion-policy design
+
+### GitHub polling without webhooks
+
+Attaching a PR to stream metadata automatically establishes a polling watch: use `github.repo` and numeric `github.pr.number`, a PR URL, or custom paths referenced by a GitHub subscription's repository and PR-number bindings. Watches track current nonterminal streams and disappear when their bindings are removed or the streams end.
+
+Issue-assignment triggers can discover work before a stream exists. Specify an exact repository in the trigger's match, as above. If a trigger only matches an assignee, exact repositories in the squad's existing `metadata.github` configuration provide its polling scope. Tau does not expand wildcard repository patterns or scan every repository accessible to the token. The first poll establishes a baseline; subsequent assignments are routed to the chosen workflow. Active watches normally poll every 1–2 minutes, subject to the shared budget and provider failures. A large event backlog may require several bounded page scans.
+
+Polling uses the squad's authorized GitHub integration connection. Set `github.connectionId` on work-stream metadata or `source.connectionId` on a subscription/trigger to select an attached account; otherwise Tau resolves the squad default. Resource metadata establishes polling interest, not repository authorization. See [GitHub integration accounts](github-integrations.md) for connection setup and migration from retired token secrets. Issue comments still require webhooks. Polling notifications remain subject to the same pause, current-attempt, and deduplication rules as webhooks.
+
+## Built-in workflow collection and squad-preset recommendations
+
+The built-in collection contains Solo (`solo`), With Review (`builder-reviewer`), Solo Coding (`solo-coding`), Reviewed Coding (`reviewed-coding`), Planned Coding (`engineering`), Research Brief (`research-brief`), Security Review (`security-review`). IDs of earlier presets remain stable. See the [user guide](../../apps/docs/src/content/docs/use/workflows.mdx) for intended uses.
+
+A squad preset's optional `workflows` field selects existing instance-scoped presets or inline definitions:
+
+```yaml
+workflows:
+  default: { kind: preset, id: solo-coding }
+  guidance: Prefer a single engineer for routine changes; request review when the risk warrants it.
+  choices:
+    - when: A change needs independent review.
+      source: { kind: preset, id: reviewed-coding }
+    - when: Architectural decisions need an explicit design step.
+      source: { kind: preset, id: engineering }
+```
+
+Creation copies the default into `metadata.workflow` and guidance/choices into `metadata.workflowSetup`. Explicit creation values win. Existing squads are not rewritten on type sync; existing streams retain their resolved snapshots. References are validated and must not cross scope boundaries. The squad-preset editor exposes these recommendations; Workflows remains the definition editor. Neither a recommendation nor a flow participant creates a persistent squad member.
+
+The Engineering squad preset includes all five engineering choices and defaults to Solo Coding. Built-in workflows disable additional delegation to keep their advertised staffing predictable; a custom flow can enable tracked delegation. Security Review and Release Validation deliver reports, while the three coding workflows default to `pr-merge`. Completion policies remain independently customizable; there are no separate copies for auto-merge or direct merge.
+
+## Code-hosting adapters
+
+The provider-neutral delivery contract and registry live in `apps/core/src/services/integrations/code-hosting/`. GitHub implements that contract in `integrations/github/code-hosting.ts`. It supplies merge evidence, remote commit containment, and provider output subscriptions. Credentials continue to resolve through the squad's authorized integration connections. GitLab and Bitbucket adapters are not implemented yet.
+
+New work streams use this resource binding:
+
+```json
+{
+  "codeHost": {
+    "integration": "github",
+    "repository": "acme/project",
+    "changeRequest": { "number": 42, "url": "https://github.com/acme/project/pull/42" }
+  },
+  "git": { "branch": "feature", "baseBranch": "main" }
+}
+```
+
+An optional `codeHost.connectionId` selects an authorized account; omission uses the squad default. Existing `github.repo`, `github.pr`, and `github.connectionId` are compatibility inputs. An explicit invalid or unsupported `codeHost` binding fails closed rather than falling back to a different provider or account.
+
+With `completion.followChanges: true`, the adapter derives subscriptions for review, CI, and merge events targeting `delivery-owner` by default. Set `completion.changeEventsTo: { step: engineer }` to route the entire bundle to a specific agent step instead. This does not change explicit subscriptions for custom events. The effective subscriptions are used by matching, durable delivery validation, polling discovery, and hosted relay interests. Resource/account changes invalidate queued deliveries. The `code-host-` subscription ID prefix is reserved when this option is enabled. No binding means no automatic subscription; adding it does not replay historical events. Existing definitions without this option keep their explicit subscriptions.
+
+`pr-merge` and `pr-auto-merge` retain their serialized names but verify normalized change-request evidence through the selected adapter. `direct-merge` verifies the full `git.commit` SHA is contained in `git.baseBranch`. GitHub-specific link displays and activity rendering can remain provider-specific; the flow engine does not choose credentials or call GitHub directly.
+
+### Assigning reviewers
+
+In a work stream, use **Assigned reviewers** to choose eligible people. Each person needs `workstreams:review` for the squad. Any one assigned reviewer can decide. With no one assigned, the filter allows any user with review permission.
+
+```bash
+tau workstream reviewers --squad <squad-id>
+tau workstream update <stream-id> --reviewer <user-id> --reviewer <another-user-id>
+tau workstream update <stream-id> --clear-reviewers
+```
+
+`--reviewer` replaces the list on update and can also be passed to `workstream create`. Assignment requires `workstreams:update` on existing streams. Admin and Operator roles have this permission; custom roles can grant it separately from reviewing.
+
+Editor tool revisions increase after every graph edit, including Undo and Redo. Applied edits return the confirmed revision and history availability, so the assistant can chain edits without an extra read. A queued backend edit must still be acknowledged by the open page. Routine reads contain the current draft and revision; the assistant can request the editing contract, agent types, or integration output catalog with `include`, filtering outputs by `integration` when needed.

@@ -1,0 +1,30 @@
+import { describe, expect, test } from 'bun:test'
+import { agentLabelParts, formatAgentLabel } from './agentLabel'
+
+describe('agentLabelParts', () => {
+  test('purpose leads, name is secondary', () => {
+    expect(agentLabelParts({ name: 'Quartz', purpose: 'Billing migration' })).toEqual({
+      primary: 'Billing migration',
+      secondary: 'Quartz',
+    })
+  })
+
+  test('falls back to name when no purpose', () => {
+    expect(agentLabelParts({ name: 'Quartz', purpose: '' })).toEqual({ primary: 'Quartz' })
+    expect(agentLabelParts({ name: 'Quartz' })).toEqual({ primary: 'Quartz' })
+  })
+
+  test('falls back to agentTypeId then "Agent"', () => {
+    expect(agentLabelParts({ agentTypeId: 'consultant' })).toEqual({ primary: 'consultant' })
+    expect(agentLabelParts({})).toEqual({ primary: 'Agent' })
+  })
+
+  test('drops a redundant name equal to the purpose', () => {
+    expect(agentLabelParts({ name: 'Quartz', purpose: 'Quartz' })).toEqual({ primary: 'Quartz' })
+  })
+
+  test('formatAgentLabel joins with a separator', () => {
+    expect(formatAgentLabel({ name: 'Quartz', purpose: 'Billing migration' })).toBe('Billing migration · Quartz')
+    expect(formatAgentLabel({ name: 'Quartz' })).toBe('Quartz')
+  })
+})

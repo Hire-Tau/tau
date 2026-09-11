@@ -1,0 +1,153 @@
+import { priorityRank } from './work-stream-priority'
+import type { WorkStreamDerivedState, WorkStreamPriority, WorkStreamStatus, WorkStreamWait } from './types'
+
+export interface CanonicalWorkStreamOrderInput {
+  id: string
+  status: WorkStreamStatus
+  derivedState?: WorkStreamDerivedState
+  openWaits?: readonly Pick<WorkStreamWait, 'type' | 'closedAt'>[]
+  priority?: WorkStreamPriority
+  effectivePriority?: WorkStreamPriority
+  queuePosition?: number
+  waitingOnDependencies?: boolean
+  createdAt: Date | string
+  completedAt?: Date | string | null
+  updatedAt?: Date | string
+  metadata?: unknown
+}
+
+export interface CanonicalWorkStreamSortKey {
+  group: number
+  activeUrgency: number
+  queuePosition: number
+  terminalCompletedAt: number
+  priority: number
+  createdAt: number
+  id: string
+}
+
+const PRIORITIES = new Set<WorkStreamPriority>(['critical', 'high', 'normal', 'low'])
+const WAIT_DERIVED_STATES = new Set<WorkStreamDerivedState>([
+  'in_review',
+  'waiting_on_answer',
+  'waiting_on_dependency',
+  'blocked',
+])
+
+function safePriority(value: unknown): WorkStreamPriority {
+  return PRIORITIES.has(value as WorkStreamPriority) ? (value as WorkStreamPriority) : 'normal'
+}
+
+function validTime(value: unknown): number | undefined {
+  if (!(value instanceof Date) && typeof value !== 'string') return undefined
+  const time = value instanceof Date ? value.getTime() : new Date(value).getTime()
+  return Number.isFinite(time) ? time : undefined
+}
+
+function metadataCompletionTime(item: CanonicalWorkStreamOrderInput): { present: boolean; value?: number } {
+  if (!item.metadata || typeof item.metadata !== 'object') return { present: false }
+  const completion = (item.metadata as Record<string, unknown>).completion
+  if (!completion || typeof completion !== 'object') return { present: false }
+  const record = completion as Record<string, unknown>
+  if (!Object.prototype.hasOwnProperty.call(record, 'completedAt')) return { present: false }
+  return { present: true, value: validTime(record.completedAt) }
+}
+
+export function isValidQueuePosition(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value > 0
+}
+
+// Review is uniquely actionable and ranks first. Question, dependency, and
+// manual/blocked waits intentionally share one non-review-wait urgency tier.
+function activeUrgency(item: CanonicalWorkStreamOrderInput): number {
+  if (item.openWaits !== undefined) {
+    const openWaits = item.openWaits.filter((wait) => wait.closedAt === null)
+    if (openWaits.some((wait) => wait.type === 'review')) return 0
+    if (openWaits.length > 0) return 1
+    return item.derivedState === 'in_progress' ? 2 : 3
+  }
+
+  if (item.derivedState === 'in_review') return 0
+  if (item.derivedState && WAIT_DERIVED_STATES.has(item.derivedState)) return 1
+  if (item.derivedState === 'in_progress') return 2
+  return 3
+}
+
+function queuedHasWait(item: CanonicalWorkStreamOrderInput): boolean {
+  if (item.waitingOnDependencies === true) return true
+  if (item.openWaits !== undefined) return item.openWaits.some((wait) => wait.closedAt === null)
+  return item.derivedState !== undefined && WAIT_DERIVED_STATES.has(item.derivedState)
+}
+
+function terminalTime(item: CanonicalWorkStreamOrderInput): number | undefined {
+  if (item.completedAt !== null && item.completedAt !== undefined) return validTime(item.completedAt)
+  const metadataTime = metadataCompletionTime(item)
+  if (metadataTime.present) return metadataTime.value
+  return validTime(item.updatedAt)
+}
+
+export function canonicalWorkStreamSortKey(item: CanonicalWorkStreamOrderInput): CanonicalWorkStreamSortKey {
+  const positioned = item.status === 'queued' && isValidQueuePosition(item.queuePosition) && !queuedHasWait(item)
+  const group =
+    item.status === 'active'
+      ? 0
+      : positioned
+        ? 1
+        : item.status === 'queued'
+          ? 2
+          : item.status === 'done' || item.status === 'canceled'
+            ? 3
+            : 4
+  const effectivePriority = safePriority(item.effectivePriority ?? item.priority)
+
+  return {
+    group,
+    activeUrgency: item.status === 'active' ? activeUrgency(item) : 0,
+    queuePosition: positioned ? item.queuePosition! : Number.POSITIVE_INFINITY,
+    terminalCompletedAt:
+      item.status === 'done' || item.status === 'canceled'
+        ? (terminalTime(item) ?? Number.NEGATIVE_INFINITY)
+        : Number.NEGATIVE_INFINITY,
+    priority: priorityRank(effectivePriority),
+    createdAt: validTime(item.createdAt) ?? Number.POSITIVE_INFINITY,
+    id: item.id,
+  }
+}
+
+function ascending(a: number, b: number): number {
+  if (a === b) return 0
+  return a < b ? -1 : 1
+}
+
+function descending(a: number, b: number): number {
+  return ascending(b, a)
+}
+
+export function compareCanonicalWorkStreams<T extends CanonicalWorkStreamOrderInput>(a: T, b: T): number {
+  const ak = canonicalWorkStreamSortKey(a)
+  const bk = canonicalWorkStreamSortKey(b)
+
+  let difference = ascending(ak.group, bk.group)
+  if (difference !== 0) return difference
+
+  if (ak.group === 0) {
+    difference = ascending(ak.activeUrgency, bk.activeUrgency)
+    if (difference !== 0) return difference
+  } else if (ak.group === 1) {
+    difference = ascending(ak.queuePosition, bk.queuePosition)
+    if (difference !== 0) return difference
+  } else if (ak.group === 3) {
+    difference = descending(ak.terminalCompletedAt, bk.terminalCompletedAt)
+    if (difference !== 0) return difference
+  }
+
+  difference = descending(ak.priority, bk.priority)
+  if (difference !== 0) return difference
+  difference = ascending(ak.createdAt, bk.createdAt)
+  if (difference !== 0) return difference
+  return ak.id < bk.id ? -1 : ak.id > bk.id ? 1 : 0
+}
+
+export function sortCanonicalWorkStreams<T extends CanonicalWorkStreamOrderInput>(items: readonly T[]): T[] {
+  return [...items].sort(compareCanonicalWorkStreams)
+}

@@ -1,0 +1,1 @@
+ALTER TABLE "inbox" ALTER COLUMN "delivery_mode" SET DEFAULT 'steer';

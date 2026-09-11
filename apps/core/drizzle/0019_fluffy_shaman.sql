@@ -1,0 +1,1 @@
+ALTER TYPE "public"."work_stream_status" ADD VALUE 'canceled';

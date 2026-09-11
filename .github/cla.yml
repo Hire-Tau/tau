@@ -1,0 +1,52 @@
+enabled: true
+
+document:
+  version: v1
+  url: https://github.com/Hire-Tau/tau/blob/main/CLA.md
+
+signing:
+  mode: comment
+  comment_pattern: I have read the CLA Document and I hereby sign the CLA
+  case_insensitive: true
+  trim_whitespace: true
+  ignore_terminal_punctuation: true
+
+contributors:
+  check_pr_author: true
+  check_commit_authors: true
+  check_coauthors: false
+  exclude_bots: true
+  allowlist:
+    - dependabot[bot]
+    - renovate[bot]
+    - github-actions[bot]
+
+registry:
+  type: json-repo
+  repository: configured/registry
+  path_prefix: signatures/v1
+
+status:
+  check_name: CLA Check
+  comment_tag: <!-- cla-bot -->
+
+templates:
+  registry:
+    commit_message: 'chore: record CLA signature for {{github_login}} from {{source_repo}}#{{source_pr_number}}'
+  pr:
+    missing_comment: |
+      Thanks for your pull request! Before this can be merged, each missing contributor must read and sign the [Tau Contributor License Agreement]({{cla_document_url}}).
+
+      Missing signatures:
+
+      {{missing_contributors_markdown}}
+
+      To sign, comment on this PR with exactly:
+
+      ```text
+      {{signing_comment_pattern}}
+      ```
+
+      If you are contributing on behalf of your employer, your employer also needs to sign the Corporate CLA (Part B of the CLA document). See [CONTRIBUTING.md](https://github.com/Hire-Tau/tau/blob/main/CONTRIBUTING.md) for details.
+    success_comment: |
+      CLA requirements are satisfied for this pull request.

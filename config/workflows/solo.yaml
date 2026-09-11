@@ -1,0 +1,28 @@
+id: solo
+description: One capable agent handles a deliverable without automatic specialist delegation.
+definition:
+  schemaVersion: 1
+  name: Solo
+  participants:
+    worker:
+      agentTypeId: general
+      session: reuse-within-stream
+  entry: execute
+  routing:
+    mode: guided
+    returnTo: declared-only
+    delegation: disabled
+  limits:
+    maxDelegations: 0
+    onLimit: request-owner-input
+  steps:
+    - id: execute
+      participant: worker
+      instructions: Complete the requested deliverable and verify the result. Work directly without spawning other agents.
+      output: The deliverable, verification evidence, and any remaining limitations.
+
+      outcomes:
+        completed:
+          next: finish
+  completion:
+    mode: deliverable

@@ -1,0 +1,5 @@
+export {
+  KNOWN_GRANTABLE_PERMISSIONS as KNOWN_PERMISSIONS,
+  KNOWN_GRANTABLE_RESOURCES as KNOWN_RESOURCES,
+  isGrantablePermission,
+} from '@tau/shared'

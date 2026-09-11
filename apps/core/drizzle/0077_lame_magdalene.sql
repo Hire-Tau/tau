@@ -1,0 +1,1 @@
+ALTER TABLE "machine_boxes" ADD COLUMN "synced_hashes" jsonb DEFAULT '{}'::jsonb NOT NULL;

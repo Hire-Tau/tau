@@ -1,0 +1,1 @@
+ALTER TABLE "local_deployments" ADD COLUMN "log_path" text;

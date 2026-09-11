@@ -1,0 +1,149 @@
+import { expect, test } from 'bun:test'
+import { githubOutputAdapter } from './github'
+import { integrationOutputRegistry } from './registry'
+import { createHash } from 'node:crypto'
+
+const repository = { full_name: 'Acme/Project' }
+const date = '2026-09-07T10:00:00Z'
+const pr = { id: 10, number: 3, updated_at: date, head: { sha: 'abc' }, base: { repo: repository } }
+
+test('retiring scripts preserves existing event keys so upgrades do not replay merges', () => {
+  const [fact] = githubOutputAdapter.normalize({
+    type: 'pull_request',
+    payload: {
+      action: 'closed',
+      repository,
+      pull_request: { ...pr, merged: true, merged_at: date },
+    },
+  })
+  const previousKey = createHash('sha256')
+    .update(JSON.stringify(['pull_request.merged', 'acme/project', 3, 'closed', 10, date, '', '', '', undefined]))
+    .digest('hex')
+  expect(fact!.eventKey).toBe(previousKey)
+})
+
+test('native review line comments preserve file, line, multiline body and thread URL', () => {
+  const [fact] = githubOutputAdapter.normalize({
+    type: 'pull_request_review_comment',
+    payload: {
+      action: 'created',
+      repository,
+      pull_request: pr,
+      comment: {
+        id: 23,
+        created_at: date,
+        path: 'src/main.ts',
+        line: 12,
+        body: 'First point\nSecond point',
+        html_url: 'https://github.com/Acme/Project/pull/3#discussion_r23',
+      },
+    },
+  })
+  expect(fact!.body).toContain('src/main.ts:12')
+  expect(fact!.body).toContain('First point\nSecond point')
+  expect(fact!.body).toContain('reply in this review thread')
+  expect(fact!.url).toContain('#discussion_r23')
+})
+
+test('webhook and polling representations share the review output identity', () => {
+  const payload = {
+    action: 'submitted',
+    repository,
+    pull_request: pr,
+    review: {
+      id: 20,
+      submitted_at: date,
+      state: 'changes_requested',
+      body: 'Check the edge case',
+      html_url: 'https://github.com/Acme/Project/pull/3#review-20',
+    },
+  }
+  const webhook = githubOutputAdapter.normalize({ type: 'pull_request_review', payload })
+  const polling = githubOutputAdapter.normalize({
+    type: 'pull_request_review',
+    payload,
+    logicalEventKey: 'poll-dispatch-id',
+    metadata: { transport: 'poll' },
+  })
+  expect(webhook).toEqual(polling)
+  expect(webhook[0]!.data).toMatchObject({
+    repository: 'acme/project',
+    pullRequest: { number: 3, headSha: 'abc' },
+    state: 'changes_requested',
+  })
+  expect(() => integrationOutputRegistry.validateFact('github', webhook[0]!)).not.toThrow()
+})
+
+test('issue assignments expose a typed assignee and issue identity without a PR identity', () => {
+  const [event] = githubOutputAdapter.normalize({
+    type: 'issues',
+    payload: {
+      action: 'assigned',
+      repository,
+      assignee: { login: 'Noah' },
+      issue: { id: 11, number: 4, title: 'Investigate latency', updated_at: date },
+    },
+  })
+  expect(event!.output).toBe('issue.assigned')
+  expect(event!.data).toMatchObject({ assignee: 'Noah', issue: { number: 4, title: 'Investigate latency' } })
+  expect(event!.data.pullRequest).toBeUndefined()
+  expect(() => integrationOutputRegistry.validateFact('github', event!)).not.toThrow()
+})
+
+test('issue comments and PR comments are distinct outputs', () => {
+  const payload = {
+    action: 'created',
+    repository,
+    issue: { number: 3 },
+    comment: { id: 9, body: 'New details', created_at: date },
+  }
+  expect(githubOutputAdapter.normalize({ type: 'issue_comment', payload })[0]!.output).toBe('issue.comment')
+  expect(
+    githubOutputAdapter.normalize({
+      type: 'issue_comment',
+      payload: { ...payload, issue: { ...payload.issue, pull_request: {} } },
+    })[0]!.output
+  ).toBe('pull_request.comment')
+})
+
+test('CI outputs retain monotonic workflow run/attempt identity for every linked PR', () => {
+  const events = githubOutputAdapter.normalize({
+    type: 'workflow_run',
+    payload: {
+      action: 'completed',
+      repository,
+      workflow_run: {
+        id: 50,
+        workflow_id: 1,
+        run_number: 10,
+        run_attempt: 2,
+        conclusion: 'failure',
+        updated_at: date,
+        head_sha: 'abc',
+        pull_requests: [{ number: 3 }, { number: 4 }],
+      },
+    },
+  })
+  expect(events).toHaveLength(2)
+  expect(events[0]!.ordering).toEqual({ key: '1', position: [10, 2] })
+  expect(events[0]!.data).toMatchObject({ pullRequest: { headSha: 'abc' }, state: 'failure' })
+  expect(events[0]!.eventKey).not.toBe(events[1]!.eventKey)
+})
+
+test('invalid native identities cannot broaden correlation or cross a repository boundary', () => {
+  expect(
+    githubOutputAdapter.normalize({
+      type: 'pull_request',
+      payload: { action: 'closed', repository, pull_request: { ...pr, base: { repo: { full_name: 'Other/Repo' } } } },
+    })
+  ).toEqual([])
+  expect(
+    githubOutputAdapter.normalize({
+      type: 'issues',
+      payload: { action: 'assigned', repository, issue: { number: '4', updated_at: date } },
+    })
+  ).toEqual([])
+  expect(
+    githubOutputAdapter.normalize({ type: 'issues', payload: { action: 'assigned', repository, issue: { number: 4 } } })
+  ).toEqual([])
+})

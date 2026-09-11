@@ -1,0 +1,78 @@
+import { Command } from 'commander'
+import { apiGet, apiPostSSE } from '../client'
+import { outputTable, outputError } from '../output'
+
+interface Agent {
+  id: string
+  agentTypeId: string
+  status: string
+  context: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export function registerChatCommands(program: Command) {
+  program
+    .command('chat [message]')
+    .description('Chat with your user assistant')
+    .option('-a, --agent <agentId>', 'Continue existing agent conversation')
+    .option('-l, --list', 'List chat agents')
+    .option('-s, --scope <scope>', 'Filter agents by scope type (for --list)')
+    .action(async (message, options) => {
+      try {
+        // List agents
+        if (options.list) {
+          const params = new URLSearchParams({ agentTypeId: 'system-manager' })
+          if (options.scope) {
+            params.set('scopeType', options.scope)
+          }
+          const agents = await apiGet<Agent[]>(`/api/agents?${params}`)
+          const rows = agents.map((a) => {
+            const scope = (a.context as any)?.scope
+            return {
+              id: a.id,
+              status: a.status,
+              scope: scope ? `${scope.type}${scope.id ? ':' + scope.id : ''}` : '—',
+              updatedAt: a.updatedAt,
+            }
+          })
+          outputTable(rows, ['id', 'status', 'scope', 'updatedAt'])
+          return
+        }
+
+        // Require message for chat
+        if (!message) {
+          console.error('Error: message is required')
+          console.error('Usage: tau chat <message>')
+          process.exit(1)
+        }
+
+        // Build request
+        const body: Record<string, unknown> = { message }
+
+        if (options.agent) {
+          body.agentId = options.agent
+        } else if (options.task) {
+          body.scope = { type: 'task', id: options.task }
+        }
+
+        let resolvedAgentId = ''
+
+        // Stream response
+        await apiPostSSE('/api/chat', body, (event, data) => {
+          const parsed = JSON.parse(data)
+
+          if (event === 'agent') {
+            resolvedAgentId = parsed.agentId
+          } else if (event === 'chunk') {
+            process.stdout.write(parsed.text)
+          } else if (event === 'done') {
+            console.log() // newline after response
+            console.log(`\n[Agent: ${resolvedAgentId}]`)
+          }
+        })
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+}

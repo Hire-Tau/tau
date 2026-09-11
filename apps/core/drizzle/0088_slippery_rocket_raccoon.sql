@@ -1,0 +1,2 @@
+ALTER TABLE "ws_tickets" ADD COLUMN "device_token_id" uuid;--> statement-breakpoint
+ALTER TABLE "ws_tickets" ADD CONSTRAINT "ws_tickets_device_token_id_device_tokens_id_fk" FOREIGN KEY ("device_token_id") REFERENCES "public"."device_tokens"("id") ON DELETE cascade ON UPDATE no action;

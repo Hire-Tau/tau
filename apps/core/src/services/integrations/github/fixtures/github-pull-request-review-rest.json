@@ -1,0 +1,46 @@
+{
+  "_recording": {
+    "captured_at": "2020-01-02T12:00:00Z",
+    "source": "GET /repos/example-org/example-project/pulls/42/reviews"
+  },
+  "review": {
+    "_links": {
+      "html": {
+        "href": "https://github.com/example-org/example-project/pull/42#pullrequestreview-10008"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/example-org/example-project/pulls/42"
+      }
+    },
+    "author_association": "CONTRIBUTOR",
+    "body": "Synthetic fixture body.",
+    "commit_id": "cffa2e24dd747bba4991b821dd1143588ad874e4",
+    "html_url": "https://github.com/example-org/example-project/pull/42#pullrequestreview-10008",
+    "id": 10008,
+    "node_id": "Rml4dHVyZToxMQ==",
+    "pull_request_url": "https://api.github.com/repos/example-org/example-project/pulls/42",
+    "state": "COMMENTED",
+    "submitted_at": "2020-01-02T12:00:00Z",
+    "user": {
+      "avatar_url": "https://avatars.githubusercontent.com/in/946600?v=4",
+      "events_url": "https://api.github.com/users/fixture-bot-5/events{/privacy}",
+      "followers_url": "https://api.github.com/users/fixture-bot-5/followers",
+      "following_url": "https://api.github.com/users/fixture-bot-5/following{/other_user}",
+      "gists_url": "https://api.github.com/users/fixture-bot-5/gists{/gist_id}",
+      "gravatar_id": "",
+      "html_url": "https://github.com/apps/copilot-pull-request-reviewer",
+      "id": 10009,
+      "login": "fixture-bot-5",
+      "node_id": "Rml4dHVyZToxMg==",
+      "organizations_url": "https://api.github.com/users/fixture-bot-5/orgs",
+      "received_events_url": "https://api.github.com/users/fixture-bot-5/received_events",
+      "repos_url": "https://api.github.com/users/fixture-bot-5/repos",
+      "site_admin": false,
+      "starred_url": "https://api.github.com/users/fixture-bot-5/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/fixture-bot-5/subscriptions",
+      "type": "Bot",
+      "url": "https://api.github.com/users/fixture-bot-5",
+      "user_view_type": "public"
+    }
+  }
+}

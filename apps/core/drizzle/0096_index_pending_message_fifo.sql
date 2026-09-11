@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY "idx_messages_pending_uninjected_fifo" ON "messages" USING btree ("agent_id","created_at","enqueue_order") WHERE "messages"."pending" = true AND "messages"."injected_at" IS NULL;

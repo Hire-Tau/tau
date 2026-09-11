@@ -1,0 +1,189 @@
+/* Tau's web palette, with a larger reading scale for documentation. */
+:root {
+  --sl-font: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --sl-color-accent-low: #261b3b;
+  --sl-color-accent: #8b5cf6;
+  --sl-color-accent-high: #c4b5fd;
+  --sl-color-white: #f4f3f8;
+  --sl-color-gray-1: #e6e4ed;
+  --sl-color-gray-2: #c4c1d0;
+  --sl-color-gray-3: #9994ad;
+  --sl-color-gray-4: #625d73;
+  --sl-color-gray-5: #302d40;
+  --sl-color-gray-6: #10111c;
+  --sl-color-black: #090a12;
+  --sl-color-bg-nav: #10111c;
+  --sl-color-bg-sidebar: #10111c;
+  --sl-content-width: 46rem;
+  --sl-text-body: 1rem;
+}
+:root[data-theme='light'] {
+  --sl-color-accent-low: #eee8fa;
+  --sl-color-accent: #6d28d9;
+  --sl-color-accent-high: #55209f;
+  --sl-color-white: #20202c;
+  --sl-color-gray-1: #353240;
+  --sl-color-gray-2: #514c60;
+  --sl-color-gray-3: #716a80;
+  --sl-color-gray-4: #a39cae;
+  --sl-color-gray-5: #e3deeb;
+  --sl-color-gray-6: #f2eef7;
+  --sl-color-gray-7: #faf9fc;
+  --sl-color-black: #ffffff;
+  --sl-color-bg: #faf9fc;
+  --sl-color-bg-nav: #ffffff;
+  --sl-color-bg-sidebar: #faf9fc;
+}
+.site-title {
+  gap: 0.65rem;
+  font-weight: 650;
+  letter-spacing: -0.035em;
+}
+.site-title img {
+  width: 2rem;
+  height: 2rem;
+}
+h1,
+h2,
+h3 {
+  letter-spacing: -0.025em;
+}
+.sl-markdown-content {
+  line-height: 1.75;
+}
+.sl-markdown-content :is(h2, h3) {
+  line-height: 1.3;
+}
+.sidebar-content a {
+  border-radius: 0.45rem;
+}
+:where(button, select, a) {
+  -webkit-tap-highlight-color: transparent;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+  }
+}
+
+.docs-preferences {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.docs-mode-picker,
+[data-docs-mode-switch] {
+  display: none;
+}
+:root[data-docs-mode] .docs-mode-picker,
+:root[data-docs-mode] [data-docs-mode-switch] {
+  display: inline-flex;
+}
+.docs-mode-picker select {
+  font: inherit;
+  font-size: var(--sl-text-sm);
+  color: var(--sl-color-white);
+  background: var(--sl-color-bg-nav);
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  min-height: 2.75rem;
+  cursor: pointer;
+}
+:root[data-docs-mode='cloud'] [data-docs-only='self-hosted'],
+:root[data-docs-mode='self-hosted'] [data-docs-only='cloud'] {
+  display: none;
+}
+.sl-markdown-content .docs-mode-content {
+  margin-block: 1rem;
+  border-inline-start: 2px solid var(--sl-color-accent);
+  padding-inline-start: 1rem;
+}
+.docs-mode-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  margin-bottom: 0.5rem;
+  color: var(--sl-color-accent-high);
+  font-size: var(--sl-text-sm);
+  font-weight: 600;
+}
+.sl-markdown-content [data-docs-mode-switch] {
+  margin: 0;
+  padding: 0.5rem 0;
+  border: 0;
+  background: none;
+  color: var(--sl-color-text);
+  font: inherit;
+  font-weight: 400;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+.sl-markdown-content .docs-setup-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.sl-markdown-content .docs-setup-choices a {
+  margin: 0;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 0.5rem;
+  text-decoration: none;
+}
+:root[data-docs-mode='cloud'] [data-docs-mode-link='cloud'],
+:root[data-docs-mode='self-hosted'] [data-docs-mode-link='self-hosted'] {
+  background: var(--sl-color-accent-low);
+  border-color: var(--sl-color-accent);
+  color: var(--sl-color-accent-high);
+}
+
+/* A workflow stays readable as a vertical sequence on narrow screens. */
+.sl-markdown-content .docs-workflow {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-block: 1.75rem;
+}
+.docs-workflow li {
+  position: relative;
+  padding: 0.85rem;
+  margin: 0;
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 0.65rem;
+  background: var(--sl-color-bg-sidebar);
+}
+.docs-workflow li + li::before {
+  content: '→';
+  position: absolute;
+  left: -0.7rem;
+  top: 0.7rem;
+  color: var(--sl-color-accent-high);
+}
+.docs-workflow strong,
+.docs-workflow span {
+  display: block;
+}
+.docs-workflow span {
+  font-size: var(--sl-text-sm);
+  color: var(--sl-color-gray-2);
+}
+@media (max-width: 40rem) {
+  .sl-markdown-content .docs-workflow {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  .docs-workflow li + li::before {
+    content: '↓';
+    top: -1.35rem;
+    left: 1rem;
+  }
+}

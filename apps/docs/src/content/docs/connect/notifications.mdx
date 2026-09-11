@@ -1,0 +1,96 @@
+---
+title: Set up notifications
+description: Enable browser alerts, choose personal preferences, and send squad updates to chat.
+---
+
+import ModeContent from '../../../components/ModeContent.astro'
+
+Notifications help you return when work needs attention. Personal push settings
+control alerts to your devices; squad notification settings send selected work
+updates to Slack, Discord, or Telegram.
+
+## Enable browser notifications
+
+1. Open **Settings → Personal → Notifications** in the browser you want to receive
+   alerts on.
+2. Under **Push Notifications**, choose **Enable** beside **Enable notifications
+   on this device**.
+3. Allow notifications in the browser prompt. Confirm Tau reports that this
+   device will receive push notifications.
+4. Under **Notification preferences**, keep the account's **Push notifications**
+   switch enabled and choose the events under **Notify me about**.
+
+Repeat device registration in each browser you use. The account preference
+applies across your devices, while the device control enables or disables only
+that subscription. Use **Registered Devices → Remove** to remove an old browser.
+
+If the browser reports that permission is denied, change its notification
+permission for this Tau site in browser settings, then return to Tau. If it says
+push is unsupported, use a supported browser or another notification channel.
+
+## Check instance delivery
+
+An enabled device subscription also needs instance-level delivery configuration.
+
+<ModeContent mode="cloud">
+
+If device registration succeeds but alerts never arrive, ask your instance
+administrator to check **Settings → Integrations → Web Push**. Delivery must be
+enabled for the instance. Managed Apple Push credentials, when present, are
+controlled by Cloud rather than editable in your tenant settings.
+
+</ModeContent>
+
+<ModeContent mode="self-hosted">
+
+As an administrator, enable **Settings → Integrations → Web Push** and save a
+valid **Contact address**, using a `mailto:` address or HTTPS URL. Tau manages
+the browser push signing keys. Use HTTPS for your public instance and then
+register the browser device above.
+
+For a native iOS app deployment, **Apple Push** needs the APNs `.p8` signing key,
+key ID, team ID, and matching app bundle ID. Browser notifications use Web Push
+and do not require Apple Push configuration.
+
+</ModeContent>
+
+Alerts are sent to eligible recipients, not every user of the instance. For
+example, a question goes to its designated attention recipients. Muting an event
+or disabling your account push switch stops that event's personal alerts even if
+the device remains registered.
+
+## Send squad updates to chat
+
+First [connect a chat channel](/connect/chat/) and verify that its bot can reply.
+Then open the squad's **Settings → Notifications**:
+
+1. Choose the provider's channel instance.
+2. Enter the destination **Channel ID** for Slack or Discord, or **Chat ID** for
+   Telegram.
+3. Choose **Save Changes**.
+
+You can also subscribe from the target chat:
+
+```text
+/tau notify <squad-name>
+```
+
+Use `/tau unnotify <squad-name>` to unsubscribe, or choose **Clear** for that
+provider in the squad's notification settings and save.
+
+Instance notification rules determine which events are sent. Configuring a
+destination does not turn every event into a chat message. The bundled rules
+include selected completion, review, and failure updates; blocked events require
+an explicit rule for external delivery. Administrators manage this in **Settings
+→ Notification Rules**.
+
+## Adjust sound and troubleshoot
+
+**Notification Sounds → Play sound when done** controls the ping when an agent or
+chat finishes responding. It is separate from browser push registration.
+
+For a missing alert, check the destination, instance integration switch, your
+personal preferences, and browser or operating-system notification permissions.
+For a chat destination, also check bot membership and the squad's selected
+channel instance. Notifications link back to work in Tau; you can always return
+to [the assistant](/use/assistant/) to inspect progress directly.

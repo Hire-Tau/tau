@@ -1,0 +1,66 @@
+# Permission catalog
+
+Tau uses the shared catalog in
+[`packages/shared/src/permissions.ts`](../../packages/shared/src/permissions.ts).
+Every named permission has a description in
+[`packages/shared/src/permission-catalog.ts`](../../packages/shared/src/permission-catalog.ts).
+The same searchable picker appears in **Administration → System Tokens**, role
+editing, and an agent’s **Extra Scopes** panel.
+
+Expand a resource group to see its permissions and descriptions. Search matches
+both names and descriptions; **Show selected only** lets you review the grants
+before saving. A write permission does not automatically include read access.
+Select both when an automation needs both.
+
+System tokens are user-less automation credentials. Their scopes apply globally,
+while endpoint-specific ownership and resource checks still apply. A permission
+alone does not turn a token into a user or an agent. The token value is revealed
+only once, after creation.
+
+## Exact grants and wildcards
+
+Selecting permissions saves their exact names. Selecting every permission in a
+group does **not** create a wildcard. This avoids automatically granting newly
+introduced actions when Tau is updated.
+
+Existing wildcard grants remain visible and unchanged until removed. A resource
+wildcard such as `workstreams:*` includes all current and future permissions for
+that resource. The global `*` grants all permissions and is not offered by the
+normal picker. System tokens retain an advanced custom-scope input for explicit
+wildcards and dynamically qualified grants.
+
+Some permissions can be narrowed with a qualifier:
+
+- `integrations:read:github` or `integrations:write:github` limits the corresponding
+  integration settings/account access to GitHub. Squad connection management and
+  execution have their own `integrations:read`, `integrations:write`, and
+  `integrations:use` checks.
+- `secrets:read:integration` limits secret access to the configured integration
+  group. Secret group membership is defined in `config/secrets/groups.yaml`.
+
+A bare grant such as `secrets:read` also includes its qualified variants. The
+picker marks those rows as included by the broader grant. Remove the broader
+grant before choosing narrower access. Protected platform credentials remain
+protected even with secret permissions.
+
+## Retired names
+
+Unused `squads:write`, `schedules:write`, `ai:read`, `ai:write`, `actions:write`,
+`channels:respond`, and `system:worker-status` entries have been removed from the
+active catalog and bundled configuration. These names did not gate current API
+operations. They are not aliases for the current permissions.
+
+Existing custom grants are preserved and shown separately so an administrator
+can review and remove them. They are never automatically translated into broader
+permissions. Use the current catalog descriptions to choose the actions needed.
+For example, squad editing uses `squads:update`; worker status uses `squads:read`.
+Historical design documents may still mention the retired names.
+
+## Keeping the catalog current
+
+Add new named permissions to `Permissions` and describe the actual backend action
+in `PERMISSION_DESCRIPTIONS`. Typechecking requires a description for every
+catalog entry. The shared package tests inspect literal backend authorization
+calls and bundled role grants to catch missing catalog entries. Dynamic
+integration and secret qualifiers are checked against their cataloged base
+permission.

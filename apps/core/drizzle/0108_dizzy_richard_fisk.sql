@@ -1,0 +1,25 @@
+ALTER TABLE "execution_admission_reservations" DROP CONSTRAINT "execution_admission_reservation_epoch_positive";--> statement-breakpoint
+ALTER TABLE "execution_admission_reservations" ALTER COLUMN "token" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "execution_admission_reservations" ALTER COLUMN "claim_epoch" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "execution_admission_reservations" ALTER COLUMN "owner_id" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "execution_admission_reservations" ALTER COLUMN "owner_incarnation" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "execution_admission_reservations" ALTER COLUMN "admitted_generation" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "execution_admission_reservations" ALTER COLUMN "admitted_holder_revision" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "execution_admission_reservations" ALTER COLUMN "lease_expires_at" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "execution_admission_reservations" ALTER COLUMN "last_heartbeat_at" DROP NOT NULL;--> statement-breakpoint
+ALTER TABLE "execution_admission_reservations" ADD COLUMN "agent_id" uuid;--> statement-breakpoint
+ALTER TABLE "sandbox_recovery_subscriptions" ADD COLUMN "notification_client_id" varchar(128);--> statement-breakpoint
+ALTER TABLE "sandbox_recovery_subscriptions" ADD COLUMN "delivery_message_id" uuid;--> statement-breakpoint
+ALTER TABLE "sandbox_recovery_subscriptions" ADD COLUMN "delivery_execution_id" uuid;--> statement-breakpoint
+ALTER TABLE "work_stream_continuations" ADD COLUMN "claim_token" uuid;--> statement-breakpoint
+ALTER TABLE "work_stream_continuations" ADD COLUMN "delivery_prompt" text;--> statement-breakpoint
+ALTER TABLE "work_stream_continuations" ADD COLUMN "delivery_message_id" uuid;--> statement-breakpoint
+ALTER TABLE "work_stream_continuations" ADD COLUMN "delivery_execution_id" uuid;--> statement-breakpoint
+ALTER TABLE "execution_admission_reservations" ADD CONSTRAINT "execution_admission_reservations_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "public"."agents"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "sandbox_recovery_subscriptions" ADD CONSTRAINT "sandbox_recovery_subscriptions_delivery_message_id_messages_id_fk" FOREIGN KEY ("delivery_message_id") REFERENCES "public"."messages"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "sandbox_recovery_subscriptions" ADD CONSTRAINT "sandbox_recovery_subscriptions_delivery_execution_id_executions_id_fk" FOREIGN KEY ("delivery_execution_id") REFERENCES "public"."executions"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "work_stream_continuations" ADD CONSTRAINT "work_stream_continuations_delivery_message_id_messages_id_fk" FOREIGN KEY ("delivery_message_id") REFERENCES "public"."messages"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "work_stream_continuations" ADD CONSTRAINT "work_stream_continuations_delivery_execution_id_executions_id_fk" FOREIGN KEY ("delivery_execution_id") REFERENCES "public"."executions"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "idx_execution_admission_reservations_agent_current" ON "execution_admission_reservations" USING btree ("agent_id") WHERE "execution_admission_reservations"."agent_id" IS NOT NULL AND "execution_admission_reservations"."state" NOT IN ('released', 'revoked');--> statement-breakpoint
+ALTER TABLE "execution_admission_reservations" ADD CONSTRAINT "execution_admission_reservation_queue_owner_coherent" CHECK ((("execution_admission_reservations"."token" IS NULL AND "execution_admission_reservations"."claim_epoch" IS NULL AND "execution_admission_reservations"."owner_id" IS NULL AND "execution_admission_reservations"."owner_incarnation" IS NULL AND "execution_admission_reservations"."admitted_generation" IS NULL AND "execution_admission_reservations"."admitted_holder_revision" IS NULL AND "execution_admission_reservations"."lease_expires_at" IS NULL AND "execution_admission_reservations"."last_heartbeat_at" IS NULL) OR ("execution_admission_reservations"."token" IS NOT NULL AND "execution_admission_reservations"."claim_epoch" IS NOT NULL AND "execution_admission_reservations"."owner_id" IS NOT NULL AND "execution_admission_reservations"."owner_incarnation" IS NOT NULL AND "execution_admission_reservations"."admitted_generation" IS NOT NULL AND "execution_admission_reservations"."admitted_holder_revision" IS NOT NULL AND "execution_admission_reservations"."lease_expires_at" IS NOT NULL AND "execution_admission_reservations"."last_heartbeat_at" IS NOT NULL)) AND ("execution_admission_reservations"."state" NOT IN ('queued', 'waiting-maintenance') OR "execution_admission_reservations"."token" IS NULL));--> statement-breakpoint
+ALTER TABLE "execution_admission_reservations" ADD CONSTRAINT "execution_admission_reservation_epoch_positive" CHECK ("execution_admission_reservations"."claim_epoch" IS NULL OR "execution_admission_reservations"."claim_epoch" > 0);

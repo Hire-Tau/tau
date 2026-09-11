@@ -1,0 +1,443 @@
+/**
+ * Discord Gateway Connection
+ *
+ * Maintains WebSocket connection to Discord Gateway for receiving
+ * MESSAGE_CREATE events in threads.
+ */
+
+import { createLogger } from '../../lib/infra/logger'
+import { getChannelIntegrationValue } from '../../services/integrations/channels/settings'
+
+const log = createLogger('discord-gateway')
+
+// Gateway opcodes
+const GatewayOpcode = {
+  DISPATCH: 0,
+  HEARTBEAT: 1,
+  IDENTIFY: 2,
+  RESUME: 6,
+  RECONNECT: 7,
+  INVALID_SESSION: 9,
+  HELLO: 10,
+  HEARTBEAT_ACK: 11,
+} as const
+
+// Gateway intents
+const GatewayIntents = {
+  GUILDS: 1 << 0,
+  GUILD_MESSAGES: 1 << 9,
+  MESSAGE_CONTENT: 1 << 15,
+} as const
+
+interface GatewayPayload {
+  op: number
+  d: unknown
+  s?: number
+  t?: string
+}
+
+interface DiscordMessage {
+  id: string
+  channel_id: string
+  guild_id?: string
+  content: string
+  author: {
+    id: string
+    username: string
+    bot?: boolean
+  }
+  mentions?: Array<{ id: string; username: string }>
+  message_reference?: {
+    message_id?: string
+    channel_id?: string
+    guild_id?: string
+  }
+  // Thread info (present when message is in a thread)
+  thread?: {
+    id: string
+    parent_id: string
+  }
+}
+
+export class DiscordGateway {
+  private ws: WebSocket | null = null
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null
+  private sequence: number | null = null
+  private sessionId: string | null = null
+  private resumeGatewayUrl: string | null = null
+  private botToken: string
+  private botUserId: string | null = null
+  private reconnectAttempts = 0
+  private maxReconnectAttempts = 10
+
+  constructor(botToken: string) {
+    this.botToken = botToken
+  }
+
+  async connect(): Promise<void> {
+    const gatewayUrl = 'wss://gateway.discord.gg/?v=10&encoding=json'
+
+    log.info('Connecting to Discord Gateway...')
+
+    this.ws = new WebSocket(gatewayUrl)
+
+    this.ws.onopen = () => {
+      log.info('Discord Gateway WebSocket connected')
+      this.reconnectAttempts = 0
+    }
+
+    this.ws.onmessage = (event) => {
+      const data = typeof event.data === 'string' ? event.data : event.data.toString()
+      this.handleMessage(JSON.parse(data))
+    }
+
+    this.ws.onclose = (event) => {
+      log.warn(`Discord Gateway closed: ${event.code} ${event.reason}`)
+      this.cleanup()
+      this.scheduleReconnect()
+    }
+
+    this.ws.onerror = (error) => {
+      log.error('Discord Gateway error:', error)
+    }
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      log.error('Max reconnect attempts reached, giving up')
+      return
+    }
+
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000)
+    this.reconnectAttempts++
+    log.info(`Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`)
+    setTimeout(() => this.connect(), delay)
+  }
+
+  private handleMessage(payload: GatewayPayload): void {
+    switch (payload.op) {
+      case GatewayOpcode.HELLO:
+        this.startHeartbeat((payload.d as { heartbeat_interval: number }).heartbeat_interval)
+        this.identify()
+        break
+
+      case GatewayOpcode.HEARTBEAT_ACK:
+        // Heartbeat acknowledged
+        break
+
+      case GatewayOpcode.DISPATCH:
+        this.sequence = payload.s ?? this.sequence
+        this.handleDispatch(payload.t!, payload.d)
+        break
+
+      case GatewayOpcode.RECONNECT:
+        log.info('Discord requested reconnect')
+        this.ws?.close()
+        break
+
+      case GatewayOpcode.INVALID_SESSION:
+        log.warn('Invalid session, re-identifying')
+        this.sessionId = null
+        setTimeout(() => this.identify(), 5000)
+        break
+    }
+  }
+
+  private handleDispatch(eventType: string, data: unknown): void {
+    switch (eventType) {
+      case 'READY': {
+        const ready = data as { session_id: string; resume_gateway_url: string; user: { id: string } }
+        this.sessionId = ready.session_id
+        this.resumeGatewayUrl = ready.resume_gateway_url
+        this.botUserId = ready.user.id
+        log.info(`Discord Gateway ready (bot user ID: ${this.botUserId})`)
+        break
+      }
+
+      case 'MESSAGE_CREATE':
+        this.handleMessageCreate(data as DiscordMessage)
+        break
+    }
+  }
+
+  private async handleMessageCreate(message: DiscordMessage): Promise<void> {
+    // Ignore bot messages
+    if (message.author.bot) return
+
+    // Lazy imports to avoid circular dependency
+    const { Agent } = await import('../../entities/Agent')
+    const { InboxMessage } = await import('../../entities/InboxMessage')
+    const { ChannelInstance } = await import('../../entities/ChannelInstance')
+    const { getProvider } = await import('../provider')
+
+    const provider = getProvider('discord')
+    if (!provider) return
+
+    // Check if bot is mentioned
+    const isBotMentioned = !!this.botUserId && !!message.mentions?.some((m) => m.id === this.botUserId)
+
+    // The channel_id IS the thread ID when message is in a thread
+    const threadId = message.channel_id
+
+    // Check if we're tracking this thread
+    const agent = await Agent.findByThreadId('discord', threadId)
+
+    // Replace bot mentions with @Tau
+    const cleanedContent = this.botUserId
+      ? message.content.replace(new RegExp(`<@!?${this.botUserId}>`, 'g'), '@Tau').trim()
+      : message.content
+
+    // Threaded Discord conversations only respond to explicit mentions, even
+    // when Tau created the thread.
+    if (!isBotMentioned) {
+      if (agent) {
+        log.info(`Discord: regular thread message without mention in ${threadId}, ignoring`)
+      }
+      return
+    }
+
+    // Bot mentioned - handle like Slack app_mention
+    if (isBotMentioned) {
+      log.info(`Discord: @mention from ${message.author.username} in channel ${message.channel_id}`)
+
+      // Find channel instance
+      if (!message.guild_id) return
+      const channelInstance = await ChannelInstance.findByProvider('discord', message.guild_id)
+      if (!channelInstance) return
+
+      // Check if this is a mention in a thread (tracked or user-created)
+      const isThread = !agent ? await this.isChannelThread(message.channel_id) : false
+
+      if (agent || isThread) {
+        // Mention in thread - fetch history FIRST, then post thinking
+        log.info(`Discord: mention in thread ${threadId}`)
+
+        // Fetch history BEFORE posting thinking message
+        const history = await this.buildThreadHistory(provider, threadId, message.id, cleanedContent, message.author)
+
+        // Now post thinking message
+        const thinkingMsg = await provider.postMessage({
+          channelId: threadId,
+          text: '_Thinking..._',
+        })
+
+        const content = history || `<@${message.author.id}>: ${cleanedContent}`
+
+        if (agent) {
+          // Reuse existing agent
+          await InboxMessage.send({
+            recipientId: agent.id,
+            senderType: 'system',
+            wakeEligible: true,
+            subject: 'Channel: mention',
+            content,
+            metadata: {
+              type: 'channel_message',
+              channelContext: {
+                provider: 'discord',
+                channelId: threadId,
+                messageToEdit: thinkingMsg.messageId,
+              },
+              userId: message.author.id,
+              userName: message.author.username,
+              command: 'mention',
+            },
+          })
+        } else {
+          // First time in this thread - queue for concierge
+          await channelInstance.queueForConcierge({
+            command: 'mention',
+            content,
+            user: { id: message.author.id, name: message.author.username },
+            responseContext: {
+              provider: 'discord',
+              channelId: threadId,
+              messageToEdit: thinkingMsg.messageId,
+              tauInitiated: false, // User created this thread, not Tau
+            },
+          })
+        }
+        return
+      }
+
+      // Mention in channel (not in thread) - create thread
+      log.info(`Discord: creating thread for mention`)
+
+      // Create thread on user's message
+      const thread = await this.createThreadOnMessage(message.channel_id, message.id, 'Tau Response')
+
+      // Post "Thinking..." in thread
+      const thinkingMsg = await provider.postMessage({
+        channelId: thread.id,
+        text: '_Thinking..._',
+      })
+
+      await channelInstance.queueForConcierge({
+        command: 'mention',
+        content: cleanedContent,
+        user: { id: message.author.id, name: message.author.username },
+        responseContext: {
+          provider: 'discord',
+          channelId: thread.id,
+          messageToEdit: thinkingMsg.messageId,
+          tauInitiated: true,
+        },
+      })
+    }
+  }
+
+  private async buildThreadHistory(
+    provider: import('../provider').ChannelProvider,
+    threadId: string,
+    currentMessageId: string,
+    currentMessageText: string,
+    currentAuthor: { id: string; username: string }
+  ): Promise<string> {
+    try {
+      const messages = await provider.getThreadHistory(threadId, threadId, 50)
+
+      // Find last bot message
+      let startIndex = 0
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].isBotMessage) {
+          startIndex = i
+          break
+        }
+      }
+
+      // Filter out current message from history, then add it at the end
+      const historyMessages = messages.slice(startIndex).filter((m) => m.messageId !== currentMessageId)
+
+      // Add current message at the end
+      const allMessages = [
+        ...historyMessages,
+        {
+          messageId: currentMessageId,
+          userId: currentAuthor.id,
+          text: currentMessageText,
+          timestamp: '',
+          isBotMessage: false,
+        },
+      ]
+
+      const formatted = allMessages
+        .filter((m) => m.text && m.text.trim()) // Skip empty messages
+        .map((m) => {
+          const label = m.isBotMessage ? '@Tau' : `<@${m.userId}>`
+          return `${label}: ${m.text}`
+        })
+        .join('\n\n')
+
+      if (formatted) {
+        return `**Thread history** (you are referenced as @Tau):\n\n${formatted}`
+      }
+    } catch (e) {
+      log.warn(`Failed to fetch thread history: ${e}`)
+    }
+    return ''
+  }
+
+  private async createThreadOnMessage(channelId: string, messageId: string, name: string): Promise<{ id: string }> {
+    const response = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${messageId}/threads`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bot ${this.botToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ name, auto_archive_duration: 1440 }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Failed to create thread: ${await response.text()}`)
+    }
+
+    return response.json()
+  }
+
+  private async isChannelThread(channelId: string): Promise<boolean> {
+    try {
+      const response = await fetch(`https://discord.com/api/v10/channels/${channelId}`, {
+        headers: { Authorization: `Bot ${this.botToken}` },
+      })
+
+      if (!response.ok) return false
+
+      const channel = (await response.json()) as { type: number }
+      // Thread types: 10 = news thread, 11 = public thread, 12 = private thread
+      return channel.type === 10 || channel.type === 11 || channel.type === 12
+    } catch {
+      return false
+    }
+  }
+
+  private startHeartbeat(intervalMs: number): void {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval)
+    }
+
+    this.heartbeatInterval = setInterval(() => {
+      this.ws?.send(
+        JSON.stringify({
+          op: GatewayOpcode.HEARTBEAT,
+          d: this.sequence,
+        })
+      )
+    }, intervalMs)
+  }
+
+  private identify(): void {
+    const intents = GatewayIntents.GUILDS | GatewayIntents.GUILD_MESSAGES | GatewayIntents.MESSAGE_CONTENT
+
+    this.ws?.send(
+      JSON.stringify({
+        op: GatewayOpcode.IDENTIFY,
+        d: {
+          token: this.botToken,
+          intents,
+          properties: {
+            os: 'linux',
+            browser: 'tau',
+            device: 'tau',
+          },
+        },
+      })
+    )
+  }
+
+  private cleanup(): void {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval)
+      this.heartbeatInterval = null
+    }
+  }
+
+  disconnect(): void {
+    this.cleanup()
+    this.ws?.close()
+    this.ws = null
+  }
+}
+
+// Singleton instance
+let gateway: DiscordGateway | null = null
+
+export function startDiscordGateway(): void {
+  const botToken = getChannelIntegrationValue('DISCORD_BOT_TOKEN')
+  if (!botToken) {
+    log.warn('DISCORD_BOT_TOKEN not set, Discord Gateway disabled')
+    return
+  }
+
+  if (gateway) {
+    log.warn('Discord Gateway already running')
+    return
+  }
+
+  gateway = new DiscordGateway(botToken)
+  gateway.connect()
+}
+
+export function stopDiscordGateway(): void {
+  gateway?.disconnect()
+  gateway = null
+}

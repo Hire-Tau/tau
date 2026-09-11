@@ -1,0 +1,223 @@
+# appliesTo declares which kind of subject a role may be granted to:
+#   user  — a person (offered in the invite form and the per-user role editor)
+#   agent — derived from an agent's type in services/rbac/permissions.ts; never
+#           assigned to a person, and hidden from every human role picker
+#   both  — assignable to either
+# Omitting it means 'user'. Custom roles created through the API are 'user' too.
+roles:
+  - name: Admin
+    slug: admin
+    readOnly: true
+    appliesTo: user
+    permissions:
+      - '*'
+
+  - name: Operator
+    slug: operator
+    appliesTo: user
+    permissions:
+      - squads:*
+      # Agents: explicit verbs — operators manage/terminate agents but must NOT
+      # hard-delete agent records (agents:delete is admin/system only).
+      - agents:read
+      - agents:write
+      - agents:create
+      - agents:run
+      - agents:update
+      - agents:terminate
+      # agents:scopes:* is intentionally admin-only; do not grant it to operators.
+      - workstreams:*
+      - workflows:*
+      - chat:*
+      - ssh:*
+      - remote-hosts:*
+      - env:*
+      - memory:*
+      - integrations:*
+      - inbox:*
+      - terminal:*
+      - sandbox:logs
+      - system:logs
+      - workspace:*
+      - schedules:*
+      - squad-relationships:*
+      - ai:*
+      - actions:read
+      - recommendations:read
+      - recommendations:update
+      - secrets:read:integration
+      - secrets:write:integration
+      - agent-types:read # view available agent types
+      - squad-presets:read # view available squad presets
+      - channels:read # view channel instances
+      - webhooks:read # view webhook status
+      - skills:*
+      - monitors:*
+      - deployments:*
+      - artifacts:*
+      - grants:*
+      - routing:*
+      - ai:voice
+      - amtp:read
+      - amtp:register
+      - amtp:write
+
+  - name: Viewer
+    slug: viewer
+    appliesTo: user
+    permissions:
+      - squads:read
+      - agents:read
+      - workstreams:read
+      - chat:read
+      - memory:read
+      - inbox:read
+      - inbox:read-squad # read agent inboxes within accessible squads
+      - workspace:read
+      - schedules:read
+      - squad-relationships:read
+      - actions:read
+      - recommendations:read
+      - agent-types:read
+      - squad-presets:read
+      - workflows:read
+      - channels:read
+      - skills:read
+      - monitors:read
+      - deployments:read
+      - artifacts:read
+      - grants:read
+      - routing:read
+
+  - name: Squad Worker
+    slug: default-worker
+    readOnly: true
+    appliesTo: agent
+    permissions:
+      - chat:send
+      - workstreams:read
+      - workstreams:respond
+      - memory:read
+      - memory:write
+      - inbox:read
+      - inbox:write # async messaging to other agents/users
+      - squads:read
+      - agents:read
+      - workspace:read # tau squad workspace / tau squad file
+      - schedules:read # tau schedule list/show
+      - schedules:create # tau schedule create (self-reminders)
+      - schedules:update # tau schedule update --enable/--disable
+      - schedules:delete # tau schedule delete
+      - schedules:trigger # tau schedule trigger
+      - skills:read
+      - skills:write
+      - monitors:read
+      - monitors:write
+      - deployments:read
+      - deployments:write
+      - deployments:delete
+      - artifacts:read
+      - artifacts:write
+      - routing:read
+      - remote-hosts:read
+      - integrations:use
+      - slots:use
+
+  - name: Squad Manager
+    slug: default-manager
+    readOnly: true
+    appliesTo: agent
+    permissions:
+      - chat:read # search agent messages within the manager's own squad
+      - chat:send
+      - workstreams:create
+      - workstreams:read
+      - workstreams:revise-flow
+      - workstreams:update
+      - workstreams:respond
+      - workstreams:manage-agents
+      - memory:read
+      - memory:write
+      - inbox:read
+      - inbox:write
+      - inbox:read-squad # read teammate agent inboxes within own squad
+      - squads:read
+      - squads:update # update own squad metadata/typeContext (squad-scoped)
+      - agents:read
+      - agents:run # tau agent message
+      - agents:create # tau squad spawn
+      - agents:update # tau agent rename
+      - agents:terminate # tau squad unspawn (terminate a flex agent; NOT DB deletion)
+      - recommendations:read
+      - recommendations:update
+      - squad-relationships:read
+      - workspace:read # tau squad workspace / tau squad file
+      - env:read # tau squad-env secrets
+      - env:write # tau squad-env expose-secrets / unexpose-secrets
+      - schedules:read
+      - schedules:create
+      - schedules:update
+      - schedules:delete
+      - schedules:trigger
+      - skills:read
+      - skills:write
+      - monitors:read
+      - monitors:write
+      - deployments:read
+      - deployments:write
+      - deployments:delete
+      - artifacts:read
+      - artifacts:write
+      - routing:read
+      # Read-only system/global config visibility so the manager can pick valid
+      # models, verify integrations, and inspect types/channels before spawning.
+      # grants:read is squad-scoped (requireSquadPermission) — own squad only.
+      - integrations:read # inspect available connections without reading credentials
+      - integrations:use # run gh with a connection assigned to this squad
+      - provider-auth:read # tau provider-auth list / get / oauth-providers
+      - webhooks:read # tau webhook status <provider>
+      - agent-types:read # tau agent-type list / get
+      - workflows:read # choose declarative presets; inline flows do not require catalog writes
+      - workflows:create # catalog routes restrict squad managers to their own squad scope
+      - workflows:update
+      - workflows:delete
+      - channels:read # tau channel list
+      - grants:read # tau squad grant list / received (own squad only)
+      # Federation: managers are the only agent type with amtp:read (peer listing);
+      # register/send make the manager addressable + able to send amtp:// messages.
+      - amtp:read
+      - amtp:register
+      - amtp:send
+      - remote-hosts:read
+      - remote-hosts:write
+      - slots:write
+
+  - name: Default Concierge
+    slug: default-concierge
+    readOnly: true
+    appliesTo: agent
+    permissions:
+      # Worker-like base + work-stream ownership (manager-like).
+      # A concierge handles channel requests as a full member of ONE squad: it
+      # responds in-channel, reads squad context, and creates/owns work streams
+      # (spawning dedicated agents) — but does not write code or manage schedules.
+      - chat:send
+      - inbox:read
+      - inbox:write
+      - memory:read
+      - memory:write
+      - squads:read
+      - agents:read
+      - agents:create # spawn standalone squad workers when authorized
+      - workspace:read # read squad workspace for context (tau squad workspace/file)
+      - routing:read # suggest_squad
+      - workstreams:read
+      - workflows:read # select accessible presets; inline flows need no publishing grant
+      - workstreams:create # concierge creates + owns work streams
+      - workstreams:update # set/clear owner, change status
+      - workstreams:respond # resolve waits (approve/send-back/unblock) on owned work streams
+      - workstreams:manage-agents # manage participants on stored legacy work streams
+      # Federation: concierge can register a handle + send amtp:// messages (no amtp:read —
+      # peer listing is manager/operator-only; the CLI degrades gracefully on a 403).
+      - amtp:register
+      - amtp:send

@@ -1,0 +1,382 @@
+import { describe, test, expect, beforeEach, beforeAll, afterAll } from 'bun:test'
+import { Hono } from 'hono'
+import { eq } from 'drizzle-orm'
+import { db, agentTypes, modelTiers, skills } from '../db'
+import { AgentType } from '../entities/AgentType'
+import { Skill } from '../entities/Skill'
+import { agentTypesRoutes } from './agent-types'
+import { identityMiddleware } from '../middleware/identity'
+import { createTestAdmin, createTestUser, authHeaders, cleanupTestRbac } from '../test-utils'
+import type { TestUser } from '../test-utils/rbac'
+
+// ── Shared app with identity middleware ──
+const app = new Hono()
+app.use('*', identityMiddleware)
+app.route('/api/agent-types', agentTypesRoutes)
+
+const validAgentType = {
+  id: 'custom-agent',
+  name: 'Custom Agent',
+  model: 'openai/gpt-4.1',
+  systemPrompt: 'You help.',
+  skills: ['custom-skill'],
+  earlyMarginTokens: 30000,
+  inFlightMarginTokens: 8192,
+}
+
+// ── Functional tests (use canonical admin for auth) ──────────────────────────
+
+describe('agent type route validation', () => {
+  const funcPrefix = `at-func-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  let funcAdmin: TestUser
+
+  beforeAll(async () => {
+    funcAdmin = await createTestAdmin({ prefix: funcPrefix, canonicalAdmin: true })
+  })
+
+  afterAll(async () => {
+    await cleanupTestRbac(funcPrefix)
+  })
+
+  beforeEach(async () => {
+    await db.delete(agentTypes)
+    await db.delete(skills)
+    AgentType.invalidateCache()
+    Skill.invalidateCache()
+    await Skill.upsert({ id: 'custom-skill', name: 'Custom Skill', content: '# Custom Skill' })
+  })
+
+  test('GET detail includes the resolved tier chain and provenance', async () => {
+    const tierSlug = `${funcPrefix}-standard`
+    const typeId = `${funcPrefix}-tier-detail-agent`
+    const chain = 'openai-codex:gpt-5.6-sol:medium,anthropic:claude-sonnet-5:high,zai:glm-5.3:high'
+    await db.insert(modelTiers).values({ slug: tierSlug, label: 'Standard', chain })
+    await AgentType.upsert({
+      id: typeId,
+      name: 'Tier Detail Agent',
+      model: '',
+      tier: tierSlug,
+      systemPrompt: 'Test.',
+    })
+
+    try {
+      const res = await app.request(`/api/agent-types/${typeId}`, {
+        headers: authHeaders(funcAdmin.token),
+      })
+
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({
+        id: typeId,
+        resolvedChain: chain,
+        provenance: `via tier: ${tierSlug}`,
+      })
+    } finally {
+      await db.delete(agentTypes).where(eq(agentTypes.id, typeId))
+      await db.delete(modelTiers).where(eq(modelTiers.slug, tierSlug))
+      AgentType.invalidateCache()
+    }
+  })
+
+  test('rejects missing skill references', async () => {
+    const res = await app.request('/api/agent-types', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...authHeaders(funcAdmin.token) },
+      body: JSON.stringify({ ...validAgentType, skills: ['missing'] }),
+    })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: 'Skill "missing" does not exist' })
+  })
+
+  test('creates agent type with an enabled DB skill reference', async () => {
+    const res = await app.request('/api/agent-types', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...authHeaders(funcAdmin.token) },
+      body: JSON.stringify(validAgentType),
+    })
+    expect(res.status).toBe(201)
+    const created = await res.json()
+    expect(created.skills).toEqual(['custom-skill'])
+    expect(created.earlyMarginTokens).toBe(30000)
+    expect(created.inFlightMarginTokens).toBe(8192)
+  })
+
+  test('rejects non-integer earlyMarginTokens with a validation error', async () => {
+    const res = await app.request('/api/agent-types', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...authHeaders(funcAdmin.token) },
+      body: JSON.stringify({ ...validAgentType, earlyMarginTokens: 30_000.5 }),
+    })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: 'earlyMarginTokens must be an integer between 0 and 1000000' })
+  })
+
+  test('rejects absurd earlyMarginTokens with a validation error', async () => {
+    const res = await app.request('/api/agent-types', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...authHeaders(funcAdmin.token) },
+      body: JSON.stringify({ ...validAgentType, earlyMarginTokens: 1_000_000_000 }),
+    })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: 'earlyMarginTokens must be an integer between 0 and 1000000' })
+  })
+
+  test('rejects invalid inFlightMarginTokens with a validation error', async () => {
+    const res = await app.request('/api/agent-types', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...authHeaders(funcAdmin.token) },
+      body: JSON.stringify({ ...validAgentType, inFlightMarginTokens: 8192.5 }),
+    })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({
+      error: 'inFlightMarginTokens must be an integer between 0 and 1000000',
+    })
+  })
+
+  test('adds and removes one skill without replacing the full list', async () => {
+    await Skill.upsert({ id: 'second-skill', name: 'Second Skill', content: '# Second Skill' })
+    await AgentType.upsert(validAgentType)
+
+    let res = await app.request('/api/agent-types/custom-agent/add-skill', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...authHeaders(funcAdmin.token) },
+      body: JSON.stringify({ skillId: 'second-skill' }),
+    })
+    expect(res.status).toBe(200)
+    const added = await res.json()
+    expect(added.skills).toEqual(['custom-skill', 'second-skill'])
+    expect(added.earlyMarginTokens).toBe(30000)
+    expect(added.inFlightMarginTokens).toBe(8192)
+
+    res = await app.request('/api/agent-types/custom-agent/remove-skill', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...authHeaders(funcAdmin.token) },
+      body: JSON.stringify({ skillId: 'custom-skill' }),
+    })
+    expect(res.status).toBe(200)
+    const removed = await res.json()
+    expect(removed.skills).toEqual(['second-skill'])
+    expect(removed.earlyMarginTokens).toBe(30000)
+    expect(removed.inFlightMarginTokens).toBe(8192)
+  })
+})
+
+// ── RBAC guard tests ──────────────────────────────────────────────────────────
+
+describe('agent-types RBAC guards', () => {
+  const rbacPrefix = `at-guard-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  let admin: TestUser
+  let unprivileged: TestUser
+
+  beforeAll(async () => {
+    admin = await createTestAdmin({ prefix: rbacPrefix, canonicalAdmin: true })
+    unprivileged = await createTestUser({ prefix: rbacPrefix })
+    // Seed a known agent type for read/update/delete tests
+    await db.delete(agentTypes)
+    AgentType.invalidateCache()
+    await Skill.upsert({ id: 'guard-skill', name: 'Guard Skill', content: '# Guard' })
+    await AgentType.upsert({
+      id: 'guard-agent',
+      name: 'Guard Agent',
+      model: 'openai/gpt-4.1',
+      systemPrompt: 'Guard.',
+    })
+  })
+
+  afterAll(async () => {
+    await cleanupTestRbac(rbacPrefix)
+    await db.delete(agentTypes)
+    AgentType.invalidateCache()
+  })
+
+  async function gfetch(
+    token: string | null,
+    path: string,
+    init?: { method?: string; body?: unknown }
+  ): Promise<Response> {
+    const headers: Record<string, string> = {}
+    if (token) Object.assign(headers, authHeaders(token))
+    if (init?.body) headers['content-type'] = 'application/json'
+    return app.fetch(
+      new Request(`http://localhost${path}`, {
+        method: init?.method ?? 'GET',
+        body: init?.body ? JSON.stringify(init.body) : undefined,
+        headers,
+      })
+    )
+  }
+
+  // GET / — agent-types:read
+  test('GET /api/agent-types → 401 without identity', async () => {
+    const res = await gfetch(null, '/api/agent-types')
+    expect(res.status).toBe(401)
+  })
+  test('GET /api/agent-types → 403 for unprivileged user', async () => {
+    const res = await gfetch(unprivileged.token, '/api/agent-types')
+    expect(res.status).toBe(403)
+  })
+  test('GET /api/agent-types → 200 for admin', async () => {
+    const res = await gfetch(admin.token, '/api/agent-types')
+    expect(res.status).toBe(200)
+  })
+
+  // GET /:id — agent-types:read
+  test('GET /api/agent-types/:id → 401 without identity', async () => {
+    const res = await gfetch(null, '/api/agent-types/guard-agent')
+    expect(res.status).toBe(401)
+  })
+  test('GET /api/agent-types/:id → 403 for unprivileged user', async () => {
+    const res = await gfetch(unprivileged.token, '/api/agent-types/guard-agent')
+    expect(res.status).toBe(403)
+  })
+  test('GET /api/agent-types/:id → 200 for admin', async () => {
+    const res = await gfetch(admin.token, '/api/agent-types/guard-agent')
+    expect(res.status).toBe(200)
+  })
+
+  // POST / — agent-types:create
+  test('POST /api/agent-types → 401 without identity', async () => {
+    const res = await gfetch(null, '/api/agent-types', {
+      method: 'POST',
+      body: { id: 'x', name: 'X', model: 'openai/gpt-4.1', systemPrompt: 'x' },
+    })
+    expect(res.status).toBe(401)
+  })
+  test('POST /api/agent-types → 403 for unprivileged user', async () => {
+    const res = await gfetch(unprivileged.token, '/api/agent-types', {
+      method: 'POST',
+      body: { id: 'x', name: 'X', model: 'openai/gpt-4.1', systemPrompt: 'x' },
+    })
+    expect(res.status).toBe(403)
+  })
+
+  // PUT /:id — agent-types:update
+  test('PUT /api/agent-types/:id → 401 without identity', async () => {
+    const res = await gfetch(null, '/api/agent-types/guard-agent', {
+      method: 'PUT',
+      body: { name: 'G', model: 'openai/gpt-4.1', systemPrompt: 'G.' },
+    })
+    expect(res.status).toBe(401)
+  })
+  test('PUT /api/agent-types/:id → 403 for unprivileged user', async () => {
+    const res = await gfetch(unprivileged.token, '/api/agent-types/guard-agent', {
+      method: 'PUT',
+      body: { name: 'G', model: 'openai/gpt-4.1', systemPrompt: 'G.' },
+    })
+    expect(res.status).toBe(403)
+  })
+
+  // POST /:id/add-skill — agent-types:update
+  test('POST /api/agent-types/:id/add-skill → 401 without identity', async () => {
+    const res = await gfetch(null, '/api/agent-types/guard-agent/add-skill', {
+      method: 'POST',
+      body: { skillId: 'guard-skill' },
+    })
+    expect(res.status).toBe(401)
+  })
+  test('POST /api/agent-types/:id/add-skill → 403 for unprivileged user', async () => {
+    const res = await gfetch(unprivileged.token, '/api/agent-types/guard-agent/add-skill', {
+      method: 'POST',
+      body: { skillId: 'guard-skill' },
+    })
+    expect(res.status).toBe(403)
+  })
+
+  // POST /:id/remove-skill — agent-types:update
+  test('POST /api/agent-types/:id/remove-skill → 401 without identity', async () => {
+    const res = await gfetch(null, '/api/agent-types/guard-agent/remove-skill', {
+      method: 'POST',
+      body: { skillId: 'guard-skill' },
+    })
+    expect(res.status).toBe(401)
+  })
+  test('POST /api/agent-types/:id/remove-skill → 403 for unprivileged user', async () => {
+    const res = await gfetch(unprivileged.token, '/api/agent-types/guard-agent/remove-skill', {
+      method: 'POST',
+      body: { skillId: 'guard-skill' },
+    })
+    expect(res.status).toBe(403)
+  })
+
+  // DELETE /:id — agent-types:delete
+  test('DELETE /api/agent-types/:id → 401 without identity', async () => {
+    const res = await gfetch(null, '/api/agent-types/guard-agent', { method: 'DELETE' })
+    expect(res.status).toBe(401)
+  })
+  test('DELETE /api/agent-types/:id → 403 for unprivileged user', async () => {
+    const res = await gfetch(unprivileged.token, '/api/agent-types/guard-agent', { method: 'DELETE' })
+    expect(res.status).toBe(403)
+  })
+
+  // GET /:id/template-diff — agent-types:read
+  test('GET /api/agent-types/:id/template-diff → 401 without identity', async () => {
+    const res = await gfetch(null, '/api/agent-types/guard-agent/template-diff')
+    expect(res.status).toBe(401)
+  })
+  test('GET /api/agent-types/:id/template-diff → 403 for unprivileged user', async () => {
+    const res = await gfetch(unprivileged.token, '/api/agent-types/guard-agent/template-diff')
+    expect(res.status).toBe(403)
+  })
+
+  // POST /:id/revert-to-template — agent-types:update
+  test('POST /api/agent-types/:id/revert-to-template → 401 without identity', async () => {
+    const res = await gfetch(null, '/api/agent-types/guard-agent/revert-to-template', { method: 'POST', body: {} })
+    expect(res.status).toBe(401)
+  })
+  test('POST /api/agent-types/:id/revert-to-template → 403 for unprivileged user', async () => {
+    const res = await gfetch(unprivileged.token, '/api/agent-types/guard-agent/revert-to-template', {
+      method: 'POST',
+      body: {},
+    })
+    expect(res.status).toBe(403)
+  })
+
+  // POST /:id/revert-template-fields — agent-types:update
+  test('POST /api/agent-types/:id/revert-template-fields → 401 without identity', async () => {
+    const res = await gfetch(null, '/api/agent-types/guard-agent/revert-template-fields', {
+      method: 'POST',
+      body: { fields: [] },
+    })
+    expect(res.status).toBe(401)
+  })
+  test('POST /api/agent-types/:id/revert-template-fields → 403 for unprivileged user', async () => {
+    const res = await gfetch(unprivileged.token, '/api/agent-types/guard-agent/revert-template-fields', {
+      method: 'POST',
+      body: { fields: [] },
+    })
+    expect(res.status).toBe(403)
+  })
+
+  // POST /:id/disable — agent-types:update
+  test('POST /api/agent-types/:id/disable → 401 without identity', async () => {
+    const res = await gfetch(null, '/api/agent-types/guard-agent/disable', { method: 'POST', body: {} })
+    expect(res.status).toBe(401)
+  })
+  test('POST /api/agent-types/:id/disable → 403 for unprivileged user', async () => {
+    const res = await gfetch(unprivileged.token, '/api/agent-types/guard-agent/disable', { method: 'POST', body: {} })
+    expect(res.status).toBe(403)
+  })
+
+  // POST /:id/enable — agent-types:update
+  test('POST /api/agent-types/:id/enable → 401 without identity', async () => {
+    const res = await gfetch(null, '/api/agent-types/guard-agent/enable', { method: 'POST', body: {} })
+    expect(res.status).toBe(401)
+  })
+  test('POST /api/agent-types/:id/enable → 403 for unprivileged user', async () => {
+    const res = await gfetch(unprivileged.token, '/api/agent-types/guard-agent/enable', { method: 'POST', body: {} })
+    expect(res.status).toBe(403)
+  })
+
+  // GET /:id/export — agent-types:read
+  test('GET /api/agent-types/:id/export → 401 without identity', async () => {
+    const res = await gfetch(null, '/api/agent-types/guard-agent/export')
+    expect(res.status).toBe(401)
+  })
+  test('GET /api/agent-types/:id/export → 403 for unprivileged user', async () => {
+    const res = await gfetch(unprivileged.token, '/api/agent-types/guard-agent/export')
+    expect(res.status).toBe(403)
+  })
+  test('GET /api/agent-types/:id/export → 200 for admin', async () => {
+    const res = await gfetch(admin.token, '/api/agent-types/guard-agent/export')
+    expect(res.status).toBe(200)
+  })
+})

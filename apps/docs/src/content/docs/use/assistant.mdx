@@ -1,0 +1,65 @@
+---
+title: Use the Assistant
+description: Search your workspace, open work inline, start squad conversations, and switch between typing and live voice.
+---
+
+The Assistant is Tau's app-wide entrypoint. You can use it as a command bar to find something, as a conversation to ask for help, or as a way to start work in a squad.
+
+## Open and search
+
+Select **Assistant** in the header, or press **⌘K** on macOS or **Ctrl K** on Windows and Linux. Type the name or purpose of a squad, work stream, or recent consultant conversation. Page and settings results also help you find controls.
+
+Search results only include items your account can access. Ordinary conversation results leave out dormant and terminated agents, and do not list every worker in the workspace. Open a work stream to find its participating conversations.
+
+| Key                              | What happens                                                                     |
+| -------------------------------- | -------------------------------------------------------------------------------- |
+| Enter, before selecting a result | Sends your text to the Assistant, or starts a conversation in the selected squad |
+| Down arrow                       | Selects the first result, then moves down                                        |
+| Up arrow                         | Moves up; from the first result, returns to the ask/start button                 |
+| Enter, with a result selected    | Opens that result                                                                |
+| Escape                           | Goes back through the preview stack; closes at the top level                     |
+| Tab / Shift Tab                  | Moves between controls                                                           |
+
+Arrow selection stops at the ends of the list. The highlighted ask/start button indicates that Enter will send your text rather than open a result. Quick-chat pills below the empty search input send a suggested prompt.
+
+## Explore without losing your place
+
+Select a squad to preview its work and recent conversations. The search field stays at the top and filters that squad's options. Expand **Recently completed** to choose a **7 days** or **30 days** window.
+
+Open a work stream to see its conversations and description. Open one of those conversations to read or reply inline. A **Started here** conversation records where the work originated; if that conversation is no longer active, it opens read-only.
+
+Use the breadcrumb's **Back** control or Escape to unwind one level. Tau stores the preview path in the page URL so a refresh can reopen the same nested view. An **Open full conversation** control opens the selected agent in its squad's **Chats** page.
+
+## Ask Tau or start a squad conversation
+
+At the top level, ask a workspace question such as:
+
+> What needs my attention, and which work streams are waiting on me?
+
+For a task that belongs to a particular squad, find and open the squad first, then enter the brief in its search field. The start button creates a new consultant conversation in that squad. A consultant can explore an idea with you, research a question, or start a tracked [work stream](/use/work-streams/).
+
+Include the outcome, constraints, and how you will judge completion. For example:
+
+> In the Documentation squad, draft a release checklist for a small desktop app. Use Solo, keep it under one page, and save it in the squad workspace. Ask before publishing anything.
+
+The workspace Assistant and a squad consultant are different conversations. Use the squad preview when you want the task to begin with that squad's context. Give the Assistant enough detail when you ask it to coordinate across squads.
+
+## Use live voice in the same Assistant conversation
+
+When Realtime is configured and your account has voice access, you can type and talk in the same saved Assistant conversation. Use **Start voice chat** in the Assistant header and allow browser microphone access. Return from a nested work or consultant preview to the Assistant's search/conversation view if the live-voice button is disabled there.
+
+The microphone control mutes or unmutes input. **Listening** remains visible while Tau listens; the mic pulses when it detects your speech. You can interrupt a response, and the streamed response has a stop control. Ending live voice stops the live audio session; it does not delete the saved Assistant conversation.
+
+Typed messages request text responses. Spoken turns can produce spoken replies, so typing is useful when you want to continue quietly. Browser permissions and a supported secure origin are needed for microphone access; self-hosted remote access should use HTTPS.
+
+Collapse the live Assistant to keep it beside the page, and expand it to return to the transcript. Drag the header of the expanded window, or the available surface of the compact window, to move it. The position control also offers preset locations.
+
+If Realtime is not configured or your account lacks voice access, Tau uses the **User assistant · text only** path. A temporary connection error on a configured Realtime conversation does not silently switch you to another assistant: the pending message remains queued while it reconnects. If automatic reconnection stops, use **Reconnect** or **Retry** as shown. See [troubleshooting](/self-host/troubleshooting/).
+
+## Understand background work and saved history
+
+The Assistant can look up information and use its own tools. Longer tasks can run through a User Assistant or a squad agent in the background. A “waiting for an agent reply” indicator means the reply has not arrived yet; an initial acknowledgment is not a finished result.
+
+You can continue the live conversation while background work runs. Replies and updates return through the Assistant's messaging path. A task already started by an agent is separate from the live microphone connection; ending voice is not the way to pause that work. [Pause the work stream](/use/review-and-intervene/#pause-and-resume-work) when you need work to stop.
+
+End live voice before switching Assistant conversations or starting a new one. Use **Recent chats** in the Assistant conversation or **Assistant conversations** from search to resume a saved Assistant conversation. Squad consultant conversations appear in their squad preview and Chats page. If Tau reports that history could not be saved, use **Retry saving history** before leaving the page.

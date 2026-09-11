@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX CONCURRENTLY "idx_integration_dispatch_activity_id" ON "integration_event_polling_dispatches" USING btree ("activity_id") WHERE "integration_event_polling_dispatches"."activity_id" IS NOT NULL;

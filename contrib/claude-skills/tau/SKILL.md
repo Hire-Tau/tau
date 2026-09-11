@@ -1,0 +1,280 @@
+---
+name: tau
+description: Operate a Tau instance as a manager/operator — CLI auth, the work-stream lifecycle, squad-manager coordination, answering agent questions, and the operating doctrine that avoids known failure modes. Use whenever supervising Tau squads, unblocking/reviewing work streams, or directing work on a Tau deployment via the `tau` CLI.
+---
+
+# Operating Tau (the `tau` CLI)
+
+## What Tau is
+
+A Tau instance runs **squads** of AI agents (typical crew: architect,
+engineer, reviewer, coordinated by a squad **manager** agent). Work is
+organized into **work streams** — durable units with a lifecycle, a
+priority, an assignee, a dedicated agent crew, and a git branch. You direct
+at the work-stream level and communicate through the manager; the manager
+orchestrates the agents.
+
+Everything below uses the `tau` CLI. Global flags: `--json` for
+machine-readable output (parse this, not the human tables; add
+`--no-truncate` when grepping table output), `--backend <label>` to select a
+stored auth backend for one command.
+
+## Installing the CLI (if `tau` is missing)
+
+```bash
+curl -fsSL https://hiretau.ai/cli/install.sh | bash
+export PATH="$HOME/.tau/bin:$PATH"   # add to the shell profile too
+tau --version                        # verify
+```
+
+The installer writes the binary to `~/.tau/bin/tau` and bundled assets to
+`~/.tau/share`. Upgrade or reinstall later with `tau install`. If `tau` is
+on PATH but misbehaving after an instance upgrade, run `tau install` before
+debugging further — version skew between CLI and server is a common cause.
+
+## Auth — connecting to a live instance
+
+`tau auth` manages named backends (label → URL + credential). CLI auth is a
+**device pairing flow**: no secrets are typed or stored by hand.
+
+```bash
+tau auth login [label] --api-url https://<instance-host>
+# The CLI prints a verification URL (and opens a browser where possible);
+# a signed-in user approves the pairing there; the CLI receives a durable
+# device token bound to this machine.
+
+tau auth list | status | switch <label>   # manage multiple instances
+tau auth introspect                        # identity + effective roles/permissions
+tau auth logout [label]                    # removes the backend AND revokes the
+                                           # paired device server-side
+                                           # (--local-only keeps the device grant)
+```
+
+- Label defaults to the instance hostname; `--json` works on all of these.
+- Verify a new backend immediately with `tau auth introspect`.
+- Device tokens survive instance upgrades and new-passkey registrations —
+  pair once per machine per instance and it keeps working.
+
+## Find squads, work, and conversations
+
+```bash
+tau --json search "authentication" --limit 10
+tau --json search "deployment" --kind work_stream --squad <squad-uuid>
+```
+
+Search matches names, purposes, work descriptions, IDs, squad names, and statuses
+across authorized squads, work streams, live consultant conversations, and your
+saved Assistant conversations. Optional `--kind` values are `squad`,
+`work_stream`, `consultant_conversation`, and `assistant_conversation`;
+`--limit` is 1–50 (default 20). Results contain canonical IDs, squad context,
+status, and ranked summaries. Strong text matches lead, with active work and
+recency breaking up similar matches. Dormant/terminated consultants are omitted;
+saved Assistant conversations remain private to the logged-in account.
+
+Use the returned `id` with the matching command, for example `tau ws get <id>`
+or `tau agent get <id>`, before taking action. This searches entity metadata,
+not message bodies. A limited or empty result is not a complete inventory.
+Pages and settings are searched separately by the web Assistant, not this CLI.
+
+## Work streams — the core surface
+
+```bash
+tau ws list -q <squadId> [--json]    # outside a squad box, the squad flag is required
+tau ws get <id> [--json]             # shows the crew and each agent's live status
+tau ws create "<title>" -q <squadId> -d "<description>" \
+    --agents architect,engineer,reviewer --assign-index 1 \
+    --branch <branch> --base-branch main \
+    [--priority <p>] [--depends-on <id>] -m "<kickoff message>"
+tau ws request-review <id> -m "<what to review>" [--no-complete]
+                                     # open the review wait; approval completes the
+                                     # stream by default. --no-complete = mid-work
+                                     # checkpoint gate: approval resolves the gate
+                                     # only and work continues
+tau ws approve <id> [-m "<note>"]    # close the open review wait; completes the
+                                     # stream unless the wait was --no-complete.
+                                     # The note is recorded on the wait and
+                                     # DELIVERED (durable home for follow-ups)
+tau ws send-back <id> -m "<fb>"      # close the review wait with feedback (a
+                                     # review round); never completes anything —
+                                     # always safe
+tau ws request-input <id> -m "<why>" # open a manual wait: the stream needs an
+                                     # answer/action from the owner or operator
+tau ws unblock <id> -m "<answer>"    # resolve the manual wait; the note is
+                                     # delivered to the assignee as its next
+                                     # instruction
+tau ws handoff <id> --to <agentId> -m "<context>" [-f <file>]...
+                                     # reassignment ONLY (bound-agent phase
+                                     # transitions). It never opens a review
+                                     # wait — that's request-review
+tau ws park <id>                     # intentional preemption ONLY: release the
+                                     # slot for higher-priority work. Never park
+                                     # a waiting stream — open waits already
+                                     # exclude it from scheduling
+tau ws done <id>                     # complete directly — REJECTED while any
+                                     # wait is open (except via approve on the
+                                     # final review wait)
+tau ws reopen <id>                   # take a done/canceled stream back through
+                                     # admission (queued/active)
+tau ws cancel <id>                   # cancel + stop assigned executions
+tau ws add-agent <id> <types...>     # spawn+bind extra agents; remove-agent to unbind
+tau ws watch <id>                    # subscribe to lifecycle updates
+```
+
+Stored statuses are just `queued | active → done | canceled`. `queued` means
+not admitted under the squad's concurrency cap (or parked back into the
+queue) — visible, ordered, and auto-admitted when a slot frees, its
+dependencies are done, AND it has no open wait. Everything richer is a typed
+OPEN WAIT record (`dependency | question | review | manual`) plus a DERIVED
+display: `in progress` (live execution), `in review`, `waiting on answer`,
+`waiting on <dep>`, `blocked`, or `idle` (active with no execution and no
+wait — the one alarming state).
+
+When more than one wait of a type is open, the sugar verbs require
+`--wait <waitId>` — `tau ws get <id>` prints each open wait's id (checkpoint
+review waits are marked). JSON fields worth knowing: `status` +
+`derivedState`, `openWaits[]` (id, type, message, completesOnApproval,
+openedAt — why it's waiting; often a precise statement of the resume
+condition), `reviewRounds` (closed review waits) on detail,
+`priority` (stored) vs the computed effective priority shown in listings,
+`handoffMessage` (the assignee's latest substantive report), `dependsOn`,
+`assigneeAgentId`, `metadata` (free-form; `set-meta` supports dot paths).
+
+**Priority & concurrency.** Streams carry a priority (`critical | high |
+normal | low`, default `normal`; set at creation or `ws update --priority`).
+Effective priority is computed with **blocker boosting**: a stream inherits
+the max priority of every open stream that depends on it, so a low-priority
+flake fix blocking a high-priority feature schedules as high (`ws list`
+annotates when stored and effective differ). `dependsOn` writes reject
+cycles. The squad-level cap (`tau squad update --max-concurrent-streams
+N|unlimited`) bounds how many streams may hold a slot (= have runnable
+sandboxes) at once; creation under a full cap lands in `queued` with the
+crew bound but boxes stopped — only sandboxes consume resources, agent rows
+are free. Admission order is effective priority, then age. There is NO
+preemption — a critical arrival goes to the queue head and the manager
+decides whether to `park` something to make room. Parking is never lossy:
+files stay in place and the stream re-enters the queue at its effective
+priority. AUTO-PARK: an active stream with an open wait older than the squad
+grace (`tau squad update --blocked-grace-minutes N`, default 30, 0 =
+immediate) is parked automatically — no exemptions, review waits included. A
+parked-with-wait display (`in review — parked`, `waiting on <dep>`) is the
+system working, not a stall: do NOT "fix" it; resolve the wait.
+
+**Reading blocked correctly:** a `blocked` display means _waiting on
+something named in the open manual wait's message_ — operator input, a
+resource grant, or a deliberate hold. It does NOT mean stalled or broken.
+Read the wait message; it usually tells you exactly whether you're the
+unblocker.
+
+**Every wait resolves through its typed verb** — `unblock` for manual
+waits, `approve`/`send-back` for review waits (there is no generic
+`respond`). A good resolution note states: what changed, what the stream
+should do now, and any new constraints — the resumed agent reads it as its
+next instruction, and notes ride the wait record, so they are never lost.
+Blocking questions (`ask_human` with `blocking: true`) open a question wait
+that the answer (`tau aq answer`) clears automatically.
+
+**PR streams: the completing review wait is a MERGE gate, not an LGTM.**
+Approving a review wait with `completesOnApproval` (the default) completes
+the stream in the same transaction — so for a stream whose deliverable is a
+PR, the final review wait must represent "the PR is merged", and whoever
+resolves it must check the wait's stated condition is actually met before
+approving. The working convention: the bound reviewer creates the PR, gets
+it reviewed on GitHub, and opens the completing review wait only at (or
+explicitly gated on) the merge; GitHub webhook events tell the reviewer the
+PR merged, and the reviewer resolves the wait — closing the stream —
+themselves. Pre-merge quality gates are `request-review --no-complete`
+checkpoints. As an operator: reply to PR feedback on GitHub; touch the
+stream's completing wait only when its condition holds (send-back is always
+safe). Approving an "awaiting CI/merge" wait early completes the stream
+under the reviewer and forces a reopen — the exact churn this rule exists
+to prevent.
+
+## The squad manager — direct, don't micromanage
+
+- The manager agent owns orchestration: assignment, sequencing, quality
+  gates, steering messages to agents. Operate THROUGH it, not around it.
+- All communication is the inbox: `tau inbox send <recipientId> "<msg>"` —
+  address the squad's manager agent directly.
+- When you believe streams are stalled: **ask the manager for execution
+  state before concluding anything.** Idle agents + a stale `updatedAt` is
+  what deliberate queueing looks like from the outside; managers sequence
+  work on purpose. Only flag when the manager confirms the active stream has
+  no execution running.
+- Findings/feature requests for the squad: send the manager a message with
+  BINDING requirements (exact behaviors, failure semantics, test
+  expectations) — managers open well-scoped streams from precise specs and
+  flounder on vague ones.
+- Handoffs carry the phase chain: workers hand off to the next bound agent
+  with `tau ws handoff <id> --to <agentId> -m "<context>"` (and `-f` file
+  attachments reviewable in the UI). Opening a verdict review wait is a
+  separate act (`request-review`) — never a handoff side effect.
+
+### Message delivery: steer vs follow-up
+
+`tau inbox send` has two delivery modes, and choosing wrong has real
+consequences:
+
+- `--steer` (the default) **interrupts the recipient immediately**, mid-turn.
+- `--follow-up` queues until the recipient's **whole turn ends** (the agent
+  goes idle) — not merely its current step. An agent mid-implementation
+  will finish EVERYTHING it is doing before a follow-up is delivered.
+
+Use steer for anything that must shape in-flight work — a spec change, a
+stop-what-you're-doing, a correction to instructions the agent is actively
+executing. Use follow-up only for messages that can safely wait until the
+agent is completely done (post-completion feedback, next-task context).
+Sending a mid-build spec change as a follow-up means the agent builds the
+whole thing to the old spec first.
+
+## Your inbox, agent questions, and the Action Center
+
+You have an inbox too — check it when supervising:
+
+```bash
+tau inbox list                       # your unread messages (agents report here)
+tau inbox read <messageIds...>       # mark read; read-all to clear
+tau inbox count                      # quick unread check
+tau inbox download <attachmentId> -o <path>
+tau action list                      # pending actions requiring human/operator attention
+```
+
+Agents that hit a decision they can't make **ask an async question and keep
+working** (their status shows `waiting-input` when truly halted). These
+surface in the Action Center and via:
+
+```bash
+tau aq list <agentId>                # an agent's open questions
+tau aq answer <id> "<answer>"        # delivered to the agent, which wakes it
+```
+
+Answer questions promptly and decisively — a precise answer with the
+constraint spelled out beats a fast vague one; the agent resumes with your
+text as its instruction. If an agent seems stuck in `waiting-input`, check
+`tau aq list` before nudging it through the manager.
+
+## Operating doctrine (learned the hard way)
+
+1. **Precise wait messages are gold.** When asking a squad to do risky
+   work, require them to block with wait messages that name the exact resume
+   condition — and write your own `unblock`/`approve` and `aq answer`
+   messages the same way.
+2. **Don't infer stalls from timestamps** (see manager section). Real
+   incidents have come from misreading deliberate sequencing as death.
+3. **Infrastructure-shaped failures deserve an infrastructure check first.**
+   If agents report sandbox-unavailable, socket-closed, or
+   timeout-with-no-output errors, ask the manager about machine health
+   before blaming the code.
+4. **Push-before-risky:** before instance restarts or upgrades, have agents
+   push their branches; recovery machinery restores boxes, not uncommitted
+   scratch work.
+5. **State teardown ownership for every resource you hand a squad** — who
+   deletes it, when — or it will linger forever.
+6. **Editing a work stream's description notifies nobody.** Amending a
+   spec after agents picked the stream up silently changes the source of
+   truth out from under them — always `--steer` the assignee with a summary
+   of what changed and a pointer to re-read the description.
+7. **Ownership notices fire only at creation.** An ownerless stream routes
+   to the squad manager automatically on current versions (older cores left
+   it silently unowned — pass `--owner` explicitly if unsure), but setting
+   the owner later via `ws update --owner` sends no notice: message the new
+   owner yourself or the stream sits invisible.

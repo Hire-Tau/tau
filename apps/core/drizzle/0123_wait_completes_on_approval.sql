@@ -1,0 +1,1 @@
+ALTER TABLE "work_stream_waits" ADD COLUMN "completes_on_approval" boolean DEFAULT true NOT NULL;

@@ -1,0 +1,48 @@
+{
+  "name": "@tau/shared",
+  "version": "0.0.1",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./crypto": "./src/crypto.ts",
+    "./node": "./src/node/index.ts",
+    "./provider-health": "./src/provider-health.ts",
+    "./testDbLock": "./src/testDbLock.ts",
+    "./testDbReady": "./src/testDbReady.ts",
+    "./testDbPort": "./src/testDbPort.ts",
+    "./openrouter-tier-expansion": "./src/openrouter-tier-expansion.ts",
+    "./advisory-lock": "./src/advisory-lock.ts",
+    "./oauth-broker": "./src/oauth-broker/protocol.ts",
+    "./oauth-providers": "./src/oauth-providers/registry.ts",
+    "./oauth-providers/types": "./src/oauth-providers/types.ts",
+    "./oauth-providers/notion/client": "./src/oauth-providers/notion/client.ts",
+    "./oauth-providers/notion/config": "./src/oauth-providers/notion/config.ts",
+    "./oauth-providers/github/app": "./src/oauth-providers/github/app.ts",
+    "./oauth-providers/github/client": "./src/oauth-providers/github/client.ts",
+    "./oauth-providers/github/config": "./src/oauth-providers/github/config.ts",
+    "./oauth-providers/fake": "./src/oauth-providers/fake/adapter.ts",
+    "./integration-relay": "./src/integration-relay/protocol.ts",
+    "./apns": "./src/apns.ts",
+    "./push-relay": "./src/push-relay.ts",
+    "./platform-usage": "./src/platform-usage.ts",
+    "./testDbUp": "./src/testDbUp.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "amtp-protocol": "^0.1.2",
+    "zod": "^3.24.0",
+    "zod-to-json-schema": "^3.25.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  },
+  "files": [
+    "src"
+  ]
+}

@@ -1,0 +1,59 @@
+id: engineering
+description: Plan, implement, and independently review a change that needs architectural decisions.
+definition:
+  schemaVersion: 1
+  name: Planned Coding
+  participants:
+    architect:
+      agentTypeId: architect
+      session: reuse-within-stream
+    engineer:
+      agentTypeId: engineer
+      session: reuse-within-stream
+    reviewer:
+      agentTypeId: reviewer
+      session: reuse-within-stream
+  entry: design
+  routing:
+    mode: flexible
+    returnTo: earlier-steps
+    delegation: disabled
+  limits:
+    maxDelegations: 0
+    onLimit: request-owner-input
+  steps:
+    - id: design
+      participant: architect
+      instructions: Design a solution that satisfies the request and document implementation guidance.
+      output: A design with requirements, tradeoffs, and a validation plan.
+
+      outcomes:
+        completed:
+          next: implement
+    - id: implement
+      participant: engineer
+      instructions: Implement the design and run the required validation in the work-stream workspace.
+      output: Committed implementation and validation evidence.
+
+      outcomes:
+        completed:
+          next: review
+        redesign-needed:
+          returnTo: design
+    - id: review
+      participant: reviewer
+
+      instructions: >-
+        Review the implementation against the requirements and design. Request targeted implementation changes
+        or a redesign when necessary. Prepare the change request for delivery when ready.
+      output: Review findings, validation evidence, and a change request ready for delivery.
+      outcomes:
+        approved:
+          next: finish
+        changes-requested:
+          returnTo: implement
+        redesign-needed:
+          returnTo: design
+  completion:
+    mode: pr-merge
+    followChanges: true

@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY "idx_messages_agent_execution" ON "messages" USING btree ("agent_id",("metadata"->>'executionId'),"created_at","id") WHERE "messages"."role" = 'assistant' AND ("messages"."metadata"->>'executionId') IS NOT NULL;

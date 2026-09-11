@@ -1,0 +1,7 @@
+---
+import DefaultHead from '@astrojs/starlight/components/Head.astro'
+import docsModeScript from '../scripts/docs-mode.js?raw'
+---
+
+<DefaultHead />
+<script is:inline set:html={docsModeScript} />

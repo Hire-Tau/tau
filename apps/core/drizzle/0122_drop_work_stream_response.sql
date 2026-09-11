@@ -1,0 +1,1 @@
+ALTER TABLE "work_streams" DROP COLUMN "response";

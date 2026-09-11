@@ -1,0 +1,1 @@
+ALTER TYPE "public"."app_deployment_environment" ADD VALUE 'staging' BEFORE 'production';

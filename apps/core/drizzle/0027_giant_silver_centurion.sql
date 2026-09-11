@@ -1,0 +1,2 @@
+CREATE INDEX "idx_executions_status_started_at" ON "executions" USING btree ("status","started_at");--> statement-breakpoint
+CREATE INDEX "idx_inbox_delivery_pending" ON "inbox" USING btree ("recipient_type","recipient_id","read_at","delivered_at");

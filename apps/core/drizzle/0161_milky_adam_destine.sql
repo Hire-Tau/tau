@@ -1,0 +1,1 @@
+DROP INDEX "idx_executions_agent_status_started_at";

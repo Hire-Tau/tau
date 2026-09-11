@@ -1,0 +1,130 @@
+# Action Center
+
+The Action Center is the per-user list of work that currently needs attention. `GET /api/actions/pending` is authoritative for action identity, visibility, response capability, priority, and order. Clients display the returned order rather than reconstructing or re-sorting actions.
+
+## Data flow
+
+Question history and question attention are two different flows with different authorization:
+
+```text
+agent conversation/context
+  -> canonical current-agent agents:read authorization
+  -> GET /api/agent-questions/by-agent/:agentId
+  -> all requested-lifecycle questions for that agent
+
+agent-question lifecycle event
+  -> durable direct attention recipients + compatible owner + authorized subscriptions
+  -> Action Center / push / targeted actions.invalidated WebSocket frame with data: {}
+  -> actions + exact-question cache invalidation
+  -> authoritative REST refetch
+```
+
+`PendingAction` and its action-data types live in `packages/shared/src/types.ts`. Each action has a full `id`, numeric `priority`, ISO-string `createdAt`, type-specific `data`, and `canRespond`. A visible action with `canRespond: false` remains visible and is explicitly read-only.
+
+The `actions.invalidated` frame is only a content-free reconciliation hint. It contains no action, question, answer, agent, squad, work-stream, or recipient identifier. Core targets it to currently subscribed authenticated user sockets in the current attention-recipient set. REST remains authoritative.
+
+## Attention, visibility, and capability
+
+Action Center items, push, and targeted realtime hints derive recipients only from durable direct-attention records (consumed execution participants and attributable work-stream requesters), a compatible squadless personal owner, and currently authorized squad/work-stream watchers (`actions:read` plus a subscription). Disabled and unauthorized users are filtered. `agents:read` alone never adds an Action Center item, push, or socket invalidation, and merely opening an agent's chat never subscribes anyone.
+
+Chat/history visibility is deliberately separate: anyone with canonical `agents:read` on the current agent sees that agent's open questions and answered/dismissed history through the by-agent API, regardless of attention routing. Conversely, a direct attention recipient without `agents:read` receives the Action Center item but cannot read the agent's chat history. The physical `audience_resolution`/`agent_question_recipients` schema names are legacy-compatible storage for this attention-routing state.
+
+Read permission and attention determine visibility; mutation permission determines `canRespond`. `canRespond` for `agent-question` follows canonical current-agent `agents:run` plus the addressable lifecycle/scope transaction fence. Visibility does not imply response capability. Clients consume `canRespond` rather than applying a contradictory standalone permission gate. Counts, badges, and cards therefore remain scoped to the current user.
+
+## Action matrix
+
+Lower priority numbers appear first. Within a priority, newer actions appear first. The server returns this final order.
+
+| Wire type            | Priority | Exact ID                                     | Source and operation                                                                                                                                                                 |
+| -------------------- | -------: | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `agent-error`        |        0 | `agent-error:<agentId>`                      | A halted agent. Continue only the visible action with `continueHaltedActions([action.id])`.                                                                                          |
+| `squad-question`     |        1 | `squad-question:<agentId>`                   | Legacy blocking agent question. Send the answer with `sendMessage(agentId, answer)`.                                                                                                 |
+| `agent-question`     |        1 | `agent-question:<questionId>`                | Durable asynchronous question. Answer `questionId`, retry the saved answer when terminal delivery status is `failed`, or `DELETE /agent-questions/:id` to dismiss without answering. |
+| `workstream-review`  |        2 | `workstream-review:<workStreamId>:<waitId>`  | Open review wait. Resolve that exact wait as `approved`, or `sent_back` with nonblank feedback.                                                                                      |
+| `workstream-blocked` |        3 | `workstream-blocked:<workStreamId>:<waitId>` | Open manual wait. Resolve that exact wait as `cleared` with the response.                                                                                                            |
+
+All operations also require `canRespond: true`. Failed answer delivery additionally requires `answerDelivery.canRetry`. Clients carry the full action ID and structured question or work-stream/wait fields; they do not reconstruct identities by splitting action IDs.
+
+## Durable questions and delivery
+
+`agent-question` represents the durable question record, not an ephemeral agent status. Answering stores the answer and its delivery generation before background delivery proceeds. A delivery that reaches terminal `failed` remains an actionable card. Retry delivers the saved answer; it does not submit a second answer.
+
+Dismissal (`DELETE /api/agent-questions/:id`, optional `reason`) marks an open question no-longer-relevant instead of answering it: the row transitions to `dismissed`, its `question` waits close `cleared`, and the dismissal is audited (`dismissedByUserId`/`dismissedByAgentId`, `dismissalReason`). Dismissal delivers no reply, inbox message, or new notification to the asking agent. It emits the existing `agent-question.dismissed` generic lifecycle event on the established agent topics; the bridge separately sends content-free `actions.invalidated` hints to the canonical human audience, with polling as fallback. Dismissal requires canonical `agents:run` resource permission, like answering, but ignores the asking agent's termination state. A squad-bound stored owner without that permission cannot dismiss. Dismissed questions leave pending/open feeds and appear read-only in the `status=answered` terminal history bucket.
+
+A work-stream `question` wait references this durable question. It closes through the question-answer lifecycle and has no separate caller resolution control. `squad-question` is the compatibility path for older blocking `questionData` stored on an agent.
+
+## Work-stream wait semantics
+
+Open waits are typed records in `work_stream_waits`; review and blocked states are not stored work-stream statuses.
+
+| Wait type    | Meaning                                                    | Caller behavior                                                                 |
+| ------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `review`     | A verdict is required.                                     | Approve or send back the exact `workStreamId` + `waitId`.                       |
+| `manual`     | Operator input or an external action is required.          | Clear the exact wait with a response.                                           |
+| `question`   | A durable agent question is awaiting its answer lifecycle. | Read-only in work-stream detail; answer or dismiss its `agent-question` action. |
+| `dependency` | Another work stream must finish.                           | Read-only; the system satisfies it.                                             |
+
+For checkpoint approval, review send-back, or manual clear, the wait closure and continuation-cycle reset/invalidation are durable transaction state. A completing approval durably records the terminal transition and invalidates the active continuation cycle.
+
+Async agent-question answer delivery has its own durable generation and retry path. The later `notifyWorkStreamResponded` call used for checkpoint, send-back, and manual responses runs after the wait transaction and is **not** protected by the question-answer delivery outbox/retry contract. A separate work-stream response outbox is outside this feature and remains backlog work.
+
+A review wait's `completesOnApproval` is part of its identity:
+
+- `false`: a checkpoint; approval resolves the wait and work continues.
+- `true`: a completing review; approval resolves the wait and completes the stream.
+
+Concurrent waits are not interchangeable. Exact stale or contradictory targets do not fall back to sibling waits. HTTP 404/409 settlement is presented as no longer pending and triggers reconciliation.
+
+## Mounted client surfaces and exact focus
+
+### Web
+
+Mounted web surfaces are:
+
+- `/feed`, through `FeedPage` and `ActionCenterContent`;
+- `/actions` and `/actions/:encodedActionId`, through `ActionsPage`;
+- the desktop and bottom-navigation badge in `AppNav`.
+
+An exact action ID focuses the exact card. A structured `waitId` is passed into work-stream detail and never falls back to a sibling wait.
+
+### Expo
+
+Mounted Expo surfaces are Feed cards, the Feed tab badge, squad/conversation question badges, the agent-chat pending-question indicator, and the exact work-stream detail sheet.
+
+Expo route identity is conjunctive across `actionId`, `questionId`, `workStreamId`, and `waitId`. The Feed scrolls to and highlights the exact action without reordering server results, and reports a target stale only after authoritative reconciliation. Cross-server notification navigation first completes and verifies the paired-server switch; a failed or superseded switch aborts exact navigation.
+
+## Refresh, realtime, and mutation behavior
+
+React Query keys are centralized in `packages/client-core/src/queryKeys.ts`.
+
+- Web and Expo subscribe globally to the bare `actions` WebSocket topic. An empty `actions.invalidated` frame invalidates both `actions.all` and `agentQuestions.all`.
+- Every successful authenticated socket open, including reconnect, queues the same reconciliation.
+- Existing `agent-question.*`, agent, and work-stream events remain compatible hints for old servers and clients.
+- Both web and Expo poll pending actions every 30 seconds while mounted and foregrounded. Screen focus and pull-to-refresh are additive fallbacks.
+- Bursts coalesce. Refetches use `cancelRefetch: false`, and a trailing retry preserves the final authoritative state when a hint arrives during an in-flight request.
+- Background refetch retains cached cards and counts; it never renders a transient zero or empty success.
+- Counts and badges share the pending-action result and preserve error markers rather than presenting failures as zero.
+- Successful mutations invalidate or remove the affected authoritative caches. Failure does not optimistically remove the keyed card or clear its input/error state. Expo may refetch on settlement to recognize a stale 404/409, while a genuine server failure retains the action and form for retry.
+
+## Compatibility
+
+The new topic and event are additive. Older clients do not subscribe and continue using existing agent/work-stream hints and polling. New clients connected to an older Core may receive an invalid-topic response, but focus, pull-to-refresh, and the foreground poll bound staleness. Existing agent-topic broadcasts and payloads remain unchanged. `packages/client-core/src/ws.ts` automatically resubscribes after reconnect; no new client API is required.
+
+## Key files and routes
+
+| Path                                                     | Purpose                                                             |
+| -------------------------------------------------------- | ------------------------------------------------------------------- |
+| `packages/shared/src/types.ts`                           | Pending actions, action data, typed waits, and resolution contracts |
+| `packages/shared/src/events.ts`                          | Content-free `actions.invalidated` event contract                   |
+| `packages/shared/src/ws-topics.ts`                       | Strict bare `actions` collection topic                              |
+| `apps/core/src/services/agents/actions.ts`               | Aggregation, exact IDs, priority, and server order                  |
+| `apps/core/src/services/agents/questions.ts`             | Question history and attention-recipient resolution                 |
+| `apps/core/src/services/agents/pending-action-policy.ts` | Per-identity attention visibility and `canRespond`                  |
+| `apps/core/src/services/ws/bridge.ts`                    | Question lifecycle attention resolution                             |
+| `apps/core/src/services/ws/manager.ts`                   | User-only subscription and targeted empty invalidation              |
+| `apps/core/src/routes/actions.ts`                        | `GET /api/actions/pending`                                          |
+| `apps/core/src/routes/work-streams.ts`                   | Exact wait resolution                                               |
+| `packages/client-core/src/resources/actions.ts`          | Typed pending-action query                                          |
+| `packages/client-core/src/ws.ts`                         | Socket reconnect and automatic topic resubscription                 |
+| `apps/web/src/components/QueryInvalidator.tsx`           | Web action/question signal and reconnect reconciliation             |
+| `apps/web/src/hooks/usePendingActions.ts`                | Web authoritative pending query and polling                         |

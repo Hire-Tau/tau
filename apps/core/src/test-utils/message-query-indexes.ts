@@ -1,0 +1,23 @@
+import { sql } from 'drizzle-orm'
+import { readMigrationFiles } from 'drizzle-orm/migrator'
+import { join } from 'path'
+import { db } from '../db'
+import { MONOREPO_ROOT } from '../lib/paths'
+
+/** Schema push omits indexes; plan tests need the actual generated production DDL. */
+export async function ensureMessageQueryIndex(name: string) {
+  return ensureQueryIndex(name)
+}
+
+export async function ensureQueryIndex(name: string) {
+  const [existing] = await db.execute(sql`SELECT to_regclass(${name}) AS index`)
+  if (existing.index) return
+  const statements = readMigrationFiles({ migrationsFolder: join(MONOREPO_ROOT, 'apps/core/drizzle') }).flatMap(
+    (migration) => migration.sql
+  )
+  const statement = statements.find(
+    (value) => value.trim().startsWith('CREATE INDEX') && value.includes(`"${name}" ON `)
+  )
+  if (!statement) throw new Error(`Missing generated index migration: ${name}`)
+  await db.execute(sql.raw(statement))
+}

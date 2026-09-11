@@ -1,0 +1,70 @@
+# Notification rules - routes events to channels
+#
+# NOTE: To send to push or external channels (discord, slack, telegram), the event type
+# must have a builder in apps/core/src/services/notifications/event-builders.ts.
+# The builder constructs the notification title, body, and URL from the event data.
+# Push fans the shared notification out through browser web-push and native APNs.
+#
+# Supported events with builders:
+#   - agent-question.created
+#   - workStream.blocked, workStream.review, workStream.done
+#   - workStream.created, workStream.updated
+#   - inbox.messageReceived
+#   - execution.completed, execution.failed
+
+rules:
+  # Async questions use persisted owner + authorized squad-watcher recipient resolution.
+  - event: 'agent-question.created'
+    channels: [push]
+
+  # Work stream events - notify external channels. Blocked remains available to explicit
+  # custom rules but is intentionally absent from bundled human-attention routes.
+  - event: 'workStream.review'
+    channels: [push, discord, slack, telegram]
+
+  - event: 'workStream.done'
+    channels: [discord, slack, telegram]
+
+  # Human fleet operator alerts retain system-inbox push routing and additionally fan out through
+  # configured squad channels. Manager fleet messages use source fleet-incident-manager and an
+  # agent recipient, so they cannot match this or the generic human inbox rule. This must remain
+  # before generic inbox routing (first match wins).
+  - id: 'fleet-operator-alert'
+    event: 'inbox.messageReceived'
+    match:
+      source: 'fleet-alert'
+    channels: [push, discord, slack, telegram]
+
+  # Inbox messages to a user (personal inbox) or the shared system inbox - web and native push.
+  # Push delivery is filtered per-recipient in the notification service (user → that user's devices;
+  # system → holders of inbox:system).
+  - event: 'inbox.messageReceived'
+    match:
+      recipientType: ['user', 'system']
+    channels: [push]
+
+  # Failures - push and console
+  - event: 'execution.failed'
+    channels: [push, console, discord, slack, telegram]
+
+  # Normal lifecycle events - console only
+  - event: 'execution.completed'
+    channels: [console]
+
+  - event: 'workStream.created'
+    channels: [console]
+
+  - event: 'workStream.updated'
+    channels: [console]
+
+channels:
+  push:
+    enabled: true
+  console:
+    enabled: true
+  discord:
+    enabled: true
+  slack:
+    enabled: true
+  telegram:
+    enabled: true

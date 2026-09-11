@@ -1,0 +1,1 @@
+ALTER TABLE "squads" ADD COLUMN "global_collaboration_enabled" boolean DEFAULT false NOT NULL;

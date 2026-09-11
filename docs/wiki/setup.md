@@ -1,0 +1,684 @@
+# Tau Setup Guide
+
+How to get a running Tau. Pick your path:
+
+| Path                    | Best for                                                                              | Where                                          |
+| ----------------------- | ------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| **Local install**       | Your laptop or a dev box — nothing → running tau in one command, no root              | [Local setup](#local-setup) below              |
+| **Production Linux VM** | A fresh Ubuntu 24.04 host you own (root + systemd), or a cloud VM provisioned for you | [Setup toolkit](../../scripts/setup/README.md) |
+| **Kubernetes**          | Multi-tenant cluster deployments                                                      | [K8s Deployment Guide](k8s/deployment.md)      |
+| **Hosted**              | Let us run it                                                                         | [hiretau.ai](https://hiretau.ai)               |
+
+Every path needs a sandbox runtime (`TAU_SANDBOX_RUNTIME`, required, no
+default) — [docs/wiki/sandbox-runtimes.md](sandbox-runtimes.md) compares them.
+
+Developing tau itself (git identity, commit signing, `bun run dev`) is a
+different job from installing it; that material lives in
+[docs/wiki/development.md](development.md).
+
+## Local setup
+
+`bun run setup` takes a checkout from nothing → a running tau: `.env` written,
+PostgreSQL up, database migrated, core/CLI/web built, the sandbox runtime
+prepared, and api + worker running under the selected local supervisor with a URL to open. It is
+idempotent — re-running it never regenerates secrets, and it keeps values you
+set yourself unless you pass the matching flag (see
+["Replaced when"](#what-it-writes) below).
+
+### One command
+
+```bash
+curl -fsSL https://hiretau.ai/cli/setup.sh | bash
+```
+
+Fully headless (no prompt at all):
+
+```bash
+curl -fsSL https://hiretau.ai/cli/setup.sh | bash -s -- --runtime host --yes
+```
+
+Everything after `bash -s --` goes to `tau server install`. It consumes
+`--root` (where to clone), `--repo` and `--ref` — which must come first — and
+forwards everything else verbatim to setup, so any other flag from the
+[table below](#flags) works there.
+
+What the one-liner does, in order:
+
+1. Installs the `tau` CLI into `~/.tau/bin` — `TAU_INSTALL_DIR` overrides that
+   directory (both the one-liner and the CLI installer honour it). The install
+   is skipped when `~/.tau/bin/tau` already exists **and**
+   `TAU_SETUP_SKIP_CLI_INSTALL=1`; the installer URL comes from
+   `TAU_INSTALL_URL`, default `https://hiretau.ai/cli/install.sh`.
+2. Runs `tau server install`, which installs bun with the official installer if
+   it is missing, then clones `https://github.com/Hire-Tau/tau.git` into
+   `~/.tau/tau` (`--root <dir>` to clone elsewhere; an existing checkout there
+   is reused untouched, and a non-empty directory that is not a checkout is an
+   error).
+3. `bun install --frozen-lockfile` in the checkout.
+4. Hands off to the checkout's own `bun run setup` with your flags. The
+   compiled CLI never runs installer logic of its own — setup always comes from
+   the source it just installed.
+
+`curl` and `git` must already be present. Under `curl … | bash` the installer
+reattaches stdin from `/dev/tty` so the runtime prompt still works; with no
+terminal at all it exits with the "no terminal and no runtime chosen" error.
+
+`tau server install` can also be run directly, e.g.
+`tau server install --root /srv/tau --ref main -- --runtime docker-socket --yes`
+(`--root`, `--repo` and `--ref` must come **before** the pass-through setup
+flags).
+
+### From a checkout
+
+```bash
+git clone --recurse-submodules https://github.com/Hire-Tau/tau.git
+cd tau
+bun install
+bun run setup
+```
+
+`bun run setup` is `tau server setup` run from the source
+(`bun apps/cli/src/index.ts server setup`). Pass flags after `--`:
+
+```bash
+bun run setup -- --runtime host --port 3000
+```
+
+### What setup asks
+
+Up to two things. First the runtime, and only when neither `--runtime` nor
+`TAU_SETUP_RUNTIME` is set:
+
+```
+Where should agents run?
+  host           — no sandbox: agents run on this machine as you (fastest; zero isolation)
+  docker-socket  — containers via the host Docker socket (any Docker host, incl. macOS)
+  docker-sysbox  — containers with real Docker-in-Docker via sysbox (Linux + sysbox installed)
+  k3d            — sandbox pods in a local k3d cluster (heaviest; matches the k8s runtime)
+```
+
+[docs/wiki/sandbox-runtimes.md](sandbox-runtimes.md) is the chooser if none of
+those is an obvious yes. `--runtime k8s` and `--runtime vm` are not installed by
+this installer: they need a cluster or a machine fleet, so setup exits with a
+pointer to that doc.
+
+Then, on a terminal, setup prints the plan it is about to execute (the same one
+`--dry-run` prints) and asks for one confirmation:
+
+```
+Proceed with setup? [Y/n]
+```
+
+Answering anything but yes cancels before a single step runs. `--yes` skips this
+confirmation, and a headless run (no terminal) never shows it. Note that `--yes`
+does **not** answer the runtime question: a headless run must pass `--runtime`
+(or `TAU_SETUP_RUNTIME`), otherwise setup exits 2 listing the flags.
+
+### Flags
+
+Every flag that takes a value is mirrored by an environment variable for
+headless use; the flag wins when both are set.
+
+| Flag                                                  | Env mirror               | Default                                                          | Notes                                                                                                                             |
+| ----------------------------------------------------- | ------------------------ | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `--runtime <host\|docker-socket\|docker-sysbox\|k3d>` | `TAU_SETUP_RUNTIME`      | asked                                                            | `k8s` / `vm` exit with a pointer to the runtime doc                                                                               |
+| `--supervisor <pm2\|launchd\|systemd-user>`           | `TAU_SETUP_SUPERVISOR`   | macOS: `launchd`; Linux: `systemd-user`                          | `pm2` remains selectable; native supervisors are OS-specific                                                                      |
+| `--instance <label>`                                  | `TAU_SETUP_INSTANCE`     | the checkout's label, else `tau`                                 | names every per-instance resource — see [Multiple instances](#multiple-instances)                                                 |
+| `--home-dir <path>`                                   | `TAU_SETUP_HOME_DIR`     | `~/.tau`, or `~/.tau-<label>`                                    | written to `.env` when given, or when the instance is labelled; a leading `~` is expanded by the core                             |
+| `--port <n>`                                          | `TAU_SETUP_PORT`         | `3000` on a fresh checkout; a re-run keeps the checkout's `PORT` | sets `PORT`, derives `WORKER_PORT` (+2), `TAU_WORKER_EVENT_PORT` (+3), `TAU_API_URL`, `APP_URL`, `TAU_WEB_ORIGIN`; max `65532`    |
+| `--app-url <origin>`                                  | `TAU_SETUP_APP_URL`      | `http://localhost:<port>`                                        | must be a bare origin (`scheme://host[:port]`, no path) — a path breaks passkeys                                                  |
+| `--database-url <dsn>`                                | `TAU_SETUP_DATABASE_URL` | the managed container                                            | use an existing PostgreSQL; no container is then created or started                                                               |
+| `--db-name <name>`                                    | `TAU_SETUP_DB_NAME`      | `tau`                                                            | managed container only, created if missing; mutually exclusive with `--database-url`                                              |
+| `--db-port <n>`                                       | `TAU_SETUP_DB_PORT`      | `5432` for `tau`, else the first free port from 5433             | host port the managed PostgreSQL container publishes on loopback                                                                  |
+| `--default`                                           | —                        | off                                                              | make this instance the fallback for bare `tau server …` commands run outside any checkout (inside a checkout, that checkout wins) |
+| `--no-start`                                          | —                        | starts                                                           | write configuration/registry only; do not register or start a supervisor                                                          |
+| `--dry-run`                                           | —                        | off                                                              | print the plan (secrets redacted), change nothing, exit 0                                                                         |
+| `--yes`                                               | —                        | off                                                              | skip the plan confirmation (the runtime question is still asked on a TTY)                                                         |
+| `--rebuild-image`                                     | —                        | off                                                              | rebuild `tau-sandbox:latest` even if it already exists                                                                            |
+| `--root <dir>`                                        | `TAU_SERVER_ROOT`        | resolved (see below)                                             | the checkout to operate on                                                                                                        |
+
+The checkout a `tau server` management command (`start`, `stop`, `restart`,
+`status`, `logs`, `update`, `uninstall`) acts on is resolved in this order:
+`--root` > `TAU_SERVER_ROOT` > `--instance <label>` (or `TAU_INSTANCE` in the
+environment) looked up in the registry > the checkout you are standing in >
+the registry's default instance. A label you pass explicitly is honoured or
+refused; one that merely happens to be in the environment is ignored when the
+registry cannot use it. **Setup root resolution never selects a checkout from the registry**: `--root` >
+`TAU_SERVER_ROOT` > the checkout you are in — otherwise running setup in a
+second checkout would reconfigure the installed one.
+
+### What it writes
+
+Three things, in the checkout and in your home directory:
+
+- **`.env`** — copied from `.env.example` if missing, then merged key by key and
+  `chmod 600`. Comments, ordering and every key setup does not manage are
+  preserved; managed keys that are missing are appended under a single
+  `# --- added by tau setup ---` comment.
+- **Supervisor definition** — PM2 installs generate `ecosystem.config.js`. Native installs create paired definitions when started: `~/Library/LaunchAgents/ai.hiretau.<process>.plist` on macOS or `${XDG_CONFIG_HOME:-~/.config}/systemd/user/<process>.service` on Linux. Native setup leaves any existing ecosystem file untouched.
+- **`~/.tau/cli/local-server.json`** — the instance registry:
+  `{ "version": 3, "default": "<label>", "instances": { "<label>": { root, port, supervisor, createdAt, updatedAt } } }`,
+  so `tau server …` finds every install from anywhere. Version-1 and version-2 records migrate in memory to `supervisor: "pm2"`; malformed version-3 or future-version state fails closed. Setup adds its
+  instance and takes the default when it is the first one or `--default` is
+  passed.
+
+The managed `.env` keys:
+
+| Key                                                           | Value                                                                                                                                                                            | Replaced when                              |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `TAU_SANDBOX_RUNTIME`                                         | the chosen runtime (`k3d` is written as `k8s`)                                                                                                                                   | `--runtime`                                |
+| `TAU_K8S_LOCAL`, `TAU_K8S_NAMESPACE`, `TAU_K8S_RUNTIME_CLASS` | `true`, `tau-sandboxes-dev`, empty — k3d only; otherwise a `TAU_K8S_LOCAL=true` already in .env is blanked (it applies only to the k8s runtime) and the other two are left alone | `--runtime`                                |
+| `TAU_ENCRYPTION_KEY`                                          | random 32-byte hex, only when empty                                                                                                                                              | never                                      |
+| `TAU_INTERNAL_EVENT_TOKEN`                                    | random 32-byte hex, only when empty                                                                                                                                              | never                                      |
+| `TAU_PASSWORD`                                                | random 24-byte token, only when empty                                                                                                                                            | never                                      |
+| `TAU_SERVE_WEB`                                               | `1` (the core serves the built web UI on `PORT`)                                                                                                                                 | never                                      |
+| `TAU_INSTANCE`                                                | the instance label (`tau` unless `--instance` says otherwise); a re-run with a _different_ `--instance` is refused, not replaced                                                 | `--instance`                               |
+| `PORT`                                                        | the port                                                                                                                                                                         | `--port`                                   |
+| `WORKER_PORT`                                                 | `PORT + 2`                                                                                                                                                                       | `--port`                                   |
+| `TAU_WORKER_EVENT_PORT`                                       | `PORT + 3`                                                                                                                                                                       | `--port`                                   |
+| `TAU_API_URL`                                                 | `http://localhost:<port>`                                                                                                                                                        | `--port`                                   |
+| `APP_URL`, `TAU_WEB_ORIGIN`                                   | the app URL                                                                                                                                                                      | `--app-url`, `--port`                      |
+| `DATABASE_URL`                                                | your DSN, or the managed container's URL with the database name                                                                                                                  | `--database-url`, `--db-name`, `--db-port` |
+| `HOME_DIR`                                                    | `--home-dir` when given; otherwise `~/.tau-<label>`, and nothing at all for the `tau` instance (the core's own default `~/.tau`)                                                 | `--home-dir`, `--instance`                 |
+| `TAU_UPDATE_SUPERVISOR`                                       | selected supervisor                                                                                                                                                              | always reconciled                          |
+| `TAU_SYSTEM_LOG_PROVIDER`                                     | `pm2` for PM2; `file` for native supervisors                                                                                                                                     | always reconciled                          |
+| `TAU_PM2_API_NAME`, `TAU_PM2_WORKER_NAME`                     | derived app names for PM2; cleared for native supervisors                                                                                                                        | always reconciled                          |
+| `TAU_LOG_FILE_API`, `TAU_LOG_FILE_WORKER`                     | absolute `~/.tau/logs/<process>.log` paths for native supervisors; cleared for PM2                                                                                               | always reconciled                          |
+
+"Replaced when" is the whole rule: an existing non-empty value is kept unless
+you passed the flag (or env mirror) that owns it. One exception is baked in —
+`.env.example`'s placeholder `APP_URL=https://your-domain.com` counts as empty,
+so setup always replaces it. Secrets are generated once and
+never regenerated — re-running setup on a working install cannot lock you out.
+
+The steps, in order: preflight → config files → `.env` → PostgreSQL → migrate
+(`TAU_MIGRATE_LIVE=1`) → build core, CLI and web → sandbox image or k3d cluster
+→ start worker first and API last under the selected supervisor and wait for the API → handoff. The registry entry is written
+**before** the start step — so `tau server logs` can reach the instance even if
+the health wait fails — and refreshed after it. Each step
+checks before acting: an existing `tau-sandbox:latest` image or `tau-dev` k3d
+cluster is left alone (`--rebuild-image` forces the image), builds are
+incremental, and starting an already-running pair is a restart.
+
+The PostgreSQL step never calls `docker compose`. It runs the container itself —
+`docker run -d --name postgres-tau --restart unless-stopped -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=tau -p 127.0.0.1:5432:5432 -v tau_postgres-data:/var/lib/postgresql paradedb/paradedb:latest`
+(the name, volume and port come from the instance; a first run pulls the image,
+which takes minutes) — or, when a container of that name already exists,
+**starts** it and adopts the port it publishes. A container `docker compose`
+created for this checkout is exactly such a container, so an existing dev
+install is reused rather than duplicated. Setup then waits until the database
+answers three times in a row (ParadeDB restarts once during first init) and
+creates the database if it is missing. A `DATABASE_URL` on loopback whose
+credentials are not the container's is a PostgreSQL **you** run: setup treats it
+as external, never picks its port for you and never builds a container over it
+(it is still waited for, like any external database, so it must be running).
+
+`--dry-run` prints exactly that plan, including the `.env` diff with secret
+values shown as `<redacted>`, and touches nothing — no files, no Docker, and no supervisor commands:
+
+```bash
+bun run setup -- --runtime host --dry-run
+```
+
+The health check that ends a real run probes `/health`, the core's public
+liveness route, and accepts **200 or 401**: 200 is the normal answer, and 401 is
+accepted because a reverse proxy in front of the instance may gate the route —
+either way something is answering, which is what the probe proves. (`/api/*`
+sits behind identity middleware and answers 401 to an unauthenticated probe;
+that also means the API is up, but `/health` is the direct check.)
+
+### Managing it
+
+None of these need the API, an account, or a network:
+
+```bash
+tau server list              # every instance on this machine: label, supervisor, root, URL, default, process states
+tau server status            # instance, supervisor, root, port, runtime, commit, process states, health (--json for machines)
+tau server logs -f           # recorded-supervisor logs; -c api|worker to narrow, -n N for history
+tau server restart           # also: start, stop
+tau server use smoke         # make `smoke` the instance bare commands act on
+tau server uninstall         # remove supervisor registration + registry entry; deletes no data
+tau server bootstrap-sysbox  # (Linux host) install the sysbox runtime docker-sysbox needs; --dry-run to preview
+```
+
+Each one acts on a single instance — add `--instance <label>` to the subcommand
+(`tau server logs --instance smoke -f`) to pick another one; see
+[Multiple instances](#multiple-instances). (`tau server list` needs no label: it
+prints every instance.)
+
+`tau server use <label>` changes which instance the bare commands act on, the
+way `tau auth use` switches backends. It only moves the registry's `default`,
+so it matters when you are outside any checkout — inside a checkout, that
+checkout still wins — and `--instance` overrides both. It is also the repair
+for a registry whose `default` was lost or points at a label that no longer
+exists.
+
+`tau server uninstall` asks for confirmation first — pass `--yes` to skip the
+prompt, which is required when there is no terminal (it refuses to run
+unattended otherwise). It prints what it deliberately left behind (the
+checkout, the instance's PostgreSQL container and volume, and `HOME_DIR`) with
+the commands to remove them by hand, and says which registry entry it dropped.
+
+To update:
+
+```bash
+tau server update            # this checkout: git pull + rebuild, then restart the recorded supervisor (works with the API down)
+tau update apply             # the instance the CLI is pointed at, through its API
+tau update status --offline  # read the checkout's local update status file
+```
+
+The two commands target different things. `tau server update` always acts on
+the checkout on this machine (`--root`, `TAU_SERVER_ROOT`, the local-server
+record, or the checkout you are in) and never needs the API — use it for a
+local install. `tau update apply` posts to `/api/updates/apply` on whatever
+backend the CLI is pointed at (`--backend`, the active `tau auth login`
+backend, `TAU_API_URL`), which may be a cloud instance; it announces the
+target first. It falls back to the offline path only when that target is
+unreachable at the transport level **and** is the local instance itself (a
+loopback address on this checkout's port) — an unreachable remote backend, an
+auth failure or an HTTP error is reported, never turned into a git pull on
+this machine. The offline path refuses a dirty tree and fast-forwards the current branch
+without fetching tags. With the offline-only `--ref <branch|tag|commit>`, it
+fetches only that exact ref before checking it out. Release tags remain
+immutable: an existing local release tag that disagrees with origin is an
+error. `nightly` is the intentional moving-channel tag, so only an explicitly
+requested `--ref nightly` may force-refresh that one local tag; unrelated tags
+are never rewritten. The updater then runs the checkout's
+`bun run update:offline -- --from <old-sha>` — the same task table as the
+in-app updater, minus the restarts — and then restarts through the supervisor
+recorded in the registry, worker first and API last. It prints the old → new commit.
+
+Native persistence behavior:
+
+- launchd definitions start at GUI login and stop at logout; they do not prove or provide logged-out execution.
+- systemd user units start with the user manager. Setup checks linger, attempts `loginctl enable-linger <user>` without sudo, and warns with the exact `sudo loginctl enable-linger <user>` command when policy prevents it.
+- PM2 remains explicit. Setup runs `pm2 save`; for optional reboot startup, run `cd <checkout> && bunx pm2 startup` and then the privileged command PM2 prints.
+
+To change supervisors safely, first run `tau server uninstall --root <checkout>`, then rerun `bun run setup -- --supervisor <new>`. Setup refuses an in-place supervisor change so two managers cannot bind the same ports.
+
+### Multiple instances
+
+Several tau installs can run on one machine at once. Each one is an **instance**
+with a label, and the label names every resource the instance owns, so nothing
+is shared by accident. The label of an existing install is `tau`, and the `tau`
+label keeps today's names exactly — installing a second instance changes nothing
+about the first.
+
+An instance is a checkout: `.env` and `ecosystem.config.js` belong to one label,
+so give the second instance its own clone.
+
+```bash
+git clone --recurse-submodules https://github.com/Hire-Tau/tau.git tau-smoke
+cd tau-smoke && bun install
+bun run setup -- --instance smoke --runtime host --port 3100
+```
+
+That is the whole command: the port, database, data root, and supervisor
+process/service names all follow from `--instance smoke` and `--port 3100`.
+
+**What the label names**
+
+| Resource               | `tau` (the default)             | `--instance <label>`                    |
+| ---------------------- | ------------------------------- | --------------------------------------- |
+| process/service names  | `tau-api`, `tau-worker`         | `tau-<label>-api`, `tau-<label>-worker` |
+| PostgreSQL container   | `postgres-tau`                  | `postgres-tau-<label>`                  |
+| PostgreSQL data volume | `tau_postgres-data`             | `tau-<label>_postgres-data`             |
+| `HOME_DIR`             | `~/.tau` (left unset in `.env`) | `~/.tau-<label>`                        |
+
+A label is lowercased first, and must then be letters, digits and inner dashes —
+1 to 31 characters, starting and ending with a letter or digit. Anything else is
+rejected before setup touches the checkout.
+
+**Ports**
+
+| Value                   | Comes from                                                                                        |
+| ----------------------- | ------------------------------------------------------------------------------------------------- |
+| `PORT`                  | `--port` — default `3000` on a fresh checkout; a re-run keeps the checkout's `PORT` (max `65532`) |
+| `WORKER_PORT`           | `PORT + 2`                                                                                        |
+| `TAU_WORKER_EVENT_PORT` | `PORT + 3`                                                                                        |
+| PostgreSQL host port    | `--db-port`; by default `5432` for `tau`, else the first free port from 5433                      |
+
+The default instance therefore keeps 3000/3002/3003 and 5432. For the database
+port setup follows, in order: an explicit `--db-port`; the port this instance's
+own container already publishes (running or stopped — a container's mapping is
+fixed when it is created, so setup obeys it rather than picking); the port a
+`DATABASE_URL` it previously wrote names, provided nothing foreign listens
+there; then the default above. Every resolved value is written to `.env` once
+and reused from then on.
+
+**Managing them**
+
+```bash
+tau server list                          # label, root, URL, default marker, supervisor states
+tau server status --instance smoke       # --instance belongs to the subcommand
+tau server logs --instance smoke -f
+tau server uninstall --instance smoke
+```
+
+`tau server list` reads `~/.tau/cli/local-server.json`, the registry setup
+writes an entry into (`{ root, port, createdAt, updatedAt }` per label). Which
+instance a command acts on is decided in this order: `--root` >
+`TAU_SERVER_ROOT` > `--instance` (or `TAU_INSTANCE`) > the checkout you are
+standing in > the registry's default instance — the first one installed, or
+whichever passed `--default` (also in [Flags](#flags)). `tau server uninstall`
+drops the entry and hands the default to a remaining instance; it deletes no
+data.
+
+**Re-running setup**
+
+A re-run in a checkout that is already an instance keeps what that checkout is:
+its label and its port come from its own `.env` unless `--instance` / `--port`
+(or the `TAU_SETUP_*` mirrors) say otherwise. Passing a **different**
+`--instance` is refused —
+
+```
+this checkout is instance "tau"; to relabel it, remove TAU_INSTANCE from .env (after unregistering its supervisor with tau server uninstall --root /path/to/checkout) — or set up a fresh checkout
+```
+
+— because relabelling would orphan the supervisor registrations, container,
+database and data directory the old label owns. The message is the whole recipe:
+`tau server uninstall` unregisters the supervisor but does **not**
+clear the label, so removing `TAU_INSTANCE` from `.env` is the part that
+actually relabels the checkout. A checkout with **no** label yet — an
+install made before labels existed, or a hand-copied `.env` — may take one: setup
+regenerates `ecosystem.config.js` for the new pm2 names, warning that hand edits
+were discarded, and warns that `HOME_DIR` now points at `~/.tau-<label>` while
+saying whether `DATABASE_URL` moved with it.
+
+**Two checkouts, one label**
+
+Nothing stops two checkouts from claiming the same label, so setup checks before
+starting: if pm2 already runs this instance's apps **online** from a different
+checkout, it stops with
+
+```
+pm2 already runs tau-api for instance "tau" from another checkout (/path/to/other). Give this checkout its own label with --instance <other-label>, or tau server uninstall --root /path/to/other the other one
+```
+
+Both ways out are in the message: a label of its own for this checkout, or
+unregistering the checkout that holds the label. Stopped pm2 entries are
+ignored, so this only blocks while the other checkout is actually running.
+
+**The k3d runtime is single-instance.** `bun run k3d:setup` creates one cluster
+(`tau-dev`) and bind-mounts `~/.tau` into it, neither of which is per-instance —
+so run k3d on the default `tau` instance only, and give the extra instances
+`host` or a docker runtime.
+
+[docs/wiki/sandbox-runtimes.md](sandbox-runtimes.md#second-instance-beside-an-existing-one)
+lists the same separation for a second instance you wire up by hand instead of
+with `--instance`.
+
+### Notes
+
+- The default checkout `~/.tau/tau` lives inside `~/.tau`, which is also tau's
+  default data root (`HOME_DIR`). Source and data sit side by side; tau's
+  storage never writes into `~/.tau/tau`.
+- The k3d runtime bind-mounts `~/.tau` into the cluster so pods and the host see
+  the same workspace files. That mount includes the checkout at `~/.tau/tau` —
+  harmless, but worth knowing before you point `--home-dir` somewhere exotic.
+
+## After setup
+
+### First admin
+
+Open the URL setup printed. It looks like
+`http://localhost:3000/#setup=<password>`: the fragment carries the instance
+password, and the login page signs you in with it and strips it from the
+address bar. A fragment is never sent to the server, so it does not reach
+access logs.
+
+1. If you open the plain URL instead, the login page asks for the instance
+   password. Setup generated a random `TAU_PASSWORD` and wrote it to `.env`;
+   read it with:
+
+   ```bash
+   grep '^TAU_PASSWORD=' ~/.tau/tau/.env   # or .env in your own checkout
+   ```
+
+2. Create your account. The **first passkey becomes the system admin**.
+3. Registration wants an email verification code. With no email provider
+   configured, that first admin's code is shown in the page instead of being
+   mailed.
+4. Once that admin holds a passkey, `TAU_PASSWORD` stops being accepted as a
+   login — human sign-in is passkeys only from then on.
+
+Then point the CLI at it:
+
+```bash
+tau auth login local --api-url http://localhost:3000
+```
+
+Until an admin has a passkey, `tau` can authenticate from inside the checkout
+using the bootstrap password in `.env`. After that, use browser-authorized CLI
+login. If you exported `TAU_PASSWORD` in your shell, unset it first so it does
+not override browser authorization. `tau auth status` shows the active source.
+
+### AI provider
+
+Sign in to a model provider in the web UI: **Settings > AI Providers** — API
+keys, or the OAuth logins for Claude Pro/Max, ChatGPT Plus/Pro and GitHub
+Copilot subscriptions. This needs `TAU_ENCRYPTION_KEY`, which setup wrote for
+you; without it saving credentials in AI Providers or Integrations fails with
+`Cannot mutate secrets: TAU_ENCRYPTION_KEY not configured`.
+From the CLI, `tau provider-auth set <provider> <key>` stores an API key
+(`list`, `get`, `delete` and `oauth-providers` round out the command); the OAuth
+subscription logins are web-UI only.
+
+Optionally, agents can also use a Pi Coding Agent login on the host:
+
+```bash
+bun add -g @earendil-works/pi-coding-agent
+pi
+/login
+```
+
+Follow the prompts, then exit the session — the saved credentials are picked up
+automatically. See the
+[Pi Coding Agent quick start](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent#quick-start).
+
+### GitHub credentials for agents
+
+Open **Settings > Integrations > GitHub > Settings > Connect account**.
+Authorize the account and install the GitHub App on the repositories agents
+should access. Account authorization alone does not grant repository access.
+Standalone instances support device login; hosted instances return through the
+Platform authorization broker.
+
+In each squad's **Integrations** settings, check its selected or inherited
+GitHub account and attach additional accounts when needed. Git and `gh` resolve
+credentials for each operation, so account changes do not require restarting
+agents. See [GitHub account connections](github-integrations.md) for CLI
+connection and selection commands.
+
+Legacy `GITHUB_USER`, `GITHUB_TOKEN`, `GH_TOKEN`, and per-squad token-secret
+configuration are retired. Reconnect through Integrations; historical stored
+values are not automatically deleted. Git commit author name and email are
+separate from authentication: configure global overrides under **Settings >
+Git**, or squad overrides under its **Integrations** settings.
+
+### Optional services and keys
+
+Agent-model login under **AI Providers** is separate from these optional API
+services:
+
+| Service             | Setup and scope                                                                                                                                                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| OpenAI API services | **Settings > Integrations > OpenAI API services**: save an OpenAI API key and enable the integration for Realtime voice, audio transcription, and memory embeddings. ChatGPT subscription login does not supply this key. |
+| Assistant & Memory  | **Settings > Assistant & Memory**: enable Voice assistant and Semantic memory search as desired. This page exposes the same OpenAI API-service connection.                                                                |
+| Google Cloud speech | **Settings > Integrations > Google Cloud**: enable the integration and save service-account JSON with Text-to-Speech API access for message read-aloud. This is separate from OpenAI Realtime voice.                      |
+| Brave search        | `BRAVE_SEARCH_API_KEY` enables the agent `web_search` tool; [get a key](https://brave.com/search/api/) and configure it in the server environment.                                                                        |
+
+For OpenAI services-only setup, use the integration card. Exporting
+`OPENAI_API_KEY` in the server environment also retains legacy agent-model
+provider discovery behavior. Google speech alternatively supports a server-side
+`GOOGLE_APPLICATION_CREDENTIALS` path for Application Default Credentials; the
+Google Cloud integration must still be enabled.
+
+There is no **Secrets & Keys** page. Saved integration secrets stay hidden;
+enter a replacement to rotate them. OpenAI API-service and Google speech
+credential changes apply to new requests without a restart. Restart with
+`tau server restart` after changing server environment settings.
+
+### Browser tools
+
+On the **`host` runtime** nothing is downloaded: the core drives a
+Chrome/Chromium/Edge/Brave already installed on this machine, or the binary
+named by `TAU_BROWSER_EXECUTABLE_PATH` — see
+[docs/wiki/host-runtime.md](host-runtime.md#browser-tools). Setup warns during
+preflight when it cannot find one.
+
+On the other runtimes the browser lives in the sandbox. Install it on the
+machine host or bake it into the image:
+
+```bash
+cd apps/core && bunx playwright install chromium
+```
+
+Browser tools fail gracefully when no browser is available.
+
+### Exposing it publicly
+
+The core serves the app, `/api/*`, `/ws` and `/ws/terminal` on one port
+(`TAU_SERVE_WEB=1`, which setup writes), so a reverse proxy only has to forward
+one origin. See
+[Single-origin and reverse proxy deployment](reverse-proxy.md) for Caddy,
+nginx, Traefik and Tailscale examples.
+
+Passkeys are strict about the origin, and this is the common footgun:
+
+- **`TAU_WEB_ORIGIN`** must be the **bare origin** — `scheme://host[:port]`,
+  **no path**. If the app is served under a base path
+  (`APP_URL=https://home.example.com/tau` with `APP_BASE_PATH=/tau`), set
+  `TAU_WEB_ORIGIN=https://home.example.com`. WebAuthn rejects an origin with a
+  path, which surfaces as a **500 on passkey registration**
+  (`Unexpected registration response origin … expected …/tau`). It also drives
+  the CORS allowlist and the session-cookie SameSite/Secure choice.
+- **`WEBAUTHN_RP_ID`** must be the **bare registrable domain**
+  (`home.example.com` — no scheme, port or path). It defaults to the host of
+  `TAU_WEB_ORIGIN`, so set it only to pin a parent domain. A wrong RP ID makes
+  registration fail.
+- `--app-url` validates this at setup time and refuses anything that is not a
+  bare origin.
+
+Once the instance has a public URL, configure email (`AWS_SES_REGION` /
+`SES_FROM_ADDRESS` plus AWS credentials, with the sender verified in SES) so
+invited users receive their verification codes, and set `VAPID_SUBJECT` to a
+real `mailto:` address if you want iOS/Safari push (Apple rejects `.local`
+domains).
+
+### Integrations
+
+- **GitHub and Linear webhooks** — [docs/wiki/webhooks.md](webhooks.md)
+  (webhook secrets, `gh`/UI setup, verification, event routing).
+- **Discord / Slack / Telegram** — [docs/wiki/channels.md](channels.md): the
+  concierge bot (slash commands, thread replies) and squad notifications for
+  work streams that finish or need review.
+
+## Manual setup reference
+
+This is what `bun run setup` does, in case you want to do it by hand, script it
+differently, or debug a step that failed:
+
+1. **Clone and install.** `git clone --recurse-submodules …`, then `bun install`
+   (which also initializes submodules).
+2. **Config files.** `cp .env.example .env`; for PM2 also
+   `cp ecosystem.config.example.js ecosystem.config.js` (the example carries the
+   default instance's app names; for a labelled instance replace `tau-api` /
+   `tau-worker` in it with `tau-<label>-api` / `tau-<label>-worker`, which is all
+   setup's generation step does).
+3. **`.env`.** Set `TAU_SANDBOX_RUNTIME` (required — the api and worker refuse
+   to start without it), `TAU_ENCRYPTION_KEY` and `TAU_INTERNAL_EVENT_TOKEN`
+   (`openssl rand -hex 32` each), `TAU_PASSWORD`, `PORT`, `WORKER_PORT`,
+   `TAU_WORKER_EVENT_PORT`, `TAU_API_URL`, `APP_URL`, `TAU_WEB_ORIGIN`,
+   `DATABASE_URL`, `TAU_SERVE_WEB=1`, `TAU_UPDATE_SUPERVISOR`, the matching system-log provider/targets, and — for a
+   labelled instance — `TAU_INSTANCE`, `TAU_PM2_API_NAME`,
+   `TAU_PM2_WORKER_NAME` and `HOME_DIR`. See
+   [the managed-keys table](#what-it-writes) for the values setup picks.
+4. **PostgreSQL.**
+   `docker run -d --name postgres-tau --restart unless-stopped -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=tau -p 127.0.0.1:5432:5432 -v tau_postgres-data:/var/lib/postgresql paradedb/paradedb:latest`
+   (`docker start postgres-tau` if that container already exists — one created
+   by `docker compose` counts). Wait until
+   `docker exec postgres-tau psql -U postgres -tAc 'SELECT 1'` succeeds
+   repeatedly (ParadeDB restarts once during first init), and create the
+   database if it is not named `tau`. A labelled instance uses
+   `postgres-tau-<label>`, the volume `tau-<label>_postgres-data` and its own
+   host port. Managed PostgreSQL works too — point `DATABASE_URL` at it and skip
+   the container. pgvector, which memory search needs, is created by the
+   migrations; nothing to install by hand.
+5. **Migrate.** `TAU_MIGRATE_LIVE=1 bun run db:migrate`. The flag is the
+   explicit confirmation required to migrate the database configured by the
+   repository-root `.env`; for a scratch database pass its `DATABASE_URL`
+   inline instead.
+6. **Build.** `bun run build:core && bun run build:cli && bun run build:web`.
+7. **Sandbox runtime.** `docker-socket` / `docker-sysbox`:
+   `bun run sandbox:build:docker`. k3d: `bun run k3d:setup` (creates the
+   `tau-dev` cluster, the `tau-sandboxes-dev` namespace and the PVC, and imports
+   the image). `host`: nothing. `k8s` and `vm` are not local installs — see
+   [docs/wiki/k8s/deployment.md](k8s/deployment.md) and
+   [docs/wiki/machines/runtime.md](machines/runtime.md).
+8. **Start.** Use the recorded supervisor. PM2 starts its ecosystem and saves it; launchd uses `launchctl bootstrap gui/$UID` and systemd-user uses `systemctl --user enable --now`, always worker first and API last.
+9. **Verify.** `curl http://localhost:3000/health`, then open the app.
+
+## Verification checklist
+
+```bash
+# 1. The instance as tau sees it: instance, supervisor, root, port, runtime, commit, process states, health
+tau server status
+
+#    Every instance installed here (the other commands take --instance <label>)
+tau server list
+
+# 2. API health — /health is public and returns 200 ({"status":"ok"})
+curl -i http://localhost:3000/health
+
+#    /api/* is auth-gated: 401 without a bearer token also proves the API is up
+curl -i http://localhost:3000/api/health
+
+# 3. Nothing crashing on boot
+tau server logs -n 50
+
+# 4. The CLI talks to it (after the first admin exists)
+tau auth login local --api-url http://localhost:3000
+tau squad list
+
+# 5. Integrations, if you configured them. These routes need the `webhooks:read`
+#    permission: the bootstrap TAU_PASSWORD works as a bearer token only until an
+#    admin holds a passkey — after that, check them from a signed-in browser session.
+curl -H "Authorization: Bearer $TAU_PASSWORD" https://YOUR-DOMAIN/api/webhooks/github/status
+curl -H "Authorization: Bearer $TAU_PASSWORD" https://YOUR-DOMAIN/api/webhooks/channels/discord/status
+```
+
+Then open the app in a browser: the passkey flow, an AI provider signed in under
+**Settings > AI Providers**, and one squad you can chat with is the real
+end-to-end proof.
+
+## Troubleshooting
+
+| Problem                                                                             | Solution                                                                                                                                                                                                                                                                                                                                |
+| ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Docker is required for …` (preflight)                                              | Install it — macOS: [Docker Desktop](https://docs.docker.com/get-docker/); Linux: `curl -fsSL https://get.docker.com \| sh`, then `sudo usermod -aG docker $USER` and log out and back in for the group change to take effect.                                                                                                          |
+| `Preflight failed: docker info failed`                                              | Docker is installed but the daemon is not running — start Docker Desktop, or `sudo systemctl start docker`. Docker is only needed for the managed PostgreSQL container and the container runtimes; `--runtime host` with `--database-url` pointing at an existing PostgreSQL needs none.                                                |
+| `pm2 already runs tau-api for instance "<label>" from another checkout`             | Another checkout is running this instance's pm2 apps. Give this one its own label (`--instance <other-label>`), or unregister the other (`tau server uninstall --root <that checkout>`). Only online pm2 apps block; stopped ones are ignored. See [Multiple instances](#multiple-instances).                                           |
+| `this checkout is instance "<x>"; to relabel it, remove TAU_INSTANCE from .env`     | A checkout belongs to one instance. Re-run without `--instance` to keep it as it is, use a fresh checkout for the new label, or genuinely relabel this one: `tau server uninstall --root <root>` (supervisor registration + registry entry), then delete `TAU_INSTANCE` from its `.env`. See [Multiple instances](#multiple-instances). |
+| `this checkout's DATABASE_URL points at a Postgres the installer does not manage …` | The DSN in `.env` is on loopback but is not this instance's container (its credentials differ), so `--db-port` / `--db-name` cannot apply to it. Pass `--database-url` to point at the database you want, or remove `DATABASE_URL` from `.env` and let setup manage a container.                                                        |
+| `unknown instance "<label>" — known instances: …`                                   | `--instance` (or `TAU_INSTANCE`) names a label the registry does not hold. `tau server list` shows the labels it knows; run setup in that checkout to register it, or address it with `--root <dir>`. See [Multiple instances](#multiple-instances).                                                                                    |
+| `port <n> is in use but is not container postgres-tau…`                             | The port this checkout's `DATABASE_URL` names is taken by something that is not this instance's container. Stop that listener, pass the `--db-port <n>` the message suggests, or point `--database-url` at the database you actually want.                                                                                              |
+| `container postgres-tau… publishes <x>, not <y>`                                    | A container's port mapping is fixed when it is created, so `--db-port` cannot move it. Re-run with `--db-port <x>`, or remove the container (`docker rm -f <container>`, keeping the volume) and let setup recreate it on the port you want.                                                                                            |
+| `TAU_SANDBOX_RUNTIME must be one of …`                                              | The value is unset or an old spelling. Old spellings were removed, not aliased: `sysbox` → `docker-sysbox`, `socket` → `docker-socket`, `auto` / `docker` → choose `docker-sysbox` or `docker-socket` explicitly. Fix `.env`, then `tau server restart`.                                                                                |
+| `bun: command not found`                                                            | `curl -fsSL https://bun.sh/install \| bash`, then re-open the shell.                                                                                                                                                                                                                                                                    |
+| Preflight says bun is older than the pinned version                                 | `bun upgrade` (the pin is the checkout's `.bun-version`).                                                                                                                                                                                                                                                                               |
+| `This installer supports macOS or Linux (got win32)`                                | Windows runs through WSL 2: from PowerShell run `wsl --install -d Ubuntu-24.04`, reboot, then inside WSL run the installer (`curl -fsSL https://hiretau.ai/cli/setup.sh \| bash`).                                                                                                                                                      |
+| Warning: `tmux is not installed — agents cannot run local deployments until it is`  | A `host`-runtime warning, not a failure: setup continues, but agents cannot run local deployments until tmux is installed (macOS: `brew install tmux`; Debian/Ubuntu: `sudo apt install tmux`).                                                                                                                                         |
+| `docker-sysbox requested but the sysbox runtime is not installed`                   | Run `tau server bootstrap-sysbox` (consent-gated automation; inside WSL enable systemd first — see [docs/wiki/sandbox-runtimes.md](sandbox-runtimes.md#installing-sysbox)), or choose `docker-socket`.                                                                                                                                  |
+| `k3d is required for the k3d runtime`                                               | `brew install k3d kubectl` (or see [k3d.io](https://k3d.io)), then re-run setup.                                                                                                                                                                                                                                                        |
+| The API did not answer `/health` within 60s                                         | `tau server logs -c api -n 100` — a missing `.env` value or a failed migration is the usual cause.                                                                                                                                                                                                                                      |
+| Database connection error                                                           | `docker ps --filter name=postgres-tau` — this instance's container (`postgres-tau`, or `postgres-tau-<label>`) must be up on the port `DATABASE_URL` names. `tau server start` starts it for you when the DSN is one the installer wrote.                                                                                               |
+| Collation version mismatch                                                          | `docker exec postgres-tau psql -U postgres -d tau -c "ALTER DATABASE tau REFRESH COLLATION VERSION;"` (`postgres-tau-<label>` for a labelled instance) — happens when the Docker image updates glibc.                                                                                                                                   |
+| Migration fails                                                                     | PostgreSQL must be reachable and `DATABASE_URL` correct; migrating the root `.env` database needs `TAU_MIGRATE_LIVE=1`.                                                                                                                                                                                                                 |
+| `Cannot mutate secrets: TAU_ENCRYPTION_KEY not configured`                          | `.env` has no encryption key: `echo "TAU_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env`, then `tau server restart`.                                                                                                                                                                                                                   |
+| API returns 401 from the CLI                                                        | Run `tau auth status`, then `tau auth login local --api-url http://localhost:<port>`. Clear a stale shell `TAU_PASSWORD` for browser login; the checkout password works only before an admin has a passkey.                                                                                                                             |
+| Passkey registration returns 500                                                    | `TAU_WEB_ORIGIN` contains a path, or `WEBAUTHN_RP_ID` is wrong — see [Exposing it publicly](#exposing-it-publicly).                                                                                                                                                                                                                     |
+| `<root> has uncommitted changes` from `tau update`                                  | The offline updater refuses a dirty tree. Commit or discard the changes, then retry.                                                                                                                                                                                                                                                    |
+| Webhook 401 / 404                                                                   | 401: the secret in `.env` and the one on the provider differ. 404: the provider is not registered — check that the api started cleanly.                                                                                                                                                                                                 |
+| Voice, memory search, or TTS not working                                            | Check Integrations > OpenAI API services and Assistant & Memory feature switches for voice/embeddings; check Integrations > Google Cloud and its JSON/ADC credentials for message read-aloud.                                                                                                                                           |
+| Agent runs fail immediately                                                         | Sign in to a provider under **Settings > AI Providers**, or install and authenticate Pi (`bun add -g @earendil-works/pi-coding-agent`, then `pi` and `/login`).                                                                                                                                                                         |

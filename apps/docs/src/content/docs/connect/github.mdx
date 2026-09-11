@@ -1,0 +1,101 @@
+---
+title: Connect GitHub
+description: Authorize an account, grant repository access, and choose the identity your squad uses.
+---
+
+import ModeContent from '../../../components/ModeContent.astro'
+
+Connect GitHub so squads can read repositories, push changes, and work with issues
+and pull requests. You need permission to manage integrations in Tau and permission
+to authorize the account and install the GitHub App on the intended repositories.
+
+## Connect an account
+
+Open **Settings → Integrations**, find **GitHub**, enable the card, and expand
+**Settings**. Choose **Connect account**.
+
+<ModeContent mode="cloud">
+
+Follow the GitHub authorization page and return to your Tau instance when it
+finishes. Cloud handles the shared OAuth application configuration; you do not
+need to enter an application client secret in your instance.
+
+</ModeContent>
+
+<ModeContent mode="self-hosted">
+
+The default setup uses device login. Copy the code shown in Tau, open the displayed
+GitHub verification link, and enter the code. Leave Tau open while it waits for
+authorization. If the code expires, start **Connect account** again.
+
+To use your own GitHub App, expand **Use your own GitHub App**. A public client ID
+supports device login; browser authorization also needs the optional client
+secret and the exact callback URL displayed by Tau. Enable device flow and
+expiring user tokens in that App's configuration.
+
+</ModeContent>
+
+Install the GitHub App on the repositories Tau should use. Authorizing your user
+account alone does not give the App repository access. When you return, confirm
+the account appears in the card without a reconnect warning.
+
+## Choose the squad's account
+
+The first connected account becomes the **Global default**. Squads inherit it
+unless they choose their own accounts or disable GitHub.
+
+1. Open the squad's **Settings → Integrations**.
+2. Check that GitHub is enabled for the squad.
+3. Keep the inherited account, or select the accounts this squad may use and its
+   default identity.
+4. For issue routing, enter the repository as `owner/repository` in **GitHub
+   Routing** and add label filters if you want them.
+
+Repository routing and workflow subscriptions decide which updates a squad
+consumes. They do not grant repository access. The selected account and the App
+installation must both allow the operation.
+
+## Check that it works
+
+Ask the squad to list the open pull requests in a repository it should access.
+Use a read-only request first, such as: “List the open pull requests in
+`example-org/sample-app` and summarize their titles.” Replace that example with
+your repository. Then continue with [your first task](/start/first-task/).
+
+Tau uses the selected account when `gh` runs and when Git needs HTTPS credentials.
+Changing the connection takes effect for subsequent credential requests. Git
+commit author name and email are separate settings; edit those in **Settings →
+Git** or the squad's author overrides when needed.
+
+## Receive repository updates
+
+<ModeContent mode="cloud">
+
+Managed instances can receive shared-App webhook events when Cloud delivery is
+configured. You still need a squad account and a repository referenced by the
+squad's work or subscriptions. You do not need to create a tenant webhook for
+that managed delivery path. Tau also polls repositories referenced by its work.
+
+</ModeContent>
+
+<ModeContent mode="self-hosted">
+
+Polling works without a webhook. For direct delivery, expand **Webhook delivery**
+in the GitHub card. Copy its URL, generate or enter a signing secret, and configure
+the same secret in your GitHub App or repository webhook. Choose JSON delivery
+and the events your workflows consume, then save the setting in Tau. Your
+instance must be reachable at the displayed public URL.
+
+</ModeContent>
+
+## Fix access or disconnect
+
+If a repository cannot be read, check the App installation, the account's
+repository permissions, and the squad assignment. If the card shows **Reconnect
+required**, choose **Reconnect** and authorize the intended account again.
+
+Disabling GitHub preserves saved accounts and assignments while stopping new
+use. Disconnecting removes access through Tau. Removing a default account does
+not silently choose another identity; select a new default explicitly. For full
+revocation, review **GitHub Settings → Applications → Authorized GitHub Apps**;
+public-client device authorizations cannot be remotely revoked by Tau alone.

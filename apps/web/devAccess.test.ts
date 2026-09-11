@@ -1,0 +1,24 @@
+import { describe, expect, test } from 'bun:test'
+import { DEV_ACCESS_COOKIE, DEV_ACCESS_HEADER, requestHasDevAccess, stripDevAccessCookie } from './devAccess'
+
+describe('requestHasDevAccess', () => {
+  test('accepts the exact token from an HttpOnly cookie or explicit client header', () => {
+    expect(requestHasDevAccess({ cookie: `theme=dark; ${DEV_ACCESS_COOKIE}=secret-token` }, 'secret-token')).toBe(true)
+    expect(requestHasDevAccess({ [DEV_ACCESS_HEADER]: 'secret-token' }, 'secret-token')).toBe(true)
+  })
+
+  test('rejects missing, malformed, and partial tokens', () => {
+    expect(requestHasDevAccess({}, 'secret-token')).toBe(false)
+    expect(requestHasDevAccess({ cookie: `${DEV_ACCESS_COOKIE}=secret` }, 'secret-token')).toBe(false)
+    expect(requestHasDevAccess({ cookie: `${DEV_ACCESS_COOKIE}=%` }, 'secret-token')).toBe(false)
+  })
+})
+
+describe('stripDevAccessCookie', () => {
+  test('removes only the local dev credential before proxying', () => {
+    expect(stripDevAccessCookie(`session=abc; ${DEV_ACCESS_COOKIE}=secret-token; theme=dark`)).toBe(
+      'session=abc; theme=dark'
+    )
+    expect(stripDevAccessCookie(`${DEV_ACCESS_COOKIE}=secret-token`)).toBeUndefined()
+  })
+})

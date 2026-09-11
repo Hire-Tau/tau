@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY "idx_messages_agent_stream_group_pattern" ON "messages" USING btree ("agent_id",("metadata"->>'streamGroupId') text_pattern_ops) WHERE "messages"."role" = 'assistant' AND ("messages"."metadata"->>'streamGroupId') IS NOT NULL;

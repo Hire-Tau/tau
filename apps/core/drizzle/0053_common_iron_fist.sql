@@ -1,0 +1,2 @@
+ALTER TABLE "work_streams" ADD COLUMN "creator_agent_id" uuid;--> statement-breakpoint
+ALTER TABLE "work_streams" ADD CONSTRAINT "work_streams_creator_agent_id_agents_id_fk" FOREIGN KEY ("creator_agent_id") REFERENCES "public"."agents"("id") ON DELETE set null ON UPDATE no action;
