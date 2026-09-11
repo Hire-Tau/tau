@@ -1,5 +1,6 @@
 import { WorkflowPicker } from '../squads/WorkflowPicker'
-import type { WorkflowSource } from '@tau/shared'
+import { WorkflowEditorModal } from '../squads/WorkflowEditorModal'
+import type { WorkflowDefinition, WorkflowSource } from '@tau/shared'
 import { isWorkerAgentType } from '@tau/shared'
 import clsx from 'clsx'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
@@ -1213,6 +1214,8 @@ function EditActionFields({
   scopeType: string
   scopeId: string
 }) {
+  // A fresh `session` remounts the editor so each open starts from its own draft.
+  const [flowEditor, setFlowEditor] = useState<{ session: number; initial?: WorkflowDefinition } | null>(null)
   return (
     <div className="space-y-3">
       <DetailRow label="Action Type">
@@ -1355,8 +1358,22 @@ function EditActionFields({
             value={editState.workflow}
             onChange={(workflow) => setEditState((prev) => ({ ...prev, workflow }))}
             onUseSquadDefault={() => setEditState((prev) => ({ ...prev, workflow: undefined }))}
+            onCustomize={(initial) => setFlowEditor({ session: Date.now(), initial })}
             preview={false}
           />
+          {flowEditor && (
+            <WorkflowEditorModal
+              key={flowEditor.session}
+              isOpen
+              squadId={scopeType === 'squad' ? scopeId : undefined}
+              initialDefinition={flowEditor.initial}
+              onClose={() => setFlowEditor(null)}
+              onSave={(definition) => {
+                setEditState((prev) => ({ ...prev, workflow: { kind: 'inline', definition } }))
+                setFlowEditor(null)
+              }}
+            />
+          )}
           <p className="text-xs text-muted">Uses the squad default at each run unless you choose a workflow here.</p>
         </div>
       )}

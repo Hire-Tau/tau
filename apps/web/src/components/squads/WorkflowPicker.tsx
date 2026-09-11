@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { resolveWorkflow, type WorkflowSource } from '@tau/shared'
+import { resolveWorkflow, type WorkflowDefinition, type WorkflowSource } from '@tau/shared'
 import { queries } from '../../queryOptions'
 import { WorkflowGraph } from '../WorkflowGraph'
 
@@ -11,6 +11,7 @@ export function WorkflowPicker({
   disabled,
   preview = true,
   onUseSquadDefault,
+  onCustomize,
 }: {
   squadId?: string
   value?: WorkflowSource
@@ -18,6 +19,13 @@ export function WorkflowPicker({
   disabled?: boolean
   preview?: boolean
   onUseSquadDefault?: () => void
+  /**
+   * Offer custom flows: a "Custom workflow…" choice (called with undefined for
+   * a blank draft), "Customize" on a selected preset (called with a detached
+   * copy of its resolved definition), and "Edit custom flow" on an inline
+   * value. The caller opens the editor and sets the resulting inline source.
+   */
+  onCustomize?: (definition: WorkflowDefinition | undefined) => void
 }) {
   const catalog = useQuery(queries.workflows.list())
   const entries = (catalog.data ?? []).filter(
@@ -45,18 +53,20 @@ export function WorkflowPicker({
           className="tau-field mt-1 w-full min-w-0 rounded-md border border-th-border bg-surface px-3 py-2"
           disabled={disabled || catalog.isPending || catalog.isError}
           value={value?.kind === 'preset' ? value.id : value ? '__inline' : ''}
-          onChange={(event) =>
-            event.target.value
-              ? onChange({ kind: 'preset', id: event.target.value, customizations: [] })
-              : onUseSquadDefault?.()
-          }
+          onChange={(event) => {
+            const next = event.target.value
+            if (next === '__custom') return onCustomize?.(undefined)
+            if (next === '__inline') return
+            if (next) return onChange({ kind: 'preset', id: next, customizations: [] })
+            onUseSquadDefault?.()
+          }}
         >
           <option value="" disabled={!onUseSquadDefault}>
             {onUseSquadDefault ? 'Use squad default' : 'Choose a workflow'}
           </option>
           {value?.kind === 'inline' && (
-            <option value="__inline" disabled>
-              {value.definition.name} (saved custom flow)
+            <option value="__inline" disabled={!onCustomize}>
+              {value.definition.name} ({onCustomize ? 'custom flow' : 'saved custom flow'})
             </option>
           )}
           {value?.kind === 'preset' && !entries.some((entry) => entry.id === value.id) && (
@@ -69,8 +79,30 @@ export function WorkflowPicker({
               {entry.definition.name}
             </option>
           ))}
+          {onCustomize && <option value="__custom">Custom workflow…</option>}
         </select>
       </label>
+      {onCustomize && value?.kind === 'inline' && (
+        <button
+          type="button"
+          className="tau-button text-sm text-accent"
+          disabled={disabled}
+          onClick={() => onCustomize(structuredClone(value.definition))}
+        >
+          Edit custom flow
+        </button>
+      )}
+      {onCustomize && value?.kind === 'preset' && definition && (
+        <button
+          type="button"
+          className="tau-button text-sm text-accent"
+          disabled={disabled}
+          title="Start a custom flow from this preset (it will no longer follow the preset)"
+          onClick={() => onCustomize(structuredClone(definition))}
+        >
+          Customize
+        </button>
+      )}
       {(catalog.isError || error) && (
         <p role="alert" className="text-xs text-danger">
           {error ?? 'Unable to load workflows.'}

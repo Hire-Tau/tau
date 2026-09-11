@@ -1,5 +1,6 @@
 import { WorkflowPicker } from '../squads/WorkflowPicker'
-import { isWorkerAgentType, type WorkflowSource } from '@tau/shared'
+import { WorkflowEditorModal } from '../squads/WorkflowEditorModal'
+import { isWorkerAgentType, type WorkflowDefinition, type WorkflowSource } from '@tau/shared'
 import { useState } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { schedulesApi } from '../../api/schedules'
@@ -59,6 +60,8 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
   const [agentTypeId, setAgentTypeId] = useState('')
   const [prompt, setPrompt] = useState('')
   const [workflow, setWorkflow] = useState<WorkflowSource>()
+  // A fresh `session` remounts the editor so each open starts from its own draft.
+  const [flowEditor, setFlowEditor] = useState<{ session: number; initial?: WorkflowDefinition } | null>(null)
   const [wsTitle, setWsTitle] = useState('')
   const [wsDescription, setWsDescription] = useState('')
   const [skipIfUnresolved, setSkipIfUnresolved] = useState(true)
@@ -481,8 +484,22 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
               value={workflow}
               onChange={setWorkflow}
               onUseSquadDefault={() => setWorkflow(undefined)}
+              onCustomize={(initial) => setFlowEditor({ session: Date.now(), initial })}
               preview={false}
             />
+            {flowEditor && (
+              <WorkflowEditorModal
+                key={flowEditor.session}
+                isOpen
+                squadId={scopeType === 'squad' ? scopeId : undefined}
+                initialDefinition={flowEditor.initial}
+                onClose={() => setFlowEditor(null)}
+                onSave={(definition) => {
+                  setWorkflow({ kind: 'inline', definition })
+                  setFlowEditor(null)
+                }}
+              />
+            )}
             <p className="text-xs text-muted">
               The squad default is resolved when the schedule runs. Workers start only as their flow steps become
               active.
