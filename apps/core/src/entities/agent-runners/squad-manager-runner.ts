@@ -272,11 +272,17 @@ export class SquadManagerRunner extends AgentRunner {
     const webTools = createWebTools()
     const browserTools = createBrowserTools(this.agent.id, lightId)
     const environmentTools = [...baseTools, squadBashTool, ...webTools, ...browserTools]
-    const askHumanTool = createAsyncAskHumanTool({
-      agentId: this.agent.id,
-      executionId: this.execution.id,
-      flushPersistence: () => this.persistence.waitForAll(),
-    })
+    // Managers (and consultants) never block on a human answer: they keep coordinating and act
+    // on the answer when it arrives. Only work-stream agents open question waits.
+    const askHumanTool = createAsyncAskHumanTool(
+      {
+        agentId: this.agent.id,
+        executionId: this.execution.id,
+        flushPersistence: () => this.persistence.waitForAll(),
+      },
+      undefined,
+      { allowBlocking: false }
+    )
     const notifyContactTool = createNotifyContactTool({ agentId: this.agent.id })
     const subagentLifecycleTools = createSubagentLifecycleTools({ agentId: this.agent.id })
     const monitorTool = createMonitorTool({

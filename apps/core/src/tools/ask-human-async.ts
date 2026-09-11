@@ -23,10 +23,18 @@ const QuestionItemSchema = Type.Object({
   optional: Type.Optional(Type.Boolean({ description: 'If true, this question can be left unanswered' })),
 })
 
+const QuestionsSchema = Type.Array(QuestionItemSchema, {
+  description: 'One or more questions to ask. Each has an id, type, question text, and optional options.',
+})
+
+/** Managers and assistants: the question is always asynchronous; no wait can be opened. */
+const AsyncOnlyAskHumanSchema = Type.Object({
+  questions: QuestionsSchema,
+})
+
+/** Work-stream agents: may additionally block their flow attempt on the answer. */
 const AsyncAskHumanSchema = Type.Object({
-  questions: Type.Array(QuestionItemSchema, {
-    description: 'One or more questions to ask. Each has an id, type, question text, and optional options.',
-  }),
+  questions: QuestionsSchema,
   waitScope: Type.Optional(
     Type.Union([Type.Literal('attempt'), Type.Literal('stream')], {
       description:
@@ -74,21 +82,48 @@ export interface AsyncAskHumanOrigin {
   flushPersistence: () => Promise<void>
 }
 
+export interface AsyncAskHumanOptions {
+  /**
+   * Whether `blocking: true` is offered at all. Only work-stream agents may block: a blocking
+   * question opens a `question` wait on the agent's flow attempt, which the workflow step system
+   * holds until the answer clears it. Managers and assistants coordinate other work and must keep
+   * working while a human decides, so their tool exposes no blocking parameter and always records
+   * the question asynchronously. Default true.
+   */
+  allowBlocking?: boolean
+}
+
+const COMMON_DESCRIPTION =
+  'Ask one or more structured questions of the humans responsible for this agent (your owner and ' +
+  'the watchers of your squad). The tool returns immediately; the answer arrives later in your inbox. '
+const DESCRIPTION_TAIL =
+  'An answer does not approve a workflow approval gate. ' +
+  "For simple questions use type 'text'; for choices " +
+  "use 'select' or 'multi-select' (with options)."
+
+const BLOCKING_DESCRIPTION =
+  COMMON_DESCRIPTION +
+  'Set blocking true when your current step needs the answer before proceeding, then end your turn; ' +
+  'independent branches can continue. ' +
+  DESCRIPTION_TAIL
+
+const ASYNC_ONLY_DESCRIPTION =
+  COMMON_DESCRIPTION +
+  'You cannot block on the answer: keep working on everything that does not depend on it, and act on ' +
+  'the answer when it arrives (for example by resolving the wait it unblocks). ' +
+  DESCRIPTION_TAIL
+
 export function createAsyncAskHumanTool(
   origin: AsyncAskHumanOrigin,
-  dependencies: { createQuestion: typeof createAgentQuestion } = { createQuestion: createAgentQuestion }
+  dependencies: { createQuestion: typeof createAgentQuestion } = { createQuestion: createAgentQuestion },
+  options: AsyncAskHumanOptions = {}
 ): ToolDefinition {
+  const allowBlocking = options.allowBlocking !== false
   return {
     name: 'ask_human',
     label: 'Ask Human',
-    description:
-      'Ask one or more structured questions of the humans responsible for this agent (your owner and ' +
-      'the watchers of your squad). The tool returns immediately; the answer arrives later in your inbox. ' +
-      'Set blocking true when your current step needs the answer before proceeding, then end your turn; ' +
-      'independent branches can continue. An answer does not approve a workflow approval gate. ' +
-      "For simple questions use type 'text'; for choices " +
-      "use 'select' or 'multi-select' (with options).",
-    parameters: AsyncAskHumanSchema,
+    description: allowBlocking ? BLOCKING_DESCRIPTION : ASYNC_ONLY_DESCRIPTION,
+    parameters: allowBlocking ? AsyncAskHumanSchema : AsyncOnlyAskHumanSchema,
     async execute(_toolCallId: string, params: AskParams): Promise<AgentToolResult<unknown>> {
       const questions = params.questions ?? []
       if (!questions.length) return errorResult('At least one question is required.')
@@ -122,14 +157,21 @@ export function createAsyncAskHumanTool(
       }
       if (errors.length) return errorResult(errors.join('; '))
 
-      const blocking = params.blocking === true
+      // A provider that skips schema validation may still pass blocking; an agent that cannot block
+      // gets its question recorded asynchronously and is told so, never silently held.
+      const blockingRequested = params.blocking === true
+      const blocking = allowBlocking && blockingRequested
+      const cannotBlockNote =
+        !allowBlocking && blockingRequested
+          ? ' This agent cannot block on answers, so the question was recorded as non-blocking.'
+          : ''
       await origin.flushPersistence()
       let record
       try {
         record = await dependencies.createQuestion(
           { agentId: origin.agentId, executionId: origin.executionId },
           { questions: items },
-          { blocking, ...(params.waitScope ? { waitScope: params.waitScope } : {}) }
+          { blocking, ...(blocking && params.waitScope ? { waitScope: params.waitScope } : {}) }
         )
       } catch (error) {
         return errorResult(error instanceof Error ? error.message : String(error))
@@ -150,7 +192,7 @@ export function createAsyncAskHumanTool(
             text:
               record.audienceResolution === 'unroutable'
                 ? `Question recorded (${record.id.slice(0, 8)}), but no direct Action Center recipient was found; the question is still visible and answerable by everyone who can read this agent.${blockingNote}`
-                : `Question recorded (${record.id.slice(0, 8)}): ${summary}. The answer will arrive as an inbox message.${blockingNote}${blocking && openedWaitWorkStreamIds.length > 0 ? ' End your turn while the affected work waits; do not poll.' : ' You can continue other work in the meantime.'}`,
+                : `Question recorded (${record.id.slice(0, 8)}): ${summary}. The answer will arrive as an inbox message.${blockingNote}${blocking && openedWaitWorkStreamIds.length > 0 ? ' End your turn while the affected work waits; do not poll.' : ' You can continue other work in the meantime.'}${cannotBlockNote}`,
           },
         ],
         details: {

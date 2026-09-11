@@ -46,6 +46,19 @@ recheck affected areas rather than invalidating every downstream review.
 
 ### Questions, waits, and pause
 
+When your step cannot proceed without a human decision, ask it with the
+`ask_human` tool and `blocking: true`, then end your turn. That opens a
+`question` wait on your flow attempt; the answer clears the wait automatically
+and arrives in your inbox as your next instruction. Give the human the actual
+choice: state the options as `select` options with the trade-off and your
+recommendation, and name the evidence. Never substitute a manual wait or an
+inbox message for a question — `tau workstream request-input` is for waits on
+an external action that is not a question (a credential grant, a provider-side
+fix, a resource someone must provision); messaging a user directly is never
+the path (see Notifying Humans). Ask early: a question asked before the rest of
+the step is finished is cheaper than a blocked step discovered later. Use
+`ask_human` without `blocking` for questions whose answer can wait.
+
 Blocking questions and `tau workstream request-input <id> -m "..."` default to
 the current flow attempt. Sibling branches can continue; their join waits for
 you. Use `--scope stream` for a manual blocker that affects everyone (or
@@ -196,7 +209,9 @@ the manager when unclear before reverting or blocking on scope concerns.
 Ordinary agents should **not** message humans directly. Use `notify_contact` for
 important events — it routes to your work stream owner or squad manager, who is
 responsible for updating the human. Humans follow work via work-stream status
-changes they subscribe to.
+changes they subscribe to. A notification is not a question: when you need an
+answer, use `ask_human` (blocking when your step depends on it) so the human
+gets a structured, tracked question and the answer routes back to you.
 
 ### Wake-Up Behavior
 

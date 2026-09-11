@@ -150,7 +150,14 @@ waits, `approve`/`send-back` for review waits (there is no generic
 should do now, and any new constraints — the resumed agent reads it as its
 next instruction, and notes ride the wait record, so they are never lost.
 Blocking questions (`ask_human` with `blocking: true`) open a question wait
-that the answer (`tau aq answer`) clears automatically.
+that the answer (`tau aq answer`) clears automatically. This is THE path for
+"an agent needs a human decision to continue": the worker asks, the stream
+shows `waiting on answer`, you answer once, and the worker resumes with your
+answer as its next instruction. A manual wait whose message is a question, or
+an inbox message asking you to decide something, is the wrong shape — answer
+it, then tell the manager the worker should have asked a blocking `ask_human`.
+Managers never block on a question: they ask asynchronously and keep
+coordinating.
 
 **PR streams: the completing review wait is a MERGE gate, not an LGTM.**
 Approving a review wait with `completesOnApproval` (the default) completes

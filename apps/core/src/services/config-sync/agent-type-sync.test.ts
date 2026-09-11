@@ -151,13 +151,26 @@ describe('AgentTypeSync', () => {
     }
   })
 
-  test('manager prompt routes only human-required blockers to the requester or system inbox', async () => {
+  test('manager prompt asks humans through ask_human and reserves inbox messages for information', async () => {
     const manager = (await sync.loadFromDir()).find((item) => item.id === 'manager')!
 
+    expect(manager.systemPrompt).toContain('### Asking Humans')
+    expect(manager.systemPrompt).toContain('you never block on a human')
+    expect(manager.systemPrompt).toContain('Never ask a decision through an inbox message')
     expect(manager.systemPrompt).toContain('check `requestingUserId`')
     expect(manager.systemPrompt).toContain('--recipient-type user')
     expect(manager.systemPrompt).toContain('tau inbox send system')
-    expect(manager.systemPrompt).toContain('Blockers that require human intervention')
+    expect(manager.systemPrompt).not.toContain('Decisions that need human input')
+    expect(manager.systemPrompt).not.toContain('Blockers that require human intervention')
+  })
+
+  test('squad rules send workers to a blocking ask_human for human decisions, not manual waits', async () => {
+    const parsed = await sync.loadFromDir()
+    for (const id of ['engineer', 'sysops', 'reviewer']) {
+      const prompt = parsed.find((item) => item.id === id)?.systemPrompt ?? ''
+      expect(prompt).toContain('`ask_human` tool and `blocking: true`')
+      expect(prompt).toContain('Never substitute a manual wait or an\ninbox message for a question')
+    }
   })
 
   test('manager prompt creates worktrees and passes branch/worktree flags', async () => {
