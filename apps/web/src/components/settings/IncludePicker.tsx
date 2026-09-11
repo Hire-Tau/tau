@@ -1,0 +1,128 @@
+import { useQuery } from '@tanstack/react-query'
+import type { ReactNode } from 'react'
+import { queries } from '../../queryOptions'
+
+/** The subset of a prompt include the picker needs — keeps the view testable without the full record. */
+export interface IncludeOption {
+  id: string
+  name: string
+  disabled: boolean
+}
+
+/**
+ * Ordered editor for an agent type's `includes` list. Order is meaningful —
+ * includes are composed into the prompt in list order — so rows carry move
+ * up/down controls rather than a checkbox set.
+ *
+ * Pure: takes the full catalog as a prop so it renders without a query client.
+ */
+export function IncludePickerView({
+  value,
+  all,
+  onChange,
+  actions,
+}: {
+  value: string[]
+  all: IncludeOption[]
+  onChange: (next: string[]) => void
+  actions?: ReactNode
+}) {
+  const byId = new Map(all.map((include) => [include.id, include]))
+  const selected = new Set(value)
+  const addable = all.filter((include) => !include.disabled && !selected.has(include.id))
+
+  const move = (index: number, delta: number) => {
+    const next = [...value]
+    const target = index + delta
+    if (target < 0 || target >= next.length) return
+    ;[next[index], next[target]] = [next[target], next[index]]
+    onChange(next)
+  }
+
+  return (
+    <div>
+      <label className="text-xs text-muted flex items-center gap-2 mb-1">
+        <span>Includes</span>
+        {actions}
+      </label>
+      <div className="border border-th-border rounded bg-surface-secondary p-2 space-y-1">
+        {value.length === 0 ? (
+          <div className="text-xs text-muted">No includes. This type uses its system prompt alone.</div>
+        ) : (
+          value.map((id, index) => {
+            const include = byId.get(id)
+            return (
+              <div key={`${id}:${index}`} className="flex items-center gap-2 text-sm text-primary">
+                <span className="flex-1 min-w-0 truncate">
+                  <span className="font-medium">{include?.name ?? id}</span>{' '}
+                  <span className="text-xs text-muted font-mono">{id}</span>
+                  {include?.disabled && (
+                    <span className="ml-1 text-xs text-amber-600 dark:text-amber-400">disabled</span>
+                  )}
+                  {!include && <span className="ml-1 text-xs text-red-600 dark:text-red-400">missing</span>}
+                </span>
+                <button
+                  type="button"
+                  aria-label={`Move ${id} up`}
+                  disabled={index === 0}
+                  onClick={() => move(index, -1)}
+                  className="tau-button text-xs text-muted hover:text-primary disabled:opacity-30"
+                >
+                  ▲
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Move ${id} down`}
+                  disabled={index === value.length - 1}
+                  onClick={() => move(index, 1)}
+                  className="tau-button text-xs text-muted hover:text-primary disabled:opacity-30"
+                >
+                  ▼
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Remove ${id}`}
+                  onClick={() => onChange(value.filter((_entry, position) => position !== index))}
+                  className="tau-button text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+                >
+                  ✕
+                </button>
+              </div>
+            )
+          })
+        )}
+        <select
+          aria-label="Add include"
+          value=""
+          disabled={addable.length === 0}
+          onChange={(event) => {
+            if (!event.target.value) return
+            onChange([...value, event.target.value])
+          }}
+          className="tau-field mt-1 w-full border border-th-border bg-surface px-2 py-1 text-sm"
+        >
+          <option value="">{addable.length ? 'Add include…' : 'No more includes available'}</option>
+          {addable.map((include) => (
+            <option key={include.id} value={include.id}>
+              {include.name}
+            </option>
+          ))}
+        </select>
+      </div>
+    </div>
+  )
+}
+
+/** `IncludePickerView` bound to the prompt-include catalog. */
+export function IncludePicker({
+  value,
+  onChange,
+  actions,
+}: {
+  value: string[]
+  onChange: (next: string[]) => void
+  actions?: ReactNode
+}) {
+  const { data: includes = [] } = useQuery(queries.promptIncludes.list())
+  return <IncludePickerView value={value} all={includes} onChange={onChange} actions={actions} />
+}

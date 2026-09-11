@@ -27,6 +27,8 @@ export interface AgentTypeConfig {
   description: string | null
   systemPrompt: string
   includes: string[]
+  /** Composed prompt (system prompt + enabled includes) — detail endpoint only. */
+  resolvedSystemPrompt?: string
   skills: string[] | null
   extensions: string[] | null
   toolsAllow: string[] | null
@@ -322,6 +324,73 @@ export async function exportNotificationConfigYaml(): Promise<string> {
   const response = await authFetch(`/notification-config/export`)
   if (!response.ok) throw new Error(`API error: ${response.status}`)
   return response.text()
+}
+
+// ============================================================================
+// Prompt Includes
+// ============================================================================
+
+export interface PromptIncludeConfig {
+  id: string
+  name: string
+  description: string | null
+  content: string
+  yamlFieldOverrides: string[]
+  hasTemplate: boolean
+  disabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export async function getPromptIncludes(): Promise<PromptIncludeConfig[]> {
+  return apiFetch<PromptIncludeConfig[]>('/prompt-includes')
+}
+
+export async function getPromptInclude(id: string): Promise<PromptIncludeConfig> {
+  return apiFetch<PromptIncludeConfig>(`/prompt-includes/${id}`)
+}
+
+export async function createPromptInclude(data: {
+  id: string
+  name: string
+  content: string
+  description?: string | null
+}): Promise<PromptIncludeConfig> {
+  return apiFetch<PromptIncludeConfig>('/prompt-includes', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export async function updatePromptInclude(
+  id: string,
+  data: { content: string; name?: string; description?: string | null }
+): Promise<PromptIncludeConfig> {
+  return apiFetch<PromptIncludeConfig>(`/prompt-includes/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+}
+
+export async function deletePromptInclude(id: string): Promise<void> {
+  await apiFetch<void>(`/prompt-includes/${id}`, { method: 'DELETE' })
+}
+
+export async function disablePromptInclude(id: string): Promise<void> {
+  await apiFetch<void>(`/prompt-includes/${id}/disable`, { method: 'POST' })
+}
+
+export async function enablePromptInclude(id: string): Promise<void> {
+  await apiFetch<void>(`/prompt-includes/${id}/enable`, { method: 'POST' })
+}
+
+export async function getPromptIncludeTemplateDiff(id: string): Promise<TemplateDiff> {
+  return apiFetch<TemplateDiff>(`/prompt-includes/${id}/template-diff`)
+}
+
+export async function revertPromptInclude(id: string): Promise<void> {
+  await apiFetch<void>(`/prompt-includes/${id}/revert-to-template`, { method: 'POST' })
+}
+
+export async function revertPromptIncludeFields(id: string, fields: string[]): Promise<void> {
+  await apiFetch<void>(`/prompt-includes/${id}/revert-template-fields`, {
+    method: 'POST',
+    body: JSON.stringify({ fields }),
+  })
 }
 
 // ============================================================================
