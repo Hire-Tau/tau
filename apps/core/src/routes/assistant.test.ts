@@ -460,6 +460,11 @@ test('squad delegations create one owned consultant per squad, label it, and ste
   const second = await request(`/${id}/messages`, { ...body, clientId: randomUUID(), label: 'Pause the deploy stream' })
   expect((await second.json()).agentId).toBe(receipt.agentId)
   expect((await Agent.mustFind(receipt.agentId)).metadata?.purpose).toBe('Assistant task: Pause the deploy stream')
+  // Reusing the first request's clientId with different content conflicts (409); the relabel
+  // only applies after a request is accepted, so a rejected retry must not rewrite the purpose.
+  const conflict = await request(`/${id}/messages`, { ...body, request: 'Different request', label: 'Reroute the deploy pipeline' })
+  expect(conflict.status).toBe(409)
+  expect((await Agent.mustFind(receipt.agentId)).metadata?.purpose).toBe('Assistant task: Pause the deploy stream')
   const rows = await db.select().from(inbox).where(eq(inbox.recipientId, receipt.agentId))
   expect(rows.map((row) => row.deliveryMode)).toEqual(['steer', 'steer'])
   const general = await request(`/${id}/messages`, { clientId: randomUUID(), request: 'General task', label: 'General task' })
@@ -476,24 +481,40 @@ test('squad delegations create one owned consultant per squad, label it, and ste
 })
 
 test('squad delegations require squad chat permission and reject mixed targets', async () => {
-  const { id, owner, request } = await fixture()
+  const { id, owner, other, request } = await fixture()
   const role = await createTestRole({ prefix, permissions: ['chat:send'] })
   const squad = await squadFixture(owner, role)
   const base = { clientId: randomUUID(), request: 'Task', label: 'Task' }
   expect((await request(`/${id}/messages`, { ...base, squadId: squad.id, agentId: randomUUID() })).status).toBe(400)
   expect((await request(`/${id}/messages`, { ...base, squadId: randomUUID() })).status).toBe(404)
-  // fixture() grants owner and other a system-scope chat:send role, and system-scope
-  // permissions are unconditionally included by resolveUserPermissions regardless of the
-  // squadId argument (apps/core/src/services/rbac/permissions.ts) — so `other` already
-  // satisfies hasPermission(identity, 'chat:send', squad.id) and would pass the squad check.
-  // Use a user with no role assignment at all instead: the router's top-level
-  // requirePermission('chat:send') (no squadId) rejects it with 403 before the route runs.
-  const stranger = await createTestUser({ prefix })
+  // An existing but inactive squad must be rejected too, and must not leave behind an owned-agent row.
+  const archived = await Squad.create({ name: `${prefix}-squad-${randomUUID().slice(0, 8)}`, purpose: 'test' })
+  squadIds.push(archived.id)
+  await db.update(squads).set({ status: 'archived' }).where(eq(squads.id, archived.id))
+  expect(
+    (await request(`/${id}/messages`, { ...base, clientId: randomUUID(), squadId: archived.id })).status
+  ).toBe(404)
+  expect(
+    await db.select().from(assistantConversationAgents).where(eq(assistantConversationAgents.conversationId, id))
+  ).toEqual([])
+  // Ownership is scoped per conversation, not per squad: two different owners delegating to the
+  // same active squad from their own conversations must each get their own owned consultant.
   const otherConversation = randomUUID()
   conversationIds.push(otherConversation)
-  expect((await request('/', { id: otherConversation }, stranger.token)).status).toBe(403)
-  expect(
-    (await request(`/${otherConversation}/messages`, { ...base, squadId: squad.id }, stranger.token)).status
-  ).toBe(403)
-  expect(await db.select().from(assistantConversationAgents).where(eq(assistantConversationAgents.conversationId, otherConversation))).toEqual([])
+  expect((await request('/', { id: otherConversation }, other.token)).status).toBe(200)
+  // `other` has no squad-scoped role here; fixture()'s system-scope chat:send role already
+  // satisfies hasPermission(identity, 'chat:send', squad.id), same as the rest of this route.
+  const delegated = await request(
+    `/${otherConversation}/messages`,
+    { ...base, clientId: randomUUID(), squadId: squad.id },
+    other.token
+  )
+  expect(delegated.status).toBe(200)
+  const delegatedReceipt = await delegated.json()
+  agentIds.push(delegatedReceipt.agentId)
+  const ownerDelegation = await request(`/${id}/messages`, { ...base, clientId: randomUUID(), squadId: squad.id })
+  expect(ownerDelegation.status).toBe(200)
+  const ownerReceipt = await ownerDelegation.json()
+  agentIds.push(ownerReceipt.agentId)
+  expect(delegatedReceipt.agentId).not.toBe(ownerReceipt.agentId)
 })

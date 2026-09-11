@@ -236,7 +236,6 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
           .for('update')
         return resolveOwnedAgent(tx, conversation, { squadId })
       })
-      if (input.label) await agent.update({ purpose: `Assistant task: ${input.label}` })
       kind = squadId ? 'squad' : 'background'
     }
     const agentId = agent.id
@@ -301,12 +300,13 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
       (message.metadata?.inReplyTo ?? undefined) !== input.inReplyTo
     )
       return c.json({ error: 'Message receipt conflicts with this request' }, 409)
+    if (input.label && kind !== 'agent') await agent.update({ purpose: `Assistant task: ${input.label}` })
     const receipt: AssistantMessageReceipt = {
       id: message.id,
       agentId,
       delivered: Boolean(message.deliveredAt),
       kind,
-      ...(kind === 'squad' && input.squadId ? { squadId: input.squadId } : {}),
+      ...(kind === 'squad' ? { squadId: input.squadId } : {}),
     }
     return c.json(receipt)
   })
