@@ -42,7 +42,8 @@ test('shipped denoiser links as a browser module and initializes processors befo
     registerProcessor: (_name: string, value: any) => {
       Processor = value
     },
-    console: { log() {}, warn() {} },
+    // AudioWorkletGlobalScope has a full console; the glue binds console.error at load.
+    console: { log() {}, warn() {}, error() {} },
     atob,
   })
   const first = new Processor()

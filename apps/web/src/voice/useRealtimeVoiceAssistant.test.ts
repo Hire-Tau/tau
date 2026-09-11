@@ -101,9 +101,9 @@ describe('RealtimeTransport initial microphone state', () => {
 
 describe('RealtimeTransport DTLN worklet assets', () => {
   test('resolves worklet URL relative to the Vite base path', () => {
-    expect(resolveDtlnWorkletUrl('/tau/')).toBe('/tau/voice/dtln/processor.js?v=2')
-    expect(resolveDtlnWorkletUrl('/tau')).toBe('/tau/voice/dtln/processor.js?v=2')
-    expect(resolveDtlnWorkletUrl('/')).toBe('/voice/dtln/processor.js?v=2')
+    expect(resolveDtlnWorkletUrl('/tau/')).toBe('/tau/voice/dtln/processor.js?v=3')
+    expect(resolveDtlnWorkletUrl('/tau')).toBe('/tau/voice/dtln/processor.js?v=3')
+    expect(resolveDtlnWorkletUrl('/')).toBe('/voice/dtln/processor.js?v=3')
   })
 })
 

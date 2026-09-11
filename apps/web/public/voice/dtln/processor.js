@@ -1,4 +1,4 @@
-import dtln from './dtln.js?v=2'
+import dtln from './dtln.js?v=3'
 
 const DTLN_FIXED_BUFFER_SIZE = 512
 
@@ -44,6 +44,10 @@ class TauDtlnDenoiser extends AudioWorkletProcessor {
     } catch (error) {
       this.port.postMessage({ type: 'error', message: error instanceof Error ? error.message : String(error) })
       output.set(input.subarray(0, output.length))
+      // A frame that threw part-way leaves inputIndex past the buffer; the next
+      // frame would then fail on inputBuffer.set forever. Start the frame over.
+      this.inputIndex = 0
+      this.outputBytes = 0
     }
 
     return true
