@@ -223,7 +223,9 @@ describe('runSetup', () => {
     expect(joined).toContain(
       'docker run -d --name postgres-tau-smoke --restart unless-stopped -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=tau -p 127.0.0.1:5433:5432 -v tau-smoke_postgres-data:/var/lib/postgresql paradedb/paradedb:latest'
     )
-    expect(joined.filter((c) => c === 'docker exec postgres-tau-smoke psql -h 127.0.0.1 -U postgres -tAc SELECT 1')).toHaveLength(3)
+    expect(
+      joined.filter((c) => c === 'docker exec postgres-tau-smoke psql -h 127.0.0.1 -U postgres -tAc SELECT 1')
+    ).toHaveLength(3)
     expect(joined).toContain(
       "docker exec postgres-tau-smoke psql -U postgres -tAc SELECT 1 FROM pg_database WHERE datname='tau'"
     )
