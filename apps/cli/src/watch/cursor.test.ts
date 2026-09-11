@@ -15,7 +15,7 @@ const snapshot: Snapshot = {
     },
   },
   actions: { 'a-1': { hash: 'def', type: 'agent-question', squadId: null, canRespond: true } },
-  inbox: { 'm-1': { hash: '123', senderId: 'ag', subject: 'S' } },
+  inbox: { 'm-1': { hash: '123', senderType: 'agent', senderId: 'ag', subject: 'S' } },
 }
 
 describe('cursor', () => {

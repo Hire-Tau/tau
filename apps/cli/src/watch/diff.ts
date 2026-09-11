@@ -25,7 +25,13 @@ export type WatchEvent =
   | (Base & StreamRef & { kind: 'workstream.wait'; waitId: string; waitType: string; message: string | null })
   | (Base & StreamRef & { kind: 'workstream.idle'; idleSince: string })
   | (Base & { kind: 'action.pending'; actionId: string; type: string; squadId: string | null; canRespond: boolean })
-  | (Base & { kind: 'inbox.message'; messageId: string; senderId: string | null; subject: string | null })
+  | (Base & {
+      kind: 'inbox.message'
+      messageId: string
+      senderType: string
+      senderId: string | null
+      subject: string | null
+    })
   | (Base & { kind: 'health.degraded'; error: string })
   | (Base & { kind: 'health.recovered' })
 
@@ -109,8 +115,9 @@ export function diffSnapshots(prev: Snapshot, next: Snapshot, ctx: { now: number
     events.push({
       kind: 'inbox.message',
       key: `inbox:${id}:${m.hash}`,
-      label: `New or updated inbox message ${id} from agent ${m.senderId ?? 'unknown'}${m.subject ? `: ${m.subject}` : ''}`,
+      label: `New or updated inbox message ${id} from ${m.senderType}${m.senderId ? ` ${m.senderId}` : ''}${m.subject ? `: ${m.subject}` : ''}`,
       messageId: id,
+      senderType: m.senderType,
       senderId: m.senderId,
       subject: m.subject,
     })

@@ -73,7 +73,7 @@ describe('normalizeSnapshot', () => {
     })
   })
 
-  it('keeps only agent-sent inbox messages, hashed by subject and content', () => {
+  it('keeps inbox messages from every sender type, hashed by subject and content', () => {
     const snap = normalizeSnapshot(
       {
         streams: [],
@@ -81,13 +81,24 @@ describe('normalizeSnapshot', () => {
         inbox: [
           { id: 'm-1', senderType: 'agent', senderId: 'ag-1', subject: 'Done', content: 'PR up', metadata: {} },
           { id: 'm-2', senderType: 'user', senderId: 'u-1', subject: null, content: 'hi', metadata: {} },
-          { id: 'm-3', senderType: 'system', senderId: null, subject: 'x', content: 'y', metadata: {} },
+          { id: 'm-3', senderType: 'system', senderId: null, subject: 'Fleet alert', content: 'y', metadata: {} },
         ],
       },
       {}
     )
-    expect(Object.keys(snap.inbox)).toEqual(['m-1'])
-    expect(snap.inbox['m-1']).toEqual({ hash: hashValue(['Done', 'PR up']), senderId: 'ag-1', subject: 'Done' })
+    expect(Object.keys(snap.inbox)).toEqual(['m-1', 'm-2', 'm-3'])
+    expect(snap.inbox['m-1']).toEqual({
+      hash: hashValue(['Done', 'PR up']),
+      senderType: 'agent',
+      senderId: 'ag-1',
+      subject: 'Done',
+    })
+    expect(snap.inbox['m-3']).toEqual({
+      hash: hashValue(['Fleet alert', 'y']),
+      senderType: 'system',
+      senderId: null,
+      subject: 'Fleet alert',
+    })
   })
 
   it('applies the squad filter to actions and inbox metadata', () => {

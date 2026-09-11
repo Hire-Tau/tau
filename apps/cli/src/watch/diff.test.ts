@@ -160,22 +160,41 @@ describe('diffSnapshots — actions and inbox', () => {
     expect(kinds(diffSnapshots(next, changed, { now: 0 }))).toEqual(['action.pending'])
   })
 
-  it('reports new and changed agent inbox messages', () => {
-    const next: Snapshot = { ...empty(), inbox: { 'm-1': { hash: 'h1', senderId: 'ag', subject: 'Done' } } }
+  it('reports new and changed inbox messages from any sender', () => {
+    const next: Snapshot = {
+      ...empty(),
+      inbox: {
+        'm-1': { hash: 'h1', senderType: 'agent', senderId: 'ag', subject: 'Done' },
+        'm-2': { hash: 'h2', senderType: 'system', senderId: null, subject: 'Fleet alert' },
+      },
+    }
     expect(diffSnapshots(empty(), next, { now: 0 })).toEqual([
       {
         kind: 'inbox.message',
         key: 'inbox:m-1:h1',
         label: 'New or updated inbox message m-1 from agent ag: Done',
         messageId: 'm-1',
+        senderType: 'agent',
         senderId: 'ag',
         subject: 'Done',
+      },
+      {
+        kind: 'inbox.message',
+        key: 'inbox:m-2:h2',
+        label: 'New or updated inbox message m-2 from system: Fleet alert',
+        messageId: 'm-2',
+        senderType: 'system',
+        senderId: null,
+        subject: 'Fleet alert',
       },
     ])
   })
 
   it('a message that disappears (read) produces no event', () => {
-    const prev: Snapshot = { ...empty(), inbox: { 'm-1': { hash: 'h1', senderId: 'ag', subject: null } } }
+    const prev: Snapshot = {
+      ...empty(),
+      inbox: { 'm-1': { hash: 'h1', senderType: 'agent', senderId: 'ag', subject: null } },
+    }
     expect(diffSnapshots(prev, empty(), { now: 0 })).toEqual([])
   })
 })

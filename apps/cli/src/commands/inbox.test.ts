@@ -92,6 +92,21 @@ describe('inbox CLI commands', () => {
     )
   })
 
+  it('send-system honors --recipient-type so automation can address a user inbox', async () => {
+    await run(['inbox', 'send-system', 'user-1', 'fleet alert', '--recipient-type', 'user', '-s', 'Alert'])
+
+    expect(apiPost).toHaveBeenCalledWith(
+      '/api/inbox',
+      expect.objectContaining({
+        recipientType: 'user',
+        recipientId: 'user-1',
+        asSystem: true,
+        subject: 'Alert',
+        content: 'fleet alert',
+      })
+    )
+  })
+
   it('preserves the full reply ID for a local Assistant inbox reply', async () => {
     const recipientId = 'assistant:57bd78ce-0344-45cf-8e1b-798d1b764b56'
     const requestId = '395cd9c1-1f01-4fe8-a9fa-157e77516843'

@@ -25,6 +25,7 @@ export interface ActionEntry {
 
 export interface InboxEntry {
   hash: string
+  senderType: string
   senderId: string | null
   subject: string | null
 }
@@ -94,14 +95,15 @@ export function normalizeSnapshot(raw: RawSnapshot, opts: { squadId?: string }):
         } satisfies ActionEntry,
       ])
   )
+  // Every unread message to the user counts (agents, system notices, remote peers, other humans).
   const inbox = sorted(
     (raw.inbox as Row[])
-      .filter((m) => m.senderType === 'agent')
       .filter((m) => !squadId || m.metadata?.squadId === squadId)
       .map((m) => [
         m.id,
         {
           hash: hashValue([m.subject ?? null, m.content ?? '']),
+          senderType: m.senderType ?? 'unknown',
           senderId: m.senderId ?? null,
           subject: m.subject ?? null,
         } satisfies InboxEntry,
