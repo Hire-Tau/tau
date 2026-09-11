@@ -6,6 +6,7 @@ import {
   agentTypes,
   deviceTokens,
   messages,
+  modelTiers,
   roleAssignments,
   squads,
   users,
@@ -363,9 +364,31 @@ async function ensureBundledConfig(created: string[]): Promise<Role> {
   const requiredTypes = [...new Set(['manager', ...DEMO_CONTENT.flatMap((squad) => squad.defaultAgents)])]
   const present = await db.select({ id: agentTypes.id }).from(agentTypes).where(inArray(agentTypes.id, requiredTypes))
   if (present.length < requiredTypes.length) {
-    await sync.modelTierSync.sync()
     await sync.agentTypeSync.sync()
     created.push('bundled agent types synced')
+  }
+  // The tiers those types resolve their model through. Insert-only: the tier
+  // sync is a full reconcile that refuses to prune tiers still referenced,
+  // which is not this command's business.
+  const tierSlugs = (
+    await db.select({ tier: agentTypes.tier }).from(agentTypes).where(inArray(agentTypes.id, requiredTypes))
+  ).flatMap((row) => (row.tier ? [row.tier] : []))
+  if (tierSlugs.length) {
+    const have = new Set(
+      (await db.select({ slug: modelTiers.slug }).from(modelTiers).where(inArray(modelTiers.slug, tierSlugs))).map(
+        (row) => row.slug
+      )
+    )
+    const missing = (await sync.modelTierSync.loadFromDir()).filter(
+      (tier) => tierSlugs.includes(tier.slug) && !have.has(tier.slug)
+    )
+    if (missing.length) {
+      await db
+        .insert(modelTiers)
+        .values(missing.map((tier) => sync.modelTierSync.toRecord(tier) as typeof modelTiers.$inferInsert))
+        .onConflictDoNothing()
+      created.push(`bundled model tiers synced (${missing.map((tier) => tier.slug).join(', ')})`)
+    }
   }
 
   const { SquadPreset } = await import('../../entities/SquadPreset')
