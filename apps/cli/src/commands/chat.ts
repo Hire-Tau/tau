@@ -57,17 +57,21 @@ export function registerChatCommands(program: Command) {
         }
 
         let resolvedAgentId = ''
+        let finished = false
 
         // Stream response
-        // The stream also carries keepalive `ping` events with empty data and
+        // The worker streams the reply as `text` events (`chunk` is the older
+        // name) and repeats `agent`/`done` when the execution settles. The
+        // stream also carries keepalive `ping` events with empty data and
         // events this command does not render (thinking, flush_agent, ...), so
         // only parse the events it reads.
         await apiPostSSE('/api/chat', body, (event, data) => {
           if (event === 'agent') {
             resolvedAgentId = JSON.parse(data).agentId
-          } else if (event === 'chunk') {
+          } else if (event === 'text' || event === 'chunk') {
             process.stdout.write(JSON.parse(data).text)
-          } else if (event === 'done') {
+          } else if (event === 'done' && !finished) {
+            finished = true
             console.log() // newline after response
             console.log(`\n[Agent: ${resolvedAgentId}]`)
           }
