@@ -67,6 +67,24 @@ describe('skill CLI commands', () => {
     expect(skill).toContain('name: tau-memory')
   })
 
+  it('installs the tau operator skill from external/skills', async () => {
+    const cwd = await makeTempDir()
+    const targetDir = join(cwd, 'custom-skills')
+
+    await run(['skill', 'install', 'tau', '--agent', 'custom', '--target-dir', targetDir])
+
+    const skill = await readFile(join(targetDir, 'tau/SKILL.md'), 'utf8')
+    expect(skill).toContain('name: tau\n')
+    expect(skill).toContain('# Operating Tau (the `tau` CLI)')
+    expect(skill).toContain('## Installed Tau CLI')
+  })
+
+  it('rejects skills that are not bundled', async () => {
+    await expect(run(['skill', 'install', 'nope', '--agent', 'pi'])).rejects.toThrow(
+      /unsupported skill: nope\. Supported skills: tau-memory, tau/
+    )
+  })
+
   it('requires a target directory for custom agents', async () => {
     await expect(run(['skill', 'install', 'tau-memory', '--agent', 'custom'])).rejects.toThrow(
       /custom agent requires --target-dir/

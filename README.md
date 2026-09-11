@@ -52,8 +52,12 @@ curl -fsSL https://hiretau.ai/cli/install.sh | bash
 The CLI is installed to `~/.tau/bin`. See [CLI setup](docs/wiki/cli/README.md)
 for authentication and usage.
 
-**Operate Tau from Claude Code:** run `bash contrib/claude-skills/install.sh`
-from a checkout to install the [Tau operator skill](contrib/claude-skills/tau/SKILL.md).
+**Operate Tau from an AI coding agent:** the CLI bundles the
+[Tau operator skill](external/skills/tau/SKILL.md). Install it for your agent with
+
+```bash
+tau skill install tau --agent claude-code --global   # or --agent pi | codex
+```
 
 </details>
 
