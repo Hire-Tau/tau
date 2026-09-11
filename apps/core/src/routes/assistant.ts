@@ -12,24 +12,36 @@ import { HTTPException } from 'hono/http-exception'
 import { isDeepStrictEqual } from 'node:util'
 import { zValidator } from '@hono/zod-validator'
 import { and, asc, desc, eq, ilike, isNull, sql } from 'drizzle-orm'
-import { assistantEntrySchema, assistantInboxRecipientId, chatPagePathSchema, type AssistantEntry } from '@tau/shared'
+import {
+  assistantEntrySchema,
+  assistantInboxRecipientId,
+  chatPagePathSchema,
+  type AssistantEntry,
+  type AssistantMessageReceipt,
+} from '@tau/shared'
 import { assistantConversations, assistantEntries, db, inbox, agents } from '../db'
 import { Agent } from '../entities/Agent'
+import { Squad } from '../entities/Squad'
 import { InboxMessage } from '../entities/InboxMessage'
-import { resolveActingUser, hasAgentResourcePermission } from '../services/rbac'
+import { resolveOwnedAgent } from '../services/assistant-agents'
+import { resolveActingUser, hasAgentResourcePermission, hasPermission } from '../services/rbac'
 import { requirePermission } from '../middleware/require-permission'
 
 const uuid = z.string().uuid()
 const createSchema = z.object({ id: uuid, title: z.string().trim().min(1).max(120).optional() })
 const appendSchema = z.object({ entries: z.array(assistantEntrySchema).min(1).max(50) })
-const messageSchema = z.object({
-  clientId: uuid,
-  request: z.string().trim().min(1).max(20_000),
-  pagePath: chatPagePathSchema.optional(),
-  agentId: uuid.optional(),
-  inReplyTo: uuid.optional(),
-  mode: z.enum(['steer', 'follow-up']).default('follow-up'),
-})
+const messageSchema = z
+  .object({
+    clientId: uuid,
+    request: z.string().trim().min(1).max(20_000),
+    pagePath: chatPagePathSchema.optional(),
+    agentId: uuid.optional(),
+    squadId: uuid.optional(),
+    label: z.string().trim().min(1).max(80).optional(),
+    inReplyTo: uuid.optional(),
+    mode: z.enum(['steer', 'follow-up']).default('steer'),
+  })
+  .refine((input) => !(input.agentId && input.squadId), { message: 'agentId and squadId are mutually exclusive' })
 
 // Every lookup includes the current human owner, including when called by their system manager.
 async function owned(id: string, userId: string) {
@@ -202,29 +214,32 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
       conversation.editor && !conversation.editor.closed
         ? `${input.request}\n\n${assistantEditorContext(conversation.editor)}\n\n[Page editor conversation: brainstorm or edit the draft using read and edit. Read the latest draft before edits. Do not modify or publish saved presets via CLI or other tools; valid edits apply automatically and can be undone; the user saves to publish.]`
         : input.request
-    const agentId =
-      input.agentId ??
-      (await db.transaction(async (tx) => {
-        const [fresh] = await tx
-          .select()
+    let agent: Agent | null
+    let kind: AssistantMessageReceipt['kind']
+    if (input.agentId) {
+      agent = await Agent.find(input.agentId)
+      if (!agent || !(await hasAgentResourcePermission(c.get('identity'), agent, 'chat:send')))
+        return c.json({ error: 'Agent not found' }, 404)
+      kind = 'agent'
+    } else {
+      if (input.squadId) {
+        const squad = await Squad.find(input.squadId)
+        if (!squad || squad.status !== 'active' || !(await hasPermission(c.get('identity'), 'chat:send', squad.id)))
+          return c.json({ error: 'Squad not found' }, 404)
+      }
+      const squadId = input.squadId ?? null
+      agent = await db.transaction(async (tx) => {
+        await tx
+          .select({ id: assistantConversations.id })
           .from(assistantConversations)
           .where(eq(assistantConversations.id, conversation.id))
           .for('update')
-        if (fresh.managerAgentId) return fresh.managerAgentId
-        const agent = await Agent.create({
-          agentTypeId: 'system-manager',
-          ownerUserId: conversation.ownerUserId,
-          context: { scope: { type: 'system-manager' } },
-        })
-        await tx
-          .update(assistantConversations)
-          .set({ managerAgentId: agent.id })
-          .where(eq(assistantConversations.id, conversation.id))
-        return agent.id
-      }))
-    const agent = await Agent.find(agentId)
-    if (!agent || !(await hasAgentResourcePermission(c.get('identity'), agent, 'chat:send')))
-      return c.json({ error: 'Agent not found' }, 404)
+        return resolveOwnedAgent(tx, conversation, { squadId })
+      })
+      if (input.label) await agent.update({ purpose: `Assistant task: ${input.label}` })
+      kind = squadId ? 'squad' : 'background'
+    }
+    const agentId = agent.id
     if (input.inReplyTo) {
       const [reply] = await db
         .select({ id: inbox.id })
@@ -286,7 +301,14 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
       (message.metadata?.inReplyTo ?? undefined) !== input.inReplyTo
     )
       return c.json({ error: 'Message receipt conflicts with this request' }, 409)
-    return c.json({ id: message.id, agentId, delivered: Boolean(message.deliveredAt) })
+    const receipt: AssistantMessageReceipt = {
+      id: message.id,
+      agentId,
+      delivered: Boolean(message.deliveredAt),
+      kind,
+      ...(kind === 'squad' && input.squadId ? { squadId: input.squadId } : {}),
+    }
+    return c.json(receipt)
   })
   .post('/:id/inbox', zValidator('json', z.object({ consumerId: uuid })), async (c) => {
     const conversation = await owned(c.req.param('id'), c.get('assistantOwner'))

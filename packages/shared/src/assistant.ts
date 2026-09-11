@@ -29,10 +29,14 @@ export function parseAssistantInboxConversationId(id: string | null | undefined)
     ? id.slice('assistant:'.length)
     : null
 }
+export type AssistantMessageTargetKind = 'background' | 'squad' | 'agent'
 export interface AssistantMessageReceipt {
   id: string
   agentId: string
   delivered: boolean
+  /** background = the conversation's general helper, squad = its owned consultant, agent = an explicit target. */
+  kind: AssistantMessageTargetKind
+  squadId?: string
 }
 export interface AssistantInboxUpdate {
   id: string

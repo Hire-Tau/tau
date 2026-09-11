@@ -2,8 +2,18 @@ import { afterEach, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray, or } from 'drizzle-orm'
 import { Hono } from 'hono'
-import { assistantConversations, assistantEntries, agents, db, executions, inbox } from '../db'
+import {
+  assistantConversations,
+  assistantConversationAgents,
+  assistantEntries,
+  agents,
+  db,
+  executions,
+  inbox,
+  squads,
+} from '../db'
 import { Agent } from '../entities/Agent'
+import { Squad } from '../entities/Squad'
 import { InboxMessage, formatInboxMessages } from '../entities/InboxMessage'
 import { assistantInboxRecipientId } from '@tau/shared'
 import { inboxRouter } from './inbox'
@@ -19,7 +29,8 @@ import {
 import { assistantRouter } from './assistant'
 const prefix = `assistant-${randomUUID()}`
 const conversationIds: string[] = [],
-  agentIds: string[] = []
+  agentIds: string[] = [],
+  squadIds: string[] = []
 const app = new Hono()
   .use('*', identityMiddleware)
   .route('/api/assistant', assistantRouter)
@@ -54,6 +65,7 @@ afterEach(async () => {
   if (conversationIds.length)
     await db.delete(assistantConversations).where(inArray(assistantConversations.id, conversationIds.splice(0)))
   if (agentIds.length) await db.delete(agents).where(inArray(agents.id, agentIds.splice(0)))
+  if (squadIds.length) await db.delete(squads).where(inArray(squads.id, squadIds.splice(0)))
   await cleanupTestRbac(prefix)
 })
 test('saved histories belong to their user; guessed IDs cannot read, append, or delegate', async () => {
@@ -120,13 +132,14 @@ test('history pagination has no overlap and search treats wildcard characters li
     expect((await request(`/?${query}`)).status).toBe(400)
   expect((await request(`/${id}?before=NaN`)).status).toBe(400)
 })
-test('ordinary inbox requests return durable receipts and serialize on one User Assistant', async () => {
+test('ordinary inbox requests return durable receipts and serialize on one general helper', async () => {
   const { id, owner, request } = await fixture()
   const body = { clientId: randomUUID(), request: 'Investigate the current work queue', pagePath: '/squads/tau' }
   const first = await request(`/${id}/messages`, body)
   expect(first.status).toBe(200)
   const receipt = await first.json()
   agentIds.push(receipt.agentId)
+  expect(receipt.kind).toBe('background')
   const second = await request(`/${id}/messages`, body)
   expect(second.status).toBe(200)
   expect((await second.json()).id).toBe(receipt.id)
@@ -141,7 +154,7 @@ test('ordinary inbox requests return durable receipts and serialize on one User 
     .from(inbox)
     .where(eq(inbox.senderId, assistantInboxRecipientId(id)))
   expect(rows).toHaveLength(2)
-  expect(rows.every((row) => row.deliveryMode === 'follow-up')).toBe(true)
+  expect(rows.every((row) => row.deliveryMode === 'steer')).toBe(true)
   expect(rows.filter((row) => row.metadata.pagePath)).toHaveLength(1)
   expect((await db.select().from(executions).where(eq(executions.agentId, agent.id))).length).toBe(1)
   const formatted = formatInboxMessages([await InboxMessage.mustFind(receipt.id)])
@@ -254,7 +267,7 @@ test('page editors scope tools to their conversation and reject stale, invalid, 
   const manager = await Agent.create({ agentTypeId: 'system-manager', ownerUserId: f.owner.id, context: {} })
   const stranger = await Agent.create({ agentTypeId: 'system-manager', ownerUserId: f.owner.id, context: {} })
   agentIds.push(manager.id, stranger.id)
-  await db.update(assistantConversations).set({ managerAgentId: manager.id }).where(eq(assistantConversations.id, f.id))
+  await db.insert(assistantConversationAgents).values({ conversationId: f.id, squadId: null, agentId: manager.id })
   const tools = createPageEditorTools(manager.id, f.id)
   const denied = await createPageEditorTools(stranger.id, f.id)[0]!.execute(
     'read',
@@ -420,4 +433,67 @@ test('editor operations and history actions share revision checks and atomic pro
   expect(
     (await f.request(`/${f.id}/editor/propose`, { baseRevision: 2, summary: 'Redo', historyAction: 'redo' })).status
   ).toBe(200)
+})
+
+async function squadFixture(owner: { id: string }, role: { id: string }) {
+  const squad = await Squad.create({ name: `${prefix}-squad-${randomUUID().slice(0, 8)}`, purpose: 'test' })
+  squadIds.push(squad.id)
+  await assignRole({ userId: owner.id, roleId: role.id, scope: 'squad', squadId: squad.id })
+  return squad
+}
+
+test('squad delegations create one owned consultant per squad, label it, and steer by default', async () => {
+  const { id, owner, request } = await fixture()
+  const role = await createTestRole({ prefix, permissions: ['chat:send'] })
+  const squad = await squadFixture(owner, role)
+  const body = { clientId: randomUUID(), request: 'List enabled schedules', squadId: squad.id, label: 'Check enabled schedules' }
+  const first = await request(`/${id}/messages`, body)
+  expect(first.status).toBe(200)
+  const receipt = await first.json()
+  agentIds.push(receipt.agentId)
+  expect(receipt).toMatchObject({ kind: 'squad', squadId: squad.id })
+  const consultant = await Agent.mustFind(receipt.agentId)
+  expect(consultant.agentTypeId).toBe('consultant')
+  expect(consultant.squadId).toBe(squad.id)
+  expect(consultant.metadata?.name).toBe('Assistant task')
+  expect(consultant.metadata?.purpose).toBe('Assistant task: Check enabled schedules')
+  const second = await request(`/${id}/messages`, { ...body, clientId: randomUUID(), label: 'Pause the deploy stream' })
+  expect((await second.json()).agentId).toBe(receipt.agentId)
+  expect((await Agent.mustFind(receipt.agentId)).metadata?.purpose).toBe('Assistant task: Pause the deploy stream')
+  const rows = await db.select().from(inbox).where(eq(inbox.recipientId, receipt.agentId))
+  expect(rows.map((row) => row.deliveryMode)).toEqual(['steer', 'steer'])
+  const general = await request(`/${id}/messages`, { clientId: randomUUID(), request: 'General task', label: 'General task' })
+  const generalReceipt = await general.json()
+  agentIds.push(generalReceipt.agentId)
+  expect(generalReceipt.kind).toBe('background')
+  expect(generalReceipt.agentId).not.toBe(receipt.agentId)
+  expect((await Agent.mustFind(generalReceipt.agentId)).metadata?.purpose).toBe('Assistant task: General task')
+  const owned = await db
+    .select()
+    .from(assistantConversationAgents)
+    .where(eq(assistantConversationAgents.conversationId, id))
+  expect(owned.map((row) => row.squadId).sort()).toEqual([null, squad.id].sort())
+})
+
+test('squad delegations require squad chat permission and reject mixed targets', async () => {
+  const { id, owner, request } = await fixture()
+  const role = await createTestRole({ prefix, permissions: ['chat:send'] })
+  const squad = await squadFixture(owner, role)
+  const base = { clientId: randomUUID(), request: 'Task', label: 'Task' }
+  expect((await request(`/${id}/messages`, { ...base, squadId: squad.id, agentId: randomUUID() })).status).toBe(400)
+  expect((await request(`/${id}/messages`, { ...base, squadId: randomUUID() })).status).toBe(404)
+  // fixture() grants owner and other a system-scope chat:send role, and system-scope
+  // permissions are unconditionally included by resolveUserPermissions regardless of the
+  // squadId argument (apps/core/src/services/rbac/permissions.ts) — so `other` already
+  // satisfies hasPermission(identity, 'chat:send', squad.id) and would pass the squad check.
+  // Use a user with no role assignment at all instead: the router's top-level
+  // requirePermission('chat:send') (no squadId) rejects it with 403 before the route runs.
+  const stranger = await createTestUser({ prefix })
+  const otherConversation = randomUUID()
+  conversationIds.push(otherConversation)
+  expect((await request('/', { id: otherConversation }, stranger.token)).status).toBe(403)
+  expect(
+    (await request(`/${otherConversation}/messages`, { ...base, squadId: squad.id }, stranger.token)).status
+  ).toBe(403)
+  expect(await db.select().from(assistantConversationAgents).where(eq(assistantConversationAgents.conversationId, otherConversation))).toEqual([])
 })
