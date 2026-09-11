@@ -105,7 +105,7 @@ export function InboxPage() {
           <div className="px-3 py-2">
             <SkeletonLine className="w-20" />
           </div>
-          <div className="divide-y divide-th-border/50">
+          <div className="divide-y divide-th-border">
             <SkeletonRows count={Math.max(1, loadingRowCount)}>
               {(index) => (
                 <div key={index} className="px-3 py-4 space-y-2">
@@ -126,7 +126,7 @@ export function InboxPage() {
           {hasUnread && (
             <section className="tau-section overflow-hidden">
               <SectionHeader title="Unread" count={unreadMessages.length} />
-              <div className="divide-y divide-th-border/50">
+              <div className="divide-y divide-th-border">
                 {unreadMessages.map((message) => (
                   <MessageRow
                     key={message.id}
@@ -150,7 +150,7 @@ export function InboxPage() {
                 onToggle={() => setReadCollapsed(!readCollapsed)}
               />
               {!readCollapsed && (
-                <div className="divide-y divide-th-border/50">
+                <div className="divide-y divide-th-border">
                   {readMessages.map((message) => (
                     <MessageRow key={message.id} squads={squads} message={message} />
                   ))}

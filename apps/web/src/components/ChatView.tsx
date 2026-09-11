@@ -228,7 +228,7 @@ function AssistantMessageRow({
         />
         <NavigateButtons navigations={extractNavigationToolCalls(effectiveMetadata?.content)} />
         {tts && tts.playingMessageId === message.id && (
-          <div className="flex items-center mt-2 pt-1.5 border-t border-th-border/60">
+          <div className="flex items-center mt-2 pt-1.5 border-t border-th-border">
             <button
               type="button"
               onClick={() => tts.stop()}
