@@ -59,13 +59,14 @@ export function registerChatCommands(program: Command) {
         let resolvedAgentId = ''
 
         // Stream response
+        // The stream also carries keepalive `ping` events with empty data and
+        // events this command does not render (thinking, flush_agent, ...), so
+        // only parse the events it reads.
         await apiPostSSE('/api/chat', body, (event, data) => {
-          const parsed = JSON.parse(data)
-
           if (event === 'agent') {
-            resolvedAgentId = parsed.agentId
+            resolvedAgentId = JSON.parse(data).agentId
           } else if (event === 'chunk') {
-            process.stdout.write(parsed.text)
+            process.stdout.write(JSON.parse(data).text)
           } else if (event === 'done') {
             console.log() // newline after response
             console.log(`\n[Agent: ${resolvedAgentId}]`)
