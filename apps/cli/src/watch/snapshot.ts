@@ -110,14 +110,21 @@ export function normalizeSnapshot(raw: RawSnapshot, opts: { squadId?: string }):
   return { v: 1, streams, actions, inbox }
 }
 
+/** List endpoints answer with a bare array, or `{ items }` once a `limit` makes them paginate. */
+function rows(payload: unknown): unknown[] {
+  if (Array.isArray(payload)) return payload
+  const items = (payload as { items?: unknown } | null)?.items
+  return Array.isArray(items) ? items : []
+}
+
 /** Three read-only requests; the list payload already carries openWaits/derivedState/runtime. */
 export async function fetchSnapshot(opts: { squadId?: string }): Promise<Snapshot> {
   const streamParams = new URLSearchParams({ statuses: 'active,queued' })
   if (opts.squadId) streamParams.set('squadId', opts.squadId)
   const [streams, actions, inbox] = await Promise.all([
-    apiGet<unknown[]>(`/api/workstreams?${streamParams}`),
-    apiGet<unknown[]>('/api/actions/pending'),
-    apiGet<unknown[]>('/api/inbox/user/me?limit=200'),
+    apiGet<unknown>(`/api/workstreams?${streamParams}`),
+    apiGet<unknown>('/api/actions/pending'),
+    apiGet<unknown>('/api/inbox/user/me?limit=200'),
   ])
-  return normalizeSnapshot({ streams, actions, inbox }, opts)
+  return normalizeSnapshot({ streams: rows(streams), actions: rows(actions), inbox: rows(inbox) }, opts)
 }

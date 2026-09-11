@@ -35,6 +35,7 @@ import { registerSquadEnvCommands } from './commands/squad-env'
 import { registerSquadPresetCommands } from './commands/squad-preset'
 import { registerSystemCommands } from './commands/system'
 import { registerUpdateCommands } from './commands/update'
+import { registerWatchCommands } from './commands/watch'
 import { registerWebhookCommands } from './commands/webhook'
 import { registerWhoamiCommands } from './commands/whoami'
 import { registerWorkerCommands } from './commands/worker'
@@ -89,6 +90,7 @@ registerSquadEnvCommands(program)
 registerSquadPresetCommands(program)
 registerSystemCommands(program)
 registerUpdateCommands(program)
+registerWatchCommands(program)
 registerWebhookCommands(program)
 registerWhoamiCommands(program)
 registerWorkerCommands(program)

@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'bun:test'
-import { hashValue, normalizeSnapshot } from './snapshot'
+import { describe, expect, it, mock } from 'bun:test'
+import { apiGet } from '../client'
+import { fetchSnapshot, hashValue, normalizeSnapshot } from './snapshot'
 
 const stream = (over: Record<string, unknown> = {}) => ({
   id: 'ws-1',
@@ -102,6 +103,28 @@ describe('normalizeSnapshot', () => {
       { squadId: 'sq-1' }
     )
     expect(Object.keys(snap.actions)).toEqual(['a-1'])
+    expect(Object.keys(snap.inbox)).toEqual(['m-1'])
+  })
+
+  it('fetchSnapshot unwraps paginated {items} envelopes and passes the squad filter', async () => {
+    const get = apiGet as ReturnType<typeof mock>
+    get.mockReset()
+    get.mockImplementation(async (path: string) => {
+      if (path.startsWith('/api/workstreams')) return [stream()]
+      if (path === '/api/actions/pending') return []
+      if (path.startsWith('/api/inbox/user/me')) {
+        return {
+          items: [{ id: 'm-1', senderType: 'agent', senderId: 'ag', subject: null, content: 'x', metadata: { squadId: 'sq-1' } }],
+          hasMore: false,
+          nextCursor: null,
+          totalCount: 1,
+        }
+      }
+      throw new Error(`unexpected ${path}`)
+    })
+    const snap = await fetchSnapshot({ squadId: 'sq-1' })
+    expect(get).toHaveBeenCalledWith('/api/workstreams?statuses=active%2Cqueued&squadId=sq-1')
+    expect(Object.keys(snap.streams)).toEqual(['ws-1'])
     expect(Object.keys(snap.inbox)).toEqual(['m-1'])
   })
 
