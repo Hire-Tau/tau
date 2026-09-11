@@ -36,3 +36,35 @@ test('failed, unfinished, malformed, and unrelated tools never create conversati
   ])
     expect(assistantConversationLink(bad)).toBeUndefined()
 })
+
+const receipt = (toolName: string, result: unknown) => ({
+  role: 'tool' as const,
+  final: true,
+  text: '',
+  toolName,
+  toolResult: JSON.stringify(result),
+})
+
+test('delegate_task receipts carry the task label and kind', () => {
+  expect(
+    assistantConversationLink(
+      receipt('delegate_task', {
+        id: 'm',
+        agentId: 'a',
+        delivered: true,
+        kind: 'squad',
+        squadId: 's',
+        conversation: { agentId: 'a', squadId: 's', label: 'Check enabled schedules', kind: 'squad' },
+      })
+    )
+  ).toEqual({ agentId: 'a', squadId: 's', label: 'Check enabled schedules', kind: 'squad' })
+})
+
+test('navigate agent offers and legacy message receipts still produce links', () => {
+  expect(
+    assistantConversationLink(receipt('navigate', { ok: true, conversation: { agentId: 'a', label: 'Morgan' } }))
+  ).toEqual({ agentId: 'a', label: 'Morgan' })
+  expect(assistantConversationLink(receipt('navigate', { ok: true, navigatedTo: '/x' }))).toBeUndefined()
+  for (const name of ['message_user_assistant', 'message_squad_manager', 'message_work_stream_manager', 'show_conversation'])
+    expect(assistantConversationLink(receipt(name, { receipt: { id: 'm', agentId: 'a' } }))?.agentId).toBe('a')
+})

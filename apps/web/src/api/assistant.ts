@@ -30,6 +30,8 @@ export const assistantApi = {
     options: {
       pagePath?: string
       agentId?: string
+      squadId?: string
+      label?: string
       mode?: 'steer' | 'follow-up'
       inReplyTo?: string
     } = {}
