@@ -162,11 +162,15 @@ export class SystemManagerRunner extends AgentRunner {
       : []
     const askHumanTool = assistantDelegate
       ? null
-      : createAsyncAskHumanTool({
-          agentId: this.agent.id,
-          executionId: this.execution.id,
-          flushPersistence: () => this.persistence.waitForAll(),
-        })
+      : createAsyncAskHumanTool(
+          {
+            agentId: this.agent.id,
+            executionId: this.execution.id,
+            flushPersistence: () => this.persistence.waitForAll(),
+          },
+          undefined,
+          { allowBlocking: false }
+        )
     const webTools = createWebTools()
     const environmentTools = [...baseTools, ...webTools]
     const setAgentPurposeTool = createSetAgentPurposeTool({ agentId: this.agent.id })

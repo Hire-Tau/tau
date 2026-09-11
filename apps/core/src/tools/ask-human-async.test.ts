@@ -115,3 +115,48 @@ describe('async ask_human blocking reply', () => {
     expect(result.details).toMatchObject({ openedWaitCount: 2, openedWaitWorkStreamIds: ['ws-one', 'ws-two'] })
   })
 })
+
+describe('async ask_human without blocking (managers and assistants)', () => {
+  test('omits the blocking and waitScope parameters and never opens waits', async () => {
+    const createQuestion = mock(async () => ({ ...record, openedWaitWorkStreamIds: [] }))
+    const tool = createAsyncAskHumanTool(
+      { agentId: 'manager-1', executionId: 'execution-1', flushPersistence: async () => {} },
+      { createQuestion },
+      { allowBlocking: false }
+    )
+
+    expect(JSON.stringify(tool.parameters)).not.toMatch(/blocking|waitScope/)
+    expect(tool.description).toContain('keep working')
+    expect(tool.description).not.toContain('Set blocking true')
+
+    const result = await tool.execute(
+      'call-1',
+      { blocking: true, waitScope: 'stream', questions: [{ id: 'ship', question: 'Ship it?' }] },
+      undefined,
+      undefined,
+      {} as any
+    )
+
+    expect(createQuestion).toHaveBeenCalledWith(
+      { agentId: 'manager-1', executionId: 'execution-1' },
+      expect.anything(),
+      {
+        blocking: false,
+      }
+    )
+    const text = result.content[0]?.type === 'text' ? result.content[0].text : ''
+    expect(text).toContain('You can continue other work in the meantime')
+    expect(text).toContain('cannot block')
+    expect(result.details).toMatchObject({ blocking: false, openedWaitCount: 0 })
+  })
+
+  test('keeps blocking available by default for work-stream agents', () => {
+    const tool = createAsyncAskHumanTool({
+      agentId: 'worker-1',
+      executionId: 'execution-1',
+      flushPersistence: async () => {},
+    })
+    expect(JSON.stringify(tool.parameters)).toMatch(/blocking/)
+    expect(tool.description).toContain('Set blocking true')
+  })
+})
