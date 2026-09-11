@@ -68,7 +68,7 @@ ChatGPT Plus/Pro and GitHub Copilot subscriptions are web-UI only. This requires
 Runtime-specific variables (`vm`, `k8s`, `docker-*`) are listed per runtime in
 [sandbox-runtimes.md](sandbox-runtimes.md); the full Kubernetes set is in
 [k8s/deployment.md](k8s/deployment.md#appendix-a-environment-variable-reference).
-Channel variables are explained in [channels.md](channels.md#environment-variables).
+Channel variables are explained in [channels.md](channels.md#credentials-and-legacy-environment-variables).
 
 ## Authentication
 

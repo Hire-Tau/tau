@@ -276,8 +276,8 @@ when work streams complete or need review. Notifications reuse the same bot
 configured for slash commands — no separate webhooks needed. Blocked events
 require an explicit custom rule.
 
-**Prerequisites:** the channel bot must already be set up ([Discord](#discord-setup),
-[Slack](#slack-setup), [Telegram](#telegram-setup)).
+**Prerequisites:** the channel bot must already be connected ([Discord](#discord),
+[Slack](#slack), [Telegram](#telegram)).
 
 ### Option 1: Use slash commands (easiest)
 
