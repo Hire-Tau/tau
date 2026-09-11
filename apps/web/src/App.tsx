@@ -14,6 +14,7 @@ import { OfflineBanner } from './components/OfflineBanner'
 import { MaintenanceBanner } from './components/MaintenanceBanner'
 import { AppHeader, MobileBottomNav, DesktopFooter } from './components/AppNav'
 import { LoginPage } from './components/LoginPage'
+import { DemoAccessPage } from './components/auth/DemoAccessPage'
 import { TokenRegisterPage } from './components/auth/TokenRegisterPage'
 import { InboxPopup } from './components/InboxPopup'
 import { ActionsPage } from './components/ActionsPage'
@@ -25,7 +26,7 @@ import { OnboardingBanner } from './components/onboarding/OnboardingBanner'
 import { useAuth } from './providers/AuthProvider'
 
 export default function App() {
-  const { authRequired, isAuthenticated, needsFirstAdminSetup, loginWithToken } = useAuth()
+  const { authRequired, authStatus, isAuthenticated, needsFirstAdminSetup, loginWithToken } = useAuth()
   const location = useLocation()
 
   // Still checking auth status
@@ -38,6 +39,11 @@ export default function App() {
   // an invite for a DIFFERENT account still lands on the ceremony.
   if (location.pathname === '/register') {
     return <TokenRegisterPage onSuccess={loginWithToken} />
+  }
+  // App-store reviewer access on a designated demo instance: same reasoning, the
+  // visitor has no session. The page redirects home unless the server opted in.
+  if (location.pathname === '/demo') {
+    return <DemoAccessPage enabled={authStatus?.demoReviewerAccess === true} />
   }
 
   // Auth required but not authenticated — show login. `needsFirstAdminSetup` forces

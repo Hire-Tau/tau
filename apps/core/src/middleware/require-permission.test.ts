@@ -64,6 +64,7 @@ describe('permission catalog completeness', () => {
     'ai:tts',
     'system:restart',
     'system:cleanup',
+    'system:demo',
     'slots:use',
     'slots:write',
   ]

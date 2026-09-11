@@ -4,7 +4,7 @@ The native Tau companion connects to a Tau instance. The web app also works in m
 
 ## Pairing & authentication
 
-Use your instance's HTTPS address and its device-pairing flow. Each connection has its own server credentials; connecting to one server does not grant access to another.
+Use your instance's HTTPS address and its device-pairing flow. Each connection has its own server credentials; connecting to one server does not grant access to another. A designated demo instance can also let app-store reviewers pair without an account; see [demo-access.md](demo-access.md).
 
 ## Consultant chat
 

@@ -36,6 +36,8 @@ const KNOWN_KEYS = [
   // Shared secret authenticating the in-cluster sandbox watcher's core callbacks
   // (workspace-files), independent of the admin-gated legacy TAU_PASSWORD.
   'SANDBOX_CALLBACK_SECRET',
+  // Reviewer credential for the demo access page (TAU_DEMO_REVIEWER_ACCESS); rotate to revoke.
+  'DEMO_REVIEWER_SECRET',
 
   // Notifications
   'VAPID_SUBJECT',

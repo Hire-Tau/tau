@@ -89,6 +89,42 @@ roles:
       - grants:read
       - routing:read
 
+  # The shared app-store reviewer account on a designated demo instance
+  # (services/demo). A viewer that can also talk: chat with agents, answer
+  # their questions, resolve review requests. No creation, deletion,
+  # settings, secrets, integrations, or user management.
+  - name: Demo Reviewer
+    slug: demo-reviewer
+    appliesTo: user
+    permissions:
+      - squads:read
+      - agents:read
+      - agents:run # send follow-ups and answer agent questions
+      - workstreams:read
+      - workstreams:respond # approve / send back review requests
+      - workstreams:review
+      - chat:read
+      - chat:send
+      - memory:read
+      - inbox:read
+      - inbox:write
+      - inbox:read-squad
+      - workspace:read
+      - schedules:read
+      - squad-relationships:read
+      - actions:read
+      - recommendations:read
+      - agent-types:read
+      - squad-presets:read
+      - workflows:read
+      - channels:read
+      - skills:read
+      - monitors:read
+      - deployments:read
+      - artifacts:read
+      - grants:read
+      - routing:read
+
   - name: Squad Worker
     slug: default-worker
     readOnly: true

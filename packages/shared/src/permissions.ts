@@ -219,6 +219,7 @@ export const Permissions = {
   SYSTEM_RESTART: 'system:restart',
   SYSTEM_CLEANUP: 'system:cleanup',
   SYSTEM_LOGS: 'system:logs',
+  SYSTEM_DEMO: 'system:demo',
 
   // System API tokens (user-less, scoped automation tokens — admin-managed)
   SYSTEM_TOKENS_MANAGE: 'system-tokens:manage',

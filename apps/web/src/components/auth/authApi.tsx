@@ -10,6 +10,7 @@ import {
   verifyRegistration,
   getLoginOptions,
   verifyLogin,
+  demoPair,
 } from '../../api/auth'
 
 const actualAuthApi = {
@@ -21,6 +22,7 @@ const actualAuthApi = {
   verifyRegistration,
   getLoginOptions,
   verifyLogin,
+  demoPair,
 }
 export type AuthApi = typeof actualAuthApi
 const AuthApiContext = createContext(actualAuthApi)
