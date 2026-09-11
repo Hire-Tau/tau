@@ -90,6 +90,20 @@ Under **Squad settings → Integrations → GitHub → Event rules**, choose an 
 - **Start work stream:** use a selected workflow, or the squad default. The event’s repository and issue/PR are attached automatically. Existing bound work is reused.
 - **Ignore:** take no squad action.
 
+A repository filter is an exact `owner/repository`, or a pattern with `*`
+(`owner/*`, `owner/svc-*`). Patterns match incoming events directly, and they
+also establish polling watches and hosted-relay subscriptions: the pattern is
+expanded against the repositories the selected account can see (`GET /user/repos`
+under that account, listed once per connection and refreshed every ten minutes
+or when the account reconnects), and each match is watched exactly once even
+when several rules or squads overlap. Expansion fails closed — a pattern that
+matches more than 100 repositories, or whose account is revoked or has no
+usable credential and no cached listing, establishes no watches and is
+recorded as a `repository_pattern_expansion` integration audit event and a
+worker log warning; exact filters on the same account are unaffected.
+Repositories that stop being visible or stop matching drop out on the next
+discovery cycle.
+
 The **Shared repository scope** is a reusable filter, not an action. A rule with **Use shared repository scope** enabled must match one of those repository entries **and** its own filters. Shared labels apply only to issue assignment/unassignment events and match any listed label; comments and PR events use only the shared repository restriction. When the checkbox is off, the shared scope is ignored. Blank rule filters add no restriction; rule labels match any listed label on the issue or PR. All access still comes from the assigned integration account.
 
 **Account involvement** selects how the event relates to the selected connection:

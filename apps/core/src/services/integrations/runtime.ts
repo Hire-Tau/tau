@@ -90,6 +90,7 @@ import { DbEventPollingCursorStore } from './db-event-polling-cursor-store'
 import { DbEventPollingDispatchStore } from './db-event-polling-dispatch-store'
 import { GitHubPrWatchPolicy } from './github/watch-policy'
 import { listGitHubPrWorkStreamCandidates, listGitHubTriggerSquads } from './github/database-watch-source'
+import { expandGitHubRepositories } from './github/repository-enumeration-runtime'
 import { createLogger } from '../../lib/infra/logger'
 import {
   extractGitHubPrDispatchFact,
@@ -412,6 +413,7 @@ const githubPrWatchPolicy = new GitHubPrWatchPolicy({
   listWorkStreams: listGitHubPrWorkStreamCandidates,
   listSquads: listGitHubTriggerSquads,
   lastRealDeliveries: getLastRealWebhookDeliveriesForRepos,
+  expandRepositories: expandGitHubRepositories,
 })
 const observedPollingSquads = new WeakMap<object, string[]>()
 export const integrationEventPollingRuntime = new EventPollingRunner({

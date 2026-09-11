@@ -5,6 +5,7 @@ import {
   type WorkflowEventTrigger,
 } from '@tau/shared'
 import { githubRepositoryKey } from '@tau/shared/integration-relay'
+import { isRepositoryPattern } from '../github/repository-enumeration'
 import { findGitHubPrUrl, type WorkStreamCandidate } from '../github/watch-policy'
 
 export interface RepositoryInterest {
@@ -16,22 +17,46 @@ export interface GitHubInterestSource {
   listWorkStreams(): Promise<readonly WorkStreamCandidate[]>
   listSquads(): Promise<readonly { id: string; metadata: unknown }[]>
   resolveConnection(squadId: string, connectionId?: string): Promise<{ id: string } | undefined>
+  /**
+   * Resolves wildcard selectors (`owner/*`) to the exact repositories the
+   * connection can see — see GitHubRepositoryExpander. Without it, wildcard
+   * selectors declare no relay interest.
+   */
+  expandRepositories?(connectionId: string, selectors: readonly string[]): Promise<string[]>
 }
 
-/** Exact declared interests only. Webhook presence never suppresses its own subscription. */
+/**
+ * Declared interests only: exact selectors as written, wildcard selectors
+ * expanded against the connection's own visible repositories (never an
+ * account-wide guess). Webhook presence never suppresses its own subscription.
+ */
 export async function discoverGitHubRelayInterests(source: GitHubInterestSource): Promise<RepositoryInterest[]> {
   const [streams, squads] = await Promise.all([source.listWorkStreams(), source.listSquads()])
   const result = new Map<string, RepositoryInterest>()
   const connections = new Map<string, Promise<{ id: string } | undefined>>()
-  const add = async (squadId: string, repository: unknown, requested?: string) => {
-    const key = githubRepositoryKey.safeParse(repository)
-    if (!key.success) return
+  const resolve = (squadId: string, requested?: string) => {
     const cacheKey = JSON.stringify([squadId, requested])
     if (!connections.has(cacheKey)) connections.set(cacheKey, source.resolveConnection(squadId, requested))
-    const connection = await connections.get(cacheKey)
-    if (!connection) return
-    const interest = { squadId, connectionId: connection.id, repository: key.data }
+    return connections.get(cacheKey)!
+  }
+  const addInterest = (squadId: string, connectionId: string, repository: string) => {
+    const interest = { squadId, connectionId, repository }
     result.set(JSON.stringify(interest), interest)
+  }
+  const add = async (squadId: string, repository: unknown, requested?: string) => {
+    if (typeof repository === 'string' && isRepositoryPattern(repository)) {
+      if (!source.expandRepositories) return
+      const connection = await resolve(squadId, requested)
+      if (!connection) return
+      for (const expanded of await source.expandRepositories(connection.id, [repository]))
+        addInterest(squadId, connection.id, expanded)
+      return
+    }
+    const key = githubRepositoryKey.safeParse(repository)
+    if (!key.success) return
+    const connection = await resolve(squadId, requested)
+    if (!connection) return
+    addInterest(squadId, connection.id, key.data)
   }
   for (const stream of streams) {
     if (['done', 'canceled'].includes(stream.status)) continue

@@ -6,6 +6,7 @@ import {
 } from '@tau/shared'
 import type { EventPollingWatch } from '../event-polling-runner'
 import type { GitHubPrPollingConfig } from './event-poller'
+import { isRepositoryPattern } from './repository-enumeration'
 
 export interface GitHubPrReference {
   owner: string
@@ -73,6 +74,12 @@ export interface GitHubPrWatchPolicyOptions {
   listWorkStreams: () => Promise<readonly WorkStreamCandidate[]>
   listSquads?: () => Promise<readonly { id: string; metadata: unknown }[]>
   lastRealDeliveries: (provider: string, repos: readonly string[]) => Promise<Map<string, Date>>
+  /**
+   * Resolves wildcard repository selectors (`owner/*`) to the exact repositories
+   * the connection can see — see GitHubRepositoryExpander. Without it, wildcard
+   * selectors establish no watches (they still match events that arrive).
+   */
+  expandRepositories?: (connectionId: string, selectors: readonly string[]) => Promise<string[]>
   realDeliveryLookbackDays?: number
   now?: () => Date
 }
@@ -101,24 +108,39 @@ export class GitHubPrWatchPolicy {
       return pending
     }
     const issueWatches = new Map<string, EventPollingWatch>()
-    const watchIssues = async (squadId: string, repository: unknown, connectionId?: string) => {
-      if (typeof repository !== 'string' || !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repository)) return
-      const connection = await resolve(squadId, connectionId)
-      if (!connection) return
+    const watchIssueRepository = (squadId: string, connectionId: string, repository: string) => {
       const [owner, repo] = repository.toLowerCase().split('/')
-      const key = `${squadId}:${connection.id}:${owner}/${repo}:issue-events`
+      const key = `${squadId}:${connectionId}:${owner}/${repo}:issue-events`
       issueWatches.set(key, {
         providerKey: 'github',
         resourceKey: key,
         active: true,
         connection: {
-          id: connection.id,
+          id: connectionId,
           squadId,
           providerKey: 'github',
           adapterVersion: 1,
           configuration: { kind: 'issue-events', owner, repo },
         },
       })
+    }
+    const watchIssues = async (squadId: string, repository: unknown, connectionId?: string) => {
+      if (typeof repository !== 'string') return
+      if (isRepositoryPattern(repository)) {
+        // A pattern is only as wide as the connection's own visibility, and the
+        // expander fails closed (see GitHubRepositoryExpander) — so this never
+        // guesses a scope the credential cannot see.
+        if (!this.#options.expandRepositories) return
+        const connection = await resolve(squadId, connectionId)
+        if (!connection) return
+        for (const expanded of await this.#options.expandRepositories(connection.id, [repository]))
+          watchIssueRepository(squadId, connection.id, expanded)
+        return
+      }
+      if (!/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(repository)) return
+      const connection = await resolve(squadId, connectionId)
+      if (!connection) return
+      watchIssueRepository(squadId, connection.id, repository)
     }
 
     for (const stream of candidates) {
@@ -183,8 +205,9 @@ export class GitHubPrWatchPolicy {
       }
     }
 
-    // Exact trigger bindings declare repository interest before any stream exists.
-    // Do not enumerate all repositories visible to a credential or guess wildcard scope.
+    // Trigger bindings declare repository interest before any stream exists.
+    // Exact bindings need no lookup; wildcard bindings are expanded against the
+    // selected connection's own visible repositories, never guessed.
     for (const squad of (await this.#options.listSquads?.()) ?? []) {
       const metadata = squad.metadata as {
         integrationTriggers?: IntegrationSubscription[]
