@@ -67,7 +67,7 @@ agentTypesRoutes.put('/:id', requirePermission('agent-types:update'), async (c) 
   } catch (e: any) {
     return c.json({ error: e.message }, 400)
   }
-  await AgentType.upsert({ ...body, id })
+  await AgentType.upsert({ ...body, includes: body.includes ?? existing.includes, id })
   await agentTypeSync.recomputeFieldOverrides(id)
   AgentType.invalidateCache()
   const updated = await AgentType.mustFind(id)

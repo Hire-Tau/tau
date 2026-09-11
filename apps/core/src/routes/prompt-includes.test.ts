@@ -31,12 +31,11 @@ guardApp.route('/api/prompt-includes', promptIncludesRoutes)
 const funcPrefix = `prompt-includes-func-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 const guardPrefix = `prompt-includes-guard-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 let funcAdmin: TestUser
-let guardAdmin: TestUser
 let unprivileged: TestUser
 
 beforeAll(async () => {
   funcAdmin = await createTestAdmin({ prefix: funcPrefix })
-  guardAdmin = await createTestAdmin({ prefix: guardPrefix, canonicalAdmin: true })
+  await createTestAdmin({ prefix: guardPrefix, canonicalAdmin: true })
   unprivileged = await createTestUser({ prefix: guardPrefix })
 })
 

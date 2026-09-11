@@ -370,7 +370,9 @@ export class AgentTypeSync extends ConfigSync<AgentTypeYaml> {
         wanted.map((name) => files.get(name) ?? '')
       )
       if (stripped === null) {
-        this.log.warn(`agent type '${id}': systemPrompt override contains edited include text; left as-is`)
+        this.log.warn(
+          `agent type '${id}': systemPrompt override could not be split against the current include files; left as-is with no includes. Revert the type to its template to resume receiving shared blocks.`
+        )
         // Drop the list the base sync just copied from the template, or the
         // runtime would append a second copy of text this prompt already has.
         if ((row.includes ?? []).length === 0) continue

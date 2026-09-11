@@ -239,6 +239,23 @@ describe('agent type route validation', () => {
     expect((await res.json()).yamlFieldOverrides).toContain('includes')
     await agentTypeSync.revertTemplateFields('sysops', ['includes'])
   })
+
+  test('PUT omitting includes preserves the existing list instead of clearing it', async () => {
+    await promptIncludeSync.sync()
+    await agentTypeSync.sync()
+    await modelTierSync.sync()
+    await skillSync.sync()
+    const { includes: _omitted, ...bodyWithoutIncludes } = await current('sysops')
+    const res = await app.request('/api/agent-types/sysops', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', ...authHeaders(funcAdmin.token) },
+      body: JSON.stringify(bodyWithoutIncludes),
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.includes).toEqual(['rules', 'subagents', 'squad-rules'])
+    expect(body.yamlFieldOverrides).not.toContain('includes')
+  })
 })
 
 // ── RBAC guard tests ──────────────────────────────────────────────────────────
