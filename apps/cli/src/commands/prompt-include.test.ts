@@ -4,7 +4,7 @@ import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { Command } from 'commander'
 import { apiGet, apiPost, apiPut } from '../client'
-import { output, outputTable, setOutputOptions } from '../output'
+import { isJsonMode, output, outputTable, setOutputOptions } from '../output'
 import { registerPromptIncludeCommands } from './prompt-include'
 
 const includes = [
@@ -54,6 +54,15 @@ describe('tau prompt-include', () => {
     // confirm the printed rows actually contain both ids.
     const rows = (outputTable as ReturnType<typeof mock>).mock.calls.at(-1)?.[0]
     expect(rows.map((r: any) => r.id)).toEqual(['rules', 'subagents'])
+  })
+
+  it('list passes the raw array through output unchanged in JSON mode', async () => {
+    ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(true)
+
+    await run(['prompt-include', 'list'])
+
+    expect(output).toHaveBeenCalledWith(includes)
+    expect(outputTable).not.toHaveBeenCalled()
   })
 
   it('get fetches one prompt include by id', async () => {
