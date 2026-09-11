@@ -21,11 +21,19 @@ export function IncludePickerView({
   all,
   onChange,
   actions,
+  loading,
 }: {
   value: string[]
   all: IncludeOption[]
   onChange: (next: string[]) => void
   actions?: ReactNode
+  /**
+   * The catalog query is cold when an agent type editor first opens, and an
+   * empty catalog makes every configured id look unresolvable. While loading,
+   * keep the rows but withhold the `missing` verdict and freeze the controls
+   * rather than inviting an edit based on a half-loaded picture.
+   */
+  loading?: boolean
 }) {
   const byId = new Map(all.map((include) => [include.id, include]))
   const selected = new Set(value)
@@ -59,12 +67,12 @@ export function IncludePickerView({
                   {include?.disabled && (
                     <span className="ml-1 text-xs text-amber-600 dark:text-amber-400">disabled</span>
                   )}
-                  {!include && <span className="ml-1 text-xs text-red-600 dark:text-red-400">missing</span>}
+                  {!include && !loading && <span className="ml-1 text-xs text-red-600 dark:text-red-400">missing</span>}
                 </span>
                 <button
                   type="button"
                   aria-label={`Move ${id} up`}
-                  disabled={index === 0}
+                  disabled={loading || index === 0}
                   onClick={() => move(index, -1)}
                   className="tau-button text-xs text-muted hover:text-primary disabled:opacity-30"
                 >
@@ -73,7 +81,7 @@ export function IncludePickerView({
                 <button
                   type="button"
                   aria-label={`Move ${id} down`}
-                  disabled={index === value.length - 1}
+                  disabled={loading || index === value.length - 1}
                   onClick={() => move(index, 1)}
                   className="tau-button text-xs text-muted hover:text-primary disabled:opacity-30"
                 >
@@ -82,6 +90,7 @@ export function IncludePickerView({
                 <button
                   type="button"
                   aria-label={`Remove ${id}`}
+                  disabled={loading}
                   onClick={() => onChange(value.filter((_entry, position) => position !== index))}
                   className="tau-button text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
                 >
@@ -94,14 +103,16 @@ export function IncludePickerView({
         <select
           aria-label="Add include"
           value=""
-          disabled={addable.length === 0}
+          disabled={loading || addable.length === 0}
           onChange={(event) => {
             if (!event.target.value) return
             onChange([...value, event.target.value])
           }}
           className="tau-field mt-1 w-full border border-th-border bg-surface px-2 py-1 text-sm"
         >
-          <option value="">{addable.length ? 'Add include…' : 'No more includes available'}</option>
+          <option value="">
+            {loading ? 'Loading includes…' : addable.length ? 'Add include…' : 'No more includes available'}
+          </option>
           {addable.map((include) => (
             <option key={include.id} value={include.id}>
               {include.name}
@@ -123,6 +134,6 @@ export function IncludePicker({
   onChange: (next: string[]) => void
   actions?: ReactNode
 }) {
-  const { data: includes = [] } = useQuery(queries.promptIncludes.list())
-  return <IncludePickerView value={value} all={includes} onChange={onChange} actions={actions} />
+  const { data: includes = [], isPending } = useQuery(queries.promptIncludes.list())
+  return <IncludePickerView value={value} all={includes} onChange={onChange} actions={actions} loading={isPending} />
 }

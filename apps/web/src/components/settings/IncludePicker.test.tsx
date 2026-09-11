@@ -23,3 +23,28 @@ describe('IncludePickerView', () => {
     expect(html).not.toContain('<option value="old">')
   })
 })
+
+describe('IncludePickerView while the catalog loads', () => {
+  // The Agent Types tab never fetches /prompt-includes, so the catalog query is
+  // cold when an editor first opens. Flagging every configured id as "missing"
+  // during that round trip invites the operator to delete rows that are fine.
+  const html = renderToStaticMarkup(
+    <IncludePickerView value={['rules', 'squad-rules']} all={[]} onChange={() => {}} loading />
+  )
+
+  test('keeps the configured rows without flagging them as missing', () => {
+    expect(html).toContain('rules')
+    expect(html).toContain('squad-rules')
+    expect(html).not.toContain('missing')
+  })
+
+  test('shows a loading hint instead of claiming no includes are available', () => {
+    expect(html).toContain('Loading includes…')
+    expect(html).not.toContain('No more includes available')
+  })
+
+  test('disables the reorder and remove controls until the catalog settles', () => {
+    expect(html).toContain('aria-label="Remove rules" disabled=""')
+    expect(html).toContain('aria-label="Move squad-rules up" disabled=""')
+  })
+})
