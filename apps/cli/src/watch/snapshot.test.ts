@@ -32,7 +32,11 @@ describe('normalizeSnapshot', () => {
 
   it('defaults missing runtime/derivedState/openWaits', () => {
     const snap = normalizeSnapshot(
-      { streams: [stream({ runtime: undefined, derivedState: undefined, openWaits: undefined })], actions: [], inbox: [] },
+      {
+        streams: [stream({ runtime: undefined, derivedState: undefined, openWaits: undefined })],
+        actions: [],
+        inbox: [],
+      },
       {}
     )
     expect(snap.streams['ws-1'].active).toBe(0)
@@ -95,8 +99,22 @@ describe('normalizeSnapshot', () => {
           { id: 'a-2', type: 'agent-question', squadId: 'sq-2', canRespond: true, data: { questionData: {} } },
         ],
         inbox: [
-          { id: 'm-1', senderType: 'agent', senderId: 'ag', subject: null, content: 'a', metadata: { squadId: 'sq-1' } },
-          { id: 'm-2', senderType: 'agent', senderId: 'ag', subject: null, content: 'b', metadata: { squadId: 'sq-2' } },
+          {
+            id: 'm-1',
+            senderType: 'agent',
+            senderId: 'ag',
+            subject: null,
+            content: 'a',
+            metadata: { squadId: 'sq-1' },
+          },
+          {
+            id: 'm-2',
+            senderType: 'agent',
+            senderId: 'ag',
+            subject: null,
+            content: 'b',
+            metadata: { squadId: 'sq-2' },
+          },
           { id: 'm-3', senderType: 'agent', senderId: 'ag', subject: null, content: 'c', metadata: {} },
         ],
       },
@@ -114,7 +132,16 @@ describe('normalizeSnapshot', () => {
       if (path === '/api/actions/pending') return []
       if (path.startsWith('/api/inbox/user/me')) {
         return {
-          items: [{ id: 'm-1', senderType: 'agent', senderId: 'ag', subject: null, content: 'x', metadata: { squadId: 'sq-1' } }],
+          items: [
+            {
+              id: 'm-1',
+              senderType: 'agent',
+              senderId: 'ag',
+              subject: null,
+              content: 'x',
+              metadata: { squadId: 'sq-1' },
+            },
+          ],
           hasMore: false,
           nextCursor: null,
           totalCount: 1,

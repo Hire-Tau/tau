@@ -23,7 +23,8 @@ function seconds(flag: string, value: unknown): number | undefined {
 export function parseWatchOptions(options: Record<string, unknown>): WatchOptions {
   const follow = options.follow === true
   const timeoutMs = seconds('--timeout', options.timeout)
-  if (follow && timeoutMs !== undefined) throw new Error('--timeout applies to one-shot mode only; drop it or drop --follow')
+  if (follow && timeoutMs !== undefined)
+    throw new Error('--timeout applies to one-shot mode only; drop it or drop --follow')
   return {
     squadId: typeof options.squad === 'string' ? options.squad : undefined,
     follow,

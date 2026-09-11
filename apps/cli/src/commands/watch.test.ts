@@ -19,7 +19,13 @@ describe('parseWatchOptions', () => {
   })
 
   it('converts seconds, decodes the cursor, and forwards the squad', () => {
-    const parsed = parseWatchOptions({ squad: 'sq', follow: true, poll: '5', timeout: undefined, cursor: encodeCursor(empty()) })
+    const parsed = parseWatchOptions({
+      squad: 'sq',
+      follow: true,
+      poll: '5',
+      timeout: undefined,
+      cursor: encodeCursor(empty()),
+    })
     expect(parsed).toEqual({ squadId: 'sq', follow: true, pollMs: 5_000, timeoutMs: undefined, initial: empty() })
     expect(parseWatchOptions({ timeout: '30' }).timeoutMs).toBe(30_000)
   })

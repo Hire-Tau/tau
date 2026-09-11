@@ -70,7 +70,8 @@ export function diffSnapshots(prev: Snapshot, next: Snapshot, ctx: { now: number
     }
     if (ctx.idle) {
       const idle = ctx.idle
-      const isIdle = s.status === 'active' && s.derived === 'idle' && s.active === 0 && Object.keys(s.waits).length === 0
+      const isIdle =
+        s.status === 'active' && s.derived === 'idle' && s.active === 0 && Object.keys(s.waits).length === 0
       if (isIdle) {
         idle.since[id] ??= ctx.now
         if (ctx.now - idle.since[id] >= IDLE_MS && !idle.notified.includes(id)) {

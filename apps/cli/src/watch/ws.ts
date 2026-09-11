@@ -26,7 +26,10 @@ export interface HintSocket {
  * The server sends actions.invalidated on (re)subscribe, so onOpen also hints —
  * that is what recovers changes missed while disconnected.
  */
-export function openAttentionSocket(opts: { onHint: () => void; onError: (message: string) => void }): HintSocket | null {
+export function openAttentionSocket(opts: {
+  onHint: () => void
+  onError: (message: string) => void
+}): HintSocket | null {
   const token = config.password
   if (!token) return null
   const client = createWsClient({
