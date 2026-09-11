@@ -17,7 +17,6 @@ export type AssistantEntry = z.infer<typeof assistantEntrySchema>
 export interface AssistantConversation {
   id: string
   title: string
-  managerAgentId: string | null
   createdAt: string
   updatedAt: string
 }
