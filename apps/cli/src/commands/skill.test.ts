@@ -79,9 +79,23 @@ describe('skill CLI commands', () => {
     expect(skill).toContain('## Installed Tau CLI')
   })
 
+  it('installs the tau-reviewer skill from external/skills', async () => {
+    const cwd = await makeTempDir()
+    const targetDir = join(cwd, 'custom-skills')
+
+    await run(['skill', 'install', 'tau-reviewer', '--agent', 'custom', '--target-dir', targetDir])
+
+    const skill = await readFile(join(targetDir, 'tau-reviewer/SKILL.md'), 'utf8')
+    expect(skill).toContain('name: tau-reviewer\n')
+    expect(skill).toContain('# Reviewing Tau squads (`tau watch`)')
+    expect(skill).toContain('tau watch')
+    expect(skill).toContain('## Installed Tau CLI')
+    expect(skill).not.toContain('<tau-cli>')
+  })
+
   it('rejects skills that are not bundled', async () => {
     await expect(run(['skill', 'install', 'nope', '--agent', 'pi'])).rejects.toThrow(
-      /unsupported skill: nope\. Supported skills: tau-memory, tau/
+      /unsupported skill: nope\. Supported skills: tau-memory, tau, tau-reviewer/
     )
   })
 
