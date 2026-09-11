@@ -769,6 +769,16 @@ async function startup(): Promise<void> {
   // refresh above stays the guarantee.
   await settingsStore.startCrossProcessInvalidation()
 
+  // Notifications go out through the channel transports from this process too;
+  // they read the same connection snapshot the api keeps, refreshed here on a timer.
+  const { channelConnections } = await import('./services/integrations/channels/connections')
+  await channelConnections.refresh()
+  createPeriodicRunner({
+    name: 'channel-connections-refresh',
+    intervalMs: 30_000,
+    task: () => channelConnections.refresh(),
+  }).start()
+
   const { reconcileAgentQuestionAttentionOnce } = await import('./services/agents/question-attention-reconciliation')
   // Question attention repair is unconditional (the rollout flag is retired): one bounded batch
   // at startup plus a 60-second periodic tick. The sweep defaults to 100 rows and becomes

@@ -1,6 +1,7 @@
 import { resolveDefaultGitHubIdentity } from '../services/sandbox/github-identity'
 import { isDeploymentIntegration } from '../services/integrations/deployment/settings'
-import { isChannelIntegration, type getChannelIntegrationSettings } from '../services/integrations/channels/settings'
+import { isChannelIntegration, type ChannelSettingsView } from '../services/integrations/channels/settings'
+import type { getDeploymentIntegrationSettings } from '../services/integrations/deployment/settings'
 import type { GitHubWebhookSettings } from '../services/integrations/github/webhook-settings'
 import { integrationOutputRegistry } from '../services/integrations/outputs/registry'
 import { Hono } from 'hono'
@@ -62,28 +63,26 @@ export interface IntegrationRoutesService extends Pick<
   'create' | 'validate' | 'enable' | 'disable' | 'replaceCredential' | 'remove'
 > {
   serviceSettings?: {
-    get(provider: string): ReturnType<typeof getChannelIntegrationSettings>
+    get(provider: string): ReturnType<typeof getDeploymentIntegrationSettings>
     configure(
       provider: string,
       input: unknown,
       actor: string
-    ): Promise<ReturnType<typeof getChannelIntegrationSettings>>
+    ): Promise<ReturnType<typeof getDeploymentIntegrationSettings>>
   }
   deploymentSettings?: {
-    get(provider: string): ReturnType<typeof getChannelIntegrationSettings>
+    get(provider: string): ReturnType<typeof getDeploymentIntegrationSettings>
     configure(
       provider: string,
       input: unknown,
       actor: string
-    ): Promise<ReturnType<typeof getChannelIntegrationSettings>>
+    ): Promise<ReturnType<typeof getDeploymentIntegrationSettings>>
   }
   channelSettings?: {
-    get(provider: string): ReturnType<typeof getChannelIntegrationSettings>
-    configure(
-      provider: string,
-      input: unknown,
-      actor: string
-    ): Promise<ReturnType<typeof getChannelIntegrationSettings>>
+    get(provider: string): Promise<ChannelSettingsView>
+    configure(provider: string, input: unknown, actor: string): Promise<ChannelSettingsView>
+    /** The Slack app manifest with this instance's URLs filled in. */
+    manifest?(): string
   }
   setDefault?(providerKey: string, connectionId: string): Promise<void>
   catalog?(): readonly SafeIntegrationCatalogEntry[] | Promise<readonly SafeIntegrationCatalogEntry[]>
@@ -272,7 +271,16 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       if (!isChannelIntegration(provider) || !service.channelSettings)
         return c.json({ error: 'Unknown integration' }, 404)
       c.header('Cache-Control', 'no-store')
-      return c.json(service.channelSettings.get(provider))
+      return c.json(await service.channelSettings.get(provider))
+    })
+    .get('/providers/slack/channel-settings/manifest', async (c) => {
+      const denied = await authorize(c, 'integrations:read:slack')
+      if (denied) return denied
+      if (!service.channelSettings?.manifest) return c.json({ error: 'Unknown integration' }, 404)
+      c.header('Cache-Control', 'no-store')
+      c.header('Content-Type', 'application/yaml; charset=utf-8')
+      c.header('Content-Disposition', 'attachment; filename="tau-slack-app-manifest.yaml"')
+      return c.body(service.channelSettings.manifest())
     })
     .put(
       '/providers/:provider/channel-settings',

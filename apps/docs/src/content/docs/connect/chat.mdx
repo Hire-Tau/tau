@@ -14,117 +14,81 @@ using its configured tools and permissions. Create a squad and
 
 You need permission to configure the provider's bot or app and to manage Tau
 integrations and channel routing. Open **Settings → Integrations**, enable the
-provider's card, and expand **Settings**. Save bot credentials in that card.
+provider's card, and expand **Settings**. Each card holds one bot: paste the
+token the provider gives you, and Tau checks it, shows who the bot is, and
+registers the provider-side endpoints it can register for you.
 
 <ModeContent mode="cloud">
 
-Use your hosted instance's public HTTPS address for the webhook receiver, not
-the Cloud account page. A hosted instance still needs the bot's provider setup
-and channel routing below. If a credential is marked as managed, ask your
-administrator about changes to it.
+A hosted instance still needs the bot's provider setup below. The card shows
+the receiver address the provider needs. If a credential is marked as managed,
+ask your administrator about changes to it.
 
 </ModeContent>
 
 <ModeContent mode="self-hosted">
 
-The provider must be able to reach your instance over HTTPS. Use its public base
-URL, including any configured path prefix, followed by the receiver path below.
-An address reachable only from your computer will not receive provider webhooks.
-Check [configuration](/reference/configuration/) before registering the endpoint.
+The provider must be able to reach your instance over HTTPS. The card shows the
+receiver address, built from your instance's public base URL. An address
+reachable only from your computer will not receive provider webhooks. Check
+[configuration](/reference/configuration/) if the address shown is wrong.
 
 </ModeContent>
 
+### Telegram
+
+Message **@BotFather**, send `/newbot`, and copy the bot token. Paste it into
+Tau's Telegram card and save. Tau validates the token, records the bot's id
+and username, and registers its webhook with Telegram using a generated
+secret; nothing else needs to be done on Telegram's side. Turning the card
+off removes the webhook.
+
 ### Slack
 
-Create a Slack app for the workspace. Save its **Bot token** and **Signing secret**
-in Tau's Slack card. Configure `/tau` as a slash command with this request URL:
+1. On Tau's Slack card, choose **Download the Slack app manifest**. It already
+   contains your instance's address for the `/tau` command and event
+   subscriptions, and the bot scopes Tau needs.
+2. At [api.slack.com/apps](https://api.slack.com/apps), choose **Create New App
+   → From an app manifest**, pick the workspace, paste the manifest, and create
+   the app. Then **Install to Workspace**.
+3. Copy the app's **Bot User OAuth Token** (OAuth & Permissions) and **Signing
+   Secret** (Basic Information) into the Slack card and save. Tau confirms the
+   workspace and bot user.
+4. Invite the bot to the channels you want it to use.
 
-```text
-https://tau.example.com/api/webhooks/channels/slack
-```
-
-Use the same URL for **Event Subscriptions**, then subscribe to `message.channels`,
-`message.groups`, `message.im`, `message.mpim`, and `app_mention` for conversation
-replies and mentions. Install the app into your workspace and invite it to the
-channels you want it to use.
-
-Tau's messaging adapter uses these bot scopes:
-
-- Commands and messages: `commands`, `chat:write`, `chat:write.public`.
-- Conversation access: `channels:read`, `channels:join`, `channels:history`,
-  `groups:read`, `groups:history`, `im:read`, `im:write`, `im:history`,
-  `mpim:read`, `mpim:history`.
-- User names, mentions, and reactions: `users:read`, `app_mentions:read`,
-  `reactions:read`, `reactions:write`.
-- Attachments, if used: `files:read`, `files:write`.
-
-Reinstall the Slack app after changing its scopes. Slack's
-[slash-command setup guide](https://docs.slack.dev/interactivity/implementing-slash-commands/)
-explains the provider-side command form.
+Reinstall the Slack app after changing its scopes.
 
 ### Discord
 
-Create an application and bot in the Discord Developer Portal. Save its **Bot
-token**, **Application ID**, and **Public key** in Tau's Discord card. Enable the
-bot's **Message Content Intent** for thread replies. Set the application's
-**Interactions Endpoint URL** to:
-
-```text
-https://tau.example.com/api/webhooks/channels/discord
-```
-
-Invite it with the `bot` and `applications.commands` scopes and permissions to
-send messages, use commands, send messages in threads, and create public threads.
-Install the Tau CLI and set `DISCORD_BOT_TOKEN` and `DISCORD_APPLICATION_ID` in
-your shell's environment to the same bot and application you saved in Tau. Then
-register the commands:
-
-```sh
-tau discord register
-tau discord status
-```
-
-These commands call Discord directly; they do not read credentials from your
-Tau integration card. Set `DISCORD_GUILD_ID` as well if you want to register
-commands in one server instead of globally.
-
-Discord verifies the interactions endpoint using the application public key.
-See its [interactions documentation](https://docs.discord.com/developers/interactions/receiving-and-responding)
-if endpoint verification fails.
-
-### Telegram
-
-Create a bot through **@BotFather**. Save its **Bot token** in Tau's Telegram card,
-along with a separately generated **Webhook secret**. Use the numeric prefix of
-the bot token, before the colon, for **Bot ID**.
-
-Register `https://tau.example.com/api/webhooks/channels/telegram` with Telegram's
-[`setWebhook` method](https://core.telegram.org/bots/api#setwebhook), using that
-same secret as `secret_token`. The secret must contain only letters, digits,
-underscores, or hyphens and be between 1 and 256 characters. Complete provider
-registration through your bot administration tooling; saving a token in Tau does
-not register Telegram's webhook automatically.
-
-The request is a POST to `https://api.telegram.org/bot<BOT_TOKEN>/setWebhook`
-with two fields: `url` set to your instance's receiver URL, and `secret_token`
-set to the secret saved in Tau. A successful response has `ok: true`. Telegram's
-`getWebhookInfo` method reports the registered URL and recent delivery errors.
+1. In the [Developer Portal](https://discord.com/developers/applications),
+   create an application, open **Bot**, choose **Reset Token**, and copy the
+   token. Under **Privileged Gateway Intents**, enable **Message Content
+   Intent** for thread replies.
+2. Paste the token into Tau's Discord card and save. Tau validates it, records
+   the application id and public key, registers the `/tau` commands, and
+   connects the bot.
+3. Copy the **Interactions Endpoint URL** shown on the card into the
+   application's **General Information** page and save. Discord verifies the
+   endpoint immediately.
+4. Under **OAuth2 → URL Generator**, select the `bot` and
+   `applications.commands` scopes with permissions to send messages, use
+   commands, send messages in threads, and create public threads. Open the
+   generated link and add the bot to your server.
+5. Back on the card, choose the **server**. When the bot is in exactly one
+   server it is picked for you. Commands registered to a chosen server appear
+   immediately; without one they are registered globally and can take up to an
+   hour to show.
 
 ## Route messages to a squad
 
-In the enabled provider card, find **Channel routing** and choose **+ Add New**.
+On the provider card, choose a **Default squad**. Messages arriving through
+that bot go to this squad, and the routing entry under **Channel routing** is
+created for you.
 
-1. Enter a recognizable name.
-2. Enter the **Discord server ID**, **Slack workspace ID**, or numeric **Telegram
-   bot ID**, depending on the provider.
-3. Select the **Default Squad** for messages arriving through this connection.
-4. Optionally choose **+ Add override** and pair a specific channel or chat ID
-   with another squad.
-5. Choose **Create** and check the new routing entry is enabled.
-
-The server or workspace ID identifies the provider connection. An override uses
-the individual channel or chat ID. Confusing these IDs can send a message to the
-default squad instead of the intended override.
+To send one channel or chat somewhere else, open the entry under **Channel
+routing**, choose **+ Add override**, and pair the channel or chat ID with
+another squad. The override uses the individual channel or chat ID, not the
+server or workspace ID.
 
 ## Test and continue a conversation
 
@@ -134,8 +98,10 @@ Discord uses threads, and Telegram uses reply-to-message. In Slack, start `/tau`
 from the channel composer; use replies, rather than another slash command, to
 continue an existing conversation.
 
-If there is no reply, check the global integration switch, saved credentials,
-provider webhook registration, bot access to the channel, and routing entry.
+If there is no reply, check the card: the integration switch, the
+**Connection** status (a rejected token is explained there), the default
+squad, and the bot's access to the channel. For Discord, also confirm the
+Interactions Endpoint URL was saved in the portal.
 If the request arrives but the agent cannot answer, check the squad's model
 provider. To send work updates into this chat, configure
 [notifications](/connect/notifications/) separately.

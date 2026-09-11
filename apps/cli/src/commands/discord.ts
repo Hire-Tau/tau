@@ -1,70 +1,11 @@
 import { Command } from 'commander'
 import { outputError } from '../output'
 
-// Discord command option types
-const OptionType = {
-  SUB_COMMAND: 1,
-  STRING: 3,
-} as const
+import { TAU_DISCORD_COMMANDS } from '@tau/shared/discord-commands'
 
-// Tau slash commands
-const TAU_COMMANDS = [
-  {
-    name: 'tau',
-    description: 'Interact with Tau - your AI development assistant',
-    options: [
-      {
-        name: 'status',
-        description: 'Show active work streams across squads',
-        type: OptionType.SUB_COMMAND,
-      },
-      {
-        name: 'ask',
-        description: 'Ask a question or make a request',
-        type: OptionType.SUB_COMMAND,
-        options: [
-          {
-            name: 'message',
-            type: OptionType.STRING,
-            required: true,
-            description: 'Your question or request',
-          },
-        ],
-      },
-      {
-        name: 'notify',
-        description: 'Subscribe this channel to notifications for a squad',
-        type: OptionType.SUB_COMMAND,
-        options: [
-          {
-            name: 'squad',
-            type: OptionType.STRING,
-            required: true,
-            description: 'Squad name or ID',
-          },
-        ],
-      },
-      {
-        name: 'unnotify',
-        description: 'Unsubscribe this channel from squad notifications',
-        type: OptionType.SUB_COMMAND,
-        options: [
-          {
-            name: 'squad',
-            type: OptionType.STRING,
-            required: true,
-            description: 'Squad name or ID',
-          },
-        ],
-      },
-      {
-        name: 'help',
-        description: 'Show available commands and linked squads',
-        type: OptionType.SUB_COMMAND,
-      },
-    ],
-  },
-]
+// The command set is shared with the server, which registers it whenever a
+// Discord connection is saved; these CLI commands remain as diagnostics.
+const TAU_COMMANDS = TAU_DISCORD_COMMANDS
 
 function getDiscordConfig(options: { token?: string; appId?: string; guildId?: string }) {
   const token = options.token || process.env.DISCORD_BOT_TOKEN

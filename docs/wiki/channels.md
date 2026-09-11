@@ -2,17 +2,24 @@
 
 ## Settings location
 
-Discord, Slack, and Telegram are separate cards in **Settings → Integrations**. Enable a card, save its bot credentials, then configure its channel routing and squad overrides there. Credentials are no longer edited through Secrets & Keys. Secret fields show whether a value is configured without revealing it. Existing configured bots remain enabled on upgrade; new integrations start disabled.
+Discord, Slack, and Telegram are separate cards in **Settings → Integrations**.
+Each card holds one **connection** for the provider: paste the bot token (and
+the Slack signing secret), and Tau validates it, records the bot's identity, and
+does the provider-side registration itself. Secret fields show whether a value
+is configured without revealing it, and credentials are not edited through
+Secrets & Keys. Existing configured bots remain enabled on upgrade; new
+integrations start disabled.
 
-Under the provider's **Channel routing**, choose **+ Add New**, enter a name and
-the provider identifier, select **Default Squad**, optionally add channel/chat
-overrides, and choose **Create**. The identifier is the Discord server ID, Slack
-workspace ID, or numeric Telegram bot ID (the bot token's prefix before the
-colon). The default squad is required. UI-created routing is saved directly;
-it does not require a YAML file or a configuration-sync restart. You need
-`channels:create` to add routing and `channels:update` to change it.
+Pick a **Default squad** on the card and messages arriving through that bot
+route there. **Channel routing** on the card holds per-channel overrides. The
+default squad is required. UI-created routing is saved directly; it does not
+require a YAML file or a configuration-sync restart. You need `channels:create`
+to add routing and `channels:update` to change it; credential edits require the
+provider's integration permission (`integrations:<provider>:write`).
 
-The channel adapters, thread handling, and routing system described below remain in place. The integration switch gates their credentials; disabling Discord also stops its gateway, and changing its token reconnects it. Slack clients pick up token changes on their next request. Configuration edits still use channel permissions; credential edits require the provider’s integration permission.
+The integration switch gates the transport; disabling Discord also stops its
+gateway, and saving a new token reconnects it. Slack clients pick up token
+changes on their next request.
 
 Channels connect external platforms (Discord, Slack, Telegram) to Tau squads via
 a **concierge agent**. The current bundled concierge is a member of its routed
@@ -75,368 +82,104 @@ This works across all platforms (Discord, Slack, Telegram) with platform-native 
 
 > **Slack note:** Start custom slash commands in the channel composer. To continue a conversation in Slack, **reply to the bot's message** instead of starting another `/tau` command.
 
-## Discord Setup
+## Connecting a provider
 
-### 1. Create Application
+Each provider is one **connection** on the instance, saved from its card in
+**Settings → Integrations**. Paste the secret the provider gives you; Tau
+validates it against the provider, records who the bot is (bot id, workspace,
+application), and does the provider-side setup that used to be manual. Pick a
+**Default squad** on the same card and the routing entry is created for you;
+**Channel routing** below it is only for per-channel overrides.
 
-1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
-2. Click **New Application** and give it a name (e.g., "Tau")
-3. Go to **General Information** and copy:
-   - **Application ID** → `DISCORD_APPLICATION_ID`
-   - **Public Key** → `DISCORD_PUBLIC_KEY`
+Connections are ordinary integration connections: they appear in
+`GET /api/integrations/connections?provider=<provider>`, are re-validated by the
+revalidation worker, and are audited. The provider switch (**Enable** on the
+card, `PUT /api/integrations/providers/<provider>/enabled`) stops the transport
+without discarding the credential.
 
-### 2. Create Bot
+### Telegram
 
-1. Go to **Bot** section
-2. Click **Reset Token** and copy → `DISCORD_BOT_TOKEN`
-3. Under **Privileged Gateway Intents**, enable:
-   - **Message Content Intent** — Required for reading thread replies
+1. Message [@BotFather](https://t.me/BotFather), send `/newbot`, and copy the
+   bot token.
+2. Paste it into the Telegram card and save. Tau calls `getMe` to validate,
+   records the bot id and username, generates a webhook secret, and registers
+   the webhook (`https://<instance>/api/webhooks/channels/telegram`) with
+   Telegram. Switching the provider off removes the webhook.
+3. Choose a **Default squad** on the card. Optional: add chat overrides under
+   Channel routing.
 
-### 3. Set Secrets
+### Slack
 
-Add via the matching Settings → Integrations card (or `.env` for initial setup):
+1. On the Slack card, **Download the Slack app manifest** — it already carries
+   this instance's URL for the `/tau` command and Events API.
+2. At [api.slack.com/apps](https://api.slack.com/apps) choose **Create New App
+   → From an app manifest**, paste it, create, then **Install to Workspace**.
+3. Paste the app's **Bot User OAuth Token** and **Signing Secret** into the card
+   and save. Tau calls `auth.test`, records the workspace and bot user id.
+4. Choose a **Default squad**. Invite the bot to the channels it should answer in.
 
-```
-DISCORD_APPLICATION_ID=your_app_id
-DISCORD_PUBLIC_KEY=your_public_key
-DISCORD_BOT_TOKEN=your_bot_token
-DISCORD_GUILD_ID=your_guild_id   # optional: faster command updates in one guild
-```
+Reinstall the Slack app after changing scopes. The manifest's scope list is the
+bot's contract; the copy in `config/channels/slack-app-manifest.example.yaml`
+is the template the download is rendered from.
 
-### 4. Configure Interactions
+### Discord
 
-1. Go to **General Information**
-2. Set **Interactions Endpoint URL** to:
-   ```
-   https://your-domain.com/api/webhooks/channels/discord
-   ```
-3. Discord will verify the endpoint using your public key
+1. In the [Developer Portal](https://discord.com/developers/applications)
+   create an application, open **Bot**, **Reset Token**, and copy it. Under
+   **Privileged Gateway Intents** enable **Message Content Intent** (thread
+   replies).
+2. Paste the token into the Discord card and save. Tau validates it, records
+   the application id and public key from `/applications/@me`, registers the
+   `/tau` slash commands, and (re)connects the gateway.
+3. Copy the **Interactions Endpoint URL** shown on the card
+   (`https://<instance>/api/webhooks/channels/discord`) into **General
+   Information** in the portal; Discord verifies it with the public key Tau
+   already has.
+4. Invite the bot: **OAuth2 → URL Generator**, scopes `bot` and
+   `applications.commands`, permissions Send Messages, Use Slash Commands, Send
+   Messages in Threads, Create Public Threads.
+5. Choose the **server** (shown once the bot is in one; picked automatically
+   when it is in exactly one) and a **Default squad**. Commands register to that
+   server for instant availability; without a chosen server they register
+   globally and can take up to an hour to appear.
 
-### 5. Register Commands
+`tau discord status` and `tau discord clear` remain as diagnostics; they take
+the bot token and application id as flags or environment variables because the
+CLI has no access to the instance's connections. Registration itself no longer
+needs the CLI.
 
-Register slash commands using the CLI (from a checkout, build it first with
-`bun run build:cli`). Set `DISCORD_BOT_TOKEN` and `DISCORD_APPLICATION_ID` in
-the command's shell environment. These commands call Discord directly and do
-not read credentials saved in Tau's integration card:
-
-```bash
-tau discord register
-```
-
-For faster development, set `DISCORD_GUILD_ID` for guild-specific commands (instant updates vs. up to 1 hour for global).
-
-To check status or fix duplicate commands:
-
-```bash
-tau discord status                # Show registered commands
-tau discord clear --scope global  # Clear global commands (fix duplicates)
-tau discord clear --scope all     # Clear both global and guild commands
-```
-
-### 6. Invite Bot
-
-1. Go to **OAuth2 → URL Generator**
-2. Select scopes: `bot`, `applications.commands`
-3. Select permissions: `Send Messages`, `Use Slash Commands`, `Send Messages in Threads`, `Create Public Threads`
-4. Copy the generated URL and open it to invite the bot
-
-### 7. Configure Channel Instance (Discord)
-
-In **Settings → Integrations → Discord → Channel routing**, choose **+ Add New**.
-Enter the name and **Discord server ID**, choose **Default Squad**, add any
-channel overrides, and choose **Create**.
-
-For template-managed configuration, the equivalent YAML in `config/channels/` is:
-
-```yaml
-# config/channels/my-discord.yaml
-id: my-discord-server
-name: My Discord Server
-provider: discord
-providerConfig:
-  guildId: 'YOUR_GUILD_ID'
-
-# Optional: map specific channels to squads
-channelSquadMap:
-  'frontend-channel-id': 'frontend-squad-uuid'
-  'backend-channel-id': 'backend-squad-uuid'
-
-defaultSquadId: 'squad-uuid-1'
-```
-
-Restart Tau to sync a newly added YAML template
-(`tau server restart`, or `bun run pm2:restart` in a checkout).
-
-### 8. Verify Discord Integration
+### Verifying
 
 ```bash
 # webhooks:read required — the bootstrap TAU_PASSWORD works until the first admin passkey exists
-curl -H "Authorization: Bearer $TAU_PASSWORD" https://your-domain.com/api/webhooks/channels/discord/status
-# {"provider":"discord","registered":true,"secretConfigured":true}
+curl -H "Authorization: Bearer $TAU_PASSWORD" https://your-domain.com/api/webhooks/channels/<provider>/status
 ```
 
-Try `/tau help` in your Discord server to verify commands work.
-
-## Slack Setup
-
-Slack integration supports slash commands, thread replies, reactions, and rich messaging — similar to Discord.
-
-### Option A: Use App Manifest (Recommended)
-
-The easiest way to set up the Slack app is using the pre-configured manifest:
-
-1. Go to [Slack API](https://api.slack.com/apps)
-2. Click **Create New App** → **From an app manifest**
-3. Select your workspace
-4. Copy the contents of `config/channels/slack-app-manifest.example.yaml`
-5. Replace `YOUR_DOMAIN` with your actual domain (e.g., `tau.example.com`)
-6. Paste the YAML and click **Next**
-7. Review the configuration and click **Create**
-8. Go to **Install App** and click **Install to Workspace**
-9. Add credentials via the matching Settings → Integrations card (or `.env` for initial setup):
-   - **Basic Information → App Credentials → Signing Secret** → `SLACK_SIGNING_SECRET`
-   - **OAuth & Permissions → Bot User OAuth Token** → `SLACK_BOT_TOKEN`
-
-Skip to [Configure Channel Instance](#7-configure-channel-instance) after using the manifest.
-
-### Option B: Manual Setup
-
-If you prefer to configure the app manually or need to customize settings:
-
-#### 1. Create App
-
-1. Go to [Slack API](https://api.slack.com/apps)
-2. Click **Create New App** → **From scratch**
-3. Name it (e.g., "Tau") and select your workspace
-
-#### 2. Configure Slash Command
-
-1. Go to **Slash Commands**
-2. Click **Create New Command**:
-   - **Command:** `/tau`
-   - **Request URL:** `https://your-domain.com/api/webhooks/channels/slack`
-   - **Description:** "Interact with Tau AI assistant"
-   - **Usage Hint:** `[status|ask|help] [message]`
-
-#### 3. Get Signing Secret
-
-1. Go to **Basic Information**
-2. Under **App Credentials**, copy **Signing Secret** → `SLACK_SIGNING_SECRET`
-
-#### 4. Configure OAuth & Permissions
-
-1. Go to **OAuth & Permissions**
-2. Under **Scopes → Bot Token Scopes**, add all required scopes:
-
-**Slash Commands:**
-
-| Scope      | Description                             |
-| ---------- | --------------------------------------- |
-| `commands` | Required for slash command registration |
-
-**Core Messaging:**
-
-| Scope               | Description                                         |
-| ------------------- | --------------------------------------------------- |
-| `chat:write`        | Send messages as the bot                            |
-| `chat:write.public` | Send messages to channels the bot isn't a member of |
-
-**Thread & Message History (for context and replies):**
-
-| Scope              | Description                       |
-| ------------------ | --------------------------------- |
-| `channels:history` | Read messages in public channels  |
-| `groups:history`   | Read messages in private channels |
-| `im:history`       | Read direct message history       |
-| `mpim:history`     | Read group DM history             |
-
-**Channel Information:**
-
-| Scope           | Description                              |
-| --------------- | ---------------------------------------- |
-| `channels:read` | List and get info about public channels  |
-| `channels:join` | Join public channels (for thread events) |
-| `groups:read`   | List and get info about private channels |
-| `im:read`       | List and get info about DMs              |
-| `mpim:read`     | List and get info about group DMs        |
-
-**User Information:**
-
-| Scope        | Description                               |
-| ------------ | ----------------------------------------- |
-| `users:read` | Get user display names, avatars, profiles |
-
-**Reactions:**
-
-| Scope             | Description                      |
-| ----------------- | -------------------------------- |
-| `reactions:write` | Add emoji reactions to messages  |
-| `reactions:read`  | Read emoji reactions on messages |
-
-**Files (optional, for attachments):**
-
-| Scope         | Description             |
-| ------------- | ----------------------- |
-| `files:write` | Upload files and images |
-| `files:read`  | Read file information   |
-
-**DM Support:**
-
-| Scope      | Description                   |
-| ---------- | ----------------------------- |
-| `im:write` | Open and send direct messages |
-
-**@Mention Events:**
-
-| Scope               | Description                                   |
-| ------------------- | --------------------------------------------- |
-| `app_mentions:read` | Required for `app_mention` event subscription |
-
-3. Click **Install to Workspace** (or reinstall if already installed)
-4. Copy **Bot User OAuth Token** → `SLACK_BOT_TOKEN`
-
-#### 5. Enable Events API (for thread replies)
-
-1. Go to **Event Subscriptions**
-2. Toggle **Enable Events** to On
-3. Set **Request URL** to: `https://your-domain.com/api/webhooks/channels/slack`
-4. Wait for Slack to verify the URL
-5. Under **Subscribe to bot events**, add:
-   - `message.channels` — Messages in public channels
-   - `message.groups` — Messages in private channels
-   - `message.im` — Direct messages to the bot
-   - `message.mpim` — Messages in group DMs
-   - `app_mention` — When someone @mentions the bot
-6. Click **Save Changes**
-
-#### 6. Install App
-
-1. Go to **Install App**
-2. Click **Install to Workspace** (or reinstall if you added new scopes)
-3. Authorize the app
-
-### 7. Configure Channel Instance
-
-In **Settings → Integrations → Slack → Channel routing**, choose **+ Add New**.
-Enter a name and **Slack workspace ID**, select **Default Squad**, optionally
-add channel overrides, and choose **Create**. To find the Slack team ID, open the
-workspace in a browser and look at the URL — it looks like
-`https://app.slack.com/client/T0123ABCD/C01234567`, and the team ID is the part
-starting with `T` (`T0123ABCD`).
-
-For template-managed configuration, use:
-
-```yaml
-# config/channels/my-slack.yaml
-id: my-slack-workspace
-name: My Slack Workspace
-provider: slack
-providerConfig:
-  teamId: 'T0123ABCD' # Your workspace ID
-
-defaultSquadId: 'squad-uuid-1'
-```
-
-Restart Tau to sync a newly added YAML template. UI-created routing does not
-need this restart.
-
-### 8. Verify Slack Integration
-
-Try `/tau help` in your Slack workspace to verify commands work.
-
-## Telegram Setup
-
-### 1. Create Bot
-
-1. Open Telegram and start a chat with [@BotFather](https://t.me/BotFather)
-2. Send `/newbot` and follow the prompts
-3. Copy the **bot token** → `TELEGRAM_BOT_TOKEN`
-4. Note the numeric bot ID: the portion of its token before the colon.
-
-### 2. Generate Webhook Secret
-
-Generate a secret token (1-256 characters, A-Za-z0-9\_- only):
-
-```bash
-openssl rand -hex 32
-```
-
-This becomes `TELEGRAM_WEBHOOK_SECRET`.
-
-### 3. Set Secrets
-
-Add via the matching Settings → Integrations card (or `.env` for initial setup):
-
-```
-TELEGRAM_BOT_TOKEN=123456789:ABCdef...
-TELEGRAM_WEBHOOK_SECRET=your_generated_secret
-TELEGRAM_BOT_ID=123456789  # Numeric prefix of the bot token, before the colon
-```
-
-### 4. Register Webhook
-
-Register your webhook URL with Telegram's API:
-
-```bash
-curl "https://api.telegram.org/bot<YOUR_TOKEN>/setWebhook?url=https://your-domain.com/api/webhooks/channels/telegram&secret_token=<YOUR_SECRET>"
-```
-
-Expected response: `{"ok":true,"result":true,"description":"Webhook was set"}`
-
-### 5. Configure Channel Instance
-
-In **Settings → Integrations → Telegram → Channel routing**, choose **+ Add New**.
-Enter a name, the numeric **Telegram bot ID**, and **Default Squad**. Add any chat
-overrides and choose **Create**. The bot ID must match the **Bot ID** saved in the
-Telegram credential settings; a chat override uses the destination chat ID.
-
-For template-managed configuration, use:
-
-```yaml
-# config/channels/my-telegram.yaml
-id: my-telegram-bot
-name: My Telegram Bot
-provider: telegram
-providerConfig:
-  botId: '123456789' # Must match TELEGRAM_BOT_ID
-
-defaultSquadId: 'squad-uuid-1'
-```
-
-Restart Tau to sync a newly added YAML template. UI-created routing does not
-need this restart.
-
-### 6. Test the Bot
-
-Start a chat with your bot on Telegram and try these commands:
-
-- `/tau help` or `/help` — Show available commands
-- `/tau status` or `/status` — Show active work streams
-- `/tau ask how does auth work?` — Ask a question
-- Just type a question directly — Treated as `/tau ask`
-
-If nothing comes back, check what Telegram thinks the webhook is:
-
-```bash
-curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo"
-```
-
-## Channel Instance Configuration
-
-Channel instances link external platforms to squads. See
-`config/channels/example-discord.yaml`, `config/channels/example-slack.yaml`,
-and `config/channels/example-telegram.yaml` for full examples.
-
-| Field                    | Description                                      |
-| ------------------------ | ------------------------------------------------ |
-| `id`                     | Unique identifier for the channel instance       |
-| `name`                   | Human-readable name                              |
-| `provider`               | `discord`, `slack`, or `telegram`                |
-| `providerConfig.guildId` | Discord guild/server ID                          |
-| `providerConfig.teamId`  | Slack workspace ID                               |
-| `providerConfig.botId`   | Telegram numeric bot ID; match `TELEGRAM_BOT_ID` |
-| `channelSquadMap`        | Map specific platform channels to squads         |
-| `defaultSquadId`         | Default squad for unrouted requests              |
+Then `/tau help` in the provider. The card's **Connection** section shows the
+validation state and the identity the provider reported; a rejected credential
+is kept and explained there rather than silently ignored.
+
+## Channel routing
+
+A routing entry (a *channel instance*) links one provider identity — Discord
+server, Slack workspace, Telegram bot — to squads:
+
+| Field                    | Description                                   |
+| ------------------------ | --------------------------------------------- |
+| `id`                     | Unique identifier for the channel instance    |
+| `name`                   | Human-readable name                           |
+| `provider`               | `discord`, `slack`, or `telegram`             |
+| `providerConfig.guildId` | Discord guild/server ID                       |
+| `providerConfig.teamId`  | Slack workspace ID                            |
+| `providerConfig.botId`   | Telegram numeric bot ID                       |
+| `channelSquadMap`        | Map specific platform channels to squads      |
+| `defaultSquadId`         | Default squad for unrouted requests           |
+
+Choosing a **Default squad** on the provider card creates or updates the entry
+for the connection's own identity; **Channel routing** on the card edits it and
+adds per-channel overrides. `config/channels/*.yaml` templates are still synced
+for existing installs (`channelSquadMap` keyed by channel id, `defaultSquadId`),
+but new installs do not need them.
 
 ## Multi-Squad Support
 
@@ -465,19 +208,30 @@ See [ChannelInstance](../../apps/core/src/entities/ChannelInstance.ts) and the
 [bundled concierge type](../../config/agent-types/concierge.yaml) for the current
 routing and agent contract.
 
-## Environment Variables
+## Credentials and legacy environment variables
 
-| Variable                  | Required     | Description                                     |
-| ------------------------- | ------------ | ----------------------------------------------- |
-| `DISCORD_APPLICATION_ID`  | For Discord  | Discord application ID                          |
-| `DISCORD_PUBLIC_KEY`      | For Discord  | For webhook signature verification              |
-| `DISCORD_BOT_TOKEN`       | For Discord  | For registering slash commands                  |
-| `DISCORD_GUILD_ID`        | No           | Guild ID for dev (faster command updates)       |
-| `SLACK_SIGNING_SECRET`    | For Slack    | For webhook signature verification              |
-| `SLACK_BOT_TOKEN`         | For Slack    | For sending messages and reading thread replies |
-| `TELEGRAM_BOT_TOKEN`      | For Telegram | Bot token from @BotFather                       |
-| `TELEGRAM_WEBHOOK_SECRET` | For Telegram | Secret token for webhook verification           |
-| `TELEGRAM_BOT_ID`         | For Telegram | Numeric bot ID (must match channel config)      |
+Credentials live in the provider's connection (`apps/core/src/services/integrations/channels/`):
+the configuration holds the discovered identity, the encrypted credential holds
+the secrets, and the transports read both through a per-process snapshot
+(`getChannelIntegrationValue` is the compatibility boundary). Before connections,
+the same material lived in these secret-store keys / environment variables; on
+first boot after upgrading, a complete set is migrated into a connection, and the
+keys keep serving as a fallback for one release:
+
+| Variable                  | Now                                                          |
+| ------------------------- | ------------------------------------------------------------ |
+| `DISCORD_BOT_TOKEN`       | Discord credential                                            |
+| `DISCORD_APPLICATION_ID`  | Discovered from `/applications/@me`                          |
+| `DISCORD_PUBLIC_KEY`      | Discovered from `/applications/@me`                          |
+| `DISCORD_GUILD_ID`        | Chosen on the card (server for commands and routing)          |
+| `SLACK_BOT_TOKEN`         | Slack credential                                              |
+| `SLACK_SIGNING_SECRET`    | Slack credential                                              |
+| `TELEGRAM_BOT_TOKEN`      | Telegram credential                                           |
+| `TELEGRAM_WEBHOOK_SECRET` | Generated by Tau when a token is saved                        |
+| `TELEGRAM_BOT_ID`         | Discovered from `getMe`                                       |
+
+Platform-managed keys (`TAU_MANAGED_SECRET_KEYS`) are not migrated or editable;
+the transports keep reading them directly.
 
 ## Troubleshooting
 

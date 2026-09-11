@@ -280,7 +280,22 @@ export interface ChannelIntegrationSettings {
     managed?: boolean
     value?: string
   }[]
+  /** Channel providers only: what the provider said the saved credential is. */
+  identity?: Record<string, string> | null
+  connection?: {
+    id: string
+    source: 'connection' | 'legacy'
+    authState: string
+    healthState: string
+    lastErrorCode: string | null
+  } | null
+  enabled?: boolean
+  setup?: { state: 'configured' | 'needs_setup' | 'needs_attention'; issues: string[] }
+  webhook?: { url: string; secretConfigured: boolean }
+  routing?: { instanceId: string; defaultSquadId: string | null } | null
+  guilds?: { id: string; name: string }[]
 }
+export const slackAppManifestUrl = '/api/integrations/providers/slack/channel-settings/manifest'
 export const getChannelIntegrationSettings = (provider: string) =>
   apiFetch<ChannelIntegrationSettings>(`/integrations/providers/${provider}/channel-settings`)
 export const configureChannelIntegration = (provider: string, fields: Record<string, string | null>) =>

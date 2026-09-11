@@ -133,9 +133,9 @@ CRUD management for squad preset definitions. Similar pattern to Agent Types.
 
 ### Channel integrations
 
-Discord, Slack, and Telegram each have a card in Integrations. Enable a card to configure its bot credentials and channel routing. Saved secret values are never returned to the browser. Disabling an integration stops its transport access without deleting credentials or routes. Existing configured bots retain their enabled state on upgrade.
+Discord, Slack, and Telegram each have a card in Integrations. Enable a card, paste the bot token (and Slack signing secret); Tau validates it, shows the discovered identity, the webhook URL to give the provider, and a **Default squad** picker that creates the routing entry. Saved secret values are never returned to the browser. Disabling an integration stops its transport access without deleting credentials or routes. Existing configured bots retain their enabled state on upgrade.
 
-Channel routing stays in the existing channel system for now, with CRUD management embedded inside each provider’s card.
+Channel routing (per-channel overrides) stays in the existing channel system, with CRUD management embedded inside each provider’s card.
 
 **Fields:**
 

@@ -14,7 +14,7 @@ GitHub account setup, account selection, and credential lifecycle are described 
 
 Workflows can consume typed integration outputs, and optional squad triggers can create work from issue assignments or review requests. See [Workflows: integration updates and triggers](workflows.md#integration-updates-and-new-work-triggers) and the subscription runtime. GitHub streams with declared subscriptions use their flow consumers; unconverted streams keep the legacy scripts described below.
 
-Tau's integrations layer provides instance-global external service connections through narrow, provider-neutral capabilities. Each squad selects one pooled connection per provider. Bigbrain is the first provider. GitHub can publish typed outputs into flow subscriptions while retaining its legacy connection setup. Linear, Slack, Discord, and Telegram runtime paths remain on their existing adapters.
+Tau's integrations layer provides instance-global external service connections through narrow, provider-neutral capabilities. Each squad selects one pooled connection per provider. Bigbrain is the first provider. GitHub can publish typed outputs into flow subscriptions while retaining its legacy connection setup. Linear runtime paths remain on their existing adapters; Slack, Discord, and Telegram credentials are connection-scoped (one connection per provider) while the channel runtime still owns delivery and routing.
 
 ## Clean-room provenance
 
@@ -116,7 +116,7 @@ Squad settings show only globally enabled integrations that support account assi
 
 The first connected GitHub account becomes the **global default**. Squads inherit it unless they select their own accounts or disable GitHub. A global administrator can choose another default account. Explicit squad overrides remain intact. Removing the default never silently substitutes another GitHub identity; select a new default or reconnect instead. New squads receive the inherited assignment before their manager starts.
 
-See [GitHub](github-integrations.md), [Linear](linear-integrations.md), and [Channels](channels.md) for setup. Channel credentials remain encrypted in the existing store behind the integration API while the channel runtime continues to own message delivery and routing. A later migration can move that runtime without changing these settings pages. Existing configured channel integrations retain their enabled state on upgrade; new ones default to disabled.
+See [GitHub](github-integrations.md), [Linear](linear-integrations.md), and [Channels](channels.md) for setup. Channel credentials are integration connections (one per provider; see `apps/core/src/services/integrations/channels/`), validated and re-validated like any other connection, while the channel runtime continues to own message delivery and routing. Existing configured channel integrations retain their enabled state on upgrade; new ones default to disabled.
 
 ## Google Cloud speech
 

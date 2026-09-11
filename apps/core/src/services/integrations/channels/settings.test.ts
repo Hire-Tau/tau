@@ -1,93 +1,92 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { inArray } from 'drizzle-orm'
-import { db, secrets, settings } from '../../../db'
+import { db, integrationConnections, secrets, settings } from '../../../db'
 import { getSecretStore, resetSecretStore } from '../../secrets'
 import { getSettingsStore, resetSettingsStore } from '../../settings'
+import { channelConnections, legacyChannelCredentialKeys } from './connections'
 import {
-  configureChannelIntegration,
-  getChannelIntegrationSettings,
+  channelEnabledSettingKeys,
   getChannelIntegrationValue,
   initializeChannelIntegrationStates,
+  isChannelCredential,
+  isChannelEnabledSettingKey,
+  isChannelIntegration,
+  slackAppManifest,
 } from './settings'
 
-const credentialKeys = ['SLACK_BOT_TOKEN', 'SLACK_SIGNING_SECRET', 'DISCORD_BOT_TOKEN', 'TELEGRAM_BOT_TOKEN']
-const enabledKeys = ['slack', 'discord', 'telegram'].map((key) => `__integration-enabled:${key}`)
+const providers = ['telegram', 'slack', 'discord']
 const priorEnv = new Map<string, string | undefined>()
-let priorSecrets: (typeof secrets.$inferSelect)[] = []
-let priorSettings: (typeof settings.$inferSelect)[] = []
+
+async function wipe() {
+  await db.delete(integrationConnections).where(inArray(integrationConnections.providerKey, providers))
+  await db.delete(secrets).where(inArray(secrets.key, [...legacyChannelCredentialKeys]))
+  await db.delete(settings).where(inArray(settings.key, [...channelEnabledSettingKeys]))
+}
+
 beforeEach(async () => {
-  for (const key of [...credentialKeys, 'TAU_ENCRYPTION_KEY', 'TAU_MANAGED', 'TAU_MANAGED_SECRET_KEYS']) {
+  for (const key of [...legacyChannelCredentialKeys, 'TAU_ENCRYPTION_KEY', 'TAU_MANAGED', 'TAU_MANAGED_SECRET_KEYS']) {
     priorEnv.set(key, process.env[key])
     delete process.env[key]
   }
   process.env.TAU_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
-  priorSecrets = await db.select().from(secrets).where(inArray(secrets.key, credentialKeys))
-  priorSettings = await db.select().from(settings).where(inArray(settings.key, enabledKeys))
-  await db.delete(secrets).where(inArray(secrets.key, credentialKeys))
-  await db.delete(settings).where(inArray(settings.key, enabledKeys))
+  await wipe()
   resetSecretStore()
   resetSettingsStore()
   await getSecretStore().initialize()
   await getSettingsStore().initialize()
+  await channelConnections.refresh()
 })
 afterEach(async () => {
-  await db.delete(secrets).where(inArray(secrets.key, credentialKeys))
-  await db.delete(settings).where(inArray(settings.key, enabledKeys))
-  if (priorSecrets.length) await db.insert(secrets).values(priorSecrets)
-  if (priorSettings.length) await db.insert(settings).values(priorSettings)
+  await wipe()
   for (const [key, value] of priorEnv) {
     if (value === undefined) delete process.env[key]
     else process.env[key] = value
   }
   resetSecretStore()
   resetSettingsStore()
+  await channelConnections.refresh()
 })
 
-test('channel credentials are encrypted and redacted; only the selected provider fields can change', async () => {
-  const result = await configureChannelIntegration(
-    'slack',
-    {
-      SLACK_BOT_TOKEN: 'private-bot-token',
-      SLACK_SIGNING_SECRET: 'private-signature',
-    },
-    'test'
-  )
-  expect(result.fields.every((field) => field.configured)).toBe(true)
-  expect(JSON.stringify(result)).not.toContain('private-')
-  expect(result.fields.every((field) => !('value' in field))).toBe(true)
-  expect(JSON.stringify(await db.select().from(secrets).where(inArray(secrets.key, credentialKeys)))).not.toContain(
-    'private-'
-  )
-  await expect(configureChannelIntegration('slack', { DISCORD_BOT_TOKEN: 'wrong-provider' }, 'test')).rejects.toThrow()
-  expect(getChannelIntegrationSettings('discord').fields[0].configured).toBe(false)
-  await expect(configureChannelIntegration('slack', { SLACK_SIGNING_SECRET: null }, 'test')).rejects.toThrow('required')
-  expect(getChannelIntegrationSettings('slack').fields.map((field) => field.configured)).toEqual([true, true])
-})
-
-test('upgrades preserve configured bots, new integrations start disabled, and toggling retains credentials', async () => {
-  await configureChannelIntegration('slack', { SLACK_BOT_TOKEN: 'retained-token' }, 'test')
-  await initializeChannelIntegrationStates()
-  expect(getSettingsStore().getStoredValue(enabledKeys[0])).toBe('true')
-  expect(getSettingsStore().getStoredValue(enabledKeys[1])).toBe('false')
-  expect(getChannelIntegrationValue('SLACK_BOT_TOKEN')).toBe('retained-token')
-  await getSettingsStore().set(enabledKeys[0], 'false', 'test')
+test('the transport boundary resolves legacy key names through the provider switch and the fallback keys', async () => {
   expect(getChannelIntegrationValue('SLACK_BOT_TOKEN')).toBeUndefined()
-  expect(getChannelIntegrationSettings('slack').fields[0].configured).toBe(true)
-  await initializeChannelIntegrationStates()
-  expect(getChannelIntegrationValue('SLACK_BOT_TOKEN')).toBeUndefined()
-  await getSettingsStore().set(enabledKeys[0], 'true', 'test')
+  await getSecretStore().set('SLACK_BOT_TOKEN', 'retained-token', 'test')
+  await getSecretStore().set('SLACK_SIGNING_SECRET', 'retained-secret', 'test')
+  await channelConnections.refresh()
   expect(getChannelIntegrationValue('SLACK_BOT_TOKEN')).toBe('retained-token')
+  expect(getChannelIntegrationValue('SLACK_SIGNING_SECRET')).toBe('retained-secret')
+  await getSettingsStore().set('__integration-enabled:slack', 'false', 'test')
+  expect(getChannelIntegrationValue('SLACK_BOT_TOKEN')).toBeUndefined()
+  await getSettingsStore().set('__integration-enabled:slack', 'true', 'test')
+  expect(getChannelIntegrationValue('SLACK_BOT_TOKEN')).toBe('retained-token')
+  expect(getChannelIntegrationValue('NOT_A_CHANNEL_KEY')).toBeUndefined()
 })
 
-test('managed channel material remains hidden and cannot be replaced through the integration', async () => {
-  process.env.TAU_MANAGED = '1'
-  process.env.TAU_MANAGED_SECRET_KEYS = 'SLACK_BOT_TOKEN'
-  process.env.SLACK_BOT_TOKEN = 'platform-only-token'
-  const view = getChannelIntegrationSettings('slack')
-  expect(view.fields[0]).toMatchObject({ managed: true, configured: true })
-  expect(JSON.stringify(view)).not.toContain('platform-only-token')
-  await expect(configureChannelIntegration('slack', { SLACK_BOT_TOKEN: 'replacement' }, 'test')).rejects.toThrow(
-    'managed'
-  )
-  expect(getChannelIntegrationValue('SLACK_BOT_TOKEN')).toBe('platform-only-token')
+test('boot keeps configured bots switched on, starts fresh providers off, and migrates legacy keys', async () => {
+  // A legacy Slack bot with only a token cannot form a full credential (no
+  // signing secret), so it is not migrated and the switch still reflects it.
+  await getSecretStore().set('SLACK_BOT_TOKEN', 'retained-token', 'test')
+  await initializeChannelIntegrationStates()
+  expect(getSettingsStore().getStoredValue('__integration-enabled:slack')).toBe('true')
+  expect(getSettingsStore().getStoredValue('__integration-enabled:discord')).toBe('false')
+  expect(getSettingsStore().getStoredValue('__integration-enabled:telegram')).toBe('false')
+  expect(
+    await db.select().from(integrationConnections).where(inArray(integrationConnections.providerKey, providers))
+  ).toEqual([])
+})
+
+test('helpers classify channel providers, their legacy keys and their switch settings', () => {
+  expect(isChannelIntegration('slack')).toBe(true)
+  expect(isChannelIntegration('github')).toBe(false)
+  expect(isChannelCredential('DISCORD_PUBLIC_KEY')).toBe(true)
+  expect(isChannelCredential('GITHUB_TOKEN')).toBe(false)
+  expect(isChannelEnabledSettingKey('__integration-enabled:telegram')).toBe(true)
+  expect(isChannelEnabledSettingKey('__integration-enabled:github')).toBe(false)
+})
+
+test('the Slack manifest is generated with this instance URLs and no placeholders', () => {
+  const manifest = slackAppManifest('https://tau.example.test')
+  expect(manifest).toContain('url: https://tau.example.test/api/webhooks/channels/slack')
+  expect(manifest).toContain('request_url: https://tau.example.test/api/webhooks/channels/slack')
+  expect(manifest).not.toContain('YOUR_DOMAIN')
+  expect(manifest).toContain('command: /tau')
 })

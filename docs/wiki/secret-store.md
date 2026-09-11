@@ -72,9 +72,7 @@ The store has a fixed list of known secret keys used across the application:
 | AI Providers | `OPENAI_API_KEY`, `PROVIDER_AUTH_DATA`                                                  |
 | Git          | `GIT_USER_NAME`, `GIT_USER_EMAIL`                                                       |
 | Linear       | `LINEAR_WEBHOOK_SECRET`, `LINEAR_USER_ID`                                               |
-| Discord      | `DISCORD_APPLICATION_ID`, `DISCORD_PUBLIC_KEY`, `DISCORD_BOT_TOKEN`, `DISCORD_GUILD_ID` |
-| Slack        | `SLACK_SIGNING_SECRET`, `SLACK_BOT_TOKEN`                                               |
-| Telegram     | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `TELEGRAM_BOT_ID`                      |
+| Chat (legacy)| `DISCORD_*`, `SLACK_*`, `TELEGRAM_*` — migrated into integration connections on boot |
 | Push Notif   | `VAPID_SUBJECT`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`                                |
 | Apple Push   | `APNS_KEY_P8`, `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID`, `APNS_ENV`              |
 | Google Cloud | `GOOGLE_SERVICE_ACCOUNT_JSON`                                                           |

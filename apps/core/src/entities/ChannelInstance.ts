@@ -5,7 +5,7 @@
  * Each channel instance routes messages via a default squad and optional channel-specific squad map.
  */
 
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import type { InferSelectModel } from 'drizzle-orm'
 import { db, channelInstances } from '../db'
 import { getProvider } from '../channels'
@@ -87,11 +87,17 @@ export class ChannelInstance implements ChannelInstanceRow {
 
     const { configKey } = channelProvider
 
-    // Query using JSONB operator
+    // Query using JSONB operator, scoped to the provider so identifiers that
+    // happen to collide across providers cannot route to the wrong instance.
     const [row] = await db
       .select()
       .from(channelInstances)
-      .where(sql`${channelInstances.providerConfig}->>${configKey} = ${identifier}`)
+      .where(
+        and(
+          eq(channelInstances.provider, provider),
+          sql`${channelInstances.providerConfig}->>${configKey} = ${identifier}`
+        )
+      )
       .limit(1)
 
     return row ? new ChannelInstance(row) : null
