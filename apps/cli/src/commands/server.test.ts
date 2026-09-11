@@ -161,6 +161,56 @@ describe('tau server', () => {
       'bunx pm2 restart tau-api --update-env',
     ])
   })
+  it('start and restart warn when the built web bundle was made for a different base path', async () => {
+    writeFileSync(
+      join(root, '.env'),
+      'PORT=3000\nDATABASE_URL=postgres://user:pw@db.example.com:5432/tau\nAPP_BASE_PATH=/tau\n'
+    )
+    mkdirSync(join(root, 'apps', 'web', 'dist'), { recursive: true })
+    writeFileSync(
+      join(root, 'apps', 'web', 'dist', 'index.html'),
+      '<script type="module" crossorigin src="/assets/index-abc.js"></script>'
+    )
+    const capture = async (args: string[], json: boolean) => {
+      const { run } = make()
+      const printed: string[] = []
+      const realLog = console.log
+      console.log = (line?: unknown) => void printed.push(String(line))
+      ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(json)
+      try {
+        await run(args)
+      } finally {
+        console.log = realLog
+        ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(false)
+      }
+      const [data] = (output as ReturnType<typeof mock>).mock.calls.at(-1) as [Record<string, unknown>]
+      return { printed, data }
+    }
+    for (const verb of ['start', 'restart']) {
+      const { printed, data } = await capture(['server', verb], false)
+      const line = printed.find((l) => l.includes('warning:'))
+      expect(line).toContain('built for base "/"')
+      expect(line).toContain('APP_BASE_PATH=/tau')
+      expect(line).toContain('bun run build:web')
+      expect(data.warnings).toEqual([expect.stringContaining('built for base "/"')])
+    }
+    // --json promised one machine-readable document: the warning rides in it, not stdout.
+    const { printed, data } = await capture(['server', 'restart'], true)
+    expect(printed.some((l) => l.includes('warning:'))).toBe(false)
+    expect(data.warnings).toEqual([expect.stringContaining('built for base "/"')])
+  })
+  it('start and restart stay quiet when the bundle matches the base path', async () => {
+    writeFileSync(join(root, '.env'), 'PORT=3000\nAPP_BASE_PATH=/tau\n')
+    mkdirSync(join(root, 'apps', 'web', 'dist'), { recursive: true })
+    writeFileSync(
+      join(root, 'apps', 'web', 'dist', 'index.html'),
+      '<script type="module" crossorigin src="/tau/assets/index-abc.js"></script>'
+    )
+    const { run } = make()
+    await run(['server', 'restart'])
+    const [data] = (output as ReturnType<typeof mock>).mock.calls.at(-1) as [Record<string, unknown>]
+    expect(data.warnings).toBeUndefined()
+  })
   it('status reports root, processes and health', async () => {
     const { run } = make({
       'bunx pm2 jlist': {

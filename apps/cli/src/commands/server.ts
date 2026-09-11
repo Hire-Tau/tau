@@ -46,6 +46,7 @@ import { LOCAL_SUPERVISORS, type LocalSupervisor, type SetupOptions } from '../l
 import { isJsonMode, output, outputError, setOutputOptions } from '../output'
 import { startingPostgresLine } from '../local-server/steps'
 import { narrate } from '../local-server/log'
+import { webDistWarning } from '../local-server/web-dist'
 
 export interface ServerDeps {
   runner: Runner
@@ -80,6 +81,18 @@ export function defaultServerDeps(): ServerDeps {
 function rootEnv(root: string): Record<string, string> {
   const path = join(root, '.env')
   return existsSync(path) ? parseEnvFile(readFileSync(path, 'utf8')) : {}
+}
+
+/**
+ * Checks that start/restart cannot fix but the operator must know about
+ * (today: a web bundle built for another base path). Narrated as warnings
+ * on a human run; under --json they ride in the document instead.
+ */
+function narrateWarnings(root: string): { warnings?: string[] } {
+  const warnings = [webDistWarning(root, rootEnv(root))].filter((w): w is string => Boolean(w))
+  if (warnings.length === 0) return {}
+  if (!isJsonMode()) for (const warning of warnings) narrate(`  warning: ${warning}`)
+  return { warnings }
 }
 
 export function registerServerCommands(program: Command, deps: ServerDeps = defaultServerDeps()) {
@@ -380,8 +393,9 @@ Examples:
         await waitForPostgres(deps.runner, names.container, { sleep: deps.sleep })
       }
       await startSupervisor(context)
+      const warnings = narrateWarnings(dir)
       output(
-        { ok: true, root: dir, instance: names.label, supervisor: registered.record.supervisor },
+        { ok: true, root: dir, instance: names.label, supervisor: registered.record.supervisor, ...warnings },
         `Started instance "${names.label}" from ${dir}`
       )
     })
@@ -400,8 +414,9 @@ Examples:
     guarded(async (opts) => {
       const { dir, names, context, registered } = managed(opts as { root?: string; instance?: string })
       await restartSupervisor(context)
+      const warnings = narrateWarnings(dir)
       output(
-        { ok: true, root: dir, instance: names.label, supervisor: registered.record.supervisor },
+        { ok: true, root: dir, instance: names.label, supervisor: registered.record.supervisor, ...warnings },
         `Restarted instance "${names.label}" (${dir})`
       )
     })
