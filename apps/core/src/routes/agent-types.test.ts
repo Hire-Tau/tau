@@ -9,6 +9,7 @@ import { agentTypesRoutes } from './agent-types'
 import { identityMiddleware } from '../middleware/identity'
 import { createTestAdmin, createTestUser, authHeaders, cleanupTestRbac } from '../test-utils'
 import type { TestUser } from '../test-utils/rbac'
+import { agentTypeSync, promptIncludeSync, modelTierSync, skillSync } from '../services/config-sync'
 
 // ── Shared app with identity middleware ──
 const app = new Hono()
@@ -49,6 +50,11 @@ describe('agent type route validation', () => {
     PromptInclude.invalidateCache()
     await PromptInclude.upsert({ id: 'shared-block', name: 'Shared Block', content: '# Shared Block' })
   })
+
+  async function current(id: string) {
+    const res = await app.request(`/api/agent-types/${id}`, { headers: authHeaders(funcAdmin.token) })
+    return res.json()
+  }
 
   test('GET detail includes the resolved tier chain and provenance', async () => {
     const tierSlug = `${funcPrefix}-standard`
@@ -195,6 +201,43 @@ describe('agent type route validation', () => {
     expect(removed.includes).toEqual(['shared-block'])
     expect(removed.earlyMarginTokens).toBe(30000)
     expect(removed.inFlightMarginTokens).toBe(8192)
+  })
+
+  test('detail returns the include list and the resolved prompt agents receive', async () => {
+    await promptIncludeSync.sync()
+    await agentTypeSync.sync()
+    const res = await app.request('/api/agent-types/sysops', {
+      headers: authHeaders(funcAdmin.token),
+    })
+    const body = await res.json()
+    expect(body.includes).toEqual(['rules', 'subagents', 'squad-rules'])
+    expect(body.resolvedSystemPrompt).toContain('### Incident Response')
+    expect(body.resolvedSystemPrompt).toContain('### Questions, waits, and pause')
+    expect(body.systemPrompt).not.toContain('### Questions, waits, and pause')
+  })
+
+  test('PUT validates include ids and records an includes override', async () => {
+    await promptIncludeSync.sync()
+    await agentTypeSync.sync()
+    // sysops carries tier: standard and several bundled skills in its template;
+    // PUT re-validates both, so seed model tiers and skills too (the route
+    // doesn't sync these itself).
+    await modelTierSync.sync()
+    await skillSync.sync()
+    let res = await app.request('/api/agent-types/sysops', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', ...authHeaders(funcAdmin.token) },
+      body: JSON.stringify({ ...(await current('sysops')), includes: ['rules', 'nope'] }),
+    })
+    expect(res.status).toBe(400)
+    res = await app.request('/api/agent-types/sysops', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', ...authHeaders(funcAdmin.token) },
+      body: JSON.stringify({ ...(await current('sysops')), includes: ['rules'] }),
+    })
+    expect(res.status).toBe(200)
+    expect((await res.json()).yamlFieldOverrides).toContain('includes')
+    await agentTypeSync.revertTemplateFields('sysops', ['includes'])
   })
 })
 

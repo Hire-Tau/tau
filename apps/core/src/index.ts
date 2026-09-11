@@ -11,6 +11,7 @@ import { logger } from 'hono/logger'
 import { agentTypesRoutes } from './routes/agent-types'
 import { modelTiersRoutes } from './routes/model-tiers'
 import { skillsRoutes } from './routes/skills'
+import { promptIncludesRoutes } from './routes/prompt-includes'
 import { assistantRouter } from './routes/assistant'
 import { chatRouter } from './routes/chat'
 import { pushRouter } from './routes/push'
@@ -262,6 +263,7 @@ app.route('/api/roles', rolesRouter)
 // previously-undefined 'system:worker-status' (which only Admin's '*' matched).
 app.get('/api/worker/status', requirePermission('squads:read'), (c) => c.json({ status: getWorkerStatus() }))
 app.route('/api/skills', skillsRoutes)
+app.route('/api/prompt-includes', promptIncludesRoutes)
 app.route('/api/agent-types', agentTypesRoutes)
 app.route('/api/model-tiers', modelTiersRoutes)
 app.route('/api/chat', chatRouter)
