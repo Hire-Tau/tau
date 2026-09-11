@@ -1,0 +1,22 @@
+# Replacement for upstream dtln-rs's .cargo/config.toml, overlaid by the Tau
+# denoiser build (apps/web/scripts/dtln/Dockerfile). Identical to upstream
+# except `ENVIRONMENT=web,worker` is unquoted: Emscripten 4.x parses the quoted
+# form as a string and refuses it ("setting `ENVIRONMENT` expects `list`").
+[target.'cfg(not(target_os = "emscripten"))']
+rustflags = [
+    "-C", "link-arg=-lc++",
+    "-C", "link-arg=-lc++abi",
+]
+[target.wasm32-unknown-emscripten]
+rustflags = [
+    # This provides the DtlnPlugin wrapper to match our NEON module interface.
+    "-C", "link-args=--post-js ./dtln_post.js",
+    "-C", "link-args=--pre-js ./dtln_pre.js",
+    "-C", "link-args=-s SINGLE_FILE=1 -s ENVIRONMENT=web,worker",
+    "-C", "link-args=-msimd128 -msse",
+
+    "-C", "target-feature=+simd128",
+
+    # This allows cdylib to be built, which doesn't have a main symbol.
+    "-C", "link-args=--no-entry",
+]

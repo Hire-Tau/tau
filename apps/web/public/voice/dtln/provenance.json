@@ -1,13 +1,25 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "asset": "dtln.js",
-  "assetSha256": "41444ff0e586a130d659ed9d486d043a885817260faecb7278df8e7d402acf96",
-  "embeddedWasmSha256": "b63233182af792568bd4508581185e38d1e19f7f48ae2c992b01dad48448b639",
-  "embeddedWasmBytes": 6043145,
-  "upstreamReference": {
+  "assetSha256": "9d2db56008cc8f750c3712066abab71bc3187c96686e00b675e6904b8b641219",
+  "embeddedWasmSha256": "d9887ead985050a77746bc4f95cebe6003d623ef3ca16e4d12a25fb14f104970",
+  "embeddedWasmBytes": 6126090,
+  "upstream": {
     "repository": "https://github.com/DataDog/dtln-rs",
     "commit": "5bd53c00d3334615f9b03fa7775402ae2a39b616"
   },
-  "exactBinarySourceCommit": null,
-  "reproducibleBuildVerified": false
+  "build": {
+    "recipe": "apps/web/scripts/dtln/Dockerfile",
+    "emscripten": "4.0.23",
+    "rustc": "1.94.1",
+    "cargo": "1.94.1",
+    "overlays": [
+      "build.rs",
+      "config.toml",
+      "dtln_post.js"
+    ],
+    "formatted": "prettier (repository config)"
+  },
+  "exactBinarySourceCommit": "5bd53c00d3334615f9b03fa7775402ae2a39b616",
+  "reproducibleBuildVerified": true
 }
