@@ -1,11 +1,18 @@
 import { describe, test, expect, beforeEach } from 'bun:test'
 import { db, agentTypes } from '../../db'
 import { eq } from 'drizzle-orm'
-import { AgentTypeSync } from './agent-type-sync'
+import { AgentTypeSync, composeFromYaml } from './agent-type-sync'
+import { loadIncludeFiles } from './prompt-include-sync'
+
+const sync = new AgentTypeSync()
+
+/** The prompt an agent actually receives: the type's own text plus its includes. */
+async function loadComposed() {
+  const [parsed, files] = await Promise.all([sync.loadFromDir(), loadIncludeFiles()])
+  return parsed.map((t) => ({ ...t, systemPrompt: composeFromYaml(t, files) }))
+}
 
 describe('AgentTypeSync', () => {
-  const sync = new AgentTypeSync()
-
   beforeEach(async () => {
     await db.delete(agentTypes)
   })
@@ -110,7 +117,7 @@ describe('AgentTypeSync', () => {
   })
 
   test('engineering squad prompts include public communication guidance', async () => {
-    const parsed = await sync.loadFromDir()
+    const parsed = await loadComposed()
     for (const id of ['engineer', 'reviewer', 'manager']) {
       const agentType = parsed.find((p) => p.id === id)
       expect(agentType).toBeTruthy()
@@ -122,7 +129,7 @@ describe('AgentTypeSync', () => {
   })
 
   test('manager, reviewer, and shared prompts document scope adjustment coordination', async () => {
-    const parsed = await sync.loadFromDir()
+    const parsed = await loadComposed()
     const manager = parsed.find((p) => p.id === 'manager')
     const reviewer = parsed.find((p) => p.id === 'reviewer')
 
@@ -152,7 +159,7 @@ describe('AgentTypeSync', () => {
   })
 
   test('manager prompt asks humans through ask_human and reserves inbox messages for information', async () => {
-    const manager = (await sync.loadFromDir()).find((item) => item.id === 'manager')!
+    const manager = (await loadComposed()).find((item) => item.id === 'manager')!
 
     expect(manager.systemPrompt).toContain('### Asking Humans')
     expect(manager.systemPrompt).toContain('you never block on a human')
@@ -165,7 +172,7 @@ describe('AgentTypeSync', () => {
   })
 
   test('squad rules send workers to a blocking ask_human for human decisions, not manual waits', async () => {
-    const parsed = await sync.loadFromDir()
+    const parsed = await loadComposed()
     for (const id of ['engineer', 'sysops', 'reviewer']) {
       const prompt = parsed.find((item) => item.id === id)?.systemPrompt ?? ''
       expect(prompt).toContain('`ask_human` tool and `blocking: true`')
@@ -174,7 +181,7 @@ describe('AgentTypeSync', () => {
   })
 
   test('manager prompt creates worktrees and passes branch/worktree flags', async () => {
-    const parsed = await sync.loadFromDir()
+    const parsed = await loadComposed()
     const manager = parsed.find((p) => p.id === 'manager')
     expect(manager).toBeTruthy()
     const p = manager!.systemPrompt
@@ -194,7 +201,7 @@ describe('AgentTypeSync', () => {
   })
 
   test('architect and engineer prompts verify worktree on startup and can create it when metadata exists', async () => {
-    const parsed = await sync.loadFromDir()
+    const parsed = await loadComposed()
     for (const id of ['architect', 'engineer']) {
       const agentType = parsed.find((p) => p.id === id)
       expect(agentType).toBeTruthy()
@@ -214,8 +221,8 @@ describe('AgentTypeSync', () => {
     }
   })
 
-  test('all worker types keep expertise and shared flow guidance in a single prompt', async () => {
-    const parsed = await sync.loadFromDir()
+  test('all worker types keep expertise and shared flow guidance in the composed prompt', async () => {
+    const parsed = await loadComposed()
     const expectations: Record<string, string[]> = {
       architect: ['### Creating Plans', '### Task Structure', '## Design Judgment', 'Testing strategy'],
       engineer: ['### Implementation', '### Self-Review Checklist', '### Revision Feedback', '### Report Format'],
@@ -261,8 +268,8 @@ describe('AgentTypeSync', () => {
   })
 
   test('squad rules teach verifying worktree dir exists (not CWD) and allow intentional no-worktree', async () => {
-    const parsed = await sync.loadFromDir()
-    // Shared squad-rules include is appended to manager/architect/engineer/reviewer.
+    const parsed = await loadComposed()
+    // Shared squad-rules include is composed into manager/architect/engineer/reviewer.
     for (const id of ['manager', 'architect', 'engineer', 'reviewer']) {
       const agentType = parsed.find((p) => p.id === id)
       expect(agentType).toBeTruthy()
@@ -278,7 +285,7 @@ describe('AgentTypeSync', () => {
   })
 
   test('worker prompts require follow-up work to be communicated to the manager', async () => {
-    const parsed = await sync.loadFromDir()
+    const parsed = await loadComposed()
 
     const reviewer = parsed.find((p) => p.id === 'reviewer')
     const engineer = parsed.find((p) => p.id === 'engineer')
@@ -300,7 +307,7 @@ describe('AgentTypeSync', () => {
   })
 
   test('squad manager and worker prompts include monitor tool guidance', async () => {
-    const parsed = await sync.loadFromDir()
+    const parsed = await loadComposed()
     for (const id of ['manager', 'architect', 'engineer', 'reviewer']) {
       const agentType = parsed.find((p) => p.id === id)
       expect(agentType).toBeTruthy()
@@ -325,7 +332,7 @@ describe('AgentTypeSync', () => {
   })
 
   test('top-level subagent-capable prompts include subagent usage guidance', async () => {
-    const parsed = await sync.loadFromDir()
+    const parsed = await loadComposed()
     const subagentCapableIds = [
       'system-manager',
       'concierge',
@@ -367,7 +374,7 @@ describe('AgentTypeSync', () => {
   })
 
   test('subagent usage guidance is excluded from non-top-level or non-capable prompts', async () => {
-    const parsed = await sync.loadFromDir()
+    const parsed = await loadComposed()
 
     for (const id of ['subagent', 'artifact-builder-default', 'general']) {
       const agentType = parsed.find((p) => p.id === id)
@@ -425,14 +432,13 @@ describe('AgentTypeSync', () => {
     expect(parsed.find((row) => row.id === 'concierge')!.systemPrompt).toContain('channel_respond')
   })
 
-  test('includes are resolved into systemPrompt', async () => {
+  test('includes are kept as a list, not merged into systemPrompt', async () => {
     const parsed = await sync.loadFromDir()
-    // Find an agent type that has includes (check the YAML files)
-    const withIncludes = parsed.find((p) => p.includes && p.includes.length > 0)
-    if (withIncludes) {
-      // systemPrompt should be longer than just the raw prompt (includes appended)
-      expect(withIncludes.systemPrompt.length).toBeGreaterThan(50)
-    }
+    const withIncludes = parsed.find((p) => p.includes && p.includes.length > 0)!
+    expect(withIncludes.includes!.length).toBeGreaterThan(0)
+    const files = await loadIncludeFiles()
+    for (const id of withIncludes.includes!)
+      expect(withIncludes.systemPrompt).not.toContain(files.get(id)!.trim().slice(0, 80))
   })
 
   test('toYaml produces valid YAML', async () => {
@@ -514,7 +520,6 @@ describe('AgentTypeSync', () => {
 })
 
 test('retired flowPrompt config points authors to the shared expertise prompt', () => {
-  const sync = new AgentTypeSync()
   const base = 'id: worker\nname: Worker\nmodel: anthropic:claude-sonnet-4-5\nsystemPrompt: Domain expertise\n'
   expect(sync.parse(base, 'worker.yaml').systemPrompt).toBe('Domain expertise')
   expect(() => sync.parse(base + 'flowPrompt: Separate expertise\n', 'worker.yaml')).toThrow('flowPrompt was removed')

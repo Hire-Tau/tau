@@ -13,6 +13,7 @@ export interface CreateAgentTypeInput {
   tier?: string | null
   description?: string
   systemPrompt: string
+  includes?: string[]
   skills?: string[]
   extensions?: string[]
   toolsAllow?: string[]
@@ -187,6 +188,7 @@ export class AgentType implements AgentTypeRow {
       name: input.name,
       description: input.description ?? null,
       systemPrompt: input.systemPrompt,
+      includes: input.includes ?? [],
       skills: input.skills ?? null,
       extensions: input.extensions ?? null,
       toolsAllow: input.toolsAllow ?? null,
@@ -214,6 +216,7 @@ export class AgentType implements AgentTypeRow {
         name: input.name,
         description: input.description ?? null,
         systemPrompt: input.systemPrompt,
+        includes: input.includes ?? [],
         skills: input.skills ?? null,
         extensions: input.extensions ?? null,
         toolsAllow: input.toolsAllow ?? null,
@@ -231,6 +234,7 @@ export class AgentType implements AgentTypeRow {
           name: input.name,
           description: input.description ?? null,
           systemPrompt: input.systemPrompt,
+          includes: input.includes ?? [],
           skills: input.skills ?? null,
           extensions: input.extensions ?? null,
           toolsAllow: input.toolsAllow ?? null,

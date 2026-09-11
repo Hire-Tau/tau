@@ -1,8 +1,9 @@
 import { describe, test, expect, beforeEach, beforeAll, afterAll } from 'bun:test'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
-import { db, agentTypes, modelTiers, skills } from '../db'
+import { db, agentTypes, modelTiers, promptIncludes, skills } from '../db'
 import { AgentType } from '../entities/AgentType'
+import { PromptInclude } from '../entities/PromptInclude'
 import { Skill } from '../entities/Skill'
 import { agentTypesRoutes } from './agent-types'
 import { identityMiddleware } from '../middleware/identity'
@@ -44,6 +45,9 @@ describe('agent type route validation', () => {
     AgentType.invalidateCache()
     Skill.invalidateCache()
     await Skill.upsert({ id: 'custom-skill', name: 'Custom Skill', content: '# Custom Skill' })
+    await db.delete(promptIncludes)
+    PromptInclude.invalidateCache()
+    await PromptInclude.upsert({ id: 'shared-block', name: 'Shared Block', content: '# Shared Block' })
   })
 
   test('GET detail includes the resolved tier chain and provenance', async () => {
@@ -132,9 +136,40 @@ describe('agent type route validation', () => {
     })
   })
 
+  test('rejects unknown and duplicated prompt includes', async () => {
+    const post = (includes: unknown) =>
+      app.request('/api/agent-types', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...authHeaders(funcAdmin.token) },
+        body: JSON.stringify({ ...validAgentType, includes }),
+      })
+
+    let res = await post(['nope'])
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: "Unknown prompt include 'nope'" })
+
+    res = await post(['shared-block', 'shared-block'])
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: "includes lists 'shared-block' twice" })
+
+    res = await post('shared-block')
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: 'includes must be an array' })
+  })
+
+  test('creates an agent type carrying a prompt include list', async () => {
+    const res = await app.request('/api/agent-types', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...authHeaders(funcAdmin.token) },
+      body: JSON.stringify({ ...validAgentType, includes: ['shared-block'] }),
+    })
+    expect(res.status).toBe(201)
+    expect((await res.json()).includes).toEqual(['shared-block'])
+  })
+
   test('adds and removes one skill without replacing the full list', async () => {
     await Skill.upsert({ id: 'second-skill', name: 'Second Skill', content: '# Second Skill' })
-    await AgentType.upsert(validAgentType)
+    await AgentType.upsert({ ...validAgentType, includes: ['shared-block'] })
 
     let res = await app.request('/api/agent-types/custom-agent/add-skill', {
       method: 'POST',
@@ -144,6 +179,8 @@ describe('agent type route validation', () => {
     expect(res.status).toBe(200)
     const added = await res.json()
     expect(added.skills).toEqual(['custom-skill', 'second-skill'])
+    // The skill shortcuts rewrite the whole row; the include list must survive.
+    expect(added.includes).toEqual(['shared-block'])
     expect(added.earlyMarginTokens).toBe(30000)
     expect(added.inFlightMarginTokens).toBe(8192)
 
@@ -155,6 +192,7 @@ describe('agent type route validation', () => {
     expect(res.status).toBe(200)
     const removed = await res.json()
     expect(removed.skills).toEqual(['second-skill'])
+    expect(removed.includes).toEqual(['shared-block'])
     expect(removed.earlyMarginTokens).toBe(30000)
     expect(removed.inFlightMarginTokens).toBe(8192)
   })

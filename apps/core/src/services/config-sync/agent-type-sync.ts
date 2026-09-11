@@ -1,11 +1,12 @@
 import yaml from 'js-yaml'
-import { readFile } from 'fs/promises'
+import { eq } from 'drizzle-orm'
 import { join } from 'path'
-import { agentTypes } from '../../db'
+import { agentTypes, db } from '../../db'
 import { AGENT_TYPES_DIR } from '../../lib/paths'
 import { validateModelSpecList } from '../../lib/utils/model-spec'
 import { AgentType } from '../../entities/AgentType'
-import { ConfigSync } from './ConfigSync'
+import { ConfigSync, type SyncResult } from './ConfigSync'
+import { loadIncludeFiles } from './prompt-include-sync'
 import { INTEGRATION_CAPABILITIES, type AgentTypeIntegrationPolicyV1 } from '@tau/shared'
 
 // ---------------------------------------------------------------------------
@@ -79,9 +80,6 @@ export class AgentTypeSync extends ConfigSync<AgentTypeYaml> {
   readonly yamlFieldOverridesColumn = agentTypes.yamlFieldOverrides
   readonly updatedAtColumn = agentTypes.updatedAt
   readonly disabledColumn = agentTypes.disabled
-
-  /** Per-instance cache for resolved include file contents. */
-  private includeCache: Map<string, string> = new Map()
 
   // -------------------------------------------------------------------------
   // Parse
@@ -300,46 +298,95 @@ export class AgentTypeSync extends ConfigSync<AgentTypeYaml> {
   }
 
   // -------------------------------------------------------------------------
-  // Include resolution
+  // Includes
   // -------------------------------------------------------------------------
 
-  /**
-   * Override loadFromDir to resolve includes after loading all YAML files.
-   */
+  /** Agent types no longer bake include text into systemPrompt; they carry the list and the runtime composes. */
   async loadFromDir(): Promise<AgentTypeYaml[]> {
     const results = await super.loadFromDir()
-    const includesDir = join(this.directory, 'includes')
-
-    for (const agentType of results) {
-      await this.resolveIncludes(agentType, includesDir)
-    }
-
+    await this.validateIncludes(results, await loadIncludeFiles(this.includesDir))
     return results
   }
 
-  /**
-   * Resolve includes for an agent type. Reads `.md` files from the includes
-   * subdirectory and appends their content to the systemPrompt.
-   */
-  private async resolveIncludes(agentType: AgentTypeYaml, includesDir: string): Promise<void> {
-    if (!agentType.includes?.length) return
-
-    const parts: string[] = []
-    for (const name of agentType.includes) {
-      const filePath = join(includesDir, `${name}.md`)
-      let content = this.includeCache.get(filePath)
-      if (content === undefined) {
-        try {
-          content = await readFile(filePath, 'utf-8')
-          this.includeCache.set(filePath, content)
-        } catch {
-          throw new YamlValidationError(`AgentType '${agentType.id}': Include '${name}' not found at ${filePath}`)
-        }
+  async validateIncludes(types: AgentTypeYaml[], files: Map<string, string>): Promise<void> {
+    for (const agentType of types) {
+      for (const name of agentType.includes ?? []) {
+        if (!files.has(name))
+          throw new YamlValidationError(`AgentType '${agentType.id}': Include '${name}' not found in includes/`)
       }
-      parts.push(content)
     }
+  }
 
-    agentType.systemPrompt = agentType.systemPrompt + '\n\n' + parts.join('\n\n')
+  private get includesDir(): string {
+    return join(this.directory, 'includes')
+  }
+
+  // -------------------------------------------------------------------------
+  // Sync
+  // -------------------------------------------------------------------------
+
+  async sync(): Promise<SyncResult> {
+    // Read the legacy markers before the base sync fills `includes` from the
+    // template — afterwards every row looks migrated.
+    const legacyIds = await this.findLegacyMergedIds()
+    const result = await super.sync()
+    await this.splitLegacyMergedPrompts(legacyIds)
+    return result
+  }
+
+  /**
+   * A row edited before includes were split out carries the include text inside
+   * its systemPrompt override and has no stored include list.
+   */
+  private async findLegacyMergedIds(): Promise<string[]> {
+    const rows = await db.select().from(agentTypes)
+    return rows
+      .filter(
+        (row) =>
+          ((row.yamlFieldOverrides as string[] | null) ?? []).includes('systemPrompt') &&
+          (row.includes ?? []).length === 0
+      )
+      .map((row) => row.id)
+  }
+
+  /**
+   * One-time repair for rows edited before includes were split out: their
+   * systemPrompt override contains the include text verbatim. Strip it and
+   * adopt the template's include list. A hand-modified merge cannot be split
+   * safely, so it keeps its text and gets an empty include list — the composed
+   * prompt stays exactly what the admin wrote instead of gaining a second copy.
+   */
+  private async splitLegacyMergedPrompts(legacyIds: string[]): Promise<void> {
+    if (legacyIds.length === 0) return
+    const files = await loadIncludeFiles(this.includesDir)
+    for (const id of legacyIds) {
+      const [row] = await db.select().from(agentTypes).where(eq(agentTypes.id, id))
+      const template = row?.yamlTemplate as { systemPrompt?: string; includes?: string[] } | null | undefined
+      const wanted = template?.includes ?? []
+      if (!row || !template || wanted.length === 0) continue
+
+      const stripped = stripLegacyIncludeSuffix(
+        row.systemPrompt,
+        wanted.map((name) => files.get(name) ?? '')
+      )
+      if (stripped === null) {
+        this.log.warn(`agent type '${id}': systemPrompt override contains edited include text; left as-is`)
+        // Drop the list the base sync just copied from the template, or the
+        // runtime would append a second copy of text this prompt already has.
+        if ((row.includes ?? []).length === 0) continue
+        await db.update(agentTypes).set({ includes: [], updatedAt: new Date() }).where(eq(agentTypes.id, id))
+        await this.recomputeFieldOverrides(id)
+        continue
+      }
+
+      await db
+        .update(agentTypes)
+        .set({ systemPrompt: stripped, includes: wanted, updatedAt: new Date() })
+        .where(eq(agentTypes.id, id))
+      await this.recomputeFieldOverrides(id)
+      this.log.info(`agent type '${id}': split legacy merged prompt into systemPrompt + includes`)
+    }
+    AgentType.invalidateCache()
   }
 
   // -------------------------------------------------------------------------
@@ -359,6 +406,7 @@ export class AgentTypeSync extends ConfigSync<AgentTypeYaml> {
       tier: parsed.tier ?? null,
       description: parsed.description ?? null,
       systemPrompt: parsed.systemPrompt,
+      includes: parsed.includes ?? [],
       skills: parsed.skills ?? null,
       extensions: parsed.extensions ?? null,
       toolsAllow: parsed.tools?.allow ?? null,
@@ -379,6 +427,7 @@ export class AgentTypeSync extends ConfigSync<AgentTypeYaml> {
       tier: (row.tier as string) ?? null,
       description: (row.description as string) ?? null,
       systemPrompt: row.systemPrompt as string,
+      includes: (row.includes as string[]) ?? [],
       skills: (row.skills as string[]) ?? null,
       extensions: (row.extensions as string[]) ?? null,
       toolsAllow: (row.toolsAllow as string[]) ?? null,
@@ -404,6 +453,8 @@ export class AgentTypeSync extends ConfigSync<AgentTypeYaml> {
     if (row.tier) obj.tier = row.tier
     if (row.description) obj.description = row.description
     obj.systemPrompt = row.systemPrompt
+    const includes = row.includes as string[] | null
+    if (includes && includes.length > 0) obj.includes = includes
     if (row.skills) obj.skills = row.skills
     if (row.extensions) obj.extensions = row.extensions
     const earlyMarginTokens = row.earlyMarginTokens as number | null
@@ -437,4 +488,25 @@ export class AgentTypeSync extends ConfigSync<AgentTypeYaml> {
   async afterSync(_id: string): Promise<void> {
     AgentType.invalidateCache()
   }
+}
+
+// ---------------------------------------------------------------------------
+// Prompt composition helpers
+// ---------------------------------------------------------------------------
+
+/** The legacy merge, kept only for tests and the one-time migration strip. */
+export function composeFromYaml(parsed: AgentTypeYaml, files: Map<string, string>): string {
+  const parts = (parsed.includes ?? []).map((id) => files.get(id)).filter((t): t is string => typeof t === 'string')
+  return [parsed.systemPrompt, ...parts].join('\n\n')
+}
+
+/**
+ * Pre-includes databases stored systemPrompt = own + '\n\n' + include texts.
+ * If a stored prompt still ends with exactly that suffix, return the own part;
+ * otherwise null (leave it alone — re-appending at runtime would duplicate).
+ */
+export function stripLegacyIncludeSuffix(prompt: string, includeTexts: string[]): string | null {
+  if (includeTexts.length === 0) return prompt
+  const suffix = '\n\n' + includeTexts.join('\n\n')
+  return prompt.endsWith(suffix) ? prompt.slice(0, -suffix.length) : null
 }

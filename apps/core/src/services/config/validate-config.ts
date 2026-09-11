@@ -81,6 +81,17 @@ export async function validateAgentTypeConfig(input: any): Promise<void> {
       throw new Error(`Skill "${ref}" does not exist`)
     }
   }
+  if (input.includes != null) {
+    if (!Array.isArray(input.includes)) throw new Error('includes must be an array')
+    const { PromptInclude } = await import('../../entities/PromptInclude')
+    const seen = new Set<string>()
+    for (const id of input.includes) {
+      if (typeof id !== 'string' || !id) throw new Error('includes must contain non-empty ids')
+      if (seen.has(id)) throw new Error(`includes lists '${id}' twice`)
+      seen.add(id)
+      if (!(await PromptInclude.find(id))) throw new Error(`Unknown prompt include '${id}'`)
+    }
+  }
 }
 
 export async function validateSquadPresetConfig(input: any): Promise<void> {
