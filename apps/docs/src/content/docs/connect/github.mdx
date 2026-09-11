@@ -49,7 +49,10 @@ unless they choose their own accounts or disable GitHub.
 3. Keep the inherited account, or select the accounts this squad may use and its
    default identity.
 4. For issue routing, enter the repository as `owner/repository` in **GitHub
-   Routing** and add label filters if you want them.
+   Routing** and add label filters if you want them. A pattern such as
+   `owner/*` or `owner/svc-*` covers every matching repository the selected
+   account can see (up to 100 per pattern); new repositories are picked up
+   within ten minutes, and ones the account loses access to are dropped.
 
 Repository routing and workflow subscriptions decide which updates a squad
 consumes. They do not grant repository access. The selected account and the App

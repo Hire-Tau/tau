@@ -199,3 +199,38 @@ test('canonical code hosting references honor the selected account and never pol
   ])
   expect(requested).toEqual([['squad', connectionId]])
 })
+
+test('wildcard issue rules establish one watch per expanded repository and none without an expander', async () => {
+  const { squadEventRuleSchema } = await import('@tau/shared')
+  const rule = squadEventRuleSchema.parse({
+    id: 'glob',
+    source: { integration: 'github', output: 'issue.assigned', version: 1 },
+    filters: { repository: 'acme/svc-*', audience: 'any' },
+    action: { type: 'notify-manager' },
+  })
+  const options = {
+    resolveConnection: async (squadId: string) => ({ id: `account-${squadId}` }),
+    listWorkStreams: async () => [],
+    listSquads: async () => [{ id: 's1', metadata: { integrationRules: { github: [rule] } } }],
+    lastRealDeliveries: async () => new Map<string, Date>(),
+  }
+  expect(await new GitHubPrWatchPolicy(options).listWatches()).toEqual([])
+
+  const expanded: [string, readonly string[]][] = []
+  const watches = await new GitHubPrWatchPolicy({
+    ...options,
+    expandRepositories: async (connectionId, selectors) => {
+      expanded.push([connectionId, selectors])
+      return ['acme/svc-api', 'acme/svc-web']
+    },
+  }).listWatches()
+  expect(expanded).toEqual([['account-s1', ['acme/svc-*']]])
+  expect(watches.map((watch) => watch.resourceKey)).toEqual([
+    's1:account-s1:acme/svc-api:issue-events',
+    's1:account-s1:acme/svc-web:issue-events',
+  ])
+  expect(watches[0]!.connection).toMatchObject({
+    id: 'account-s1',
+    configuration: { kind: 'issue-events', owner: 'acme', repo: 'svc-api' },
+  })
+})

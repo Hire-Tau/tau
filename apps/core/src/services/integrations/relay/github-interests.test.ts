@@ -104,3 +104,33 @@ test('editable rules discover selected account repositories and drop disabled or
     { squadId: 'squad', connectionId: account, repository: 'org/repo' },
   ])
 })
+
+test('wildcard rule repositories expand through the injected expander into exact interests', async () => {
+  const { squadEventRuleSchema } = await import('@tau/shared')
+  const account = 'bcbe4f3a-d2d1-4b91-b1ea-4c6c14485893'
+  const rule = (id: string, repository: string) =>
+    squadEventRuleSchema.parse({
+      id,
+      source: { integration: 'github', output: 'issue.assigned', version: 1, connectionId: account },
+      filters: { repository, audience: 'any' },
+      action: { type: 'notify-manager' },
+    })
+  const expanded: [string, readonly string[]][] = []
+  const source: GitHubInterestSource = {
+    listWorkStreams: async () => [],
+    listSquads: async () => [
+      { id: 'squad', metadata: { integrationRules: { github: [rule('glob', 'org/*'), rule('exact', 'Org/Repo')] } } },
+    ],
+    resolveConnection: async (_squad, id) => (id === account ? { id } : undefined),
+    expandRepositories: async (connectionId, selectors) => {
+      expanded.push([connectionId, selectors])
+      return selectors.flatMap((selector) => (selector === 'org/*' ? ['org/a', 'org/repo'] : [selector.toLowerCase()]))
+    },
+  }
+  expect(await discoverGitHubRelayInterests(source)).toEqual([
+    { squadId: 'squad', connectionId: account, repository: 'org/a' },
+    { squadId: 'squad', connectionId: account, repository: 'org/repo' },
+  ])
+  // Only the pattern went through expansion, keyed by the resolved connection.
+  expect(expanded).toEqual([[account, ['org/*']]])
+})

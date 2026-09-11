@@ -6,6 +6,7 @@ import {
   resolveInstanceGitHubConnection,
 } from '../github/resolve-connection'
 import { listGitHubPrWorkStreamCandidates, listGitHubTriggerSquads } from '../github/database-watch-source'
+import { expandGitHubRepositories } from '../github/repository-enumeration-runtime'
 import { publishIntegrationOutputs } from '../outputs/runtime'
 import { DbEventPollingDispatchStore } from '../db-event-polling-dispatch-store'
 import { extractGitHubPrDispatchFact } from '../../squad-activity/github-pr-fact'
@@ -25,6 +26,7 @@ export const hostedIntegrationRelayRuntime = new HostedIntegrationRelayRunner({
       listWorkStreams: listGitHubPrWorkStreamCandidates,
       listSquads: listGitHubTriggerSquads,
       resolveConnection: resolveGitHubRelayAssignment,
+      expandRepositories: expandGitHubRepositories,
     }),
   resolve: async (id) => {
     const resolved = await resolveInstanceGitHubConnection(id)
