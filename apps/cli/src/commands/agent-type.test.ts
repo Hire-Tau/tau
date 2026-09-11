@@ -17,6 +17,20 @@ const existing = {
   toolsDeny: null,
 }
 
+const sysops = {
+  id: 'sysops',
+  name: 'Sysops',
+  model: '',
+  description: 'Runs the fleet',
+  systemPrompt: 'You operate.',
+  resolvedSystemPrompt: 'You operate.\n\n## Rules\n\nFollow the rules.',
+  includes: ['rules'],
+  skills: null,
+  extensions: null,
+  toolsAllow: null,
+  toolsDeny: null,
+}
+
 describe('tau agent-type update', () => {
   beforeEach(() => {
     ;(apiGet as ReturnType<typeof mock>).mockResolvedValue(existing)
@@ -58,5 +72,48 @@ describe('tau agent-type update', () => {
     await run(['agent-type', 'update', 'engineer', '--name', 'Engineer II'])
 
     expect(apiPut).toHaveBeenCalledWith('/api/agent-types/engineer', expect.objectContaining({ includes: [] }))
+  })
+})
+
+describe('tau agent-type get --resolved', () => {
+  beforeEach(() => {
+    ;(apiGet as ReturnType<typeof mock>).mockResolvedValue(sysops)
+  })
+
+  afterEach(() => {
+    mock.restore()
+  })
+
+  async function run(args: string[]): Promise<string[]> {
+    const program = new Command()
+    program.exitOverride()
+    program.option('--json')
+    program.option('--quiet')
+    program.hook('preAction', (command) => setOutputOptions(command.optsWithGlobals()))
+    registerAgentTypeCommands(program)
+
+    const printed: string[] = []
+    const realLog = console.log
+    console.log = (line?: unknown) => void printed.push(String(line))
+    try {
+      await program.parseAsync(['--quiet', ...args], { from: 'user' })
+    } finally {
+      console.log = realLog
+    }
+    return printed
+  }
+
+  it('prints only the resolved system prompt text', async () => {
+    const printed = await run(['agent-type', 'get', 'sysops', '--resolved'])
+
+    expect(printed).toEqual(['You operate.\n\n## Rules\n\nFollow the rules.'])
+  })
+
+  it('falls back to systemPrompt when resolvedSystemPrompt is absent', async () => {
+    ;(apiGet as ReturnType<typeof mock>).mockResolvedValue({ ...sysops, resolvedSystemPrompt: undefined })
+
+    const printed = await run(['agent-type', 'get', 'sysops', '--resolved'])
+
+    expect(printed).toEqual(['You operate.'])
   })
 })
