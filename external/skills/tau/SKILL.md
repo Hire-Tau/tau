@@ -55,27 +55,6 @@ tau auth logout [label]                    # removes the backend AND revokes the
 - Device tokens survive instance upgrades and new-passkey registrations —
   pair once per machine per instance and it keeps working.
 
-## Find squads, work, and conversations
-
-```bash
-tau --json search "authentication" --limit 10
-tau --json search "deployment" --kind work_stream --squad <squad-uuid>
-```
-
-Search matches names, purposes, work descriptions, IDs, squad names, and statuses
-across authorized squads, work streams, live consultant conversations, and your
-saved Assistant conversations. Optional `--kind` values are `squad`,
-`work_stream`, `consultant_conversation`, and `assistant_conversation`;
-`--limit` is 1–50 (default 20). Results contain canonical IDs, squad context,
-status, and ranked summaries. Strong text matches lead, with active work and
-recency breaking up similar matches. Dormant/terminated consultants are omitted;
-saved Assistant conversations remain private to the logged-in account.
-
-Use the returned `id` with the matching command, for example `tau ws get <id>`
-or `tau agent get <id>`, before taking action. This searches entity metadata,
-not message bodies. A limited or empty result is not a complete inventory.
-Pages and settings are searched separately by the web Assistant, not this CLI.
-
 ## Work streams — the core surface
 
 ```bash
@@ -208,6 +187,7 @@ to prevent.
   with `tau ws handoff <id> --to <agentId> -m "<context>"` (and `-f` file
   attachments reviewable in the UI). Opening a verdict review wait is a
   separate act (`request-review`) — never a handoff side effect.
+
 
 ### Message delivery: steer vs follow-up
 

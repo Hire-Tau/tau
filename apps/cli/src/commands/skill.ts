@@ -9,7 +9,7 @@ import { isJsonMode, output, outputError, outputTable } from '../output'
 
 type AgentTarget = 'pi' | 'claude-code' | 'codex' | 'custom'
 
-const SUPPORTED_SKILLS = ['tau-memory'] as const
+const SUPPORTED_SKILLS = ['tau-memory', 'tau'] as const
 
 type SupportedSkill = (typeof SUPPORTED_SKILLS)[number]
 
