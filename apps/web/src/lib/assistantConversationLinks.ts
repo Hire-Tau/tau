@@ -50,7 +50,11 @@ export function assistantConversationLink(entry: VoiceTranscriptEntry): Assistan
     const link = conversationSchema.safeParse(receipt.conversation ?? result.conversation)
     if (link.success) return link.data
     // Existing saved message receipts also carry canonical agent IDs.
-    if (typeof receipt.id === 'string' && typeof receipt.agentId === 'string') {
+    if (
+      (messageTools.has(name) || name === 'show_conversation') &&
+      typeof receipt.id === 'string' &&
+      typeof receipt.agentId === 'string'
+    ) {
       const legacy = conversationSchema.safeParse({ agentId: receipt.agentId, label: 'Agent conversation' })
       if (legacy.success) return legacy.data
     }
