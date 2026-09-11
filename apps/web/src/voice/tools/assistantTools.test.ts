@@ -121,31 +121,54 @@ test('search requests bounded backend results and retains explicit work context'
   })
 })
 
-test('conversation suggestions verify access, never send, and only explicit opens change the view', async () => {
-  const getAgent = mock(
-    async (agentId: string) =>
-      ({ id: agentId, squadId: 'squad', agentTypeId: 'manager', metadata: { name: 'Morgan' } }) as any
-  )
-  const sendAgentMessage = mock(async () => ({ success: true }) as any)
+test('answer_question dismisses with a flag and never both answers and dismisses', async () => {
+  const answer = mock(async () => ({ ok: true }))
+  const dismiss = mock(async () => ({ ok: true }))
+  const tools = createAssistantTools({ answerAgentQuestion: answer as any, dismissAgentQuestion: dismiss as any })
+  await find(tools, 'answer_question').execute({ questionId: 'q', dismiss: true, reason: 'stale' }, env)
+  expect(dismiss.mock.calls).toEqual([['q', 'stale']])
+  expect(answer).not.toHaveBeenCalled()
+  await expect(find(tools, 'answer_question').execute({ questionId: 'q', dismiss: true, answer: 'x' }, env)).rejects.toThrow()
+  await expect(find(tools, 'answer_question').execute({ questionId: 'q' }, env)).rejects.toThrow()
+  expect(answer).not.toHaveBeenCalled()
+})
+
+test('read_inbox views call the action center or the notification inbox', async () => {
+  const listPendingActions = mock(async () => [{ id: 'a1' }])
+  const getMyInbox = mock(async () => [
+    { id: 'n1', readAt: null, subject: null, content: 'new', senderType: 'agent', senderId: 'x', createdAt: '2026-01-01' },
+    { id: 'n2', readAt: '2026-01-01', subject: null, content: 'old', senderType: 'agent', senderId: 'x', createdAt: '2026-01-01' },
+  ])
+  const tools = createAssistantTools({ listPendingActions: listPendingActions as any, getMyInbox: getMyInbox as any })
+  expect(await find(tools, 'read_inbox').execute({ view: 'actions' }, env)).toEqual([{ id: 'a1' }])
+  const unread = (await find(tools, 'read_inbox').execute({ view: 'notifications' }, env)) as any
+  expect(getMyInbox.mock.calls).toEqual([[false]])
+  expect(unread.messages.map((m: any) => m.id)).toEqual(['n1'])
+  const all = (await find(tools, 'read_inbox').execute({ view: 'notifications', status: 'all' }, env)) as any
+  expect(getMyInbox.mock.calls[1]).toEqual([true])
+  expect(all.messages.map((m: any) => m.id)).toEqual(['n1', 'n2'])
+})
+
+test('navigate takes exactly one of path, agentId, or drawer', async () => {
+  const getAgent = mock(async (agentId: string) => ({ id: agentId, squadId: 'squad', agentTypeId: 'manager', metadata: { name: 'Morgan' } }) as any)
   const openConversation = mock()
   const navigate = mock()
-  const tools = createAssistantTools({ getAgent, sendAgentMessage })
-  const show = find(tools, 'show_conversation')
-  const offered = (await show.execute({ agentId: 'manager' }, { navigate, openConversation })) as any
-  expect(offered.opened).toBe(false)
-  expect(offered.conversation.agentId).toBe('manager')
+  const tools = createAssistantTools({ getAgent })
+  const nav = find(tools, 'navigate')
+  const envWith = { navigate, openConversation, getCurrentPath: () => '/settings?section=providers' }
+  expect(await nav.execute({ path: '/squads/tau' }, envWith)).toEqual({ ok: true, navigatedTo: '/squads/tau' })
+  expect(navigate.mock.calls).toEqual([['/squads/tau']])
+  const offered = (await nav.execute({ agentId: 'manager' }, envWith)) as any
+  expect(offered.conversation).toMatchObject({ agentId: 'manager', squadId: 'squad', label: 'Morgan' })
   expect(openConversation).not.toHaveBeenCalled()
-  expect(navigate).not.toHaveBeenCalled()
-  expect(sendAgentMessage).not.toHaveBeenCalled()
-  await show.execute({ agentId: 'manager', open: true }, { navigate, openConversation })
+  await nav.execute({ agentId: 'manager', open: true }, envWith)
   expect(openConversation.mock.calls).toEqual([[offered.conversation]])
-  expect(navigate).not.toHaveBeenCalled()
-  getAgent.mockImplementation(async () => {
-    throw new Error('Forbidden')
+  expect(await nav.execute({ drawer: 'open' }, envWith)).toEqual({
+    ok: true,
+    drawerState: 'open',
+    navigatedTo: '/settings?section=providers&chat=open',
   })
-  await expect(show.execute({ agentId: 'private', open: true }, { navigate, openConversation })).rejects.toThrow(
-    'Forbidden'
-  )
-  expect(openConversation).toHaveBeenCalledTimes(1)
-  expect(sendAgentMessage).not.toHaveBeenCalled()
+  expect(navigate.mock.calls).toHaveLength(2)
+  await expect(nav.execute({}, envWith)).rejects.toThrow()
+  await expect(nav.execute({ path: '/x', drawer: 'open' }, envWith)).rejects.toThrow()
 })

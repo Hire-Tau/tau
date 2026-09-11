@@ -3,6 +3,7 @@ import { createAgentMessagingTools } from './agentMessagingTools'
 
 const calls: Array<{ agentId: string; content: string; mode?: string }> = []
 const inboxCalls: unknown[] = []
+const stops: string[] = []
 let agentFixture: any = { id: 'agent-1', agentTypeId: 'system-manager', squadId: null }
 let inboxDelivered = true
 
@@ -11,6 +12,10 @@ const { directMessageAgentTool, workspaceInboxMessageAgentTool } = createAgentMe
   sendAgentMessage: async (agentId: string, content: string, _images?: string[], mode?: any) => {
     calls.push({ agentId, content, mode })
     return { success: true, status: 'queued' } as any
+  },
+  stopAgent: async (agentId: string) => {
+    stops.push(agentId)
+    return { success: true }
   },
   sendInboxMessage: async (input: any) => {
     inboxCalls.push(input)
@@ -33,7 +38,7 @@ const { directMessageAgentTool, workspaceInboxMessageAgentTool } = createAgentMe
 const messageAgentTool = directMessageAgentTool
 
 describe('message_agent voice tool', () => {
-  test('direct site-operator tool calls sendAgentMessage with default follow-up delivery mode', async () => {
+  test('direct site-operator tool calls sendAgentMessage with default steer delivery mode', async () => {
     calls.length = 0
     inboxCalls.length = 0
     agentFixture = { id: 'system-manager', agentTypeId: 'system-manager', squadId: null, status: 'idle' }
@@ -41,8 +46,25 @@ describe('message_agent voice tool', () => {
     const result = await directMessageAgentTool.execute({ agentId: 'system-manager', content: 'Please help' }, {})
 
     expect(result).toEqual({ ok: true, agentStatus: 'queued' })
-    expect(calls).toEqual([{ agentId: 'system-manager', content: 'Please help', mode: 'follow-up' }])
+    expect(calls).toEqual([{ agentId: 'system-manager', content: 'Please help', mode: 'steer' }])
     expect(inboxCalls).toEqual([])
+  })
+
+  test('stop mode stops the agent without sending a message', async () => {
+    calls.length = 0
+    stops.length = 0
+    agentFixture = { id: 'worker', agentTypeId: 'engineer', squadId: 'squad', status: 'active' }
+    const result = await directMessageAgentTool.execute({ agentId: 'worker', mode: 'stop' }, {})
+    expect(result).toEqual({ ok: true, stopped: true })
+    expect(stops).toEqual(['worker'])
+    expect(calls).toEqual([])
+  })
+
+  test('default delivery is steer', async () => {
+    calls.length = 0
+    agentFixture = { id: 'worker', agentTypeId: 'engineer', squadId: 'squad', status: 'active' }
+    await directMessageAgentTool.execute({ agentId: 'worker', content: 'Now' }, {})
+    expect(calls).toEqual([{ agentId: 'worker', content: 'Now', mode: 'steer' }])
   })
 
   test('direct site-operator tool calls sendAgentMessage with selected delivery mode', async () => {
@@ -121,7 +143,7 @@ describe('message_agent voice tool', () => {
     const result = await messageAgentTool.execute({ agentId: 'artifact-agent', content: 'Use Vercel' }, {})
 
     expect(result).toMatchObject({ ok: true })
-    expect(calls).toEqual([{ agentId: 'artifact-agent', content: 'Use Vercel', mode: 'follow-up' }])
+    expect(calls).toEqual([{ agentId: 'artifact-agent', content: 'Use Vercel', mode: 'steer' }])
     expect(inboxCalls).toEqual([])
   })
 

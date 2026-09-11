@@ -1,4 +1,3 @@
-export { controlAgentTool, agentControlTools } from './agentControlTools'
 export { agentMessagingTools, messageAgentTool } from './agentMessagingTools'
 export { artifactTools, getArtifactContextTool, listArtifactsTool, requestArtifactTool } from './artifactTools'
 export {
@@ -10,9 +9,6 @@ export {
   updateCanvasTool,
 } from './canvasTools'
 export type { CanvasToolEnvironment, WorkspaceVoiceStateUpdater } from './canvasTools'
-export { chatDrawerTool, chatDrawerTools } from './chatDrawerTool'
-export { readUserInboxTool, inboxTools } from './inboxTools'
-export { navigationTool, navigationTools } from './navigationTool'
 export { createVoiceToolRegistry } from './registry'
 export type { VoiceToolExecutionResult, VoiceToolRegistry } from './registry'
 export { getWorkTool, statusTools } from './statusTools'

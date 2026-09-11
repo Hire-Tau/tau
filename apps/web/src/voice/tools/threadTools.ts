@@ -38,100 +38,118 @@ function mapMessages(messages: Message[]) {
   })
 }
 
-async function readMessageDetail(input: {
-  agentId: string
-  messageId: string
-  blockIndex?: number
-  offset?: number
-  limit?: number
+export function createThreadTools(deps: {
+  getAgent: typeof getAgent
+  getActiveExecution: typeof getActiveExecution
+  getMessages: typeof getMessages
+  getMessage: typeof getMessage
 }) {
-  const { agentId, messageId, blockIndex, offset: rawOffset, limit: rawPageSize } = input
-  const PAGE_SIZE = Math.min(rawPageSize ?? 500, 1500)
-  const offset = rawOffset ?? 0
+  async function readMessageDetail(input: {
+    agentId: string
+    messageId: string
+    blockIndex?: number
+    offset?: number
+    limit?: number
+  }) {
+    const { agentId, messageId, blockIndex, offset: rawOffset, limit: rawPageSize } = input
+    const PAGE_SIZE = Math.min(rawPageSize ?? 500, 1500)
+    const offset = rawOffset ?? 0
 
-  const msg = await getMessage(agentId, messageId)
-  if (!msg) return { error: 'Message not found' }
+    const msg = await deps.getMessage(agentId, messageId)
+    if (!msg) return { error: 'Message not found' }
 
-  const blocks = msg.metadata?.content
-  let fullContent: string
+    const blocks = msg.metadata?.content
+    let fullContent: string
 
-  if (blockIndex !== undefined) {
-    if (!blocks || blockIndex >= blocks.length) return { error: `Block index ${blockIndex} not found` }
-    const block = blocks[blockIndex]
-    if (block.type === 'tool_use') {
-      const tc = block.toolCall
-      fullContent = `[tool: ${tc.toolName}]\ninput: ${tc.args}\noutput: ${tc.result}${tc.isError ? '\n(error)' : ''}`
+    if (blockIndex !== undefined) {
+      if (!blocks || blockIndex >= blocks.length) return { error: `Block index ${blockIndex} not found` }
+      const block = blocks[blockIndex]
+      if (block.type === 'tool_use') {
+        const tc = block.toolCall
+        fullContent = `[tool: ${tc.toolName}]\ninput: ${tc.args}\noutput: ${tc.result}${tc.isError ? '\n(error)' : ''}`
+      } else {
+        fullContent = block.content
+      }
+    } else if (blocks?.length) {
+      fullContent = blocks
+        .map((b, i) => {
+          if (b.type === 'text') return b.content
+          if (b.type === 'thinking') return `[thinking] ${b.content}`
+          if (b.type === 'tool_use') {
+            const tc = b.toolCall
+            return `[block ${i}, tool: ${tc.toolName}]\ninput: ${tc.args}\noutput: ${tc.result}${tc.isError ? '\n(error)' : ''}`
+          }
+          return ''
+        })
+        .filter(Boolean)
+        .join('\n\n')
     } else {
-      fullContent = block.content
+      fullContent = msg.content
     }
-  } else if (blocks?.length) {
-    fullContent = blocks
-      .map((b, i) => {
-        if (b.type === 'text') return b.content
-        if (b.type === 'thinking') return `[thinking] ${b.content}`
-        if (b.type === 'tool_use') {
-          const tc = b.toolCall
-          return `[block ${i}, tool: ${tc.toolName}]\ninput: ${tc.args}\noutput: ${tc.result}${tc.isError ? '\n(error)' : ''}`
-        }
-        return ''
-      })
-      .filter(Boolean)
-      .join('\n\n')
-  } else {
-    fullContent = msg.content
-  }
 
-  const slice = fullContent.slice(offset, offset + PAGE_SIZE)
-  const hasMore = offset + PAGE_SIZE < fullContent.length
-  return {
-    content: slice,
-    offset,
-    length: fullContent.length,
-    hasMore,
-    ...(hasMore ? { nextOffset: offset + PAGE_SIZE } : {}),
-  }
-}
-
-export const readThreadTool: VoiceAssistantTool<VoiceToolExecutor> = {
-  definition: {
-    type: 'function',
-    name: 'read_thread',
-    description:
-      'Read an agent’s conversation. Without messageId: the agent’s status and active execution plus its recent messages. With messageId (from a previous result): that message’s full content, paginated with offset and limit, optionally one content block via blockIndex. Use to check what an agent or task is doing or to answer questions about its work.',
-    parameters: {
-      type: 'object',
-      properties: {
-        agentId: { type: 'string', description: 'Agent ID whose thread to read' },
-        messageId: { type: 'string', description: 'Message ID to read in full. Omit for the recent thread.' },
-        blockIndex: { type: 'number', description: 'With messageId: content block index (0-based). Omit for all blocks.' },
-        offset: { type: 'number', description: 'With messageId: character offset to start from (default 0).' },
-        limit: {
-          type: 'number',
-          description: 'Recent messages to fetch (default 5, max 20); with messageId, max characters (default 500, max 1500).',
-        },
-      },
-      required: ['agentId'],
-    },
-  },
-  async execute(args) {
-    const input = args as { agentId: string; messageId?: string; blockIndex?: number; offset?: number; limit?: number }
-    if (input.messageId) return readMessageDetail(input as typeof input & { messageId: string })
-    const limit = Math.min(Math.max(input.limit ?? 5, 1), 20)
-    const [agent, execution, { messages }] = await Promise.all([
-      getAgent(input.agentId),
-      getActiveExecution(input.agentId),
-      getMessages(input.agentId, { limit }),
-    ])
+    const slice = fullContent.slice(offset, offset + PAGE_SIZE)
+    const hasMore = offset + PAGE_SIZE < fullContent.length
     return {
-      agent: {
-        id: agent.id,
-        type: agent.agentTypeId,
-        status: agent.status,
-        execution: execution.active ? { status: execution.status } : null,
-      },
-      messages: mapMessages(messages),
+      content: slice,
+      offset,
+      length: fullContent.length,
+      hasMore,
+      ...(hasMore ? { nextOffset: offset + PAGE_SIZE } : {}),
     }
-  },
+  }
+
+  const readThreadTool: VoiceAssistantTool<VoiceToolExecutor> = {
+    definition: {
+      type: 'function',
+      name: 'read_thread',
+      description:
+        'Read an agent’s conversation. Without messageId: the agent’s status and active execution plus its recent messages. With messageId (from a previous result): that message’s full content, paginated with offset and limit, optionally one content block via blockIndex. Use to check what an agent or task is doing or to answer questions about its work.',
+      parameters: {
+        type: 'object',
+        properties: {
+          agentId: { type: 'string', description: 'Agent ID whose thread to read' },
+          messageId: { type: 'string', description: 'Message ID to read in full. Omit for the recent thread.' },
+          blockIndex: {
+            type: 'number',
+            description: 'With messageId: content block index (0-based). Omit for all blocks.',
+          },
+          offset: { type: 'number', description: 'With messageId: character offset to start from (default 0).' },
+          limit: {
+            type: 'number',
+            description:
+              'Recent messages to fetch (default 5, max 20); with messageId, max characters (default 500, max 1500).',
+          },
+        },
+        required: ['agentId'],
+      },
+    },
+    async execute(args) {
+      const input = args as { agentId: string; messageId?: string; blockIndex?: number; offset?: number; limit?: number }
+      if (input.messageId) return readMessageDetail(input as typeof input & { messageId: string })
+      const limit = Math.min(Math.max(input.limit ?? 5, 1), 20)
+      const [agent, execution, { messages }] = await Promise.all([
+        deps.getAgent(input.agentId),
+        deps.getActiveExecution(input.agentId),
+        deps.getMessages(input.agentId, { limit }),
+      ])
+      return {
+        agent: {
+          id: agent.id,
+          type: agent.agentTypeId,
+          status: agent.status,
+          execution: execution.active ? { status: execution.status } : null,
+        },
+        messages: mapMessages(messages),
+      }
+    },
+  }
+
+  return { readThreadTool, threadTools: [readThreadTool] }
 }
 
-export const threadTools = [readThreadTool]
+export const { readThreadTool, threadTools } = createThreadTools({
+  getAgent,
+  getActiveExecution,
+  getMessages,
+  getMessage,
+})

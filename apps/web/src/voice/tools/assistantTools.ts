@@ -5,13 +5,14 @@ import { getAgent } from '../../api/agents'
 import { listGlobalActivity } from '../../api/activity'
 import { listPendingActions } from '../../api/actions'
 import { answerAgentQuestion, dismissAgentQuestion } from '../../api/agentQuestions'
-import { markAsRead } from '../../api/inbox'
+import { getMyInbox, markAsRead } from '../../api/inbox'
 import * as workspace from '../../api/workspace'
 import { searchMemory } from '../../api/memory'
 import { searchEntities } from '../../api/search'
 import { hybridTauSearch } from '../../lib/hybridTauSearch'
 import { ALL_SECTIONS, isSectionAllowed } from '../../components/settings/settingsSections'
 import { resolveVoiceSquadId } from '../squadReferences'
+import { getChatDrawerPath, type ChatDrawerToolState } from '../chatDrawerTool'
 import type { VoiceAssistantTool, VoiceToolExecutor } from './types'
 
 export interface AssistantToolEnvironment extends VoiceToolExecutor {
@@ -46,6 +47,7 @@ const depsDefault = {
   answerAgentQuestion,
   dismissAgentQuestion,
   markAsRead,
+  getMyInbox,
   workspace,
   searchMemory,
   searchEntities,
@@ -60,25 +62,47 @@ export function createAssistantTools(
     return id
   }
   return [
-    tool(
-      'show_conversation',
-      'Offer a nested conversation link to an existing agent without sending a message. Use open=true only when the user asks to open or go to the conversation (in text or voice). Opening preserves the Assistant conversation and live voice recipient; Back returns here. Successful message tools already display a conversation link, so do not call this again after sending.',
-      {
-        agentId: string,
-        open: {
-          type: 'boolean',
-          description: 'Open immediately only for an explicit navigation request; otherwise show a link.',
+    {
+      ...tool(
+        'navigate',
+        'Operate the UI. Pass exactly one of: path (an app-relative route from the Navigation section of your instructions; only when it differs from the current screen), agentId (offer a conversation link row for an existing agent without sending anything; open=true opens it, only for an explicit request), or drawer (open, closed, expanded, or toggle the Assistant popup; closing during live voice keeps a compact voice strip). Sending a message never navigates; message receipts already show their link.',
+        {
+          path: { type: 'string', description: 'Route path with optional query, e.g. "/squads/abc123/work"' },
+          agentId: string,
+          open: { type: 'boolean', description: 'With agentId: open the conversation now (explicit request only).' },
+          drawer: { type: 'string', enum: ['open', 'closed', 'expanded', 'toggle'] },
         },
-      },
-      ['agentId'],
-      async (args, env) => {
-        const input = z.object({ agentId: text, open: z.boolean().default(false) }).parse(args)
-        const agent = await deps.getAgent(input.agentId)
-        const conversation = agentConversationLink(agent)
-        if (input.open && env.openConversation) env.openConversation(conversation)
-        return { ok: true, conversation, opened: input.open && Boolean(env.openConversation) }
-      }
-    ),
+        [],
+        async (args, env) => {
+          const input = z
+            .object({
+              path: z.string().trim().min(1).max(2000).optional(),
+              agentId: text.optional(),
+              open: z.boolean().default(false),
+              drawer: z.enum(['open', 'closed', 'expanded', 'toggle']).optional(),
+            })
+            .refine((value) => [value.path, value.agentId, value.drawer].filter(Boolean).length === 1, {
+              message: 'Pass exactly one of path, agentId, or drawer',
+            })
+            .parse(args)
+          if (input.path) {
+            env.navigate(input.path)
+            return { ok: true, navigatedTo: input.path }
+          }
+          if (input.drawer) {
+            const currentPath = env.getCurrentPath?.() ?? `${window.location.pathname}${window.location.search}`
+            const path = getChatDrawerPath(currentPath, input.drawer as ChatDrawerToolState)
+            env.navigate(path)
+            return { ok: true, drawerState: input.drawer, navigatedTo: path }
+          }
+          const agent = await deps.getAgent(input.agentId!)
+          const conversation = agentConversationLink(agent)
+          if (input.open && env.openConversation) env.openConversation(conversation)
+          return { ok: true, conversation, opened: input.open && Boolean(env.openConversation) }
+        }
+      ),
+      followUp: 'never' as const,
+    },
     tool(
       'search_tau',
       'Find pages, settings, squads, consultant conversations, work streams, and saved Assistant conversations. Returns canonical IDs and links.',
@@ -182,35 +206,66 @@ export function createAssistantTools(
       }
     ),
     tool(
-      'list_attention',
-      'List the user’s actionable questions, blocked work, and items needing a decision, with their action IDs.',
-      {},
-      [],
-      async () => deps.listPendingActions()
+      'read_inbox',
+      'Read what is waiting for the user. view=actions: the action center — agent questions awaiting an answer, blocked work, and decisions, each with its action ID; this is the tool for "what needs me". view=notifications: recent inbox notifications (task and agent updates, work-stream events); unread by default, status=all or read for earlier ones. Summarize unless asked for verbatim content.',
+      {
+        view: { type: 'string', enum: ['actions', 'notifications'] },
+        status: { type: 'string', enum: ['unread', 'read', 'all'], description: 'notifications only; default unread' },
+        limit: number,
+      },
+      ['view'],
+      async (args) => {
+        const input = z
+          .object({
+            view: z.enum(['actions', 'notifications']),
+            status: z.enum(['unread', 'read', 'all']).default('unread'),
+            limit: z.number().int().min(1).max(20).default(5),
+          })
+          .parse(args)
+        if (input.view === 'actions') return deps.listPendingActions()
+        const messages = await deps.getMyInbox(input.status !== 'unread')
+        const filtered = messages.filter((message) =>
+          input.status === 'all' ? true : input.status === 'read' ? Boolean(message.readAt) : !message.readAt
+        )
+        return {
+          messages: filtered.slice(0, input.limit).map((message) => ({
+            id: message.id,
+            subject: message.subject,
+            content: message.content,
+            senderType: message.senderType,
+            senderId: message.senderId,
+            senderAgent: message.senderAgent ? { id: message.senderAgent.id, agentTypeId: message.senderAgent.agentTypeId } : null,
+            readAt: message.readAt,
+            createdAt: message.createdAt,
+          })),
+        }
+      }
     ),
     tool(
       'answer_question',
-      'Answer a specific agent question using the answer the user provided. Read the attention item first; do not invent a user decision.',
-      { questionId: string, answer: string },
-      ['questionId', 'answer'],
-      async (args) => {
-        const input = z.object({ questionId: text, answer: text.max(20000) }).parse(args)
-        return deps.answerAgentQuestion(input.questionId, input.answer)
-      }
-    ),
-    tool(
-      'dismiss_question',
-      'Dismiss an agent question when the user asks to dismiss it.',
-      { questionId: string, reason: string },
+      'Resolve an agent question from the action center. Pass the user’s own answer, or dismiss=true (with an optional reason) when the user asks to dismiss it. Read the item first; never invent a decision.',
+      { questionId: string, answer: string, dismiss: { type: 'boolean' }, reason: string },
       ['questionId'],
       async (args) => {
-        const input = z.object({ questionId: text, reason: z.string().max(2000).optional() }).parse(args)
-        return deps.dismissAgentQuestion(input.questionId, input.reason)
+        const input = z
+          .object({
+            questionId: text,
+            answer: z.string().trim().max(20000).optional(),
+            dismiss: z.boolean().default(false),
+            reason: z.string().max(2000).optional(),
+          })
+          .refine((value) => (value.dismiss ? !value.answer : Boolean(value.answer)), {
+            message: 'Pass an answer, or dismiss=true without an answer',
+          })
+          .parse(args)
+        return input.dismiss
+          ? deps.dismissAgentQuestion(input.questionId, input.reason)
+          : deps.answerAgentQuestion(input.questionId, input.answer!)
       }
     ),
     tool(
-      'dismiss_notification',
-      'Mark a notification read when the user asks to dismiss it. Does not resolve associated agent questions.',
+      'mark_read',
+      'Mark a notification read when the user asks to dismiss it. Does not resolve an agent question; use answer_question for that.',
       { messageId: string },
       ['messageId'],
       async (args) => deps.markAsRead(z.object({ messageId: text }).parse(args).messageId)
