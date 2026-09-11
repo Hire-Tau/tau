@@ -166,10 +166,14 @@ export function registerInboxCommands(program: Command): void {
     .command('send-system <recipientId> <content>')
     .description('Send a message authored as "system" (requires the inbox:system permission)')
     .option('-s, --subject <subject>', 'Message subject')
+    .option(
+      '--recipient-type <type>',
+      'Recipient type (agent, user, voice_assistant, system). Defaults to system for recipient ID "system", otherwise agent.'
+    )
     .option('--url <url>', 'URL to attach to message (used for push notification links)')
     .action(async (recipientId, content, options) => {
       try {
-        const recipientType = recipientId === 'system' ? 'system' : 'agent'
+        const recipientType = options.recipientType ?? (recipientId === 'system' ? 'system' : 'agent')
 
         const metadata = options.url ? { url: options.url } : undefined
 
