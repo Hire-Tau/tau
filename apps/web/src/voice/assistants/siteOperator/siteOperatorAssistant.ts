@@ -249,7 +249,7 @@ export function createSiteOperatorAssistant(deps: SiteOperatorAssistantDependenc
       const [squads, agents] = env.pageEditor ? [[], []] : await Promise.all([deps.listSquads(), deps.listAgents()])
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
 
-      const systemManager = env.messageUserAssistant
+      const systemManager = env.delegateTask
         ? null
         : (agents.find((agent) => agent.agentTypeId === 'system-manager') ?? null)
       const managerAgentArrays = await Promise.all(squads.map((s) => deps.listSquadAgents(s.id)))
@@ -290,7 +290,7 @@ export function createSiteOperatorAssistant(deps: SiteOperatorAssistantDependenc
             ? [
                 ...env.pageEditor.tools,
                 ...siteOperatorToolDefinitions
-                  .filter((tool) => tool.name === 'message_user_assistant')
+                  .filter((tool) => tool.name === 'delegate_task')
                   .map((tool) => ({ ...tool, name: 'delegate' })),
               ]
             : siteOperatorToolDefinitions,
@@ -325,14 +325,14 @@ export function createSiteOperatorAssistant(deps: SiteOperatorAssistantDependenc
 
     async executeTool({ name, toolArgs, env }) {
       if (env.pageEditor) {
-        if (name === 'delegate') return siteOperatorTools.execute('message_user_assistant', toolArgs, env)
+        if (name === 'delegate') return siteOperatorTools.execute('delegate_task', toolArgs, env)
         return env.pageEditor.execute(name, toolArgs)
       }
       return siteOperatorTools.execute(name, toolArgs, env)
     },
 
     summarizeToolCall(name, args) {
-      return siteOperatorTools.summarizeCall(name === 'delegate' ? 'message_user_assistant' : name, args)
+      return siteOperatorTools.summarizeCall(name === 'delegate' ? 'delegate_task' : name, args)
     },
 
     onOutputAudioStopped(runtime) {

@@ -242,9 +242,9 @@ test('page conversations expose only scoped editor tools and delegation, without
   })
   const prepare = mock(async () => {})
   const execute = mock(async () => ({ result: { revision: 3 }, followUp: 'auto' as const }))
-  const messageUserAssistant = mock(async () => ({ accepted: true }))
+  const delegateTask = mock(async () => ({ accepted: true }))
   const env = {
-    messageUserAssistant,
+    delegateTask,
     currentPath: '/settings/workflows',
     getCurrentPath: () => '/settings/workflows',
     navigate() {},
@@ -264,10 +264,15 @@ test('page conversations expose only scoped editor tools and delegation, without
   expect(execute.mock.calls.at(-1)).toEqual(['edit', { baseRevision: 3 }])
   await controller.executeTool({
     name: 'delegate',
-    toolArgs: { request: 'Design an independent review flow' },
+    toolArgs: { label: 'Review flow design', request: 'Design an independent review flow' },
     env,
     runtime: {} as any,
   })
-  expect(messageUserAssistant).toHaveBeenCalledWith('Design an independent review flow', undefined, undefined)
+  expect(delegateTask).toHaveBeenCalledWith('Design an independent review flow', {
+    label: 'Review flow design',
+    squadId: undefined,
+    mode: 'steer',
+    inReplyTo: undefined,
+  })
   expect(execute.mock.calls).toHaveLength(2)
 })
