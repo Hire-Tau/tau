@@ -27,19 +27,23 @@ test('memory, files, activity, and subscriptions resolve route slugs before call
     searchMemory: memory as any,
     workspace: { ...workspace, getSquadMemoryFile: file },
   })
-  await find(tools, 'search_memory').execute({ squadId: 'tau', query: 'context' }, env)
+  await find(tools, 'read_squad_files').execute({ squadId: 'tau', source: 'memory', query: 'context' }, env)
   expect(memory.mock.calls).toEqual([[id, { query: 'context', limit: 10 }]])
   await find(tools, 'read_activity').execute({ squadId: 'tau', limit: 3 }, env)
   expect(activity.mock.calls).toEqual([[id, { limit: 3 }]])
   await find(tools, 'set_subscription').execute({ scope: 'squad', id: 'tau', watching: true }, env)
   expect(subscribe.mock.calls).toEqual([[id]])
-  const result = (await find(tools, 'read_squad_file').execute(
+  const result = (await find(tools, 'read_squad_files').execute(
     { squadId: 'tau', source: 'memory', path: '/context.md' },
     env
   )) as any
   expect(file.mock.calls).toEqual([[id, '/context.md']])
   expect(result.content.length).toBe(12000)
   expect(result.nextOffset).toBe(12000)
+  await expect(
+    find(tools, 'read_squad_files').execute({ squadId: 'tau', source: 'workspace', query: 'x' }, env)
+  ).rejects.toThrow()
+  expect(memory).toHaveBeenCalledTimes(1)
 })
 test('invalid inputs never reach mutations and forbidden responses remain errors', async () => {
   const answer = mock(async () => {
@@ -115,19 +119,6 @@ test('search requests bounded backend results and retains explicit work context'
     squadName: 'Tau',
     path: `/squads/${id}/work?ws=${id}`,
   })
-})
-
-const workId = '888b3fdd-6e16-429d-bf12-940268e5f4c8'
-const otherSquadId = '22222222-2222-4222-8222-222222222222'
-const work = { id: workId, squadId: id, title: 'Ship Tau', status: 'active' }
-
-test('inspect normalizes legacy work IDs and rejects malformed references before the API', async () => {
-  const getWorkStream = mock(async () => work as any)
-  const tools = createAssistantTools({ squads: { ...squadDeps, getWorkStream } })
-  await find(tools, 'inspect_work_stream').execute({ id: `work:${workId}` }, env)
-  expect(getWorkStream.mock.calls).toEqual([[workId]])
-  await expect(find(tools, 'inspect_work_stream').execute({ id: 'work:unknown' }, env)).rejects.toThrow()
-  expect(getWorkStream).toHaveBeenCalledTimes(1)
 })
 
 test('conversation suggestions verify access, never send, and only explicit opens change the view', async () => {

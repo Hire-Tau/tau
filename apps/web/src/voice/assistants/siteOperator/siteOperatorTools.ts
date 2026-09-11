@@ -4,9 +4,8 @@ import {
   chatDrawerTool as setChatDrawerTool,
   controlAgentTool,
   createVoiceToolRegistry,
-  getStatusTool,
+  getWorkTool,
   navigationTool as navigateTool,
-  readMessageDetailTool,
   readThreadTool,
   readUserInboxTool,
   type VoiceToolExecutor,
@@ -17,12 +16,11 @@ export type { VoiceToolExecutor }
 export const siteOperatorTools = createVoiceToolRegistry<AssistantToolEnvironment>([
   ...assistantTools,
   directMessageAgentTool,
-  getStatusTool,
+  getWorkTool,
   navigateTool,
   setChatDrawerTool,
   readUserInboxTool,
   readThreadTool,
-  readMessageDetailTool,
   controlAgentTool,
 ])
 

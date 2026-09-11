@@ -18,8 +18,6 @@ export interface AssistantToolEnvironment extends VoiceToolExecutor {
   can?: (permission: string) => boolean
 }
 const text = z.string().trim().min(1)
-// Accept legacy UI result IDs at the tool boundary, never pass them to the API.
-const workStreamId = text.transform((value) => value.replace(/^work:/, '')).pipe(z.string().uuid())
 const limit = z.number().int().min(1).max(50).default(20)
 function tool(
   name: string,
@@ -97,13 +95,6 @@ export function createAssistantTools(
       }
     ),
     tool(
-      'inspect_work_stream',
-      'Read a work stream’s description, status, assignments, waits, and metadata.',
-      { id: string },
-      ['id'],
-      async (args) => deps.squads.getWorkStream(z.object({ id: workStreamId }).parse(args).id)
-    ),
-    tool(
       'delegate_task',
       'Run a task in the background with the user’s own permissions and report back here. Omit squadId for anything about the whole Tau instance or the user’s account: schedules, integrations, environment variables, secrets, users, permissions, billing, notifications, instance settings, and any investigation or sustained work that is not owned by one squad. Pass squadId (full ID or URL slug) only for work that belongs to that squad: its project, repositories, work streams, incidents, and squad settings. Give every task a short label. Results, progress, and clarification questions arrive in this conversation as task updates; a receipt is not a result and must never be described as one. To continue or answer a task, call this again with inReplyTo set to the update’s id and the same squadId. Delivery is steer (the new request takes priority); pass follow-up only when the user explicitly wants it queued behind the running task. Never send secret values.',
       {
@@ -147,12 +138,13 @@ export function createAssistantTools(
       }
     ),
     tool(
-      'read_squad_file',
-      'List directories or read a bounded excerpt from squad workspace or memory. Paths are scoped by the server. Omit path to list the root.',
+      'read_squad_files',
+      'Read a squad’s shared workspace or its memory. Pass path for a file (paginated with offset) or a directory tree (directory=true or no path). Pass query with source=memory to search indexed memory for relevant context and sources instead of reading a path.',
       {
         squadId: string,
         source: { type: 'string', enum: ['workspace', 'memory'] },
         path: string,
+        query: { type: 'string', description: 'Memory search query. Only with source=memory.' },
         directory: { type: 'boolean' },
         offset: { type: 'integer', minimum: 0 },
       },
@@ -163,11 +155,14 @@ export function createAssistantTools(
             squadId: text,
             source: z.enum(['workspace', 'memory']),
             path: z.string().max(2000).optional(),
+            query: z.string().trim().max(1000).optional(),
             directory: z.boolean().default(false),
             offset: z.number().int().min(0).default(0),
           })
+          .refine((value) => !(value.query && value.source !== 'memory'), { message: 'query requires source=memory' })
           .parse(args)
         const id = await squadId(input.squadId)
+        if (input.query) return deps.searchMemory(id, { query: input.query, limit: 10 })
         const memory = input.source === 'memory'
         if (!input.path || input.directory)
           return memory
@@ -184,16 +179,6 @@ export function createAssistantTools(
           totalLength: file.content.length,
           nextOffset: input.offset + content.length < file.content.length ? input.offset + content.length : null,
         }
-      }
-    ),
-    tool(
-      'search_memory',
-      'Search a squad’s indexed memory for relevant context and sources.',
-      { squadId: string, query: string },
-      ['squadId', 'query'],
-      async (args) => {
-        const input = z.object({ squadId: text, query: text.max(1000) }).parse(args)
-        return deps.searchMemory(await squadId(input.squadId), { query: input.query, limit: 10 })
       }
     ),
     tool(
