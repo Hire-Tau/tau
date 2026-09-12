@@ -11,7 +11,12 @@ export function voiceWorkStreamStatus(workStream: WorkStream) {
 const FINISHED = new Set(['done', 'canceled'])
 
 function summarize(workStream: WorkStream) {
-  return { id: workStream.id, title: workStream.title, status: voiceWorkStreamStatus(workStream), squadId: workStream.squadId }
+  return {
+    id: workStream.id,
+    title: workStream.title,
+    status: voiceWorkStreamStatus(workStream),
+    squadId: workStream.squadId,
+  }
 }
 
 export function createStatusTools(deps: {
@@ -34,7 +39,10 @@ export function createStatusTools(deps: {
         properties: {
           squadId: { type: 'string', description: 'Full squad ID or URL slug. Not with workStreamId.' },
           workStreamId: { type: 'string', description: 'Work stream ID. Not with squadId.' },
-          includeFinished: { type: 'boolean', description: 'Include done and canceled work in list results. Default false.' },
+          includeFinished: {
+            type: 'boolean',
+            description: 'Include done and canceled work in list results. Default false.',
+          },
         },
       },
     },
@@ -52,7 +60,10 @@ export function createStatusTools(deps: {
       }
       if (squadId) {
         const resolved = resolveVoiceSquadId(squadId, await deps.listSquads())
-        if (!resolved) return { error: `Unknown or ambiguous squad reference: ${squadId}. Use a full squad ID from your instructions.` }
+        if (!resolved)
+          return {
+            error: `Unknown or ambiguous squad reference: ${squadId}. Use a full squad ID from your instructions.`,
+          }
         const [agents, streams] = await Promise.all([deps.listSquadAgents(resolved), deps.listWorkStreams(resolved)])
         return {
           agents: agents.map((agent) => ({

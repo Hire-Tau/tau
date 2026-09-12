@@ -67,7 +67,10 @@ test('delegate_task runs instance-wide without a squad and resolves squad slugs 
     )
   ).toEqual({ id: 'message', agentId: 'helper', delivered: true, kind: 'background' })
   expect(delegateTask.mock.calls).toEqual([
-    ['Which schedules are enabled?', { label: 'Check enabled schedules', squadId: undefined, mode: 'steer', inReplyTo: undefined }],
+    [
+      'Which schedules are enabled?',
+      { label: 'Check enabled schedules', squadId: undefined, mode: 'steer', inReplyTo: undefined },
+    ],
   ])
   await find(tools, 'delegate_task').execute(
     { label: 'Pause deploy stream', request: 'Pause work stream Ship Tau', squadId: 'tau', mode: 'follow-up' },
@@ -89,7 +92,9 @@ test('delegate_task rejects empty labels, unknown squads, and surfaces where del
     find(tools, 'delegate_task').execute({ label: 'Task', request: 'Work', squadId: 'nope' }, { ...env, delegateTask })
   ).rejects.toThrow('Unknown or ambiguous squad')
   expect(delegateTask).not.toHaveBeenCalled()
-  await expect(find(tools, 'delegate_task').execute({ label: 'Task', request: 'Work' }, env)).rejects.toThrow('unavailable')
+  await expect(find(tools, 'delegate_task').execute({ label: 'Task', request: 'Work' }, env)).rejects.toThrow(
+    'unavailable'
+  )
 })
 test('search requests bounded backend results and retains explicit work context', async () => {
   const searchEntities = mock(async () => ({
@@ -128,7 +133,9 @@ test('answer_question dismisses with a flag and never both answers and dismisses
   await find(tools, 'answer_question').execute({ questionId: 'q', dismiss: true, reason: 'stale' }, env)
   expect(dismiss.mock.calls).toEqual([['q', 'stale']])
   expect(answer).not.toHaveBeenCalled()
-  await expect(find(tools, 'answer_question').execute({ questionId: 'q', dismiss: true, answer: 'x' }, env)).rejects.toThrow()
+  await expect(
+    find(tools, 'answer_question').execute({ questionId: 'q', dismiss: true, answer: 'x' }, env)
+  ).rejects.toThrow()
   await expect(find(tools, 'answer_question').execute({ questionId: 'q' }, env)).rejects.toThrow()
   expect(answer).not.toHaveBeenCalled()
 })
@@ -136,8 +143,24 @@ test('answer_question dismisses with a flag and never both answers and dismisses
 test('read_inbox views call the action center or the notification inbox', async () => {
   const listPendingActions = mock(async () => [{ id: 'a1' }])
   const getMyInbox = mock(async () => [
-    { id: 'n1', readAt: null, subject: null, content: 'new', senderType: 'agent', senderId: 'x', createdAt: '2026-01-01' },
-    { id: 'n2', readAt: '2026-01-01', subject: null, content: 'old', senderType: 'agent', senderId: 'x', createdAt: '2026-01-01' },
+    {
+      id: 'n1',
+      readAt: null,
+      subject: null,
+      content: 'new',
+      senderType: 'agent',
+      senderId: 'x',
+      createdAt: '2026-01-01',
+    },
+    {
+      id: 'n2',
+      readAt: '2026-01-01',
+      subject: null,
+      content: 'old',
+      senderType: 'agent',
+      senderId: 'x',
+      createdAt: '2026-01-01',
+    },
   ])
   const tools = createAssistantTools({ listPendingActions: listPendingActions as any, getMyInbox: getMyInbox as any })
   expect(await find(tools, 'read_inbox').execute({ view: 'actions' }, env)).toEqual([{ id: 'a1' }])
@@ -150,7 +173,10 @@ test('read_inbox views call the action center or the notification inbox', async 
 })
 
 test('navigate takes exactly one of path, agentId, or drawer', async () => {
-  const getAgent = mock(async (agentId: string) => ({ id: agentId, squadId: 'squad', agentTypeId: 'manager', metadata: { name: 'Morgan' } }) as any)
+  const getAgent = mock(
+    async (agentId: string) =>
+      ({ id: agentId, squadId: 'squad', agentTypeId: 'manager', metadata: { name: 'Morgan' } }) as any
+  )
   const openConversation = mock()
   const navigate = mock()
   const tools = createAssistantTools({ getAgent })

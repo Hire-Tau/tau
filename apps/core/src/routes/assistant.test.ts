@@ -446,7 +446,12 @@ test('squad delegations create one owned consultant per squad, label it, and ste
   const { id, owner, request } = await fixture()
   const role = await createTestRole({ prefix, permissions: ['chat:send'] })
   const squad = await squadFixture(owner, role)
-  const body = { clientId: randomUUID(), request: 'List enabled schedules', squadId: squad.id, label: 'Check enabled schedules' }
+  const body = {
+    clientId: randomUUID(),
+    request: 'List enabled schedules',
+    squadId: squad.id,
+    label: 'Check enabled schedules',
+  }
   const first = await request(`/${id}/messages`, body)
   expect(first.status).toBe(200)
   const receipt = await first.json()
@@ -462,12 +467,20 @@ test('squad delegations create one owned consultant per squad, label it, and ste
   expect((await Agent.mustFind(receipt.agentId)).metadata?.purpose).toBe('Assistant task: Pause the deploy stream')
   // Reusing the first request's clientId with different content conflicts (409); the relabel
   // only applies after a request is accepted, so a rejected retry must not rewrite the purpose.
-  const conflict = await request(`/${id}/messages`, { ...body, request: 'Different request', label: 'Reroute the deploy pipeline' })
+  const conflict = await request(`/${id}/messages`, {
+    ...body,
+    request: 'Different request',
+    label: 'Reroute the deploy pipeline',
+  })
   expect(conflict.status).toBe(409)
   expect((await Agent.mustFind(receipt.agentId)).metadata?.purpose).toBe('Assistant task: Pause the deploy stream')
   const rows = await db.select().from(inbox).where(eq(inbox.recipientId, receipt.agentId))
   expect(rows.map((row) => row.deliveryMode)).toEqual(['steer', 'steer'])
-  const general = await request(`/${id}/messages`, { clientId: randomUUID(), request: 'General task', label: 'General task' })
+  const general = await request(`/${id}/messages`, {
+    clientId: randomUUID(),
+    request: 'General task',
+    label: 'General task',
+  })
   const generalReceipt = await general.json()
   agentIds.push(generalReceipt.agentId)
   expect(generalReceipt.kind).toBe('background')
@@ -491,9 +504,7 @@ test('squad delegations require squad chat permission and reject mixed targets',
   const archived = await Squad.create({ name: `${prefix}-squad-${randomUUID().slice(0, 8)}`, purpose: 'test' })
   squadIds.push(archived.id)
   await db.update(squads).set({ status: 'archived' }).where(eq(squads.id, archived.id))
-  expect(
-    (await request(`/${id}/messages`, { ...base, clientId: randomUUID(), squadId: archived.id })).status
-  ).toBe(404)
+  expect((await request(`/${id}/messages`, { ...base, clientId: randomUUID(), squadId: archived.id })).status).toBe(404)
   expect(
     await db.select().from(assistantConversationAgents).where(eq(assistantConversationAgents.conversationId, id))
   ).toEqual([])

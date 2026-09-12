@@ -34,7 +34,13 @@ afterEach(async () => {
     : []
   if (conversationIds.length)
     await db.delete(assistantConversations).where(inArray(assistantConversations.id, conversationIds.splice(0)))
-  if (rows.length) await db.delete(agents).where(inArray(agents.id, rows.map((row) => row.agentId)))
+  if (rows.length)
+    await db.delete(agents).where(
+      inArray(
+        agents.id,
+        rows.map((row) => row.agentId)
+      )
+    )
   if (squadIds.length) await db.delete(squads).where(inArray(squads.id, squadIds.splice(0)))
   await cleanupTestRbac(prefix)
 })

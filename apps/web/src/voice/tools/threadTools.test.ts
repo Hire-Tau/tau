@@ -67,10 +67,7 @@ test('read_thread with messageId paginates the full message content by offset an
   const first = (await readThreadTool.execute({ agentId: 'a1', messageId: 'm1', limit: 500 }, {})) as any
   expect(first).toEqual({ content: content.slice(0, 500), offset: 0, length: 1200, hasMore: true, nextOffset: 500 })
 
-  const second = (await readThreadTool.execute(
-    { agentId: 'a1', messageId: 'm1', offset: 500, limit: 500 },
-    {}
-  )) as any
+  const second = (await readThreadTool.execute({ agentId: 'a1', messageId: 'm1', offset: 500, limit: 500 }, {})) as any
   expect(second).toEqual({
     content: content.slice(500, 1000),
     offset: 500,
@@ -79,9 +76,6 @@ test('read_thread with messageId paginates the full message content by offset an
     nextOffset: 1000,
   })
 
-  const last = (await readThreadTool.execute(
-    { agentId: 'a1', messageId: 'm1', offset: 1000, limit: 500 },
-    {}
-  )) as any
+  const last = (await readThreadTool.execute({ agentId: 'a1', messageId: 'm1', offset: 1000, limit: 500 }, {})) as any
   expect(last).toEqual({ content: content.slice(1000), offset: 1000, length: 1200, hasMore: false })
 })

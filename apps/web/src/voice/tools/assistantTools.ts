@@ -122,11 +122,25 @@ export function createAssistantTools(
       'delegate_task',
       'Run a task in the background with the user’s own permissions and report back here. Omit squadId for anything about the whole Tau instance or the user’s account: schedules, integrations, environment variables, secrets, users, permissions, billing, notifications, instance settings, and any investigation or sustained work that is not owned by one squad. Pass squadId (full ID or URL slug) only for work that belongs to that squad: its project, repositories, work streams, incidents, and squad settings. Give every task a short label. Results, progress, and clarification questions arrive in this conversation as task updates; a receipt is not a result and must never be described as one. To continue or answer a task, call this again with inReplyTo set to the update’s id and the same squadId. Delivery is steer (the new request takes priority); pass follow-up only when the user explicitly wants it queued behind the running task. Never send secret values.',
       {
-        label: { type: 'string', description: '3–6 words naming the task, e.g. "Check enabled schedules". No status words or secrets.' },
-        request: { type: 'string', description: 'Self-contained request from the user’s perspective with every relevant detail, exact URLs, and constraints.' },
-        squadId: { type: 'string', description: 'Full squad ID or URL slug when the task belongs to one squad. Omit for instance-wide or personal tasks.' },
+        label: {
+          type: 'string',
+          description: '3–6 words naming the task, e.g. "Check enabled schedules". No status words or secrets.',
+        },
+        request: {
+          type: 'string',
+          description:
+            'Self-contained request from the user’s perspective with every relevant detail, exact URLs, and constraints.',
+        },
+        squadId: {
+          type: 'string',
+          description:
+            'Full squad ID or URL slug when the task belongs to one squad. Omit for instance-wide or personal tasks.',
+        },
         mode: { type: 'string', enum: ['steer', 'follow-up'] },
-        inReplyTo: { type: 'string', description: 'Full inbox update UUID when answering or continuing a task update.' },
+        inReplyTo: {
+          type: 'string',
+          description: 'Full inbox update UUID when answering or continuing a task update.',
+        },
       },
       ['label', 'request'],
       async (args, env) => {
@@ -234,7 +248,9 @@ export function createAssistantTools(
             content: message.content,
             senderType: message.senderType,
             senderId: message.senderId,
-            senderAgent: message.senderAgent ? { id: message.senderAgent.id, agentTypeId: message.senderAgent.agentTypeId } : null,
+            senderAgent: message.senderAgent
+              ? { id: message.senderAgent.id, agentTypeId: message.senderAgent.agentTypeId }
+              : null,
             readAt: message.readAt,
             createdAt: message.createdAt,
           })),

@@ -113,7 +113,11 @@ const sourceSquad = {
 }
 
 test('squad reports become squad tasks and instance-wide questions stay instance-wide on a squad page', () => {
-  const instructions = buildVoiceInstructions({ ...baseContext, currentPath: '/squads/source', squads: [sourceSquad as any] })
+  const instructions = buildVoiceInstructions({
+    ...baseContext,
+    currentPath: '/squads/source',
+    squads: [sourceSquad as any],
+  })
   expect(instructions).toContain('## Background tasks')
   expect(instructions).toContain('## Routing')
   expect(instructions).toContain('call delegate_task with that squad')
@@ -123,7 +127,15 @@ test('squad reports become squad tasks and instance-wide questions stay instance
   expect(instructions).toContain('delete GITHUB_TOKEN and GITHUB_TOKEN_NOAHSASO env vars')
   expect(instructions).toContain('Current squad manager ID: source-manager')
   expect(instructions).not.toContain('source-worker')
-  for (const gone of ['User Assistant', 'message_user_assistant', 'message_squad_manager', 'message_work_stream_manager', 'get_status', 'list_attention', 'show_conversation'])
+  for (const gone of [
+    'User Assistant',
+    'message_user_assistant',
+    'message_squad_manager',
+    'message_work_stream_manager',
+    'get_status',
+    'list_attention',
+    'show_conversation',
+  ])
     expect(instructions).not.toContain(gone)
 })
 

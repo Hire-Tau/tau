@@ -124,7 +124,13 @@ export function createThreadTools(deps: {
       },
     },
     async execute(args) {
-      const input = args as { agentId: string; messageId?: string; blockIndex?: number; offset?: number; limit?: number }
+      const input = args as {
+        agentId: string
+        messageId?: string
+        blockIndex?: number
+        offset?: number
+        limit?: number
+      }
       if (input.messageId) return readMessageDetail(input as typeof input & { messageId: string })
       const limit = Math.min(Math.max(input.limit ?? 5, 1), 20)
       const [agent, execution, { messages }] = await Promise.all([

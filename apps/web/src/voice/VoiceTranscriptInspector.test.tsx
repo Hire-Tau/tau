@@ -78,9 +78,7 @@ test('rendered tool entries keep a label: the summary or text when present, the 
     await dom.act(async () =>
       root.render(
         <VoiceTranscriptInspector
-          history={[
-            { role: 'tool' as const, text: '', final: true, toolName: 'get_work', toolArgs: '{}' },
-          ]}
+          history={[{ role: 'tool' as const, text: '', final: true, toolName: 'get_work', toolArgs: '{}' }]}
           toolRenderers={siteAssistantToolRenderers}
         />
       )
@@ -91,9 +89,7 @@ test('rendered tool entries keep a label: the summary or text when present, the 
     await dom.act(async () =>
       root.render(
         <VoiceTranscriptInspector
-          history={[
-            { role: 'tool' as const, text: 'Task update', final: true, toolName: 'assistant_inbox' },
-          ]}
+          history={[{ role: 'tool' as const, text: 'Task update', final: true, toolName: 'assistant_inbox' }]}
           toolRenderers={siteAssistantToolRenderers}
         />
       )

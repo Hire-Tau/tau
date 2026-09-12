@@ -8,7 +8,7 @@ function createMessageAgentDefinition(options: { allowStop: boolean }) {
     type: 'function' as const,
     name: 'message_agent',
     description:
-      'Send a message to a user assistant, squad manager, or squad worker. Also use this to answer an artifact builder only when that artifact builder is already in waiting-input state after asking for human input. Do not use for normal artifact creation or iteration; use request_artifact instead. For squad or instance work the site Assistant uses delegate_task; use message_agent only for an explicitly requested or visible agent. Global or personal Tau settings, environment variables, secrets, and integration accounts go through message_user_assistant using the user’s permissions. Use a squad manager only for clearly squad-owned project work; viewing a squad page does not establish that ownership. Unscoped settings requests go to message_user_assistant for scope resolution. If the agent is idle, this wakes it up. If running, the message steers or follows up based on the mode.' +
+      'Send a message to a user assistant, squad manager, or squad worker. Also use this to answer an artifact builder only when that artifact builder is already in waiting-input state after asking for human input. Do not use for normal artifact creation or iteration; use request_artifact instead. For squad or instance work the site Assistant uses delegate_task; use message_agent only for an explicitly requested or visible agent. Global or personal Tau settings, environment variables, secrets, and integration accounts go through message_agent to the user assistant using the user’s permissions. Use a squad manager only for clearly squad-owned project work; viewing a squad page does not establish that ownership. Unscoped settings requests go to the user assistant via message_agent for scope resolution. If the agent is idle, this wakes it up. If running, the message steers or follows up based on the mode.' +
       (options.allowStop
         ? ' Mode stop halts the agent immediately: only for urgent stops such as a runaway or harmful action; to change what an agent or task is doing, steer it instead.'
         : ''),
@@ -45,7 +45,12 @@ export function createAgentMessagingTools(deps: AgentMessagingDependencies) {
   const directMessageAgentTool: VoiceAssistantTool<VoiceToolExecutor> = {
     definition: createMessageAgentDefinition({ allowStop: true }),
     async execute(args, env) {
-      const { agentId, content, mode = 'steer', inReplyTo } = args as {
+      const {
+        agentId,
+        content,
+        mode = 'steer',
+        inReplyTo,
+      } = args as {
         agentId: string
         content?: string
         mode?: DeliveryMode | 'stop'
@@ -67,7 +72,11 @@ export function createAgentMessagingTools(deps: AgentMessagingDependencies) {
   const workspaceInboxMessageAgentTool: VoiceAssistantTool<VoiceToolExecutor> = {
     definition: createMessageAgentDefinition({ allowStop: false }),
     async execute(args) {
-      const { agentId, content, mode = 'steer' } = args as {
+      const {
+        agentId,
+        content,
+        mode = 'steer',
+      } = args as {
         agentId: string
         content?: string
         mode?: DeliveryMode | 'stop'

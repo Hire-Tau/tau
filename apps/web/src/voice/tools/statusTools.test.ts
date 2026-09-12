@@ -40,9 +40,13 @@ describe('get_work', () => {
   function tools(overrides: Partial<Parameters<typeof createStatusTools>[0]> = {}) {
     return createStatusTools({
       listSquads: async () => [{ id: squadId, name: 'Tau', createdAt: '2026-01-01' }] as any,
-      listSquadAgents: async () => [{ id: 'a1', agentTypeId: 'engineer', status: 'idle', metadata: { name: 'Ava' } }] as any,
+      listSquadAgents: async () =>
+        [{ id: 'a1', agentTypeId: 'engineer', status: 'idle', metadata: { name: 'Ava' } }] as any,
       listWorkStreams: async () => [stream({ id: 'ws-s', squadId })],
-      listAllWorkStreams: async () => [stream({ id: 'ws-1' }), stream({ id: 'ws-2', status: 'done', derivedState: 'done' })],
+      listAllWorkStreams: async () => [
+        stream({ id: 'ws-1' }),
+        stream({ id: 'ws-2', status: 'done', derivedState: 'done' }),
+      ],
       getAgent: async () => {
         throw new Error('Unexpected agent request')
       },
