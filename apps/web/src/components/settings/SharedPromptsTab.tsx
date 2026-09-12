@@ -105,7 +105,9 @@ export function SharedPromptsTab() {
   const canWrite = !permissionsLoading && can('agent-types:update')
   const [editing, setEditing] = useState<IncludeDraft | null>(null)
   const [isNew, setIsNew] = useState(false)
-  const [deleteError, setDeleteError] = useState('')
+  // Every mutation on this tab reports here: a failed toggle or revert used to
+  // vanish silently, leaving the operator to guess from unchanged cards.
+  const [actionError, setActionError] = useState('')
 
   const existing = editing && !isNew ? includes.find((include) => include.id === editing.id) : undefined
   const editingDiffQuery = useQuery({
@@ -135,6 +137,7 @@ export function SharedPromptsTab() {
             description: draft.description.trim() || null,
           }),
     onSuccess: () => {
+      setActionError('')
       setEditing(null)
       invalidate()
     },
@@ -143,16 +146,20 @@ export function SharedPromptsTab() {
   const toggle = useMutation({
     mutationFn: (include: SharedPromptConfig) =>
       include.disabled ? enableSharedPrompt(include.id) : disableSharedPrompt(include.id),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      setActionError('')
+      invalidate()
+    },
+    onError: (error) => setActionError(deleteErrorMessage(error)),
   })
 
   const remove = useMutation({
     mutationFn: (include: SharedPromptConfig) => deleteSharedPrompt(include.id),
     onSuccess: () => {
-      setDeleteError('')
+      setActionError('')
       invalidate()
     },
-    onError: (error) => setDeleteError(deleteErrorMessage(error)),
+    onError: (error) => setActionError(deleteErrorMessage(error)),
   })
 
   const revertAll = useMutation({
@@ -161,6 +168,7 @@ export function SharedPromptsTab() {
       invalidate()
       queryClient.invalidateQueries({ queryKey: queryKeys.sharedPrompts.templateDiff(id) })
     },
+    onError: (error) => setActionError(deleteErrorMessage(error)),
   })
 
   const revertFields = useMutation({
@@ -169,6 +177,7 @@ export function SharedPromptsTab() {
       invalidate()
       queryClient.invalidateQueries({ queryKey: queryKeys.sharedPrompts.templateDiff(variables.id) })
     },
+    onError: (error) => setActionError(deleteErrorMessage(error)),
   })
 
   // A revert rewrites the stored record, so refresh the open editor from the
@@ -196,6 +205,7 @@ export function SharedPromptsTab() {
 
   const openEditor = (include: SharedPromptConfig) => {
     save.reset()
+    setActionError('')
     setIsNew(false)
     setEditing({
       id: include.id,
@@ -207,6 +217,7 @@ export function SharedPromptsTab() {
 
   const openNew = () => {
     save.reset()
+    setActionError('')
     setIsNew(true)
     setEditing({ id: '', name: '', description: '', content: '' })
   }
@@ -229,20 +240,20 @@ export function SharedPromptsTab() {
         )}
       </div>
 
-      {deleteError && <div className="text-sm text-red-600 dark:text-red-400">{deleteError}</div>}
+      {actionError && <div className="text-sm text-red-600 dark:text-red-400">{actionError}</div>}
 
       <SharedPromptList
         includes={includes}
         onEdit={openEditor}
         onToggle={(include) => toggle.mutate(include)}
         onDelete={(include) => {
-          setDeleteError('')
+          setActionError('')
           if (window.confirm(`Delete shared prompt "${include.name}"? This cannot be undone.`)) remove.mutate(include)
         }}
         canWrite={canWrite}
       />
 
-      {editing && (
+      {canWrite && editing && (
         <Modal
           isOpen
           onClose={() => setEditing(null)}

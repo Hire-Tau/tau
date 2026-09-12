@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { SharedPromptList, deleteErrorMessage } from './SharedPromptsTab'
+
+const source = readFileSync(join(import.meta.dir, 'SharedPromptsTab.tsx'), 'utf8')
 
 describe('SharedPromptList', () => {
   test('shows name, id, drift and disabled state per include', () => {
@@ -70,5 +74,25 @@ describe('deleteErrorMessage', () => {
 
   test('passes a plain error through unchanged', () => {
     expect(deleteErrorMessage(new Error('boom'))).toBe('boom')
+  })
+})
+
+describe('SharedPromptsTab failure reporting', () => {
+  // A rejected toggle or revert used to leave the card looking unchanged with
+  // no explanation; every mutation now writes to the one error banner.
+  test('routes every mutation failure into the shared action banner', () => {
+    expect(source.split('onError: (error) => setActionError(deleteErrorMessage(error))').length - 1).toBe(4)
+    expect(source.includes('{actionError && ')).toBe(true)
+    expect(source.includes('setDeleteError')).toBe(false)
+  })
+
+  test('clears the banner when an editor opens, a save lands or a toggle lands', () => {
+    // openEditor, openNew, save.onSuccess, toggle.onSuccess, remove.onSuccess,
+    // and the delete confirm path all reset it.
+    expect(source.split("setActionError('')").length - 1).toBe(6)
+  })
+
+  test('renders the edit modal only for operators who can write', () => {
+    expect(source.includes('{canWrite && editing && (')).toBe(true)
   })
 })

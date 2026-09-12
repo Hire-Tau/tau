@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { agentTypeUpdatePayload, type AgentTypeForm } from './AgentTypesSection'
+import { agentTypeCreatePayload, agentTypeUpdatePayload, type AgentTypeForm } from './AgentTypesSection'
 
 const source = readFileSync(join(import.meta.dir, 'AgentTypesSection.tsx'), 'utf8')
 
@@ -72,5 +72,49 @@ describe('agent type save payload', () => {
 
   test('sends an empty list for a type with no includes', () => {
     expect(agentTypeUpdatePayload({ ...form, includes: [] }).includes).toEqual([])
+  })
+})
+
+describe('agent type create payload', () => {
+  const form: AgentTypeForm = {
+    systemOnly: false,
+    name: 'Engineer',
+    model: '',
+    tier: 'standard',
+    description: '',
+    systemPrompt: 'You implement.',
+    includes: ['rules', 'squad-rules'],
+    skills: [],
+    extensions: '',
+    toolsAllow: '',
+    toolsDeny: '',
+    integrationAgentTools: false,
+    integrationConversationExport: false,
+  }
+
+  // The create form has its own shared prompt picker; dropping `includes` from
+  // the POST would make every new type start empty and need a second edit.
+  test('sends the shared prompts the create form picked', () => {
+    const payload = agentTypeCreatePayload('engineer', form)
+    expect(payload.id).toBe('engineer')
+    expect(payload.includes).toEqual(['rules', 'squad-rules'])
+  })
+
+  test('sends an empty list when the create form picked none', () => {
+    expect(agentTypeCreatePayload('engineer', { ...form, includes: [] }).includes).toEqual([])
+  })
+
+  test('renders the shared prompt picker on the create form', () => {
+    expect(source.includes('<SharedPromptPicker')).toBe(true)
+    expect(source.split('<SharedPromptPicker').length - 1).toBe(2)
+  })
+})
+
+describe('resolved prompt preview', () => {
+  // A failed detail fetch used to leave an empty <pre>, which reads as "this
+  // type resolves to nothing" instead of "the request failed".
+  test('reports a failed detail query instead of rendering an empty box', () => {
+    expect(source.includes('Couldn&apos;t load the resolved prompt')).toBe(true)
+    expect(source.includes('const { data, isLoading, error } = useQuery')).toBe(true)
   })
 })

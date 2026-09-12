@@ -192,14 +192,15 @@ function AddAgentTypeForm({ onClose, onCreated }: { onClose: () => void; onCreat
   const queryClient = useQueryClient()
   const { data: modelTiers = [] } = useQuery({ queryKey: ['model-tiers'], queryFn: getModelTiers })
   const [newId, setNewId] = useState('')
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<AgentTypeForm>({
     name: '',
     model: '',
     tier: '',
     description: '',
     systemOnly: false,
     systemPrompt: '',
-    skills: [] as string[],
+    includes: [],
+    skills: [],
     extensions: '',
     toolsAllow: '',
     toolsDeny: '',
@@ -229,20 +230,7 @@ function AddAgentTypeForm({ onClose, onCreated }: { onClose: () => void; onCreat
       alert('A model tier or override is required')
       return
     }
-    createMutation.mutate({
-      id,
-      systemOnly: form.systemOnly,
-      name: form.name,
-      model: form.model,
-      tier: form.tier || null,
-      description: form.description || null,
-      systemPrompt: form.systemPrompt,
-      skills: form.skills.length ? form.skills : null,
-      extensions: csvToArray(form.extensions),
-      toolsAllow: csvToArray(form.toolsAllow),
-      toolsDeny: csvToArray(form.toolsDeny),
-      integrationCapabilities: integrationPolicy(form.integrationAgentTools, form.integrationConversationExport),
-    })
+    createMutation.mutate(agentTypeCreatePayload(id, form))
   }
 
   return (
@@ -291,6 +279,7 @@ function AddAgentTypeForm({ onClose, onCreated }: { onClose: () => void; onCreat
         rows={6}
       />
       <SkillPicker value={form.skills} onChange={(skills) => setForm({ ...form, skills })} />
+      <SharedPromptPicker value={form.includes} onChange={(includes) => setForm({ ...form, includes })} />
       <FormField
         label="Extensions (comma-separated)"
         value={form.extensions}
@@ -647,7 +636,7 @@ function AgentTypeRow({
 function ResolvedPromptPreview({ agentTypeId }: { agentTypeId: string }) {
   const [isOpen, setIsOpen] = useState(false)
   const [copyMsg, setCopyMsg] = useState('')
-  const { data, isLoading } = useQuery({ ...queries.agentTypes.detail(agentTypeId), enabled: isOpen })
+  const { data, isLoading, error } = useQuery({ ...queries.agentTypes.detail(agentTypeId), enabled: isOpen })
   const resolved = data?.resolvedSystemPrompt ?? ''
 
   const handleCopy = async () => {
@@ -680,9 +669,15 @@ function ResolvedPromptPreview({ agentTypeId }: { agentTypeId: string }) {
             {copyMsg || 'Copy'}
           </button>
         </div>
-        <pre className="tau-field whitespace-pre-wrap font-mono text-xs max-h-96 overflow-auto">
-          {isLoading ? 'Loading…' : resolved}
-        </pre>
+        {error ? (
+          <p className="text-xs text-red-600 dark:text-red-400">
+            Couldn&apos;t load the resolved prompt: {(error as Error).message}
+          </p>
+        ) : (
+          <pre className="tau-field whitespace-pre-wrap font-mono text-xs max-h-96 overflow-auto">
+            {isLoading ? 'Loading…' : resolved}
+          </pre>
+        )}
       </div>
     </details>
   )
@@ -952,6 +947,15 @@ export function agentTypeUpdatePayload(form: AgentTypeForm): Partial<AgentTypeCo
     toolsDeny: csvToArray(form.toolsDeny),
     integrationCapabilities: integrationPolicy(form.integrationAgentTools, form.integrationConversationExport),
   }
+}
+
+/**
+ * The POST body for a brand-new type: the same field set as an update, plus the
+ * id the operator typed. Sharing the builder keeps a field added to one form
+ * from being silently dropped by the other.
+ */
+export function agentTypeCreatePayload(id: string, form: AgentTypeForm): Partial<AgentTypeConfig> & { id: string } {
+  return { id, ...agentTypeUpdatePayload(form) }
 }
 
 export type AgentTypeForm = ReturnType<typeof agentTypeToForm>
