@@ -4,7 +4,6 @@ import { useAssistantConversationBridge } from '../../AssistantConversationConte
 import { useCallback, useEffect, useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import { getMyInbox, markAsRead } from '../../../api/inbox'
-import { listAgents } from '../../../api/agents'
 import { listSquads, listSquadAgents } from '../../../api/squads'
 import { useStableRef } from '../../../hooks/useStableRef'
 import { useWebSocket } from '../../../hooks/useWebSocket'
@@ -229,7 +228,6 @@ function useSiteOperatorEffects(
 }
 
 export type SiteOperatorAssistantDependencies = {
-  listAgents: typeof listAgents
   listSquads: typeof listSquads
   listSquadAgents: typeof listSquadAgents
   getMyInbox: typeof getMyInbox
@@ -246,19 +244,15 @@ export function createSiteOperatorAssistant(deps: SiteOperatorAssistantDependenc
     async prepareSession({ env, signal }) {
       const history = await env.prepareHistory?.()
       await env.pageEditor?.prepare()
-      const [squads, agents] = env.pageEditor ? [[], []] : await Promise.all([deps.listSquads(), deps.listAgents()])
+      const squads = env.pageEditor ? [] : await deps.listSquads()
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
 
-      const systemManager = env.delegateTask
-        ? null
-        : (agents.find((agent) => agent.agentTypeId === 'system-manager') ?? null)
       const managerAgentArrays = await Promise.all(squads.map((s) => deps.listSquadAgents(s.id)))
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
 
       const allSquadAgents = managerAgentArrays.flat()
       const currentPath = env.getCurrentPath()
       const ctx: SiteOperatorSessionContext = {
-        systemManagerId: systemManager?.id ?? null,
         currentPath,
         visibleAgents: getCurrentVisibleAgentContexts(currentPath),
         squads: squads.map((s) => {
@@ -291,7 +285,12 @@ export function createSiteOperatorAssistant(deps: SiteOperatorAssistantDependenc
                 ...env.pageEditor.tools,
                 ...siteOperatorToolDefinitions
                   .filter((tool) => tool.name === 'delegate_task')
-                  .map((tool) => ({ ...tool, name: 'delegate' })),
+                  // Page-editor delegation always runs on the conversation's general helper,
+                  // so the squad target must not be offered here.
+                  .map((tool) => {
+                    const { squadId: _squadId, ...properties } = tool.parameters.properties as Record<string, unknown>
+                    return { ...tool, name: 'delegate', parameters: { ...tool.parameters, properties } }
+                  }),
               ]
             : siteOperatorToolDefinitions,
           output_modalities: ['audio'],
@@ -360,7 +359,6 @@ export function createSiteOperatorAssistant(deps: SiteOperatorAssistantDependenc
 }
 
 export const { siteOperatorVoiceAssistant, __siteOperatorAssistantTest } = createSiteOperatorAssistant({
-  listAgents,
   listSquads,
   listSquadAgents,
   getMyInbox,

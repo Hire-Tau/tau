@@ -216,6 +216,29 @@ test('agent inbox updates are durable context, queued independently, and acknowl
   }
 })
 
+test('Realtime inbox updates are saved as a compact "Task update" tool entry, not raw content', async () => {
+  const f = await fixture(true)
+  const enqueueMessage = mock(() => {})
+  Object.assign(f.voice, { isConnected: true, status: 'listening', enqueueMessage })
+  f.props.dependencies.api.inbox.mockImplementation(async () => ({
+    acquired: true,
+    pending: 0,
+    messages: [{ id: 'update', senderId: 'agent-1', senderName: 'Assistant task', content: 'The task is complete' }],
+  }))
+  try {
+    await f.dom.act(async () => f.render())
+    const update = f.stored.find((entry) => entry.toolName === 'assistant_inbox')!
+    expect(update).toBeDefined()
+    expect(update.text).toBe('Task update')
+    expect(update.role).toBe('tool')
+    expect(JSON.parse(update.toolResult!).content).toBe('The task is complete')
+    expect(enqueueMessage.mock.calls[0]?.[0].historyEntry.text).toBe('Task update')
+  } finally {
+    await f.dom.cleanup()
+    f.queryClient.clear()
+  }
+})
+
 test('a disconnected receiver leaves inbox updates unread for its next connection', async () => {
   const f = await fixture(true)
   Object.assign(f.voice, { isConnected: false })

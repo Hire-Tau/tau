@@ -5,7 +5,6 @@ import type { InboxMessageResponse } from '../../../api/inbox'
 import type { VisibleAgentContext } from '../../pageContext'
 
 export interface SiteOperatorSessionContext {
-  systemManagerId: string | null
   squads: (Pick<Squad, 'id' | 'name' | 'purpose' | 'status'> & {
     createdAt?: Squad['createdAt']
     agents: Pick<Agent, 'id' | 'agentTypeId' | 'status'>[]

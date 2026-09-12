@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test'
 import { buildVoiceInstructions, type VoiceSessionContext } from './assistants/siteOperator/siteOperatorInstructions'
 
 const baseContext: VoiceSessionContext = {
-  systemManagerId: 'system-manager-agent',
   squads: [],
   currentPath: '/settings?chat=open',
 }
@@ -20,7 +19,6 @@ describe('buildVoiceInstructions', () => {
 
   test('identifies the squad coordinator without claiming an open conversation', () => {
     const instructions = buildVoiceInstructions({
-      systemManagerId: 'system-manager-agent',
       currentPath: '/squads/squad-1?tab=home',
       squads: [
         {
@@ -41,7 +39,6 @@ describe('buildVoiceInstructions', () => {
 
   test('keeps the coordinator distinct from an open Assistant conversation', () => {
     const instructions = buildVoiceInstructions({
-      systemManagerId: 'system-manager-agent',
       currentPath: '/squads/squad-1?tab=home',
       visibleAgents: [{ id: 'drawer-agent-id', source: 'system-manager-chat-drawer' }],
       squads: [
@@ -82,7 +79,6 @@ test('resolves the current squad slug and supplies full tool IDs', () => {
   const squadId = '11111111-1111-1111-1111-111111111111'
   const managerId = '22222222-2222-2222-2222-222222222222'
   const instructions = buildVoiceInstructions({
-    systemManagerId: null,
     currentPath: '/squads/tau',
     squads: [
       {
@@ -155,7 +151,6 @@ test('the prompt and tool definitions stay within the size budget', async () => 
     })),
   }))
   const instructions = buildVoiceInstructions({
-    systemManagerId: '33333333-3333-3333-3333-333333333333',
     currentPath: `/squads/${squads[0]!.id}/work`,
     squads: squads as any,
   })

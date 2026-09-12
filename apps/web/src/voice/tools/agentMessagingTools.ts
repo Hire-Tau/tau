@@ -4,14 +4,26 @@ import { sendInboxMessage } from '../../api/inbox'
 import type { VoiceAssistantTool, VoiceToolExecutor } from './types'
 
 function createMessageAgentDefinition(options: { allowStop: boolean }) {
+  // The site-operator variant (allowStop) ships alongside delegate_task, so instance-wide and
+  // squad work routes there. The workspace variant has no delegate_task and keeps its own routing.
+  const opening = options.allowStop
+    ? 'Send a message to a specific agent: a system manager, squad manager, or squad worker.'
+    : 'Send a message to a user assistant, squad manager, or squad worker.'
+  const artifacts =
+    'Also use this to answer an artifact builder only when that artifact builder is already in waiting-input state after asking for human input. Do not use for normal artifact creation or iteration; use request_artifact instead.'
+  const routing = options.allowStop
+    ? 'Instance-wide or squad work goes through delegate_task; use message_agent only for an explicitly requested or visible agent.'
+    : 'Global or personal Tau settings, environment variables, secrets, and integration accounts go through message_agent to the user assistant using the user’s permissions. Unscoped settings requests go to the user assistant via message_agent for scope resolution.'
+  const ownership =
+    'Use a squad manager only for clearly squad-owned project work; viewing a squad page does not establish that ownership.'
+  const delivery =
+    'If the agent is idle, this wakes it up. If running, the message steers or follows up based on the mode.'
+  const stop =
+    'Mode stop halts the agent immediately: only for urgent stops such as a runaway or harmful action; to change what an agent or task is doing, steer it instead.'
   return {
     type: 'function' as const,
     name: 'message_agent',
-    description:
-      'Send a message to a user assistant, squad manager, or squad worker. Also use this to answer an artifact builder only when that artifact builder is already in waiting-input state after asking for human input. Do not use for normal artifact creation or iteration; use request_artifact instead. For squad or instance work the site Assistant uses delegate_task; use message_agent only for an explicitly requested or visible agent. Global or personal Tau settings, environment variables, secrets, and integration accounts go through message_agent to the user assistant using the user’s permissions. Use a squad manager only for clearly squad-owned project work; viewing a squad page does not establish that ownership. Unscoped settings requests go to the user assistant via message_agent for scope resolution. If the agent is idle, this wakes it up. If running, the message steers or follows up based on the mode.' +
-      (options.allowStop
-        ? ' Mode stop halts the agent immediately: only for urgent stops such as a runaway or harmful action; to change what an agent or task is doing, steer it instead.'
-        : ''),
+    description: [opening, artifacts, routing, ownership, delivery, ...(options.allowStop ? [stop] : [])].join(' '),
     parameters: {
       type: 'object',
       properties: {

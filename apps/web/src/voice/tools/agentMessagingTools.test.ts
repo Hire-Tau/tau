@@ -210,4 +210,13 @@ describe('message_agent voice tool', () => {
     expect(calls.map((call) => call.agentId)).toEqual(['system-manager', 'worker-1'])
     expect(calls[1].mode).toBe('follow-up')
   })
+
+  test('each surface describes the routing it actually has', () => {
+    // The site operator owns delegate_task, so its message_agent must not route work to a
+    // "user assistant"; the workspace surface has no delegate_task and must never name it.
+    const direct = directMessageAgentTool.definition.description
+    expect(direct).toContain('delegate_task')
+    expect(direct).not.toContain('user assistant')
+    expect(workspaceInboxMessageAgentTool.definition.description).not.toContain('delegate_task')
+  })
 })

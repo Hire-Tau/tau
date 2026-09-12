@@ -169,7 +169,7 @@ Purpose:
 - general text and spoken interaction with the Tau web UI
 - search and navigate pages, squads, work and conversations
 - inspect work and route messages to the relevant manager
-- delegate deeper tasks to the User Assistant and receive updates in the active conversation
+- delegate deeper tasks as background tasks on helpers the conversation owns — a general system-manager helper for instance-wide and personal work, plus one consultant per squad (named “Assistant task”) for squad-owned work — and receive their updates in the active conversation
 - read and message normal agent threads
 - read inbox updates
 - answer status questions

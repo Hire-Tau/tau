@@ -493,7 +493,7 @@ test('squad delegations create one owned consultant per squad, label it, and ste
   expect(owned.map((row) => row.squadId).sort()).toEqual([null, squad.id].sort())
 })
 
-test('squad delegations require squad chat permission and reject mixed targets', async () => {
+test('squad delegations reject mixed targets and unknown or inactive squads, and own one consultant per conversation', async () => {
   const { id, owner, other, request } = await fixture()
   const role = await createTestRole({ prefix, permissions: ['chat:send'] })
   const squad = await squadFixture(owner, role)
@@ -528,4 +528,43 @@ test('squad delegations require squad chat permission and reject mixed targets',
   const ownerReceipt = await ownerDelegation.json()
   agentIds.push(ownerReceipt.agentId)
   expect(delegatedReceipt.agentId).not.toBe(ownerReceipt.agentId)
+})
+
+test('a reply without an explicit target continues the squad task that sent it', async () => {
+  const { id, owner, request } = await fixture()
+  const role = await createTestRole({ prefix, permissions: ['chat:send'] })
+  const squad = await squadFixture(owner, role)
+  const delegated = await request(`/${id}/messages`, {
+    clientId: randomUUID(),
+    request: 'Check the deploy stream',
+    squadId: squad.id,
+    label: 'Check the deploy stream',
+  })
+  expect(delegated.status).toBe(200)
+  const receipt = await delegated.json()
+  agentIds.push(receipt.agentId)
+  expect(receipt).toMatchObject({ kind: 'squad', squadId: squad.id })
+
+  const token = await createTestAgentToken({ agentId: receipt.agentId, squadId: squad.id })
+  const replied = await app.request('/api/inbox', {
+    method: 'POST',
+    headers: { ...authHeaders(token.token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      recipientType: 'voice_assistant',
+      recipientId: assistantInboxRecipientId(id),
+      content: 'Which environment?',
+      inReplyTo: receipt.id,
+    }),
+  })
+  expect(replied.status).toBe(201)
+  const reply = await replied.json()
+
+  // No squadId here: the reply itself identifies the owned consultant that asked the question.
+  const followUp = await request(`/${id}/messages`, {
+    clientId: randomUUID(),
+    request: 'Production',
+    inReplyTo: reply.id,
+  })
+  expect(followUp.status).toBe(200)
+  expect(await followUp.json()).toMatchObject({ agentId: receipt.agentId, kind: 'squad', squadId: squad.id })
 })

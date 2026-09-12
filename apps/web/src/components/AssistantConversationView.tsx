@@ -391,7 +391,8 @@ function ConversationRuntime(
         else await voice.sendText(text)
       } else {
         await props.append([{ id: crypto.randomUUID(), role: 'user', text, final: true, channel: 'text' }])
-        await props.sendAgent(text, { label: 'Assistant request' })
+        // No label: a typed message is not a new task, so it must not rewrite the helper's purpose.
+        await props.sendAgent(text, {})
         setAwaitingReplies((count) => count + 1)
       }
       setDraft('')

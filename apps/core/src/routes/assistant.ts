@@ -19,7 +19,7 @@ import {
   type AssistantEntry,
   type AssistantMessageReceipt,
 } from '@tau/shared'
-import { assistantConversations, assistantEntries, db, inbox, agents } from '../db'
+import { assistantConversationAgents, assistantConversations, assistantEntries, db, inbox, agents } from '../db'
 import { Agent } from '../entities/Agent'
 import { Squad } from '../entities/Squad'
 import { InboxMessage } from '../entities/InboxMessage'
@@ -216,6 +216,7 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
         : input.request
     let agent: Agent | null
     let kind: AssistantMessageReceipt['kind']
+    let targetSquadId: string | null = null
     if (input.agentId) {
       agent = await Agent.find(input.agentId)
       if (!agent || !(await hasAgentResourcePermission(c.get('identity'), agent, 'chat:send')))
@@ -227,7 +228,36 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
         if (!squad || squad.status !== 'active' || !(await hasPermission(c.get('identity'), 'chat:send', squad.id)))
           return c.json({ error: 'Squad not found' }, 404)
       }
-      const squadId = input.squadId ?? null
+      let squadId = input.squadId ?? null
+      // A reply continues the task it answers. Without an explicit target, resolve the owned agent
+      // that sent the update so a follow-up stays on that squad's consultant instead of silently
+      // landing on the general helper.
+      if (!input.squadId && input.inReplyTo) {
+        const [replied] = await db
+          .select({ senderId: inbox.senderId })
+          .from(inbox)
+          .where(
+            and(
+              eq(inbox.id, input.inReplyTo),
+              eq(inbox.recipientType, 'voice_assistant'),
+              eq(inbox.recipientId, address),
+              eq(inbox.senderType, 'agent')
+            )
+          )
+        if (replied?.senderId) {
+          const [owned] = await db
+            .select({ squadId: assistantConversationAgents.squadId })
+            .from(assistantConversationAgents)
+            .where(
+              and(
+                eq(assistantConversationAgents.conversationId, conversation.id),
+                eq(assistantConversationAgents.agentId, replied.senderId)
+              )
+            )
+          if (owned) squadId = owned.squadId
+        }
+      }
+      targetSquadId = squadId
       agent = await db.transaction(async (tx) => {
         await tx
           .select({ id: assistantConversations.id })
@@ -306,7 +336,7 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
       agentId,
       delivered: Boolean(message.deliveredAt),
       kind,
-      ...(kind === 'squad' ? { squadId: input.squadId } : {}),
+      ...(kind === 'squad' && targetSquadId ? { squadId: targetSquadId } : {}),
     }
     return c.json(receipt)
   })
