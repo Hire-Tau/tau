@@ -530,7 +530,7 @@ test('squad delegations reject mixed targets and unknown or inactive squads, and
   expect(delegatedReceipt.agentId).not.toBe(ownerReceipt.agentId)
 })
 
-test('a reply without an explicit target continues the squad task that sent it', async () => {
+test('a reply without an explicit target continues the squad task that sent it, subject to squad access', async () => {
   const { id, owner, request } = await fixture()
   const role = await createTestRole({ prefix, permissions: ['chat:send'] })
   const squad = await squadFixture(owner, role)
@@ -567,4 +567,14 @@ test('a reply without an explicit target continues the squad task that sent it',
   })
   expect(followUp.status).toBe(200)
   expect(await followUp.json()).toMatchObject({ agentId: receipt.agentId, kind: 'squad', squadId: squad.id })
+
+  // A squad reached through a reply is re-checked like an explicit one: archiving it closes the
+  // reply path too, rather than letting inReplyTo bypass the squad gate.
+  await db.update(squads).set({ status: 'archived' }).where(eq(squads.id, squad.id))
+  const afterArchive = await request(`/${id}/messages`, {
+    clientId: randomUUID(),
+    request: 'Still production',
+    inReplyTo: reply.id,
+  })
+  expect(afterArchive.status).toBe(404)
 })

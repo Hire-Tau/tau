@@ -223,11 +223,6 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
         return c.json({ error: 'Agent not found' }, 404)
       kind = 'agent'
     } else {
-      if (input.squadId) {
-        const squad = await Squad.find(input.squadId)
-        if (!squad || squad.status !== 'active' || !(await hasPermission(c.get('identity'), 'chat:send', squad.id)))
-          return c.json({ error: 'Squad not found' }, 404)
-      }
       let squadId = input.squadId ?? null
       // A reply continues the task it answers. Without an explicit target, resolve the owned agent
       // that sent the update so a follow-up stays on that squad's consultant instead of silently
@@ -256,6 +251,13 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
             )
           if (owned) squadId = owned.squadId
         }
+      }
+      // Every squad target is checked the same way, however it was resolved: a squad reached through
+      // a reply can have been archived, or the user's access to it revoked, since the task started.
+      if (squadId) {
+        const squad = await Squad.find(squadId)
+        if (!squad || squad.status !== 'active' || !(await hasPermission(c.get('identity'), 'chat:send', squad.id)))
+          return c.json({ error: 'Squad not found' }, 404)
       }
       targetSquadId = squadId
       agent = await db.transaction(async (tx) => {

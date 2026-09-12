@@ -324,7 +324,10 @@ export function createSiteOperatorAssistant(deps: SiteOperatorAssistantDependenc
 
     async executeTool({ name, toolArgs, env }) {
       if (env.pageEditor) {
-        if (name === 'delegate') return siteOperatorTools.execute('delegate_task', toolArgs, env)
+        // The schema omits squadId, but the inherited description still mentions it: drop any the
+        // model emits anyway, so page-editor delegation always lands on the general helper.
+        if (name === 'delegate')
+          return siteOperatorTools.execute('delegate_task', { ...toolArgs, squadId: undefined }, env)
         return env.pageEditor.execute(name, toolArgs)
       }
       return siteOperatorTools.execute(name, toolArgs, env)

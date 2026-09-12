@@ -272,5 +272,16 @@ test('page conversations expose only scoped editor tools and delegation, without
     mode: 'steer',
     inReplyTo: undefined,
   })
+  // The schema omits squadId, so a squad the model emits anyway must be dropped, not honoured.
+  await controller.executeTool({
+    name: 'delegate',
+    toolArgs: { label: 'Review flow design', request: 'Design an independent review flow', squadId: 'tau' },
+    env,
+    runtime: {} as any,
+  })
+  expect(delegateTask).toHaveBeenCalledTimes(2)
+  const forwarded = (delegateTask.mock.calls.at(-1) as any)?.[1]
+  expect(forwarded.label).toBe('Review flow design')
+  expect(forwarded.squadId).toBeUndefined()
   expect(execute.mock.calls).toHaveLength(2)
 })
