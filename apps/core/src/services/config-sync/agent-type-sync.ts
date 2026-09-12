@@ -310,11 +310,17 @@ export class AgentTypeSync extends ConfigSync<AgentTypeYaml> {
 
   async validateIncludes(types: AgentTypeYaml[], files: Map<string, string>): Promise<void> {
     for (const agentType of types) {
+      const seen = new Set<string>()
       for (const name of agentType.includes ?? []) {
         if (!files.has(name))
           throw new YamlValidationError(
             `AgentType '${agentType.id}': Include '${name}' not found in config/agent-types/shared/`
           )
+        // The API rejects duplicates too: composing the same block twice is
+        // always a mistake, and order-sensitive edits get ambiguous.
+        if (seen.has(name))
+          throw new YamlValidationError(`AgentType '${agentType.id}': Include '${name}' is listed twice`)
+        seen.add(name)
       }
     }
   }
@@ -341,13 +347,21 @@ export class AgentTypeSync extends ConfigSync<AgentTypeYaml> {
    * its systemPrompt override and has no stored include list.
    */
   private async findLegacyMergedIds(): Promise<string[]> {
-    const rows = await db.select().from(agentTypes)
+    // One narrow query decides the whole thing: with no systemPrompt override
+    // anywhere — the normal case — there is nothing to repair and the sync does
+    // no per-row work at all.
+    const rows = await db
+      .select({ id: agentTypes.id, overrides: agentTypes.yamlFieldOverrides, includes: agentTypes.includes })
+      .from(agentTypes)
     return rows
-      .filter(
-        (row) =>
-          ((row.yamlFieldOverrides as string[] | null) ?? []).includes('systemPrompt') &&
-          (row.includes ?? []).length === 0
-      )
+      .filter((row) => {
+        const overrides = (row.overrides as string[] | null) ?? []
+        if (!overrides.includes('systemPrompt')) return false
+        // An `includes` override is a post-split admin decision, not a
+        // pre-split merge: leave it exactly as the admin left it, silently.
+        if (overrides.includes('includes')) return false
+        return (row.includes ?? []).length === 0
+      })
       .map((row) => row.id)
   }
 

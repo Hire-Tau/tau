@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
 import { agentTypes, db } from '../../db'
 import { AgentType } from '../../entities/AgentType'
@@ -8,6 +8,15 @@ import { loadSharedPromptFiles } from './shared-prompt-sync'
 const sync = new AgentTypeSync()
 
 describe('agent type includes', () => {
+  // Several tests below plant a doctored `engineer` row. Reset it to its
+  // template first so each test starts from a clean row regardless of the
+  // order they run in.
+  beforeEach(async () => {
+    await sync.sync()
+    await sync.revertToTemplate('engineer')
+    AgentType.invalidateCache()
+  })
+
   test('loadFromDir keeps the include list and leaves systemPrompt free of include text', async () => {
     const sysops = (await sync.loadFromDir()).find((t) => t.id === 'sysops')!
     expect(sysops.includes).toEqual(['rules', 'subagents', 'squad-rules'])
@@ -32,6 +41,18 @@ describe('agent type includes', () => {
     await expect(sync.validateIncludes([bad], new Map())).rejects.toThrow(/Include 'nope' not found/)
   })
 
+  test('loadFromDir rejects a type that lists the same include twice', async () => {
+    const dup = sync.parse(
+      ['id: dup-inc', 'name: Dup', 'tier: standard', 'systemPrompt: hi', 'includes:', '  - rules', '  - rules'].join(
+        '\n'
+      ),
+      'dup-inc.yaml'
+    )
+    await expect(sync.validateIncludes([dup], new Map([['rules', 'text']]))).rejects.toThrow(
+      /AgentType 'dup-inc': Include 'rules' is listed twice/
+    )
+  })
+
   test('sync stores includes on the row and the template', async () => {
     await sync.sync()
     const [row] = await db.select().from(agentTypes).where(eq(agentTypes.id, 'engineer'))
@@ -49,21 +70,35 @@ describe('agent type includes', () => {
     expect(stripLegacyIncludeSuffix(own, [])).toBe(own)
   })
 
-  test('an overridden merged prompt is split once on sync and flagged, not duplicated', async () => {
-    await sync.sync()
+  /**
+   * An `includes` override means the row was edited after the split — the empty
+   * list is what the admin asked for, not a pre-migration artifact. Repairing it
+   * would overwrite a deliberate choice, and warning about it would nag on every
+   * sync forever.
+   */
+  test('a deliberate empty includes override is left alone with no warning', async () => {
     const files = await loadSharedPromptFiles()
     const engineer = (await sync.loadFromDir()).find((t) => t.id === 'engineer')!
-    // Simulate a pre-migration admin edit: the whole merged text plus a local line.
-    const legacyMerged = composeFromYaml(engineer, files)
+    const merged = composeFromYaml(engineer, files)
     await db
       .update(agentTypes)
-      .set({ systemPrompt: `${legacyMerged}`, includes: [], yamlFieldOverrides: ['systemPrompt', 'includes'] })
+      .set({ systemPrompt: merged, includes: [], yamlFieldOverrides: ['systemPrompt', 'includes'] })
       .where(eq(agentTypes.id, 'engineer'))
-    await sync.sync()
+    AgentType.invalidateCache()
+
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await sync.sync()
+      const warnings = warn.mock.calls.map((args) => args.join(' ')).filter((line) => line.includes('engineer'))
+      expect(warnings).toEqual([])
+    } finally {
+      warn.mockRestore()
+    }
+
     const after = await AgentType.mustFind('engineer')
-    expect(after.systemPrompt).toBe(engineer.systemPrompt)
-    expect(after.includes).toEqual(engineer.includes!)
-    expect(after.yamlFieldOverrides).toEqual([])
+    expect(after.systemPrompt).toBe(merged)
+    expect(after.includes).toEqual([])
+    expect([...after.yamlFieldOverrides].sort()).toEqual(['includes', 'systemPrompt'])
   })
 
   /**

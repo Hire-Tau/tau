@@ -159,3 +159,55 @@ describe('shared prompt routes', () => {
     expect(res.status).toBe(403)
   })
 })
+
+// ── RBAC guards ───────────────────────────────────────────────────────────────
+
+/**
+ * Shared prompt content lands in every agent's system prompt, so each mutating
+ * route must reject an anonymous caller and a caller without
+ * `agent-types:update` before it touches the record.
+ */
+describe('shared prompt RBAC guards', () => {
+  const jsonBody = { body: JSON.stringify({ content: 'c' }), headers: { 'content-type': 'application/json' } }
+
+  test('GET /api/shared-prompts → 401 without identity', async () => {
+    expect((await guardFetch(null, '/api/shared-prompts')).status).toBe(401)
+  })
+
+  test('GET /api/shared-prompts → 403 for unprivileged user', async () => {
+    expect((await guardFetch(unprivileged.token, '/api/shared-prompts')).status).toBe(403)
+  })
+
+  test('PUT /api/shared-prompts/:id → 401 without identity', async () => {
+    const res = await guardFetch(null, '/api/shared-prompts/rules', { method: 'PUT', ...jsonBody })
+    expect(res.status).toBe(401)
+  })
+
+  test('PUT /api/shared-prompts/:id → 403 for unprivileged user', async () => {
+    const res = await guardFetch(unprivileged.token, '/api/shared-prompts/rules', { method: 'PUT', ...jsonBody })
+    expect(res.status).toBe(403)
+  })
+
+  test('DELETE /api/shared-prompts/:id → 401 without identity', async () => {
+    expect((await guardFetch(null, '/api/shared-prompts/rules', { method: 'DELETE' })).status).toBe(401)
+  })
+
+  test('DELETE /api/shared-prompts/:id → 403 for unprivileged user', async () => {
+    const res = await guardFetch(unprivileged.token, '/api/shared-prompts/rules', { method: 'DELETE' })
+    expect(res.status).toBe(403)
+  })
+
+  test('POST /api/shared-prompts/:id/disable → 401 without identity', async () => {
+    expect((await guardFetch(null, '/api/shared-prompts/rules/disable', { method: 'POST' })).status).toBe(401)
+  })
+
+  test('POST /api/shared-prompts/:id/disable → 403 for unprivileged user', async () => {
+    const res = await guardFetch(unprivileged.token, '/api/shared-prompts/rules/disable', { method: 'POST' })
+    expect(res.status).toBe(403)
+  })
+
+  test('POST /api/shared-prompts/:id/enable → 403 for unprivileged user', async () => {
+    const res = await guardFetch(unprivileged.token, '/api/shared-prompts/rules/enable', { method: 'POST' })
+    expect(res.status).toBe(403)
+  })
+})

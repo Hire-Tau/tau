@@ -1,8 +1,8 @@
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
+import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { eq, inArray } from 'drizzle-orm'
 import { db, sharedPrompts } from '../../db'
 import { SharedPrompt } from '../../entities/SharedPrompt'
-import { composeAgentTypePrompt } from './compose-prompt'
+import { composeAgentTypePrompt, resetUnknownSharedPromptWarnings } from './compose-prompt'
 
 const ids = ['cp-alpha', 'cp-beta', 'cp-off']
 
@@ -31,5 +31,23 @@ describe('composeAgentTypePrompt', () => {
   })
   test('returns the own prompt unchanged with no includes', async () => {
     expect(await composeAgentTypePrompt({ id: 't', systemPrompt: 'Own.', includes: null })).toBe('Own.')
+  })
+  // Compose runs on every turn, so a permanently missing id would otherwise
+  // repeat its warning forever; the operator only needs to be told once.
+  test('warns once per agent type and unknown id, not once per turn', async () => {
+    resetUnknownSharedPromptWarnings()
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const type = { id: 'warn-once', systemPrompt: 'Own.', includes: ['cp-gone'] }
+      await composeAgentTypePrompt(type)
+      await composeAgentTypePrompt(type)
+      await composeAgentTypePrompt({ ...type, id: 'warn-once-other' })
+      const lines = warn.mock.calls.map((args) => args.join(' ')).filter((line) => line.includes('cp-gone'))
+      expect(lines.filter((line) => line.includes("'warn-once'")).length).toBe(1)
+      expect(lines.filter((line) => line.includes("'warn-once-other'")).length).toBe(1)
+    } finally {
+      warn.mockRestore()
+      resetUnknownSharedPromptWarnings()
+    }
   })
 })

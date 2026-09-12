@@ -163,6 +163,23 @@ describe('agent type route validation', () => {
     expect(await res.json()).toMatchObject({ error: 'includes must be an array' })
   })
 
+  // A disabled shared prompt contributes nothing at compose time, so letting a
+  // type adopt one would silently store a no-op — the skills rule above rejects
+  // the same mistake.
+  test('PUT rejects a disabled shared prompt', async () => {
+    await AgentType.upsert({ ...validAgentType, includes: [] })
+    await db.update(sharedPrompts).set({ disabled: true }).where(eq(sharedPrompts.id, 'shared-block'))
+    SharedPrompt.invalidateCache()
+
+    const res = await app.request('/api/agent-types/custom-agent', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', ...authHeaders(funcAdmin.token) },
+      body: JSON.stringify({ ...validAgentType, includes: ['shared-block'] }),
+    })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: "Shared prompt 'shared-block' is disabled" })
+  })
+
   test('creates an agent type carrying a shared prompt list', async () => {
     const res = await app.request('/api/agent-types', {
       method: 'POST',
