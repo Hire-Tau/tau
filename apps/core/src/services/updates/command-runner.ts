@@ -14,6 +14,13 @@ export type RunProcess = (
 ) => Promise<ProcessResult>
 export type DispatchProcess = (command: string[], cwd: string) => void
 
+/** Exit status of a child that received SIGTERM (128 + 15): the fate of a systemctl child when
+ *  the unit it just asked to restart is stopped before it returns. */
+export const SIGTERM_EXIT_CODE = 143
+export function isKilledByOwnRestart(exitCode: number): boolean {
+  return exitCode === SIGTERM_EXIT_CODE
+}
+
 export class UpdateCommandError extends Error {
   constructor(
     public command: string[],
@@ -151,6 +158,15 @@ export class CommandRunner {
         planned.outputTail = 'API restart accepted by systemd; queued for this unit.'
         this.onUpdate?.()
         const result = await this.runProcess(planned.command, this.cwd, this.timeoutMs)
+        if (isKilledByOwnRestart(result.exitCode)) {
+          // The manager began stopping this unit — and with it this whole cgroup, the
+          // systemctl child included — before systemctl could return. That is the restart
+          // working; the boot-time reconciler will finish the run.
+          planned.exitCode = result.exitCode
+          planned.outputTail = 'API restart accepted by systemd; this process was stopped before systemctl returned.'
+          this.onUpdate?.()
+          continue
+        }
         if (result.exitCode !== 0) {
           planned.status = 'failed'
           planned.exitCode = result.exitCode

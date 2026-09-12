@@ -4,7 +4,7 @@ import { dirname, join } from 'path'
 import { SYSTEM_RECIPIENT_ID } from '@tau/shared'
 import { InboxMessage } from '../../entities/InboxMessage'
 import { requireSandboxRuntime } from '../sandbox/runtime'
-import { CommandRunner } from './command-runner'
+import { CommandRunner, isKilledByOwnRestart } from './command-runner'
 import {
   commandsForTasks,
   detectUpdateTasks,
@@ -507,13 +507,18 @@ export class LocalUpdateManager {
     if (run.status !== 'running') return run
 
     const lastCommand = run.commands.at(-1)
+    if (!lastCommand || !isApiRestartCommand(lastCommand.command)) return run
+    // A systemd restart child killed by the restart it requested (SIGTERM, 143) is the
+    // restart working. Older cores recorded it as a failed command and died before the run
+    // status was persisted; heal that record here so the run does not stay "running" forever.
     if (
-      !lastCommand ||
-      !isApiRestartCommand(lastCommand.command) ||
-      run.commands.some((cmd) => cmd.status === 'failed')
+      lastCommand.command.includes('systemctl') &&
+      lastCommand.status === 'failed' &&
+      isKilledByOwnRestart(lastCommand.exitCode ?? 0)
     ) {
-      return run
+      lastCommand.status = 'succeeded'
     }
+    if (run.commands.some((cmd) => cmd.status === 'failed')) return run
 
     // An observed supervisor restart can stop this process before its child result is persisted.
     // `running` therefore proves only that the command started, not that systemd accepted

@@ -253,6 +253,30 @@ describe('CommandRunner', () => {
     expect(commands[0]).toMatchObject({ status: 'succeeded', exitCode: 0 })
   })
 
+  it('treats a systemd API restart child killed by SIGTERM as the restart beginning, not failing', async () => {
+    // `systemctl --no-block restart <api>` returns once the job is queued, but systemd can
+    // start stopping the unit — and kill this whole cgroup, child included — before it
+    // returns. The child then exits 143, which is the restart working, not a rejection.
+    const commands: PlannedCommand[] = [
+      { task: 'core', command: ['systemctl', '--user', '--no-block', 'restart', 'tau-api.service'], status: 'pending' },
+    ]
+    const runner = new CommandRunner({
+      cwd: '/repo',
+      dispatchProcess: () => {
+        throw new Error('systemd restarts are awaited, never dispatched')
+      },
+      runProcess: async () => ({ exitCode: 143, output: '' }),
+    })
+
+    await runner.runAll(commands)
+
+    expect(commands[0]).toMatchObject({
+      status: 'succeeded',
+      exitCode: 143,
+      outputTail: 'API restart accepted by systemd; this process was stopped before systemctl returned.',
+    })
+  })
+
   it('still records a systemd manager rejection of the API restart', async () => {
     const commands: PlannedCommand[] = [
       {

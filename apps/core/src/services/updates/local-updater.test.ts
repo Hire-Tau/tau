@@ -271,6 +271,38 @@ describe('LocalUpdateManager', () => {
     }
   })
 
+  it('marks a persisted systemd restart whose child was killed by SIGTERM succeeded after the API restarted', async () => {
+    // Older cores recorded the SIGTERM as a failed command and died before the run status
+    // was persisted; the reconciler must still recognise that shape as a completed restart.
+    const dir = mkdtempSync(join(tmpdir(), 'tau-update-status-'))
+    try {
+      const statusPath = join(dir, 'status.json')
+      const first = manager({ repoRoot: dir, statusPath })
+      const run = first.updater.applyInBackground({ manual: true })
+      run.changedFiles = ['apps/core/src/index.ts']
+      run.selectedTasks = ['core']
+      run.commands = [
+        { task: 'core', command: ['bun', 'run', 'build:core'], status: 'succeeded' },
+        {
+          task: 'core',
+          command: ['systemctl', '--user', '--no-block', 'restart', 'tau-api.service'],
+          status: 'failed',
+          exitCode: 143,
+          outputTail: '',
+        },
+      ]
+      ;(first.updater as any).persistLatest(run)
+
+      const second = manager({ repoRoot: dir, statusPath })
+
+      expect(second.updater.status().latest?.status).toBe('succeeded')
+      expect(second.updater.status().latest?.message).toContain('Update completed; API restarted')
+      expect(second.updater.status().latest?.commands.at(-1)?.status).toBe('succeeded')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('does not mark a run succeeded when it was interrupted mid-build before the restart command ran', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tau-update-status-'))
     try {
