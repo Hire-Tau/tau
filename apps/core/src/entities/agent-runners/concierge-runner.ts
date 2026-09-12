@@ -58,6 +58,7 @@ import { filterToolsByPolicy } from '../../lib/tools'
 import { createSubagentLifecycleTools } from '../../tools/subagents'
 import { Squad } from '../Squad'
 import { prompt, interpolateTemplate, buildPlatformUrlsPrompt } from '../../lib/prompts'
+import { composeAgentTypePrompt } from '../../services/agent-types/compose-prompt'
 import { buildWorkspacePrompt, workspaceToolNamesForPolicy } from '../../lib/prompts/workspace-prompt'
 import type { ScopeRequest } from '../../services/memory/access/scope-expander'
 import {
@@ -91,8 +92,9 @@ export class ConciergeRunner extends AgentRunner {
     }
 
     const sandboxId = await this.agent.getSandboxId()
+    const typePrompt = await composeAgentTypePrompt(agentType)
     const rawPrompt = prompt()
-      .text(agentType.systemPrompt)
+      .text(typePrompt)
       .section('Your squad', `${this.squad.name} (${this.squad.id.slice(0, 8)})\n${this.squad.purpose ?? ''}`)
       // Concierge runs in its own light box (/private) with the shared squad
       // workspace mounted, but has no squad_bash (single private bash only).

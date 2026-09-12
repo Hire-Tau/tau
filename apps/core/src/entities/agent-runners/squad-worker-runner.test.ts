@@ -18,6 +18,7 @@ import { eventEmitter } from '../../lib/infra/event-emitter'
 import { Subagent } from '../Subagent'
 import { filterToolsByPolicy } from '../../lib/tools'
 import * as workflowExecution from '../../services/workflows/execution'
+import { SharedPrompt } from '../SharedPrompt'
 
 const TEST_SQUAD_ID = '00000000-0000-4000-8000-000000000102'
 
@@ -86,6 +87,7 @@ function makeAgentType(overrides: Partial<AgentType> = {}): AgentType {
     name: 'Test Agent',
     description: null,
     systemPrompt: 'You are a test agent.',
+    includes: [],
     skills: null,
     extensions: null,
     toolsAllow: null,
@@ -219,6 +221,31 @@ describe('SquadWorkerRunner artifact tool registration', () => {
     const agent = makeTestAgent({ agentTypeId: 'artifact-builder-default', squadId: null })
 
     expect(agent.runnerType).toBe('artifact-builder')
+  })
+
+  it('composes an enabled shared prompt into the built system prompt, after the agent type prompt', async () => {
+    const includeId = `test-include-${crypto.randomUUID()}`
+    await SharedPrompt.upsert({ id: includeId, name: 'Test Include', content: 'INCLUDE-CONTENT-MARKER' })
+    SharedPrompt.invalidateCache()
+    try {
+      const agent = makeTestAgent({ agentTypeId: 'worker', squadId: TEST_SQUAD_ID })
+      const agentType = makeAgentType({
+        id: 'worker',
+        systemPrompt: 'You are a worker.',
+        includes: [includeId],
+      }) as AgentType
+      const runner = new TestableSquadWorkerRunner(makeExecution(agent.id), agent, agentType)
+
+      await runner.exposeCreateSession()
+
+      const systemPrompt = agentSessionCreateSpy.mock.calls[0][0].systemPrompt
+      const ownIndex = systemPrompt.indexOf('You are a worker.')
+      const includeIndex = systemPrompt.indexOf('INCLUDE-CONTENT-MARKER')
+      expect(ownIndex).toBeGreaterThanOrEqual(0)
+      expect(includeIndex).toBeGreaterThan(ownIndex)
+    } finally {
+      await SharedPrompt.delete(includeId)
+    }
   })
 
   it('registers artifact tools for artifact builders and passes squad id through', async () => {

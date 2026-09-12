@@ -3,6 +3,7 @@ import { AgentRunner } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
 import { getSquadWorkerCliHelp } from '../../lib/utils/cli-help'
 import { interpolateTemplate, prompt, buildMemorySystemPrompt, buildActiveSchedulesPrompt } from '../../lib/prompts'
+import { composeAgentTypePrompt } from '../../services/agent-types/compose-prompt'
 import { readSquadMemoryFile } from '../../services/memory/paths'
 import { createWebTools } from '../../tools/web-search'
 import { createBrowserTools } from '../../tools/browser'
@@ -99,9 +100,10 @@ export class SquadWorkerRunner extends AgentRunner {
     }
 
     const shortTermMemorySection = formatShortTermMemoryPrompt(shortTermMemory)
+    const typePrompt = await composeAgentTypePrompt(this.agentType)
 
     const p = prompt()
-      .text(this.agentType.systemPrompt)
+      .text(typePrompt)
       .text(
         buildWorkspacePrompt({
           squadId: this.squad.id,

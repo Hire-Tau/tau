@@ -7,6 +7,7 @@ export { RoleSync } from './role-sync'
 export { SquadPresetSync, type SquadPresetYaml, type ScheduleTemplateYaml } from './squad-preset-sync'
 export { WorkflowSync } from './workflow-sync'
 export { SkillSync, type SkillMarkdown } from './skill-sync'
+export { SharedPromptSync, type SharedPromptMarkdown } from './shared-prompt-sync'
 
 import { AgentTypeSync } from './agent-type-sync'
 import { ModelTierSync } from './model-tier-sync'
@@ -16,8 +17,10 @@ import { ChannelSync } from './channel-sync'
 import { NotificationSync } from './notification-sync'
 import { RoleSync } from './role-sync'
 import { SkillSync } from './skill-sync'
+import { SharedPromptSync } from './shared-prompt-sync'
 
 export const skillSync = new SkillSync()
+export const sharedPromptSync = new SharedPromptSync()
 export const modelTierSync = new ModelTierSync()
 export const agentTypeSync = new AgentTypeSync()
 export const squadPresetSync = new SquadPresetSync()
@@ -29,6 +32,7 @@ export const roleSync = new RoleSync()
 export async function syncAllConfig(): Promise<void> {
   await roleSync.sync()
   await skillSync.sync()
+  await sharedPromptSync.sync()
   await modelTierSync.sync()
   await agentTypeSync.sync()
   await squadPresetSync.sync()

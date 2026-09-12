@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm'
 import { db, modelTiers } from '../../db'
 import { AgentType } from '../../entities/AgentType'
+import { SharedPrompt } from '../../entities/SharedPrompt'
 import { Skill } from '../../entities/Skill'
 import { validateModelSpecList } from '../../lib/utils/model-spec'
 import { assertConfigId, assertNonEmptyString } from '../../lib/validation/config-ids'
@@ -79,6 +80,20 @@ export async function validateAgentTypeConfig(input: any): Promise<void> {
         continue
       }
       throw new Error(`Skill "${ref}" does not exist`)
+    }
+  }
+  if (input.includes != null) {
+    if (!Array.isArray(input.includes)) throw new Error('includes must be an array')
+    const seen = new Set<string>()
+    for (const id of input.includes) {
+      if (typeof id !== 'string' || !id) throw new Error('includes must contain non-empty ids')
+      if (seen.has(id)) throw new Error(`includes lists '${id}' twice`)
+      seen.add(id)
+      const sharedPrompt = await SharedPrompt.find(id)
+      if (!sharedPrompt) throw new Error(`Unknown shared prompt '${id}'`)
+      // Composition skips disabled prompts, so accepting one here would store a
+      // reference that silently does nothing.
+      if (sharedPrompt.disabled) throw new Error(`Shared prompt '${id}' is disabled`)
     }
   }
 }

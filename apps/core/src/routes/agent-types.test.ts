@@ -1,13 +1,15 @@
 import { describe, test, expect, beforeEach, beforeAll, afterAll } from 'bun:test'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
-import { db, agentTypes, modelTiers, skills } from '../db'
+import { db, agentTypes, modelTiers, sharedPrompts, skills } from '../db'
 import { AgentType } from '../entities/AgentType'
+import { SharedPrompt } from '../entities/SharedPrompt'
 import { Skill } from '../entities/Skill'
 import { agentTypesRoutes } from './agent-types'
 import { identityMiddleware } from '../middleware/identity'
 import { createTestAdmin, createTestUser, authHeaders, cleanupTestRbac } from '../test-utils'
 import type { TestUser } from '../test-utils/rbac'
+import { agentTypeSync, sharedPromptSync, modelTierSync, skillSync } from '../services/config-sync'
 
 // ── Shared app with identity middleware ──
 const app = new Hono()
@@ -44,7 +46,15 @@ describe('agent type route validation', () => {
     AgentType.invalidateCache()
     Skill.invalidateCache()
     await Skill.upsert({ id: 'custom-skill', name: 'Custom Skill', content: '# Custom Skill' })
+    await db.delete(sharedPrompts)
+    SharedPrompt.invalidateCache()
+    await SharedPrompt.upsert({ id: 'shared-block', name: 'Shared Block', content: '# Shared Block' })
   })
+
+  async function current(id: string) {
+    const res = await app.request(`/api/agent-types/${id}`, { headers: authHeaders(funcAdmin.token) })
+    return res.json()
+  }
 
   test('GET detail includes the resolved tier chain and provenance', async () => {
     const tierSlug = `${funcPrefix}-standard`
@@ -132,9 +142,57 @@ describe('agent type route validation', () => {
     })
   })
 
+  test('rejects unknown and duplicated shared prompts', async () => {
+    const post = (includes: unknown) =>
+      app.request('/api/agent-types', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...authHeaders(funcAdmin.token) },
+        body: JSON.stringify({ ...validAgentType, includes }),
+      })
+
+    let res = await post(['nope'])
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: "Unknown shared prompt 'nope'" })
+
+    res = await post(['shared-block', 'shared-block'])
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: "includes lists 'shared-block' twice" })
+
+    res = await post('shared-block')
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: 'includes must be an array' })
+  })
+
+  // A disabled shared prompt contributes nothing at compose time, so letting a
+  // type adopt one would silently store a no-op — the skills rule above rejects
+  // the same mistake.
+  test('PUT rejects a disabled shared prompt', async () => {
+    await AgentType.upsert({ ...validAgentType, includes: [] })
+    await db.update(sharedPrompts).set({ disabled: true }).where(eq(sharedPrompts.id, 'shared-block'))
+    SharedPrompt.invalidateCache()
+
+    const res = await app.request('/api/agent-types/custom-agent', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', ...authHeaders(funcAdmin.token) },
+      body: JSON.stringify({ ...validAgentType, includes: ['shared-block'] }),
+    })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: "Shared prompt 'shared-block' is disabled" })
+  })
+
+  test('creates an agent type carrying a shared prompt list', async () => {
+    const res = await app.request('/api/agent-types', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...authHeaders(funcAdmin.token) },
+      body: JSON.stringify({ ...validAgentType, includes: ['shared-block'] }),
+    })
+    expect(res.status).toBe(201)
+    expect((await res.json()).includes).toEqual(['shared-block'])
+  })
+
   test('adds and removes one skill without replacing the full list', async () => {
     await Skill.upsert({ id: 'second-skill', name: 'Second Skill', content: '# Second Skill' })
-    await AgentType.upsert(validAgentType)
+    await AgentType.upsert({ ...validAgentType, includes: ['shared-block'] })
 
     let res = await app.request('/api/agent-types/custom-agent/add-skill', {
       method: 'POST',
@@ -144,6 +202,8 @@ describe('agent type route validation', () => {
     expect(res.status).toBe(200)
     const added = await res.json()
     expect(added.skills).toEqual(['custom-skill', 'second-skill'])
+    // The skill shortcuts rewrite the whole row; the include list must survive.
+    expect(added.includes).toEqual(['shared-block'])
     expect(added.earlyMarginTokens).toBe(30000)
     expect(added.inFlightMarginTokens).toBe(8192)
 
@@ -155,8 +215,63 @@ describe('agent type route validation', () => {
     expect(res.status).toBe(200)
     const removed = await res.json()
     expect(removed.skills).toEqual(['second-skill'])
+    expect(removed.includes).toEqual(['shared-block'])
     expect(removed.earlyMarginTokens).toBe(30000)
     expect(removed.inFlightMarginTokens).toBe(8192)
+  })
+
+  test('detail returns the include list and the resolved prompt agents receive', async () => {
+    await sharedPromptSync.sync()
+    await agentTypeSync.sync()
+    const res = await app.request('/api/agent-types/sysops', {
+      headers: authHeaders(funcAdmin.token),
+    })
+    const body = await res.json()
+    expect(body.includes).toEqual(['rules', 'subagents', 'squad-rules'])
+    expect(body.resolvedSystemPrompt).toContain('### Incident Response')
+    expect(body.resolvedSystemPrompt).toContain('### Questions, waits, and pause')
+    expect(body.systemPrompt).not.toContain('### Questions, waits, and pause')
+  })
+
+  test('PUT validates include ids and records an includes override', async () => {
+    await sharedPromptSync.sync()
+    await agentTypeSync.sync()
+    // sysops carries tier: standard and several bundled skills in its template;
+    // PUT re-validates both, so seed model tiers and skills too (the route
+    // doesn't sync these itself).
+    await modelTierSync.sync()
+    await skillSync.sync()
+    let res = await app.request('/api/agent-types/sysops', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', ...authHeaders(funcAdmin.token) },
+      body: JSON.stringify({ ...(await current('sysops')), includes: ['rules', 'nope'] }),
+    })
+    expect(res.status).toBe(400)
+    res = await app.request('/api/agent-types/sysops', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', ...authHeaders(funcAdmin.token) },
+      body: JSON.stringify({ ...(await current('sysops')), includes: ['rules'] }),
+    })
+    expect(res.status).toBe(200)
+    expect((await res.json()).yamlFieldOverrides).toContain('includes')
+    await agentTypeSync.revertTemplateFields('sysops', ['includes'])
+  })
+
+  test('PUT omitting includes preserves the existing list instead of clearing it', async () => {
+    await sharedPromptSync.sync()
+    await agentTypeSync.sync()
+    await modelTierSync.sync()
+    await skillSync.sync()
+    const { includes: _omitted, ...bodyWithoutIncludes } = await current('sysops')
+    const res = await app.request('/api/agent-types/sysops', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', ...authHeaders(funcAdmin.token) },
+      body: JSON.stringify(bodyWithoutIncludes),
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.includes).toEqual(['rules', 'subagents', 'squad-rules'])
+    expect(body.yamlFieldOverrides).not.toContain('includes')
   })
 })
 

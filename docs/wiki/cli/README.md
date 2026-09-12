@@ -75,6 +75,7 @@ Other current command groups include:
 | `tau agent-question` (`aq`)  | Manage asynchronous agent questions                                              |
 | `tau deploy`                 | Manage local app runs and external deployment records                            |
 | `tau skill` (`skills`)       | Manage bundled and dynamic agent skills                                          |
+| `tau shared-prompt` (`shared-prompts`) | Manage shared prompts included by agent types                        |
 | `tau remote-hosts`           | Manage team-owned SSH hosts                                                      |
 | `tau amtp` / `tau remote`    | Manage federation and agent federation identity                                  |
 | `tau machines`               | Manage VM sandbox machines                                                       |
@@ -286,3 +287,7 @@ Tau injects a scoped `TAU_TOKEN`, the instance `TAU_API_URL`, and `TAU_AGENT_CON
 
 - `tau squad-preset list` — View available squad presets
 - `tau agent-type list` — View available agent types
+- `tau agent-type get <id> --resolved` — Print an agent type's composed system prompt (its own prompt plus enabled includes, in order)
+- `tau shared-prompt list` / `tau shared-prompt get <id>` — List or inspect shared prompts
+- `tau shared-prompt update <id> --file <path>` — Replace a shared prompt's content from a file
+- `tau shared-prompt disable <id>` / `tau shared-prompt enable <id>` — Toggle a shared prompt's availability

@@ -3,6 +3,7 @@ import { AgentRunner } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
 import { AgentSession } from '../AgentSession'
 import { prompt } from '../../lib/prompts'
+import { composeAgentTypePrompt } from '../../services/agent-types/compose-prompt'
 import { buildWorkspacePrompt } from '../../lib/prompts/workspace-prompt'
 import { createWebTools } from '../../tools/web-search'
 import { createBrowserTools } from '../../tools/browser'
@@ -197,7 +198,8 @@ export class SubagentRunner extends AgentRunner {
     const inheritedToolNames = this.resolveInheritedToolNames(parentExecutionContext)
     const hasSquadBash = Boolean(this.agent.squadId && inheritedToolNames.includes('squad_bash'))
     const squad = this.agent.squadId ? await Squad.find(this.agent.squadId) : null
-    const p = prompt().text(this.agentType.systemPrompt)
+    const typePrompt = await composeAgentTypePrompt(this.agentType)
+    const p = prompt().text(typePrompt)
     p.text(
       buildWorkspacePrompt({
         squadId: this.agent.squadId ?? undefined,

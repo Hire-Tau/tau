@@ -26,6 +26,9 @@ export interface AgentTypeConfig {
   provenance?: string
   description: string | null
   systemPrompt: string
+  includes: string[]
+  /** Composed prompt (system prompt + enabled includes) — detail endpoint only. */
+  resolvedSystemPrompt?: string
   skills: string[] | null
   extensions: string[] | null
   toolsAllow: string[] | null
@@ -321,6 +324,73 @@ export async function exportNotificationConfigYaml(): Promise<string> {
   const response = await authFetch(`/notification-config/export`)
   if (!response.ok) throw new Error(`API error: ${response.status}`)
   return response.text()
+}
+
+// ============================================================================
+// Shared Prompts
+// ============================================================================
+
+export interface SharedPromptConfig {
+  id: string
+  name: string
+  description: string | null
+  content: string
+  yamlFieldOverrides: string[]
+  hasTemplate: boolean
+  disabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export async function getSharedPrompts(): Promise<SharedPromptConfig[]> {
+  return apiFetch<SharedPromptConfig[]>('/shared-prompts')
+}
+
+export async function getSharedPrompt(id: string): Promise<SharedPromptConfig> {
+  return apiFetch<SharedPromptConfig>(`/shared-prompts/${id}`)
+}
+
+export async function createSharedPrompt(data: {
+  id: string
+  name: string
+  content: string
+  description?: string | null
+}): Promise<SharedPromptConfig> {
+  return apiFetch<SharedPromptConfig>('/shared-prompts', { method: 'POST', body: JSON.stringify(data) })
+}
+
+export async function updateSharedPrompt(
+  id: string,
+  data: { content: string; name?: string; description?: string | null }
+): Promise<SharedPromptConfig> {
+  return apiFetch<SharedPromptConfig>(`/shared-prompts/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+}
+
+export async function deleteSharedPrompt(id: string): Promise<void> {
+  await apiFetch<void>(`/shared-prompts/${id}`, { method: 'DELETE' })
+}
+
+export async function disableSharedPrompt(id: string): Promise<void> {
+  await apiFetch<void>(`/shared-prompts/${id}/disable`, { method: 'POST' })
+}
+
+export async function enableSharedPrompt(id: string): Promise<void> {
+  await apiFetch<void>(`/shared-prompts/${id}/enable`, { method: 'POST' })
+}
+
+export async function getSharedPromptTemplateDiff(id: string): Promise<TemplateDiff> {
+  return apiFetch<TemplateDiff>(`/shared-prompts/${id}/template-diff`)
+}
+
+export async function revertSharedPrompt(id: string): Promise<void> {
+  await apiFetch<void>(`/shared-prompts/${id}/revert-to-template`, { method: 'POST' })
+}
+
+export async function revertSharedPromptFields(id: string, fields: string[]): Promise<void> {
+  await apiFetch<void>(`/shared-prompts/${id}/revert-template-fields`, {
+    method: 'POST',
+    body: JSON.stringify({ fields }),
+  })
 }
 
 // ============================================================================

@@ -10,7 +10,7 @@ async function readRepoFile(path: string): Promise<string> {
 
 describe('work stream context guidance', () => {
   test('flow outcomes route work while scoped waits request input without advancing a review', async () => {
-    const guidance = (await readRepoFile('config/agent-types/includes/squad-rules.md')).replace(/\s+/g, ' ')
+    const guidance = (await readRepoFile('config/agent-types/shared/squad-rules.md')).replace(/\s+/g, ' ')
     expect(guidance).toContain('tau workstream advance')
     expect(guidance).toContain('expectedVersion')
     expect(guidance).toContain('attemptId')
@@ -22,7 +22,7 @@ describe('work stream context guidance', () => {
   })
 
   test('flow delivery requires policy evidence, not a role-owned legacy review wait', async () => {
-    const shared = (await readRepoFile('config/agent-types/includes/squad-rules.md')).replace(/\s+/g, ' ')
+    const shared = (await readRepoFile('config/agent-types/shared/squad-rules.md')).replace(/\s+/g, ' ')
     const manager = (await readRepoFile('config/agent-types/manager.yaml')).replace(/\s+/g, ' ')
     expect(shared).toContain('completion-ready')
     expect(shared).toContain('tau workstream finish')
@@ -35,7 +35,7 @@ describe('work stream context guidance', () => {
   })
 
   test('scheduled work respects flow steps and does not introduce a no-code bypass', async () => {
-    const guidance = (await readRepoFile('config/agent-types/includes/squad-rules.md')).replace(/\s+/g, ' ')
+    const guidance = (await readRepoFile('config/agent-types/shared/squad-rules.md')).replace(/\s+/g, ' ')
     expect(guidance).toContain('scheduled')
     expect(guidance).not.toContain('explicit exception to generic handoff guidance')
     expect(guidance).toContain('required checks')

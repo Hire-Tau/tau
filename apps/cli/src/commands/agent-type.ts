@@ -9,6 +9,8 @@ interface AgentType {
   model: string
   description: string | null
   systemPrompt: string
+  resolvedSystemPrompt?: string
+  includes: string[] | null
   skills: string[] | null
   extensions: string[] | null
   toolsAllow: string[] | null
@@ -45,8 +47,14 @@ export function registerAgentTypeCommands(program: Command) {
       try {
         const types = await apiGet<AgentType[]>('/api/agent-types')
         outputTable(
-          types.map((t) => ({ id: t.id, name: t.name, model: t.model, description: t.description ?? '' })),
-          ['id', 'name', 'model', 'description']
+          types.map((t) => ({
+            id: t.id,
+            name: t.name,
+            model: t.model,
+            description: t.description ?? '',
+            includes: (t.includes ?? []).join(','),
+          })),
+          ['id', 'name', 'model', 'description', 'includes']
         )
       } catch (error) {
         outputError(error as Error)
@@ -57,9 +65,15 @@ export function registerAgentTypeCommands(program: Command) {
     .command('get <id>')
     .alias('info')
     .description('Get agent type details')
-    .action(async (id) => {
+    .option('--resolved', 'Print the composed system prompt agents receive')
+    .action(async (id, options) => {
       try {
-        output(await apiGet<AgentType>(`/api/agent-types/${id}`))
+        const type = await apiGet<AgentType>(`/api/agent-types/${id}`)
+        if (options.resolved) {
+          console.log(type.resolvedSystemPrompt ?? type.systemPrompt)
+          return
+        }
+        output(type)
       } catch (error) {
         outputError(error as Error)
       }
@@ -135,6 +149,9 @@ export function registerAgentTypeCommands(program: Command) {
           model: options.model ?? existing.model,
           description: options.description ?? existing.description,
           systemPrompt: systemPrompt ?? existing.systemPrompt,
+          // The PUT replaces the whole row; `includes` has no flag yet, so it
+          // has to ride along or the update clears the type's shared blocks.
+          includes: existing.includes ?? [],
           skills: existing.skills,
           extensions: existing.extensions,
           toolsAllow: existing.toolsAllow,

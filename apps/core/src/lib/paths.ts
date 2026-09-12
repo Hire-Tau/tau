@@ -22,6 +22,8 @@ export const AGENT_DIR = join(CONFIG_DIR, 'agent')
 export const WEBHOOKS_DIR = join(CONFIG_DIR, 'webhooks')
 export const NOTIFICATIONS_DIR = join(CONFIG_DIR, 'notifications')
 export const AGENT_TYPES_DIR = join(CONFIG_DIR, 'agent-types')
+/** Shared prompt blocks that agent types list under `includes:`. */
+export const AGENT_TYPE_SHARED_PROMPTS_DIR = join(AGENT_TYPES_DIR, 'shared')
 export const MODEL_TIERS_DIR = join(CONFIG_DIR, 'model-tiers')
 export const SQUAD_PRESETS_DIR = join(CONFIG_DIR, 'squad-presets')
 export const WORKFLOWS_DIR = join(CONFIG_DIR, 'workflows')

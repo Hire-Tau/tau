@@ -23,6 +23,8 @@ import {
   type ModelTierConfig,
   deleteModelTier,
 } from '../../api/config'
+import { SharedPromptPicker } from './SharedPromptPicker'
+import { SharedPromptsTab } from './SharedPromptsTab'
 import { TemplateDiffDialog } from './TemplateDiffDialog'
 import { TemplateFieldActions } from './TemplateFieldActions'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -190,14 +192,15 @@ function AddAgentTypeForm({ onClose, onCreated }: { onClose: () => void; onCreat
   const queryClient = useQueryClient()
   const { data: modelTiers = [] } = useQuery({ queryKey: ['model-tiers'], queryFn: getModelTiers })
   const [newId, setNewId] = useState('')
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<AgentTypeForm>({
     name: '',
     model: '',
     tier: '',
     description: '',
     systemOnly: false,
     systemPrompt: '',
-    skills: [] as string[],
+    includes: [],
+    skills: [],
     extensions: '',
     toolsAllow: '',
     toolsDeny: '',
@@ -227,20 +230,7 @@ function AddAgentTypeForm({ onClose, onCreated }: { onClose: () => void; onCreat
       alert('A model tier or override is required')
       return
     }
-    createMutation.mutate({
-      id,
-      systemOnly: form.systemOnly,
-      name: form.name,
-      model: form.model,
-      tier: form.tier || null,
-      description: form.description || null,
-      systemPrompt: form.systemPrompt,
-      skills: form.skills.length ? form.skills : null,
-      extensions: csvToArray(form.extensions),
-      toolsAllow: csvToArray(form.toolsAllow),
-      toolsDeny: csvToArray(form.toolsDeny),
-      integrationCapabilities: integrationPolicy(form.integrationAgentTools, form.integrationConversationExport),
-    })
+    createMutation.mutate(agentTypeCreatePayload(id, form))
   }
 
   return (
@@ -289,6 +279,7 @@ function AddAgentTypeForm({ onClose, onCreated }: { onClose: () => void; onCreat
         rows={6}
       />
       <SkillPicker value={form.skills} onChange={(skills) => setForm({ ...form, skills })} />
+      <SharedPromptPicker value={form.includes} onChange={(includes) => setForm({ ...form, includes })} />
       <FormField
         label="Extensions (comma-separated)"
         value={form.extensions}
@@ -399,19 +390,7 @@ function AgentTypeRow({
   )
 
   const handleSave = () => {
-    updateMutation.mutate({
-      systemOnly: form.systemOnly,
-      name: form.name,
-      model: form.model,
-      tier: form.tier || null,
-      description: form.description || null,
-      systemPrompt: form.systemPrompt,
-      skills: form.skills.length ? form.skills : null,
-      extensions: csvToArray(form.extensions),
-      toolsAllow: csvToArray(form.toolsAllow),
-      toolsDeny: csvToArray(form.toolsDeny),
-      integrationCapabilities: integrationPolicy(form.integrationAgentTools, form.integrationConversationExport),
-    })
+    updateMutation.mutate(agentTypeUpdatePayload(form))
   }
 
   const handleExport = async () => {
@@ -587,6 +566,12 @@ function AgentTypeRow({
                 rows={8}
                 actions={fieldActions('systemPrompt')}
               />
+              <SharedPromptPicker
+                value={form.includes}
+                onChange={(includes) => setForm({ ...form, includes })}
+                actions={fieldActions('includes')}
+              />
+              <ResolvedPromptPreview agentTypeId={agentType.id} />
               <SkillPicker
                 value={form.skills}
                 onChange={(skills) => setForm({ ...form, skills })}
@@ -637,6 +622,64 @@ function AgentTypeRow({
         </Modal>
       )}
     </article>
+  )
+}
+
+/**
+ * Read-only view of the prompt agents of this type actually receive: the
+ * type's own system prompt with its enabled includes composed in. The server
+ * composes it, so the preview fetches the agent type detail rather than
+ * assembling the text here — a client-side copy would drift from what the
+ * runtime builds. Collapsed by default, and the detail query only runs once
+ * the operator opens it.
+ */
+function ResolvedPromptPreview({ agentTypeId }: { agentTypeId: string }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [copyMsg, setCopyMsg] = useState('')
+  const { data, isLoading, error } = useQuery({ ...queries.agentTypes.detail(agentTypeId), enabled: isOpen })
+  const resolved = data?.resolvedSystemPrompt ?? ''
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(resolved)
+      setCopyMsg('Copied!')
+    } catch {
+      setCopyMsg('Failed')
+    }
+    setTimeout(() => setCopyMsg(''), 2000)
+  }
+
+  return (
+    <details
+      className="rounded border border-th-border bg-surface-secondary px-2 py-1"
+      onToggle={(event) => setIsOpen(event.currentTarget.open)}
+    >
+      <summary className="cursor-pointer text-xs text-muted">Resolved prompt</summary>
+      <div className="mt-2 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs text-muted">
+            What agents of this type receive before runtime sections (workspace, memory, schedules).
+          </p>
+          <button
+            type="button"
+            onClick={handleCopy}
+            disabled={!resolved}
+            className="tau-button shrink-0 text-xs text-accent-light hover:text-accent-hover disabled:opacity-50"
+          >
+            {copyMsg || 'Copy'}
+          </button>
+        </div>
+        {error ? (
+          <p className="text-xs text-red-600 dark:text-red-400">
+            Couldn&apos;t load the resolved prompt: {(error as Error).message}
+          </p>
+        ) : (
+          <pre className="tau-field whitespace-pre-wrap font-mono text-xs max-h-96 overflow-auto">
+            {isLoading ? 'Loading…' : resolved}
+          </pre>
+        )}
+      </div>
+    </details>
   )
 }
 
@@ -884,6 +927,39 @@ function IntegrationPolicyFields({
   )
 }
 
+/**
+ * The PUT body replaces the whole row, so the form has to cover every stored
+ * field — omitting one stores the server-side default and records it as a
+ * deliberate override.
+ */
+export function agentTypeUpdatePayload(form: AgentTypeForm): Partial<AgentTypeConfig> {
+  return {
+    systemOnly: form.systemOnly,
+    name: form.name,
+    model: form.model,
+    tier: form.tier || null,
+    description: form.description || null,
+    systemPrompt: form.systemPrompt,
+    includes: form.includes,
+    skills: form.skills.length ? form.skills : null,
+    extensions: csvToArray(form.extensions),
+    toolsAllow: csvToArray(form.toolsAllow),
+    toolsDeny: csvToArray(form.toolsDeny),
+    integrationCapabilities: integrationPolicy(form.integrationAgentTools, form.integrationConversationExport),
+  }
+}
+
+/**
+ * The POST body for a brand-new type: the same field set as an update, plus the
+ * id the operator typed. Sharing the builder keeps a field added to one form
+ * from being silently dropped by the other.
+ */
+export function agentTypeCreatePayload(id: string, form: AgentTypeForm): Partial<AgentTypeConfig> & { id: string } {
+  return { id, ...agentTypeUpdatePayload(form) }
+}
+
+export type AgentTypeForm = ReturnType<typeof agentTypeToForm>
+
 function agentTypeToForm(at: AgentTypeConfig) {
   return {
     systemOnly: at.systemOnly ?? false,
@@ -892,6 +968,7 @@ function agentTypeToForm(at: AgentTypeConfig) {
     tier: at.tier ?? '',
     description: at.description ?? '',
     systemPrompt: at.systemPrompt,
+    includes: at.includes ?? [],
     skills: at.skills ?? [],
     extensions: arrayToCsv(at.extensions),
     toolsAllow: arrayToCsv(at.toolsAllow),
@@ -1278,13 +1355,15 @@ function ModelTiersTab({ onUsedBy }: { onUsedBy: (slug: string) => void }) {
 }
 
 export function AgentTypesSection() {
-  const [tab, setTab] = useState<'types' | 'tiers'>('types')
+  const [tab, setTab] = useState<'types' | 'tiers' | 'includes'>('types')
   const [tierFilter, setTierFilter] = useState<string | undefined>()
   return (
     <div className="space-y-5">
       <div>
         <h3 className="text-lg font-semibold text-primary">Agent Types</h3>
-        <p className="mt-1 text-sm text-muted">Define agent roles and choose the models they use.</p>
+        <p className="mt-1 text-sm text-muted">
+          Define agent roles, choose the models they use, and edit the shared prompt blocks they include.
+        </p>
         <div className="mt-3 flex gap-2" role="tablist">
           <button
             role="tab"
@@ -1311,11 +1390,21 @@ export function AgentTypesSection() {
           >
             Model tiers
           </button>
+          <button
+            role="tab"
+            aria-selected={tab === 'includes'}
+            onClick={() => setTab('includes')}
+            className={clsx(
+              'tau-nav-item rounded-full px-4 py-2 text-sm',
+              tab === 'includes' ? 'bg-accent/10 text-accent-light' : 'text-muted hover:bg-surface-secondary'
+            )}
+          >
+            Shared prompts
+          </button>
         </div>
       </div>
-      {tab === 'types' ? (
-        <AgentTypesTab tierFilter={tierFilter} onClearTierFilter={() => setTierFilter(undefined)} />
-      ) : (
+      {tab === 'types' && <AgentTypesTab tierFilter={tierFilter} onClearTierFilter={() => setTierFilter(undefined)} />}
+      {tab === 'tiers' && (
         <ModelTiersTab
           onUsedBy={(slug) => {
             setTierFilter(slug)
@@ -1323,6 +1412,7 @@ export function AgentTypesSection() {
           }}
         />
       )}
+      {tab === 'includes' && <SharedPromptsTab />}
     </div>
   )
 }

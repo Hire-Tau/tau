@@ -52,6 +52,13 @@ export const queryKeys = {
     templateDiff: (id: string) => [...queryKeys.skills.all, 'templateDiff', id] as const,
   },
 
+  sharedPrompts: {
+    all: ['sharedPrompts'] as const,
+    list: () => [...queryKeys.sharedPrompts.all, 'list'] as const,
+    detail: (id: string) => [...queryKeys.sharedPrompts.all, 'detail', id] as const,
+    templateDiff: (id: string) => [...queryKeys.sharedPrompts.all, 'templateDiff', id] as const,
+  },
+
   agentTypes: {
     all: ['agentTypes'] as const,
     list: () => [...queryKeys.agentTypes.all, 'list'] as const,

@@ -7,6 +7,7 @@ import { validateAgentTypeConfig } from '../services/config/validate-config'
 import { Skill } from '../entities/Skill'
 import { requirePermission } from '../middleware/require-permission'
 import { resolveModelChain } from '../services/model-selection/model-tier-resolution'
+import { composeAgentTypePrompt } from '../services/agent-types/compose-prompt'
 
 type ModelTierRow = typeof modelTiers.$inferSelect
 
@@ -35,7 +36,7 @@ agentTypesRoutes.get('/:id', requirePermission('agent-types:read'), async (c) =>
   const type = await AgentType.find(c.req.param('id'))
   if (!type) return c.json({ error: 'Agent type not found' }, 404)
   const [tier] = type.tier ? await db.select().from(modelTiers).where(eq(modelTiers.slug, type.tier)) : []
-  return c.json(resolvedAgentTypeJson(type, tier))
+  return c.json({ ...resolvedAgentTypeJson(type, tier), resolvedSystemPrompt: await composeAgentTypePrompt(type) })
 })
 
 // POST /api/agent-types - Create new agent type
@@ -66,7 +67,7 @@ agentTypesRoutes.put('/:id', requirePermission('agent-types:update'), async (c) 
   } catch (e: any) {
     return c.json({ error: e.message }, 400)
   }
-  await AgentType.upsert({ ...body, id })
+  await AgentType.upsert({ ...body, includes: body.includes ?? existing.includes, id })
   await agentTypeSync.recomputeFieldOverrides(id)
   AgentType.invalidateCache()
   const updated = await AgentType.mustFind(id)
@@ -91,6 +92,7 @@ agentTypesRoutes.post('/:id/add-skill', requirePermission('agent-types:update'),
     tier: existing.tier,
     description: existing.description ?? undefined,
     systemPrompt: existing.systemPrompt,
+    includes: existing.includes,
     skills: nextSkills,
     extensions: existing.extensions ?? undefined,
     toolsAllow: existing.toolsAllow ?? undefined,
@@ -121,6 +123,7 @@ agentTypesRoutes.post('/:id/remove-skill', requirePermission('agent-types:update
     tier: existing.tier,
     description: existing.description ?? undefined,
     systemPrompt: existing.systemPrompt,
+    includes: existing.includes,
     skills: nextSkills,
     extensions: existing.extensions ?? undefined,
     toolsAllow: existing.toolsAllow ?? undefined,

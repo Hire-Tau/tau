@@ -6,7 +6,7 @@ const root = join(import.meta.dir, '../../../../../')
 const read = (path: string) => readFile(join(root, path), 'utf8')
 
 test('shared agent guidance defines the complete slot use protocol', async () => {
-  const rules = (await read('config/agent-types/includes/rules.md')).replace(/\s+/g, ' ')
+  const rules = (await read('config/agent-types/shared/rules.md')).replace(/\s+/g, ' ')
   for (const phrase of [
     'tau slot claim',
     // A blocked claim now queues on its own, so the protocol must say that
@@ -31,7 +31,7 @@ test('manager and consultant share slot administration guidance', async () => {
   const [manager, consultant, guidance] = await Promise.all([
     read('config/agent-types/manager.yaml'),
     read('config/agent-types/consultant.yaml'),
-    read('config/agent-types/includes/slot-manager.md'),
+    read('config/agent-types/shared/slot-manager.md'),
   ])
   expect(manager).toContain('- slot-manager')
   expect(consultant).toContain('- slot-manager')

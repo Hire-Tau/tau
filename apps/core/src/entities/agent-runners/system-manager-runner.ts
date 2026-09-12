@@ -22,6 +22,7 @@ import { ensureWorkspaceSandbox } from '../../services/sandbox/ensure'
 import { AgentSession } from '../AgentSession'
 import { getShortTermMemory, formatShortTermMemoryPrompt, createSetAgentPurposeTool } from '../../tools'
 import { prompt, interpolateTemplate, buildPlatformUrlsPrompt } from '../../lib/prompts'
+import { composeAgentTypePrompt } from '../../services/agent-types/compose-prompt'
 import { buildWorkspacePrompt, workspaceToolNamesForPolicy } from '../../lib/prompts/workspace-prompt'
 import { buildModelOverridePrompt } from '../../lib/prompts/model-overrides-prompt'
 import {
@@ -94,9 +95,10 @@ export class SystemManagerRunner extends AgentRunner {
       SystemManagerRunner.buildSquadsContext(identity),
     ])
 
+    const typePrompt = await composeAgentTypePrompt(agentType)
     const systemPrompt = interpolateTemplate(
       prompt()
-        .text(agentType.systemPrompt)
+        .text(typePrompt)
         .section('Model Overrides for Spawned Agents', buildModelOverridePrompt())
         .text(buildPlatformUrlsPrompt())
         .build(),

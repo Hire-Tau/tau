@@ -13,6 +13,7 @@ export interface CreateAgentTypeInput {
   tier?: string | null
   description?: string
   systemPrompt: string
+  includes?: string[]
   skills?: string[]
   extensions?: string[]
   toolsAllow?: string[]
@@ -41,6 +42,7 @@ export class AgentType implements AgentTypeRow {
   declare tier: string | null
   declare description: string | null
   declare systemPrompt: string
+  declare includes: string[]
   declare skills: string[] | null
   declare extensions: string[] | null
   declare toolsAllow: string[] | null
@@ -186,6 +188,7 @@ export class AgentType implements AgentTypeRow {
       name: input.name,
       description: input.description ?? null,
       systemPrompt: input.systemPrompt,
+      includes: input.includes ?? [],
       skills: input.skills ?? null,
       extensions: input.extensions ?? null,
       toolsAllow: input.toolsAllow ?? null,
@@ -213,6 +216,7 @@ export class AgentType implements AgentTypeRow {
         name: input.name,
         description: input.description ?? null,
         systemPrompt: input.systemPrompt,
+        includes: input.includes ?? [],
         skills: input.skills ?? null,
         extensions: input.extensions ?? null,
         toolsAllow: input.toolsAllow ?? null,
@@ -230,6 +234,7 @@ export class AgentType implements AgentTypeRow {
           name: input.name,
           description: input.description ?? null,
           systemPrompt: input.systemPrompt,
+          includes: input.includes ?? [],
           skills: input.skills ?? null,
           extensions: input.extensions ?? null,
           toolsAllow: input.toolsAllow ?? null,
@@ -270,6 +275,7 @@ export class AgentType implements AgentTypeRow {
       tier: this.tier,
       description: this.description,
       systemPrompt: this.systemPrompt,
+      includes: this.includes ?? [],
       skills: this.skills,
       extensions: this.extensions,
       toolsAllow: this.toolsAllow,

@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test'
 import yaml from 'js-yaml'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
-import { AgentTypeSync } from './agent-type-sync'
+import { AgentTypeSync, composeFromYaml } from './agent-type-sync'
+import { loadSharedPromptFiles } from './shared-prompt-sync'
 
 const repoRoot = join(import.meta.dir, '../../../../../')
 
@@ -24,7 +25,7 @@ describe('squad context configuration guidance', () => {
     const [manager, consultant, guidance] = await Promise.all([
       readRepoFile('config/agent-types/manager.yaml'),
       readRepoFile('config/agent-types/consultant.yaml'),
-      readRepoFile('config/agent-types/includes/squad-dynamic-context.md'),
+      readRepoFile('config/agent-types/shared/squad-dynamic-context.md'),
     ])
 
     expect(readIncludes(manager)).toContain('squad-dynamic-context')
@@ -46,15 +47,16 @@ describe('squad context configuration guidance', () => {
     expect(normalizedGuidance).not.toContain('tau squad create')
   })
 
-  test('shared squad context guidance resolves into manager and consultant prompts', async () => {
-    const parsed = await new AgentTypeSync().loadFromDir()
+  test('shared squad context guidance lands in the composed manager and consultant prompts', async () => {
+    const [parsed, files] = await Promise.all([new AgentTypeSync().loadFromDir(), loadSharedPromptFiles()])
 
     for (const id of ['manager', 'consultant']) {
       const agentType = parsed.find((item) => item.id === id)
       expect(agentType, `${id} agent type should load`).toBeTruthy()
-      expect(agentType!.systemPrompt).toContain('Squad Context (all-agent and type-specific)')
-      expect(agentType!.systemPrompt).toContain('project-wide information')
-      expect(agentType!.systemPrompt).toContain('role-specific instructions')
+      const composed = composeFromYaml(agentType!, files)
+      expect(composed).toContain('Squad Context (all-agent and type-specific)')
+      expect(composed).toContain('project-wide information')
+      expect(composed).toContain('role-specific instructions')
     }
   })
 })

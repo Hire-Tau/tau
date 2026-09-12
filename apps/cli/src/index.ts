@@ -22,6 +22,7 @@ import { registerMachinesCommands } from './commands/machines'
 import { registerMemoryCommands } from './commands/memory'
 import { registerNotificationConfigCommands } from './commands/notification-config'
 import { registerMonitorCommands } from './commands/monitor'
+import { registerSharedPromptCommands } from './commands/shared-prompt'
 import { registerProviderAuthCommands } from './commands/provider-auth'
 import { registerRemoteHostsCommands } from './commands/remote-hosts'
 import { registerScheduleCommands } from './commands/schedule'
@@ -84,6 +85,7 @@ registerScheduleCommands(program)
 registerSecretCommands(program)
 registerServerCommands(program)
 registerSkillCommands(program)
+registerSharedPromptCommands(program)
 registerSlotCommands(program)
 registerSquadCommands(program)
 registerSquadEnvCommands(program)

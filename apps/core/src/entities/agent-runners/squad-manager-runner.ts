@@ -4,6 +4,7 @@ import type { AdmissionScope } from '../../services/maintenance/admission-reserv
 import { Squad } from '../Squad'
 import { getSquadManagerCliHelp } from '../../lib/utils/cli-help'
 import { prompt, interpolateTemplate, buildActiveSchedulesPrompt, buildPlatformUrlsPrompt } from '../../lib/prompts'
+import { composeAgentTypePrompt } from '../../services/agent-types/compose-prompt'
 import { ensureSquadSandbox, ensureWorkspaceSandbox } from '../../services/sandbox/ensure'
 import { createNotifyContactTool } from '../../tools/notify-contact'
 import { createDispatchTool } from '../../tools/dispatch'
@@ -141,9 +142,10 @@ export class SquadManagerRunner extends AgentRunner {
     ])
 
     const shortTermMemorySection = formatShortTermMemoryPrompt(shortTermMemory)
+    const typePrompt = await composeAgentTypePrompt(this.agentType)
 
     const p = prompt()
-      .text(this.agentType.systemPrompt)
+      .text(typePrompt)
       .text(
         buildWorkspacePrompt({
           squadId: this.squad.id,
