@@ -6,7 +6,6 @@ import {
   agentTypes,
   deviceTokens,
   messages,
-  modelTiers,
   roleAssignments,
   squads,
   users,
@@ -361,45 +360,20 @@ async function ensureBundledConfig(created: string[]): Promise<Role> {
     created.push('bundled roles synced')
   }
 
+  // Bundled definitions the content relies on, inserted only when missing:
+  // the boot sync owns updates and removals.
   const requiredTypes = [...new Set(['manager', ...DEMO_CONTENT.flatMap((squad) => squad.defaultAgents)])]
-  const present = await db.select({ id: agentTypes.id }).from(agentTypes).where(inArray(agentTypes.id, requiredTypes))
-  if (present.length < requiredTypes.length) {
-    await sync.agentTypeSync.sync()
-    created.push('bundled agent types synced')
-  }
-  // The tiers those types resolve their model through. Insert-only: the tier
-  // sync is a full reconcile that refuses to prune tiers still referenced,
-  // which is not this command's business.
+  const presetIds = [...new Set(DEMO_CONTENT.flatMap((squad) => (squad.squadPresetId ? [squad.squadPresetId] : [])))]
+  const inserted = [
+    ...(await sync.workflowSync.syncMissing()),
+    ...(await sync.squadPresetSync.syncMissing(presetIds)),
+    ...(await sync.agentTypeSync.syncMissing(requiredTypes)),
+  ]
   const tierSlugs = (
     await db.select({ tier: agentTypes.tier }).from(agentTypes).where(inArray(agentTypes.id, requiredTypes))
   ).flatMap((row) => (row.tier ? [row.tier] : []))
-  if (tierSlugs.length) {
-    const have = new Set(
-      (await db.select({ slug: modelTiers.slug }).from(modelTiers).where(inArray(modelTiers.slug, tierSlugs))).map(
-        (row) => row.slug
-      )
-    )
-    const missing = (await sync.modelTierSync.loadFromDir()).filter(
-      (tier) => tierSlugs.includes(tier.slug) && !have.has(tier.slug)
-    )
-    if (missing.length) {
-      await db
-        .insert(modelTiers)
-        .values(missing.map((tier) => sync.modelTierSync.toRecord(tier) as typeof modelTiers.$inferInsert))
-        .onConflictDoNothing()
-      created.push(`bundled model tiers synced (${missing.map((tier) => tier.slug).join(', ')})`)
-    }
-  }
-
-  const { SquadPreset } = await import('../../entities/SquadPreset')
-  const presetIds = [...new Set(DEMO_CONTENT.flatMap((squad) => (squad.squadPresetId ? [squad.squadPresetId] : [])))]
-  for (const presetId of presetIds) {
-    if (await SquadPreset.find(presetId)) continue
-    await sync.workflowSync.sync()
-    await sync.squadPresetSync.sync()
-    created.push('bundled squad presets synced')
-    break
-  }
+  if (tierSlugs.length) inserted.push(...(await sync.modelTierSync.syncMissing(tierSlugs)))
+  if (inserted.length) created.push(`bundled config inserted (${inserted.join(', ')})`)
   return role
 }
 

@@ -156,6 +156,43 @@ export abstract class ConfigSync<TYaml> {
    * - In DB but not YAML, updatedBy='yaml' → delete
    * - In DB but not YAML, updatedBy='admin' → keep
    */
+  /**
+   * Insert bundled definitions that are missing from the DB and nothing else:
+   * no updates, no deletes, no drift bookkeeping. For callers that need a few
+   * bundled rows to exist outside the API boot sync (the demo seed), where the
+   * full reconcile would be both too much and, on a shared test database,
+   * liable to refuse. Restrict to `ids` to touch only what is needed.
+   *
+   * @returns the ids inserted.
+   */
+  async syncMissing(ids?: readonly string[]): Promise<string[]> {
+    const wanted = ids ? new Set(ids) : null
+    const parsed = (await this.loadFromDir()).filter((item) => !wanted || wanted.has(this.getId(item)))
+    if (parsed.length === 0) return []
+    const existing = new Set(
+      (await db.select({ id: this.idColumn }).from(this.table)).map((row) => (row as { id: string }).id)
+    )
+    const inserted: string[] = []
+    for (const item of parsed) {
+      const id = this.getId(item)
+      if (existing.has(id)) continue
+      await this.insertNew(id, this.toRecord(item))
+      inserted.push(id)
+    }
+    if (inserted.length) this.log.info(`Inserted missing ${this.name}: ${inserted.join(', ')}`)
+    return inserted
+  }
+
+  private async insertNew(id: string, record: Record<string, unknown>): Promise<void> {
+    await db.insert(this.table).values({
+      ...record,
+      [this.jsKey(this.yamlTemplateColumn)]: { ...record },
+      ...this.legacyOwnershipSet('yaml', false),
+      ...this.fieldOverridesSet([]),
+    } as any)
+    await this.afterSync?.(id)
+  }
+
   async sync(): Promise<SyncResult> {
     const parsed = await this.loadFromDir()
     const yamlIds = new Set(parsed.map((p) => this.getId(p)))
@@ -178,14 +215,8 @@ export abstract class ConfigSync<TYaml> {
       const existing = existingMap.get(id)
 
       if (!existing) {
-        await db.insert(this.table).values({
-          ...record,
-          [this.jsKey(this.yamlTemplateColumn)]: template,
-          ...this.legacyOwnershipSet('yaml', false),
-          ...this.fieldOverridesSet([]),
-        } as any)
+        await this.insertNew(id, record)
         synced++
-        await this.afterSync?.(id)
         continue
       }
 
