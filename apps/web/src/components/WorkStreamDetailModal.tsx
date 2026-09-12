@@ -873,7 +873,12 @@ export function WorkStreamDetailModal({
                     )}
                     <span className="text-muted ml-auto shrink-0">{new Date(wait.openedAt).toLocaleString()}</span>
                   </div>
-                  {wait.type === 'question' ? (
+                  {wait.message && (
+                    <div className="mt-1 text-primary">
+                      <MarkdownContent className="prose-xs">{wait.message}</MarkdownContent>
+                    </div>
+                  )}
+                  {wait.type === 'question' && (
                     <WorkStreamQuestionWait
                       wait={wait}
                       agentThreadHref={
@@ -882,12 +887,6 @@ export function WorkStreamDetailModal({
                           : undefined
                       }
                     />
-                  ) : (
-                    wait.message && (
-                      <div className="mt-1 text-primary">
-                        <MarkdownContent className="prose-xs">{wait.message}</MarkdownContent>
-                      </div>
-                    )
                   )}
                 </li>
               ))}
