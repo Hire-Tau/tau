@@ -14,7 +14,7 @@ import { MONOREPO_ROOT } from '../../lib/paths'
 const TEST_SQUAD_ID = '00000000-0000-4000-8000-000000000103'
 
 /** The real squad-rules.md include, inlined into the manager systemPrompt at load time. */
-const SQUAD_RULES_INCLUDE = readFileSync(join(MONOREPO_ROOT, 'config/agent-types/includes/squad-rules.md'), 'utf-8')
+const SQUAD_RULES_INCLUDE = readFileSync(join(MONOREPO_ROOT, 'config/agent-types/shared/squad-rules.md'), 'utf-8')
 
 let squadSandboxCalls: unknown[] = []
 let lightSandboxCalls: unknown[] = []

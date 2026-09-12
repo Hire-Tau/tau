@@ -3,7 +3,7 @@ import yaml from 'js-yaml'
 import { readFile } from 'fs/promises'
 import { join } from 'path'
 import { AgentTypeSync, composeFromYaml } from './agent-type-sync'
-import { loadIncludeFiles } from './shared-prompt-sync'
+import { loadSharedPromptFiles } from './shared-prompt-sync'
 
 const repoRoot = join(import.meta.dir, '../../../../../')
 
@@ -25,7 +25,7 @@ describe('squad context configuration guidance', () => {
     const [manager, consultant, guidance] = await Promise.all([
       readRepoFile('config/agent-types/manager.yaml'),
       readRepoFile('config/agent-types/consultant.yaml'),
-      readRepoFile('config/agent-types/includes/squad-dynamic-context.md'),
+      readRepoFile('config/agent-types/shared/squad-dynamic-context.md'),
     ])
 
     expect(readIncludes(manager)).toContain('squad-dynamic-context')
@@ -48,7 +48,7 @@ describe('squad context configuration guidance', () => {
   })
 
   test('shared squad context guidance lands in the composed manager and consultant prompts', async () => {
-    const [parsed, files] = await Promise.all([new AgentTypeSync().loadFromDir(), loadIncludeFiles()])
+    const [parsed, files] = await Promise.all([new AgentTypeSync().loadFromDir(), loadSharedPromptFiles()])
 
     for (const id of ['manager', 'consultant']) {
       const agentType = parsed.find((item) => item.id === id)

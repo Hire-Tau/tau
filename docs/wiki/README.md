@@ -120,7 +120,7 @@ YAML files in `config/` define the available building blocks and are synced into
 | Directory                      | What it defines                                                                              |
 | ------------------------------ | -------------------------------------------------------------------------------------------- |
 | `config/agent-types/`          | Agent type templates: system prompt, tools, model, skills, extensions                        |
-| `config/agent-types/includes/` | Shared prompt fragments (e.g. `rules`) included by `includes:` in agent types                |
+| `config/agent-types/shared/` | Shared prompt fragments (e.g. `rules`) included by `includes:` in agent types                |
 | `config/squad-presets/`          | Squad preset templates: manager context, workflow recommendations, initial members and schedules |
 | `config/skills/`               | Reusable skill bundles (`SKILL.md` + support files) materialized into sandboxes              |
 | `config/channels/`             | Channel provider templates (Discord, Slack, Telegram)                                        |

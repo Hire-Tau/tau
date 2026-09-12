@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm'
 import { agentTypes, db } from '../../db'
 import { AgentType } from '../../entities/AgentType'
 import { AgentTypeSync, composeFromYaml, stripLegacyIncludeSuffix } from './agent-type-sync'
-import { loadIncludeFiles } from './shared-prompt-sync'
+import { loadSharedPromptFiles } from './shared-prompt-sync'
 
 const sync = new AgentTypeSync()
 
@@ -17,7 +17,7 @@ describe('agent type includes', () => {
 
   test('composeFromYaml reproduces the legacy merged prompt exactly', async () => {
     const sysops = (await sync.loadFromDir()).find((t) => t.id === 'sysops')!
-    const files = await loadIncludeFiles()
+    const files = await loadSharedPromptFiles()
     const composed = composeFromYaml(sysops, files)
     expect(composed).toBe(
       [sysops.systemPrompt, files.get('rules'), files.get('subagents'), files.get('squad-rules')].join('\n\n')
@@ -51,7 +51,7 @@ describe('agent type includes', () => {
 
   test('an overridden merged prompt is split once on sync and flagged, not duplicated', async () => {
     await sync.sync()
-    const files = await loadIncludeFiles()
+    const files = await loadSharedPromptFiles()
     const engineer = (await sync.loadFromDir()).find((t) => t.id === 'engineer')!
     // Simulate a pre-migration admin edit: the whole merged text plus a local line.
     const legacyMerged = composeFromYaml(engineer, files)
@@ -75,7 +75,7 @@ describe('agent type includes', () => {
    */
   test('a row overriding only systemPrompt is still recognized as a pre-migration merge', async () => {
     await sync.sync()
-    const files = await loadIncludeFiles()
+    const files = await loadSharedPromptFiles()
     const engineer = (await sync.loadFromDir()).find((t) => t.id === 'engineer')!
     const legacyMerged = composeFromYaml(engineer, files)
     await db
@@ -91,7 +91,7 @@ describe('agent type includes', () => {
 
   test('a hand-edited merged prompt keeps its text and drops its includes so nothing is appended twice', async () => {
     await sync.sync()
-    const files = await loadIncludeFiles()
+    const files = await loadSharedPromptFiles()
     const engineer = (await sync.loadFromDir()).find((t) => t.id === 'engineer')!
     const edited = `${composeFromYaml(engineer, files)}\n\nLocal addition.`
     await db

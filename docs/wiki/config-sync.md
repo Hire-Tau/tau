@@ -10,7 +10,7 @@ Config sync bridges bundled configuration files and database records. On API sta
 | --------------- | ------------------- | ------------------------------------------------ | ---------------------- |
 | Roles           | `RoleSync`          | `config/roles/defaults.yaml`                     | `roles`                |
 | Skills          | `SkillSync`         | `config/skills/<id>/SKILL.md` and support files  | `skills`               |
-| Shared prompts  | `SharedPromptSync`  | `config/agent-types/includes/*.md`               | `shared_prompts`       |
+| Shared prompts  | `SharedPromptSync`  | `config/agent-types/shared/*.md`               | `shared_prompts`       |
 | Model tiers     | `ModelTierSync`     | `config/model-tiers/`                            | `model_tiers`          |
 | Agent types     | `AgentTypeSync`     | `config/agent-types/`                            | `agent_types`          |
 | Squad presets   | `SquadPresetSync`   | `config/squad-presets/`                          | `squad_presets`        |
@@ -62,7 +62,7 @@ Field comparisons use deep JSON equality with sorted object keys. API edits reco
 
 ### Shared prompts
 
-`SharedPromptSync` reads each Markdown file under `config/agent-types/includes/` into its own `shared_prompts` record, following the same template snapshot / `yamlFieldOverrides` / disable / revert model as skills. It runs after `SkillSync` and before `ModelTierSync`, so includes exist before agent types are synced. Agent type sync validates that every ID an agent type lists in its `includes` actually exists.
+`SharedPromptSync` reads each Markdown file under `config/agent-types/shared/` into its own `shared_prompts` record, following the same template snapshot / `yamlFieldOverrides` / disable / revert model as skills. It runs after `SkillSync` and before `ModelTierSync`, so includes exist before agent types are synced. Agent type sync validates that every ID an agent type lists in its `includes` actually exists.
 
 ### Agent types
 

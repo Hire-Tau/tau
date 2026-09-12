@@ -2,13 +2,13 @@ import { describe, test, expect, beforeEach } from 'bun:test'
 import { db, agentTypes } from '../../db'
 import { eq } from 'drizzle-orm'
 import { AgentTypeSync, composeFromYaml } from './agent-type-sync'
-import { loadIncludeFiles } from './shared-prompt-sync'
+import { loadSharedPromptFiles } from './shared-prompt-sync'
 
 const sync = new AgentTypeSync()
 
 /** The prompt an agent actually receives: the type's own text plus its includes. */
 async function loadComposed() {
-  const [parsed, files] = await Promise.all([sync.loadFromDir(), loadIncludeFiles()])
+  const [parsed, files] = await Promise.all([sync.loadFromDir(), loadSharedPromptFiles()])
   return parsed.map((t) => ({ ...t, systemPrompt: composeFromYaml(t, files) }))
 }
 
@@ -436,7 +436,7 @@ describe('AgentTypeSync', () => {
     const parsed = await sync.loadFromDir()
     const withIncludes = parsed.find((p) => p.includes && p.includes.length > 0)!
     expect(withIncludes.includes!.length).toBeGreaterThan(0)
-    const files = await loadIncludeFiles()
+    const files = await loadSharedPromptFiles()
     for (const id of withIncludes.includes!)
       expect(withIncludes.systemPrompt).not.toContain(files.get(id)!.trim().slice(0, 80))
   })

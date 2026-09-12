@@ -6,7 +6,7 @@ import { AGENT_TYPES_DIR } from '../../lib/paths'
 import { validateModelSpecList } from '../../lib/utils/model-spec'
 import { AgentType } from '../../entities/AgentType'
 import { ConfigSync, type SyncResult } from './ConfigSync'
-import { loadIncludeFiles } from './shared-prompt-sync'
+import { loadSharedPromptFiles } from './shared-prompt-sync'
 import { INTEGRATION_CAPABILITIES, type AgentTypeIntegrationPolicyV1 } from '@tau/shared'
 
 // ---------------------------------------------------------------------------
@@ -304,7 +304,7 @@ export class AgentTypeSync extends ConfigSync<AgentTypeYaml> {
   /** Agent types no longer bake include text into systemPrompt; they carry the list and the runtime composes. */
   async loadFromDir(): Promise<AgentTypeYaml[]> {
     const results = await super.loadFromDir()
-    await this.validateIncludes(results, await loadIncludeFiles(this.includesDir))
+    await this.validateIncludes(results, await loadSharedPromptFiles(this.sharedPromptsDir))
     return results
   }
 
@@ -312,13 +312,15 @@ export class AgentTypeSync extends ConfigSync<AgentTypeYaml> {
     for (const agentType of types) {
       for (const name of agentType.includes ?? []) {
         if (!files.has(name))
-          throw new YamlValidationError(`AgentType '${agentType.id}': Include '${name}' not found in includes/`)
+          throw new YamlValidationError(
+            `AgentType '${agentType.id}': Include '${name}' not found in config/agent-types/shared/`
+          )
       }
     }
   }
 
-  private get includesDir(): string {
-    return join(this.directory, 'includes')
+  private get sharedPromptsDir(): string {
+    return join(this.directory, 'shared')
   }
 
   // -------------------------------------------------------------------------
@@ -358,7 +360,7 @@ export class AgentTypeSync extends ConfigSync<AgentTypeYaml> {
    */
   private async splitLegacyMergedPrompts(legacyIds: string[]): Promise<void> {
     if (legacyIds.length === 0) return
-    const files = await loadIncludeFiles(this.includesDir)
+    const files = await loadSharedPromptFiles(this.sharedPromptsDir)
     for (const id of legacyIds) {
       const [row] = await db.select().from(agentTypes).where(eq(agentTypes.id, id))
       const template = row?.yamlTemplate as { systemPrompt?: string; includes?: string[] } | null | undefined

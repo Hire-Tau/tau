@@ -2,7 +2,7 @@ import { readdir, readFile } from 'fs/promises'
 import { join } from 'path'
 import { sharedPrompts } from '../../db'
 import { SharedPrompt } from '../../entities/SharedPrompt'
-import { AGENT_TYPE_INCLUDES_DIR } from '../../lib/paths'
+import { AGENT_TYPE_SHARED_PROMPTS_DIR } from '../../lib/paths'
 import { assertConfigId, assertNonEmptyString } from '../../lib/validation/config-ids'
 import { ConfigSync } from './ConfigSync'
 
@@ -28,7 +28,7 @@ export function parseSharedPromptMarkdown(content: string, id: string): SharedPr
 }
 
 /** Reads every include block on disk, keyed by file stem. Shared with AgentTypeSync validation. */
-export async function loadIncludeFiles(dir: string = AGENT_TYPE_INCLUDES_DIR): Promise<Map<string, string>> {
+export async function loadSharedPromptFiles(dir: string = AGENT_TYPE_SHARED_PROMPTS_DIR): Promise<Map<string, string>> {
   const out = new Map<string, string>()
   let entries: string[]
   try {
@@ -45,7 +45,7 @@ export async function loadIncludeFiles(dir: string = AGENT_TYPE_INCLUDES_DIR): P
 
 export class SharedPromptSync extends ConfigSync<SharedPromptMarkdown> {
   readonly name = 'shared-prompts'
-  readonly directory = AGENT_TYPE_INCLUDES_DIR
+  readonly directory = AGENT_TYPE_SHARED_PROMPTS_DIR
   readonly table = sharedPrompts
   readonly idColumn = sharedPrompts.id
   readonly yamlTemplateColumn = sharedPrompts.yamlTemplate
@@ -54,7 +54,7 @@ export class SharedPromptSync extends ConfigSync<SharedPromptMarkdown> {
   readonly disabledColumn = sharedPrompts.disabled
 
   async loadFromDir(): Promise<SharedPromptMarkdown[]> {
-    const files = await loadIncludeFiles(this.directory)
+    const files = await loadSharedPromptFiles(this.directory)
     if (files.size === 0) this.log.warn(`Directory empty or missing: ${this.directory}`)
     return [...files.entries()].map(([id, content]) => parseSharedPromptMarkdown(content, id))
   }

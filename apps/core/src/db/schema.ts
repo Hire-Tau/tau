@@ -258,7 +258,7 @@ export const skills = pgTable('skills', {
 
 /**
  * Shared prompt blocks appended to agent type prompts at runtime. Synced from
- * config/agent-types/includes/*.md with the same template/override model as
+ * config/agent-types/shared/*.md with the same template/override model as
  * skills, so admins can edit a block once for every type that includes it.
  */
 export const sharedPrompts = pgTable('shared_prompts', {
