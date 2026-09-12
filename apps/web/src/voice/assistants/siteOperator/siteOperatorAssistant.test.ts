@@ -113,7 +113,7 @@ describe('siteOperatorVoiceAssistant', () => {
     })
     expect(session.sessionConfig.truncation).toEqual({ type: 'retention_ratio', retention_ratio: 0.8 })
     expect(session.sessionConfig.tools).toEqual(siteOperatorTools.definitions)
-    expect(session.sessionConfig.instructions).toContain('User assistant agent ID: system-manager-agent')
+    expect(session.sessionConfig.instructions).toContain('**Engineering** (id: squad-1, manager: manager-agent-id)')
     expect(session.sessionConfig.instructions).toContain('Current squad manager ID: manager-agent-id')
     expect(session.sessionConfig.instructions).not.toContain('Current primary visible agent ID: manager-agent-id')
   })

@@ -105,7 +105,7 @@ export function createAssistantTools(
     },
     tool(
       'search_tau',
-      'Find pages, settings, squads, consultant conversations, work streams, and saved Assistant conversations. Returns canonical IDs and links.',
+      'Look up Tau entities by name or keyword: squads, work streams, consultant conversations, saved Assistant conversations, and navigation targets (pages and settings sections). Returns canonical IDs and links. It does not read data or configuration: no schedules, environment variables, secrets, integrations, users, permissions, agent status, activity, or the value of any setting. For live state use get_work, read_thread, read_inbox, or read_activity; for anything else use delegate_task.',
       { query: string, limit: number },
       ['query'],
       async (args, env) => {

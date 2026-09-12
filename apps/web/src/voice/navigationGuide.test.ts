@@ -28,5 +28,5 @@ test('settings navigation includes a description for every destination without i
     expect(section.description.length).toBeGreaterThan(10)
     expect(guide).toContain(section.description)
   }
-  expect(guide).toContain('not live form values')
+  expect(guide).toContain('not live values')
 })
