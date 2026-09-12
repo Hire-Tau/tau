@@ -141,11 +141,14 @@ describe('WorkStreamDetailModal question waits', () => {
 
   test('renders the open question with its answer form and posts the answer', async () => {
     const { body, posts, dom } = await render([question])
+    // The wait's own message renders immediately; the answer form arrives once the
+    // agent's question list loads, so wait for the form itself.
+    const findSubmit = () => [...body.querySelectorAll('button')].find((b) => /Submit Answer/.test(b.textContent ?? ''))
     await dom.act(async () => {
-      await waitFor(() => expect(body.textContent).toContain('Switch the testnet RPC?'), { timeout: 2000 })
+      await waitFor(() => expect(findSubmit()).toBeDefined(), { timeout: 2000 })
     })
-    const submit = [...body.querySelectorAll('button')].find((b) => /Submit Answer/.test(b.textContent ?? ''))
-    expect(submit).toBeDefined()
+    const submit = findSubmit()
+    expect(body.textContent).toContain('Switch the testnet RPC?')
     const link = [...body.querySelectorAll('a')].find((a) => a.textContent === 'Open agent thread')
     expect(link?.getAttribute('href')).toContain('agent=agent-1')
     const option = body.querySelector('input[type="radio"][value="switch"]') as HTMLInputElement | null
