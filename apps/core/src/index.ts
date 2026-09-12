@@ -70,6 +70,7 @@ import updatesRouter from './routes/updates'
 import providerAuthRouter from './routes/provider-auth'
 import machinesRouter from './routes/machines'
 import adminRouter from './routes/admin'
+import demoRouter from './routes/demo'
 import remoteHostsRouter from './routes/remote-hosts'
 import onboardingRouter from './routes/onboarding'
 import { startAuthCleanupScheduler, stopAuthCleanupScheduler } from './services/auth/cleanup-scheduler'
@@ -317,6 +318,7 @@ app.route('/api/system', systemRouter)
 app.route('/api/updates', updatesRouter)
 app.route('/api/machines', machinesRouter)
 app.route('/api/admin', adminRouter)
+app.route('/api/demo', demoRouter)
 app.route('/api/remote-hosts', remoteHostsRouter)
 app.route('/api/onboarding', onboardingRouter)
 app.route('/api/provider-auth', providerAuthRouter)

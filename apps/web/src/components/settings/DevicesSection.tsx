@@ -1,6 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import QRCode from 'qrcode'
 import { queryKeys } from '../../queryKeys'
 import { approveDeviceAuthorization, revokeDevice, startPairing } from '../../api/devices'
 import { queries } from '../../queryOptions'
@@ -8,6 +7,8 @@ import { getApiUrl } from '../../api/client'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton } from '../loading/Skeleton'
 import { DeviceAuthorizationApproval } from './DeviceAuthorizationApproval'
+import { PairingCode } from './PairingCode'
+import { renderPairing } from './pairingQr'
 import {
   approveDeviceRequest,
   deviceApprovalErrorMessage,
@@ -15,16 +16,7 @@ import {
   parseDeviceRequest,
 } from './deviceAuthorizationApprovalLogic'
 
-interface PendingQr {
-  dataUrl: string
-  /** tau://pair?url=…&code=… — tap on the same phone to open the app and pair. */
-  deepLink: string
-  code: string
-  expiresAt: number
-}
-
-// The deep link only resolves on a phone with the Tau app installed; hide it on desktop.
-const IS_MOBILE = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+type PendingQr = Awaited<ReturnType<typeof renderPairing>> & { code: string }
 
 function getDeviceRequest(): string {
   return typeof window === 'undefined' ? '' : parseDeviceRequest(window.location.hash)
@@ -33,7 +25,6 @@ function getDeviceRequest(): string {
 export function DevicesSection() {
   const queryClient = useQueryClient()
   const [qr, setQr] = useState<PendingQr | null>(null)
-  const [now, setNow] = useState(() => Date.now())
   const [error, setError] = useState<string | null>(null)
   const [deviceRequest] = useState(getDeviceRequest)
   // Device ids present when the QR was generated, so we can detect a newly-paired one.
@@ -54,17 +45,7 @@ export function DevicesSection() {
     maxCount: 8,
   })
 
-  // Tick the countdown while a QR is active; clear it when it expires.
-  useEffect(() => {
-    if (!qr) return
-    const interval = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(interval)
-  }, [qr])
-
-  const secondsLeft = qr ? Math.max(0, Math.round((qr.expiresAt - now) / 1000)) : 0
-  useEffect(() => {
-    if (qr && secondsLeft === 0) setQr(null)
-  }, [qr, secondsLeft])
+  const clearQr = useCallback(() => setQr(null), [])
 
   // When a new device appears while the QR is up, the phone paired → close the QR.
   useEffect(() => {
@@ -74,14 +55,10 @@ export function DevicesSection() {
 
   const startMutation = useMutation({
     mutationFn: () => startPairing(),
-    onSuccess: async ({ code, serverUrl, expiresAt }) => {
+    onSuccess: async (value) => {
       setError(null)
       baselineIds.current = new Set(devices.map((d) => d.id))
-      // The mobile app scans this JSON: { url, code }.
-      const dataUrl = await QRCode.toDataURL(JSON.stringify({ url: serverUrl, code }), { width: 240, margin: 1 })
-      const deepLink = `tau://pair?url=${encodeURIComponent(serverUrl)}&code=${encodeURIComponent(code)}`
-      setNow(Date.now())
-      setQr({ dataUrl, deepLink, code, expiresAt: new Date(expiresAt).getTime() })
+      setQr({ ...(await renderPairing(value)), code: value.code })
     },
     onError: (e) => setError(e instanceof Error ? e.message : 'Failed to start pairing'),
   })
@@ -139,36 +116,12 @@ export function DevicesSection() {
           Pair the Tau mobile app
         </h3>
         {qr ? (
-          <div className="flex flex-col items-center gap-2">
-            <img src={qr.dataUrl} alt="Pairing QR code" className="rounded bg-white p-2" width={240} height={240} />
-            <p className="text-xs text-muted">
-              Scan with the Tau app. Expires in <span className="font-mono">{secondsLeft}s</span>.
-            </p>
-            <div className="flex items-center gap-2">
-              <code className="rounded bg-surface-hover px-2 py-1 text-xs select-all">{qr.code}</code>
-              <button
-                className="tau-button text-xs text-secondary"
-                onClick={() => navigator.clipboard.writeText(qr.code)}
-              >
-                Copy code
-              </button>
-            </div>
-            {IS_MOBILE && (
-              <a
-                href={qr.deepLink}
-                className="px-3 py-1.5 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-hover"
-              >
-                Open in the Tau app
-              </a>
-            )}
-            <button
-              onClick={() => startMutation.mutate()}
-              disabled={startMutation.isPending}
-              className="tau-button text-xs text-secondary hover:text-primary"
-            >
-              Regenerate
-            </button>
-          </div>
+          <PairingCode
+            pairing={qr}
+            onExpired={clearQr}
+            onRegenerate={() => startMutation.mutate()}
+            regenerating={startMutation.isPending}
+          />
         ) : (
           <button
             onClick={() => startMutation.mutate()}

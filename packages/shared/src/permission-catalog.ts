@@ -134,6 +134,7 @@ export const PERMISSION_DESCRIPTIONS = {
   'system:restart': 'Restart Tau services.',
   'system:cleanup': 'Clean up inactive agents and run workspace or package-store garbage collection.',
   'system:logs': 'Read system diagnostics and stream Tau service logs.',
+  'system:demo': 'Seed and manage the app-store reviewer demo account on a designated demo instance.',
   'system-tokens:manage': 'Create, list, and revoke system API tokens, including choosing their permission scopes.',
 } satisfies Record<Permission, string>
 

@@ -12,6 +12,7 @@ export type { AuthStatus, AuthUser, AuthSettings } from '@tau/client-core'
 
 // ── Cross-platform (shared client-core) ─────────────────────────────────────
 export const getAuthStatus = client.auth.getAuthStatus
+export const demoPair = client.auth.demoPair
 export const loginWithPassword = client.auth.loginWithPassword
 export const sendVerificationEmail = client.auth.sendVerificationEmail
 export const getAuthSettings = client.auth.getAuthSettings

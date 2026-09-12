@@ -9,6 +9,8 @@ export interface AuthStatus {
   hasUsers: boolean
   hasAdminUser: boolean
   emailConfigured: boolean
+  /** The /demo reviewer access page is served on this instance (TAU_DEMO_REVIEWER_ACCESS). */
+  demoReviewerAccess?: boolean
   /**
    * Whether registration could succeed for SOME address a stranger types — the only
    * signup-policy signal exposed anonymously (the allowed-domain list stays behind
@@ -98,6 +100,13 @@ export function authResource(t: Transport) {
     /** (web, authenticated) Start a pairing: returns a short-lived code + the server URL to encode in a QR. */
     pairStart: (): Promise<{ code: string; serverUrl: string; expiresAt: string }> =>
       t.request('/auth/pair/start', { method: 'POST' }),
+    /**
+     * (unauthenticated) App-store reviewer access on a designated demo instance: the
+     * private reviewer secret yields an ordinary pairing code for the demo account.
+     * 404 unless the instance opted in (see AuthStatus.demoReviewerAccess).
+     */
+    demoPair: (secret: string): Promise<{ code: string; serverUrl: string; expiresAt: string }> =>
+      t.request('/auth/demo/pair', { method: 'POST', body: { secret } }),
     /** (mobile, unauthenticated) Claim a scanned code → a long-lived per-device token. */
     pairClaim: (input: { code: string; name: string; platform: DevicePlatform }): Promise<PairClaimResult> =>
       t.request('/auth/pair/claim', { method: 'POST', body: input }),

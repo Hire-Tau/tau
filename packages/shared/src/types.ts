@@ -1676,6 +1676,8 @@ export interface AuthStatus {
   mode: 'password' | 'passkey'
   hasUsers: boolean
   hasAdminUser: boolean
+  /** The /demo reviewer access page is served on this instance (TAU_DEMO_REVIEWER_ACCESS). */
+  demoReviewerAccess?: boolean
 }
 
 export interface AuthSettings {

@@ -163,6 +163,7 @@ Template-based entries can be customized in the UI but not deleted — only disa
 | Settings UI                                               | [`settings-ui.md`](settings-ui.md)                                                                                                                                    |
 | In-app Consultant (human-facing squad interface)          | [`consultant.md`](consultant.md)                                                                                                                                      |
 | Mobile app (iOS) + device pairing                         | [`mobile-app.md`](mobile-app.md)                                                                                                                                      |
+| App-store reviewer access on a demo instance              | [`demo-access.md`](demo-access.md)                                                                                                                                    |
 | App deployments                                           | [`deployments.md`](deployments.md)                                                                                                                                    |
 | CI/CD                                                     | [`ci-cd.md`](ci-cd.md)                                                                                                                                                |
 

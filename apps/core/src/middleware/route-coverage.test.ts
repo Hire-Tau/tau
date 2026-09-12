@@ -39,6 +39,10 @@ const PUBLIC_ALLOWLIST = new Set([
   'POST /api/auth/device/token',
   // Mobile pairing claim is intentionally unauthenticated — gated by the single-use, short-lived code itself.
   'POST /api/auth/pair/claim',
+  // App-store reviewer access on a designated demo instance: 404 unless TAU_DEMO_REVIEWER_ACCESS
+  // is set, then gated by the private reviewer secret (timing-safe, rate limited per address)
+  // and yielding only an ordinary single-use pairing code for the demo account.
+  'POST /api/auth/demo/pair',
   // Logout self-authenticates (revokes only the session whose token is presented)
   // and must clear the cookie even when the token is already invalid.
   'POST /api/auth/logout',

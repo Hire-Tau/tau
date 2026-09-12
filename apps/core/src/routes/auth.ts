@@ -55,6 +55,7 @@ import { replaceCredentialsAfterRecovery } from '../services/auth/passkey-recove
 import { MAX_CREDENTIAL_NAME_LENGTH, resolveCredentialName } from '../services/auth/credential-name'
 import { createLogger } from '../lib/infra/logger'
 import { getClientAddress } from '../lib/client-address'
+import { demoReviewerAccess } from '../services/demo/access'
 import { primaryWebOrigin } from '../services/auth/web-origins'
 
 const log = createLogger('auth-routes')
@@ -131,6 +132,9 @@ authRouter.get('/status', async (c) => {
     // nobody new can register themselves. Zero users is the first-admin bootstrap
     // window, which deliberately bypasses the policy entirely.
     canSelfRegister: userCount === 0 || !settings.requireInvite || settings.allowedDomains.length > 0,
+    // The /demo reviewer page exists on this instance (TAU_DEMO_REVIEWER_ACCESS).
+    // Says nothing about the secret or whether the demo account is seeded.
+    demoReviewerAccess: demoReviewerAccess.enabled(),
   })
 })
 
@@ -752,6 +756,35 @@ authRouter.post('/pair/claim', async (c) => {
   const result = await claimPairingCode({ code: body.code, name, platform })
   if (!result) return c.json({ error: 'Invalid or expired pairing code' }, 401)
   return c.json(result)
+})
+
+// POST /api/auth/demo/pair — (unauthenticated) app-store reviewer access on a
+// designated demo instance: the private reviewer secret mints an ordinary
+// pairing code for the shared demo account. Off (404) unless
+// TAU_DEMO_REVIEWER_ACCESS is set; see services/demo/access.ts.
+authRouter.post('/demo/pair', async (c) => {
+  const body = await c.req.json<{ secret?: unknown }>()
+  const secret = typeof body.secret === 'string' ? body.secret : ''
+  const result = await demoReviewerAccess.pair({
+    secret,
+    clientAddress: getClientAddress(c.req.raw),
+    requestUrl: c.req.url,
+    originHeader: c.req.header('origin'),
+  })
+  switch (result.status) {
+    case 'disabled':
+      return c.json({ error: 'Not found' }, 404)
+    case 'rate_limited':
+      return c.json({ error: 'rate_limited' }, 429, { 'Retry-After': String(result.retryAfterSeconds) })
+    case 'invalid_secret':
+      return c.json({ error: 'Invalid reviewer access code' }, 401)
+    case 'not_seeded':
+      return c.json({ error: 'demo_not_seeded' }, 503)
+    case 'ok': {
+      const { status: _status, ...pairing } = result
+      return c.json(pairing)
+    }
+  }
 })
 
 // GET /api/auth/devices — (self-service) list my paired devices.
