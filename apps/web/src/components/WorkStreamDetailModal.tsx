@@ -26,6 +26,7 @@ import { computeWorkStreamElapsedMs } from '../lib/workStreamRuntime'
 import { useTick } from '../hooks/useTick'
 import { usePermissions } from '../hooks/usePermissions'
 import { WorkStreamApprovalConfirmation } from './WorkStreamApprovalConfirmation'
+import { WorkStreamQuestionWait } from './WorkStreamQuestionWait'
 import { actionErrorMessage } from '../lib/actionError'
 import { LoadingSurface, SkeletonBlock, SkeletonRows } from './loading/Skeleton'
 
@@ -289,8 +290,8 @@ export function WorkStreamDetailModal({
 
   // Open waits win over a running execution, sorted by display precedence (review > question >
   // dependency > manual) by the server. A review wait gets the Approve/Request-changes panel; a
-  // manual wait gets a free-text respond panel. Dependency/question waits are read-only here (no
-  // direct user action resolves them from this modal).
+  // manual wait gets a free-text respond panel. Dependency waits are read-only; a question wait
+  // renders its agent question with the answer form in the Open Waits list below.
   const openWaits = workStream.openWaits ?? []
   const focusedWait = focusWaitId ? openWaits.find((wait) => wait.id === focusWaitId) : undefined
   const actionableFocusedWait =
@@ -301,7 +302,7 @@ export function WorkStreamDetailModal({
   const reviewWait = calloutWait?.type === 'review' ? calloutWait : undefined
   const manualWait = calloutWait?.type === 'manual' ? calloutWait : undefined
   const needsResponse = !!calloutWait && calloutWait.resolutionHandler !== 'workflow'
-  const missingFocusedWait = !!focusWaitId && !actionableFocusedWait
+  const missingFocusedWait = !!focusWaitId && !actionableFocusedWait && focusedWait?.type !== 'question'
   const remainingWaits = openWaits.filter((wait) => wait.id !== calloutWait?.id)
 
   const [isResponding, setIsResponding] = useState(false)
@@ -872,10 +873,21 @@ export function WorkStreamDetailModal({
                     )}
                     <span className="text-muted ml-auto shrink-0">{new Date(wait.openedAt).toLocaleString()}</span>
                   </div>
-                  {wait.message && (
-                    <div className="mt-1 text-primary">
-                      <MarkdownContent className="prose-xs">{wait.message}</MarkdownContent>
-                    </div>
+                  {wait.type === 'question' ? (
+                    <WorkStreamQuestionWait
+                      wait={wait}
+                      agentThreadHref={
+                        wait.createdByAgentId
+                          ? `/squads/${slugFor(workStream.squadId)}?agent=${wait.createdByAgentId}`
+                          : undefined
+                      }
+                    />
+                  ) : (
+                    wait.message && (
+                      <div className="mt-1 text-primary">
+                        <MarkdownContent className="prose-xs">{wait.message}</MarkdownContent>
+                      </div>
+                    )
                   )}
                 </li>
               ))}
