@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
-import { agentToolRenderers, ToolArgsView, ToolResultView, ToolSummary } from './tool-renderers'
+import { agentToolRenderers, siteAssistantToolRenderers, ToolArgsView, ToolResultView, ToolSummary } from './tool-renderers'
 import { getToolInlineActions } from './tool-inline-actions'
 
 function renderToolResult(toolName: string, result: string, isError = false, entry = '/') {
@@ -281,5 +281,42 @@ describe('tool inline actions', () => {
         completed: true,
       })
     ).toEqual([])
+  })
+})
+
+describe('site assistant task renderers', () => {
+  it('delegate_task summarizes by label and shows the request, not the tool name', () => {
+    const args = JSON.stringify({ label: 'Check enabled schedules', request: 'Which schedules are enabled?' })
+    expect(
+      renderToStaticMarkup(<ToolSummary renderers={siteAssistantToolRenderers} toolName="delegate_task" args={args} />)
+    ).toContain('Started: Check enabled schedules')
+    const html = renderToStaticMarkup(<ToolArgsView renderers={siteAssistantToolRenderers} toolName="delegate_task" args={args} />)
+    expect(html).toContain('Which schedules are enabled?')
+    expect(html).not.toContain('delegate_task')
+  })
+
+  it('delegate_task with a squad names the squad from the receipt', () => {
+    const args = JSON.stringify({ label: 'Pause deploy stream', request: 'Pause it', squadId: 'tau' })
+    const result = JSON.stringify({ id: 'm', agentId: 'a', delivered: true, kind: 'squad', squadId: 'tau', conversation: { agentId: 'a', label: 'Pause deploy stream', kind: 'squad' } })
+    expect(
+      renderToStaticMarkup(<ToolResultView renderers={siteAssistantToolRenderers} toolName="delegate_task" result={result} isError={false} />)
+    ).toContain('Running in the background')
+    expect(
+      renderToStaticMarkup(<ToolSummary renderers={siteAssistantToolRenderers} toolName="delegate_task" args={args} />)
+    ).toContain('Started: Pause deploy stream')
+  })
+
+  it('assistant_inbox renders as a task update with the content only', () => {
+    const result = JSON.stringify({ id: 'u', senderId: 'a', senderName: 'Assistant task', content: 'Three schedules are enabled.', subject: null, replyTo: 'm', createdAt: '2026-01-01' })
+    const html = renderToStaticMarkup(<ToolResultView renderers={siteAssistantToolRenderers} toolName="assistant_inbox" result={result} isError={false} />)
+    expect(html).toContain('Three schedules are enabled.')
+    expect(html).not.toContain('senderName')
+    expect(renderToStaticMarkup(<ToolSummary renderers={siteAssistantToolRenderers} toolName="assistant_inbox" args="{}" />)).toContain('Task update')
+  })
+
+  it('search_tau summarizes the query', () => {
+    expect(
+      renderToStaticMarkup(<ToolSummary renderers={siteAssistantToolRenderers} toolName="search_tau" args='{"query":"schedules"}' />)
+    ).toContain('Searched Tau for “schedules”')
   })
 })

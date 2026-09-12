@@ -187,7 +187,9 @@ function ToolTranscriptEntry({
           ) : (
             <span className="inline-block h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600 dark:border-gray-600 dark:border-t-gray-300" />
           )}
-          <span className="min-w-0 truncate font-medium text-secondary">{toolName}</span>
+          {!toolRenderers[toolName] && (
+            <span className="min-w-0 truncate font-medium text-secondary">{toolName}</span>
+          )}
           {entry.toolArgs ? (
             <ToolSummary renderers={toolRenderers} toolName={toolName} args={entry.toolArgs} />
           ) : entry.text ? (
