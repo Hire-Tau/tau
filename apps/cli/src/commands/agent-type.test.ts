@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { Command } from 'commander'
 import { apiGet, apiPut } from '../client'
-import { setOutputOptions } from '../output'
+import { outputTable, setOutputOptions } from '../output'
 import { registerAgentTypeCommands } from './agent-type'
 
 const existing = {
@@ -115,5 +115,37 @@ describe('tau agent-type get --resolved', () => {
     const printed = await run(['agent-type', 'get', 'sysops', '--resolved'])
 
     expect(printed).toEqual(['You operate.'])
+  })
+})
+
+describe('tau agent-type list', () => {
+  beforeEach(() => {
+    ;(apiGet as ReturnType<typeof mock>).mockResolvedValue([existing, { ...sysops, includes: null }])
+    ;(outputTable as ReturnType<typeof mock>).mockClear()
+  })
+
+  afterEach(() => {
+    mock.restore()
+  })
+
+  async function run(args: string[]): Promise<void> {
+    const program = new Command()
+    program.exitOverride()
+    program.option('--json')
+    program.option('--quiet')
+    program.hook('preAction', (command) => setOutputOptions(command.optsWithGlobals()))
+    registerAgentTypeCommands(program)
+    await program.parseAsync(['--quiet', ...args], { from: 'user' })
+  }
+
+  // The shared prompts a type composes are part of what it is, so `list` shows
+  // them; a type with none prints an empty cell rather than "null".
+  it("prints each type's shared prompt list in an includes column", async () => {
+    await run(['agent-type', 'list'])
+
+    expect(apiGet).toHaveBeenCalledWith('/api/agent-types')
+    const [rows, columns] = (outputTable as ReturnType<typeof mock>).mock.calls.at(-1)!
+    expect(columns).toContain('includes')
+    expect(rows.map((row: any) => row.includes)).toEqual(['rules,subagents,squad-rules', ''])
   })
 })

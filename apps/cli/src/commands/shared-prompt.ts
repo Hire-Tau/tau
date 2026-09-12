@@ -8,7 +8,8 @@ interface SharedPrompt {
   name: string
   description: string | null
   content: string
-  yamlFieldOverrides: Record<string, unknown> | null
+  /** Names of fields that drifted from the YAML template, empty when in sync. */
+  yamlFieldOverrides: string[] | null
   hasTemplate: boolean
   disabled: boolean
   createdAt: string
@@ -33,7 +34,7 @@ export function registerSharedPromptCommands(program: Command) {
             id: i.id,
             name: i.name,
             disabled: i.disabled ? 'yes' : 'no',
-            overridden: i.yamlFieldOverrides && Object.keys(i.yamlFieldOverrides).length > 0 ? 'yes' : 'no',
+            overridden: (i.yamlFieldOverrides ?? []).length > 0 ? 'yes' : 'no',
           })),
           ['id', 'name', 'disabled', 'overridden']
         )
@@ -73,8 +74,8 @@ export function registerSharedPromptCommands(program: Command) {
     .description('Disable a shared prompt')
     .action(async (id) => {
       try {
-        const result = await apiPost(`/api/shared-prompts/${id}/disable`)
-        output(result)
+        await apiPost(`/api/shared-prompts/${id}/disable`)
+        output({ id, disabled: true }, `Disabled shared prompt "${id}"`)
       } catch (error) {
         outputError(error as Error)
       }
@@ -85,8 +86,8 @@ export function registerSharedPromptCommands(program: Command) {
     .description('Enable a shared prompt')
     .action(async (id) => {
       try {
-        const result = await apiPost(`/api/shared-prompts/${id}/enable`)
-        output(result)
+        await apiPost(`/api/shared-prompts/${id}/enable`)
+        output({ id, enabled: true }, `Enabled shared prompt "${id}"`)
       } catch (error) {
         outputError(error as Error)
       }

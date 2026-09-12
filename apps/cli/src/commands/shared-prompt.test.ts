@@ -7,9 +7,10 @@ import { apiGet, apiPost, apiPut } from '../client'
 import { isJsonMode, output, outputTable, setOutputOptions } from '../output'
 import { registerSharedPromptCommands } from './shared-prompt'
 
+// `yamlFieldOverrides` is the API's list of drifted field names, not a map.
 const includes = [
-  { id: 'rules', name: 'Rules', description: null, disabled: false, yamlFieldOverrides: null },
-  { id: 'subagents', name: 'Subagents', description: null, disabled: true, yamlFieldOverrides: { name: 'Custom' } },
+  { id: 'rules', name: 'Rules', description: null, disabled: false, yamlFieldOverrides: [] },
+  { id: 'subagents', name: 'Subagents', description: null, disabled: true, yamlFieldOverrides: ['name'] },
 ]
 
 const tempDirs: string[] = []
@@ -54,6 +55,8 @@ describe('tau shared-prompt', () => {
     // confirm the printed rows actually contain both ids.
     const rows = (outputTable as ReturnType<typeof mock>).mock.calls.at(-1)?.[0]
     expect(rows.map((r: any) => r.id)).toEqual(['rules', 'subagents'])
+    // Drift comes from a non-empty field list, so an untouched prompt reads "no".
+    expect(rows.map((r: any) => r.overridden)).toEqual(['no', 'yes'])
   })
 
   it('list passes the raw array through output unchanged in JSON mode', async () => {
@@ -86,15 +89,17 @@ describe('tau shared-prompt', () => {
     await expect(run(['shared-prompt', 'update', 'rules'])).rejects.toThrow()
   })
 
-  it('disable posts to the disable endpoint', async () => {
+  it('disable posts to the disable endpoint and confirms which prompt changed', async () => {
     await run(['shared-prompt', 'disable', 'rules'])
 
     expect(apiPost).toHaveBeenCalledWith('/api/shared-prompts/rules/disable')
+    expect(output).toHaveBeenCalledWith({ id: 'rules', disabled: true }, 'Disabled shared prompt "rules"')
   })
 
-  it('enable posts to the enable endpoint', async () => {
+  it('enable posts to the enable endpoint and confirms which prompt changed', async () => {
     await run(['shared-prompt', 'enable', 'rules'])
 
     expect(apiPost).toHaveBeenCalledWith('/api/shared-prompts/rules/enable')
+    expect(output).toHaveBeenCalledWith({ id: 'rules', enabled: true }, 'Enabled shared prompt "rules"')
   })
 })
