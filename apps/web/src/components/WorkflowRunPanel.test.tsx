@@ -5,7 +5,7 @@ import { createWorkflowRun, workflowPresetSchema, type WorkStream } from '@tau/s
 import type { WorkflowRunDetail } from '@tau/client-core'
 import { acquireDomHarness } from '../test/domHarness'
 import { client } from '../api/clientInstance'
-import { queryKeys } from '../queryKeys'
+import { modelTierQueryKeys, queryKeys } from '../queryKeys'
 import { WorkflowRunPanel } from './WorkflowRunPanel'
 import { WorkflowEditor } from './squads/WorkflowEditor'
 
@@ -30,6 +30,7 @@ function run(human = false): WorkflowRunDetail {
 async function fixture(value: WorkflowRunDetail | null, permissions: string[] = []) {
   const dom = await acquireDomHarness({ url: 'http://localhost/workflows' })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  queryClient.setQueryData(modelTierQueryKeys.list(), [{ slug: 'deep', label: 'Deep' }])
   queryClient.setQueryData(queryKeys.squads.list(), [])
   queryClient.setQueryData(queryKeys.workflows.reviewers(stream.squadId), [])
   queryClient.setQueryData(queryKeys.workflows.run(stream.id), value)
@@ -128,7 +129,7 @@ test('read-only viewers can inspect human work without approval or revision cont
     await f.cleanup()
   }
 })
-test('preset customization shows the effective participant model instead of silently reverting to the catalog', async () => {
+test('preset customization shows the effective participant tier instead of silently reverting to the catalog', async () => {
   const f = await fixture(null)
   try {
     await f.render(
@@ -141,15 +142,15 @@ test('preset customization shows the effective participant model instead of sile
             {
               op: 'put-participant',
               id: 'worker',
-              participant: { ...preset.definition.participants.worker!, model: 'custom:model' },
+              participant: { ...preset.definition.participants.worker!, tier: 'deep' },
             },
           ],
         }}
         onChange={() => {}}
       />
     )
-    const inputs = [...f.dom.window.document.querySelectorAll('input')]
-    expect(inputs.some((input) => input.value === 'custom:model')).toBe(true)
+    const selects = [...f.dom.window.document.querySelectorAll('select')]
+    expect(selects.some((select) => select.value === 'deep')).toBe(true)
   } finally {
     await f.cleanup()
   }

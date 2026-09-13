@@ -6,6 +6,7 @@ import {
   applyWorkflowCustomizations,
   type WorkflowCustomization,
   workflowStepSchema,
+  workflowParticipantSchema,
   workflowDefinitionSchema,
   workflowPresetSchema,
   type WorkflowDefinition,
@@ -75,14 +76,14 @@ describe('declarative workflows', () => {
     expect(definition.completion.mode).toBe('pr-merge')
   })
 
-  test('two architect participants can use different models and sessions', async () => {
+  test('two architect participants can use different tiers and sessions', async () => {
     const definition = await engineering()
     definition.participants['second-architect'] = {
       agentTypeId: 'architect',
-      model: 'provider:independent-model',
+      tier: 'exhaustive',
       session: 'fresh-per-attempt',
     }
-    definition.participants.architect!.model = 'provider:first-model'
+    definition.participants.architect!.tier = 'deep'
     definition.steps[0]!.outcomes.completed = { next: 'critique' }
     definition.steps.push({
       id: 'critique',
@@ -94,7 +95,7 @@ describe('declarative workflows', () => {
       outcomes: { completed: { next: 'implement' } },
     })
     const parsed = workflowDefinitionSchema.parse(definition)
-    expect(parsed.participants.architect!.model).not.toBe(parsed.participants['second-architect']!.model)
+    expect(parsed.participants.architect!.tier).not.toBe(parsed.participants['second-architect']!.tier)
     // The same two stages can deliberately reuse the first session instead.
     const critique = definition.steps[3]!
     if (critique.kind !== 'agent') throw new Error('Expected agent step')
@@ -256,14 +257,14 @@ describe('workflow resolution', () => {
           {
             op: 'put-participant',
             id: 'engineer',
-            participant: { agentTypeId: 'engineer', model: 'provider:smart', session: 'reuse-within-stream' },
+            participant: { agentTypeId: 'engineer', tier: 'deep', session: 'reuse-within-stream' },
           },
         ],
       },
       record
     )
-    expect(resolved.definition.participants.engineer!.model).toBe('provider:smart')
-    expect(record.definition.participants.engineer!.model).toBeUndefined()
+    expect(resolved.definition.participants.engineer!.tier).toBe('deep')
+    expect(record.definition.participants.engineer!.tier).toBeUndefined()
     expect(resolveWorkflow({ kind: 'inline', definition: resolved.definition }).definition).toEqual(resolved.definition)
   })
 
@@ -513,4 +514,17 @@ describe('atomic final step order', () => {
     ])
     expect(result.steps.map((step) => step.id)).toEqual(['execute'])
   })
+})
+
+test('participant tier overrides round-trip and reject ambiguous or malformed settings', () => {
+  const base = { agentTypeId: 'engineer', session: 'reuse-within-stream' as const }
+  for (const tier of ['deep', 'exhaustive']) {
+    const participant = workflowParticipantSchema.parse({ ...base, tier })
+    const definition = createBlankWorkflow()
+    definition.participants.worker = participant
+    expect(workflowDefinitionSchema.parse(definition).participants.worker).toEqual({ ...base, tier })
+  }
+  expect(workflowParticipantSchema.safeParse({ ...base, tier: 'provider:model' }).success).toBe(false)
+  expect(workflowParticipantSchema.safeParse({ ...base, tier: 'deep', model: 'provider:model' }).success).toBe(false)
+  expect(workflowParticipantSchema.safeParse({ ...base, model: 'provider:model' }).success).toBe(false)
 })

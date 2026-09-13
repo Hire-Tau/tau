@@ -10,6 +10,7 @@ test('shared participant edits retain step instructions and rename every referen
   const dom = await acquireDomHarness({ url: 'http://localhost/settings/workflows' })
   const { root } = dom.createRoot()
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  client.setQueryData(queries.modelTiers.list().queryKey, [])
   client.setQueryData(queries.agentTypes.list().queryKey, [{ id: 'general', name: 'General Purpose' }])
   let definition = createBlankWorkflow()
   definition.steps.push({ ...structuredClone(definition.steps[0]!), id: 'publish', instructions: 'Publish the result' })
@@ -78,6 +79,54 @@ test('shared participant edits retain step instructions and rename every referen
     expect(definition.participants['publish-agent']).toEqual(definition.participants.engineer!)
     expect(input('Participant ID').value).toBe('publish-agent')
     expect(document.querySelector('[aria-label="Choose participant"]')?.textContent).toContain('Used by 1 step')
+  } finally {
+    client.clear()
+    await dom.cleanup()
+  }
+})
+
+test('tier dropdown overrides the engineer tier and can return to agent type defaults', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/settings/workflows' })
+  const { root } = dom.createRoot()
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  client.setQueryData(queries.agentTypes.list().queryKey, [{ id: 'engineer', name: 'Engineer' }])
+  client.setQueryData(queries.modelTiers.list().queryKey, [
+    { slug: 'deep', label: 'Deep' },
+    { slug: 'exhaustive', label: 'Exhaustive' },
+    { slug: 'disabled', label: 'Disabled', disabled: true },
+  ])
+  let definition = createBlankWorkflow()
+  definition.participants.worker = { agentTypeId: 'engineer', session: 'reuse-within-stream' }
+  function Harness() {
+    const [value, setValue] = useState(definition)
+    definition = value
+    return <WorkflowParticipantEditor definition={value} onChange={setValue} selected="worker" onSelect={() => {}} />
+  }
+  const selector = () =>
+    [...document.querySelectorAll('label')]
+      .find((label) => label.textContent?.startsWith('Model tier'))!
+      .querySelector('select')!
+  try {
+    await dom.act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <Harness />
+        </QueryClientProvider>
+      )
+    )
+    expect(selector().value).toBe('')
+    expect([...selector().options].map((o) => o.value)).not.toContain('disabled')
+    for (const tier of ['deep', 'exhaustive', '']) {
+      await dom.act(async () => {
+        selector().value = tier
+        selector().dispatchEvent(new dom.window.Event('change', { bubbles: true }))
+      })
+      expect(definition.participants.worker).toEqual({
+        agentTypeId: 'engineer',
+        session: 'reuse-within-stream',
+        ...(tier ? { tier } : {}),
+      })
+    }
   } finally {
     client.clear()
     await dom.cleanup()

@@ -10,8 +10,7 @@ import {
   type WorkflowPreset,
   type ResolvedWorkflow,
 } from '@tau/shared'
-import { agentTypes, db, workflows, type DbTx } from '../../db'
-import { validateModelSpecList } from '../../lib/utils/model-spec'
+import { agentTypes, db, modelTiers, workflows, type DbTx } from '../../db'
 
 type Store = typeof db | DbTx
 export type WorkflowRow = typeof workflows.$inferSelect
@@ -37,7 +36,7 @@ function canonical(value: unknown): string {
     typeof value === 'object' &&
     'agentTypeId' in value &&
     'session' in value &&
-    Object.keys(value).every((key) => ['agentTypeId', 'model', 'session'].includes(key))
+    Object.keys(value).every((key) => ['agentTypeId', 'tier', 'session'].includes(key))
   ) {
     const { agentTypeId, ...settings } = value as Record<string, unknown>
     value = { ...settings, profile: agentTypeId }
@@ -98,12 +97,10 @@ export async function validateWorkflowParticipants(definition: WorkflowDefinitio
         `Agent type '${id}' does not exist, is disabled, or is system-only; choose an enabled worker agent type`
       )
   for (const participant of Object.values(definition.participants)) {
-    if (participant.model) {
-      try {
-        validateModelSpecList(participant.model)
-      } catch (error) {
-        throw new WorkflowError(error instanceof Error ? error.message : 'Invalid model configuration')
-      }
+    if (participant.tier) {
+      const [tier] = await store.select().from(modelTiers).where(eq(modelTiers.slug, participant.tier))
+      if (!tier || tier.disabled)
+        throw new WorkflowError(`Model tier '${participant.tier}' does not exist or is disabled`)
     }
   }
 }

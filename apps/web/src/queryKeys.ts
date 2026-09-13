@@ -1,6 +1,8 @@
 // Query keys now live in @tau/client-core so web and mobile share one definition.
 export { queryKeys } from '@tau/client-core'
 
+export const modelTierQueryKeys = { list: () => ['model-tiers'] as const }
+
 /**
  * Onboarding has no mobile surface yet, so its keys live here directly
  * instead of in the shared @tau/client-core definitions — same `all` +

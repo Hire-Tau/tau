@@ -29,7 +29,7 @@ test('inserting a step splices one forward connection and preserves later work a
 test('changes to a reused participant highlight every affected step', () => {
   const before = createBlankWorkflow()
   const after = structuredClone(before)
-  after.participants[Object.keys(after.participants)[0]!]!.model = 'another-model'
+  after.participants[Object.keys(after.participants)[0]!]!.tier = 'deep'
   expect(changedWorkflowSteps(before, after)).toEqual([before.entry])
 })
 
@@ -201,7 +201,7 @@ test('backward connections infer rework, while reconnecting the same arrow forwa
 
 test('making a participant separate copies settings for only the selected step and preserves graph references', () => {
   const source = createBlankWorkflow()
-  source.participants.worker!.model = 'custom-model'
+  source.participants.worker!.tier = 'deep'
   source.steps[0]!.outcomes = { completed: { next: 'publish' } }
   source.steps.push({
     ...structuredClone(source.steps[0]!),
@@ -217,7 +217,7 @@ test('making a participant separate copies settings for only the selected step a
   expect(separated.definition.entry).toBe(source.entry)
   expect(separated.definition.steps[1]).toEqual({ ...source.steps[1]!, participant: 'publish-agent-2' })
   expect(separated.definition.participants['publish-agent-2']).toEqual(source.participants.worker!)
-  separated.definition.participants['publish-agent-2']!.model = 'different-model'
-  expect(separated.definition.participants.worker!.model).toBe('custom-model')
+  separated.definition.participants['publish-agent-2']!.tier = 'exhaustive'
+  expect(separated.definition.participants.worker!.tier).toBe('deep')
   expect(workflowDefinitionSchema.safeParse(separated.definition).success).toBe(true)
 })

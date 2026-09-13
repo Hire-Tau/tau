@@ -15,6 +15,7 @@ import {
   db,
   agents,
   agentTypes,
+  modelTiers,
   squads,
   workStreams,
   workflowBindings,
@@ -44,6 +45,7 @@ import {
 
 const prefix = `flow-execution-${randomUUID()}`
 const agentTypeId = `${prefix}-worker`
+const overrideTier = `${prefix}-override`
 let squadId: string
 let flow: WorkflowDefinition
 let send: ReturnType<typeof spyOn<Agent, 'sendMessage'>>
@@ -63,6 +65,9 @@ beforeAll(async () => {
     systemPrompt: 'Shared role expertise and operational guidance',
     extraScopes: ['workstreams:respond'],
   })
+  await db
+    .insert(modelTiers)
+    .values({ slug: overrideTier, label: 'Override fixture', chain: 'anthropic:claude-haiku-4-5' })
   const [squad] = await db.insert(squads).values({ name: prefix, purpose: 'Flow execution fixtures' }).returning()
   squadId = squad!.id
   // Exercise durable dispatch and inbox claims without starting a model or sandbox.
@@ -85,6 +90,7 @@ afterAll(async () => {
   }
   await cleanupTestRbac(prefix)
   await db.delete(agentTypes).where(eq(agentTypes.id, agentTypeId))
+  await db.delete(modelTiers).where(eq(modelTiers.slug, overrideTier))
 })
 async function create(status: 'active' | 'queued' = 'active', definition = flow) {
   return db.transaction(async (tx) => {
@@ -399,7 +405,7 @@ describe('flow lifecycle and authority', () => {
             {
               op: 'put-participant',
               id: 'reviewer',
-              participant: { ...definition.participants.reviewer!, model: 'anthropic:claude-haiku-4-5' },
+              participant: { ...definition.participants.reviewer!, tier: overrideTier },
             },
           ],
         },
@@ -464,7 +470,9 @@ describe('flow lifecycle and authority', () => {
         attemptId: 1,
         active: 'keep',
         reason: 'Change future model',
-        operations: [{ op: 'put-participant', id: 'builder', participant: { ...flow.participants.builder!, model } }],
+        operations: [
+          { op: 'put-participant', id: 'builder', participant: { ...flow.participants.builder!, tier: overrideTier } },
+        ],
       },
       randomUUID(),
       actor
@@ -671,7 +679,7 @@ test('a revised participant reuses its replacement session after agent snapshot 
         {
           op: 'put-participant',
           id: 'builder',
-          participant: { ...flow.participants.builder!, model: 'anthropic:claude-haiku-4-5' },
+          participant: { ...flow.participants.builder!, tier: overrideTier },
         },
       ],
     },
@@ -1021,7 +1029,7 @@ describe('attempt-scoped waits', () => {
           {
             op: 'put-participant',
             id: 'builder',
-            participant: { ...flow.participants.builder!, model: 'anthropic:claude-haiku-4-5' },
+            participant: { ...flow.participants.builder!, tier: overrideTier },
           },
         ],
         reason: 'Restart with a fresh brief',
@@ -1112,7 +1120,7 @@ test('blocking questions pin their origin attempt and late answers cannot wake i
         {
           op: 'put-participant',
           id: 'worker',
-          participant: { ...current.state.definition.participants.worker!, model: 'anthropic:claude-haiku-4-5' },
+          participant: { ...current.state.definition.participants.worker!, tier: overrideTier },
         },
       ],
       reason: 'Restart review with new instructions',
@@ -1185,4 +1193,51 @@ test('action center human gates use review permission and assigned reviewer filt
     .set({ assignedReviewerIds: [responder.id] })
     .where(eq(workStreams.id, id))
   expect((await evaluatePendingAction({ type: 'user', userId: reviewer.id }, action, context)).canRespond).toBe(false)
+})
+
+test('participant tier resolves for each execution without changing the snapshotted role or current runner', async () => {
+  const slug = prefix + '-deep'
+  const initial = 'anthropic:claude-haiku-4-5'
+  const updated = 'anthropic:claude-opus-4-5'
+  await db.insert(modelTiers).values({ slug, label: 'Deep fixture', chain: initial })
+  try {
+    const definition = structuredClone(flow)
+    definition.participants.builder!.tier = slug
+    const id = await create('queued', definition)
+    expect((await getFlow(id))!.participantSnapshots.builder).toMatchObject({ id: agentTypeId, model: '', tier: slug })
+    expect((await getFlow(id))!.participantSnapshots.reviewer!.model).toBe('anthropic:claude-sonnet-4-5')
+    await db.update(modelTiers).set({ chain: updated }).where(eq(modelTiers.slug, slug))
+    await db.update(workStreams).set({ status: 'active' }).where(eq(workStreams.id, id))
+    await ensureFlowDispatch(id)
+    const binding = (await bindings(id))[0]!
+    expect(binding.agentSnapshot).toMatchObject({ model: '', tier: slug })
+    const worker = await Agent.mustFind(binding.agentId)
+    expect(worker.modelOverride).toBeNull()
+    const runningType = (await flowAgentType(worker.id))!
+    expect(runningType.model).toBe(updated)
+    expect(await worker.getEffectiveModelSpec(runningType.model)).toBe(updated)
+    await db.update(modelTiers).set({ chain: initial }).where(eq(modelTiers.slug, slug))
+    expect(runningType.model).toBe(updated)
+    expect((await flowAgentType(worker.id))!.model).toBe(initial)
+    expect((await flowAgentType(worker.id))!.systemPrompt).toBe('Shared role expertise and operational guidance')
+    await db.update(modelTiers).set({ disabled: true }).where(eq(modelTiers.slug, slug))
+    await expect(flowAgentType(worker.id)).rejects.toThrow('does not exist or is disabled')
+  } finally {
+    await db.delete(modelTiers).where(eq(modelTiers.slug, slug))
+  }
+})
+
+test('workflow tier overrides reject missing and disabled tiers without falling back', async () => {
+  const definition = structuredClone(flow)
+  const slug = prefix + '-disabled'
+  definition.participants.builder!.tier = slug
+  await expect(create('queued', definition)).rejects.toThrow('does not exist or is disabled')
+  await db
+    .insert(modelTiers)
+    .values({ slug, label: 'Disabled fixture', chain: 'anthropic:claude-haiku-4-5', disabled: true })
+  try {
+    await expect(create('queued', definition)).rejects.toThrow('does not exist or is disabled')
+  } finally {
+    await db.delete(modelTiers).where(eq(modelTiers.slug, slug))
+  }
 })

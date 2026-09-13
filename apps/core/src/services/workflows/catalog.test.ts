@@ -96,7 +96,7 @@ describe('workflow catalog', () => {
     expect(edits.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
     expect(edits.find((r) => r.status === 'rejected')).toMatchObject({ reason: { status: 409 } })
   })
-  test('resolution rejects absent/disabled agent types, invalid models, unknown customizations, disabled and stale presets', async () => {
+  test('resolution rejects absent/disabled agent types, unavailable tiers, unknown customizations, disabled and stale presets', async () => {
     const value = preset('validation')
     const row = await createWorkflow(value)
     await expect(resolveStoredWorkflow({ kind: 'preset', id: row.id, revision: 'old' })).rejects.toMatchObject({
@@ -109,7 +109,7 @@ describe('workflow catalog', () => {
     invalid.definition.participants.worker!.agentTypeId = `${prefix}-missing`
     await expect(createWorkflow(invalid)).rejects.toThrow('does not exist')
     invalid.definition.participants.worker!.agentTypeId = workerType
-    invalid.definition.participants.worker!.model = 'invalid-provider:model'
+    invalid.definition.participants.worker!.tier = `${prefix}-missing-tier`
     await expect(resolveStoredWorkflow({ kind: 'inline', definition: invalid.definition })).rejects.toThrow()
     const disabled = await setWorkflowDisabled(row.id, workflowRevision(row), true)
     await expect(resolveStoredWorkflow({ kind: 'preset', id: row.id })).rejects.toThrow('disabled')
