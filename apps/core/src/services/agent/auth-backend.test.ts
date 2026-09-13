@@ -4,6 +4,7 @@ import { db, secrets } from '../../db'
 import { SecretStore, getSecretStore, resetSecretStore } from '../secrets'
 import {
   SecretStoreCredentialStore,
+  firstProviderCredential,
   getModelRuntime,
   refreshModelRuntime,
   resetModelRuntimeForTests,
@@ -104,6 +105,90 @@ describe('SecretStoreCredentialStore', () => {
     expect(accounts).toHaveLength(2)
     expect((accounts[0].credential as any).key).toBe('sk-1')
     expect((accounts[1].credential as any).key).toBe('sk-2')
+  })
+
+  test('modify does not overwrite an enabled api_key account with an oauth credential', async () => {
+    await writeAccountStore(
+      {
+        version: 1,
+        accounts: {
+          anthropic: [{ id: 'a1', enabled: true, credential: { type: 'api_key', key: 'sk-keep' } }],
+        },
+      },
+      'admin'
+    )
+
+    const cs = new SecretStoreCredentialStore()
+    const resolved = await cs.modify('anthropic', async () => ({
+      type: 'oauth' as const,
+      refresh: 'r',
+      access: 'a',
+      expires: 123,
+    }))
+
+    // Nothing is written: the api_key survives untouched and modify resolves it.
+    expect(resolved?.type).toBe('api_key')
+    expect((resolved as any).key).toBe('sk-keep')
+    const accounts = readAccountStore().accounts.anthropic
+    expect(accounts).toHaveLength(1)
+    expect(accounts[0].credential).toEqual({ type: 'api_key', key: 'sk-keep' })
+  })
+
+  test('modify lands an oauth credential on the enabled oauth account of a mixed provider', async () => {
+    await writeAccountStore(
+      {
+        version: 1,
+        accounts: {
+          anthropic: [
+            { id: 'key', enabled: true, credential: { type: 'api_key', key: 'sk-keep' } },
+            { id: 'oauth-off', enabled: false, credential: { type: 'oauth', refresh: 'r0', access: 'a0', expires: 1 } },
+            { id: 'oauth-on', enabled: true, credential: { type: 'oauth', refresh: 'r1', access: 'a1', expires: 2 } },
+          ],
+        },
+      },
+      'admin'
+    )
+
+    const cs = new SecretStoreCredentialStore()
+    const resolved = await cs.modify('anthropic', async () => ({
+      type: 'oauth' as const,
+      refresh: 'r2',
+      access: 'a2',
+      expires: 3,
+    }))
+
+    expect(resolved?.type).toBe('oauth')
+    const accounts = readAccountStore().accounts.anthropic
+    expect(accounts[0].credential).toEqual({ type: 'api_key', key: 'sk-keep' })
+    expect(accounts[1].credential).toEqual({ type: 'oauth', refresh: 'r0', access: 'a0', expires: 1 })
+    expect(accounts[2].credential).toEqual({ type: 'oauth', refresh: 'r2', access: 'a2', expires: 3 })
+  })
+
+  test('modify does not overwrite a migrated api_key account with an oauth credential', async () => {
+    await writeAccountStore(
+      {
+        version: 1,
+        accounts: {
+          anthropic: [{ id: 'acc_migrated', enabled: false, credential: { type: 'api_key', key: 'sk-keep' } }],
+        },
+      },
+      'admin'
+    )
+
+    const cs = new SecretStoreCredentialStore()
+    const resolved = await cs.modify('anthropic', async () => ({
+      type: 'oauth' as const,
+      refresh: 'r',
+      access: 'a',
+      expires: 123,
+    }))
+
+    expect(resolved?.type).toBe('api_key')
+    const accounts = readAccountStore().accounts.anthropic
+    expect(accounts).toHaveLength(1)
+    expect(accounts[0].credential).toEqual({ type: 'api_key', key: 'sk-keep' })
+    // The migrated branch must not force-enable an account it did not write.
+    expect(accounts[0].enabled).toBe(false)
   })
 
   test('slow modify callback does not block unrelated account-store writes', async () => {
@@ -209,5 +294,53 @@ describe('getModelRuntime', () => {
     // refreshModelRuntime rebuilds the snapshot so hasConfiguredAuth reflects it.
     await refreshModelRuntime()
     expect(rt.hasConfiguredAuth('zai')).toBe(true)
+  })
+})
+
+describe('firstProviderCredential', () => {
+  const accounts = [
+    { id: 'key', enabled: true, credential: { type: 'api_key' as const, key: 'sk-1' } },
+    {
+      id: 'oauth-off',
+      enabled: false,
+      credential: { type: 'oauth' as const, refresh: 'r0', access: 'a0', expires: 1 },
+    },
+    { id: 'oauth-on', enabled: true, credential: { type: 'oauth' as const, refresh: 'r1', access: 'a1', expires: 2 } },
+  ]
+
+  test('without a requested type returns the first enabled credential', () => {
+    expect(firstProviderCredential(accounts)).toEqual({ type: 'api_key', key: 'sk-1' })
+  })
+
+  test('returns the enabled credential of the requested type', () => {
+    expect(firstProviderCredential(accounts, 'oauth')).toEqual({
+      type: 'oauth',
+      refresh: 'r1',
+      access: 'a1',
+      expires: 2,
+    })
+    expect(firstProviderCredential(accounts, 'api_key')).toEqual({ type: 'api_key', key: 'sk-1' })
+  })
+
+  test('falls back to a disabled credential of the requested type', () => {
+    const disabledOnly = [
+      { id: 'key', enabled: true, credential: { type: 'api_key' as const, key: 'sk-1' } },
+      {
+        id: 'oauth-off',
+        enabled: false,
+        credential: { type: 'oauth' as const, refresh: 'r0', access: 'a0', expires: 1 },
+      },
+    ]
+    expect(firstProviderCredential(disabledOnly, 'oauth')).toEqual({
+      type: 'oauth',
+      refresh: 'r0',
+      access: 'a0',
+      expires: 1,
+    })
+  })
+
+  test('returns undefined when no credential of the requested type exists', () => {
+    const keyOnly = [{ id: 'key', enabled: true, credential: { type: 'api_key' as const, key: 'sk-1' } }]
+    expect(firstProviderCredential(keyOnly, 'oauth')).toBeUndefined()
   })
 })

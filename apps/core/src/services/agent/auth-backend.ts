@@ -17,6 +17,7 @@ import { ModelRuntime } from '@earendil-works/pi-coding-agent'
 import type { Credential, CredentialInfo, CredentialStore } from '@earendil-works/pi-ai'
 import { registerBunOAuthFlows } from '@earendil-works/pi-ai/bun-oauth'
 import { KeyedSerialQueue } from '../../lib/infra/inflight'
+import { createLogger } from '../../lib/infra/logger'
 import { mutateAccountStoreAsync, readAccountStore, type AccountStoreV1 } from './account-store'
 
 // pi-ai loads OAuth flow modules through deliberately bundler-opaque dynamic
@@ -27,6 +28,8 @@ import { mutateAccountStoreAsync, readAccountStore, type AccountStoreV1 } from '
 // mechanism pi ships for standalone/bundled runtimes and is a no-op override
 // of the lazy path when running unbundled.
 registerBunOAuthFlows()
+
+const log = createLogger('auth-backend')
 
 const PROVIDER_KEY_PREFIX = 'PROVIDER_AUTH_'
 
@@ -74,7 +77,8 @@ const credentialModifyQueue = new KeyedSerialQueue()
  * `modify` may run a provider OAuth refresh (pi-ai calls it for token
  * rotation); it is serialized per provider, but the callback runs outside the
  * global account-store write lock. The result is persisted with a short
- * compare-and-swap write onto the first enabled account for that provider.
+ * compare-and-swap write onto the first enabled account of the SAME credential
+ * type for that provider, and dropped when the provider has no such account.
  */
 export class SecretStoreCredentialStore implements CredentialStore {
   async read(providerId: string): Promise<Credential | undefined> {
@@ -111,14 +115,26 @@ export class SecretStoreCredentialStore implements CredentialStore {
       let resolved: Credential | undefined
       await mutateAccountStoreAsync(async (store) => {
         const accounts = store.accounts[providerId] ?? []
-        const current = firstProviderCredential(accounts)
+        // Re-read the same TYPE we handed fn: on a mixed api_key + oauth
+        // provider a type-blind re-read can return the other account's
+        // credential and report a conflict that never happened.
+        const current = firstProviderCredential(accounts, observed?.type)
         if (!credentialsEqual(current, observed)) {
           // Another writer changed this provider while fn was running. Do not
           // overwrite fresher user/account-store state with a stale refresh.
           resolved = current
           return false
         }
-        upsertProviderCredential(store.accounts, providerId, accounts, next)
+        if (!upsertProviderCredential(store.accounts, providerId, accounts, next)) {
+          // No account of this credential's type: dropping the write is the
+          // only safe outcome (the alternative overwrites a credential of the
+          // other type). Never throw — this runs inside a token refresh.
+          log.warn(
+            `Dropped credential of type '${next.type}' for provider ${providerId}: no account of that type exists`
+          )
+          resolved = current
+          return false
+        }
         resolved = next
         return true
       }, 'system')
@@ -137,21 +153,27 @@ export class SecretStoreCredentialStore implements CredentialStore {
   }
 }
 
-/**
- * Persist `credential` for `providerId` through the serialized account-store
- * writer, preserving the existing per-provider OAuth merge semantics: when an
- * `acc_migrated`/single-account layout exists the credential is updated in
- * place; otherwise the credential is written onto the first enabled account
- * (or a fresh migrated account if none).
- */
-function readProviderCredential(providerId: string): Credential | undefined {
-  return firstProviderCredential(readAccountStore().accounts[providerId] ?? [])
+/** {@link firstProviderCredential} over the live account store. */
+function readProviderCredential(providerId: string, type?: Credential['type']): Credential | undefined {
+  return firstProviderCredential(readAccountStore().accounts[providerId] ?? [], type)
 }
 
-function firstProviderCredential(
-  accounts: ReturnType<typeof readAccountStore>['accounts'][string]
+/**
+ * The provider's "current" credential: the first enabled account's, falling
+ * back to the first account's.
+ *
+ * `type` narrows the search to accounts holding that credential type. A
+ * provider can hold both an api_key and an OAuth account, and the type-blind
+ * answer then hands an OAuth refresh callback the api_key (and makes the
+ * compare-and-swap in `modify` compare across types) — see
+ * {@link upsertProviderCredential}.
+ */
+export function firstProviderCredential(
+  accounts: ReturnType<typeof readAccountStore>['accounts'][string],
+  type?: Credential['type']
 ): Credential | undefined {
-  return accounts.find((a) => a.enabled && a.credential != null)?.credential ?? accounts[0]?.credential
+  const candidates = type == null ? accounts : accounts.filter((a) => a.credential?.type === type)
+  return candidates.find((a) => a.enabled && a.credential != null)?.credential ?? candidates[0]?.credential
 }
 
 function credentialsEqual(a: Credential | undefined, b: Credential | undefined): boolean {
@@ -160,21 +182,42 @@ function credentialsEqual(a: Credential | undefined, b: Credential | undefined):
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
+/**
+ * Write `credential` onto the provider's account of the SAME credential type,
+ * preferring an enabled one. Returns false (writing nothing) when the provider
+ * holds no account of that type.
+ *
+ * The type match is the whole point: a provider can hold an api_key account and
+ * an OAuth account at once, and the credential arriving here is whatever the
+ * caller's flow produced (pi-ai drives `modify` for OAuth token rotation).
+ * Writing it onto "the first enabled account" DESTROYS an api_key when an OAuth
+ * credential arrives. This mirrors the guard `persistOAuthCredential` already
+ * applies in account-store.ts (`wrong_type`), whose comment names this call
+ * site — including the `acc_migrated` id, which is deterministic and recycled,
+ * so "the migrated account exists" never implies "it is OAuth".
+ */
 function upsertProviderCredential(
   allAccounts: ReturnType<typeof readAccountStore>['accounts'],
   providerId: string,
   accounts: ReturnType<typeof readAccountStore>['accounts'][string],
   credential: Credential
-): void {
+): boolean {
   if (accounts.length === 0) {
     allAccounts[providerId] = [{ id: 'acc_migrated', enabled: true, credential }]
-  } else if (accounts.length === 1 && accounts[0].id === 'acc_migrated') {
+    return true
+  }
+  if (accounts.length === 1 && accounts[0].id === 'acc_migrated') {
+    if (accounts[0].credential?.type !== credential.type) return false
     accounts[0].credential = credential
     accounts[0].enabled = true
-  } else {
-    const target = accounts.find((a) => a.enabled) ?? accounts[0]
-    target.credential = credential
+    return true
   }
+  const target =
+    accounts.find((a) => a.enabled && a.credential?.type === credential.type) ??
+    accounts.find((a) => a.credential?.type === credential.type)
+  if (!target) return false
+  target.credential = credential
+  return true
 }
 
 let modelRuntimePromise: Promise<ModelRuntime> | undefined
