@@ -6,10 +6,20 @@ const dotenvInjected = new Map<string, string>()
 /** Load variables from the deliberate runtime CWD .env without overriding existing values. */
 export function loadEnv(options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}): void {
   const env = options.env ?? process.env
-  const envPath = join(options.cwd ?? process.cwd(), '.env')
+  const cwd = options.cwd ?? process.cwd()
+  const envPath = join(cwd, '.env')
   if (!existsSync(envPath)) return
 
-  for (const line of readFileSync(envPath, 'utf-8').split('\n')) {
+  let contents: string
+  try {
+    contents = readFileSync(envPath, 'utf-8')
+  } catch (error) {
+    const code = error instanceof Error && 'code' in error ? String(error.code) : String(error)
+    process.stderr.write(`tau: could not read .env in ${cwd} (${code}); continuing without it\n`)
+    return
+  }
+
+  for (const line of contents.split('\n')) {
     const trimmed = line.trim()
     if (!trimmed || trimmed.startsWith('#')) continue
     const eqIdx = trimmed.indexOf('=')
