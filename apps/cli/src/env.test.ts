@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'bun:test'
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs'
+import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { getDotenvEnv, getExplicitEnv, loadEnv } from './env'
@@ -85,5 +85,26 @@ describe('loadEnv', () => {
 
     expect(getExplicitEnv('TAU_PASSWORD')).toBe('exported-by-the-user')
     expect(getDotenvEnv('TAU_PASSWORD')).toBeUndefined()
+  })
+
+  it('continues without throwing when the cwd dotenv exists but is unreadable', () => {
+    if (process.getuid?.() === 0) {
+      console.log('skipping: running as root, which ignores file mode bits')
+      return
+    }
+
+    const root = mkdtempSync(join(tmpdir(), 'tau-env-'))
+    dirs.push(root)
+    const envPath = join(root, '.env')
+    writeFileSync(envPath, 'TAU_PASSWORD=unreadable\n')
+    chmodSync(envPath, 0o000)
+    const env: NodeJS.ProcessEnv = {}
+
+    try {
+      expect(() => loadEnv({ cwd: root, env })).not.toThrow()
+      expect(env.TAU_PASSWORD).toBeUndefined()
+    } finally {
+      chmodSync(envPath, 0o600)
+    }
   })
 })
