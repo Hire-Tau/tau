@@ -233,6 +233,30 @@ test('phone settings chooser stays open across areas and closes on a page select
   expect(trigger.getAttribute('aria-expanded')).toBe('false')
 })
 
+test('phone chooser fits below the squad header and tracks the keyboard viewport', async () => {
+  const { container } = await setup()
+  const trigger = container.querySelector<HTMLButtonElement>('[aria-label="Choose settings section"]')!
+  const chooser = trigger.parentElement!
+  const viewport = new dom!.window.EventTarget()
+  Object.assign(viewport, { height: 844, offsetTop: 0 })
+  Object.defineProperty(dom!.window, 'visualViewport', { configurable: true, value: viewport })
+  container.getBoundingClientRect = () => ({ bottom: 740 }) as DOMRect
+  chooser.getBoundingClientRect = () => ({ bottom: 350 }) as DOMRect
+  await dom!.act(async () => trigger.click())
+  const menu = chooser.querySelector<HTMLElement>('[data-state="open"]')!
+  expect(menu.style.maxHeight).toBe('min(60dvh, 374px)')
+  await dom!.act(async () => {
+    Object.assign(viewport, { height: 510 })
+    viewport.dispatchEvent(new dom!.window.Event('resize'))
+  })
+  expect(menu.style.maxHeight).toBe('min(60dvh, 144px)')
+  await dom!.act(async () => {
+    Object.assign(viewport, { offsetTop: 100 })
+    viewport.dispatchEvent(new dom!.window.Event('scroll'))
+  })
+  expect(menu.style.maxHeight).toBe('min(60dvh, 244px)')
+})
+
 test('exact Agents page ranks ahead of keyword-only field matches', async () => {
   const { sidebar, search } = await setup([
     {
