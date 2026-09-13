@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { eq, inArray } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { db } from '../db'
-import { agents, agentTypes, executions, schedules } from '../db/schema'
+import { agents } from '../db/schema'
 import { Agent } from '../entities/Agent'
-import { AgentType } from '../entities/AgentType'
+import { SubagentTestFixture } from '../test-utils/subagent-fixture'
 import { Subagent } from '../entities/Subagent'
 import { createDispatchTool } from './dispatch'
 import { createCheckSubagentsTool, createStopSubagentTool } from './subagents'
@@ -12,30 +12,17 @@ describe('subagent tools ownership scoping', () => {
   let agentTypeId: string
   let createdAgentIds: string[]
 
+  let fixture: SubagentTestFixture
+
   beforeEach(async () => {
-    agentTypeId = `subagent-tools-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    createdAgentIds = []
-    await AgentType.create({
-      id: agentTypeId,
-      name: 'Subagent Tools Test',
-      model: 'anthropic:claude-sonnet-4-5',
-      systemPrompt: 'test',
-    })
-    await AgentType.upsert({
-      id: 'subagent',
-      name: 'Subagent',
-      model: 'anthropic:claude-sonnet-4-5',
-      systemPrompt: 'subagent',
-    })
+    fixture = new SubagentTestFixture('subagent-tools', 'anthropic:claude-sonnet-4-5')
+    agentTypeId = fixture.parentTypeId
+    createdAgentIds = fixture.agentIds
+    await fixture.setup()
   })
 
   afterEach(async () => {
-    if (createdAgentIds.length) {
-      await db.delete(schedules).where(inArray(schedules.scopeId, createdAgentIds))
-      await db.delete(executions).where(inArray(executions.agentId, createdAgentIds))
-      await db.delete(agents).where(inArray(agents.id, createdAgentIds))
-    }
-    await db.delete(agentTypes).where(eq(agentTypes.id, agentTypeId))
+    await fixture.cleanup()
   })
 
   async function createParent(): Promise<Agent> {
