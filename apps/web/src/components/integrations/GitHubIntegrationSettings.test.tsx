@@ -4,7 +4,7 @@ import { fireEvent, waitFor } from '@testing-library/dom'
 import { acquireDomHarness } from '../../test/domHarness'
 import { integrationQueryKeys, onboardingQueryKeys } from '../../queryKeys'
 import { GitHubIntegrationSettings } from './GitHubIntegrationSettings'
-import { TAU_GITHUB_APP_CLIENT_ID } from '@tau/shared/oauth-providers/github/app'
+import { TAU_GITHUB_APP_CLIENT_ID } from '@tau/shared/github-app'
 
 let harness: Awaited<ReturnType<typeof acquireDomHarness>>
 let oldFetch: typeof globalThis.fetch

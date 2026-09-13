@@ -3,7 +3,7 @@ import { GitHubWebhookSettings } from './GitHubWebhookSettings'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { IntegrationAuthorizationStart } from '@tau/shared'
-import { TAU_GITHUB_APP_CLIENT_ID } from '@tau/shared/oauth-providers/github/app'
+import { TAU_GITHUB_APP_CLIENT_ID } from '@tau/shared/github-app'
 import {
   setIntegrationDefault,
   setIntegrationEnabled,
