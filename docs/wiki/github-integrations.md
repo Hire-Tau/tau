@@ -87,7 +87,7 @@ Under **Squad settings → Integrations → GitHub → Event rules**, choose an 
 
 - **Notify manager:** send the event to the squad’s manager.
 - **Notify new consultant:** start a fresh consultant chat for the event, with the same squad context as a manager chat. Retrying delivery reuses that chat.
-- **Start work stream:** use a selected workflow, or the squad default. The event’s repository and issue/PR are attached automatically. Existing bound work is reused.
+- **Create work stream:** save a selected workflow, or the squad default, paused for owner preparation. The event’s repository and issue/PR references are attached automatically; a Git checkout is prepared separately before resume. Existing bound work is reused.
 - **Ignore:** take no squad action.
 
 A repository filter is an exact `owner/repository`, or a pattern with `*`
@@ -112,7 +112,9 @@ The **Shared repository scope** is a reusable filter, not an action. A rule with
 - **Account is assigned or @mentioned**: the account is an assignee on the issue/PR or appears as an @mention in the event text. Events authored by that account or a bot are ignored.
 - **Any matching event**: no assignment or mention check, including self-authored and bot events. The other filters still apply.
 
-With any account selected, one attached account matching is enough. **Start work stream** also accepts optional **Additional context**, included as squad instructions alongside the event details and chosen workflow. Updating this context affects newly created work, not existing work streams.
+With any account selected, one attached account matching is enough. **Notify manager**, **Notify new consultant**, and **Create work stream** accept optional **Instructions**, included as instructions from the squad’s event rule alongside the external event details. For example, tell the manager to create an engineering workflow for the issue, prepare an isolated worktree, and then start it. Updating instructions affects future events, not previously delivered messages or existing work streams.
+
+**Create work stream** saves the chosen workflow in a queued, paused stream and notifies its owner (the squad manager). No worker agents are spawned and no admission slot is consumed during preparation. The owner reviews the event, attaches a workspace if needed using `tau workstream update <id> --repository <checkout-path>`, and runs `tau workstream resume <id>` to start it under the normal concurrency limits. Tasks without a Git workspace can be resumed after review. If the squad has no manager, an operator must prepare and resume the stream. Repository replacement after workflow agents have started remains prohibited.
 
 The first matching enabled rule wins. Move rules up or down to set priority. Deleting every rule disables squad actions for that provider. Events already bound to a work stream still follow its own subscriptions, including pause and wait behavior; squad rules do not override them. Changing rules does not replay already handled events.
 

@@ -84,13 +84,16 @@ test('all four actions are shared across providers and metadata rejects invalid 
   ).toBe(false)
 })
 
-test('additional work-stream context is optional, bounded, and retained with the selected workflow', () => {
-  const item = rule('context', 'start-workstream')
-  const action = { type: 'start-workstream', additionalContext: '  Check accessibility.\nInclude evidence.  ' }
-  expect(squadEventRuleSchema.parse({ ...item, action }).action).toMatchObject({
-    additionalContext: 'Check accessibility.\nInclude evidence.',
-  })
-  expect(
-    squadEventRuleSchema.safeParse({ ...item, action: { ...action, additionalContext: 'a'.repeat(10001) } }).success
-  ).toBe(false)
-})
+test.each(['start-workstream', 'notify-manager', 'notify-consultant'] as const)(
+  'instructions for %s are optional, bounded, and retained',
+  (type) => {
+    const item = rule('context', type)
+    const action = { type, additionalContext: '  Check accessibility.\nInclude evidence.  ' }
+    expect(squadEventRuleSchema.parse({ ...item, action }).action).toMatchObject({
+      additionalContext: 'Check accessibility.\nInclude evidence.',
+    })
+    expect(
+      squadEventRuleSchema.safeParse({ ...item, action: { ...action, additionalContext: 'a'.repeat(10001) } }).success
+    ).toBe(false)
+  }
+)

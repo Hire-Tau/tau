@@ -55,10 +55,29 @@ test('event rules expose four actions, persist workflow selection, and allow pri
     expect(Array.from(select('Then').options).map((option) => option.textContent)).toEqual([
       'Notify manager',
       'Notify new consultant',
-      'Start work stream',
+      'Create work stream',
       'Ignore',
     ])
+    await dom.act(async () =>
+      fireEvent.input(document.querySelector('textarea')!, {
+        target: { value: 'Prepare an engineering stream and its worktree.' },
+      })
+    )
+    expect(value[0]!.action).toMatchObject({
+      type: 'notify-manager',
+      additionalContext: 'Prepare an engineering stream and its worktree.',
+    })
     await change(select('Then'), 'notify-consultant')
+    await dom.act(async () =>
+      fireEvent.input(document.querySelector('textarea')!, {
+        target: { value: 'Research the issue before creating work.' },
+      })
+    )
+    expect(value[0]!.action).toMatchObject({
+      type: 'notify-consultant',
+      additionalContext: 'Research the issue before creating work.',
+    })
+
     expect(document.body.textContent).toContain('fresh consultant chat')
     await change(select('Then'), 'start-workstream')
     await change(select('Workflow'), 'reviewed-coding')
