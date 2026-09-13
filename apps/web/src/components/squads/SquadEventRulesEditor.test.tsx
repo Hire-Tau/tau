@@ -53,7 +53,7 @@ test('event rules expose four actions, persist workflow selection, and allow pri
       )
     )
     expect(Array.from(select('Then').options).map((option) => option.textContent)).toEqual([
-      'Notify manager',
+      'Notify manager (unlinked events)',
       'Notify new consultant',
       'Create work stream',
       'Ignore',
