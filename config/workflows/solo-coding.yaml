@@ -4,10 +4,10 @@ definition:
   schemaVersion: 1
   name: Solo Coding
   participants:
-    worker:
+    engineer:
       agentTypeId: engineer
       session: reuse-within-stream
-  entry: execute
+  entry: implement
   routing:
     mode: guided
     returnTo: declared-only
@@ -16,8 +16,8 @@ definition:
     maxDelegations: 0
     onLimit: request-owner-input
   steps:
-    - id: execute
-      participant: worker
+    - id: implement
+      participant: engineer
       instructions: >-
         Implement the requested change in the work-stream workspace. Run appropriate validation, inspect your
         own diff, and prepare the change request. Work directly without spawning other agents. Ask the owner

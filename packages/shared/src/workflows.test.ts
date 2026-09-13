@@ -35,6 +35,7 @@ describe('declarative workflows', () => {
     'solo-coding',
     'reviewed-coding',
     'research-brief',
+    'code-review',
     'security-review',
   ])('validates the %s declarative preset', async (id) => {
     const value = await preset(id)
@@ -334,6 +335,7 @@ test('engineering recommendations resolve to ready-to-use styles and never provi
     'solo-coding',
     'reviewed-coding',
     'engineering',
+    'code-review',
     'security-review',
   ])
   for (const choice of squad.workflows.choices) {
@@ -348,7 +350,7 @@ test('engineering recommendations resolve to ready-to-use styles and never provi
     expect(definition.completion).toEqual({ mode: 'pr-merge', followChanges: true })
     expect(definition.subscriptions).toBeUndefined()
   }
-  for (const id of ['research-brief', 'security-review'])
+  for (const id of ['research-brief', 'security-review', 'code-review'])
     expect((await preset(id)).definition.completion.mode).toBe('deliverable')
 })
 
@@ -418,6 +420,7 @@ test('shipped presets follow the visible graph after rework rather than skipping
     'reviewed-coding',
     'engineering',
     'research-brief',
+    'code-review',
     'security-review',
   ]) {
     const { definition } = await preset(id)
@@ -527,4 +530,35 @@ test('participant tier overrides round-trip and reject ambiguous or malformed se
   expect(workflowParticipantSchema.safeParse({ ...base, tier: 'provider:model' }).success).toBe(false)
   expect(workflowParticipantSchema.safeParse({ ...base, tier: 'deep', model: 'provider:model' }).success).toBe(false)
   expect(workflowParticipantSchema.safeParse({ ...base, model: 'provider:model' }).success).toBe(false)
+})
+
+test('Code Review has one reviewer and finishes with a report while following attached code-host events', async () => {
+  const { definition } = await preset('code-review')
+  expect(definition.participants).toEqual({ reviewer: { agentTypeId: 'reviewer', session: 'reuse-within-stream' } })
+  expect(definition.steps).toHaveLength(1)
+  expect(definition.entry).toBe('review')
+  expect(definition.steps[0]).toMatchObject({ kind: 'agent', participant: 'reviewer' })
+  expect(definition.steps[0]!.outcomes).toEqual({ completed: { next: 'finish' } })
+  expect(definition.routing.delegation).toBe('disabled')
+  expect(definition.completion).toEqual({ mode: 'deliverable', followChanges: true })
+})
+
+test('shipped workflow roles describe the work and every participant is used', async () => {
+  const roles: Record<string, string[]> = {
+    solo: ['worker'],
+    'builder-reviewer': ['builder', 'reviewer'],
+    'solo-coding': ['engineer'],
+    'reviewed-coding': ['engineer', 'reviewer'],
+    engineering: ['architect', 'engineer', 'reviewer'],
+    'research-brief': ['researcher', 'reviewer'],
+    'security-review': ['assessor', 'reviewer'],
+    'code-review': ['reviewer'],
+  }
+  for (const [id, participants] of Object.entries(roles)) {
+    const { definition } = await preset(id)
+    expect(Object.keys(definition.participants)).toEqual(participants)
+    expect(new Set(definition.steps.filter((step) => step.kind === 'agent').map((step) => step.participant))).toEqual(
+      new Set(participants)
+    )
+  }
 })
