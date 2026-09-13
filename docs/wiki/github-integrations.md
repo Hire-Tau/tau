@@ -87,7 +87,7 @@ Under **Squad settings → Integrations → GitHub → Event rules**, choose an 
 
 - **Notify manager:** send the event to the squad’s manager.
 - **Notify new consultant:** start a fresh consultant chat for the event, with the same squad context as a manager chat. Retrying delivery reuses that chat.
-- **Start work stream:** use a selected workflow, or the squad default. The event’s repository and issue/PR are attached automatically. Existing bound work is reused.
+- **Create work stream:** save a selected workflow, or the squad default, paused for owner preparation. The event’s repository and issue/PR references are attached automatically; a Git checkout is prepared separately before resume. Existing bound work is reused.
 - **Ignore:** take no squad action.
 
 A repository filter is an exact `owner/repository`, or a pattern with `*`
