@@ -18,8 +18,12 @@ export const squadEventRuleSchema = z
       })
       .strict(),
     action: z.discriminatedUnion('type', [
-      z.object({ type: z.literal('notify-manager') }).strict(),
-      z.object({ type: z.literal('notify-consultant') }).strict(),
+      z
+        .object({ type: z.literal('notify-manager'), additionalContext: z.string().trim().max(10000).optional() })
+        .strict(),
+      z
+        .object({ type: z.literal('notify-consultant'), additionalContext: z.string().trim().max(10000).optional() })
+        .strict(),
       z.object({ type: z.literal('ignore') }).strict(),
       z
         .object({

@@ -554,10 +554,16 @@ async function formatWorkStreamCreatorForOwnerNotice(workStream: WorkStream): Pr
     return `the user ${displayName} (${user.email})`
   }
 
+  const source = workStream.metadata?.integrationSource as { integration?: unknown } | undefined
+  if (typeof source?.integration === 'string') return `an integration event (${source.integration})`
+
   return null
 }
 
-export async function notifyWorkStreamOwnerOfNewStream(workStream: WorkStream): Promise<void> {
+export async function notifyWorkStreamOwnerOfNewStream(
+  workStream: WorkStream,
+  options: { retryOnFailure?: boolean } = {}
+): Promise<void> {
   try {
     const { creatorAgentId, ownerAgentId } = workStream
     // Same rule as every other lifecycle event, with the creator as the actor:
@@ -578,9 +584,12 @@ export async function notifyWorkStreamOwnerOfNewStream(workStream: WorkStream): 
     if (!creatorDescription) return
     const requesterContext = await formatRequestingUser(workStream)
     const content = [
-      `A new work stream you now own was started by ${creatorDescription}.`,
+      `A new work stream you now own was ${workStream.metadata?.integrationSource ? 'created' : 'started'} by ${creatorDescription}.`,
       requesterContext,
       `Query it with \`tau workstream get ${workStream.id}\` to see the full details.`,
+      workStream.pause && workStream.metadata?.integrationSource && !workStream.agentIds?.length
+        ? `The workflow is paused before any workers start. Review the event and workflow, prepare its workspace if needed with \`tau workstream update ${workStream.id} --repository <checkout-path>\`, then start it with \`tau workstream resume ${workStream.id}\`. If no Git workspace is needed, resume after reviewing the task. Do not manually bypass repository setup guards.`
+        : null,
     ]
       .filter((part): part is string => Boolean(part))
       .join('\n\n')
@@ -596,7 +605,7 @@ export async function notifyWorkStreamOwnerOfNewStream(workStream: WorkStream): 
         workStreamId: workStream.id,
         squadId: workStream.squadId,
         event: 'created',
-        transitionAt: transitionAt(workStream),
+        transitionAt: workStream.createdAt.toISOString(),
         ownerAgentId,
         creatorAgentId,
         requestingUserId: workStream.requestingUserId,
@@ -604,6 +613,7 @@ export async function notifyWorkStreamOwnerOfNewStream(workStream: WorkStream): 
     })
   } catch (error) {
     log.error('Failed to notify work stream owner of new stream:', error)
+    if (options.retryOnFailure) throw error
   }
 }
 

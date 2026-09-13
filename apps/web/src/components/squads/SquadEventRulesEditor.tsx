@@ -259,7 +259,7 @@ export function SquadEventRulesEditor({
             >
               <option value="notify-manager">Notify manager</option>
               <option value="notify-consultant">Notify new consultant</option>
-              <option value="start-workstream">Start work stream</option>
+              <option value="start-workstream">Create work stream</option>
               <option value="ignore">Ignore</option>
             </select>
           </label>
@@ -282,30 +282,35 @@ export function SquadEventRulesEditor({
                   update(index, { action: { ...rule.action, type: 'start-workstream', workflow: undefined } })
                 }
               />
-              <label className="block text-sm">
-                Additional context (optional)
-                <textarea
-                  className={field}
-                  rows={3}
-                  maxLength={10000}
-                  value={rule.action.additionalContext ?? ''}
-                  placeholder="Extra instructions for work started by this rule…"
-                  onChange={(event) =>
-                    update(index, {
-                      action: {
-                        ...rule.action,
-                        type: 'start-workstream',
-                        additionalContext: event.target.value || undefined,
-                      },
-                    })
-                  }
-                />
-                <span className="mt-1 block text-xs text-muted">
-                  Included in the new work stream’s instructions alongside the issue or event details and the chosen
-                  workflow.
-                </span>
-              </label>
+              <p className="text-xs text-muted">
+                Creates a paused work stream and notifies its owner to prepare the workspace. Workers start only after
+                the owner resumes it.
+              </p>
             </>
+          )}
+          {rule.action.type !== 'ignore' && (
+            <label className="block text-sm">
+              Instructions (optional)
+              <textarea
+                className={field}
+                rows={3}
+                maxLength={10000}
+                value={rule.action.additionalContext ?? ''}
+                placeholder="How should this event be handled?"
+                onChange={(event) => {
+                  if (rule.action.type === 'ignore') return
+                  update(index, {
+                    action: {
+                      ...rule.action,
+                      additionalContext: event.target.value || undefined,
+                    },
+                  })
+                }}
+              />
+              <span className="mt-1 block text-xs text-muted">
+                Sent as instructions from this rule, alongside the external event details.
+              </span>
+            </label>
           )}
         </fieldset>
       ))}

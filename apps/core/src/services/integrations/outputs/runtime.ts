@@ -645,6 +645,7 @@ async function applyOutputTriggers(event: Event) {
           if (prior) continue
           const metadata: Record<string, unknown> = {
             integrationSource: {
+              eventId: event.id,
               integration: event.integration,
               connectionId: event.authority.kind === 'connection' ? event.authority.connectionId : undefined,
               resourceKey: event.fact.resourceKey,
@@ -734,13 +735,21 @@ async function applyOutputTriggers(event: Event) {
                 .filter(Boolean)
                 .join('\n\n'),
               ownerAgentId: squad.managerAgentId,
+              // Commit the preparation hold with the flow and receipt. No scheduler
+              // can admit this stream before its owner has prepared and resumed it.
+              status: 'queued',
+              pause: {
+                id: crypto.randomUUID(),
+                pausedAt: new Date().toISOString(),
+                reason: 'Event-created work stream: awaiting owner preparation before starting the workflow.',
+                parkAt: null,
+                agentIds: [],
+              },
               metadata,
             })
             .returning()
           const { attachFlow } = await import('../../workflows/execution')
           await attachFlow(tx, stream!, trigger.create.workflow)
-          const { admitOrQueueAtCreation } = await import('../../work-streams/admission')
-          await admitOrQueueAtCreation(tx, { squadId: id, streamId: stream!.id })
           await tx.insert(integrationOutputTriggerRuns).values({
             squadId: id,
             triggerId: trigger.id,
@@ -762,6 +771,19 @@ async function applyOutputTriggers(event: Event) {
     } catch (error) {
       errors.push(error)
     }
+  }
+  // Recover the post-commit owner notice from the durable receipt on retries.
+  // Receipts that merely bound an existing stream must not announce new work.
+  const receipts = await db
+    .select({ workStreamId: integrationOutputTriggerRuns.workStreamId })
+    .from(integrationOutputTriggerRuns)
+    .where(eq(integrationOutputTriggerRuns.eventId, event.id))
+  for (const streamId of new Set(receipts.flatMap((row) => (row.workStreamId ? [row.workStreamId] : [])))) {
+    const { WorkStream } = await import('../../../entities/WorkStream')
+    const stream = await WorkStream.find(streamId)
+    if (!stream || integrationValueAt(stream.metadata, 'integrationSource.eventId') !== event.id) continue
+    const { notifyWorkStreamOwnerOfNewStream } = await import('../../squad/work-stream-notifications')
+    await notifyWorkStreamOwnerOfNewStream(stream, { retryOnFailure: true })
   }
   if (errors.length) throw errors[0]
 }
