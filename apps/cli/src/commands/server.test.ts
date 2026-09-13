@@ -69,7 +69,7 @@ const joined = (calls: { command: string[] }[]) => calls.map((c) => c.command.jo
 
 /** A recording runner whose `git clone` actually creates a fake checkout at `installRoot`. */
 function cloningRunner(installRoot: string) {
-  const rec = recordingRunner()
+  const rec = recordingRunner({ 'bun --version': { stdout: '1.3.8\n' } })
   const runner = async (
     command: string[],
     options?: { cwd?: string; env?: Record<string, string | undefined>; inherit?: boolean }
@@ -78,6 +78,7 @@ function cloningRunner(installRoot: string) {
     if (command[0] === 'git' && command[1] === 'clone') {
       mkdirSync(join(installRoot, '.git'), { recursive: true })
       writeFileSync(join(installRoot, 'package.json'), JSON.stringify({ name: 'tau' }))
+      writeFileSync(join(installRoot, '.bun-version'), '1.3.8\n')
     }
     return r
   }
@@ -533,6 +534,7 @@ describe('tau server', () => {
     )
     expect(joined(calls)).toEqual([
       `git clone --recurse-submodules --branch main x ${installRoot}`,
+      'bun --version',
       'bun install --frozen-lockfile',
       `bun run setup -- --root ${installRoot} --runtime host`,
     ])
@@ -592,6 +594,7 @@ describe('tau server', () => {
     )
     expect(joined(calls)).toEqual([
       `git clone --recurse-submodules --branch main x ${installRoot}`,
+      'bun --version',
       'bun install --frozen-lockfile',
       `bun run setup -- --root ${installRoot} --runtime host --yes`,
     ])
