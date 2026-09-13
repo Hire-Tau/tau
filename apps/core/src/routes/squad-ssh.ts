@@ -32,6 +32,10 @@ async function getValidSquadId(squadIdParam: string): Promise<string | null> {
 }
 
 export const squadSshRouter = new Hono()
+  .onError((error, c) => {
+    if (error instanceof squadSsh.SshDirectoryPermissionError) return c.json({ error: error.message }, 500)
+    throw error
+  })
 
   // List SSH keys for a squad
   .get('/:squadId/keys', requireSquadPermission('ssh:read', 'squadId'), async (c) => {
@@ -57,6 +61,7 @@ export const squadSshRouter = new Hono()
         await squadSsh.addSshKey(squadId, name, privateKey, publicKey)
         return c.json({ success: true, keyName: name }, 201)
       } catch (error) {
+        if (error instanceof squadSsh.SshDirectoryPermissionError) throw error
         const message = error instanceof Error ? error.message : 'Failed to add key'
         return c.json({ error: message }, 400)
       }
@@ -87,6 +92,7 @@ export const squadSshRouter = new Hono()
       await squadSsh.removeSshKey(squadId, keyName)
       return c.json({ success: true })
     } catch (error) {
+      if (error instanceof squadSsh.SshDirectoryPermissionError) throw error
       const message = error instanceof Error ? error.message : 'Failed to remove key'
       return c.json({ error: message }, 400)
     }
