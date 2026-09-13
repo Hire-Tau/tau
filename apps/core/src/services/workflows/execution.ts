@@ -82,12 +82,17 @@ async function snapshotParticipants(
     }
     const [row] = await tx.select().from(agentTypes).where(eq(agentTypes.id, participant.agentTypeId))
     if (!row || row.disabled) throw new WorkflowError('Agent type is unavailable')
-    const [tier] = row.tier ? await tx.select().from(modelTiers).where(eq(modelTiers.slug, row.tier)) : []
-    const model =
-      participant.model || row.model || (tier && !tier.disabled ? tier.chain : '') || process.env.DEFAULT_MODEL || ''
+    const tierSlug = participant.tier ?? row.tier
+    const [tier] = tierSlug ? await tx.select().from(modelTiers).where(eq(modelTiers.slug, tierSlug)) : []
+    if (participant.tier && (!tier || tier.disabled))
+      throw new WorkflowError(`Model tier '${participant.tier}' does not exist or is disabled`)
+    const model = participant.tier
+      ? tier!.chain
+      : row.model || (tier && !tier.disabled ? tier.chain : '') || process.env.DEFAULT_MODEL || ''
     if (!model || model.length > 500)
       throw new WorkflowError(`Agent type '${row.id}' needs a valid model chain of at most 500 characters`)
-    result[id] = { ...row, model, tier: null }
+    // Freeze the role/settings and tier choice, not the mutable tier mapping.
+    result[id] = participant.tier ? { ...row, model: '', tier: participant.tier } : { ...row, model, tier: null }
   }
   return result
 }
@@ -219,7 +224,7 @@ async function dispatchFlowAttempt(
         agentTypeId: agentSnapshot.id,
         squadId: stream.squadId,
         persist: false,
-        modelOverride: agentSnapshot.model,
+        modelOverride: agentSnapshot.tier ? null : agentSnapshot.model,
         metadata: {
           name: `${step.participant} · ${stream.title.slice(0, 60)}`,
           resourceGeneration: crypto.randomUUID(),
@@ -573,8 +578,20 @@ export async function flowAgentType(agentId: string): Promise<AgentType | null> 
   if (!binding) return null
   const [current] = await db.select().from(agentTypes).where(eq(agentTypes.id, binding.agentSnapshot.id))
   if (!current || current.disabled) throw new WorkflowError('Flow participant agent type was disabled')
+  let model = binding.agentSnapshot.model
+  if (binding.agentSnapshot.tier) {
+    const [tier] = await db.select().from(modelTiers).where(eq(modelTiers.slug, binding.agentSnapshot.tier))
+    if (!tier || tier.disabled)
+      throw new WorkflowError(`Model tier '${binding.agentSnapshot.tier}' does not exist or is disabled`)
+    if (!tier.chain || tier.chain.length > 500)
+      throw new WorkflowError('Workflow model tier needs a valid chain of at most 500 characters')
+    model = tier.chain
+  }
   const agentSnapshot = {
     ...binding.agentSnapshot,
+    // The runner keeps this resolved copy for its execution; persisted bindings retain the tier.
+    model,
+    tier: null,
     skills: (binding.agentSnapshot.skills ?? []).filter(
       (skill) => !['subagent-driven-development', 'executing-plans'].includes(skill)
     ),

@@ -464,6 +464,7 @@ export async function exportSkillMarkdown(id: string): Promise<string> {
 }
 
 export interface ModelTierConfig {
+  disabled?: boolean
   slug: string
   label: string
   description: string | null

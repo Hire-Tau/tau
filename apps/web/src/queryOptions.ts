@@ -24,7 +24,8 @@ import {
   listAgentScopes,
 } from './api/agents'
 import { listAgentTypes } from './api/agentTypes'
-import { getSquadPresets } from './api/config'
+import { getModelTiers, getSquadPresets } from './api/config'
+import { modelTierQueryKeys } from './queryKeys'
 import { schedulesApi, type ListSchedulesParams } from './api/schedules'
 import { monitorsApi, type ListMonitorsParams } from './api/monitors'
 import { getRecommendation, listRecommendations, type ListRecommendationsParams } from './api/recommendations'
@@ -202,6 +203,10 @@ export const queries = {
         queryKey: queryKeys.sharedPrompts.templateDiff(id),
         queryFn: () => getSharedPromptTemplateDiff(id),
       }),
+  },
+
+  modelTiers: {
+    list: () => queryOptions({ queryKey: modelTierQueryKeys.list(), queryFn: getModelTiers }),
   },
 
   agentTypes: {

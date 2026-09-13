@@ -1,3 +1,4 @@
+import { WorkflowParticipantTierField } from './WorkflowParticipantEditor'
 import type { PageEditorAssistant } from '../PageEditorAssistant'
 import { isWorkflowTextTarget, workflowHistoryKey } from '../../lib/workflowEditing'
 import { isWorkerAgentType } from '@tau/shared'
@@ -350,20 +351,14 @@ export function WorkflowEditor({
                         ))}
                       </select>
                     </label>
-                    <label className="text-xs text-secondary">
-                      Model override
-                      <input
-                        className={field}
-                        value={participant.model ?? ''}
-                        placeholder="Agent type default"
-                        onChange={(e) =>
-                          edit((draft) => {
-                            if (e.target.value) draft.participants[id]!.model = e.target.value
-                            else delete draft.participants[id]!.model
-                          })
-                        }
-                      />
-                    </label>
+                    <WorkflowParticipantTierField
+                      participant={participant}
+                      onChange={(next) =>
+                        edit((draft) => {
+                          draft.participants[id] = next
+                        })
+                      }
+                    />
                     <label className="text-xs text-secondary">
                       Session
                       <select

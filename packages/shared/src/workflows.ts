@@ -14,7 +14,13 @@ export const workflowParticipantSchema = z
   .object({
     // Existing agent-type IDs need not follow the flow's local ID convention.
     agentTypeId: z.string().trim().min(1).max(100),
-    model: z.string().trim().min(1).max(2000).optional(),
+    tier: z
+      .string()
+      .trim()
+      .min(1)
+      .max(100)
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+      .optional(),
     session: z.enum(['reuse-within-stream', 'fresh-per-attempt']),
   })
   .strict()

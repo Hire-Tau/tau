@@ -217,21 +217,7 @@ function WorkflowParticipantFields({
           Supplies the role, base instructions, and tools for this participant.
         </span>
       </label>
-      <label className="block text-sm">
-        Model override
-        <input
-          className={field}
-          placeholder="Agent type default"
-          value={participant.model ?? ''}
-          onChange={(event) => {
-            const next = { ...participant }
-            if (event.target.value) next.model = event.target.value
-            else delete next.model
-            onChange(next)
-          }}
-        />
-        <span className="block text-xs text-muted mt-1">Leave empty to use the agent type’s model.</span>
-      </label>
+      <WorkflowParticipantTierField participant={participant} onChange={onChange} />
       <label className="block text-sm">
         Session
         <select
@@ -253,5 +239,54 @@ function WorkflowParticipantFields({
         results, and open revision requests.
       </p>
     </div>
+  )
+}
+
+export function WorkflowParticipantTierField({
+  participant,
+  onChange,
+}: {
+  participant: WorkflowDefinition['participants'][string]
+  onChange: (participant: WorkflowDefinition['participants'][string]) => void
+}) {
+  const { data: tiers = [], isPending: tiersPending, isError: tiersError } = useQuery(queries.modelTiers.list())
+  const availableTiers = tiers.filter((tier) => !tier.disabled)
+  return (
+    <>
+      <label className="block text-sm">
+        Model tier
+        <select
+          className={field}
+          value={participant.tier ?? ''}
+          disabled={tiersPending}
+          onChange={(event) => {
+            const next = { ...participant }
+            if (event.target.value) next.tier = event.target.value
+            else delete next.tier
+            onChange(next)
+          }}
+        >
+          <option value="">Agent type default</option>
+          {participant.tier && !availableTiers.some((tier) => tier.slug === participant.tier) && (
+            <option value={participant.tier} disabled>
+              {participant.tier} (unavailable)
+            </option>
+          )}
+          {availableTiers.map((tier) => (
+            <option key={tier.slug} value={tier.slug}>
+              {tier.label}
+            </option>
+          ))}
+        </select>
+        <span className="block text-xs text-muted mt-1">
+          Choose a tier for this participant, or keep the agent type’s default model settings.
+        </span>
+      </label>
+      {tiersError && (
+        <p role="alert" className="text-sm text-danger">
+          Model tiers could not be loaded.
+        </p>
+      )}
+    </>
   )
 }
