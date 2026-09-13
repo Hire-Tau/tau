@@ -37,7 +37,8 @@ export function SquadEventRulesEditor({
         <h4 className="font-medium text-primary">Event rules</h4>
         <p className="mt-1 text-xs text-muted">
           Rules run from top to bottom; only the first matching enabled rule acts. All filters within a rule must match.
-          Events already linked to a work stream follow that work stream’s event settings.
+          Manager and consultant notifications are fallbacks for unlinked events. Events linked to an active or queued
+          work stream use only that stream’s subscriptions, including its pause and wait settings.
         </p>
       </div>
       {catalog.isError && (
@@ -257,15 +258,22 @@ export function SquadEventRulesEditor({
               value={rule.action.type}
               onChange={(event) => update(index, { action: { type: event.target.value } as SquadEventRule['action'] })}
             >
-              <option value="notify-manager">Notify manager</option>
+              <option value="notify-manager">Notify manager (unlinked events)</option>
               <option value="notify-consultant">Notify new consultant</option>
               <option value="start-workstream">Create work stream</option>
               <option value="ignore">Ignore</option>
             </select>
           </label>
+          {rule.action.type === 'notify-manager' && (
+            <p className="text-xs text-muted">
+              Notify the squad manager only when the event is not already associated with a work stream. Disabling this
+              rule does not disable work-stream subscriptions.
+            </p>
+          )}
           {rule.action.type === 'notify-consultant' && (
             <p className="text-xs text-muted">
-              Start a fresh consultant chat for this event. Redelivery keeps the same chat.
+              Start a fresh consultant chat only when the event is not already associated with a work stream. Redelivery
+              keeps the same chat.
             </p>
           )}
           {rule.action.type === 'start-workstream' && (
