@@ -15,6 +15,7 @@
     "./testDbPort": "./src/testDbPort.ts",
     "./openrouter-tier-expansion": "./src/openrouter-tier-expansion.ts",
     "./advisory-lock": "./src/advisory-lock.ts",
+    "./github-app": "./src/github-app.ts",
     "./oauth-broker": "./src/oauth-broker/protocol.ts",
     "./oauth-providers": "./src/oauth-providers/registry.ts",
     "./oauth-providers/types": "./src/oauth-providers/types.ts",

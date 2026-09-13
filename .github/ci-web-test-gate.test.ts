@@ -265,6 +265,10 @@ describe('full web test runner summary', () => {
 })
 
 describe('CI web test gate', () => {
+  test('the canonical web suite discovers the browser import boundary guard', async () => {
+    expect(await discoverTestFiles()).toContain('src/no-server-only-imports.test.ts')
+  })
+
   test('uses the exact unconditional full-suite contract', () => {
     expect(validateWebTestGate(workflow)).toEqual([])
   })
