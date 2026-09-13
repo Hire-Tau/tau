@@ -1418,3 +1418,41 @@ test('parked issue comments notify the owner while paused issue streams stay hel
   expect((await ownerNotices(id)).map((row) => row.recipientId)).toEqual([owner.id])
   expect((await deliveries(id))[0]!.targets).toEqual([])
 })
+
+test('issue rules reuse a manually attached string-number issue instead of creating another work stream', async () => {
+  await withNativeRouting(async (connectionId) => {
+    const id = await create(98, { codeHost: true })
+    await attachIssue(id, 99, connectionId)
+    await db
+      .update(squads)
+      .set({
+        metadata: {
+          integrationRules: {
+            github: [
+              {
+                id: 'manual-issue',
+                enabled: true,
+                source: { integration: 'github', output: 'issue.comment', version: 1 },
+                filters: { squadRouting: false, audience: 'any' },
+                action: { type: 'start-workstream' },
+              },
+            ],
+          },
+        },
+      })
+      .where(eq(squads.id, squadId))
+    const eventId = await publishIntegrationOutput('github', issueComment(99), {
+      kind: 'connection',
+      connectionId,
+      squadId,
+    })
+    eventIds.push(eventId)
+    const receipts = await db
+      .select()
+      .from(integrationOutputTriggerRuns)
+      .where(eq(integrationOutputTriggerRuns.eventId, eventId))
+    expect(receipts.map((row) => row.workStreamId)).toEqual([id])
+    expect((await deliveries(id)).filter((row) => row.eventId === eventId)).toHaveLength(1)
+    expect((await getFlow(id))!.state.status).toBe('running')
+  })
+})
