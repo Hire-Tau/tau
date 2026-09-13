@@ -133,12 +133,14 @@ See `docs/wiki/workflows.md` for the reference. Flow `subscriptions` and squad `
 
 ## Integration events
 
-For code-hosting review, CI, and merge updates, prefer
-`completion.followChanges: true` and bind the stream's `metadata.codeHost` with
+For linked PR and issue updates, enable **Code hosting** in the workflow editor
+(`completion.followChanges: true`) and bind the stream's `metadata.codeHost` with
 `integration`, `repository`, and `changeRequest: {number}` (plus optional
 `connectionId`). The provider adapter supplies subscriptions to the delivery
 owner and verifies merge evidence. GitHub is supported today; other providers
-need adapters before use. Existing `metadata.github` remains compatible.
+need adapters before use. Existing `metadata.github` remains compatible. For GitHub issues, attach
+`metadata.github.repo` and `metadata.github.issue`; Code hosting then includes
+issue comments, edits, and assignment changes alongside any linked PR events.
 The three shipped coding workflows enable this option. Use explicit subscriptions
 for additional outputs or different consumers; do not duplicate the generated
 subscriptions or use their reserved `code-host-` ID prefix.

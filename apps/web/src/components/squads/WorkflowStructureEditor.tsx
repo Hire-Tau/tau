@@ -583,10 +583,10 @@ export function WorkflowStructureEditor({
                   }
                 />
                 <span>
-                  Follow code changes
+                  Code hosting
                   <span className="block text-xs text-muted">
-                    Route review, CI, and merge events from the work stream’s code hosting integration to its delivery
-                    owner.
+                    Send updates from linked pull requests and issues to the selected workflow recipient, or the
+                    delivery owner by default.
                   </span>
                 </span>
               </label>

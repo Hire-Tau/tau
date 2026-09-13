@@ -38,14 +38,15 @@ export function WorkflowEventEditor({
           <span>
             <span className="block font-medium">Code hosting</span>
             <span className="block text-xs text-muted mt-1">
-              Send review, CI, merge, and other change updates from the code host bound to each work stream to your
-              chosen agent.
+              Send updates from linked pull requests and issues to the selected workflow recipient, or the delivery
+              owner by default.
             </span>
           </span>
         </label>
         <p className="text-xs text-muted">
-          Uses the stream’s repository, change request, and authorized account. GitHub is supported today; future
-          code-host adapters can use this same flow. No provider-specific event matching is needed.
+          Includes PR comments, reviews, CI, and merges, plus issue comments, edits, and assignment changes. Uses the
+          stream’s linked resources and authorized account. GitHub is supported today; no individual event rules are
+          needed.
         </p>
         {definition.completion.followChanges && (
           <label className="block text-sm">
@@ -91,7 +92,7 @@ export function WorkflowEventEditor({
         <summary className="cursor-pointer text-sm font-medium">Advanced event configuration</summary>
         <h5 className="text-sm font-medium">Custom integration events</h5>
         <p className="text-xs text-muted">
-          Configure individual events such as Linear issue assigned. Code hosting already bundles its provider’s change
+          Configure individual events such as Linear issue assigned. Code hosting already bundles linked PR and issue
           events; configure those here only when you need a specific event or matching rule.
         </p>
         {(definition.subscriptions ?? []).map((subscription, index) => {
