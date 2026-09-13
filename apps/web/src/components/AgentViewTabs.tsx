@@ -23,6 +23,7 @@ export function AgentViewTabs<T extends string>({ activeTab, onChange, tabs }: A
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const pointerSelection = useRef(false)
   useEffect(() => {
     if (!menuOpen) return
     menuRef.current?.querySelector<HTMLButtonElement>('[aria-current="page"]')?.focus()
@@ -30,6 +31,7 @@ export function AgentViewTabs<T extends string>({ activeTab, onChange, tabs }: A
       if (event.target instanceof Node && !menuRef.current?.contains(event.target)) setMenuOpen(false)
     }
     const onKeyDown = (event: KeyboardEvent) => {
+      pointerSelection.current = false
       if (event.key === 'Escape') {
         event.stopPropagation()
         setMenuOpen(false)
@@ -92,10 +94,17 @@ export function AgentViewTabs<T extends string>({ activeTab, onChange, tabs }: A
       <div
         ref={menuRef}
         className="relative md:hidden"
+        onPointerDownCapture={() => {
+          pointerSelection.current = true
+        }}
         onBlur={(event) => {
-          // Safari can blur without a new focus target before dispatching the tapped option's click.
-          // Outside presses are already handled by the document pointer listener.
-          if (event.relatedTarget instanceof Node && !event.currentTarget.contains(event.relatedTarget))
+          // Touch browsers may move focus to the page before the option's click.
+          // Let an inside pointer finish selecting; outside pointers dismiss above.
+          if (
+            !pointerSelection.current &&
+            event.relatedTarget instanceof Node &&
+            !event.currentTarget.contains(event.relatedTarget)
+          )
             setMenuOpen(false)
         }}
       >

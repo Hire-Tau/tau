@@ -115,34 +115,60 @@ describe('AgentViewTabs', () => {
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
   })
 
-  test('a mobile tap with null relatedTarget selects its option before the menu closes', async () => {
+  test.each(['null', 'body'] as const)(
+    'a mobile tap with %s relatedTarget selects before dismissal',
+    async (target) => {
+      const dom = await installDom()
+      const { root } = dom.createRoot()
+      const onChange = mock()
+      await dom.act(async () => root.render(<AgentViewTabs activeTab="chat" onChange={onChange} tabs={tabs} />))
+      const trigger = dom.window.document.querySelector<HTMLButtonElement>(
+        '[aria-label="Conversation options, Chat view"]'
+      )!
+      await dom.act(async () => trigger.click())
+      const menu = trigger.parentElement!
+      const context = Array.from(menu.querySelectorAll('button')).find((button) => button.textContent === 'Context')!
+      await dom.act(async () => {
+        context.dispatchEvent(new dom.window.Event('pointerdown', { bubbles: true }))
+        dom.window.document.activeElement!.dispatchEvent(
+          new dom.window.FocusEvent('focusout', {
+            bubbles: true,
+            relatedTarget: target === 'body' ? dom.window.document.body : null,
+          })
+        )
+      })
+      expect(trigger.getAttribute('aria-expanded')).toBe('true')
+      expect(context.closest('[data-state]')?.getAttribute('data-state')).toBe('open')
+      await dom.act(async () => context.click())
+      expect(onChange).toHaveBeenCalledWith('context')
+      expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    }
+  )
+
+  test('keyboard focus leaving the menu still dismisses after a pointer opened it', async () => {
     const dom = await installDom()
-    const { root } = dom.createRoot()
-    const onChange = mock()
-    await dom.act(async () => root.render(<AgentViewTabs activeTab="chat" onChange={onChange} tabs={tabs} />))
-    const trigger = dom.window.document.querySelector<HTMLButtonElement>(
-      '[aria-label="Conversation options, Chat view"]'
-    )!
-    await dom.act(async () => trigger.click())
-    const menu = trigger.parentElement!
-    const context = Array.from(menu.querySelectorAll('button')).find((button) => button.textContent === 'Context')!
+    const { root, container } = dom.createRoot()
+    await dom.act(async () => root.render(<AgentViewTabs activeTab="chat" onChange={mock()} tabs={tabs} />))
+    const trigger = container.querySelector<HTMLButtonElement>('[aria-expanded]')!
     await dom.act(async () => {
-      context.dispatchEvent(new dom.window.Event('pointerdown', { bubbles: true }))
+      trigger.dispatchEvent(new dom.window.Event('pointerdown', { bubbles: true }))
+      trigger.click()
+    })
+    await dom.act(async () => {
       dom.window.document.activeElement!.dispatchEvent(
-        new dom.window.FocusEvent('focusout', { bubbles: true, relatedTarget: null })
+        new dom.window.KeyboardEvent('keydown', { key: 'Tab', bubbles: true })
+      )
+      dom.window.document.activeElement!.dispatchEvent(
+        new dom.window.FocusEvent('focusout', { bubbles: true, relatedTarget: dom.window.document.body })
       )
     })
-    expect(trigger.getAttribute('aria-expanded')).toBe('true')
-    expect(context.closest('[data-state]')?.getAttribute('data-state')).toBe('open')
-    await dom.act(async () => context.click())
-    expect(onChange).toHaveBeenCalledWith('context')
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
   })
 
   test('selecting a tablet option calls onChange with the selected view', async () => {
     const dom = await installDom()
     const { window } = dom
-    const { root, container: element } = domHarness!.createRoot()
+    const { root } = domHarness!.createRoot()
     const onChange = mock()
 
     await domHarness!.act(async () => {

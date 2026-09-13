@@ -1,7 +1,7 @@
 import { Presence } from '../Presence'
 import { matchesSetting, settingMatchRank, SETTINGS_PAGE_KEYWORDS, SETTINGS_SEARCH_ENTRIES } from './settingsSearch'
 import clsx from 'clsx'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDownIcon, SettingsIcon } from '../icons'
 import { SETTINGS_SECTION_ICONS as icons } from './settingsIcons'
@@ -34,6 +34,36 @@ export function SettingsNavigation({
   const triggerRef = useRef<HTMLButtonElement>(null)
   const [search, setSearch] = useState('')
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [mobileMaxHeight, setMobileMaxHeight] = useState(0)
+  useLayoutEffect(() => {
+    if (!mobileOpen) return
+    const chooser = mobileRef.current
+    const bounds = chooser?.parentElement
+    if (!chooser || !bounds) return
+    const viewport = window.visualViewport
+    const updateHeight = () => {
+      // The settings region ends above the dock, including its PWA safe area.
+      // A viewport-only cap can extend beyond that region and get clipped.
+      const viewportBottom = viewport ? viewport.offsetTop + viewport.height : window.innerHeight
+      const bottom = Math.min(bounds.getBoundingClientRect().bottom, viewportBottom)
+      setMobileMaxHeight(Math.max(0, bottom - chooser.getBoundingClientRect().bottom - 16))
+    }
+    updateHeight()
+    const observer = new ResizeObserver(updateHeight)
+    observer.observe(bounds)
+    observer.observe(chooser)
+    window.addEventListener('resize', updateHeight)
+    window.addEventListener('scroll', updateHeight, true)
+    viewport?.addEventListener('resize', updateHeight)
+    viewport?.addEventListener('scroll', updateHeight)
+    return () => {
+      observer.disconnect()
+      window.removeEventListener('resize', updateHeight)
+      window.removeEventListener('scroll', updateHeight, true)
+      viewport?.removeEventListener('resize', updateHeight)
+      viewport?.removeEventListener('scroll', updateHeight)
+    }
+  }, [mobileOpen])
   useEffect(() => {
     if (!mobileOpen) return
     mobileRef.current?.querySelector<HTMLInputElement>('input')?.focus()
@@ -238,7 +268,8 @@ export function SettingsNavigation({
         </button>
         <Presence
           open={mobileOpen}
-          className="tau-overlay absolute left-0 right-0 top-full z-30 mt-2 max-h-[60dvh] overflow-y-auto p-3"
+          style={{ maxHeight: `min(60dvh, ${mobileMaxHeight}px)` }}
+          className="tau-overlay absolute left-0 right-0 top-full z-30 mt-2 overflow-y-auto overscroll-contain p-3"
         >
           {content()}
         </Presence>
