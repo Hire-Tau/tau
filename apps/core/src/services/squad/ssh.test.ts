@@ -64,6 +64,126 @@ describe('squad-ssh', () => {
     })
   })
 
+  describe('SSH directory failures', () => {
+    function expectedOwnerMessage(path: string): string {
+      return `SSH directory "${path}" requires owner UID ${process.geteuid!()} (GID ${process.getegid!()}) and permissions 0700`
+    }
+
+    it('rejects a legacy directory owned by another user before changing its permissions', async () => {
+      const { ensureSquadSshDir, getSquadSshPath } = await getModule()
+      const squadId = 'legacy-owner'
+      const sshPath = getSquadSshPath(squadId)
+      mkdirSync(sshPath, { mode: 0o755 })
+      chmodSync(sshPath, 0o755)
+      const stats = statSync(sshPath)
+      const originalStatSync = fs.statSync
+      // Simulate foreign ownership without requiring root/chown privileges in CI.
+      const statSpy = spyOn(fs, 'statSync').mockImplementation(((path, options) => {
+        if (path === sshPath) return Object.assign(stats, { uid: process.geteuid!() + 1 })
+        return originalStatSync(path, options)
+      }) as typeof fs.statSync)
+
+      try {
+        expect(() => ensureSquadSshDir(squadId)).toThrow(expectedOwnerMessage(sshPath))
+        expect(originalStatSync(sshPath).mode & 0o777).toBe(0o755)
+      } finally {
+        statSpy.mockRestore()
+      }
+    })
+
+    for (const code of ['EACCES', 'EPERM']) {
+      for (const directory of ['base', 'squad']) {
+        it(`reports an actionable error when ${directory} directory chmod fails with ${code}`, async () => {
+          const { ensureSquadSshDir } = await getModule()
+          const squadId = 'legacy-permissions'
+          const sshPath = ensureSquadSshDir(squadId)
+          const deniedPath = directory === 'base' ? join(tempDir, 'ssh') : sshPath
+          const originalChmodSync = fs.chmodSync
+          const chmodSpy = spyOn(fs, 'chmodSync').mockImplementation((path, mode) => {
+            if (path === deniedPath) throw Object.assign(new Error('permission denied'), { code })
+            return originalChmodSync(path, mode)
+          })
+
+          try {
+            expect(() => ensureSquadSshDir(squadId)).toThrow(expectedOwnerMessage(deniedPath))
+            expect(() => ensureSquadSshDir(squadId)).toThrow('administrator')
+          } finally {
+            chmodSpy.mockRestore()
+          }
+        })
+      }
+    }
+
+    it('reports access denied even when directory chmod succeeds', async () => {
+      const { ensureSquadSshDir } = await getModule()
+      const squadId = 'inaccessible-directory'
+      const sshPath = ensureSquadSshDir(squadId)
+      const originalAccessSync = fs.accessSync
+      const accessSpy = spyOn(fs, 'accessSync').mockImplementation((path, mode) => {
+        if (path === sshPath) throw Object.assign(new Error('permission denied'), { code: 'EACCES' })
+        return originalAccessSync(path, mode)
+      })
+
+      try {
+        expect(() => ensureSquadSshDir(squadId)).toThrow(expectedOwnerMessage(sshPath))
+      } finally {
+        accessSpy.mockRestore()
+      }
+    })
+
+    it('reports denied creation of a squad directory instead of a raw filesystem error', async () => {
+      const { ensureSquadSshDir, getSquadSshPath } = await getModule()
+      const squadId = 'denied-creation'
+      const sshPath = getSquadSshPath(squadId)
+      const originalMkdirSync = fs.mkdirSync
+      const mkdirSpy = spyOn(fs, 'mkdirSync').mockImplementation(((path, options) => {
+        if (path === sshPath) throw Object.assign(new Error('permission denied'), { code: 'EACCES' })
+        return originalMkdirSync(path, options)
+      }) as typeof fs.mkdirSync)
+
+      try {
+        expect(() => ensureSquadSshDir(squadId)).toThrow(expectedOwnerMessage(sshPath))
+      } finally {
+        mkdirSpy.mockRestore()
+      }
+    })
+
+    it('does not relabel unrelated filesystem errors as permission failures', async () => {
+      const { ensureSquadSshDir } = await getModule()
+      const squadId = 'io-error'
+      const sshPath = ensureSquadSshDir(squadId)
+      const failure = Object.assign(new Error('input/output error'), { code: 'EIO' })
+      const originalChmodSync = fs.chmodSync
+      const chmodSpy = spyOn(fs, 'chmodSync').mockImplementation((path, mode) => {
+        if (path === sshPath) throw failure
+        return originalChmodSync(path, mode)
+      })
+
+      try {
+        expect(() => ensureSquadSshDir(squadId)).toThrow(failure)
+      } finally {
+        chmodSpy.mockRestore()
+      }
+    })
+
+    it('checks a legacy directory before listing its keys', async () => {
+      const { ensureSquadSshDir, listSshKeys } = await getModule()
+      const squadId = 'legacy-list'
+      const sshPath = ensureSquadSshDir(squadId)
+      const originalChmodSync = fs.chmodSync
+      const chmodSpy = spyOn(fs, 'chmodSync').mockImplementation((path, mode) => {
+        if (path === sshPath) throw Object.assign(new Error('permission denied'), { code: 'EPERM' })
+        return originalChmodSync(path, mode)
+      })
+
+      try {
+        await expect(listSshKeys(squadId)).rejects.toThrow(expectedOwnerMessage(sshPath))
+      } finally {
+        chmodSpy.mockRestore()
+      }
+    })
+  })
+
   describe('addSshKey', () => {
     it('adds a private key with correct permissions', async () => {
       const { addSshKey, getSquadSshPath } = await getModule()
@@ -219,7 +339,7 @@ dGVzdA==
       )
     })
 
-    it('continues when squad directory chmod is denied but private key chmod succeeds', async () => {
+    it('rejects inaccessible squad directories before using a private key', async () => {
       const { ensurePrivateSshKeyPermissions, getSquadSshPath } = await getModule()
       const squadId = 'test-squad-123'
       const keyName = 'legacy-key'
@@ -232,7 +352,6 @@ dGVzdA==
       chmodSync(keyPath, 0o660)
 
       const originalChmodSync = fs.chmodSync
-      const warnSpy = spyOn(console, 'warn').mockImplementation(() => {})
       const chmodSpy = spyOn(fs, 'chmodSync').mockImplementation((path, mode) => {
         if (path === sshPath) {
           const error = new Error('operation not permitted') as NodeJS.ErrnoException
@@ -243,12 +362,10 @@ dGVzdA==
       })
 
       try {
-        expect(ensurePrivateSshKeyPermissions(squadId, keyName)).toBe(keyPath)
-        expect(statSync(keyPath).mode & 0o777).toBe(0o600)
-        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Unable to update SSH directory permissions'))
+        expect(() => ensurePrivateSshKeyPermissions(squadId, keyName)).toThrow(`SSH directory "${sshPath}"`)
+        expect(statSync(keyPath).mode & 0o777).toBe(0o660)
       } finally {
         chmodSpy.mockRestore()
-        warnSpy.mockRestore()
       }
     })
 

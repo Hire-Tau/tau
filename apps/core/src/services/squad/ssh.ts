@@ -66,15 +66,36 @@ function isPermissionDeniedError(error: unknown): boolean {
   )
 }
 
-function chmodDirectoryBestEffort(path: string, mode: number): void {
+/** A host filesystem problem, not an invalid SSH key or an authorization failure. */
+export class SshDirectoryPermissionError extends Error {
+  constructor(path: string, cause: Error) {
+    const uid = process.geteuid?.() ?? process.getuid?.() ?? 'unknown'
+    const gid = process.getegid?.() ?? process.getgid?.() ?? 'unknown'
+    super(
+      `SSH directory "${path}" requires owner UID ${uid} (GID ${gid}) and permissions 0700. ` +
+        `Ask the instance administrator to repair ownership (chown ${uid}:${gid}) and permissions (chmod 700) ` +
+        `on this directory and check access to its parent directories, then retry. ${cause.message}`,
+      { cause }
+    )
+    this.name = 'SshDirectoryPermissionError'
+  }
+}
+
+function ensureSshDirectory(path: string): void {
   try {
-    fs.chmodSync(path, mode)
+    fs.mkdirSync(path, { recursive: true, mode: 0o700 })
+    const stat = fs.statSync(path)
+    const uid = process.geteuid?.() ?? process.getuid?.()
+    // Mode 0700 grants access only to the owner; the directory's group may
+    // legitimately differ (e.g. inherited from a setgid parent).
+    if (uid !== undefined && stat.uid !== uid) {
+      throw new SshDirectoryPermissionError(path, new Error(`Current owner is UID ${stat.uid} (GID ${stat.gid}).`))
+    }
+    fs.chmodSync(path, 0o700)
+    fs.accessSync(path, fs.constants.R_OK | fs.constants.W_OK | fs.constants.X_OK)
   } catch (error) {
     if (isPermissionDeniedError(error)) {
-      console.warn(
-        `Unable to update SSH directory permissions for ${path}; continuing because private key permissions are enforced separately: ${(error as Error).message}`
-      )
-      return
+      throw new SshDirectoryPermissionError(path, error as Error)
     }
     throw error
   }
@@ -85,10 +106,7 @@ function chmodDirectoryBestEffort(path: string, mode: number): void {
  */
 export function getSshBasePath(): string {
   const basePath = join(getHomeDir(), 'ssh')
-  if (!fs.existsSync(basePath)) {
-    fs.mkdirSync(basePath, { recursive: true, mode: 0o700 })
-  }
-  chmodDirectoryBestEffort(basePath, 0o700)
+  ensureSshDirectory(basePath)
   return basePath
 }
 
@@ -100,14 +118,13 @@ export function getSquadSshPath(squadId: string): string {
 }
 
 /**
- * Ensure a squad's SSH directory exists with proper permissions.
+ * Ensure a squad's SSH directory exists with proper permissions. Owned
+ * directories are repaired automatically; legacy ownership/access failures
+ * require administrator intervention and throw SshDirectoryPermissionError.
  */
 export function ensureSquadSshDir(squadId: string): string {
   const sshPath = getSquadSshPath(squadId)
-  if (!fs.existsSync(sshPath)) {
-    fs.mkdirSync(sshPath, { recursive: true, mode: 0o700 })
-  }
-  chmodDirectoryBestEffort(sshPath, 0o700)
+  ensureSshDirectory(sshPath)
   return sshPath
 }
 
@@ -294,8 +311,7 @@ export async function removeSshKey(squadId: string, keyName: string): Promise<vo
  * List SSH keys for a squad with metadata.
  */
 export async function listSshKeys(squadId: string): Promise<SshKeyInfo[]> {
-  const sshPath = getSquadSshPath(squadId)
-  if (!fs.existsSync(sshPath)) return []
+  const sshPath = ensureSquadSshDir(squadId)
 
   const files = fs.readdirSync(sshPath)
   const keyNames = files.filter(
