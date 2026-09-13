@@ -80,3 +80,55 @@ test('explicit unsupported or invalid bindings never fall back to legacy GitHub;
   }
   expect(registry.subscriptions(flow, { codeHost: { integration: 'github', repository: 'owner/repo' } })).toEqual([])
 })
+
+test('attached issues get their own connection-scoped subscriptions alongside PRs', () => {
+  const registry = new CodeHostingRegistry([githubCodeHostingAdapter])
+  const flow = createBlankWorkflow()
+  flow.completion.followChanges = true
+  flow.completion.changeEventsTo = { step: flow.entry }
+  const connectionId = crypto.randomUUID()
+  const github = { repo: 'Owner/Repo', issue: '42' }
+  const integrationSource = { integration: 'github', resourceKey: 'owner/repo#42', connectionId }
+  const issues = registry.subscriptions(flow, { github, integrationSource })
+  expect(issues.map((sub) => sub.source.output)).toEqual([
+    'issue.assigned',
+    'issue.unassigned',
+    'issue.updated',
+    'issue.comment',
+  ])
+  for (const sub of issues) {
+    expect(integrationSubscriptionSchema.parse(sub).source.connectionId).toBe(connectionId)
+    expect(sub.match).toEqual({ repository: { value: 'owner/repo' }, 'issue.number': { value: 42 } })
+    expect(sub.deliver).toEqual({ to: { step: flow.entry }, whenInactive: 'retain' })
+  }
+  const codeHost = { integration: 'github', repository: 'owner/repo', changeRequest: { number: 99 } }
+  const both = registry.subscriptions(flow, { github, codeHost, integrationSource })
+  expect(both).toHaveLength(12)
+  expect(new Set(both.map((sub) => sub.id)).size).toBe(12)
+  expect(both.filter((sub) => sub.source.output.startsWith('issue.'))).toEqual(issues)
+  flow.completion.followChanges = false
+  expect(registry.subscriptions(flow, { github, codeHost })).toEqual([])
+})
+
+test('issue subscriptions reject malformed identities and do not cross repository or connection bindings', () => {
+  const registry = new CodeHostingRegistry([githubCodeHostingAdapter])
+  const flow = createBlankWorkflow()
+  flow.completion.followChanges = true
+  for (const issue of [null, true, {}, [], -1, 0, 1.5, '1.5', '0', 'bad', Number.MAX_SAFE_INTEGER + 1])
+    expect(registry.subscriptions(flow, { github: { repo: 'owner/repo', issue } })).toEqual([])
+  const github = { repo: 'owner/repo', issue: 42 }
+  expect(registry.subscriptions(flow, { github, codeHost: null })).toEqual([])
+  expect(
+    registry.subscriptions(flow, { github, codeHost: { integration: 'github', repository: 'other/repo' } })
+  ).toEqual([])
+  expect(registry.subscriptions(flow, { github: { ...github, connectionId: 'invalid' } })).toEqual([])
+  const connectionId = crypto.randomUUID()
+  expect(
+    registry
+      .subscriptions(flow, {
+        github: { ...github, connectionId },
+        integrationSource: { integration: 'github', resourceKey: 'owner/repo#42', connectionId: crypto.randomUUID() },
+      })
+      .every((sub) => sub.source.connectionId === connectionId)
+  ).toBe(true)
+})

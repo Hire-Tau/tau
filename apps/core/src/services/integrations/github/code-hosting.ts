@@ -1,3 +1,4 @@
+import { resolveGitHubIssueReference } from './issue-reference'
 import type { CodeHostingAdapter } from '../code-hosting/registry'
 import { githubApiGet } from '../../github/api-client'
 
@@ -20,6 +21,21 @@ export const githubCodeHostingAdapter: CodeHostingAdapter = {
       reference.connectionId
     )
     return !!comparison && ['identical', 'behind'].includes(comparison.status)
+  },
+  issueSubscriptions(reference, metadata) {
+    const issue = resolveGitHubIssueReference(metadata, reference)
+    if (!issue) return []
+    return ['assigned', 'unassigned', 'updated', 'comment'].map((event) => ({
+      id: `code-host-issue-${event}`,
+      source: {
+        integration: 'github',
+        output: `issue.${event}`,
+        version: 1,
+        ...(issue.connectionId ? { connectionId: issue.connectionId } : {}),
+      },
+      match: { repository: { value: issue.repository }, 'issue.number': { value: issue.number } },
+      deliver: { to: 'delivery-owner' as const, whenInactive: 'retain' as const },
+    }))
   },
   subscriptions(reference) {
     return [

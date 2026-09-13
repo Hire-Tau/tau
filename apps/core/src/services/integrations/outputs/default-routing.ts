@@ -1,3 +1,4 @@
+import { resolveGitHubIssueReference } from '../github/issue-reference'
 import { createHash } from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import {
@@ -101,6 +102,7 @@ export async function routeDefaultNotifications(event: Event, authorize: (squadI
   let matchedStream = false
   for (const { stream, runId } of candidates) {
     const binding = resolveCodeHostReference(stream.metadata)
+    const issue = resolveGitHubIssueReference(stream.metadata)
     const origin = record(integrationValueAt(stream.metadata, 'integrationSource'))
     const matches =
       (origin.integration === event.integration &&
@@ -116,8 +118,9 @@ export async function routeDefaultNotifications(event: Event, authorize: (squadI
             binding.repository.toLowerCase() === data.repository &&
             binding.changeRequest?.number === data.pullRequest.number &&
             (!binding.connectionId || binding.connectionId === event.authority.connectionId)
-          : integrationValueAt(stream.metadata, 'github.repo') === data.repository &&
-            integrationValueAt(stream.metadata, 'github.issue') === data.issue?.number))
+          : issue?.repository === data.repository &&
+            issue?.number === data.issue?.number &&
+            (!issue?.connectionId || issue.connectionId === event.authority.connectionId)))
     if (!matches) continue
     matchedStream = true
     // An inactive/retained subscription still owns routing. Never bypass its wait or pause policy.

@@ -1,3 +1,4 @@
+import { resolveGitHubIssueReference } from '../github/issue-reference'
 import { codeHostingRegistry } from '../code-hosting'
 import { isIntegrationEnabled } from '../provider-state'
 import { and, eq, inArray, isNull, lte, desc, sql, or } from 'drizzle-orm'
@@ -793,6 +794,20 @@ async function applyOutputTriggers(event: Event) {
                 reference.repository.toLowerCase() === event.fact.data.repository &&
                 reference.changeRequest?.number === integrationValueAt(event.fact.data, 'pullRequest.number') &&
                 (!reference.connectionId || reference.connectionId === event.authority.connectionId)
+              )
+            }
+            if (
+              raw === ruleTrigger &&
+              event.integration === 'github' &&
+              integrationValueAt(event.fact.data, 'issue.number') !== undefined &&
+              event.authority.kind === 'connection'
+            ) {
+              const issue = resolveGitHubIssueReference(stream.metadata)
+              return (
+                !!issue &&
+                issue.repository === event.fact.data.repository &&
+                issue.number === integrationValueAt(event.fact.data, 'issue.number') &&
+                (!issue.connectionId || issue.connectionId === event.authority.connectionId)
               )
             }
             return (
