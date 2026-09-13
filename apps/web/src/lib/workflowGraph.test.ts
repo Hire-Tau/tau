@@ -36,7 +36,7 @@ test('code hosting preview connects the provider-independent event source to del
   expect(graph.edges).toContainEqual({
     from: 'code-host:delivery',
     to: 'finish',
-    label: 'change events → delivery owner',
+    label: 'code hosting events → delivery owner',
     rework: false,
   })
 })
