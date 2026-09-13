@@ -1067,3 +1067,223 @@ test('a failed preparation notice is recovered from the trigger receipt without 
     }
   })
 })
+
+async function parkedCodeWork(number: number, ownerAgentId: string | null) {
+  const id = await create(number, { codeHost: true })
+  const run = (await getFlow(id))!
+  await advanceFlow(
+    id,
+    {
+      action: 'complete',
+      expectedVersion: run.version,
+      attemptId: 1,
+      outcome: 'completed',
+      evidence: 'PR ready',
+    },
+    randomUUID(),
+    { type: 'legacy' }
+  )
+  const { openWait } = await import('../../work-streams/waits')
+  await db.transaction(async (tx) => {
+    await openWait(tx, { workStreamId: id, type: 'manual', message: 'Await external CI or merge action' })
+    await tx.update(workStreams).set({ status: 'queued', ownerAgentId }).where(eq(workStreams.id, id))
+  })
+  return id
+}
+async function ownerNotices(id: string) {
+  return (await db.select().from(inbox)).filter(
+    (row) => row.metadata?.workStreamId === id && row.metadata?.integrationOwnerNotice === true
+  )
+}
+
+test('parked merge events notify the actual owner once, retain waits, and reach the worker after readmission', async () => {
+  await withNativeRouting(async (connectionId, managerId) => {
+    const owner = await Agent.create({ squadId, agentTypeId: prefix })
+    const id = await parkedCodeWork(80, owner.id)
+    const workerId = (await getFlow(id))!.attemptAgents['1']!
+    const { executions } = await import('../../../db')
+    const before = await db.select().from(executions).where(eq(executions.agentId, workerId))
+    const event = fact(80, { output: 'pull_request.merged' })
+    const authority = { kind: 'connection' as const, connectionId, squadId }
+    eventIds.push(
+      ...(await Promise.all([
+        publishIntegrationOutput('github', event, authority),
+        publishIntegrationOutput('github', event, authority),
+      ]))
+    )
+    await reconcileOutputDeliveries(id)
+    const notices = await ownerNotices(id)
+    expect(notices).toHaveLength(1)
+    expect(notices[0]!.recipientId).toBe(owner.id)
+    expect(notices[0]!.recipientId).not.toBe(managerId)
+    expect(notices[0]!.content).toContain('does not clear waits, approve, resume, or complete')
+    expect(await isCurrentFlowMessage(notices[0]!)).toBe(true)
+    const { listOpenWaits } = await import('../../work-streams/waits')
+    expect(await listOpenWaits(db, id)).toHaveLength(1)
+    expect((await WorkStream.mustFind(id)).status).toBe('queued')
+    expect((await getFlow(id))!.state.status).toBe('completion-ready')
+    expect(await db.select().from(executions).where(eq(executions.agentId, workerId))).toEqual(before)
+    expect((await deliveries(id))[0]!.targets).toEqual([])
+    expect((await deliveries(id))[0]!.reason).toBe('Work stream parked; owner notification pending')
+    await (await WorkStream.mustFind(id)).unblock({ note: 'PR merged externally; delivery blocker resolved' })
+    await reconcileOutputDeliveries(id)
+    expect((await deliveries(id))[0]!.targets[0]!.agentId).toBe(workerId)
+    expect(await isCurrentFlowMessage(notices[0]!)).toBe(false)
+  })
+})
+
+test('owner changes at queue acceptance fence the old notice and retry the current owner with durable receipts', async () => {
+  const oldOwner = await Agent.create({ squadId, agentTypeId: prefix })
+  const newOwner = await Agent.create({ squadId, agentTypeId: prefix })
+  const id = await parkedCodeWork(81, oldOwner.id)
+  send.mockImplementation(async function (this: Agent, ...args: Parameters<Agent['sendMessage']>) {
+    if (this.id === oldOwner.id)
+      await db.update(workStreams).set({ ownerAgentId: newOwner.id }).where(eq(workStreams.id, id))
+    return realSend.apply(this, args)
+  })
+  try {
+    await publish(fact(81, { output: 'pull_request.merged' }))
+    const first = (await ownerNotices(id))[0]!
+    expect(first.recipientId).toBe(oldOwner.id)
+    expect(first.deliveredAt).toBeNull()
+    expect(await isCurrentFlowMessage(first)).toBe(false)
+    await reconcileOutputDeliveries(id)
+    const current = (await ownerNotices(id)).find((row) => row.recipientId === newOwner.id)!
+    expect(current.deliveredAt).not.toBeNull()
+    const { chatSendReceipts } = await import('../../../db')
+    expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, oldOwner.id))).toHaveLength(0)
+    expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, newOwner.id))).toHaveLength(1)
+    // A crash after acceptance but before settlement must not send again.
+    await db.update(inbox).set({ deliveredAt: null }).where(eq(inbox.id, current.id))
+    const calls = send.mock.calls.length
+    await reconcileOutputDeliveries(id)
+    expect(send.mock.calls.length).toBe(calls)
+    await reconcileOutputDeliveries(id)
+    expect((await deliveries(id))[0]!.reason).toBe('Work stream parked; owner notified')
+    expect(await ownerNotices(id)).toHaveLength(2)
+  } finally {
+    send.mockResolvedValue({ success: true, queued: true, status: 'queued' })
+    await (await newOwner.getActiveExecution())?.stop()
+    await (await oldOwner.getActiveExecution())?.stop()
+  }
+})
+
+test('paused or never-started streams hold events without waking an owner', async () => {
+  const owner = await Agent.create({ squadId, agentTypeId: prefix })
+  const id = await parkedCodeWork(82, owner.id)
+  const { pauseWorkStream, resumeWorkStream } = await import('../../work-streams/pause')
+  await pauseWorkStream(id, { reason: 'Deliberate hold' })
+  await publish(fact(82, { output: 'pull_request.merged' }))
+  expect(await ownerNotices(id)).toHaveLength(0)
+  expect((await deliveries(id))[0]!.reason).toBe('Work stream paused')
+  await resumeWorkStream(id)
+  await reconcileOutputDeliveries(id)
+  expect(await ownerNotices(id)).toHaveLength(1)
+  const fresh = await create(83, { queued: true, codeHost: true })
+  await db.update(workStreams).set({ ownerAgentId: owner.id }).where(eq(workStreams.id, fresh))
+  await publish(fact(83, { output: 'pull_request.merged' }))
+  expect(await ownerNotices(fresh)).toHaveLength(0)
+  expect((await getFlow(fresh))!.attemptAgents).toEqual({})
+})
+
+test('missing owners and crew owners are explicit holds without a manager fallback', async () => {
+  await withNativeRouting(async (_connection, managerId) => {
+    const id = await parkedCodeWork(84, null)
+    await publish(fact(84, { output: 'pull_request.merged' }))
+    expect((await deliveries(id))[0]!.reason).toBe('Work stream parked; no owner assigned')
+    expect(await ownerNotices(id)).toHaveLength(0)
+    const workerId = (await getFlow(id))!.attemptAgents['1']!
+    await db.update(workStreams).set({ ownerAgentId: workerId }).where(eq(workStreams.id, id))
+    await reconcileOutputDeliveries(id)
+    expect((await deliveries(id))[0]!.reason).toBe('Work stream parked; owner is part of the parked crew')
+    expect(await ownerNotices(id)).toHaveLength(0)
+    await db.update(workStreams).set({ ownerAgentId: managerId }).where(eq(workStreams.id, id))
+    await reconcileOutputDeliveries(id)
+    expect((await ownerNotices(id))[0]!.recipientId).toBe(managerId)
+  })
+})
+
+test.each(['connection', 'binding', 'subscription', 'pause'] as const)(
+  'a changed %s fences pending owner notices',
+  async (change) => {
+    await withNativeRouting(async (connectionId) => {
+      const owner = await Agent.create({ squadId, agentTypeId: prefix })
+      const number = 85 + ['connection', 'binding', 'subscription', 'pause'].indexOf(change)
+      const id = await parkedCodeWork(number, owner.id)
+      eventIds.push(
+        await publishIntegrationOutput('github', fact(number, { output: 'pull_request.merged' }), {
+          kind: 'connection',
+          connectionId,
+          squadId,
+        })
+      )
+      const message = (await ownerNotices(id))[0]!
+      expect(await isCurrentFlowMessage(message)).toBe(true)
+      if (change === 'connection') {
+        await db
+          .delete(integrationConnectionAssignments)
+          .where(eq(integrationConnectionAssignments.connectionId, connectionId))
+      } else if (change === 'binding') {
+        await db
+          .update(workStreams)
+          .set({
+            metadata: { codeHost: { integration: 'github', repository: 'another/repo', changeRequest: { number } } },
+          })
+          .where(eq(workStreams.id, id))
+      } else if (change === 'subscription') {
+        const { workStreamFlowRuns } = await import('../../../db')
+        const run = (await getFlow(id))!
+        run.state.definition.completion.followChanges = false
+        await db.update(workStreamFlowRuns).set({ state: run.state }).where(eq(workStreamFlowRuns.workStreamId, id))
+      } else {
+        const { pauseWorkStream } = await import('../../work-streams/pause')
+        await pauseWorkStream(id, { reason: 'Explicit hold after notice was queued' })
+      }
+      expect(await isCurrentFlowMessage(message)).toBe(false)
+      await expect(db.transaction((tx) => lockFlowInboxDelivery(tx, owner.id, [message.id]))).rejects.toThrow(
+        'superseded'
+      )
+      const sends = send.mock.calls.length
+      await reconcileOutputDeliveries(id)
+      expect(send.mock.calls.length).toBe(sends)
+      expect((await deliveries(id))[0]!.status).toBe(change === 'pause' ? 'pending' : 'superseded')
+      expect((await deliveries(id))[0]!.reason).toBe(
+        {
+          connection: 'Connection no longer available',
+          binding: 'Subscription changed',
+          subscription: 'Subscription changed',
+          pause: 'Work stream paused',
+        }[change]
+      )
+    })
+  }
+)
+
+test('periodic flow reconciliation retries a parked owner notice after the webhook has been fully matched', async () => {
+  const owner = await Agent.create({ squadId, agentTypeId: prefix })
+  const id = await parkedCodeWork(89, owner.id)
+  send.mockRejectedValueOnce(new Error('Temporary owner delivery failure'))
+  const eventId = await publish(fact(89, { output: 'pull_request.merged' }))
+  const [event] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, eventId))
+  expect(event!.matchedAt).not.toBeNull()
+  expect((await ownerNotices(id))[0]!.deliveredAt).toBeNull()
+  send.mockImplementation(function (this: Agent, ...args: Parameters<Agent['sendMessage']>) {
+    return this.id === owner.id
+      ? realSend.apply(this, args)
+      : Promise.resolve({ success: true, queued: true, status: 'queued' })
+  })
+  try {
+    const { reconcileFlows } = await import('../../workflows/execution')
+    await reconcileFlows()
+    expect((await ownerNotices(id))[0]!.deliveredAt).not.toBeNull()
+    const { chatSendReceipts } = await import('../../../db')
+    await reconcileFlows()
+    expect(await db.select().from(chatSendReceipts).where(eq(chatSendReceipts.agentId, owner.id))).toHaveLength(1)
+    expect(await ownerNotices(id)).toHaveLength(1)
+    expect((await WorkStream.mustFind(id)).status).toBe('queued')
+    expect((await deliveries(id))[0]!.targets).toEqual([])
+  } finally {
+    send.mockResolvedValue({ success: true, queued: true, status: 'queued' })
+    await (await owner.getActiveExecution())?.stop()
+  }
+})

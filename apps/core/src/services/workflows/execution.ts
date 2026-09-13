@@ -557,8 +557,9 @@ export async function finishFlow(id: string, version: number, identity: Identity
 }
 
 export async function reconcileFlows() {
-  const { reconcileUnmatchedOutputs } = await import('../integrations/outputs/runtime')
+  const { reconcileUnmatchedOutputs, reconcileParkedOutputDeliveries } = await import('../integrations/outputs/runtime')
   await reconcileUnmatchedOutputs()
+  await reconcileParkedOutputDeliveries()
   const rows = await db
     .select({ id: workStreamFlowRuns.workStreamId })
     .from(workStreamFlowRuns)
