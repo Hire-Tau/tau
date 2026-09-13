@@ -1287,3 +1287,134 @@ test('periodic flow reconciliation retries a parked owner notice after the webho
     await (await owner.getActiveExecution())?.stop()
   }
 })
+
+async function attachIssue(id: string, number: number, connectionId?: string) {
+  const stream = await WorkStream.mustFind(id)
+  await db
+    .update(workStreams)
+    .set({
+      metadata: {
+        ...stream.metadata,
+        github: { repo: `${prefix}/repo`, issue: String(number), ...(connectionId ? { connectionId } : {}) },
+      },
+    })
+    .where(eq(workStreams.id, id))
+}
+function issueComment(number: number) {
+  return fact(number, {
+    output: 'issue.comment',
+    subject: 'Issue follow-up',
+    data: {
+      repository: `${prefix}/repo`,
+      issue: { number },
+      labels: ['bug'],
+      assignees: ['tau-bot'],
+      actor: 'external-user',
+    },
+  })
+}
+
+test('attached issue comments reach the worker once alongside PR events without a manager fallback', async () => {
+  await withNativeRouting(async (connectionId, managerId) => {
+    const id = await create(92, { codeHost: true })
+    await attachIssue(id, 93, connectionId)
+    const event = issueComment(93)
+    const authority = { kind: 'connection' as const, connectionId, squadId }
+    eventIds.push(
+      ...(await Promise.all([
+        publishIntegrationOutput('github', event, authority),
+        publishIntegrationOutput('github', event, authority),
+      ]))
+    )
+    await publish(fact(92))
+    expect(await deliveries(id)).toHaveLength(2)
+    const issue = (await deliveries(id)).find((row) => row.subscriptionId === 'code-host-issue-comment')!
+    const worker = (await getFlow(id))!.attemptAgents['1']
+    expect(issue.targets.map((target) => target.agentId)).toEqual([worker!])
+    expect(
+      await isCurrentFlowMessage((await db.select().from(inbox).where(eq(inbox.id, issue.targets[0]!.inboxId)))[0]!)
+    ).toBe(true)
+    expect(
+      (await db.select().from(inbox).where(eq(inbox.recipientId, managerId))).filter(
+        (row) => row.metadata?.integrationEventId === issue.eventId
+      )
+    ).toEqual([])
+    await publish(issueComment(94))
+    expect(await deliveries(id)).toHaveLength(2)
+    await attachIssue(id, 94, connectionId)
+    await reconcileOutputDeliveries(id)
+    expect(
+      await isCurrentFlowMessage((await db.select().from(inbox).where(eq(inbox.id, issue.targets[0]!.inboxId)))[0]!)
+    ).toBe(false)
+  })
+})
+
+test('an issue-created stream retains its issue binding and automatically receives later comments', async () => {
+  await withNativeRouting(async (connectionId) => {
+    const event = fact(95, {
+      output: 'issue.assigned',
+      data: { repository: `${prefix}/repo`, issue: { number: 95 }, assignee: 'tau-bot', labels: ['bug'] },
+    })
+    const definition = createBlankWorkflow()
+    definition.participants.worker!.agentTypeId = prefix
+    definition.completion.followChanges = true
+    await db
+      .update(squads)
+      .set({
+        metadata: {
+          github: [{ repo: `${prefix}/repo` }],
+          integrationRules: {
+            github: [
+              {
+                id: 'issue-followup',
+                enabled: true,
+                source: { integration: 'github', output: 'issue.assigned', version: 1 },
+                filters: { squadRouting: true, audience: 'connected-account' },
+                action: { type: 'start-workstream', workflow: { kind: 'inline', definition } },
+              },
+            ],
+          },
+        },
+      })
+      .where(eq(squads.id, squadId))
+    const authority = { kind: 'connection' as const, connectionId, squadId }
+    const eventId = await publishIntegrationOutput('github', event, authority)
+    eventIds.push(eventId)
+    const trigger = (
+      await db.select().from(integrationOutputTriggerRuns).where(eq(integrationOutputTriggerRuns.eventId, eventId))
+    )[0]!
+    const id = trigger.workStreamId!
+    const commentId = await publishIntegrationOutput('github', issueComment(95), authority)
+    eventIds.push(commentId)
+    const retained = (await deliveries(id)).find((row) => row.eventId === commentId)!
+    expect(retained.status).toBe('pending')
+    expect(retained.targets).toEqual([])
+    expect(retained.subscription.source.connectionId).toBe(connectionId)
+    expect((await getFlow(id))!.attemptAgents).toEqual({})
+    const { resumeWorkStream } = await import('../../work-streams/pause')
+    await resumeWorkStream(id)
+    // Admission is separate from resume; activate this fixture deliberately.
+    await db.transaction(async (tx) => {
+      const [stream] = await tx.update(workStreams).set({ status: 'active' }).where(eq(workStreams.id, id)).returning()
+      const run = (await getFlow(id))!
+      await dispatchFlow(tx, stream!, run, [])
+    })
+    await reconcileOutputDeliveries(id)
+    expect((await deliveries(id)).find((row) => row.eventId === commentId)!.targets).toHaveLength(1)
+  })
+})
+
+test('parked issue comments notify the owner while paused issue streams stay held', async () => {
+  const owner = await Agent.create({ squadId, agentTypeId: prefix })
+  const id = await parkedCodeWork(96, owner.id)
+  await attachIssue(id, 97)
+  const { pauseWorkStream, resumeWorkStream } = await import('../../work-streams/pause')
+  await pauseWorkStream(id, { reason: 'Explicit hold' })
+  await publish(issueComment(97))
+  expect(await ownerNotices(id)).toHaveLength(0)
+  expect((await deliveries(id))[0]!.targets).toEqual([])
+  await resumeWorkStream(id)
+  await reconcileOutputDeliveries(id)
+  expect((await ownerNotices(id)).map((row) => row.recipientId)).toEqual([owner.id])
+  expect((await deliveries(id))[0]!.targets).toEqual([])
+})
