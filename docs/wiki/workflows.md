@@ -164,7 +164,7 @@ Polling uses the squad's authorized GitHub integration connection. Set `github.c
 
 ## Built-in workflow collection and squad-preset recommendations
 
-The built-in collection contains Solo (`solo`), With Review (`builder-reviewer`), Solo Coding (`solo-coding`), Reviewed Coding (`reviewed-coding`), Planned Coding (`engineering`), Research Brief (`research-brief`), Security Review (`security-review`). IDs of earlier presets remain stable. See the [user guide](../../apps/docs/src/content/docs/use/workflows.mdx) for intended uses.
+The built-in collection contains Solo (`solo`), With Review (`builder-reviewer`), Solo Coding (`solo-coding`), Reviewed Coding (`reviewed-coding`), Planned Coding (`engineering`), Research Brief (`research-brief`), Security Review (`security-review`), Code Review (`code-review`). IDs of earlier presets remain stable. See the [user guide](../../apps/docs/src/content/docs/use/workflows.mdx) for intended uses.
 
 A squad preset's optional `workflows` field selects existing instance-scoped presets or inline definitions:
 

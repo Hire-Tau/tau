@@ -4,13 +4,13 @@ definition:
   schemaVersion: 1
   name: Security Review
   participants:
-    builder:
+    assessor:
       agentTypeId: reviewer
       session: reuse-within-stream
     reviewer:
       agentTypeId: reviewer
       session: reuse-within-stream
-  entry: build
+  entry: assess
   routing:
     mode: flexible
     returnTo: earlier-steps
@@ -19,8 +19,8 @@ definition:
     maxDelegations: 0
     onLimit: request-owner-input
   steps:
-    - id: build
-      participant: builder
+    - id: assess
+      participant: assessor
       instructions: >-
         Review the authorized target and threat model. Inspect trust boundaries, authentication,
         authorization, data handling, and relevant dependencies. Stay within the approved scope. Keep the
@@ -42,6 +42,6 @@ definition:
         approved:
           next: finish
         changes-requested:
-          returnTo: build
+          returnTo: assess
   completion:
     mode: deliverable

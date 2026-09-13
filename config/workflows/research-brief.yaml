@@ -4,13 +4,13 @@ definition:
   schemaVersion: 1
   name: Research Brief
   participants:
-    builder:
+    researcher:
       agentTypeId: general
       session: reuse-within-stream
     reviewer:
       agentTypeId: general
       session: reuse-within-stream
-  entry: build
+  entry: research
   routing:
     mode: flexible
     returnTo: earlier-steps
@@ -19,8 +19,8 @@ definition:
     maxDelegations: 0
     onLimit: request-owner-input
   steps:
-    - id: build
-      participant: builder
+    - id: research
+      participant: researcher
       instructions: >-
         Clarify the research question and decision it informs. Gather primary sources, compare credible
         alternatives, distinguish facts from inference, and produce a concise sourced brief with uncertainty
@@ -40,6 +40,6 @@ definition:
         approved:
           next: finish
         changes-requested:
-          returnTo: build
+          returnTo: research
   completion:
     mode: deliverable

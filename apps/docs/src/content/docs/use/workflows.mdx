@@ -17,7 +17,10 @@ Tau ships these starting workflows. An administrator can customize or disable th
 | Reviewed Coding | Implementation followed by independent code review        | Changes needing a second pair of eyes     |
 | Planned Coding  | Architecture, implementation, and independent review      | Changes needing design decisions          |
 | Research Brief  | Research and an independent source/evidence review        | A decision supported by cited findings    |
+| Code Review     | One reviewer assesses existing code and delivers findings | A holistic PR, diff, or codebase review   |
 | Security Review | Security assessment and independent finding validation    | A report on risks and mitigations         |
+
+Code Review has no implementation step and finishes when its report is delivered, rather than waiting for a merge. It follows code-hosting events when a resource is attached. Security Review uses two reviewer agents: the first produces a security assessment and the second independently validates the findings.
 
 These are ordinary workflows in **Administration → Workflows**, not a separate kind of configuration. Their participants start only when needed. Additional delegation is disabled in the shipped presets; you can enable it in a customized workflow.
 

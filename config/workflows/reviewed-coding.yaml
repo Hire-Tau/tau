@@ -4,13 +4,13 @@ definition:
   schemaVersion: 1
   name: Reviewed Coding
   participants:
-    builder:
+    engineer:
       agentTypeId: engineer
       session: reuse-within-stream
     reviewer:
       agentTypeId: reviewer
       session: reuse-within-stream
-  entry: build
+  entry: implement
   routing:
     mode: flexible
     returnTo: earlier-steps
@@ -19,8 +19,8 @@ definition:
     maxDelegations: 0
     onLimit: request-owner-input
   steps:
-    - id: build
-      participant: builder
+    - id: implement
+      participant: engineer
       instructions: >-
         Implement the requested change and run appropriate validation. Provide the reviewer with requirements,
         the diff, and evidence.
@@ -39,7 +39,7 @@ definition:
         approved:
           next: finish
         changes-requested:
-          returnTo: build
+          returnTo: implement
   completion:
     mode: pr-merge
     followChanges: true

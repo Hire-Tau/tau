@@ -1,0 +1,39 @@
+id: code-review
+description: One reviewer delivers a holistic review of a pull request, diff, or codebase without implementing changes.
+definition:
+  schemaVersion: 1
+  name: Code Review
+  participants:
+    reviewer:
+      agentTypeId: reviewer
+      session: reuse-within-stream
+  entry: review
+  routing:
+    mode: guided
+    returnTo: declared-only
+    delegation: disabled
+  limits:
+    maxDelegations: 0
+    onLimit: request-owner-input
+  steps:
+    - id: review
+      participant: reviewer
+      instructions: >-
+        Review the requested pull request, diff, or codebase directly. Establish the scope and intended behavior
+        from the work stream, requirements, and repository context. Cover both requirements and implementation
+        quality, including correctness, regressions, edge cases, architecture, maintainability, security,
+        performance, and test coverage. Report requirements gaps without stopping the rest of the review.
+        For a codebase review, assess the authorized area rather than assuming there is an implementation diff.
+        Verify findings against the actual code and relevant tests; distinguish confirmed defects from questions
+        and optional improvements. Provide severity, file and line references, practical impact, and remediation
+        advice. State what was reviewed, what was tested, and remaining uncertainty; explicitly say if no actionable
+        findings were found. Work directly without delegating, implementing fixes, or merging changes. If a PR is
+        attached, publish the requested review through the code host and report its link; otherwise deliver the
+        report to the work stream.
+      output: A prioritized review with evidence, coverage, limitations, and a recommendation about readiness.
+      outcomes:
+        completed:
+          next: finish
+  completion:
+    mode: deliverable
+    followChanges: true
