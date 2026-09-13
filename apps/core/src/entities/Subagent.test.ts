@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
-import { eq, inArray } from 'drizzle-orm'
-import { db } from '../db'
-import { agents, agentTypes, executions, modelTiers, schedules, users } from '../db/schema'
+import { eq, sql } from 'drizzle-orm'
+import { db, setDatabaseQueryObserverForTest, withDedicatedDbTransaction } from '../db'
+import { agents, schedules, users } from '../db/schema'
+import { SubagentTestFixture } from '../test-utils/subagent-fixture'
 import { Agent } from './Agent'
+import * as agentQueries from './agent-queries'
 import { AgentType } from './AgentType'
 import { Execution } from './Execution'
 import { Schedule } from './Schedule'
@@ -15,46 +17,40 @@ import {
   setDormancyEffectHookForTest,
 } from '../services/agent/lifecycle'
 
+// Keep the real sweep and claim SQL, but use its existing exact-scope seam so
+// these destructive exercises never claim another test's pending fixture.
+async function sweepPendingFixtureAgents(
+  agentIds: string[],
+  options: Parameters<typeof runPendingAgentLifecycleSweep>[0] = {}
+): Promise<number> {
+  const claim = spyOn(agentQueries, 'claimAgentLifecycleSweepCandidates').mockImplementation((input) =>
+    agentQueries.claimAgentLifecycleSweepCandidatesForTest(input, agentIds)
+  )
+  try {
+    return await runPendingAgentLifecycleSweep(options)
+  } finally {
+    claim.mockRestore()
+  }
+}
+
 describe('Subagent.dispatch', () => {
   const standardChain = 'openai-codex:gpt-5.6-sol:medium,anthropic:claude-sonnet-5:high,zai:glm-5.3:high'
   let parentTypeId: string
   let createdIds: string[]
   let createdUserIds: string[]
 
+  let fixture: SubagentTestFixture
+
   beforeEach(async () => {
-    parentTypeId = `sub-parent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    createdIds = []
-    createdUserIds = []
-    await AgentType.create({
-      id: parentTypeId,
-      name: 'Sub Parent',
-      model: 'openai-codex:gpt-5.6-sol:low',
-      systemPrompt: 'parent',
-    })
-    await db
-      .insert(modelTiers)
-      .values({ slug: 'standard', label: 'Standard', chain: standardChain })
-      .onConflictDoUpdate({ target: modelTiers.slug, set: { chain: standardChain } })
-    await AgentType.upsert({
-      id: 'subagent',
-      name: 'Subagent',
-      model: '',
-      tier: 'standard',
-      systemPrompt: 'base',
-    })
+    fixture = new SubagentTestFixture('subagent-entities', standardChain)
+    parentTypeId = fixture.parentTypeId
+    createdIds = fixture.agentIds
+    createdUserIds = fixture.userIds
+    await fixture.setup()
   })
 
   afterEach(async () => {
-    const parentId = createdIds[0] ?? '__none__'
-    const children = await db.select({ id: agents.id }).from(agents).where(eq(agents.parentAgentId, parentId))
-    const ids = [...createdIds, ...children.map((c) => c.id)]
-    if (createdIds.length) await db.delete(schedules).where(inArray(schedules.scopeId, createdIds))
-    if (ids.length) {
-      await db.delete(executions).where(inArray(executions.agentId, ids))
-      await db.delete(agents).where(inArray(agents.id, ids))
-    }
-    await db.delete(agentTypes).where(eq(agentTypes.id, parentTypeId))
-    if (createdUserIds.length) await db.delete(users).where(inArray(users.id, createdUserIds))
+    await fixture.cleanup()
   })
 
   it('rejects dispatch to an already terminated parent', async () => {
@@ -70,20 +66,102 @@ describe('Subagent.dispatch', () => {
     expect(await Subagent.countLive(parent.id)).toBe(0)
   })
 
-  it('converges dispatch racing parent termination without live orphan children', async () => {
+  it('holds the parent lock through child admission before a racing termination cascades', async () => {
     const parent = await Agent.create({ agentTypeId: parentTypeId })
     createdIds.push(parent.id)
-    await Promise.allSettled([
-      Subagent.dispatch({
-        parentAgentId: parent.id,
-        subagents: [{ label: 'race', instructions: 'race termination' }],
-      }),
-      parent.update({ terminatedAt: new Date() }),
-    ])
+    const admitting = Promise.withResolvers<void>()
+    const resume = Promise.withResolvers<void>()
+    const terminating = Promise.withResolvers<void>()
+    const originalQueue = Agent.prototype.queueExecution
+    const queue = spyOn(Agent.prototype, 'queueExecution').mockImplementation(async function (
+      this: Agent,
+      input: Parameters<Agent['queueExecution']>[0]
+    ) {
+      if (this.parentAgentId === parent.id) {
+        admitting.resolve()
+        await resume.promise
+      }
+      return originalQueue.call(this, input)
+    })
+    const dispatch = Subagent.dispatch({
+      parentAgentId: parent.id,
+      subagents: [{ label: 'race', instructions: 'race termination' }],
+    })
+    let termination: Promise<Agent> | undefined
+    // Fail a missing barrier early enough to release the paused operation and
+    // join teardown within the unchanged 5s test budget.
+    let timer: ReturnType<typeof setTimeout>
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Race barrier was not reached')), 2000)
+    })
+    try {
+      await Promise.race([
+        admitting.promise,
+        deadline,
+        dispatch.then(() => {
+          throw new Error('Dispatch completed without reaching child admission')
+        }),
+      ])
+      // Prove the real row lock is held, rather than relying on two promises
+      // happening to overlap. Removing the dispatch lock must fail this test.
+      await expect(
+        withDedicatedDbTransaction(async (tx) => {
+          await tx.execute(sql`SELECT id FROM ${agents} WHERE id = ${parent.id} FOR NO KEY UPDATE NOWAIT`)
+        })
+      ).rejects.toMatchObject({ code: '55P03' })
+      setDatabaseQueryObserverForTest((query, params) => {
+        if (query.endsWith(' for update') && params.includes(parent.id)) terminating.resolve()
+      })
+      termination = parent.update({ terminatedAt: new Date() })
+      await Promise.race([
+        terminating.promise,
+        deadline,
+        termination.then(() => {
+          throw new Error('Termination completed without attempting its parent lock')
+        }),
+      ])
+    } finally {
+      clearTimeout(timer!)
+      resume.resolve()
+      setDatabaseQueryObserverForTest(undefined)
+      queue.mockRestore()
+      // Join both operations on assertion failures too. Unlike allSettled,
+      // unexpected dispatch/termination failures cannot silently pass.
+      await Promise.all([dispatch, termination])
+    }
     const children = await Agent.list({ parentAgentId: parent.id })
-    createdIds.push(...children.map((child) => child.id))
-    expect((await Agent.mustFind(parent.id)).terminatedAt).toBeInstanceOf(Date)
-    expect(children.filter((child) => !child.terminatedAt)).toHaveLength(0)
+    expect(children).toHaveLength(1)
+    expect((await Agent.mustFind(parent.id)).status).toBe('terminated')
+    expect(children[0].status).toBe('terminated')
+    expect(children[0].terminatedAt).toBeInstanceOf(Date)
+    expect((await Execution.list({ agentId: children[0].id })).map(({ status }) => status)).toEqual(['stopped'])
+    expect(await Subagent.countLive(parent.id)).toBe(0)
+    expect(await Schedule.list({ scopeType: 'agent', scopeId: parent.id, kind: SUBAGENT_WATCHDOG_KIND })).toEqual([])
+  })
+
+  it('rejects racing dispatch after termination fences the parent but before teardown completes', async () => {
+    const parent = await Agent.create({ agentTypeId: parentTypeId })
+    createdIds.push(parent.id)
+    let checked = false
+    setDormancyEffectHookForTest(async (stage) => {
+      if (stage !== 'schedules') return
+      expect((await Agent.mustFind(parent.id)).status).toBe('dormant')
+      await expect(
+        Subagent.dispatch({
+          parentAgentId: parent.id,
+          subagents: [{ instructions: 'must not escape the termination fence' }],
+        })
+      ).rejects.toThrow('is not live')
+      checked = true
+    })
+    try {
+      await parent.update({ terminatedAt: new Date() })
+    } finally {
+      setDormancyEffectHookForTest(undefined)
+    }
+    expect(checked).toBe(true)
+    expect((await Agent.mustFind(parent.id)).status).toBe('terminated')
+    expect(await Agent.list({ parentAgentId: parent.id })).toEqual([])
   })
 
   it('batch-creates subagents, queues first execution, and arms a watchdog', async () => {
@@ -261,17 +339,42 @@ describe('Subagent.dispatch', () => {
       })
     }
 
-    expect(await runPendingAgentLifecycleSweep({ maxCandidates: 1 })).toBe(1)
+    expect(
+      await sweepPendingFixtureAgents(
+        children.map((child) => child.id),
+        { maxCandidates: 1 }
+      )
+    ).toBe(1)
     expect(
       (await Agent.list({ parentAgentId: parent.id })).filter((child) => child.status === 'terminated')
     ).toHaveLength(1)
-    expect(await runPendingAgentLifecycleSweep({ maxCandidates: 1 })).toBe(1)
+    expect(
+      await sweepPendingFixtureAgents(
+        children.map((child) => child.id),
+        { maxCandidates: 1 }
+      )
+    ).toBe(1)
     children = await Agent.list({ parentAgentId: parent.id })
     expect(children.every((child) => child.status === 'terminated')).toBe(true)
     expect(children.every((child) => child.metadata?.pendingLifecycleTarget === undefined)).toBe(true)
   })
 
   it('rotates a busy pending candidate so a later request is reached on the next capped tick', async () => {
+    // An unrelated pending fixture must neither steal this test's capped tick
+    // nor be destructively reconciled by it (as happened in shuffled order).
+    const neighbor = await Agent.create({ agentTypeId: parentTypeId })
+    createdIds.push(neighbor.id)
+    await db
+      .update(agents)
+      .set({
+        metadata: {
+          pendingLifecycleTarget: 'dormant',
+          pendingLifecycleRequestId: crypto.randomUUID(),
+          pendingLifecycleSweepAt: -1,
+        },
+      })
+      .where(eq(agents.id, neighbor.id))
+    const neighborBefore = (await db.select().from(agents).where(eq(agents.id, neighbor.id)))[0]
     const stuck = await Agent.create({ agentTypeId: parentTypeId })
     const later = await Agent.create({ agentTypeId: parentTypeId })
     createdIds.push(stuck.id, later.id)
@@ -305,11 +408,12 @@ describe('Subagent.dispatch', () => {
       })
       .where(eq(agents.id, later.id))
 
-    expect(await runPendingAgentLifecycleSweep({ maxCandidates: 1 })).toBe(0)
+    expect(await sweepPendingFixtureAgents([stuck.id, later.id], { maxCandidates: 1 })).toBe(0)
     expect((await Agent.mustFind(stuck.id)).metadata).toHaveProperty('pendingLifecycleTarget')
-    expect(await runPendingAgentLifecycleSweep({ maxCandidates: 1 })).toBe(1)
+    expect(await sweepPendingFixtureAgents([stuck.id, later.id], { maxCandidates: 1 })).toBe(1)
     expect(await Agent.mustFind(later.id)).toMatchObject({ status: 'dormant' })
     expect((await Agent.mustFind(later.id)).metadata).not.toHaveProperty('pendingLifecycleTarget')
+    expect((await db.select().from(agents).where(eq(agents.id, neighbor.id)))[0]).toEqual(neighborBefore)
   })
 
   it('replays durable stop intent and never downgrades a pending final request', async () => {
@@ -328,7 +432,7 @@ describe('Subagent.dispatch', () => {
         })
       ).toBe(false)
       expect(await requestAgentLifecycle(child, { target: 'dormant', reason: 'stale weaker request' })).toBe(false)
-      expect(await runPendingAgentLifecycleSweep()).toBe(0)
+      expect(await sweepPendingFixtureAgents([child.id])).toBe(0)
       expect(stop.mock.calls.length).toBeGreaterThanOrEqual(3)
       expect((await Agent.mustFind(child.id)).metadata).toMatchObject({
         pendingLifecycleTarget: 'terminated',
@@ -340,12 +444,12 @@ describe('Subagent.dispatch', () => {
 
     await execution.update({ status: 'stopped' })
     await child.update({ status: 'idle' })
-    expect(await runPendingAgentLifecycleSweep()).toBe(1)
+    expect(await sweepPendingFixtureAgents([child.id])).toBe(1)
     expect(await Agent.mustFind(child.id)).toMatchObject({ status: 'terminated' })
     expect((await Agent.mustFind(child.id)).metadata).not.toHaveProperty('pendingLifecycleTarget')
   })
 
-  it('uses the Standard tier without storing a child override by default', async () => {
+  it('uses the configured subagent tier without storing a child override by default', async () => {
     const parent = await Agent.create({ agentTypeId: parentTypeId })
     createdIds.push(parent.id)
 
@@ -372,7 +476,7 @@ describe('Subagent.dispatch', () => {
     })
 
     const child = await Agent.mustFind(result.subagents[0].subagentId)
-    expect((await child.mustGetAgentType()).tier).toBe('standard')
+    expect((await child.mustGetAgentType()).tier).toBe(fixture.tierSlug)
     expect(child.modelOverride).toBe(explicitChain)
     expect(child.selectedModel).toBeNull()
     expect(child.toJson()).toMatchObject({
@@ -405,7 +509,7 @@ describe('Subagent.dispatch', () => {
       id: parentTypeId,
       name: 'Sub Parent',
       model: '',
-      tier: 'standard',
+      tier: fixture.tierSlug,
       systemPrompt: 'parent',
     })
     const parent = await Agent.create({ agentTypeId: parentTypeId })
