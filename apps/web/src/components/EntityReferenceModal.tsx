@@ -1,18 +1,47 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStableRef } from '../hooks/useStableRef'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { queries } from '../queryOptions'
 import type { EntityReference } from '../lib/entityReference'
 import { Modal } from './Modal'
 import { WorkStreamViewModal } from './WorkStreamViewModal'
-export function EntityReferenceModal({ reference, onClose }: { reference: EntityReference; onClose: () => void }) {
-  if (reference.kind === 'ws') return <WorkStreamReference id={reference.id} onClose={onClose} />
-  return <AgentReference id={reference.id} onClose={onClose} />
+/** Warm only visible/hovered references; use the same cache as the destination UI. */
+export async function preloadEntityReference(client: QueryClient, reference: EntityReference) {
+  const staleTime = 30_000
+  if (reference.kind === 'agent') {
+    const agent = await client.fetchQuery({ ...queries.agents.detail(reference.id), staleTime })
+    client.setQueryData(queries.agents.detail(agent.id).queryKey, agent)
+    return
+  }
+  const stream = await client.fetchQuery({ ...queries.squads.workStreamDetail(reference.id), staleTime })
+  client.setQueryData(queries.squads.workStreamDetail(stream.id).queryKey, stream)
+  await Promise.all([
+    client.prefetchQuery({ ...queries.squads.basic(stream.squadId), staleTime }),
+    client.prefetchQuery({ ...queries.squads.agents(stream.squadId), staleTime }),
+    client.prefetchQuery({ ...queries.squads.workStreamMetrics(stream.id), staleTime }),
+    client.prefetchQuery({ ...queries.workStreamSubscription.detail(stream.id), staleTime }),
+    client.prefetchQuery({ ...queries.workflows.run(stream.id), staleTime }),
+  ])
 }
 
-function AgentReference({ id, onClose }: { id: string; onClose: () => void }) {
+type ResolutionProps = { onClose: () => void; onResolved?: () => void }
+
+export function EntityReferenceModal({ reference, ...props }: { reference: EntityReference } & ResolutionProps) {
+  if (reference.kind === 'ws') return <WorkStreamReference id={reference.id} {...props} />
+  return <AgentReference id={reference.id} {...props} />
+}
+
+function useResolutionComplete(complete: boolean, onResolved?: () => void) {
+  const onResolvedRef = useStableRef(onResolved)
+  useEffect(() => {
+    if (complete) onResolvedRef.current?.()
+  }, [complete, onResolvedRef])
+}
+
+function AgentReference({ id, onClose, onResolved }: { id: string } & ResolutionProps) {
   const { data, isError } = useQuery(queries.agents.detail(id))
+  useResolutionComplete(!!data || isError, onResolved)
   const navigate = useNavigate()
   const onCloseRef = useStableRef(onClose)
   useEffect(() => {
@@ -23,26 +52,26 @@ function AgentReference({ id, onClose }: { id: string; onClose: () => void }) {
     onCloseRef.current()
     navigate(path)
   }, [data, navigate, onCloseRef])
+  if (!isError) return null
   return (
     <Modal isOpen title="Agent chat" onClose={onClose}>
       <p role="status">
-        {isError
-          ? 'This agent could not be opened. The ID may be ambiguous, unavailable, or inaccessible. Try its full UUID.'
-          : 'Opening conversation…'}
+        This agent could not be opened. The ID may be ambiguous, unavailable, or inaccessible. Try its full UUID.
       </p>
     </Modal>
   )
 }
 
-function WorkStreamReference({ id, onClose }: { id: string; onClose: () => void }) {
+function WorkStreamReference({ id, onClose, onResolved }: { id: string } & ResolutionProps) {
   const { data, isError } = useQuery(queries.squads.workStreamDetail(id))
-  if (data) return <WorkStreamViewModal workStreamId={data.id} squadId={data.squadId} onClose={onClose} />
+  useResolutionComplete(!!data || isError, onResolved)
+  // Reuse the resolving query even when the link used a prefix and was clicked before preloading finished.
+  if (data) return <WorkStreamViewModal workStreamId={id} squadId={data.squadId} onClose={onClose} />
+  if (!isError) return null
   return (
     <Modal isOpen title="Work stream" onClose={onClose}>
       <p role="status">
-        {isError
-          ? 'This work stream could not be opened. The ID may be ambiguous, unavailable, or inaccessible. Try its full UUID.'
-          : 'Loading work stream…'}
+        This work stream could not be opened. The ID may be ambiguous, unavailable, or inaccessible. Try its full UUID.
       </p>
     </Modal>
   )
