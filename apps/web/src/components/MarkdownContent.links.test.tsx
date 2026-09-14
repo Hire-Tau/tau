@@ -24,3 +24,25 @@ describe('compact Action Center PR links', () => {
     expect(renderToStaticMarkup(<MarkdownContent>{url}</MarkdownContent>)).toContain(`>${url}</a>`)
   })
 })
+
+const entityId = 'fa27abb6-4c92-4cc6-aff9-a8da616346c1'
+test('renders explicit work stream and agent references as in-place actions', () => {
+  for (const kind of ['ws', 'agent']) {
+    const html = renderToStaticMarkup(<MarkdownContent>{`[Open item](tau:${kind}:${entityId})`}</MarkdownContent>)
+    expect(html).toContain('<button')
+    expect(html).toContain('Open item</button>')
+    expect(html).not.toContain('href="tau:')
+  }
+})
+
+test('does not activate malformed references or references in code and retains URL sanitization', () => {
+  for (const content of ['[Bad](tau:ws:not-an-id)', '[Bad](javascript:alert)', `[Bad](tau:ws:${entityId}/extra)`]) {
+    const html = renderToStaticMarkup(<MarkdownContent>{content}</MarkdownContent>)
+    expect(html).not.toContain('<button')
+    expect(html).not.toContain('href="javascript:')
+    expect(html).not.toContain('href="tau:')
+  }
+  expect(renderToStaticMarkup(<MarkdownContent>{`\`[Example](tau:ws:${entityId})\``}</MarkdownContent>)).not.toContain(
+    '<button'
+  )
+})

@@ -1,0 +1,3 @@
+/** Route-independent references resolved by the Tau chat UI in the current instance. */
+export const ENTITY_REFERENCE_GUIDANCE = `## Linking Tau work
+In Tau chat, use [short label](tau:ws:FULL_UUID) for a work stream and [short label](tau:agent:FULL_UUID) for an agent conversation. Copy the full ID from an actual tool result; never invent IDs, hosts, squad slugs, or app routes. The UI resolves these references and opens the item without leaving the conversation. Use these references in prose, not code blocks. They are Tau UI references, not public URLs: do not use them in external messages or documents.`
