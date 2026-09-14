@@ -87,13 +87,18 @@ export async function routeDefaultNotifications(event: Event, authorize: (squadI
     .from(integrationConnections)
     .where(eq(integrationConnections.id, event.authority.connectionId))
   const login = String(record(connection?.configuration).login ?? '')
+  if (
+    integrationOutputRegistry.adapter(event.integration)?.shouldNotify?.(event.fact, connection?.configuration) ===
+    false
+  )
+    return
   const data = record(event.fact.data)
-  const isOwnComment =
+  const isBotComment =
     event.integration === 'github' &&
     ['issue.comment', 'pull_request.comment', 'pull_request.reviewed', 'pull_request.review_comment'].includes(
       event.fact.output
     ) &&
-    (data.actorType === 'Bot' || (login && String(data.actor).toLowerCase() === login.toLowerCase()))
+    data.actorType === 'Bot'
   const candidates = await db
     .select({ stream: workStreams, runId: workStreamFlowRuns.workStreamId })
     .from(workStreams)
@@ -125,7 +130,7 @@ export async function routeDefaultNotifications(event: Event, authorize: (squadI
     matchedStream = true
     // An inactive/retained subscription still owns routing. Never bypass its wait or pause policy.
     // New flows explicitly opt into integration events; compatibility notices are only for pre-flow streams.
-    if (runId || isOwnComment) continue
+    if (runId || isBotComment) continue
     const available = await db
       .select()
       .from(agents)

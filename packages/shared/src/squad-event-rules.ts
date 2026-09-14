@@ -132,6 +132,18 @@ export function effectiveSquadEventRules(metadata: unknown, provider: string): S
   return existing
 }
 
+/** Comment/review echoes from the connected account must not start another agent turn. */
+export function isGitHubSelfComment(fact: IntegrationOutputFact, login: string): boolean {
+  return (
+    !!login &&
+    ['issue.comment', 'pull_request.comment', 'pull_request.reviewed', 'pull_request.review_comment'].includes(
+      fact.output
+    ) &&
+    typeof fact.data.actor === 'string' &&
+    fact.data.actor.toLowerCase() === login.toLowerCase()
+  )
+}
+
 export function selectSquadEventRule(
   metadata: unknown,
   integration: string,
@@ -139,6 +151,7 @@ export function selectSquadEventRule(
   login: string,
   connectionId?: string
 ) {
+  if (integration === 'github' && isGitHubSelfComment(fact, login)) return undefined
   const data = record(fact.data)
   return effectiveSquadEventRules(metadata, integration).find((rule) => {
     if (

@@ -78,6 +78,16 @@ async function authorized(
     )
   return !!row
 }
+async function shouldNotifyEvent(store: Store, event: Event): Promise<boolean> {
+  const adapter = integrationOutputRegistry.adapter(event.integration)
+  if (!adapter?.shouldNotify || event.authority.kind !== 'connection') return true
+  const [connection] = await store
+    .select({ configuration: integrationConnections.configuration })
+    .from(integrationConnections)
+    .where(eq(integrationConnections.id, event.authority.connectionId))
+  return adapter.shouldNotify(event.fact, connection?.configuration)
+}
+
 function sourceMatches(subscription: IntegrationSubscription, event: Event) {
   return (
     subscription.source.integration === event.integration &&
@@ -247,7 +257,7 @@ export async function publishIntegrationOutput(
 }
 
 async function matchOutputEvent(event: Event) {
-  if (event.matchedAt) return
+  if (event.matchedAt || !(await shouldNotifyEvent(db, event))) return
   const created = await db
     .select({ id: integrationOutputTriggerRuns.workStreamId })
     .from(integrationOutputTriggerRuns)
@@ -357,7 +367,9 @@ export async function reconcileOutputDeliveries(workStreamId: string) {
             ? 'Resource binding changed'
             : !(await authorized(tx, event.integration, event.authority, stream.squadId))
               ? 'Connection no longer available'
-              : undefined
+              : !(await shouldNotifyEvent(tx, event))
+                ? 'Event suppressed by integration notification policy'
+                : undefined
       const ordering = event.fact.ordering
       if (
         !reason &&
@@ -586,7 +598,8 @@ export async function isCurrentIntegrationDelivery(store: Store, deliveryId: str
     !stream ||
     !run?.activated ||
     !event ||
-    !(await authorized(store, event.integration, event.authority, stream.squadId))
+    !(await authorized(store, event.integration, event.authority, stream.squadId)) ||
+    !(await shouldNotifyEvent(store, event))
   )
     return false
   const current = codeHostingRegistry
@@ -673,7 +686,7 @@ export async function outputDeliveryHistory(workStreamId: string) {
 }
 
 async function applyOutputTriggers(event: Event) {
-  if (event.matchedAt) return
+  if (event.matchedAt || !(await shouldNotifyEvent(db, event))) return
   const candidates = await db
     .select({ id: squads.id })
     .from(squads)

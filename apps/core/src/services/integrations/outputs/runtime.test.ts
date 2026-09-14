@@ -1456,3 +1456,122 @@ test('issue rules reuse a manually attached string-number issue instead of creat
     expect((await getFlow(id))!.state.status).toBe('running')
   })
 })
+
+test('Code hosting ignores own PR/issue comments and reviews but retains facts and external feedback', async () => {
+  await withNativeRouting(async (connectionId, managerId) => {
+    const id = await create(101, { codeHost: true })
+    await attachIssue(id, 102, connectionId)
+    const authority = { kind: 'connection' as const, connectionId, squadId }
+    for (const output of [
+      'issue.comment',
+      'pull_request.comment',
+      'pull_request.reviewed',
+      'pull_request.review_comment',
+    ]) {
+      const comment = output === 'issue.comment' ? issueComment(102) : fact(101, { output })
+      comment.data.actor = 'TAU-BOT'
+      const eventId = (await publishIntegrationOutput('github', comment, authority))!
+      eventIds.push(eventId)
+      const [recorded] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, eventId))
+      expect(recorded!.matchedAt).not.toBeNull()
+      expect(recorded!.fact).toEqual(comment)
+      expect(await deliveries(id)).toEqual([])
+      expect(
+        (await db.select().from(inbox).where(eq(inbox.recipientId, managerId))).filter(
+          (row) => row.metadata?.integrationEventId === eventId
+        )
+      ).toEqual([])
+    }
+    for (const [actor, actorType] of [
+      ['reviewer', 'User'],
+      ['review-tool[bot]', 'Bot'],
+    ]) {
+      const comment = issueComment(102)
+      comment.data = { ...comment.data, actor, actorType }
+      eventIds.push((await publishIntegrationOutput('github', comment, authority))!)
+    }
+    const merged = fact(101, { output: 'pull_request.merged' })
+    merged.data.actor = 'tau-bot'
+    eventIds.push((await publishIntegrationOutput('github', merged, authority))!)
+    expect(await deliveries(id)).toHaveLength(3)
+    const worker = (await getFlow(id))!.attemptAgents['1']!
+    for (const delivery of await deliveries(id))
+      expect(delivery.targets.map((target) => target.agentId)).toEqual([worker])
+  })
+})
+
+test('own comments do not create work or fallback notifications with any-account rules', async () => {
+  await withNativeRouting(async (connectionId) => {
+    const authority = { kind: 'connection' as const, connectionId, squadId }
+    const before = await db.select({ id: workStreams.id }).from(workStreams).where(eq(workStreams.squadId, squadId))
+    for (const type of ['notify-manager', 'notify-consultant', 'start-workstream'] as const) {
+      await db
+        .update(squads)
+        .set({
+          metadata: {
+            integrationRules: {
+              github: [
+                {
+                  id: 'all-comments',
+                  enabled: true,
+                  source: { integration: 'github', output: 'issue.comment', version: 1 },
+                  filters: { audience: 'any', squadRouting: false },
+                  action: { type, workflow: { kind: 'inline', definition: definition() } },
+                },
+              ],
+            },
+          },
+        })
+        .where(eq(squads.id, squadId))
+      const comment = issueComment(103)
+      comment.data.actor = 'tau-bot'
+      const eventId = (await publishIntegrationOutput('github', comment, authority))!
+      eventIds.push(eventId)
+      expect(
+        await db.select().from(integrationOutputTriggerRuns).where(eq(integrationOutputTriggerRuns.eventId, eventId))
+      ).toEqual([])
+      expect((await db.select().from(inbox)).filter((row) => row.metadata?.integrationEventId === eventId)).toEqual([])
+    }
+    expect(await db.select({ id: workStreams.id }).from(workStreams).where(eq(workStreams.squadId, squadId))).toEqual(
+      before
+    )
+    // The same rule still creates work for someone else's comment.
+    const eventId = (await publishIntegrationOutput('github', issueComment(103), authority))!
+    eventIds.push(eventId)
+    expect(
+      await db.select().from(integrationOutputTriggerRuns).where(eq(integrationOutputTriggerRuns.eventId, eventId))
+    ).toHaveLength(1)
+  })
+})
+
+test('pre-existing self-comment deliveries are fenced at worker and parked-owner queue acceptance', async () => {
+  await withNativeRouting(async (connectionId, managerId) => {
+    const authority = { kind: 'connection' as const, connectionId, squadId }
+    for (const parked of [false, true]) {
+      const number = parked ? 105 : 104
+      // Exercise an explicit subscription as well as inferred Code hosting subscriptions.
+      const id = parked ? await parkedCodeWork(number, managerId) : await create(number)
+      const comment = fact(number)
+      comment.data.actor = 'reviewer'
+      const eventId = (await publishIntegrationOutput('github', comment, authority))!
+      eventIds.push(eventId)
+      const [delivery] = await deliveries(id)
+      const message = parked
+        ? (await ownerNotices(id))[0]!
+        : (await db.select().from(inbox).where(eq(inbox.id, delivery!.targets[0]!.inboxId)))[0]!
+      expect(await isCurrentFlowMessage(message)).toBe(true)
+      // Model a durable echo queued before this policy existed, without changing its authority.
+      await db
+        .update(integrationOutputEvents)
+        .set({ fact: { ...comment, data: { ...comment.data, actor: 'tau-bot' } } })
+        .where(eq(integrationOutputEvents.id, eventId))
+      expect(await isCurrentFlowMessage(message)).toBe(false)
+      await expect(
+        db.transaction((tx) => lockFlowInboxDelivery(tx, message.recipientId, [message.id]))
+      ).rejects.toThrow('superseded')
+      await reconcileOutputDeliveries(id)
+      expect((await deliveries(id))[0]!.status).toBe('superseded')
+      expect((await deliveries(id))[0]!.reason).toBe('Event suppressed by integration notification policy')
+    }
+  })
+})

@@ -216,7 +216,7 @@ export function SquadEventRulesEditor({
                   </select>
                   <span className="mt-1 block text-xs text-muted">
                     {rule.filters.audience === 'any'
-                      ? 'No assignment or mention is required. Includes events from the account itself and bots. The other filters still apply.'
+                      ? 'No assignment or mention is required. Bot events can match. Comments and reviews authored by the selected account are always ignored. The other filters still apply.'
                       : rule.filters.audience === 'connected-account' &&
                           rule.source.output === 'pull_request.review_requested'
                         ? 'Match a review requested from the selected account, or a team review request delivered to that connection.'
