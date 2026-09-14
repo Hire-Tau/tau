@@ -1,3 +1,4 @@
+import { ChannelIdsEditor } from './ChannelIdsEditor'
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -408,7 +409,7 @@ export function AddChannelForm({
   const [providerConfigValue, setProviderConfigValue] = useState('')
   const [defaultSquadId, setDefaultSquadId] = useState<string | null>(null)
   const [overrideRows, setOverrideRows] = useState<OverrideRow[]>([])
-  const [trustedChannels, setTrustedChannels] = useState('')
+  const [trustedChannels, setTrustedChannels] = useState<string[]>([])
   const [validationError, setValidationError] = useState('')
   const [createAttempted, setCreateAttempted] = useState(false)
 
@@ -447,7 +448,7 @@ export function AddChannelForm({
       provider,
       providerConfig: buildProviderConfig(provider, providerConfigValue),
       defaultSquadId,
-      trustedChannelIds: trustedChannels.split(/[,\s]+/).filter(Boolean),
+      trustedChannelIds: trustedChannels.map((id) => id.trim()),
       channelSquadMap: overrideRowsToMap(overrideRows),
     })
   }
@@ -594,7 +595,7 @@ export function ChannelRow({
     updateMutation.mutate({
       name: form.name,
       providerConfig: buildProviderConfig(channel.provider, form.providerConfigValue),
-      trustedChannelIds: form.trustedChannels.split(/[,\s]+/).filter(Boolean),
+      trustedChannelIds: form.trustedChannels.map((id) => id.trim()),
       channelSquadMap: overrideRowsToMap(form.overrideRows),
       defaultSquadId: form.defaultSquadId,
     })
@@ -801,7 +802,7 @@ function FormField({
 
 function channelToForm(ch: ChannelInstanceConfig) {
   return {
-    trustedChannels: (ch.trustedChannelIds ?? []).join(', '),
+    trustedChannels: ch.trustedChannelIds ?? [],
     name: ch.name,
     providerConfigValue: extractProviderConfigValue(ch.provider, ch.providerConfig),
     defaultSquadId: ch.defaultSquadId ?? null,
@@ -814,24 +815,15 @@ export function TrustedChannelsField({
   onChange,
   actions,
 }: {
-  value: string
-  onChange: (value: string) => void
+  value: string[]
+  onChange: (value: string[]) => void
   actions?: ReactNode
 }) {
   return (
-    <div className="space-y-1">
-      <FormField
-        label="Trusted channel IDs (optional)"
-        value={value}
-        onChange={onChange}
-        placeholder="Comma-separated channel IDs"
-        actions={actions}
-      />
-      <p className="text-xs text-muted">
-        By default, senders must link a Tau account with squad chat access. Everyone who can message Tau in a trusted
-        channel can direct its squad’s agents, including through the manager. Add only channels whose participants you
-        trust. Leave empty to require linked users everywhere.
-      </p>
-    </div>
+    <ChannelIdsEditor kind="Trusted" value={value} onChange={onChange} actions={actions}>
+      By default, senders must link a Tau account with squad chat access. Everyone who can message Tau in a trusted
+      channel can direct its squad’s agents, including through the manager. Add only channels whose participants you
+      trust. Leave empty to require linked users everywhere.
+    </ChannelIdsEditor>
   )
 }

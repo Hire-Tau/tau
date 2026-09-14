@@ -1,9 +1,11 @@
+import { discordProvider, editInteractionResponse, InteractionResponseType } from './provider'
+import { handleChannelEvent } from '../handler'
 import { isChannelAllowed } from '../../services/channel-policy'
 /**
  * Discord Gateway Connection
  *
  * Maintains WebSocket connection to Discord Gateway for receiving
- * MESSAGE_CREATE events in threads.
+ * messages and slash commands without requiring a public interactions webhook.
  */
 
 import { canUseChannel, channelLinkReply, CHANNEL_ACCESS_DENIED } from '../../services/channel-access'
@@ -156,11 +158,67 @@ export class DiscordGateway {
         break
       }
 
+      case 'INTERACTION_CREATE':
+        void this.handleInteractionCreate(data).catch(() => log.error('Discord interaction handling failed'))
+        break
+
       case 'MESSAGE_CREATE':
         void this.handleMessageCreate(data as DiscordMessage).catch((error) =>
           log.error('Discord message handling failed', error)
         )
         break
+    }
+  }
+
+  private async handleInteractionCreate(payload: unknown): Promise<void> {
+    const event = await discordProvider.parseWebhook(payload, {})
+    if (!event || event.type !== 'slash_command') return
+    const applicationId = event.raw?.applicationId as string | undefined
+    const token = event.raw?.interactionToken as string | undefined
+    if (!applicationId || !token || !event.messageId) return
+
+    // Acknowledge before database lookups, authorization or agent startup. A failed
+    // callback (including duplicate delivery) must not execute the command again.
+    const ack = await fetch(
+      `https://discord.com/api/v10/interactions/${encodeURIComponent(event.messageId)}/${encodeURIComponent(token)}/callback`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: InteractionResponseType.DEFERRED_CHANNEL_MESSAGE,
+          ...(event.command === 'link' ? { data: { flags: 64 } } : {}),
+        }),
+        signal: AbortSignal.timeout(2500),
+      }
+    )
+    if (!ack.ok) throw new Error('Discord interaction acknowledgement failed')
+
+    try {
+      const platformId = discordProvider.extractPlatformId(payload)
+      if (!platformId) {
+        await editInteractionResponse(applicationId, token, 'Use this command in a server connected to Tau.')
+        return
+      }
+      if (event.isInThread && !event.routingChannelId) {
+        const routing = await this.getChannelRouting(event.channelId)
+        if (!routing?.parentId) throw new Error('Cannot verify Discord thread parent')
+        event.routingChannelId = routing.parentId
+      }
+      const result = await handleChannelEvent(discordProvider, event, platformId)
+      const response = result.response as { type?: number; data?: { content?: string } }
+      if (response.type === InteractionResponseType.CHANNEL_MESSAGE && response.data?.content) {
+        await editInteractionResponse(applicationId, token, response.data.content)
+      } else if (response.type !== InteractionResponseType.DEFERRED_CHANNEL_MESSAGE) {
+        // Policy exclusions intentionally have no response; remove the acknowledgement.
+        const removed = await fetch(
+          `https://discord.com/api/v10/webhooks/${encodeURIComponent(applicationId)}/${encodeURIComponent(token)}/messages/@original`,
+          { method: 'DELETE', signal: AbortSignal.timeout(10_000) }
+        )
+        if (!removed.ok) throw new Error('Discord interaction cleanup failed')
+      }
+    } catch {
+      await editInteractionResponse(applicationId, token, 'Tau could not complete this command. Please try again.')
+      throw new Error('Discord interaction processing failed')
     }
   }
 

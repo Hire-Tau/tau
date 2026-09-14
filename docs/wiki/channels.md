@@ -17,7 +17,6 @@ require a YAML file or a configuration-sync restart. You need `channels:create`
 to add routing and `channels:update` to change it; credential edits require the
 provider's integration permission (`integrations:<provider>:write`).
 
-
 The integration switch gates the transport; disabling Discord also stops its
 gateway, and saving a new token reconnects it. Slack clients pick up token
 changes on their next request.
@@ -75,7 +74,6 @@ revocation applies to the next message. Help and account linking do not start an
 agent and are available before this check. Notification commands can change only
 the squad routed to that channel.
 
-
 `/api/channel-links` is a personal authenticated-user API. A user starts a random,
 short-lived challenge in Tau, submits it through authenticated provider ingress,
 and confirms the displayed sender in Tau. Only hashes are stored. Confirmation
@@ -95,7 +93,6 @@ Telegram reuses one conversation per chat and responds to private messages, grou
 `/tau` commands, and replies to bot messages. Lookups are scoped to provider,
 instance, channel, thread, and the currently routed squad. A changed squad override
 does not resume an agent in the old squad.
-
 
 Telegram's persistent conversation ID is its chat ID. It must never be passed as
 `reply_to_message_id`: `postMessage.replyToMessageId` carries an optional incoming
@@ -151,7 +148,8 @@ is the template the download is rendered from.
 2. Paste the token into the Discord card and save. Tau validates it, records
    the application id and public key from `/applications/@me`, registers the
    `/tau` slash commands, and (re)connects the gateway.
-3. Copy the **Interactions Endpoint URL** shown on the card
+3. Slash commands work through the gateway without a public endpoint. If you
+   prefer HTTP delivery, copy the **Interactions Endpoint URL** shown on the card
    (`https://<instance>/api/webhooks/channels/discord`) into **General
    Information** in the portal; Discord verifies it with the public key Tau
    already has.
@@ -211,7 +209,6 @@ A channel instance can route to multiple squads. Inbound routing is deterministi
 If neither resolves a squad, routing fails with a configuration error. New UI
 and API entries require a default squad. The consultant's later decision to
 consult another squad is separate from this initial routing.
-
 
 ## Channel consultants
 
@@ -275,6 +272,7 @@ Use separate bots for separate instances.
 - Verify `TELEGRAM_WEBHOOK_SECRET` matches what you set in `setWebhook`
 - Verify `TELEGRAM_BOT_ID` matches `botId` in your channel config
 - Check logs for webhook verification errors
+
 An HTTP 200 webhook acknowledgement is **not** proof of a visible bot reply.
 Telegram replies are separate `sendMessage` API requests. Complete silence,
 including no Thinking indicator, can happen at several distinct stages:
@@ -305,7 +303,6 @@ message. Before diagnosing an incident, collect the bot identity, deployment,
 private/group context, message time and timezone, and authorized receipt/send
 logs. Keep bot tokens, webhook secrets, credential-bearing URLs, and private
 message contents out of shared diagnostics.
-
 
 ### Commands not appearing
 
@@ -430,3 +427,12 @@ thinking indicators or agent allocation. Delayed consultant replies and squad
 notifications also check the current policy. This does not grant squad access:
 allowed channels still require a linked user with `chat:send` or explicit trust.
 YAML and API fields are `allowedChannelIds` and `deniedChannelIds` (arrays of IDs).
+
+### Discord: slash commands time out but mentions work
+
+Discord sends slash commands through `INTERACTION_CREATE` on the gateway unless an
+Interactions Endpoint URL is configured. Tau handles this event, acknowledges it
+before database or agent work, then edits the response with the result. Link
+commands receive a private acknowledgement. An unsuccessful acknowledgement
+prevents command execution. With an endpoint configured, check its reachability
+and signature verification instead; Discord chooses one interaction transport.

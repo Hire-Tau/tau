@@ -286,7 +286,7 @@ export class ChannelInstance implements ChannelInstanceRow {
       },
     })
 
-    const content = await this.buildChannelInboxMessage(inbound, targetSquad, agent.id)
+    const content = await this.buildChannelInboxMessage(inbound, targetSquad)
 
     // Genuine channel correspondence explicitly wakes a dormant consultant.
     await InboxMessage.send({
@@ -314,27 +314,9 @@ export class ChannelInstance implements ChannelInstanceRow {
   /**
    * Build inbox message for consultant based on command type.
    */
-  private async buildChannelInboxMessage(
-    inbound: InboundMessage,
-    targetSquad: string | null,
-    consultantAgentId: string
-  ): Promise<string> {
+  private async buildChannelInboxMessage(inbound: InboundMessage, targetSquad: string | null): Promise<string> {
     const { content, user, responseContext } = inbound
     const platform = responseContext.provider.charAt(0).toUpperCase() + responseContext.provider.slice(1)
-    const shortAgentId = consultantAgentId.slice(0, 8)
-
-    // Build squad context with manager agent IDs for easy forwarding
-    let squadContext = ''
-    if (targetSquad) {
-      const targetSquadEntity = await Squad.find(targetSquad)
-      if (targetSquadEntity) {
-        const managerInfo = targetSquadEntity.managerAgentId
-          ? ` — manager agent: \`${targetSquadEntity.managerAgentId.slice(0, 8)}\``
-          : ''
-        squadContext = `**Target squad:** ${targetSquadEntity.name} (${targetSquadEntity.id.slice(0, 8)})${managerInfo}`
-      }
-    }
-
     let channelContext = ''
     if (responseContext.provider === 'slack') {
       const extras = responseContext.extras ?? {}
@@ -367,9 +349,7 @@ If the user asks to "index this thread" (or similar), ingest with:
 
     // All freeform commands use the same template - consultant decides how to handle
     // Status and help are handled as sync commands, so they don't reach here
-    return `**${platform} from ${user.name}:** "${content}"${squadContext ? `\n\n${squadContext}` : ''}${channelContext}
-
-**Your agent ID:** \`${shortAgentId}\` (include this if you forward to a manager so they can reply back)`
+    return `**${platform} from ${user.name}:** "${content}"${channelContext}`
   }
 
   /**

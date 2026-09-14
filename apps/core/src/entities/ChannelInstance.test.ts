@@ -70,8 +70,7 @@ describe('ChannelInstance.buildChannelInboxMessage', () => {
           },
         },
       },
-      'squad-1',
-      'agent-12345678'
+      'squad-1'
     )
 
     expect(content).toContain('Channel context (Slack)')
@@ -90,11 +89,12 @@ describe('ChannelInstance.buildChannelInboxMessage', () => {
         user: { id: 'u1', name: 'User' },
         responseContext: { provider: 'discord', channelId: 'D1' },
       },
-      null,
-      'agent-12345678'
+      null
     )
 
-    expect(content).not.toContain('Channel context (Slack)')
+    expect(content).toBe('**Discord from User:** "hello"')
+    expect(content).not.toContain('Target squad')
+    expect(content).not.toContain('Your agent ID')
   })
 })
 

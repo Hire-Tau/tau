@@ -530,11 +530,13 @@ export async function editInteractionResponse(
 ): Promise<void> {
   const truncated = content.length > 2000 ? content.slice(0, 1997) + '...' : content
 
-  await fetch(`${API_BASE}/webhooks/${applicationId}/${interactionToken}/messages/@original`, {
+  const response = await fetch(`${API_BASE}/webhooks/${applicationId}/${interactionToken}/messages/@original`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content: truncated }),
+    signal: AbortSignal.timeout(10_000),
   })
+  if (!response.ok) throw new Error(`Discord interaction response failed (HTTP ${response.status})`)
 }
 
 /**

@@ -91,7 +91,7 @@ export function LinkedChatAccounts() {
             <>
               <p className="text-sm text-primary">Send this to Tau from the account you want to link:</p>
               {code?.id === pending.id ? (
-                <pre className="text-sm whitespace-pre-wrap break-all select-all">/tau link {code.code}</pre>
+                <ChannelLinkCommand key={code.id} code={code.code} />
               ) : (
                 <p className="text-sm text-muted">
                   The code was shown when you started this request. Cancel and start again if you no longer have it.
@@ -125,5 +125,38 @@ export function LinkedChatAccounts() {
         </p>
       )}
     </section>
+  )
+}
+
+export function ChannelLinkCommand({ code }: { code: string }) {
+  const command = `/tau link ${code}`
+  const [status, setStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(command)
+      setStatus('copied')
+    } catch {
+      setStatus('failed')
+    }
+  }
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-2">
+        <pre className="flex-1 min-w-0 text-sm whitespace-pre-wrap break-all select-all">{command}</pre>
+        <button
+          type="button"
+          onClick={copy}
+          aria-label="Copy account linking command"
+          className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium shrink-0 px-2 py-1"
+        >
+          <span role="status">{status === 'copied' ? 'Copied' : 'Copy'}</span>
+        </button>
+      </div>
+      {status === 'failed' && (
+        <p role="alert" className="text-xs text-danger">
+          Couldn’t copy. Select the command and copy it manually.
+        </p>
+      )}
+    </div>
   )
 }

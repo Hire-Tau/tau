@@ -1,3 +1,4 @@
+import { ChannelIdsEditor } from '../settings/ChannelIdsEditor'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { queries } from '../../queryOptions'
@@ -25,24 +26,24 @@ export function ProviderChannelRouting({
   const client = useQueryClient()
   const query = useQuery(queries.channelInstances.detail(instanceId))
   const [rows, setRows] = useState<OverrideRow[]>([])
-  const [trusted, setTrusted] = useState('')
-  const [allowed, setAllowed] = useState('')
-  const [denied, setDenied] = useState('')
+  const [trusted, setTrusted] = useState<string[]>([])
+  const [allowed, setAllowed] = useState<string[]>([])
+  const [denied, setDenied] = useState<string[]>([])
   const [error, setError] = useState('')
   useEffect(() => {
     if (!query.data) return
     setRows(mapToOverrideRows(query.data.channelSquadMap))
-    setTrusted((query.data.trustedChannelIds ?? []).join(', '))
-    setAllowed((query.data.allowedChannelIds ?? []).join(', '))
-    setDenied((query.data.deniedChannelIds ?? []).join(', '))
+    setTrusted(query.data.trustedChannelIds ?? [])
+    setAllowed(query.data.allowedChannelIds ?? [])
+    setDenied(query.data.deniedChannelIds ?? [])
   }, [query.data])
   const save = useMutation({
     mutationFn: () =>
       updateChannelInstance(instanceId, {
         channelSquadMap: overrideRowsToMap(rows),
-        trustedChannelIds: trusted.split(/[,\s]+/).filter(Boolean),
-        allowedChannelIds: allowed.split(/[,\s]+/).filter(Boolean),
-        deniedChannelIds: denied.split(/[,\s]+/).filter(Boolean),
+        trustedChannelIds: trusted.map((id) => id.trim()),
+        allowedChannelIds: allowed.map((id) => id.trim()),
+        deniedChannelIds: denied.map((id) => id.trim()),
       }),
     onSuccess: () => client.invalidateQueries({ queryKey: queryKeys.channelInstances.all }),
   })
@@ -63,30 +64,15 @@ export function ProviderChannelRouting({
         <fieldset disabled={!canWrite || save.isPending} className="space-y-4">
           <SquadOverridesEditor provider={provider} rows={rows} onChange={setRows} />
           {(provider === 'slack' || provider === 'discord') && (
-            <div className="space-y-3">
-              <label className="block space-y-1">
-                <span className="font-medium">Allowed channel IDs</span>
-                <input
-                  className="tau-field w-full px-3 py-2"
-                  value={allowed}
-                  onChange={(e) => setAllowed(e.target.value)}
-                  placeholder="All channels when empty"
-                />
-              </label>
-              <label className="block space-y-1">
-                <span className="font-medium">Denied channel IDs</span>
-                <input
-                  className="tau-field w-full px-3 py-2"
-                  value={denied}
-                  onChange={(e) => setDenied(e.target.value)}
-                  placeholder="No denied channels"
-                />
-              </label>
-              <p className="text-muted">
-                Separate IDs with commas or spaces. Denied channels always win, including for linked users and trusted
-                channels. Threads inherit their parent channel’s policy. Tau ignores messages in excluded channels,
-                including help and account linking.
-              </p>
+            <div className="space-y-4">
+              <ChannelIdsEditor kind="Allowed" value={allowed} onChange={setAllowed}>
+                Leave empty to allow all channels. Add channels to limit where Tau can interact.
+              </ChannelIdsEditor>
+              <ChannelIdsEditor kind="Denied" value={denied} onChange={setDenied}>
+                Denied channels always win, including for linked users and trusted channels. Leave empty to deny none.
+                Threads inherit their parent channel’s policy. Tau ignores messages in excluded channels, including help
+                and account linking.
+              </ChannelIdsEditor>
             </div>
           )}
           <TrustedChannelsField value={trusted} onChange={setTrusted} />

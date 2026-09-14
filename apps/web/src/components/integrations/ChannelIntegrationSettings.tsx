@@ -36,7 +36,7 @@ const providerHints: Record<ProviderId, { where: string; what: string }> = {
   },
   discord: {
     where: 'In the Discord Developer Portal create an application, reset its bot token, and paste it here.',
-    what: 'Tau discovers the application and its public key, registers the /tau commands, and connects the gateway. Set the Interactions Endpoint URL below in the portal.',
+    what: 'Tau discovers the application and its public key, registers the /tau commands, and connects the gateway. Slash commands work through the gateway. Optionally set the Interactions Endpoint URL below for HTTP delivery.',
   },
 }
 

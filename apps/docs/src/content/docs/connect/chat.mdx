@@ -28,7 +28,8 @@ ask your administrator about changes to it.
 
 <ModeContent mode="self-hosted">
 
-The provider must be able to reach your instance over HTTPS. The card shows the
+Slack and Telegram must be able to reach your instance over HTTPS. Discord can
+receive commands and mentions through its outbound gateway connection. The card shows the
 receiver address, built from your instance's public base URL. An address
 reachable only from your computer will not receive provider webhooks. Check
 [configuration](/reference/configuration/) if the address shown is wrong.
@@ -67,9 +68,10 @@ Reinstall the Slack app after changing its scopes.
 2. Paste the token into Tau's Discord card and save. Tau validates it, records
    the application id and public key, registers the `/tau` commands, and
    connects the bot.
-3. Copy the **Interactions Endpoint URL** shown on the card into the
-   application's **General Information** page and save. Discord verifies the
-   endpoint immediately.
+3. Slash commands work through the bot connection without a public endpoint.
+   To use HTTP delivery instead, save the card’s **Interactions Endpoint URL**
+   in the application’s **General Information** page. Discord verifies it
+   immediately.
 4. Under **OAuth2 → URL Generator**, select the `bot` and
    `applications.commands` scopes with permissions to send messages, use
    commands, send messages in threads, and create public threads. Open the
@@ -121,6 +123,9 @@ choose the audience accordingly. Changing routing does not make a channel privat
 
 ## Test and continue a conversation
 
+Use **Copy** beside the linking command to copy the complete `/tau link CODE`
+command when connecting an account.
+
 Send `/tau help` to check connectivity; help works before linking. After linking,
 send `/tau ask What is this squad working on?`.
 
@@ -137,8 +142,9 @@ separate Tau question form. Existing channel conversation history is retained.
 
 If there is no reply, check the card: the integration switch, the
 **Connection** status (a rejected token is explained there), the default
-squad, and the bot's access to the channel. For Discord, also confirm the
-Interactions Endpoint URL was saved in the portal.
+squad, and the bot's access to the channel. For Discord, check the bot connection. If you configured an Interactions
+Endpoint URL in the portal, that endpoint must be reachable; otherwise slash
+commands arrive through the gateway.
 If the request arrives but the agent cannot answer, check the squad's model
 provider. To send work updates into this chat, configure
 [notifications](/connect/notifications/) separately.
@@ -154,9 +160,11 @@ webhook. A healthy token alone does not prove messages are reaching this instanc
 
 For Slack and Discord, open **Settings → Integrations**, then the provider's
 **Channel routing and access** section. Enter channel IDs under **Allowed channel
-IDs** to restrict Tau to those channels. Leave it empty to allow all channels.
+IDs** with **Add allowed channel** to restrict Tau to those channels. Leave it empty to allow all channels.
 Use **Denied channel IDs** for exclusions; denials take precedence over allowlists
-and trusted channels. Save the policy when finished.
+and trusted channels. Use the remove control beside a row to delete that ID,
+and **Add trusted channel** to add an explicit trust exception. Save the policy
+when finished.
 
 Threads follow their parent channel's policy. Tau ignores excluded channels,
 including help and linking requests, and stops sending delayed replies or squad
