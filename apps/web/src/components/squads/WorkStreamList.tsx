@@ -1,3 +1,5 @@
+import { WorkStreamStatusBadges } from '../WorkStreamStatusBadges'
+import { WS_STATUS_LABELS } from '../../lib/workStreamStatusPresentation'
 import { CreateFlowWorkStream } from './CreateFlowWorkStream'
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import clsx from 'clsx'
@@ -62,21 +64,6 @@ interface Props {
   hasMoreDone?: boolean
   isFetchingMoreDone?: boolean
   onLoadMoreDone?: () => void
-}
-
-// Full derived-state precision used for card indicators and kanban column headers.
-const STATUS_LABELS: Record<WorkStreamDerivedState, string> = {
-  queued: 'Queued',
-  idle: 'Idle',
-  in_progress: 'In Progress',
-  waiting_on_answer: 'Waiting on Answer',
-  waiting_on_dependency: 'Waiting on Dependency',
-  blocked: 'Blocked',
-  in_review: 'In Review',
-  execution_failed: 'Execution Failed',
-  paused: 'Paused',
-  done: 'Done',
-  canceled: 'Canceled',
 }
 
 const KANBAN_COLUMNS: WorkStreamDerivedState[] = [
@@ -419,7 +406,7 @@ function StatusColumn({
         )}
       >
         <h3 className="font-medium text-sm text-primary mb-3 shrink-0">
-          {STATUS_LABELS[status]} ({workStreams.length})
+          {WS_STATUS_LABELS[status]} ({workStreams.length})
         </h3>
         <div className="space-y-2 overflow-y-auto min-h-0 flex-1">
           {workStreams.map((ws) => (
@@ -499,6 +486,10 @@ function WorkStreamCard({
           {callout.label}
         </div>
       )}
+
+      <div className="mt-2">
+        <WorkStreamStatusBadges workStream={workStream} showPrimary={false} />
+      </div>
 
       {/* Assignee */}
       {assignee && (

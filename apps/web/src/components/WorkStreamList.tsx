@@ -1,3 +1,4 @@
+import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
 import clsx from 'clsx'
 import { createPortal } from 'react-dom'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -13,7 +14,6 @@ import { queries } from '../queryOptions'
 import {
   WorkStreamDetailModal,
   WS_STATUS_LABELS,
-  WS_STATUS_BADGE_COLORS,
   WS_PRIORITY_BADGE_COLORS,
   getWsDisplayState,
   getGithubInfo,
@@ -31,14 +31,7 @@ import {
   SkeletonRows,
 } from './loading/Skeleton'
 import { sortCanonicalWorkStreams, WORK_STREAM_STATUS_ROLE, type WorkStreamPresentationState } from '@tau/shared'
-import type {
-  WorkStream,
-  WorkStreamStatus,
-  WorkStreamDerivedState,
-  WorkStreamWaitType,
-  Squad,
-  Agent,
-} from '@tau/shared'
+import type { WorkStream, WorkStreamStatus, WorkStreamDerivedState, Squad, Agent } from '@tau/shared'
 
 // --- Status constants ---
 
@@ -74,14 +67,6 @@ const WS_STATUS_ICONS: Record<WorkStreamPresentationState, string> = {
   queued: '○',
   done: '✓',
   canceled: '×',
-}
-
-/** Lowercase, informal label for a wait type used only in the "parked" queued-row annotation. */
-const WS_WAIT_TYPE_PARKED_LABEL: Record<WorkStreamWaitType, string> = {
-  review: 'in review',
-  question: 'waiting on answer',
-  dependency: 'waiting on dependency',
-  manual: 'blocked',
 }
 
 // --- Priority constants ---
@@ -512,15 +497,7 @@ function WorkStreamRow({
   const priorityBadge = getPriorityBadgeInfo(workStream)
   const queuePositionText =
     workStream.status === 'queued' && workStream.queuePosition != null ? `#${workStream.queuePosition} in queue` : null
-  // A queued row with an open wait shows the wait's display state instead of the plain "Queued" label
-  // (e.g. "in review — parked") — it was parked mid-review/mid-block rather than freshly queued.
-  const topParkedWait = workStream.status === 'queued' ? workStream.openWaits?.[0] : undefined
-  const statusBadgeText = topParkedWait
-    ? `${WS_WAIT_TYPE_PARKED_LABEL[topParkedWait.type]} — parked`
-    : (WS_STATUS_LABELS[state] ?? state)
-  const statusTitle = `${statusBadgeText}${
-    workStream.status === 'queued' && workStream.queuePosition != null ? ` (${workStream.queuePosition})` : ''
-  }`
+  const statusBadgeText = WS_STATUS_LABELS[state] ?? state
 
   if (feedLayout) {
     const completedAt = new Date(workStream.completedAt ?? workStream.updatedAt)
@@ -534,9 +511,7 @@ function WorkStreamRow({
           <span className="min-w-0 flex-1 text-sm font-medium text-primary line-clamp-2 break-words">
             {workStream.title}
           </span>
-          <Badge color={WS_STATUS_BADGE_COLORS[state] ?? 'gray'} className="shrink-0">
-            {statusBadgeText}
-          </Badge>
+          <WorkStreamStatusBadges workStream={workStream} />
         </button>
         <div className="ml-4 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
           {squad && <span>{squad.name}</span>}
@@ -631,11 +606,7 @@ function WorkStreamRow({
               {queuePositionText}
             </Badge>
           )}
-          {state !== 'done' && (
-            <Badge color={WS_STATUS_BADGE_COLORS[state] ?? 'gray'} title={statusTitle}>
-              {statusBadgeText}
-            </Badge>
-          )}
+          {state !== 'done' && <WorkStreamStatusBadges workStream={workStream} />}
           {showSquadBadge && squad && (
             <Badge
               color="purple"
@@ -677,12 +648,12 @@ function WorkStreamRow({
         </div>
         <div
           data-testid="work-stream-mobile-metadata"
-          className="flex items-center gap-2 text-xs text-muted pl-6 min-w-0"
+          className="flex flex-wrap items-center gap-2 text-xs text-muted pl-6 min-w-0"
         >
           <span className={clsx('inline-block w-1.5 h-1.5 rounded-full shrink-0', statusDotClass)} />
           {assigneeTypeName && <span className="truncate">{assigneeTypeName}</span>}
           <span aria-hidden="true">·</span>
-          <span className="shrink-0">{statusBadgeText}</span>
+          <WorkStreamStatusBadges workStream={workStream} />
           {priorityBadge && (
             <>
               <span aria-hidden="true">·</span>

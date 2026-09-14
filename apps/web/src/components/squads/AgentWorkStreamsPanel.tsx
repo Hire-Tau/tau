@@ -1,17 +1,10 @@
+import { WorkStreamStatusBadges } from '../WorkStreamStatusBadges'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { queries } from '../../queryOptions'
-import {
-  WorkStreamDetailModal,
-  WS_STATUS_BADGE_COLORS,
-  WS_STATUS_LABELS,
-  formatRelativeTime,
-  getGithubInfo,
-  getWsDisplayState,
-} from '../WorkStreamDetailModal'
+import { WorkStreamDetailModal, formatRelativeTime, getGithubInfo } from '../WorkStreamDetailModal'
 import { PullRequestIcon, WorkStreamIcon } from '../icons'
 import { sortCanonicalWorkStreams, type Agent, type WorkStream } from '@tau/shared'
-import { Badge } from '../Badge'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton } from '../loading/Skeleton'
 
@@ -102,9 +95,7 @@ export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge color={WS_STATUS_BADGE_COLORS[getWsDisplayState(ws)] ?? 'gray'}>
-                      {WS_STATUS_LABELS[getWsDisplayState(ws)] ?? getWsDisplayState(ws)}
-                    </Badge>
+                    <WorkStreamStatusBadges workStream={ws} />
                     {isAssigned && (
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-accent/20 text-accent-light shrink-0">
                         Assigned

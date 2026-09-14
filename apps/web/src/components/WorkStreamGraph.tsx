@@ -1,3 +1,4 @@
+import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
 import { useMemo } from 'react'
 import clsx from 'clsx'
 import type { Agent, WorkStream } from '@tau/shared'
@@ -100,10 +101,8 @@ export function WorkStreamGraph({ workStreams, agentMap, onSelectWorkStream }: W
                     <div className="mb-2 truncate text-sm font-medium text-primary" title={stream.title}>
                       {stream.title.length > 28 ? `${stream.title.slice(0, 28)}…` : stream.title}
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <Badge color={WS_STATUS_BADGE_COLORS[displayState] ?? 'gray'}>
-                        {WS_STATUS_LABELS[displayState] ?? displayState}
-                      </Badge>
+                    <WorkStreamStatusBadges workStream={stream} />
+                    <div className="mt-1 flex items-center gap-1.5">
                       <Badge
                         color={WS_PRIORITY_BADGE_COLORS[effectivePriority]}
                         title={boosted ? `${storedPriority} → ${effectivePriority}` : undefined}

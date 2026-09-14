@@ -9,7 +9,7 @@ import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { AgentActivityDot } from './AgentActivityDot'
 import { Badge } from './Badge'
 import { LoadingSurface, SkeletonBlock, SkeletonLine } from './loading/Skeleton'
-import { getWsDisplayState, WS_STATUS_LABELS, WS_STATUS_BADGE_COLORS } from './WorkStreamDetailModal'
+import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
 import {
   commandCenterSearch,
   consultantConversations,
@@ -848,8 +848,7 @@ function CommandAgentType({ typeId }: { typeId: string }) {
 }
 
 function CommandWorkStatus({ work }: { work: WorkStream }) {
-  const state = getWsDisplayState(work)
-  return <Badge color={WS_STATUS_BADGE_COLORS[state]}>{WS_STATUS_LABELS[state]}</Badge>
+  return <WorkStreamStatusBadges workStream={work} />
 }
 
 function InlineCommandChat({

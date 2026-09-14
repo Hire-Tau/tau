@@ -1,3 +1,8 @@
+import { WORK_STREAM_STATUS_ROLE } from '@tau/shared'
+import { webStatus } from '../lib/statusPresentation'
+import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
+import { getWsDisplayState, WS_STATUS_LABELS } from '../lib/workStreamStatusPresentation'
+export { getWsDisplayState, WS_STATUS_LABELS, WS_STATUS_BADGE_COLORS } from '../lib/workStreamStatusPresentation'
 import { resolveCodeHostReference } from '@tau/shared'
 import { WorkStreamPauseControls } from './WorkStreamPauseControls'
 import { WorkflowRunPanel } from './WorkflowRunPanel'
@@ -14,12 +19,6 @@ import { Modal } from './Modal'
 import { Badge, type BadgeColor } from './Badge'
 import { WorkStreamFileList } from './WorkStreamFileCard'
 import { BellCheckIcon, BellIcon, GitHubIcon, PullRequestIcon } from './icons'
-import {
-  WORK_STREAM_STATUS_ROLE,
-  selectWorkStreamPresentationState,
-  type WorkStreamPresentationState,
-} from '@tau/shared'
-import { webStatus } from '../lib/statusPresentation'
 import type { WorkStream, WorkStreamPriority, WorkStreamWaitType, Squad, Agent } from '@tau/shared'
 import { getAgentPrimaryLabel } from '../lib/agentDisplay'
 import { computeWorkStreamElapsedMs } from '../lib/workStreamRuntime'
@@ -121,41 +120,6 @@ export function getGithubInfo(metadata: Record<string, unknown>): GithubInfo | n
   return { repo, repoUrl, prNumber, prUrl }
 }
 
-// Merged label/color maps covering BOTH stored statuses (queued/active/done/canceled) and derived
-// display states (in_progress/in_review/waiting_on_answer/waiting_on_dependency/blocked/idle). The
-// key spaces overlap on queued/done/canceled, which share the same label either way.
-export const WS_STATUS_LABELS: Record<WorkStreamPresentationState, string> = {
-  // Stored statuses
-  queued: 'Queued',
-  active: 'Active',
-  done: 'Done',
-  canceled: 'Canceled',
-  // Derived display states
-  in_progress: 'In Progress',
-  in_review: 'In Review',
-  waiting_on_answer: 'Waiting on Answer',
-  waiting_on_dependency: 'Waiting on Dependency',
-  blocked: 'Blocked',
-  idle: 'Idle',
-  execution_failed: 'Execution Failed',
-  paused: 'Paused',
-}
-
-export const WS_STATUS_BADGE_COLORS: Record<WorkStreamPresentationState, BadgeColor> = {
-  queued: webStatus(WORK_STREAM_STATUS_ROLE.queued).badgeColor,
-  active: webStatus(WORK_STREAM_STATUS_ROLE.active).badgeColor,
-  done: webStatus(WORK_STREAM_STATUS_ROLE.done).badgeColor,
-  canceled: webStatus(WORK_STREAM_STATUS_ROLE.canceled).badgeColor,
-  in_progress: webStatus(WORK_STREAM_STATUS_ROLE.in_progress).badgeColor,
-  in_review: webStatus(WORK_STREAM_STATUS_ROLE.in_review).badgeColor,
-  waiting_on_answer: webStatus(WORK_STREAM_STATUS_ROLE.waiting_on_answer).badgeColor,
-  waiting_on_dependency: webStatus(WORK_STREAM_STATUS_ROLE.waiting_on_dependency).badgeColor,
-  blocked: webStatus(WORK_STREAM_STATUS_ROLE.blocked).badgeColor,
-  idle: webStatus(WORK_STREAM_STATUS_ROLE.idle).badgeColor,
-  execution_failed: webStatus(WORK_STREAM_STATUS_ROLE.execution_failed).badgeColor,
-  paused: webStatus(WORK_STREAM_STATUS_ROLE.paused).badgeColor,
-}
-
 const WAIT_TYPE_LABELS: Record<WorkStreamWaitType, string> = {
   dependency: 'Dependency',
   question: 'Question',
@@ -178,13 +142,6 @@ const WAIT_RESOLUTION_LABELS: Record<string, string> = {
   satisfied: 'Satisfied',
   answered: 'Answered',
   canceled: 'Canceled',
-}
-
-/** Compatibility wrapper around the shared authoritative presentation selector. */
-export function getWsDisplayState(
-  workStream: Pick<WorkStream, 'status' | 'derivedState' | 'openWaits'>
-): WorkStreamPresentationState {
-  return selectWorkStreamPresentationState(workStream)
 }
 
 export const WS_PRIORITY_BADGE_COLORS: Record<WorkStreamPriority, BadgeColor> = {
@@ -360,12 +317,7 @@ export function WorkStreamDetailModal({
     },
   })
 
-  const displayState = getWsDisplayState(workStream)
-  const statusLabel =
-    displayState === 'queued' && workStream.queuePosition != null
-      ? `${WS_STATUS_LABELS[displayState]} — position ${workStream.queuePosition}`
-      : (WS_STATUS_LABELS[displayState] ?? displayState)
-  const headerExtra = <Badge color={WS_STATUS_BADGE_COLORS[displayState] ?? 'gray'}>{statusLabel}</Badge>
+  const headerExtra = <WorkStreamStatusBadges workStream={workStream} showQueuePosition />
 
   const hasActiveRuntime = (workStream.runtime?.activeCount ?? 0) > 0
   const now = useTick(1000, hasActiveRuntime)
