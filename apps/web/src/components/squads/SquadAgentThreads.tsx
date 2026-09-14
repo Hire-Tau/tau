@@ -5,6 +5,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -12,6 +13,7 @@ import {
 } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { SQUAD_RECENT_CHAT_LIMIT } from '../../lib/recentChats'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import { useFullscreen } from '../../hooks/useFullscreen'
@@ -82,7 +84,6 @@ export interface SquadAgentThreadsProps {
 
 type TabView = 'chat' | 'work' | 'inbox' | 'context' | 'subagents' | 'info'
 const VALID_TABS = ['chat', 'work', 'inbox', 'context', 'subagents', 'info'] as const
-const RECENT_CONSULTANT_LIMIT = 10
 const STATUS_LABELS: Record<Agent['status'], string> = {
   active: 'Working',
   idle: 'Idle',
@@ -136,6 +137,9 @@ export function SquadAgentThreads({
     AgentContextPanel: AgentContextPanelComponent = AgentContextPanel,
   } = dependencies
   const isPage = layout === 'page'
+  // Standalone chat pages retain their existing picker density and non-collapsible list.
+  const recentConsultantLimit = isPage ? 10 : SQUAD_RECENT_CHAT_LIMIT
+  const consultantSectionId = useId()
   const agentSkeletonCount = useLoadingShapeCount(
     `squads:${squadId}:agent-conversations:${agentTypeFilter ?? 'all'}`,
     isLoading ? undefined : agents.length,
@@ -346,12 +350,11 @@ export function SquadAgentThreads({
     return groups
   }, [sortedAgents])
 
-  // When only one category is on screen (e.g. an agentTypeFilter like 'consultant', or a squad
-  // with a single agent type), it stays expanded and its collapse toggle is disabled — there's
-  // nothing to collapse it against.
+  // A lone worker category stays expanded; consultant chats have their own disclosure below.
   const onlyOneCategory = agentTypeGroups.length === 1
 
   const [collapsedTypes, setCollapsedTypes] = useState<Set<string>>(() => new Set())
+  const consultantsCollapsed = !isPage && !isSearching && collapsedTypes.has('consultant')
   const [terminatedCollapsed, setTerminatedCollapsed] = useState(true)
   const effectiveTerminatedCollapsed = isSearching ? false : terminatedCollapsed
   const terminatedLoadMoreRef = useRef<HTMLDivElement | null>(null)
@@ -452,7 +455,7 @@ export function SquadAgentThreads({
   const managerAgentTypeGroups = agentTypeGroups.filter((group) => group.agentTypeId === 'manager')
   const consultantAgents = sortedAgents.filter((agent) => agent.agentTypeId === 'consultant')
   const visibleConsultants =
-    showAllConsultants || isSearching ? consultantAgents : consultantAgents.slice(0, RECENT_CONSULTANT_LIMIT)
+    showAllConsultants || isSearching ? consultantAgents : consultantAgents.slice(0, recentConsultantLimit)
   const otherAgentTypeGroups = agentTypeGroups.filter(
     (group) => group.agentTypeId !== 'manager' && group.agentTypeId !== 'consultant'
   )
@@ -673,7 +676,7 @@ export function SquadAgentThreads({
   )
 
   // Shared agent-list body rendered in both the desktop sidebar and the mobile picker modal.
-  const renderAgentListBody = () => (
+  const renderAgentListBody = (inPicker = false) => (
     <div className="flex min-h-0 flex-1 flex-col w-full">
       <div className="squad-chat-toolbar shrink-0 border-b border-th-border pb-1 md:pb-2">
         <div className="mx-3 my-2 flex items-center gap-1.5">
@@ -713,20 +716,50 @@ export function SquadAgentThreads({
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto overflow-x-hidden p-2">
         {consultantAgents.length > 0 && (
           <section data-agent-type-section="consultant" className="space-y-1">
-            <div className="squad-chat-category flex items-center justify-between px-2 py-1">
-              <span>{showAllConsultants || isSearching ? 'Consultant chats' : 'Recent chats'}</span>
-              {!isSearching && renderTerminateAllButton('consultant', consultantAgents)}
+            <div className={clsx('squad-chat-category flex items-center justify-between', isPage && 'px-2 py-1')}>
+              {isPage ? (
+                <span>{showAllConsultants || isSearching ? 'Consultant chats' : 'Recent chats'}</span>
+              ) : (
+                <button
+                  type="button"
+                  aria-label={`${consultantsCollapsed ? 'Expand' : 'Collapse'} ${showAllConsultants || isSearching ? 'Consultant chats' : 'Recent chats'}`}
+                  aria-expanded={!consultantsCollapsed}
+                  aria-controls={`${consultantSectionId}-${inPicker ? 'picker' : 'sidebar'}`}
+                  disabled={isSearching}
+                  onClick={(event) => {
+                    // Pointer activation does not focus buttons in every browser. Move focus
+                    // out of the rows before hiding them, just as keyboard activation does.
+                    event.currentTarget.focus()
+                    toggleType('consultant')
+                  }}
+                  className="tau-button squad-chat-category flex w-full items-center gap-1 rounded-md px-2 py-2 text-left enabled:hover:bg-surface-hover"
+                >
+                  {consultantsCollapsed ? (
+                    <ChevronRightIcon className="h-3.5 w-3.5" />
+                  ) : (
+                    <ChevronDownIcon className="h-3.5 w-3.5" />
+                  )}
+                  <span>{showAllConsultants || isSearching ? 'Consultant chats' : 'Recent chats'}</span>
+                </button>
+              )}
+              {!isSearching && !consultantsCollapsed && renderTerminateAllButton('consultant', consultantAgents)}
             </div>
-            {visibleConsultants.map((agent) => renderAgentRow(agent))}
-            {!isSearching && consultantAgents.length > RECENT_CONSULTANT_LIMIT && (
-              <button
-                type="button"
-                onClick={() => setShowAllConsultants(!showAllConsultants)}
-                className="tau-button px-2 py-1.5 text-xs text-secondary hover:text-primary"
-              >
-                {showAllConsultants ? 'Show recent' : `View all (${consultantAgents.length})`}
-              </button>
-            )}
+            <div
+              id={`${consultantSectionId}-${inPicker ? 'picker' : 'sidebar'}`}
+              hidden={consultantsCollapsed}
+              className="space-y-1"
+            >
+              {visibleConsultants.map((agent) => renderAgentRow(agent))}
+              {!isSearching && consultantAgents.length > recentConsultantLimit && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllConsultants(!showAllConsultants)}
+                  className="tau-button px-2 py-1.5 text-xs text-secondary hover:text-primary"
+                >
+                  {showAllConsultants ? 'Show recent' : `View all (${consultantAgents.length})`}
+                </button>
+              )}
+            </div>
           </section>
         )}
         {consultantAgents.length === 0 && otherAgentTypeGroups.length === 0 && (activeAgentsOnly || isSearching) && (
@@ -1073,7 +1106,7 @@ export function SquadAgentThreads({
           maxWidth="default"
           noChildPadding
         >
-          <div className="flex flex-col h-[80vh]">{renderAgentListBody()}</div>
+          <div className="flex flex-col h-[80vh]">{renderAgentListBody(true)}</div>
         </Modal>
       )}
     </div>
