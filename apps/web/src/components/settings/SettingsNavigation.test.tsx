@@ -24,7 +24,7 @@ afterEach(async () => {
   dom = undefined
 })
 
-async function setup(allowed = groups) {
+async function setup(allowed = groups, scopeTitle?: string) {
   dom = await acquireDomHarness({ url: 'http://localhost/settings' })
   const calls: Array<[string, string | undefined]> = []
   const { container, root } = dom.createRoot()
@@ -34,6 +34,7 @@ async function setup(allowed = groups) {
       <MemoryRouter>
         <SettingsNavigation
           groups={allowed}
+          scopeTitle={scopeTitle}
           activeSection={section}
           onSectionChange={(id, target) => {
             calls.push([id, target])
@@ -69,6 +70,55 @@ test('keeps personal settings clean and finds fields across permitted administra
   expect(sidebar.textContent).toContain('AI Providers')
   expect(sidebar.textContent).not.toContain('Sessions')
 })
+
+for (const scopeTitle of [undefined, 'Squad settings']) {
+  test(`settings search keyboard navigation (${scopeTitle ?? 'global'})`, async () => {
+    const { sidebar, search, calls } = await setup(
+      [
+        {
+          items: [
+            { id: 'alpha', label: 'Alpha' },
+            { id: 'beta', label: 'Beta' },
+            { id: 'gamma', label: 'Gamma' },
+          ],
+        },
+      ],
+      scopeTitle
+    )
+    const input = sidebar.querySelector('input')!
+    const key = async (key: string) =>
+      dom!.act(async () => {
+        input.focus()
+        input.dispatchEvent(new dom!.window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+      })
+    await search('a')
+    const selected = () => sidebar.querySelector('[aria-selected="true"]')!
+    expect(selected().textContent).toContain('Alpha')
+    await key('ArrowDown')
+    expect(selected().textContent).toContain('Beta')
+    expect(dom!.window.document.activeElement).toBe(input)
+    expect(input.getAttribute('aria-activedescendant')).toBe(selected().id)
+    await key('ArrowUp')
+    await key('ArrowUp')
+    expect(selected().textContent).toContain('Gamma')
+    await key('ArrowDown')
+    await key('ArrowDown')
+    await key('Enter')
+    expect(calls.at(-1)).toEqual(['beta', undefined])
+    await search('a')
+    expect(selected().textContent).toContain('Alpha')
+    await key('ArrowDown')
+    await search('gamma')
+    expect(selected().textContent).toContain('Gamma')
+    await key('Enter')
+    expect(calls.at(-1)).toEqual(['gamma', undefined])
+    await search('no match exists')
+    await key('ArrowDown')
+    await key('Enter')
+    expect(calls).toHaveLength(2)
+    expect(input.hasAttribute('aria-activedescendant')).toBe(false)
+  })
+}
 
 test('matches aliases and field labels without exposing unavailable pages', async () => {
   const { sidebar, search, calls } = await setup([groups[0]])
