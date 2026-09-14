@@ -471,7 +471,10 @@ describe('complete remote read', () => {
     ])
 
     expect(rangedResult.content).toEqual(completeResult.content)
-    expect(requests.map(({ offset, limit }) => ({ offset, limit }))).toEqual([{ offset: 0, limit: 1024 * 1024 }])
+    expect(requests.map(({ offset, limit }) => ({ offset, limit }))).toEqual([
+      { offset: 0, limit: 4100 }, // Bounded image sniff before the unchanged text read.
+      { offset: 0, limit: 1024 * 1024 },
+    ])
   })
 
   test('line range hint scans past 50 KiB and returns enough input for pi to select the requested lines', async () => {
@@ -499,7 +502,9 @@ describe('complete remote read', () => {
       expect.objectContaining({ text: expect.stringContaining('line-06000\nline-06001') })
     )
     expect(requests.length).toBeGreaterThan(1)
-    expect(requests.map((request) => request.offset)).toEqual(requests.map((_, index) => index * 16 * 1024))
+    expect(requests[0]).toMatchObject({ offset: 0, limit: 4100 })
+    const textRequests = requests.slice(1)
+    expect(textRequests.map((request) => request.offset)).toEqual(textRequests.map((_, index) => index * 16 * 1024))
     expect((requests.at(-1)?.offset ?? 0) + 16 * 1024).toBeLessThan(original.byteLength)
   })
 

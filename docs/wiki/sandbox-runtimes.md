@@ -372,6 +372,21 @@ workspaces, memory and private dirs are host bind mounts.
 | `auto`    | choose `docker-sysbox` or `docker-socket` explicitly |
 | `docker`  | choose `docker-sysbox` or `docker-socket` explicitly |
 
+## Reading images
+
+The `read` tool returns PNG, JPEG, GIF, WebP, and BMP files as native image
+content for vision-capable models, not binary text. Sandbox readers classify a
+bounded byte prefix on the same authenticated client used to read the file;
+shared-workspace routing also applies to this sniff. File extensions do not
+override the bytes. Custom Pi read operations must implement
+`detectImageMimeType`—Pi does not inherit the host detector for custom operations.
+
+Images use complete binary reads rather than text line ranges. Pi validates the
+image, converts BMP to PNG, and applies its inline image size limits. Invalid
+images are omitted and unrecognized binary prefixes are rejected instead of
+being decoded as text. Text files retain their usual line selection/truncation.
+Reading an image does not publish it or make browser `file:` URLs accessible.
+
 ## Consultant conversations
 
 A squad's consultant chats share one light runtime (`consultants_<squad-id>`).
