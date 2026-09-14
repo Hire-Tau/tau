@@ -13,7 +13,8 @@
   "dependencies": {
     "@tau/client-core": "workspace:*",
     "@tau/shared": "workspace:*",
-    "commander": "^12.0.0"
+    "commander": "^12.0.0",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "amtp-protocol": "^0.1.2",

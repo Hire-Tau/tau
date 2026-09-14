@@ -42,8 +42,11 @@ tau workstream create '<deliverable>' --squad <squad-id> \
   --branch <branch> --base-branch <base>
 ```
 
-For one-off processes use `--flow source.yaml`, containing a source such as
-`{kind: inline, definition: ...}`. Validate with `tau workflow resolve` first.
+For one-off processes use `--flow-content '<JSON source>'` for short input, or
+`--flow-stdin` with a quoted heredoc for longer JSON/YAML, containing a source
+such as `{kind: inline, definition: ...}`. Validate with `tau workflow resolve
+--content` or `--stdin` first. Files remain optional via `--flow` for saved
+definitions; do not create temporary files merely to pass input.
 Do not also pass legacy agent lists, assignee, model, or completion flags.
 Omit the source to inherit the squad default; it resolves to Solo when no squad default is stored. Squad presets only seed preferences at squad creation. The runtime
 spawns only the participants needed by admitted, active steps. No eager crew
@@ -54,7 +57,8 @@ creation, manual handoff chains, or manager-maintained scheduling ledgers.
 Use the current handoff assignment and its incoming results. Read
 `tau workstream flow <id>` when earlier evidence or current state is needed;
 do not reload the full history before every step. Perform the assigned step with the agent type's full expertise. Submit a declared outcome and evidence
-using `tau workstream advance <id> --file COMMAND.json`; include the current
+using `tau workstream advance <id> --content '<JSON>'`, or `--stdin` with a
+quoted heredoc for longer JSON/YAML; include the current
 `expectedVersion` and `attemptId`. Use permitted returns for rework and tracked
 delegation if allowed. After a version conflict, re-read before retrying and
 confirm the attempt is still active. Never route by legacy assignee/status edits.

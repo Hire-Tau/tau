@@ -4,13 +4,13 @@ The `tau workstream` (or `tau ws`) command provides functionality for managing w
 
 ## Workflows
 
-New work can use a squad default, `--workflow PRESET_ID`, or `--flow source.yaml` for a saved/customized or inline source. Flow participants are created lazily. Read [Workflows, flows, and squads](../workflows.md) for authoring, parallel joins, scoped waits, pause/resume, and delivery policies. Use `tau workstream flow/advance/finish` for flow-controlled handoffs and completion; the legacy direct assignment commands below apply to non-flow streams.
+New work can use a squad default, `--workflow PRESET_ID`, or `--flow-content '<JSON source>'` / `--flow-stdin` (or optional `--flow` for saved files) for a saved/customized or inline source. Flow participants are created lazily. Read [Workflows, flows, and squads](../workflows.md) for authoring, parallel joins, scoped waits, pause/resume, and delivery policies. Use `tau workstream flow/advance/finish` for flow-controlled handoffs and completion; the legacy direct assignment commands below apply to non-flow streams.
 
 ### Inspect and advance an active flow
 
 ```bash
 tau workstream flow STREAM_ID
-tau workstream advance STREAM_ID --file command.json --request-id REQUEST_UUID
+tau workstream advance STREAM_ID --content '{"expectedVersion":1,"attemptId":1,"action":"complete","outcome":"completed","evidence":"Tests passed"}' --request-id REQUEST_UUID
 tau workstream finish STREAM_ID --version CURRENT_VERSION
 ```
 
@@ -33,18 +33,21 @@ CI failures, requested changes, or merge conflicts can arrive after the graph re
 `completion-ready`. Verify that the feedback still applies to the current PR head,
 then read `tau workstream flow STREAM_ID` and submit:
 
-```json
+```bash
+tau workstream advance STREAM_ID --stdin --request-id REQUEST_UUID <<'TAU_COMMAND'
 {
   "action": "rework",
   "expectedVersion": 4,
   "attemptId": 3,
   "feedback": "Current CI failure and the correction required"
 }
+TAU_COMMAND
 ```
 
 Use the current version and the latest completed attempt ID for `completion.changeEventsTo.step`
-when configured, otherwise the last completed **agent** attempt. Pass the
-file to `tau workstream advance STREAM_ID --file command.json --request-id REQUEST_UUID`.
+when configured, otherwise the last completed **agent** attempt. Use single-quoted
+`--content` JSON for short payloads, or the quoted heredoc above for longer JSON/YAML.
+Saved commands can still use `--file`; no temporary file is required.
 The delivery participant or a flow manager may request rework. It creates a tracked
 attempt at that delivery step; normal outcomes can return corrections to an engineer
 and repeat review. A terminal parallel branch restarts its outer fork to preserve
@@ -157,7 +160,9 @@ tau workstream create|new [options] <title>
 | `-t, --task <taskId>` | Associated task ID |
 | `-d, --description <desc>` | Description of the work stream |
 | `--workflow <id>` | Saved workflow preset |
-| `--flow <file>` | YAML/JSON workflow source, including an inline definition |
+| `--flow-content <text>` | Inline JSON/YAML workflow source or definition |
+| `--flow-stdin` | Read the source/definition from a pipe or quoted heredoc |
+| `--flow <file>` | Read a saved JSON/YAML workflow source or definition |
 | `-m, --message <msg>` | Handoff message (included in assignment notifications) |
 | `--depends-on <wsId>` | Dependency work stream ID (can be repeated) |
 
@@ -178,8 +183,8 @@ tau workstream create "Build feature X" \
   --squad squad-123 --workflow planned-coding \
   -m "Start with high-level design"
 
-# Use an ephemeral definition for this task
-tau workstream create "Fix bug Y" --squad squad-123 --flow fix.yaml
+# Customize a preset for this task without a temporary file
+tau workstream create "Fix bug Y" --squad squad-123 --flow-content '{"kind":"preset","id":"solo-coding","customizations":[{"op":"set-name","name":"Fix bug Y"}]}'
 
 # Create with dependencies
 tau workstream create "Integration tests" \

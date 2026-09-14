@@ -1,3 +1,9 @@
+import {
+  addStructuredInputOptions,
+  readStructuredInput,
+  validateStructuredInput,
+  type StructuredInputOptions,
+} from '../structured-input'
 import { Command } from 'commander'
 import { workflowCommandSchema } from '@tau/shared'
 import { apiGet, apiPost } from '../client'
@@ -27,14 +33,16 @@ export function registerWorkstreamFlowCommands(
         deps.output(await deps.apiGet(`/api/workflows/runs/${encodeURIComponent(id)}`))
       })
     )
-  command
-    .command('advance <id>', { hidden: legacy })
+  addStructuredInputOptions(command.command('advance <id>', { hidden: legacy }))
     .description('Complete, return, delegate, rework, or revise a flow using a versioned command')
-    .requiredOption('--file <file>', 'YAML or JSON command with expectedVersion and attemptId')
     .option('--request-id <id>', 'Stable UUID for retrying this exact command')
-    .action((id: string, options: { file: string; requestId?: string }) =>
+    .addHelpText(
+      'after',
+      '\nThe command must include action, expectedVersion, attemptId, and action-specific fields (e.g. outcome and evidence for complete).'
+    )
+    .action((id: string, options: StructuredInputOptions & { requestId?: string }) =>
       run(async () => {
-        const value = workflowCommandSchema.parse(Bun.YAML.parse(await Bun.file(options.file).text()))
+        const value = validateStructuredInput(workflowCommandSchema, await readStructuredInput(options))
         deps.output(
           await deps.apiPost(`/api/workflows/runs/${encodeURIComponent(id)}/advance`, {
             command: value,

@@ -27,7 +27,9 @@ Work only on your active attempt. Queued, paused, waiting, superseded, or cancel
 work must not proceed. Participant agents are created only when their steps
 need them; never pre-spawn later participants or wake them with side messages.
 
-Use `tau workstream advance <id> --file COMMAND.json` with the current
+Use `tau workstream advance <id> --content '<JSON>'` for short commands or
+`--stdin` with a quoted heredoc for longer JSON/YAML; do not create a temporary
+file just to submit a payload. Files remain optional via `--file` for saved commands. Include the current
 `expectedVersion`, `attemptId`, declared outcome, and `evidence` as a plain string. Use authorized
 returns for rework and tracked delegation when the flow allows it. Re-read after
 a stale-version conflict and retry only if your attempt is still running. Never
@@ -85,7 +87,7 @@ not evidence of merge. Human approval and auto/direct-merge authorization must
 come from the configured policy; no role may grant itself that authority.
 If new CI failures, review findings, or merge conflicts require changes at
 `completion-ready`, verify they apply to the current PR head, then use the
-`rework` action through `tau workstream advance --file`: provide the current
+`rework` action through `tau workstream advance --content` (or `--stdin`): provide the current
 `expectedVersion`, the latest completed attempt for `completion.changeEventsTo.step`
 (or the last agent attempt by default), and `feedback`. The delivery
 participant or flow manager can request it. Follow the new tracked attempt and

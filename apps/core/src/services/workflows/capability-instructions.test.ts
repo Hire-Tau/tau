@@ -21,7 +21,10 @@ test('adaptive assignments explain their remaining budget and include a valid ve
   expect(message).toContain('2 of 3 specialist assignments remain')
   expect(message).toContain('active=keep')
   expect(message).toContain('do not increase limits')
-  const example = JSON.parse(message.match(/```json\n([\s\S]*?)\n```/)![1]!)
+  expect(message).not.toContain('COMMAND.json')
+  expect(message).toContain('--content')
+  expect(message).toContain("tau workstream advance STREAM_ID --stdin <<'TAU_COMMAND'")
+  const example = JSON.parse(message.match(/<<'TAU_COMMAND'\n([\s\S]*?)\nTAU_COMMAND/)![1]!)
   expect(workflowCommandSchema.parse(example)).toMatchObject({ action: 'delegate', expectedVersion: 7, attemptId: 1 })
   run.delegationCount = 3
   const exhausted = flowCapabilityInstructions(run, run.attempts[0]!)

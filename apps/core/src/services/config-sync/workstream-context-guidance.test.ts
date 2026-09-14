@@ -90,3 +90,24 @@ describe('work stream context guidance', () => {
     }
   })
 })
+
+test('workflow guidance prefers inline content and stdin rather than mandatory temp files', async () => {
+  const files = [
+    'config/agent-types/shared/squad-rules.md',
+    'config/agent-types/manager.yaml',
+    'config/agent-types/consultant.yaml',
+    'config/skills/setup-workflows/SKILL.md',
+    'config/skills/work-stream-driven-development/SKILL.md',
+    'config/skills/roadmap-phase-loop/SKILL.md',
+    'apps/core/src/entities/agent-runners/squad-manager-runner.ts',
+    'apps/core/src/entities/agent-runners/squad-worker-runner.ts',
+    'apps/docs/src/content/docs/reference/workflow-definition.mdx',
+  ]
+  for (const file of files) {
+    const text = await readRepoFile(file)
+    expect(text).toMatch(/--(?:flow-)?content/)
+    expect(text).toMatch(/--(?:flow-)?stdin/)
+    expect(text).not.toMatch(/tau workstream advance[^\n]*--file/)
+    expect(text).not.toContain('--flow source.yaml')
+  }
+})

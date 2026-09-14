@@ -384,12 +384,15 @@ describe('AgentTypeSync', () => {
     }
   })
 
-  test('manager and consultant select flows without eagerly staffing a fixed team', async () => {
+  test('manager and consultant select inline-first flows without eagerly staffing a fixed team', async () => {
     const parsed = await sync.loadFromDir()
     for (const id of ['manager', 'consultant']) {
       const type = parsed.find((row) => row.id === id)!
       expect(type.systemPrompt).toContain('--workflow <preset-id>')
-      expect(type.systemPrompt).toContain('--flow source.yaml')
+      expect(type.systemPrompt).toContain('--flow-content')
+      expect(type.systemPrompt).toContain('--flow-stdin')
+      expect(type.systemPrompt).not.toContain('--flow source.yaml')
+      expect(type.systemPrompt.replace(/\s+/g, ' ')).toContain('Files remain optional via --flow for saved definitions')
       expect(type.systemPrompt).not.toContain('--agents architect,engineer,reviewer')
       expect(type.systemPrompt).not.toContain('--assign-index 1')
       expect(type.skills).not.toContain('subagent-driven-development')
