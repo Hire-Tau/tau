@@ -1238,6 +1238,8 @@ export interface WorkStreamPause {
 }
 
 export interface WorkStream {
+  /** Effective retention setting. Older servers omit this field (retain). */
+  autoCleanupWorktree?: boolean
   pause?: WorkStreamPause | null
   id: string
   squadId: string
@@ -1309,6 +1311,8 @@ export interface WorkStreamRuntime {
 }
 
 export interface CreateWorkStreamInput {
+  /** Automatically reclaim an owned worktree after delivery and associated execution settlement. Defaults true for new streams. */
+  autoCleanupWorktree?: boolean
   assignedReviewerIds?: string[]
   /** Omission inherits the effective squad default. Every new stream has a flow. */
   workflow?: import('./workflows').WorkflowSource
@@ -1348,6 +1352,8 @@ export interface CreateWorkStreamInput {
 }
 
 export interface UpdateWorkStreamInput {
+  /** Disable before finish to retain the worktree. Does not cancel an already dispatched removal. */
+  autoCleanupWorktree?: boolean
   assignedReviewerIds?: string[]
   title?: string
   description?: string

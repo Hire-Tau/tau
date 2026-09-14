@@ -49,6 +49,28 @@ describe('workstream CLI commands', () => {
     await program.parseAsync(['--quiet', ...args], { from: 'user' })
   }
 
+  it('preserves cleanup opt-out and opt-in in create and update requests', async () => {
+    for (const value of ['false', 'true']) {
+      await run(['workstream', 'create', 'Cleanup test', '--squad', 'squad-1', '--auto-cleanup-worktree', value])
+      expect(apiPost).toHaveBeenLastCalledWith(
+        '/api/workstreams',
+        expect.objectContaining({ autoCleanupWorktree: value === 'true' })
+      )
+      await run(['workstream', 'update', 'stream-1', '--auto-cleanup-worktree', value])
+      expect(apiPatch).toHaveBeenLastCalledWith('/api/workstreams/stream-1', { autoCleanupWorktree: value === 'true' })
+    }
+  })
+
+  it('rejects invalid cleanup booleans without sending a request', async () => {
+    for (const value of ['0', '1', 'yes', 'FALSE']) {
+      await run(['workstream', 'update', 'stream-1', '--auto-cleanup-worktree', value])
+      await run(['workstream', 'create', 'Cleanup test', '--squad', 'squad-1', '--auto-cleanup-worktree', value])
+    }
+    expect(apiPost).not.toHaveBeenCalled()
+    expect(apiPatch).not.toHaveBeenCalled()
+    expect(outputError).toHaveBeenCalled()
+  })
+
   it('pauses with a reason and optional parking deadline, then resumes explicitly', async () => {
     await run(['workstream', 'pause', 'stream-1', '--reason', 'Review direction', '--park-after', '5'])
     expect(apiPost).toHaveBeenCalledWith('/api/workstreams/stream-1/pause', {

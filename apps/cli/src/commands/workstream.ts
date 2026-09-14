@@ -405,6 +405,10 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .option('--depends-on <wsId>', 'Dependency work stream ID (can repeat)', collect, [])
     .option('--priority <priority>', `Scheduling priority: ${WORK_STREAM_PRIORITIES.join(', ')} (default: normal)`)
     .option('--repository <path>', 'Create or validate a worktree from this repository in the squad workspace')
+    .option(
+      '--auto-cleanup-worktree <true|false>',
+      'Reclaim an owned worktree after delivery (new streams: true); set false before finish to retain'
+    )
     .option('--git-remote <name>', 'Remote for code-host detection and default base (default: origin)')
     .option('--branch <name>', 'Git branch for this work stream (stored at git.branch metadata)')
     .option('--worktree <path>', 'Worktree path for this work stream (stored at git.worktree metadata)')
@@ -422,6 +426,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .action(async (title, options) => {
       if (options.json) setOutputOptions({ json: true })
       try {
+        const autoCleanupWorktree = parseCleanupSetting(options.autoCleanupWorktree)
         const priority = validateWorkStreamPriority(options.priority as string | undefined)
 
         const sources = buildWorkStreamSourceLinks(options)
@@ -442,6 +447,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           ...(sources !== undefined ? { metadata: { sources } } : {}),
           ...(options.branch !== undefined ? { branch: options.branch } : {}),
           ...(options.repository !== undefined ? { repository: options.repository } : {}),
+          ...(autoCleanupWorktree !== undefined ? { autoCleanupWorktree } : {}),
           ...(options.gitRemote !== undefined ? { gitRemote: options.gitRemote } : {}),
           ...(options.worktree !== undefined ? { worktree: options.worktree } : {}),
           ...(options.baseBranch !== undefined ? { baseBranch: options.baseBranch } : {}),
@@ -573,6 +579,10 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .option('-m, --message <msg>', 'Handoff message (included in assignment notifications)')
     .option('-f, --file <path>', 'Attach file path (can repeat)', collect, [])
     .option('--repository <path>', 'Create or validate a worktree from this repository in the squad workspace')
+    .option(
+      '--auto-cleanup-worktree <true|false>',
+      'Reclaim an owned worktree after delivery (new streams: true); set false before finish to retain'
+    )
     .option('--git-remote <name>', 'Remote for code-host detection and default base (default: origin)')
     .option('--branch <name>', 'Git branch for this work stream')
     .option('--worktree <path>', 'Worktree path for this work stream')
@@ -598,8 +608,10 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           return
         }
         const completionMode = validateWorkStreamCompletionMode(options.completionMode as string | undefined)
+        const autoCleanupWorktree = parseCleanupSetting(options.autoCleanupWorktree)
         const priority = validateWorkStreamPriority(options.priority as string | undefined)
         const updates: Record<string, unknown> = {}
+        if (autoCleanupWorktree !== undefined) updates.autoCleanupWorktree = autoCleanupWorktree
         if (options.clearReviewers) updates.assignedReviewerIds = []
         else if (options.reviewer?.length) updates.assignedReviewerIds = options.reviewer
         if (options.status) {
@@ -1154,4 +1166,11 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
         outputError(error as Error)
       }
     })
+}
+
+function parseCleanupSetting(value: string | undefined): boolean | undefined {
+  if (value === undefined) return undefined
+  if (value === 'true') return true
+  if (value === 'false') return false
+  throw new Error('--auto-cleanup-worktree must be true or false')
 }

@@ -358,6 +358,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
   declare assigneeAgentId: string | null
   declare ownerAgentId: string | null
   declare creatorAgentId: string | null
+  declare autoCleanupWorktree: boolean
   declare assignedReviewerIds: string[]
   declare requestingUserId: string | null
   declare agentIds: string[] | null
@@ -465,6 +466,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
   static get selectColumns() {
     return {
       id: workStreams.id,
+      autoCleanupWorktree: workStreams.autoCleanupWorktree,
       squadId: workStreams.squadId,
       title: workStreams.title,
       description: workStreams.description,
@@ -601,6 +603,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         .insert(workStreams)
         .values({
           id: streamId,
+          autoCleanupWorktree: input.autoCleanupWorktree ?? true,
           squadId: input.squadId,
           title: input.title,
           description: input.description ?? '',
@@ -2155,6 +2158,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
   toJson(): WorkStreamJson {
     return {
       id: this.id,
+      autoCleanupWorktree: this.autoCleanupWorktree,
       squadId: this.squadId,
       title: this.title,
       description: this.description,

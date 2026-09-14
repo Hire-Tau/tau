@@ -75,6 +75,25 @@ describe('WorkStream entity', () => {
     await db.delete(agentTypes).where(like(agentTypes.id, `${testPrefix}%`))
   })
 
+  it('defaults cleanup on for new streams, preserves opt-out and exposes later updates', async () => {
+    const enabled = await WorkStream.create({ squadId: testSquad.id, title: 'new cleanup default' })
+    expect(enabled.toJson()).toHaveProperty('autoCleanupWorktree', true)
+    const retained = await WorkStream.create({ squadId: testSquad.id, title: 'retained', autoCleanupWorktree: false })
+    expect((await WorkStream.mustFind(retained.id)).toJson()).toHaveProperty('autoCleanupWorktree', false)
+    await enabled.update({ autoCleanupWorktree: false })
+    expect((await WorkStream.mustFind(enabled.id)).toJson()).toHaveProperty('autoCleanupWorktree', false)
+    await retained.update({ autoCleanupWorktree: true })
+    expect((await WorkStream.mustFind(retained.id)).toJson()).toHaveProperty('autoCleanupWorktree', true)
+  })
+
+  it('retains historical rows without an explicit cleanup selection', async () => {
+    const [historical] = await db
+      .insert(workStreams)
+      .values({ squadId: testSquad.id, title: 'historical cleanup default' })
+      .returning()
+    expect((await WorkStream.mustFind(historical.id)).toJson()).toHaveProperty('autoCleanupWorktree', false)
+  })
+
   // Helper to create an agent and track its ID for cleanup
   async function createTestAgent(): Promise<Agent> {
     const agent = await Agent.create({ agentTypeId: testAgentTypeId })

@@ -1,0 +1,1 @@
+ALTER TABLE "work_streams" ADD COLUMN "auto_cleanup_worktree" boolean DEFAULT false NOT NULL;

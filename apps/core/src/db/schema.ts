@@ -1155,6 +1155,8 @@ export const workStreams = pgTable(
     title: varchar('title', { length: 500 }).notNull(),
     description: text('description').notNull().default(''),
     status: workStreamStatusEnum('status').notNull().default('active'),
+    // Existing rows retain their worktree. New creation opts in explicitly.
+    autoCleanupWorktree: boolean('auto_cleanup_worktree').notNull().default(false),
     pause: jsonb('pause').$type<import('@tau/shared').WorkStreamPause>(),
     priority: workStreamPriorityEnum('priority').notNull().default('normal'),
     assigneeAgentId: uuid('assignee_agent_id').references(() => agents.id, { onDelete: 'set null' }),
