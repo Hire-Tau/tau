@@ -17,6 +17,7 @@ import { getSandboxManager } from '../services/sandbox'
 import type { DockerSandboxManager } from '../services/sandbox/docker/manager'
 import { createK8sSandboxedBashTool, enforceAbsolutePaths } from './k8s-sandbox'
 import { writeDockerFile } from './docker-tool-boundary'
+import { detectReadImageMimeType, IMAGE_SNIFF_BYTES } from './read-image-mime'
 
 export type { SandboxedToolWithKey } from '../services/sandbox/types'
 
@@ -24,12 +25,7 @@ function getDockerManager(): DockerSandboxManager {
   return getSandboxManager() as DockerSandboxManager
 }
 
-import { createReadTool, createWriteTool, createEditTool } from '@earendil-works/pi-coding-agent'
-
-type ReadOperations = {
-  readFile: (absolutePath: string) => Promise<Buffer>
-  access: (absolutePath: string) => Promise<void>
-}
+import { createReadTool, createWriteTool, createEditTool, type ReadOperations } from '@earendil-works/pi-coding-agent'
 
 type WriteOperations = {
   writeFile: (absolutePath: string, content: string) => Promise<void>
@@ -44,6 +40,10 @@ type EditOperations = {
 
 function createDockerReadOperations(sandboxId: string): ReadOperations {
   return {
+    detectImageMimeType: async (absolutePath) =>
+      detectReadImageMimeType(
+        await getDockerManager().exec(sandboxId, ['head', '-c', String(IMAGE_SNIFF_BYTES), absolutePath])
+      ),
     readFile: async (absolutePath: string): Promise<Buffer> => {
       return await getDockerManager().exec(sandboxId, ['cat', absolutePath])
     },
