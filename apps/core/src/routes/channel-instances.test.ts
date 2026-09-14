@@ -108,6 +108,56 @@ describe('channel-instances routes', () => {
     expect(((await res.json()) as { error: string }).error).toMatch(/default squad/i)
   })
 
+  for (const defaultSquadId of [undefined, null, '']) {
+    it(`POST / rejects ${String(defaultSquadId)} default even with an override`, async () => {
+      const res = await app.request(
+        '/channel-instances',
+        authReq('POST', {
+          id: 'ci-invalid',
+          name: 'Invalid',
+          provider: 'telegram',
+          defaultSquadId,
+          channelSquadMap: { chat: 'override-squad' },
+        })
+      )
+      expect(res.status).toBe(400)
+      expect((await res.json()).error).toMatch(/default squad/i)
+      expect(await ChannelInstance.find('ci-invalid')).toBeNull()
+    })
+
+    it(`PUT / rejects ${String(defaultSquadId)} effective default even with an override`, async () => {
+      if (defaultSquadId === undefined) {
+        await db.update(channelInstances).set({ defaultSquadId: null }).where(eq(channelInstances.id, 'ci-export'))
+      }
+      const before = await ChannelInstance.find('ci-export')
+      const res = await app.request(
+        '/channel-instances/ci-export',
+        authReq('PUT', {
+          defaultSquadId,
+          name: 'Should not save',
+          channelSquadMap: { chat: 'override-squad' },
+        })
+      )
+      expect(res.status).toBe(400)
+      expect((await res.json()).error).toMatch(/default squad/i)
+      const after = await ChannelInstance.find('ci-export')
+      expect(after?.name).toBe(before?.name)
+      expect(after?.defaultSquadId).toBe(before?.defaultSquadId)
+      expect(after?.channelSquadMap).toEqual(before?.channelSquadMap)
+    })
+  }
+
+  it('PUT / repairs a null default and preserves explicit overrides on subsequent partial updates', async () => {
+    await db.update(channelInstances).set({ defaultSquadId: null }).where(eq(channelInstances.id, 'ci-export'))
+    const defaultSquadId = '11111111-1111-4111-8111-111111111111'
+    const channelSquadMap = { chat: '22222222-2222-4222-8222-222222222222' }
+    expect(
+      (await app.request('/channel-instances/ci-export', authReq('PUT', { defaultSquadId, channelSquadMap }))).status
+    ).toBe(200)
+    expect((await app.request('/channel-instances/ci-export', authReq('PUT', { name: 'Repaired' }))).status).toBe(200)
+    expect(await ChannelInstance.find('ci-export')).toMatchObject({ name: 'Repaired', defaultSquadId, channelSquadMap })
+  })
+
   it('POST / creates channel instances with defaultSquadId and channelSquadMap', async () => {
     findSpy = spyOn(ChannelInstance, 'find' as any).mockResolvedValue(null)
     createSpy = spyOn(ChannelInstance, 'create' as any).mockResolvedValue({ id: 'ci-y', name: 'Y', provider: 'slack' })

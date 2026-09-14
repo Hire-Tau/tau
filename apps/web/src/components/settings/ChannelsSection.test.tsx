@@ -50,7 +50,7 @@ const SQUADS = [
 
 async function renderComponent(node: React.ReactElement) {
   const window = dom.window
-  const queryClient = new QueryClient()
+  const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } })
   activeQueryClients.add(queryClient)
   queryClient.setQueryData(queryKeys.squads.list(), SQUADS)
   const { root } = dom.createRoot()
@@ -67,6 +67,9 @@ async function renderComponent(node: React.ReactElement) {
 async function click(window: typeof dom.window, el: Element) {
   await dom.act(async () => {
     el.dispatchEvent(new window.MouseEvent('click', { bubbles: true }))
+    // React Query batches mutation notifications on the next macrotask. Drain
+    // that scheduler boundary inside act, rather than leaking it into the next action.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
   })
 }
 
@@ -400,5 +403,137 @@ describe('ChannelRow edit form — round-trips an existing hand-written map', ()
     expect(updateChannelInstanceCalls.length).toBe(1)
     const { data } = updateChannelInstanceCalls[0] as { data: { channelSquadMap: Record<string, string> } }
     expect(data.channelSquadMap).toEqual(originalMap)
+  })
+})
+
+function button(window: typeof dom.window, text: string) {
+  return Array.from(window.document.querySelectorAll('button')).find((el) => el.textContent === text)!
+}
+
+function defaultSelect(window: typeof dom.window) {
+  return window.document.querySelector('select[aria-label="Default Squad"]') as HTMLSelectElement
+}
+
+function expectDefaultError(window: typeof dom.window) {
+  const select = defaultSelect(window)
+  expect(select.getAttribute('aria-invalid')).toBe('true')
+  const descriptions = select
+    .getAttribute('aria-describedby')!
+    .split(' ')
+    .map((id) => window.document.getElementById(id)?.textContent)
+    .join(' ')
+  expect(descriptions).toContain('Select a default squad')
+}
+
+describe('required default squad', () => {
+  for (const provider of ['telegram', 'slack', 'discord'] as const) {
+    test(`${provider}: create requires a default even with a complete override`, async () => {
+      const { window } = await renderComponent(
+        <AddChannelForm initialProvider={provider} onClose={() => {}} onCreated={() => {}} />
+      )
+      const select = defaultSelect(window)
+      expect(select.required).toBe(true)
+      expect(select.value).toBe('')
+      expect(select.querySelector('option[value=""]')?.textContent).toContain('Select a squad')
+      expect((select.querySelector('option[value=""]') as HTMLOptionElement).disabled).toBe(true)
+      expect(window.document.body.textContent).toContain('Default Squad (required)')
+      await typeInput(
+        window,
+        window.document.querySelector('input[aria-label="Name"]') as HTMLInputElement,
+        'Test connection'
+      )
+      await click(window, button(window, 'Create'))
+      expect(createChannelInstanceCalls).toHaveLength(0)
+      expectDefaultError(window)
+      await click(window, button(window, '+ Add override'))
+      const overrideLabel = { telegram: 'Telegram chat ID', slack: 'Slack channel ID', discord: 'Discord channel ID' }[
+        provider
+      ]
+      await typeInput(
+        window,
+        window.document.querySelector(`input[aria-label="${overrideLabel}"]`) as HTMLInputElement,
+        'chat-1'
+      )
+      await selectOption(
+        window,
+        window.document.querySelector('select[aria-label="Squad override 1 target squad"]') as HTMLSelectElement,
+        'squad-b'
+      )
+      await click(window, button(window, 'Create'))
+      expect(createChannelInstanceCalls).toHaveLength(0)
+      expectDefaultError(window)
+      await selectOption(window, select, 'squad-a')
+      expect(select.getAttribute('aria-invalid')).not.toBe('true')
+      await click(window, button(window, 'Create'))
+      expect(createChannelInstanceCalls).toEqual([
+        expect.objectContaining({ defaultSquadId: 'squad-a', channelSquadMap: { 'chat-1': 'squad-b' } }),
+      ])
+    })
+  }
+
+  test('saving a legacy null default is blocked despite overrides, and choosing a squad repairs it', async () => {
+    const { window } = await renderComponent(
+      <ChannelRow
+        channel={channel({ defaultSquadId: null, channelSquadMap: { 'chat-1': 'squad-b' } })}
+        isExpanded
+        onToggle={() => {}}
+        onShowDiff={() => {}}
+        canUpdate
+        canDelete
+      />
+    )
+    expect(defaultSelect(window).value).toBe('')
+    await click(window, button(window, 'Save'))
+    expect(updateChannelInstanceCalls).toHaveLength(0)
+    expectDefaultError(window)
+    await selectOption(window, defaultSelect(window), 'squad-a')
+    await click(window, button(window, 'Save'))
+    expect(updateChannelInstanceCalls).toEqual([
+      {
+        id: 'discord-abc123',
+        data: expect.objectContaining({ defaultSquadId: 'squad-a', channelSquadMap: { 'chat-1': 'squad-b' } }),
+      },
+    ])
+  })
+
+  for (const isExpanded of [false, true]) {
+    test(`legacy null default warning is visible when expanded=${isExpanded}, including read-only connections`, async () => {
+      const { window } = await renderComponent(
+        <ChannelRow
+          channel={channel({ defaultSquadId: null })}
+          isExpanded={isExpanded}
+          onToggle={() => {}}
+          onShowDiff={() => {}}
+          canUpdate={false}
+          canDelete={false}
+        />
+      )
+      expect(window.document.body.textContent).toContain('Needs configuration')
+      const disclosure = window.document.querySelector('button[aria-expanded]')
+      expect(disclosure?.getAttribute('aria-expanded')).toBe(String(isExpanded))
+      expect(disclosure?.textContent).toContain('Needs configuration')
+      if (isExpanded) {
+        expect(window.document.body.textContent).toContain(
+          'New conversations without a matching override cannot be routed'
+        )
+        expect(window.document.body.textContent).toContain('Ask an administrator to select a Default Squad')
+        expect((button(window, 'Save') as HTMLButtonElement).disabled).toBe(true)
+      }
+      expect(updateChannelInstanceCalls).toHaveLength(0)
+    })
+  }
+
+  test('valid connections have no configuration warning', async () => {
+    const { window } = await renderComponent(
+      <ChannelRow
+        channel={channel({})}
+        isExpanded={false}
+        onToggle={() => {}}
+        onShowDiff={() => {}}
+        canUpdate
+        canDelete
+      />
+    )
+    expect(window.document.body.textContent).not.toContain('Needs configuration')
   })
 })

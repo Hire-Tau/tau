@@ -8,7 +8,12 @@ Under the provider's **Channel routing**, choose **+ Add New**, enter a name and
 the provider identifier, select **Default Squad**, optionally add channel/chat
 overrides, and choose **Create**. The identifier is the Discord server ID, Slack
 workspace ID, or numeric Telegram bot ID (the bot token's prefix before the
-colon). The default squad is required. UI-created routing is saved directly;
+colon). The default squad is required, even when overrides are configured.
+Create and Save show an error at the field if it is empty. Existing connections
+with no default show **Needs configuration**, including when collapsed. Expand
+the connection, select a default, and save (or ask an administrator). This does
+not silently replace a deleted squad or move an existing conversation.
+UI-created routing is saved directly;
 it does not require a YAML file or a configuration-sync restart. You need
 `channels:create` to add routing and `channels:update` to change it.
 
@@ -59,19 +64,19 @@ The concierge handles all freeform messages intelligently:
 
 ## Thread Replies
 
-Users can continue conversations with the concierge by replying to bot messages:
+For threaded providers, users can continue conversations with the concierge by replying to bot messages:
 
 - **Each slash command creates a new thread** — When you run `/tau ask` or any other command, the bot's response starts a conversation thread.
 - **Replies are routed to the same concierge** — Simply reply to the bot's message in the thread to continue the conversation. The concierge maintains context within the thread.
 - **Thread isolation** — Each thread is an independent conversation. Starting a new slash command creates a new thread.
 
-This works across all platforms (Discord, Slack, Telegram) with platform-native threading:
+Discord and Slack use native threads. Telegram instead reuses a concierge per chat:
 
 | Platform | Threading Behavior                                                  |
 | -------- | ------------------------------------------------------------------- |
 | Discord  | Uses Discord threads; slash commands in threads route to same agent |
 | Slack    | Uses Slack's native thread replies                                  |
-| Telegram | Uses Telegram's reply-to-message feature                            |
+| Telegram | Reuses one addressable concierge per chat; replies use message IDs  |
 
 > **Slack note:** Start custom slash commands in the channel composer. To continue a conversation in Slack, **reply to the bot's message** instead of starting another `/tau` command.
 
@@ -445,9 +450,18 @@ A channel instance can route to multiple squads. Inbound routing is deterministi
 1. **Channel mapping** — If the provider channel/chat ID is mapped to a specific squad in `channelSquadMap`, use that squad
 2. **Default squad** — Use `defaultSquadId` if set
 
-If neither resolves a squad, routing fails with a configuration error. New UI
-and API entries require a default squad. The concierge's later decision to
-consult another squad is separate from this initial routing.
+If neither resolves a squad, no new concierge can be created. Telegram sends an
+in-chat configuration error before posting Thinking, provided its Bot API
+transport can send. The same applies to `/tau status`, which needs a target
+squad; `/tau help` remains available without one.
+
+Create and update operations require a default squad even with overrides. Legacy
+null defaults can remain, for example after the referenced squad is deleted.
+Matching overrides still route new chats, and an existing addressable Telegram
+chat concierge is intentionally reused without resolving a new default. The
+warning therefore does not mean every existing conversation has stopped.
+The concierge's later decision to consult another squad is separate from this
+initial routing.
 
 ## Concierge Agent
 
@@ -494,10 +508,36 @@ routing and agent contract.
 
 ### Telegram: Bot not responding
 
-- Check webhook is registered: `curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"`
-- Verify `TELEGRAM_WEBHOOK_SECRET` matches what you set in `setWebhook`
-- Verify `TELEGRAM_BOT_ID` matches `botId` in your channel config
-- Check logs for webhook verification errors
+An HTTP 200 webhook acknowledgement is **not** proof of a visible bot reply.
+Telegram replies are separate `sendMessage` API requests. Complete silence,
+including no Thinking indicator, can happen at several distinct stages:
+
+1. **No delivery:** the webhook URL, TLS, ingress, or Telegram delivery may fail
+   before Tau receives anything. With authorized access, inspect Telegram's
+   `getWebhookInfo` and correlate receipt in Core logs. Do not change webhook
+   registration just to diagnose a missing reply.
+2. **Rejected delivery:** a disabled integration hides its credentials; a missing
+   or mismatched `TELEGRAM_WEBHOOK_SECRET` rejects the webhook with 401. Verify
+   the integration is enabled and the secret matches the registered webhook.
+3. **Ignored update:** only text messages are processed. Private plain text is
+   actionable without `/tau` or a reply. Group text requires `/tau` or a
+   reply-to-bot; photos without text and other non-message updates are ignored.
+4. **Missing bot/connection routing:** the credential settings' numeric
+   `TELEGRAM_BOT_ID` must match `providerConfig.botId` on the connection. Missing
+   IDs or connections now produce an in-chat configuration error when sending
+   is possible; older versions only returned an HTTP acknowledgement here.
+5. **Send failure:** a missing/invalid bot token, blocked bot, unavailable chat,
+   invalid reply target, or HTTP/network/API error can prevent either Thinking
+   or the configuration reply. Check the outgoing API result, not just the
+   incoming webhook status. Chat IDs identify reused concierges, while Telegram
+   `reply_to_message_id` must be the incoming **message** ID. Older versions used
+   the chat ID for Thinking in an existing chat, which could be rejected.
+
+A missing default alone does not establish the cause of a reported silent
+message. Before diagnosing an incident, collect the bot identity, deployment,
+private/group context, message time and timezone, and authorized receipt/send
+logs. Keep bot tokens, webhook secrets, credential-bearing URLs, and private
+message contents out of shared diagnostics.
 
 ### Commands not appearing
 
