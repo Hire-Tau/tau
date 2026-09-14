@@ -1599,18 +1599,20 @@ for (const provider of ['github', 'linear'])
         action: { type: 'notify-manager' },
       })
       let delivered = 0
-      for (const [index, config] of [
-        { rules: [candidate, fallback], assignee: 'tau-bot', allowed: true, action: 'ignore' },
-        { rules: [fallback, candidate], assignee: 'tau-bot', allowed: true, action: 'notify-manager' },
-        {
-          rules: [{ ...candidate, enabled: false }, fallback],
-          assignee: 'tau-bot',
-          allowed: true,
-          action: 'notify-manager',
-        },
-        { rules: [candidate, fallback], assignee: 'other', allowed: true, action: null },
-        { rules: [candidate, fallback], assignee: 'tau-bot', allowed: false, action: null },
-      ].entries()) {
+      for (const [index, config] of (
+        [
+          { rules: [candidate, fallback], assignee: 'tau-bot', allowed: true, action: 'ignore' },
+          { rules: [fallback, candidate], assignee: 'tau-bot', allowed: true, action: 'notify-manager' },
+          {
+            rules: [{ ...candidate, enabled: false }, fallback],
+            assignee: 'tau-bot',
+            allowed: true,
+            action: 'notify-manager',
+          },
+          { rules: [candidate, fallback], assignee: 'other', allowed: true, action: null },
+          { rules: [candidate, fallback], assignee: 'tau-bot', allowed: false, action: null },
+        ] as const
+      ).entries()) {
         const at = new Date(Date.UTC(2026, 8, 10, 12, index)).toISOString()
         const [input] = integrationOutputRegistry.adapter(provider)!.normalize(
           provider === 'github'
