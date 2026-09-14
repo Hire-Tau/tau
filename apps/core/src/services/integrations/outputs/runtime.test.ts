@@ -904,6 +904,7 @@ test('Linear uses the same start-workstream action and attaches its own resource
     delete flow.subscriptions
     const rule = squadEventRuleSchema.parse({
       id: 'linear-work',
+      predicates: [{ field: 'teamId', op: 'in', value: ['team'] }],
       source: { integration: 'linear', output: 'issue.assigned', version: 1 },
       filters: { teamId: 'team', audience: 'any' },
       action: {
@@ -921,6 +922,10 @@ test('Linear uses the same start-workstream action and attaches its own resource
       resourceKey: `${prefix}-linear-issue`,
       data: { issue: { id: `${prefix}-linear-issue` }, teamId: 'team', assignee: 'user' },
     })
+    const { previewSquadEventRules } = await import('@tau/shared')
+    expect(
+      previewSquadEventRules({ integrationRules: { linear: [rule] } }, 'linear', assigned, '', connectionId).action
+    ).toBe('start-workstream')
     const authority = { kind: 'connection' as const, connectionId, squadId }
     eventIds.push(
       ...(await Promise.all([
@@ -1593,6 +1598,99 @@ test('pre-existing self-comment deliveries are fenced at worker and parked-owner
     }
   })
 })
+
+for (const provider of ['github', 'linear'])
+  test(`synthetic preview selects the same ${provider} action as authorized native dispatch`, async () => {
+    const { previewSquadEventRules, squadEventRuleSchema } = await import('@tau/shared')
+    const { integrationOutputRegistry } = await import('./registry')
+    await withNativeRouting(async (connectionId, managerId) => {
+      const candidate = squadEventRuleSchema.parse({
+        id: 'typed-first',
+        source: { integration: provider, output: 'issue.assigned', version: 1, connectionId },
+        filters: { audience: 'any', squadRouting: true },
+        predicates: [{ field: 'assignee', op: 'eq', value: provider === 'github' ? 'TAU-BOT' : 'tau-bot' }],
+        action: { type: 'ignore' },
+      })
+      const fallback = squadEventRuleSchema.parse({
+        ...candidate,
+        id: 'typed-fallback',
+        action: { type: 'notify-manager' },
+      })
+      let delivered = 0
+      for (const [index, config] of (
+        [
+          { rules: [candidate, fallback], assignee: 'tau-bot', allowed: true, action: 'ignore' },
+          { rules: [fallback, candidate], assignee: 'tau-bot', allowed: true, action: 'notify-manager' },
+          {
+            rules: [{ ...candidate, enabled: false }, fallback],
+            assignee: 'tau-bot',
+            allowed: true,
+            action: 'notify-manager',
+          },
+          { rules: [candidate, fallback], assignee: 'other', allowed: true, action: null },
+          { rules: [candidate, fallback], assignee: 'tau-bot', allowed: false, action: null },
+        ] as const
+      ).entries()) {
+        const at = new Date(Date.UTC(2026, 8, 10, 12, index)).toISOString()
+        const [input] = integrationOutputRegistry.adapter(provider)!.normalize(
+          provider === 'github'
+            ? {
+                type: 'issues',
+                payload: {
+                  action: 'assigned',
+                  repository: { full_name: `${prefix}/repo` },
+                  assignee: { login: config.assignee },
+                  issue: { id: 900 + index, number: 900 + index, updated_at: at, labels: [{ name: 'bug' }] },
+                },
+              }
+            : {
+                type: 'Issue',
+                payload: {
+                  action: 'update',
+                  updatedFrom: { assigneeId: null },
+                  data: {
+                    id: `${prefix}-preview-${index}`,
+                    assigneeId: config.assignee,
+                    teamId: 'team',
+                    updatedAt: at,
+                  },
+                },
+              }
+        )
+        expect(input).toBeDefined()
+        const metadata = {
+          github: config.allowed ? [{ repo: `${prefix}/repo`, labels: ['bug'] }] : [],
+          linear: config.allowed ? [{ teamId: 'team' }] : [],
+          integrationRules: { [provider]: config.rules },
+        }
+        await db.update(squads).set({ metadata }).where(eq(squads.id, squadId))
+        const beforeAgents = await db.select({ id: agents.id }).from(agents).where(eq(agents.squadId, squadId))
+        const beforeEvents = await db.select({ id: integrationOutputEvents.id }).from(integrationOutputEvents)
+        const preview = previewSquadEventRules(metadata, provider, input!, 'tau-bot', connectionId)
+        expect(preview.action).toBe(config.action)
+        expect(preview.selectedRuleId).toBe(
+          config.action === null ? null : config.action === 'ignore' ? candidate.id : fallback.id
+        )
+        expect(await db.select({ id: agents.id }).from(agents).where(eq(agents.squadId, squadId))).toEqual(beforeAgents)
+        expect(await db.select({ id: integrationOutputEvents.id }).from(integrationOutputEvents)).toEqual(beforeEvents)
+        expect(await db.select().from(inbox).where(eq(inbox.recipientId, managerId))).toHaveLength(delivered)
+        eventIds.push(await publishIntegrationOutput(provider, input!, { kind: 'connection', connectionId, squadId }))
+        if (preview.action === 'notify-manager') delivered++
+        expect(await db.select().from(inbox).where(eq(inbox.recipientId, managerId))).toHaveLength(delivered)
+        expect(
+          await db
+            .select()
+            .from(integrationOutputTriggerRuns)
+            .where(eq(integrationOutputTriggerRuns.resourceKey, input!.resourceKey))
+        ).toHaveLength(0)
+      }
+      // A match in a synthetic sample cannot grant authority to dispatch.
+      const unauthorized = fact(999, { output: 'issue.assigned' })
+      await expect(
+        publishIntegrationOutput(provider, unauthorized, { kind: 'connection', connectionId, squadId: randomUUID() })
+      ).rejects.toThrow('not assigned and enabled')
+    }, provider)
+  })
 
 test('code-host CI reaches completion-ready delivery review but is retained behind unrelated blockers', async () => {
   const { openWait, closeOpenWaits } = await import('../../work-streams/waits')

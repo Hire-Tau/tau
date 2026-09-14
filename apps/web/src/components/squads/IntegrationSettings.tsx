@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { effectiveSquadEventRules, type SquadEventRule } from '@tau/shared'
+import { effectiveSquadEventRules, squadEventRulesSchema, type SquadEventRule } from '@tau/shared'
 import { SquadEventRulesEditor } from './SquadEventRulesEditor'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { updateSquad } from '../../api/squads'
@@ -270,6 +270,11 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
         squadId={squadId}
         provider={provider}
         value={eventRules}
+        metadata={
+          provider === 'github'
+            ? githubRoutingToMetadata((squad?.metadata as Record<string, unknown>) ?? {}, githubEntries)
+            : linearRoutingToMetadata((squad?.metadata as Record<string, unknown>) ?? {}, linearEntries)
+        }
         disabled={!squadPermissions.can('squads:update') || updateMutation.isPending}
         onChange={(rules) => {
           setEventRules(rules)
@@ -280,7 +285,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
         <button
           type="button"
           onClick={() => updateMutation.mutate({ github: githubEntries, linear: linearEntries, rules: eventRules })}
-          disabled={updateMutation.isPending}
+          disabled={updateMutation.isPending || !squadEventRulesSchema.safeParse({ [provider]: eventRules }).success}
           className="tau-button tau-button-primary rounded-md bg-accent px-3 py-2 text-sm text-white"
         >
           {updateMutation.isPending ? 'Saving…' : 'Save settings'}

@@ -104,7 +104,7 @@ worker log warning; exact filters on the same account are unaffected.
 Repositories that stop being visible or stop matching drop out on the next
 discovery cycle.
 
-The **Shared repository scope** is a reusable filter, not an action. A rule with **Use shared repository scope** enabled must match one of those repository entries **and** its own filters. Shared labels apply only to issue assignment/unassignment events and match any listed label; comments and PR events use only the shared repository restriction. When the checkbox is off, the shared scope is ignored. Blank rule filters add no restriction; rule labels match any listed label on the issue or PR. All access still comes from the assigned integration account.
+The **Shared repository scope** is a reusable filter, not an action. A rule with **Use shared repository scope** enabled must match one of those repository entries **and** its own filters. Shared labels apply only to non-comment issue events (assignment, unassignment, and updates) and match any listed label; comments and PR events use only the shared repository restriction. When the checkbox is off, the shared scope is ignored. Blank rule filters add no restriction; rule labels match any listed label on the issue or PR. All access still comes from the assigned integration account.
 
 **Account involvement** selects how the event relates to the selected connection:
 
@@ -121,6 +121,40 @@ The first matching enabled rule wins. Move rules up or down to set priority. Del
 If a previously started work stream is parked, subscribed events such as a PR merge are retained for its workers and also sent once to its current owner. The owner can review the event and explicitly resolve any wait whose condition is satisfied. This notice does not approve, finish, resume, or clear waits automatically, and does not start parked workers. Ownership determines the recipient, even when the owner is not the squad manager. Explicit pauses and never-started streams continue holding events. If no owner is available, or the owner is itself part of the parked crew, the delivery history explains the hold rather than substituting the manager.
 
 Existing repository/team routing and saved event triggers appear as editable rules on upgrade. No notification shell scripts are needed. Squad update permission is required to save rules. The CLI/API can also update `metadata.integrationRules.github` or `metadata.integrationRules.linear` on a squad. Each ordered rule has an `id`, `enabled`, `source` (`integration`, `output`, `version`, optional `connectionId`), `filters`, and one of the four `action.type` values: `notify-manager`, `notify-consultant`, `start-workstream`, `ignore`. The start action’s optional `workflow` uses the same preset/inline reference as work-stream creation.
+
+### Typed conditions and match preview
+
+**Typed conditions** add an optional `predicates` array to each rule. Conditions are ANDed with one another, the existing per-rule filters and saved legacy equality matches. Shared scope is an additional AND only when enabled. Rules run in their stored array order, not ID order; the first enabled match wins, including `ignore`. Later rules are shown as **shadowed**, not as additional actions.
+
+```json
+{
+  "id": "review-changes",
+  "enabled": true,
+  "source": { "integration": "github", "output": "pull_request.reviewed", "version": 1 },
+  "filters": { "squadRouting": true, "audience": "any" },
+  "predicates": [{ "field": "state", "op": "in", "value": ["changes_requested"] }],
+  "action": { "type": "notify-manager" }
+}
+```
+
+Fields are allowlisted per provider, event and version in the authenticated output catalog (`GET /api/integrations/outputs`, `predicateFields`). GitHub examples include review `state`, CI `workflow`/`state`, numeric issue/PR numbers, label/assignee collections, review-comment `path`/`line`, and `mergeConflict` on PR updates. Linear issue assignment supports `issue.id`, `issue.title`, `teamId` and `assignee`. Only fields actually present in the normalized event can match. Existing subscription `fields` and legacy `match` behavior are unchanged.
+
+| Field type              | Operators                     |
+| ----------------------- | ----------------------------- |
+| String, number, boolean | `eq`, `neq`, `in`, `exists`   |
+| Number                  | Also `gt`, `gte`, `lt`, `lte` |
+| String array            | `contains`, `exists`          |
+
+- `in` takes a nonempty array of the field's scalar type; `contains` takes one string and checks for an **exact member**, not a substring. No regular expressions, expression trees, coercion or arbitrary payload traversal.
+- All comparisons, **including `neq`**, fail for absent/null values. `exists: true` checks non-null presence; `exists: false` checks missing or null. Empty strings, false, zero and empty arrays are present; an empty array never satisfies `contains`.
+- GitHub repository/login fields and assignee collection members compare case-insensitively. Labels, review states, workflow names, paths and Linear identifiers are case-sensitive. Only the existing repository-pattern filter interprets `*` as a wildcard; typed equality does not.
+- At most 16 conditions per rule, 100 operands per `in`, and 2,000 characters per string. Unsupported fields/operators, wrong operand types, null operands and extra properties are rejected on squad configuration writes. Changing the event in the editor clears incompatible conditions. An omitted or empty conditions list adds no restriction.
+
+**Match preview** runs locally against unsaved rules and shared scope using the same evaluator as live rule selection. Enter a synthetic JSON object with flat field-name keys (for example `{"repository":"owner/repo","issue.number":15,"labels":["bug"]}`). The supported-fields disclosure lists types. Omit absent fields or use null. Select an attached connection if testing an account-specific rule; enter a hypothetical GitHub login and mention checkbox for account-involvement checks. The login is not read from the connection.
+
+The trace explains failed filters, empty/ignored shared scope, disabled rules, self-comment suppression, the selected action, and first-match shadowing. It contains no event values, configured operands or additional instructions. The preview reads no stored events, accepts no raw bodies/credentials, saves nothing and sends nothing. Legacy matches on fields outside the sample allowlist cannot be populated in a synthetic sample.
+
+This is a **rule-selection preview, not a delivery guarantee**. It assumes an authorized normalized event; connection access, provider suppression, existing work-stream subscriptions, paused/waiting work, resource bindings, and deduplication still govern actual dispatch. Changing rules or previewing an event never replays previously handled events.
 
 A squad must have an assigned, usable connection with access to the event resource. Exact repositories in routing or rules declare relay and issue-polling interests. Wildcard patterns filter received webhooks but do not enumerate an account’s repositories. New PR review requests need webhook/relay delivery; polling follows already tracked PRs and issue assignments. Linear currently supplies issue-assignment events. Additional providers can supply their own event adapters while using the same actions.
 
