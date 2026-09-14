@@ -1,23 +1,10 @@
+import { linearOutputCatalog } from '@tau/shared'
 import { createHash } from 'node:crypto'
 import type { IntegrationOutputAdapter } from '../outputs/types'
 
 export const linearOutputAdapter: IntegrationOutputAdapter = {
   integration: 'linear',
-  catalog: [
-    {
-      integration: 'linear',
-      output: 'issue.assigned',
-      version: 1,
-      title: 'Issue assigned',
-      description: 'An issue was assigned to a connected Linear account.',
-      fields: {
-        'issue.id': { type: 'string', description: 'Linear issue ID.' },
-        'issue.title': { type: 'string', description: 'Issue title.' },
-        teamId: { type: 'string', description: 'Linear team ID.' },
-        assignee: { type: 'string', description: 'Assigned Linear user ID.' },
-      },
-    },
-  ],
+  catalog: linearOutputCatalog,
   workStreamBindings() {
     return { 'linear.issueId': { event: 'issue.id' }, 'linear.teamId': { event: 'teamId' } }
   },

@@ -67,6 +67,42 @@ describe('squads routes', () => {
     await db.delete(squads).where(like(squads.name, `${testPrefix}%`))
   })
 
+  it('validates typed event predicates on PATCH and preserves metadata when rejected', async () => {
+    const squad = await Squad.create({ name: `${testPrefix} event predicates`, purpose: 'Test' })
+    const rule = {
+      id: 'typed',
+      source: { integration: 'github', output: 'issue.assigned', version: 1 },
+      filters: { audience: 'any' },
+      predicates: [{ field: 'issue.number', op: 'gte', value: 15 }],
+      action: { type: 'ignore' },
+    }
+    const patch = (rules: unknown[]) =>
+      app.request(`/api/squads/${squad.id}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(admin.token), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ metadata: { integrationRules: { github: rules } } }),
+      })
+    expect((await patch([rule])).status).toBe(200)
+    for (const predicate of [
+      { field: 'body', op: 'eq', value: 'secret' },
+      { field: 'issue.number', op: 'regex', value: 15 },
+      { field: 'issue.number', op: 'gte', value: '15' },
+      { field: 'pullRequest.number', op: 'eq', value: 15 },
+    ])
+      expect((await patch([{ ...rule, predicates: [predicate] }])).status).toBe(400)
+    const [stored] = await db.select().from(squads).where(eq(squads.id, squad.id))
+    expect(stored!.metadata).toMatchObject({ integrationRules: { github: [rule] } })
+    expect(
+      (
+        await app.request(`/api/squads/${squad.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ metadata: { integrationRules: { github: [rule] } } }),
+        })
+      ).status
+    ).toBe(401)
+  })
+
   describe('JSON body migrations', () => {
     it('distinguishes absent optional source config from malformed JSON', async () => {
       const squad = await Squad.create({ name: `${testPrefix} JSON optional`, purpose: 'JSON test' })

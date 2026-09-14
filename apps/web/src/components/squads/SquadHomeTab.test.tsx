@@ -69,7 +69,7 @@ function workStream(overrides: Partial<WorkStream> = {}): WorkStream {
   }
 }
 
-function renderSquadHome(workStreams: WorkStream[], manager?: Agent, agents: Agent[] = []) {
+function renderSquadHome(workStreams: WorkStream[], manager?: Agent, agents: Agent[] = [], agentsLoading = false) {
   const queryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -84,6 +84,7 @@ function renderSquadHome(workStreams: WorkStream[], manager?: Agent, agents: Age
           workStreams={workStreams}
           managerAgent={manager}
           agents={agents}
+          agentsLoading={agentsLoading}
           dependencies={dependencies}
         />
       </QueryClientProvider>
@@ -142,9 +143,9 @@ describe('SquadHomeTab', () => {
     expect(renderSquadHome([])).toContain('href="/squads/squad-1/manager"')
   })
 
-  test('shows three recent consultants by human activity and excludes archived chats and workers', () => {
+  test('shows five recent consultants by human activity and excludes archived chats and workers', () => {
     const agents = [
-      ...[1, 2, 3, 4].map(
+      ...[1, 2, 3, 4, 5, 6].map(
         (n) =>
           ({
             ...managerAgent,
@@ -164,14 +165,56 @@ describe('SquadHomeTab', () => {
       { ...managerAgent, agentTypeId: 'engineer', metadata: { purpose: 'Worker task' } } as Agent,
     ]
     const html = renderSquadHome([], managerAgent, agents)
-    expect(html).toContain('Conversation 4')
-    expect(html.match(/aria-label="Agent activity: Idle"/g)).toHaveLength(4)
+    expect([...html.matchAll(/agents\?agent=chat-(\d)/g)].map((match) => match[1])).toEqual(['6', '5', '4', '3', '2'])
+    expect(html).toContain('Conversation 6')
+    expect(html.match(/aria-label="Agent activity: Idle"/g)).toHaveLength(6)
     expect(html).toContain('Conversation 2')
     expect(html).not.toContain('Conversation 1')
     expect(html).not.toContain('Archived conversation')
     expect(html).not.toContain('Worker task')
-    expect(html.indexOf('Conversation 4')).toBeLessThan(html.indexOf('Conversation 3'))
-    expect(html).toContain('href="/squads/squad-1/agents?agent=chat-4"')
+    expect(html.indexOf('Conversation 6')).toBeLessThan(html.indexOf('Conversation 5'))
+    expect(html).toContain('href="/squads/squad-1/agents?agent=chat-6"')
+    expect(html).toContain('href="/squads/squad-1/agents"')
+    expect(html).toContain('Browse chats')
+    const recentSection = html.slice(html.indexOf('Recent chats'), html.indexOf('Squad coordinator'))
+    expect(recentSection).not.toContain('<button')
+    expect(recentSection).not.toContain('aria-expanded')
+  })
+
+  test.each([0, 2, 5])('shows all %i chats when the list fits, retaining Browse chats', (count) => {
+    const agents = Array.from({ length: count }, (_, index) => ({
+      ...managerAgent,
+      id: `chat-${index}`,
+      agentTypeId: 'consultant',
+      metadata: { purpose: `Conversation ${index}` },
+    }))
+    const html = renderSquadHome([], managerAgent, agents)
+    expect(html.match(/agents\?agent=chat-/g) ?? []).toHaveLength(count)
+    expect(html.includes('Your conversations will appear here.')).toBe(count === 0)
+    expect(html).toContain('Browse chats')
+  })
+
+  test('loads five recent-chat placeholders without a false empty state, retaining cached rows on refresh', () => {
+    const loading = renderSquadHome([], managerAgent, [], true)
+    expect(loading).toContain('aria-label="Loading recent chats"')
+    expect(loading.match(/class="flex items-center gap-2 px-3 py-3 text-sm"/g)).toHaveLength(5)
+    expect(loading).not.toContain('Your conversations will appear here.')
+    expect(loading).toContain('Browse chats')
+    const refreshing = renderSquadHome(
+      [],
+      managerAgent,
+      [
+        {
+          ...managerAgent,
+          id: 'cached-chat',
+          agentTypeId: 'consultant',
+          metadata: { purpose: 'Cached conversation' },
+        },
+      ],
+      true
+    )
+    expect(refreshing).toContain('Cached conversation')
+    expect(refreshing).not.toContain('aria-label="Loading recent chats"')
   })
 
   test('lets the summary scroll without capping work to a small nested viewport', () => {

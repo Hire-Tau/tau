@@ -58,3 +58,8 @@ export * from './assistant-editors'
 export * from './workflow-graph'
 
 export type { ServerInfo } from './server-info'
+
+export * from './event-predicate-catalog'
+export * from './event-predicates'
+
+export * from './event-rule-sample'

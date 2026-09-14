@@ -1,35 +1,9 @@
 import { createHash } from 'node:crypto'
-import { isGitHubSelfComment, type IntegrationOutputDescriptor, type IntegrationOutputFact } from '@tau/shared'
+import { githubOutputCatalog, isGitHubSelfComment, type IntegrationOutputFact } from '@tau/shared'
 import type { IntegrationOutputAdapter } from './types'
 
-const fields: IntegrationOutputDescriptor['fields'] = {
-  repository: { type: 'string', normalize: 'lowercase', description: 'Repository owner/name.' },
-  'pullRequest.number': { type: 'number', description: 'Pull request number.' },
-  'pullRequest.headSha': { type: 'string', description: 'Pull request head commit, when supplied.' },
-  'issue.number': { type: 'number', description: 'Issue number.' },
-  'issue.title': { type: 'string', description: 'Issue title.' },
-  assignee: { type: 'string', normalize: 'lowercase', description: 'Assigned or unassigned GitHub login.' },
-  action: { type: 'string', description: 'Native event action.' },
-  actor: { type: 'string', normalize: 'lowercase', description: 'Actor login.' },
-  state: { type: 'string', description: 'Review state or CI conclusion.' },
-  requestedReviewer: { type: 'string', normalize: 'lowercase', description: 'Requested reviewer login.' },
-  requestedTeam: { type: 'string', description: 'Requested reviewer team.' },
-  workflow: { type: 'string', description: 'CI workflow name.' },
-}
-const outputs = {
-  'issue.assigned': 'Issue assigned',
-  'issue.unassigned': 'Issue unassigned',
-  'issue.updated': 'Issue updated',
-  'issue.comment': 'Issue comment',
-  'pull_request.updated': 'Pull request updated',
-  'pull_request.merged': 'Pull request merged',
-  'pull_request.closed': 'Pull request closed',
-  'pull_request.review_requested': 'Review requested',
-  'pull_request.reviewed': 'Review submitted',
-  'pull_request.comment': 'Pull request comment',
-  'pull_request.review_comment': 'Review line comment',
-  'pull_request.ci_completed': 'CI completed',
-}
+const outputTitles = Object.fromEntries(githubOutputCatalog.map((event) => [event.output, event.title]))
+
 function record(value: unknown): Record<string, any> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, any>) : undefined
 }
@@ -40,14 +14,7 @@ function digest(value: unknown) {
 /** The adapter describes GitHub facts. It knows nothing about Tau agents or flow routing. */
 export const githubOutputAdapter: IntegrationOutputAdapter = {
   integration: 'github',
-  catalog: Object.entries(outputs).map(([output, title]) => ({
-    integration: 'github',
-    output,
-    version: 1,
-    title,
-    description: title + ' from GitHub webhooks or polling.',
-    fields,
-  })),
+  catalog: githubOutputCatalog,
   workStreamBindings(fact) {
     return {
       'github.repo': { event: 'repository' },
@@ -69,7 +36,7 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
     if (nestedRepo && (typeof nestedRepo !== 'string' || nestedRepo.toLowerCase() !== repo)) return []
     if (payload!.number !== undefined && native?.number !== undefined && payload!.number !== native.number) return []
     const action = typeof payload!.action === 'string' ? payload!.action : ''
-    let output: keyof typeof outputs
+    let output: string
     let item = native
     let numbers = [native?.number]
     if (event.type === 'workflow_run') {
@@ -218,10 +185,12 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
             ...(data.requestedTeam ? [data.requestedTeam] : []),
           ]),
           data,
-          subject: ci ? `CI ${data.state}: ${repo}#${number} · ${workflow}` : `${outputs[output]}: ${repo}#${number}`,
+          subject: ci
+            ? `CI ${data.state}: ${repo}#${number} · ${workflow}`
+            : `${outputTitles[output]}: ${repo}#${number}`,
           body: ci
             ? ciDetails
-            : `${outputs[output]}${actor ? ` by ${actor}` : ''}${data.state ? ` (${data.state})` : ''}.${data.mergeConflict ? '\nMerge conflicts need resolution.' : ''}${output === 'pull_request.review_comment' ? `\n${data.path}:${data.line ?? '?'} — reply in this review thread.` : ''}${url ? `\n${url}` : ''}${body ? `\n\n${body}` : ''}`,
+            : `${outputTitles[output]}${actor ? ` by ${actor}` : ''}${data.state ? ` (${data.state})` : ''}.${data.mergeConflict ? '\nMerge conflicts need resolution.' : ''}${output === 'pull_request.review_comment' ? `\n${data.path}:${data.line ?? '?'} — reply in this review thread.` : ''}${url ? `\n${url}` : ''}${body ? `\n\n${body}` : ''}`,
           ...(url ? { url } : {}),
           ...(ordering ? { ordering } : {}),
         },

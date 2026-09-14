@@ -1,3 +1,4 @@
+import { SQUAD_RECENT_CHAT_LIMIT } from '../../lib/recentChats'
 import { WorkStreamList } from './WorkStreamList'
 import { SquadAgentThreads } from './SquadAgentThreads'
 import { Link } from 'react-router-dom'
@@ -66,7 +67,7 @@ export function SquadHomeTab({
         new Date(b.lastHumanMessageAt ?? b.createdAt).getTime() -
         new Date(a.lastHumanMessageAt ?? a.createdAt).getTime()
     )
-    .slice(0, 3)
+    .slice(0, SQUAD_RECENT_CHAT_LIMIT)
   return (
     <div className="squad-home-layout flex h-full min-h-0 w-full flex-col gap-5 overflow-y-auto">
       <section className="shrink-0 px-3">
@@ -109,7 +110,10 @@ export function SquadHomeTab({
             <ChevronRightIcon className="h-3 w-3" />
           </Link>
         </div>
-        <LoadingContent loading={agentsLoading && agents.length === 0} fallback={<HomeAgentRowsSkeleton count={3} />}>
+        <LoadingContent
+          loading={agentsLoading && agents.length === 0}
+          fallback={<HomeAgentRowsSkeleton count={SQUAD_RECENT_CHAT_LIMIT} />}
+        >
           {recentChats.length === 0 && (
             <p className="px-2 py-3 text-sm text-secondary">Your conversations will appear here.</p>
           )}

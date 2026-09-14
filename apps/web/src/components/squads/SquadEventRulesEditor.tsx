@@ -1,3 +1,5 @@
+import { EventRulePredicates } from './EventRulePredicates'
+import { EventRulePreview } from './EventRulePreview'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { SquadEventRule } from '@tau/shared'
@@ -10,12 +12,14 @@ export function SquadEventRulesEditor({
   value,
   onChange,
   disabled,
+  metadata,
 }: {
   squadId: string
   provider: string
   value: SquadEventRule[]
   onChange: (rules: SquadEventRule[]) => void
   disabled: boolean
+  metadata?: unknown
 }) {
   const [labelsText, setLabelsText] = useState<Record<string, string>>({})
   const catalog = useQuery(integrationQueries.outputs())
@@ -105,6 +109,7 @@ export function SquadEventRulesEditor({
                       version: events.find((item) => item.output === output)?.version ?? 1,
                     },
                     match: undefined,
+                    predicates: undefined,
                     filters: {
                       ...rule.filters,
                       audience: ['issue.assigned', 'issue.unassigned', 'pull_request.review_requested'].includes(output)
@@ -251,6 +256,11 @@ export function SquadEventRulesEditor({
                 .join(' · ')}
             </p>
           )}
+          <EventRulePredicates
+            rule={rule}
+            position={index + 1}
+            onChange={(predicates) => update(index, { predicates })}
+          />
           <label className="block text-sm">
             Then
             <select
@@ -346,6 +356,7 @@ export function SquadEventRulesEditor({
       >
         Add event rule
       </button>
+      <EventRulePreview provider={provider} rules={value} metadata={metadata} events={events} accounts={accounts} />
     </section>
   )
 }

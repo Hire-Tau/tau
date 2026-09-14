@@ -167,3 +167,59 @@ test('invalid native identities cannot broaden correlation or cross a repository
     githubOutputAdapter.normalize({ type: 'issues', payload: { action: 'assigned', repository, issue: { number: 4 } } })
   ).toEqual([])
 })
+
+test('event-specific predicates match normalized review, CI, collection, boolean and absent-line facts', async () => {
+  const { previewSquadEventRules, selectSquadEventRule, squadEventRuleSchema } = await import('@tau/shared')
+  const cases = [
+    {
+      type: 'pull_request_review',
+      payload: { action: 'submitted', review: { id: 20, submitted_at: date, state: 'changes_requested' } },
+      predicate: { field: 'state', op: 'in', value: ['changes_requested'] },
+    },
+    {
+      type: 'workflow_run',
+      payload: {
+        action: 'completed',
+        workflow_run: { id: 21, updated_at: date, conclusion: 'failure', name: 'Core', pull_requests: [{ number: 3 }] },
+      },
+      predicate: { field: 'workflow', op: 'eq', value: 'Core' },
+    },
+    {
+      type: 'pull_request',
+      payload: { action: 'synchronize', pull_request: { ...pr, mergeable_state: 'dirty' } },
+      predicate: { field: 'mergeConflict', op: 'eq', value: true },
+    },
+    {
+      type: 'pull_request',
+      payload: { action: 'synchronize', pull_request: { ...pr, labels: [{ name: 'bug' }] } },
+      predicate: { field: 'labels', op: 'contains', value: 'bug' },
+    },
+    {
+      type: 'pull_request_review_comment',
+      payload: { action: 'created', comment: { id: 22, created_at: date, path: 'src/main.ts', line: null } },
+      predicate: { field: 'line', op: 'exists', value: false },
+    },
+  ]
+  for (const input of cases) {
+    const [fact] = githubOutputAdapter.normalize({
+      type: input.type,
+      payload: { repository, pull_request: pr, ...input.payload },
+    })
+    expect(fact).toBeDefined()
+    integrationOutputRegistry.validateFact('github', fact!)
+    const rule = squadEventRuleSchema.parse({
+      id: 'native',
+      source: { integration: 'github', output: fact!.output, version: 1 },
+      filters: { audience: 'any' },
+      predicates: [input.predicate],
+      action: { type: 'ignore' },
+    })
+    const metadata = { integrationRules: { github: [rule] } }
+    expect(previewSquadEventRules(metadata, 'github', fact!, 'bot').selectedRuleId).toBe('native')
+    expect(selectSquadEventRule(metadata, 'github', fact!, 'bot')?.id).toBe('native')
+    const missing = { ...fact!, data: {} }
+    expect(previewSquadEventRules(metadata, 'github', missing, 'bot').selectedRuleId).toBe(
+      input.predicate.op === 'exists' ? 'native' : null
+    )
+  }
+})
