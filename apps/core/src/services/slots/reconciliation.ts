@@ -1,3 +1,4 @@
+import { eventEmitter } from '../../lib/infra/event-emitter'
 import { and, eq, gt, inArray, sql } from 'drizzle-orm'
 import { isLiveAgentStatus } from '@tau/shared'
 import { agents, db, slotClaims, slotNotifications, slotPools, slotWaiters } from '../../db'
@@ -11,6 +12,7 @@ const SLOT_RECONCILIATION_INTERVAL_MS = 30_000
 let runner: PeriodicRunner | null = null
 
 interface PoolReconciliationResult {
+  squadId: string
   promotion: PromotionResult
   releasedClaims: number
   canceledWaiters: number
@@ -148,6 +150,7 @@ export async function reconcileSlotsOnce(input: { limit?: number } = {}): Promis
         .orderBy(slotWaiters.enqueueSequence, slotWaiters.id)
         .limit(1)
       return {
+        squadId: pool.squadId,
         promotion,
         releasedClaims,
         canceledWaiters,
@@ -156,6 +159,7 @@ export async function reconcileSlotsOnce(input: { limit?: number } = {}): Promis
       }
     })
     if (!result) continue
+    eventEmitter.emit('slots.updated', { squadId: result.squadId })
     summary.poolsProcessed += 1
     summary.expiredClaims += result.promotion.expired
     summary.timeoutCount += result.promotion.expired

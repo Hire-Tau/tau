@@ -270,6 +270,7 @@ export async function makeDormant(
 
   // Prompt outbox draining happens only after the granting transaction commits.
   if (decision.kind === 'dormant' && decision.slotCleanup.promoted) {
+    if (agent.squadId) eventEmitter.emit('slots.updated', { squadId: agent.squadId })
     const { drainSlotNotificationsSoon } = await import('../slots/store')
     drainSlotNotificationsSoon()
   }
@@ -1075,6 +1076,7 @@ async function transitionDormantAgentToFinal(agent: Agent, deps: FinalizationDep
   })
   // Prompt outbox draining happens only after the granting transaction commits.
   if (slotCleanup.promoted) {
+    if (agent.squadId) eventEmitter.emit('slots.updated', { squadId: agent.squadId })
     const { drainSlotNotificationsSoon } = await import('../slots/store')
     drainSlotNotificationsSoon()
   }

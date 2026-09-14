@@ -1,3 +1,4 @@
+import { listActiveSlotWaits } from '../services/slots/active-waits'
 import { chatPagePathSchema } from '@tau/shared'
 import { getModelCatalog } from '../services/model-selection/model-catalog'
 import { withChatQueueState } from '../services/chat/queued-messages'
@@ -39,6 +40,7 @@ import { requirePermission } from '../middleware/require-permission'
 import {
   getAccessibleSquadIds,
   hasPermission,
+  hasAnyPermission,
   permissionMatches,
   resolvePermissions,
   identityUserId,
@@ -339,6 +341,17 @@ export const agentsRouter = new Hono()
 
     wsManager.invalidateAccessCache()
     return c.json({ success: true })
+  })
+  .get('/:id/slot-waits', requireAgentReadPermission, async (c) => {
+    const agent = await Agent.find(c.req.param('id'))
+    if (!agent) return c.json({ error: 'Agent not found' }, 404)
+    if (!agent.squadId) return c.json([])
+    if (!(await hasAnyPermission(c.get('identity'), ['slots:use', 'slots:write'], agent.squadId))) {
+      return c.json({ error: 'Forbidden' }, 403)
+    }
+    const waits = await listActiveSlotWaits(db, [agent.id])
+    // Never expose another agent's queue entries, claim IDs, rank or capacity.
+    return c.json(waits.map(({ waiterId, poolKey, queuedAt }) => ({ waiterId, poolKey, queuedAt })))
   })
   .get('/:id/model-catalog', requireAgentReadPermission, async (c) => {
     const agent = await Agent.find(c.req.param('id'))

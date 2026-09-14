@@ -98,6 +98,7 @@ function resolve(entry: EventEntry): ResolvedRoute | null {
   if (
     event === 'squad.created' ||
     event === 'squad.updated' ||
+    event === 'slots.updated' ||
     event === 'squad.archived' ||
     event === 'squad.agentSpawned'
   ) {
