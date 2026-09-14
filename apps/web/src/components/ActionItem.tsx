@@ -178,7 +178,7 @@ export function ActionItem({
                   e.stopPropagation()
                   closeActionCenter()
                 }}
-                className="font-medium text-sm text-primary hover:text-accent-light line-clamp-2 block"
+                className="font-medium text-sm text-primary hover:text-accent-light line-clamp-2 block w-fit max-w-full"
               >
                 {title}
               </Link>
