@@ -32,8 +32,9 @@ export function flowCapabilityInstructions(state: WorkflowRun, attempt: Workflow
     lines.push(
       `Delegation: enabled, ${remaining} of ${definition.limits.maxDelegations} specialist assignments remain across the whole flow.`,
       'Use a worker agent type from tau agent-type list (exclude systemOnly or disabled types). Set agentTypeId to its agent-type ID. A new participant starts on demand; its result returns to this step. Do not manually spawn an untracked helper.',
-      'Write COMMAND.json like this, replacing agentTypeId with the chosen worker type and task with a self-contained request:',
-      '```json',
+      'Prefer --content with single-quoted JSON for short commands, or --stdin with a quoted heredoc for longer JSON/YAML; no temporary file is needed. Replace STREAM_ID with this work stream ID, agentTypeId with the chosen worker type, and task with a self-contained request:',
+      '```bash',
+      "tau workstream advance STREAM_ID --stdin <<'TAU_COMMAND'",
       JSON.stringify(
         {
           expectedVersion: version,
@@ -45,6 +46,7 @@ export function flowCapabilityInstructions(state: WorkflowRun, attempt: Workflow
         null,
         2
       ),
+      'TAU_COMMAND',
       '```'
     )
   } else

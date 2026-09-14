@@ -1,3 +1,4 @@
+import { addStructuredInputOptions, readWorkflowSource } from '../structured-input'
 import { Command } from 'commander'
 import { apiGet, apiPost, apiPatch, apiDelete } from '../client'
 import { output, outputTable, outputError, isJsonMode } from '../output'
@@ -29,14 +30,6 @@ interface Schedule {
   automaticallyDisabledAt: string | null
   automaticDisableReason: string | null
   createdAt: string
-}
-
-async function readWorkflow(options: { workflow?: string; flow?: string }) {
-  if (options.workflow && options.flow) throw new Error('Choose --workflow or --flow')
-  if (options.workflow) return workflowSourceSchema.parse({ kind: 'preset', id: options.workflow })
-  if (!options.flow) return undefined
-  const raw = Bun.YAML.parse(await Bun.file(options.flow).text()) as Record<string, unknown>
-  return workflowSourceSchema.parse(raw.kind ? raw : { kind: 'inline', definition: raw })
 }
 
 function healthLabel(status: Schedule['healthStatus']): string {
@@ -124,8 +117,7 @@ export function registerScheduleCommands(program: Command) {
     })
 
   // tau schedule create
-  sched
-    .command('create')
+  addStructuredInputOptions(sched.command('create'), true)
     .description('Create a schedule')
     .option('--squad <id>', 'Squad scope')
     .option('--agent <id>', 'Agent scope')
@@ -155,7 +147,6 @@ export function registerScheduleCommands(program: Command) {
     .option('--description <desc>', 'Work stream description')
     .option('--handoff-message <msg>', 'Handoff message')
     .option('--workflow <id>', 'Workflow override; otherwise inherit the squad default')
-    .option('--flow <file>', 'Inline or customized flow in YAML/JSON')
     .action(async (options) => {
       try {
         // Validate scope
@@ -187,11 +178,11 @@ export function registerScheduleCommands(program: Command) {
         }
 
         // Build action
-        const workflow = await readWorkflow(options)
+        const workflow = await readWorkflowSource(options)
         let action: Record<string, unknown>
         switch (options.action) {
           case 'inbox_message':
-            if (workflow) throw new Error('--workflow and --flow require create_work_stream')
+            if (workflow) throw new Error('Workflow input flags require create_work_stream')
             if (!options.targetAgent && !options.targetManager) {
               console.error('Error: inbox_message requires --target-agent or --target-manager')
               process.exit(1)
@@ -277,8 +268,7 @@ export function registerScheduleCommands(program: Command) {
     })
 
   // tau schedule update <id>
-  sched
-    .command('update <id>')
+  addStructuredInputOptions(sched.command('update <id>'), true)
     .description('Update a schedule')
     .option('--name <name>', 'New name')
     .option('--enable', 'Enable schedule')
@@ -313,9 +303,9 @@ export function registerScheduleCommands(program: Command) {
     .option('--description <desc>', 'Work stream description')
     .option('--handoff-message <msg>', 'Handoff message')
     .option('--workflow <id>', 'Workflow override; otherwise inherit the squad default')
-    .option('--flow <file>', 'Inline or customized flow in YAML/JSON')
     .action(async (id, options) => {
       try {
+        const workflow = await readWorkflowSource(options)
         const updates: Record<string, unknown> = {}
         let existingSchedule: Schedule | undefined
         const getExistingSchedule = async () => {
@@ -351,11 +341,10 @@ export function registerScheduleCommands(program: Command) {
         }
 
         // Action update
-        const workflow = await readWorkflow(options)
         if (options.action) {
           switch (options.action) {
             case 'inbox_message':
-              if (workflow) throw new Error('--workflow and --flow require create_work_stream')
+              if (workflow) throw new Error('Workflow input flags require create_work_stream')
               if (!options.targetAgent && !options.targetManager) {
                 console.error('Error: inbox_message requires --target-agent or --target-manager')
                 process.exit(1)
@@ -408,7 +397,7 @@ export function registerScheduleCommands(program: Command) {
         } else if (workflow) {
           const existing = await getExistingSchedule()
           if (existing.action.type !== 'create_work_stream')
-            throw new Error('--workflow and --flow require create_work_stream')
+            throw new Error('Workflow input flags require create_work_stream')
           const { agentTypes, agentIds, assigneeAgentId, assigneeAgentIndex, completionMode, ...action } =
             existing.action
           updates.action = { ...action, workflow }

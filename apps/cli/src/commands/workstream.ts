@@ -1,8 +1,9 @@
+import { addStructuredInputOptions, readWorkflowSource } from '../structured-input'
 import { registerWorkstreamFlowCommands, type WorkstreamFlowDependencies } from './workstream-flow'
 import { Command } from 'commander'
 import { apiGet, apiPost, apiPatch, apiDelete } from '../client'
 import { output, outputTable, outputError, isJsonMode, setOutputOptions } from '../output'
-import { WORK_STREAM_COMPLETION_MODES, WORK_STREAM_PRIORITIES, workflowSourceSchema } from '@tau/shared'
+import { WORK_STREAM_COMPLETION_MODES, WORK_STREAM_PRIORITIES } from '@tau/shared'
 import { buildMetadataDelta, getMetadataValue, parseMetadataPath, parseMetadataValue } from '../metadata'
 import { selectOpenWait } from './workstream-wait-selection'
 import type {
@@ -392,11 +393,10 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
       }
     })
 
-  ws.command('create <title>')
+  addStructuredInputOptions(ws.command('create <title>'), true)
     .alias('new')
     .description('Create a work stream using the squad default or an explicit workflow')
     .option('--workflow <id>', 'Saved workflow; participants are created lazily')
-    .option('--flow <file>', 'Inline flow definition or customized source in YAML/JSON')
     .requiredOption('-q, --squad <squadId>', 'Squad ID')
     .option('-t, --task <taskId>', 'Associated task ID')
     .option('-d, --description <desc>', 'Description')
@@ -426,15 +426,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
 
         const sources = buildWorkStreamSourceLinks(options)
 
-        if (options.workflow && options.flow) throw new Error('Choose --workflow or --flow')
-        const rawFlow = options.flow
-          ? (Bun.YAML.parse(await Bun.file(options.flow).text()) as Record<string, unknown>)
-          : undefined
-        const workflow = options.workflow
-          ? workflowSourceSchema.parse({ kind: 'preset', id: options.workflow })
-          : rawFlow
-            ? workflowSourceSchema.parse(rawFlow.kind ? rawFlow : { kind: 'inline', definition: rawFlow })
-            : undefined
+        const workflow = await readWorkflowSource(options)
         const ws = await apiPost<WorkStream>('/api/workstreams', {
           ...(workflow ? { workflow } : {}),
           squadId: options.squad,

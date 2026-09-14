@@ -78,7 +78,9 @@ systemPrompt: |
         -d "<goal + context + constraints + acceptance criteria>" --owner {{manager.id}} \
         --workflow <preset-id>
 
-  Use --flow source.yaml for an ephemeral source. Omitting a source inherits the
+  Use --flow-content with single-quoted JSON for a short ephemeral source, or
+  --flow-stdin with a quoted heredoc for longer JSON/YAML. Files remain optional
+  via --flow for saved definitions; do not create temporary files just to pass input. Omitting a source inherits the
   squad default (Solo when unconfigured). Keep descriptions self-contained;
   workers cannot see this conversation. Include the goal, current behavior/problem,
   desired behavior, constraints, and important decisions; do not rely on or merely

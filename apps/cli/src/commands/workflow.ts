@@ -1,3 +1,9 @@
+import {
+  addStructuredInputOptions,
+  readStructuredInput,
+  validateStructuredInput,
+  type StructuredInputOptions,
+} from '../structured-input'
 import { registerWorkstreamFlowCommands } from './workstream-flow'
 import { Command } from 'commander'
 import { workflowPresetSchema, workflowSourceSchema } from '@tau/shared'
@@ -7,7 +13,7 @@ import { output, outputError } from '../output'
 const defaults = { apiGet, apiPost, apiPut, apiDelete, apiGetRaw, output, outputError, print: console.log }
 export type WorkflowDependencies = typeof defaults
 
-/** Definition files accept YAML or JSON; mutations always carry the revision the caller inspected. */
+/** Structured inputs accept YAML or JSON; mutations always carry the revision the caller inspected. */
 export function registerWorkflowCommands(program: Command, deps: WorkflowDependencies = defaults) {
   const command = program
     .command('workflow')
@@ -37,23 +43,21 @@ export function registerWorkflowCommands(program: Command, deps: WorkflowDepende
         deps.output(await deps.apiGet(path(id)))
       })
     )
-  command
-    .command('create <file>')
-    .description('Publish a new preset from a YAML or JSON file')
-    .action((file: string) =>
+  addStructuredInputOptions(command.command('create [file]'))
+    .description('Publish a new preset from inline JSON/YAML, stdin, or a saved file')
+    .action((file: string | undefined, options: StructuredInputOptions) =>
       run(async () => {
-        const preset = workflowPresetSchema.parse(Bun.YAML.parse(await Bun.file(file).text()))
+        const preset = validateStructuredInput(workflowPresetSchema, await readStructuredInput(options, file))
         deps.output(await deps.apiPost('/api/workflows', preset))
       })
     )
-  command
-    .command('update <id> <file>')
-    .description('Replace a preset from a YAML or JSON file')
+  addStructuredInputOptions(command.command('update <id> [file]'))
+    .description('Replace a preset from inline JSON/YAML, stdin, or a saved file')
     .requiredOption('--revision <revision>', 'Revision from workflow get; conflicts require a fresh review')
-    .action((id: string, file: string, options: { revision: string }) =>
+    .action((id: string, file: string | undefined, options: StructuredInputOptions & { revision: string }) =>
       run(async () => {
-        const preset = workflowPresetSchema.parse(Bun.YAML.parse(await Bun.file(file).text()))
-        if (preset.id !== id) throw new Error('Workflow ID in the file must match the requested ID')
+        const preset = validateStructuredInput(workflowPresetSchema, await readStructuredInput(options, file))
+        if (preset.id !== id) throw new Error('Workflow ID in the input must match the requested ID')
         deps.output(await deps.apiPut(path(id), { revision: options.revision, preset }))
       })
     )
@@ -99,13 +103,12 @@ export function registerWorkflowCommands(program: Command, deps: WorkflowDepende
         deps.print(await (await deps.apiGetRaw(`${path(id)}/export`)).text())
       })
     )
-  command
-    .command('resolve <file>')
-    .description('Preview an inline or preset source file without creating work or publishing a preset')
+  addStructuredInputOptions(command.command('resolve [file]'))
+    .description('Preview a workflow source from inline JSON/YAML, stdin, or a saved file without publishing')
     .requiredOption('--squad <id>', 'Squad where you have permission to create work streams')
-    .action((file: string, options: { squad: string }) =>
+    .action((file: string | undefined, options: StructuredInputOptions & { squad: string }) =>
       run(async () => {
-        const source = workflowSourceSchema.parse(Bun.YAML.parse(await Bun.file(file).text()))
+        const source = validateStructuredInput(workflowSourceSchema, await readStructuredInput(options, file))
         deps.output(await deps.apiPost('/api/workflows/resolve', { squadId: options.squad, source }))
       })
     )

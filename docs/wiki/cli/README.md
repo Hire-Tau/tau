@@ -50,7 +50,7 @@ tau --backend <label>  # Select a saved backend for this command (outside agent 
 | `tau webhook`             |         | Manage webhooks                       |
 | `tau squad`               |         | Manage squads                         |
 | `tau slot`                |         | Coordinate squad capacity slots       |
-| `tau squad-preset`          | `st`    | Manage squad presets                    |
+| `tau squad-preset`        | `st`    | Manage squad presets                  |
 | `tau workstream`          | `ws`    | Manage work streams                   |
 | `tau schedule`            |         | Manage schedules                      |
 | `tau inbox`               |         | Manage inbox                          |
@@ -66,23 +66,23 @@ tau --backend <label>  # Select a saved backend for this command (outside agent 
 
 Other current command groups include:
 
-| Command                      | Description                                                                      |
-| ---------------------------- | -------------------------------------------------------------------------------- |
-| `tau auth`                   | Log in, switch backends, inspect identity, and log out                           |
-| `tau search <query>`         | Search squads, work streams, consultant chats, and saved Assistant conversations |
-| `tau integration`            | Connect, inspect, and assign external integrations                               |
-| `tau workflow`             | Manage presets, preview flows, and advance or finish flow runs                   |
-| `tau agent-question` (`aq`)  | Manage asynchronous agent questions                                              |
-| `tau deploy`                 | Manage local app runs and external deployment records                            |
-| `tau skill` (`skills`)       | Manage bundled and dynamic agent skills                                          |
-| `tau shared-prompt` (`shared-prompts`) | Manage shared prompts included by agent types                        |
-| `tau remote-hosts`           | Manage team-owned SSH hosts                                                      |
-| `tau amtp` / `tau remote`    | Manage federation and agent federation identity                                  |
-| `tau machines`               | Manage VM sandbox machines                                                       |
-| `tau monitor`                | Read or cancel agent-owned monitors                                              |
-| `tau server`                 | Manage the instance installed on this machine                                    |
-| `tau install` / `tau update` | Install the CLI or update an instance                                            |
-| `tau admin`                  | Operator maintenance actions                                                     |
+| Command                                | Description                                                                      |
+| -------------------------------------- | -------------------------------------------------------------------------------- |
+| `tau auth`                             | Log in, switch backends, inspect identity, and log out                           |
+| `tau search <query>`                   | Search squads, work streams, consultant chats, and saved Assistant conversations |
+| `tau integration`                      | Connect, inspect, and assign external integrations                               |
+| `tau workflow`                         | Manage presets, preview flows, and advance or finish flow runs                   |
+| `tau agent-question` (`aq`)            | Manage asynchronous agent questions                                              |
+| `tau deploy`                           | Manage local app runs and external deployment records                            |
+| `tau skill` (`skills`)                 | Manage bundled and dynamic agent skills                                          |
+| `tau shared-prompt` (`shared-prompts`) | Manage shared prompts included by agent types                                    |
+| `tau remote-hosts`                     | Manage team-owned SSH hosts                                                      |
+| `tau amtp` / `tau remote`              | Manage federation and agent federation identity                                  |
+| `tau machines`                         | Manage VM sandbox machines                                                       |
+| `tau monitor`                          | Read or cancel agent-owned monitors                                              |
+| `tau server`                           | Manage the instance installed on this machine                                    |
+| `tau install` / `tau update`           | Install the CLI or update an instance                                            |
+| `tau admin`                            | Operator maintenance actions                                                     |
 
 Run `tau --help` and `tau <command> --help` for the complete current options.
 
@@ -189,7 +189,7 @@ tau schedule create --squad <id> --name "Daily health" --interval 24h \
   --action create_work_stream --title "Check system health" --workflow solo
 
 tau schedule create --squad <id> --name "Daily audit" --interval 24h \
-  --action create_work_stream --title "Daily audit" --flow audit.yaml
+  --action create_work_stream --title "Daily audit" --flow-content '{"kind":"preset","id":"solo"}'
 
 tau schedule update <id> --workflow with-review
 ```

@@ -96,7 +96,8 @@ systemPrompt: |
   rather than inbox prose, encodes required checks and handoffs.
 
   - tau workstream create "<title>" -q {{squad.id}} --owner {{agent.id}} -d "<description>" --workflow <preset-id>
-  - tau workstream create "<title>" -q {{squad.id}} --owner {{agent.id}} -d "<description>" --flow source.yaml
+  - tau workstream create "<title>" -q {{squad.id}} --owner {{agent.id}} -d "<description>" --flow-content '<JSON source>'
+  - Prefer --flow-content with single-quoted JSON for short sources, or --flow-stdin with a quoted heredoc for longer JSON/YAML. Files remain optional via --flow for saved definitions; do not create temporary files merely to pass input.
   - Omit the source to inherit the squad default. Tau uses Solo when no saved default exists. Squad presets only seed configuration at creation.
   - Add --priority <critical|high|normal|low>, repeatable --depends-on <ws-id>, and source links as needed.
   - Append command-local --json when a script needs the created ID.
