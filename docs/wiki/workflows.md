@@ -57,13 +57,13 @@ tau workstream flow STREAM_ID
 tau workstream advance STREAM_ID --file command.json --request-id REQUEST_UUID
 ```
 
-Commands can complete, return, delegate, or revise according to the flow and caller's permission. Authorized revisions may keep current attempt snapshots or restart with a new attempt/session. Retrying the same command uses the same request ID. Do not use legacy assignee/status edits to bypass a flow.
+Commands can complete, return, delegate, request completion-ready rework, or revise according to the flow and caller's permission. Authorized revisions may keep current attempt snapshots or restart with a new attempt/session. Retrying the same command uses the same request ID. Do not use legacy assignee/status edits to bypass a flow.
 
 ## Questions and scoped waits
 
 An ordinary agent question is nonblocking. With `blocking: true`, a question from a flow execution opens a wait on that exact attempt by default. An agent's manual `request-input` similarly targets its current attempt. A security reviewer waiting for a threat-model answer does not prevent QA from continuing, but the join remains held until security finishes.
 
-A relevant open wait prevents advancement and automatic continuance nudges for that attempt. It does not forcibly interrupt the agent's current execution; the agent is instructed to end its turn and await input. Incoming answers and other relevant messages can still be delivered. Answering resumes the same current attempt and is not step approval. Replacing an attempt retires its scoped waits; late answers remain in history and must not wake a replacement session.
+A relevant open wait prevents advancement and automatic continuance nudges for that attempt. It does not forcibly interrupt the agent's current execution; the agent is instructed to end its turn and await input. Incoming answers can still be delivered. Integration notifications are retained behind unrelated waits and retried after resolution. At completion-ready, final delivery review allows code-host CI/review feedback through; the delivery participant can request [tracked rework](cli/workstream-commands.md#rework-after-delivery-becomes-ready) before making corrections. Answering resumes the same current attempt and is not step approval. Replacing an attempt retires its scoped waits; late answers remain in history and must not wake a replacement session.
 
 Use a whole-stream wait for shared blockers. The async question tool accepts `waitScope: stream`; a manual request accepts `--scope stream`. Human/operator manual requests default to whole-stream unless an attempt is selected explicitly.
 

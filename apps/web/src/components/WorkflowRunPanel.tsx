@@ -150,7 +150,9 @@ export function WorkflowRunPanel({
                 : step?.id}
         </span>
       </div>
-      <WorkStreamReviewers stream={stream} />
+      {run.state.definition.steps.some((step) => step.kind === 'human-approval') && (
+        <WorkStreamReviewers stream={stream} />
+      )}
       <WorkflowGraph
         definition={run.state.definition}
         run={run.state}

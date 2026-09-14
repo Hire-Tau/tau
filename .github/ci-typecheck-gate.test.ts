@@ -262,7 +262,9 @@ describe('CI typecheck gate', () => {
       rmSync(fixture, { recursive: true, force: true })
     }
     expect(diagnostics?.if).toBe("github.event_name == 'workflow_dispatch'")
-    expect(diagnostics?.['runs-on']).toBe('blacksmith-4vcpu-ubuntu-2404')
+    expect(diagnostics?.['runs-on']).toBe(
+      "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
+    )
     expect(measure?.run).toContain('core-typecheck-diagnostics.sh')
     expect(script.match(/NODE_OPTIONS="\$DIAGNOSTIC_NODE_OPTIONS"/g)).toHaveLength(2)
     expect(script).toContain("DIAGNOSTIC_NODE_OPTIONS='--max-old-space-size=6144'")

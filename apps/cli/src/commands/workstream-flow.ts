@@ -29,7 +29,7 @@ export function registerWorkstreamFlowCommands(
     )
   command
     .command('advance <id>', { hidden: legacy })
-    .description('Complete, return, delegate, or revise a flow using a versioned command')
+    .description('Complete, return, delegate, rework, or revise a flow using a versioned command')
     .requiredOption('--file <file>', 'YAML or JSON command with expectedVersion and attemptId')
     .option('--request-id <id>', 'Stable UUID for retrying this exact command')
     .action((id: string, options: { file: string; requestId?: string }) =>
