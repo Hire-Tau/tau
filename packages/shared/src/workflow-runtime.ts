@@ -65,6 +65,7 @@ export interface WorkflowRun {
     branch?: WorkflowBranch
     freshSession?: boolean
     sourceAttemptIds?: number[]
+    feedback?: string
   }>
   attempts: WorkflowAttempt[]
   returns: WorkflowReturnObligation[]
@@ -80,6 +81,13 @@ const commandFields = {
   attemptId: z.number().int().positive(),
 }
 export const workflowCommandSchema = z.discriminatedUnion('action', [
+  z
+    .object({
+      ...commandFields,
+      action: z.literal('rework'),
+      feedback: z.string().trim().min(1).max(64_000),
+    })
+    .strict(),
   z
     .object({
       ...commandFields,
@@ -144,7 +152,8 @@ function startAttempt(
   stepId: string,
   branch?: WorkflowBranch,
   freshSession = false,
-  sourceAttemptIds: number[] = []
+  sourceAttemptIds: number[] = [],
+  feedback?: string
 ): void {
   const step = stepById(state, stepId)
   const exhausted =
@@ -153,7 +162,7 @@ function startAttempt(
   if (exhausted || activeWorkflowAttempts(state).length >= (state.definition.limits.maxParallelAttempts ?? Infinity)) {
     state.pendingStarts ??= []
     if (!state.pendingStarts.some((entry) => entry.stepId === stepId && branchKey(entry.branch) === branchKey(branch)))
-      state.pendingStarts.push({ stepId, branch, freshSession, sourceAttemptIds })
+      state.pendingStarts.push({ stepId, branch, freshSession, sourceAttemptIds, feedback })
     if (exhausted) {
       state.status = 'paused'
       state.pauseReason = { type: 'attempt-limit', stepId }
@@ -164,6 +173,7 @@ function startAttempt(
   const attempt: WorkflowAttempt = {
     id: state.attempts.length + 1,
     sourceAttemptIds: [...sourceAttemptIds],
+    ...(feedback ? { feedback } : {}),
     stepId,
     status: 'running',
     step: structuredClone(step),
@@ -183,7 +193,7 @@ function finishState(state: WorkflowRun): WorkflowRun {
     activeWorkflowAttempts(state).length < (state.definition.limits.maxParallelAttempts ?? Infinity)
   ) {
     const next = state.pendingStarts.shift()!
-    startAttempt(state, next.stepId, next.branch, next.freshSession, next.sourceAttemptIds)
+    startAttempt(state, next.stepId, next.branch, next.freshSession, next.sourceAttemptIds, next.feedback)
   }
   if (state.status === 'paused' || activeWorkflowAttempts(state).length || state.pendingStarts?.length) return state
   if (state.joins?.some((join) => join.status === 'open'))
@@ -297,6 +307,50 @@ function requestReturn(
 export function advanceWorkflowRun(previous: WorkflowRun, input: unknown): WorkflowRun {
   const command = workflowCommandSchema.parse(input)
   if (command.expectedVersion !== previous.version) throw new Error('Stale workflow version')
+  if (command.action === 'rework') {
+    if (previous.status !== 'completion-ready') throw new Error('Rework requires a completion-ready flow')
+    const target = previous.definition.completion.changeEventsTo
+    const last = [...previous.attempts]
+      .reverse()
+      .find(
+        (attempt) =>
+          attempt.status === 'completed' &&
+          (attempt.step ?? stepById(previous, attempt.stepId)).kind === 'agent' &&
+          (!target || target === 'delivery-owner' || attempt.stepId === target.step)
+      )
+    if (!last || last.id !== command.attemptId)
+      throw new Error('Rework must reference the latest completed delivery agent attempt')
+    const state = structuredClone(previous)
+    // A completed parallel branch has a closed join. Replay its outer fork,
+    // rather than detaching a branch and silently skipping its sibling gates.
+    let entry = last
+    while (entry.branch) {
+      const fork = state.attempts.find((attempt) => attempt.id === entry.branch!.forkId)
+      if (!fork) throw new Error('Rework branch has no fork attempt')
+      entry = fork
+    }
+    state.status = 'running'
+    state.version++
+    state.completedStepIds = state.completedStepIds.filter(
+      (id) => id !== entry.stepId && !isEarlierWorkflowStep(state, entry.stepId, id)
+    )
+    // Preserve evidence and attempt limits; rework is another attempt, not a reset.
+    startAttempt(
+      state,
+      entry.stepId,
+      undefined,
+      false,
+      [...new Set([...(entry.sourceAttemptIds ?? []), last.id])],
+      command.feedback
+    )
+    state.revisions ??= [{ version: 0, definition: structuredClone(state.definition), reason: 'Initial flow' }]
+    state.revisions.push({
+      version: state.version,
+      definition: structuredClone(state.definition),
+      reason: `Rework: ${command.feedback}`,
+    })
+    return finishState(state)
+  }
   if (command.action === 'revise') {
     if (
       command.attemptId === null

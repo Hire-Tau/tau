@@ -45,6 +45,7 @@ export function flowMessage(
     `Work stream ${stream.id}: ${stream.title}\nStep: ${step.id} (attempt ${attempt.id}, version ${run.version})`,
     `${step.instructions}\nExpected output: ${step.output}`,
     workspace.length ? workspace.map(([label, value]) => `${label}: ${value}`).join('\n') : '',
+    attempt.feedback ? `Rework request:\n${attempt.feedback}` : '',
     results.length ? `Incoming results:\n\n${results.join('\n\n')}` : '',
     `History: tau workstream flow ${stream.id} returns state.attempts (evidence, feedback, sourceAttemptIds) and state.returns (rework requests). Query it when you need earlier results or handoff context.`,
     attempt.sourceAttemptIds === undefined

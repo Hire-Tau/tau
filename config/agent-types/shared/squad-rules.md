@@ -80,6 +80,17 @@ or `tau workstream flow` and use
 necessarily a completed stream. A PR link, passing CI, or review approval is
 not evidence of merge. Human approval and auto/direct-merge authorization must
 come from the configured policy; no role may grant itself that authority.
+If new CI failures, review findings, or merge conflicts require changes at
+`completion-ready`, verify they apply to the current PR head, then use the
+`rework` action through `tau workstream advance --file`: provide the current
+`expectedVersion`, the latest completed attempt for `completion.changeEventsTo.step`
+(or the last agent attempt by default), and `feedback`. The delivery
+participant or flow manager can request it. Follow the new tracked attempt and
+its normal return/review paths; never edit against a completed attempt. Final
+delivery approval is requested again after rework. Pauses, questions, dependencies,
+and unrelated manual waits remain enforced. Native CI/PR delivery waiting needs
+no extra manual wait that would prevent event-driven feedback.
+
 Only perform repository delivery for code-producing work and the selected policy.
 
 Old work streams without a flow may still exist. Inspect their recorded policy

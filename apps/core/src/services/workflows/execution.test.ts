@@ -1241,3 +1241,91 @@ test('workflow tier overrides reject missing and disabled tiers without falling 
     await db.delete(modelTiers).where(eq(modelTiers.slug, slug))
   }
 })
+
+test('completion-ready rework is authorized, idempotent, tracked, and respects unrelated waits', async () => {
+  const definition = structuredClone(flow)
+  definition.completion.mode = 'review-approval'
+  const id = await create('active', definition)
+  await advance(id, 'completed')
+  await advance(id, 'approved')
+  const ready = (await getFlow(id))!
+  const command = {
+    action: 'rework',
+    expectedVersion: ready.version,
+    attemptId: 2,
+    feedback: 'CI literal-type failure on current head',
+  }
+  await expect(
+    advanceFlow(id, command, randomUUID(), { type: 'agent', agentId: ready.attemptAgents['1']!, squadId })
+  ).rejects.toThrow('delivery participant')
+  const { wait } = await openWait(db, {
+    workStreamId: id,
+    type: 'manual',
+    scope: 'stream',
+    message: 'Operator maintenance',
+  })
+  await expect(advanceFlow(id, command, randomUUID(), actor)).rejects.toThrow('Resolve the waits')
+  expect((await listOpenWaits(db, id)).some((w) => w.id === wait.id)).toBe(true)
+  await closeOpenWaits(db, { waitId: wait.id }, 'cleared')
+  const requestId = randomUUID()
+  const result = await advanceFlow(id, command, requestId, {
+    type: 'agent',
+    agentId: ready.attemptAgents['2']!,
+    squadId,
+  })
+  expect(
+    await advanceFlow(id, command, requestId, { type: 'agent', agentId: ready.attemptAgents['2']!, squadId })
+  ).toEqual(result)
+  expect(result.stateStatus).toBe('running')
+  const run = (await getFlow(id))!
+  expect(run.state.attempts).toHaveLength(3)
+  expect(run.attemptAgents['3']).toBe(ready.attemptAgents['2'])
+  expect(await listOpenWaits(db, id)).toHaveLength(0)
+  expect((await messages(id)).some((m) => m.content.includes('CI literal-type failure'))).toBe(true)
+  await advance(id, 'changes-requested')
+  await advance(id, 'completed')
+  await advance(id, 'approved')
+  expect((await getFlow(id))!.state.status).toBe('completion-ready')
+  expect(await listOpenWaits(db, id)).toHaveLength(1)
+})
+
+test('parked completion-ready rework clears delivery review but waits for capacity admission', async () => {
+  const { parkWorkStream, promoteEligibleQueuedStreams } = await import('../work-streams/admission')
+  const definition = structuredClone(flow)
+  definition.completion.mode = 'review-approval'
+  const id = await create('active', definition)
+  await advance(id, 'completed')
+  await advance(id, 'approved')
+  const ready = (await getFlow(id))!
+  await parkWorkStream(id)
+  expect((await WorkStream.mustFind(id)).status).toBe('queued')
+  const [squad] = await db.select().from(squads).where(eq(squads.id, squadId))
+  await create('active') // Own a competing slot even when this test runs alone.
+  await db.update(squads).set({ maxConcurrentWorkStreams: 1 }).where(eq(squads.id, squadId))
+  try {
+    const result = await advanceFlow(
+      id,
+      {
+        action: 'rework',
+        expectedVersion: ready.version,
+        attemptId: 2,
+        feedback: 'CI needs correction after delivery was parked',
+      },
+      randomUUID(),
+      actor
+    )
+    expect(result.stateStatus).toBe('running')
+    expect((await WorkStream.mustFind(id)).status).toBe('queued')
+    expect((await getFlow(id))!.attemptAgents['3']).toBeUndefined()
+    expect(await listOpenWaits(db, id)).toHaveLength(0)
+    await db.update(squads).set({ maxConcurrentWorkStreams: null }).where(eq(squads.id, squadId))
+    await promoteEligibleQueuedStreams(squadId)
+    expect((await WorkStream.mustFind(id)).status).toBe('active')
+    expect((await getFlow(id))!.attemptAgents['3']).toBe(ready.attemptAgents['2'])
+  } finally {
+    await db
+      .update(squads)
+      .set({ maxConcurrentWorkStreams: squad!.maxConcurrentWorkStreams })
+      .where(eq(squads.id, squadId))
+  }
+})
