@@ -298,7 +298,11 @@ cleanup. Remove only known disposable outputs through normal project tooling if
 appropriate, or keep the retention setting disabled. Cleanup never deletes
 branches, remote refs, caches, Docker resources, or arbitrary directories. Worktree-local
 refs and in-progress Git state are retained; HEAD reflog and original-HEAD commits
-must remain reachable through surviving shared refs before removal.
+must remain reachable through surviving shared refs before removal. Unchanged
+commit-message scratch must exactly match a retained commit message. Ordinary
+fetch records must exactly match configured sources and surviving tracking/tag
+refs; edited drafts, unknown fetch records and private fetch-only recovery state
+are retained.
 
 `worktreeCleanup` exposes status, actionable reason, retry timing and operation
 ID, without private removal inputs. Exceptional blockers are deduplicated owner

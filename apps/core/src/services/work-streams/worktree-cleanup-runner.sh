@@ -84,7 +84,7 @@ try {
     fail('Submodule worktrees require manual retention');
   // Removing a linked worktree also destroys its private refs, reflogs and
   // in-progress state. A clean delivered HEAD alone is not recovery proof.
-  const ordinaryState = new Set(['HEAD', 'index', 'commondir', 'gitdir', 'logs', 'ORIG_HEAD']);
+  const ordinaryState = new Set(['HEAD', 'index', 'commondir', 'gitdir', 'logs', 'ORIG_HEAD', 'COMMIT_EDITMSG', 'FETCH_HEAD']);
   if (fs.readdirSync(o.gitDirectory).some((name) => !ordinaryState.has(name)))
     fail('Worktree-local Git recovery state must be retained');
   const roots = new Set();
@@ -115,6 +115,48 @@ try {
   const revisions = [...roots, ...surviving.map((oid) => '^' + oid)].join('\n') + '\n';
   if (roots.size && runGit(o.repository, ['rev-list', '--stdin'], revisions).trim())
     fail('Worktree history contains commits without surviving shared refs; retain for recovery');
+  // A commit's unchanged message scratch is recoverable from its retained
+  // commit object. Edited drafts, templates and extra comments are not disposable.
+  const editMessage = path.join(o.gitDirectory, 'COMMIT_EDITMSG');
+  if (exists(editMessage)) {
+    physical(editMessage);
+    const scratch = fs.readFileSync(editMessage);
+    const represented = [...new Set([head, ...roots])].some((oid) => {
+      const commit = git(o.repository, 'cat-file', 'commit', oid);
+      const boundary = commit.indexOf('\n\n');
+      return boundary >= 0 && Buffer.from(commit.slice(boundary + 2)).equals(scratch);
+    });
+    if (!represented) fail('Commit-message scratch contains unrepresented edits; retain for inspection');
+  }
+  // Recognize only ordinary named-branch/tag fetch records whose exact source and
+  // object are still represented by configured remotes and shared tracking refs.
+  // FETCH_HEAD-only objects, custom refspecs and unknown notes remain protected.
+  const fetchHead = path.join(o.gitDirectory, 'FETCH_HEAD');
+  if (exists(fetchHead)) {
+    physical(fetchHead);
+    const bytes = fs.readFileSync(fetchHead);
+    const text = bytes.toString('utf8');
+    if (!Buffer.from(text).equals(bytes) || (text && !text.endsWith('\n')))
+      fail('Unrecognized fetch evidence; retain for inspection');
+    const known = new Set();
+    for (const remote of git(o.repository, 'remote').trim().split('\n').filter(Boolean)) {
+      const url = git(o.repository, 'remote', 'get-url', remote).trim()
+        .replace(/^(.*?:\/\/)[^/]*@/, '$1').replace(/^[^/@]+@([^/:]+:)/, '$1')
+        .replace(/\/$/, '').replace(/\.git$/, '');
+      for (const ref of git(o.repository, 'for-each-ref', '--format=%(objectname) %(refname)', 'refs/tags/').trim().split('\n').filter(Boolean)) {
+        const [oid, name] = ref.split(' ');
+        for (const flag of ['', 'not-for-merge']) known.add(oid + '\t' + flag + "\ttag '" + name.slice('refs/tags/'.length) + "' of " + url);
+      }
+      const prefix = 'refs/remotes/' + remote + '/';
+      for (const ref of git(o.repository, 'for-each-ref', '--format=%(objectname) %(refname)', prefix).trim().split('\n').filter(Boolean)) {
+        const [oid, name] = ref.split(' ');
+        const branch = name.slice(prefix.length);
+        for (const flag of ['', 'not-for-merge']) known.add(oid + '\t' + flag + "\tbranch '" + branch + "' of " + url);
+      }
+    }
+    for (const line of text ? text.slice(0, -1).split('\n') : [])
+      if (!known.has(line)) fail('Fetch evidence lacks an exact surviving tracking reference; retain for inspection');
+  }
   // All managed users remain fenced. Recheck the directory identity immediately
   // before the only destructive command. No force, prune, or branch deletion.
   physical(o.worktree);

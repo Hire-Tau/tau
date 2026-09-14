@@ -236,7 +236,10 @@ test('preserves an unpublished detached commit protected only by this worktree H
   const unpublished = (await exec(['git', '-C', ownership.worktree, 'rev-parse', 'HEAD'])).trim()
   await exec(['git', '-C', ownership.worktree, 'checkout', 'feature'])
   expect(await exec(['git', '-C', ownership.worktree, 'status', '--porcelain'])).toBe('')
-  expect(await remove()).toMatchObject({ status: 'retained' })
+  expect(await remove()).toMatchObject({
+    status: 'retained',
+    reason: expect.stringContaining('without surviving shared refs'),
+  })
   expect(await readFile(join(ownership.gitDirectory, 'logs/HEAD'), 'utf8')).toContain(unpublished)
   expect(await exec(['git', '-C', repo, 'fsck', '--unreachable'])).not.toContain(unpublished)
 })
@@ -250,3 +253,61 @@ for (const state of ['local-ref', 'in-progress']) {
     expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(true)
   })
 }
+
+async function commitFeature() {
+  await writeFile(join(ownership.worktree, 'README'), 'delivered feature\n')
+  await exec(['git', '-C', ownership.worktree, 'add', 'README'])
+  await exec([
+    'git',
+    '-C',
+    ownership.worktree,
+    '-c',
+    'user.name=Test',
+    '-c',
+    'user.email=test@example.com',
+    'commit',
+    '-m',
+    'Delivered feature',
+  ])
+  head = (await exec(['git', '-C', ownership.worktree, 'rev-parse', 'HEAD'])).trim()
+}
+
+for (const operation of ['commit', 'fetch', 'tag-fetch']) {
+  test(`removes a clean delivered worktree after actual feature commits: ${operation}`, async () => {
+    await commitFeature()
+    if (operation !== 'commit') {
+      await exec(['git', '-C', repo, 'remote', 'set-url', 'origin', repo])
+      if (operation === 'tag-fetch') await exec(['git', '-C', repo, 'tag', 'v1'])
+      await exec([
+        'git',
+        '-C',
+        ownership.worktree,
+        'fetch',
+        'origin',
+        ...(operation === 'tag-fetch' ? ['tag', 'v1'] : []),
+      ])
+    }
+    expect(await exec(['git', '-C', ownership.worktree, 'status', '--porcelain'])).toBe('')
+    expect(await remove()).toMatchObject({ status: 'succeeded' })
+    expect(await exec(['git', '-C', repo, 'show', `${head}:README`])).toBe('delivered feature\n')
+  })
+}
+
+for (const file of ['COMMIT_EDITMSG', 'FETCH_HEAD']) {
+  test(`retains edited or unknown ${file} evidence`, async () => {
+    await commitFeature()
+    await writeFile(join(ownership.gitDirectory, file), 'uncommitted investigation notes\n')
+    expect(await remove()).toMatchObject({ status: 'retained' })
+    expect(await readFile(join(ownership.gitDirectory, file), 'utf8')).toBe('uncommitted investigation notes\n')
+  })
+}
+
+test('retains valid fetch records after their tracking proof disappears', async () => {
+  await exec(['git', '-C', repo, 'remote', 'set-url', 'origin', repo])
+  await exec(['git', '-C', ownership.worktree, 'fetch', 'origin'])
+  await exec(['git', '-C', repo, 'update-ref', '-d', 'refs/remotes/origin/main'])
+  expect(await remove()).toMatchObject({
+    status: 'retained',
+    reason: expect.stringContaining('exact surviving tracking reference'),
+  })
+})
