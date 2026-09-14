@@ -276,3 +276,113 @@ test('an action-center wait opens the matching parallel human attempt', async ()
     await f.cleanup()
   }
 })
+
+// Human approval is an optional future branch, not the current agent attempt.
+function reviewRun(humanGateCount: number): WorkflowRunDetail {
+  const value = run()
+  const definition = value.state.definition
+  definition.participants.reviewer = { agentTypeId: 'reviewer', session: 'reuse-within-stream' }
+  definition.steps[0]!.outcomes.completed = { next: 'agent-review' }
+  definition.steps.push({
+    id: 'agent-review',
+    kind: 'agent',
+    participant: 'reviewer',
+    instructions: 'Review the result',
+    output: 'Review findings',
+    outcomes: {
+      approved: { next: 'finish' },
+      ...(humanGateCount ? { escalate: { next: 'human-1' } } : {}),
+    },
+  })
+  for (let i = 1; i <= humanGateCount; i++) {
+    definition.steps.push({
+      id: `human-${i}`,
+      kind: 'human-approval',
+      approver: 'assigned-reviewers',
+      instructions: 'Review the escalated result',
+      output: 'Decision',
+      outcomes: { approved: { next: i === humanGateCount ? 'finish' : `human-${i + 1}` } },
+    })
+  }
+  return value
+}
+
+for (const agentReview of [false, true]) {
+  for (const assignedReviewerIds of [[], ['stale-reviewer']]) {
+    test(`omits the whole reviewer block and lookup without human gates (agent review: ${agentReview}, assigned: ${assignedReviewerIds.length})`, async () => {
+      const f = await fixture(agentReview ? reviewRun(0) : run(), ['workstreams:update'])
+      const lookup = spyOn(client.workflows, 'reviewers').mockResolvedValue([])
+      const assign = spyOn(client.workflows, 'assignReviewers').mockResolvedValue(stream)
+      f.queryClient.removeQueries({ queryKey: queryKeys.workflows.reviewers(stream.squadId) })
+      try {
+        await f.render(<WorkflowRunPanel stream={{ ...stream, assignedReviewerIds }} />)
+        expect(f.dom.window.document.querySelector('[aria-label="Assigned reviewers"]') === null).toBe(true)
+        expect(f.dom.window.document.querySelector('[aria-label="Assign reviewer"]') === null).toBe(true)
+        expect(f.dom.window.document.body.textContent).not.toContain('No reviewers assigned')
+        expect(lookup).not.toHaveBeenCalled()
+        expect(assign).not.toHaveBeenCalled()
+        expect(
+          f.queryClient.getQueryCache().find({ queryKey: queryKeys.workflows.reviewers(stream.squadId) })
+        ).toBeUndefined()
+      } finally {
+        lookup.mockRestore()
+        assign.mockRestore()
+        await f.cleanup()
+      }
+    })
+  }
+}
+
+for (const humanGateCount of [1, 2]) {
+  test(`retains reviewer assignment for ${humanGateCount} inactive conditional human gates`, async () => {
+    const value = reviewRun(humanGateCount)
+    expect(value.state.attempts.every((attempt) => attempt.step.kind === 'agent')).toBe(true)
+    const f = await fixture(value, ['workstreams:update'])
+    try {
+      await f.render()
+      expect(f.dom.window.document.querySelector('[aria-label="Assigned reviewers"]')).not.toBeNull()
+      expect(f.dom.window.document.querySelector('[aria-label="Assign reviewer"]')).not.toBeNull()
+      expect(f.dom.window.document.body.textContent).toContain('No reviewers assigned')
+    } finally {
+      await f.cleanup()
+    }
+  })
+}
+
+test('reviewer visibility follows effective definition revisions without changing stored assignments', async () => {
+  const value = run(true)
+  const assignedReviewerIds = ['reviewer']
+  const f = await fixture(value, ['workstreams:update'])
+  const assign = spyOn(client.workflows, 'assignReviewers').mockResolvedValue(stream)
+  const reviewers = () => f.dom.window.document.querySelector('[aria-label="Assigned reviewers"]')
+  try {
+    await f.render(<WorkflowRunPanel stream={{ ...stream, assignedReviewerIds }} />)
+    expect(reviewers()).not.toBeNull()
+    // Retain the old human attempt snapshot; only the effective definition changes.
+    for (const [definition, visible] of [
+      [run().state.definition, false],
+      [reviewRun(2).state.definition, true],
+    ] as const) {
+      await f.dom.act(async () => {
+        f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), {
+          ...value,
+          state: { ...value.state, definition },
+        })
+        // Flush React Query's scheduled cache notification.
+        await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      })
+      expect(reviewers() !== null).toBe(visible)
+      expect(
+        f.queryClient
+          .getQueryCache()
+          .find({ queryKey: queryKeys.workflows.reviewers(stream.squadId) })
+          ?.getObserversCount()
+      ).toBe(visible ? 1 : 0)
+    }
+    expect(assignedReviewerIds).toEqual(['reviewer'])
+    expect(assign).not.toHaveBeenCalled()
+  } finally {
+    assign.mockRestore()
+    await f.cleanup()
+  }
+})
