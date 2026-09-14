@@ -33,7 +33,7 @@ concurrency:
 jobs:
   macos-paths:
     name: Classify macOS portability paths
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
     outputs:
       run_macos: ${{ steps.classify.outputs.run_macos }}
     steps:
@@ -57,12 +57,8 @@ jobs:
     needs: macos-paths
     if: ${{ needs.macos-paths.result == 'success' && needs.macos-paths.outputs.run_macos == 'true' }}
     runs-on: macos-14
-    # Expo prebuild plus the real TauWidget simulator target compile can exceed the former 15-minute budget on a cold runner.
+    # Native lifecycle and attachment checks run on a real Darwin host.
     timeout-minutes: 25
-    env:
-      # Expo SDK 56 generates an Xcode 16 project (PBXFileSystemSynchronizedRootGroup);
-      # the image default is Xcode 15.4, which aborts on open.
-      DEVELOPER_DIR: /Applications/Xcode_16.2.app/Contents/Developer
     steps:
       - uses: actions/checkout@v7
       - name: Use Node.js 24
@@ -81,7 +77,7 @@ jobs:
       - name: Run real exe lobby subprocess lifecycle tests
         # Run from .github so ITS bunfig.toml is the one Bun loads — Bun reads
         # `bunfig.toml` from the cwd only, and does not walk up, so the root
-        # bunfig's Core/platform preloads (which need the ParadeDB container,
+        # bunfig's Core preloads (which need the ParadeDB container,
         # unavailable here) are skipped. This hermetic suite exercises real
         # /bin/sh + subprocess behavior on Darwin.
         run: bun test exe-lifecycle-config-probe.test.ts ../apps/core/src/services/machines/providers/exe-api-exec.test.ts
@@ -98,15 +94,11 @@ jobs:
             echo "Portable attachment materialization tests must not skip on macOS." >&2
             exit 1
           fi
-      # No test here may skip. main's platform-version-lock.ts calls flock(2)
-      # through bun:ffi rather than spawning util-linux's flock(1), so every one
-      # of these runs on macOS exactly as it does on Linux — that portability is
-      # the whole point of this job, and a skip would silently retire it.
   macos-portability-required:
     name: macOS portability
     needs: [macos-paths, macos-portability-suite]
     if: ${{ always() }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
     steps:
       - uses: actions/checkout@v7
       - name: Use Node.js 24
@@ -129,19 +121,12 @@ jobs:
     # touches Postgres, so a gate failure can no longer sit behind a six-minute core
     # suite (or hide one).
     name: test / gates
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
 
     steps:
       - uses: actions/checkout@v7
         with:
-          # Full history. The control-plane self-update compatibility floor is a
-          # fixed commit (see services/platform-updates/compatibility.ts), and
-          # the admin `platform-updates/check` route proves the target descends
-          # from it by fetching both commits out of PLATFORM_SOURCE_REPO — which
-          # the route test points at this checkout. Under the default shallow
-          # (depth 1) checkout the floor commit is absent, ancestry cannot be
-          # proven, and the route correctly fails closed with 400 — a CI-only
-          # failure of a genuinely-correct implementation. The pack is ~35 MiB.
+          # History is used by changed-path and Git-backed test fixtures.
           fetch-depth: 0
 
       - name: Use Node.js 24
@@ -156,8 +141,7 @@ jobs:
           # repo's test graph (exit 133, main-thread trap) before any test runs
           # — the AMTP node-conformance suite (apps/core/src/services/amtp/
           # node-conformance-readiness.test.ts) is the canary. Validate any bump
-          # against that suite before moving the pin. See
-          # docs/wiki/testing/bun-platform-tests.md.
+          # against that suite before moving the pin.
           bun-version: 1.3.8
 
       - name: Cache Bun dependencies
@@ -246,7 +230,7 @@ jobs:
         working-directory: .github
 
       - name: Validate CLI publish gate
-        run: bun test ./cli-publish-gate.test.ts ./cla-workflow.test.ts
+        run: bun test ./cli-publish-gate.test.ts ./cla-workflow.test.ts ./public-contribution-workflows.test.ts
         working-directory: .github
 
       - name: Validate subprocess lane membership
@@ -309,19 +293,12 @@ jobs:
     # the step it runs in: while typecheck shared a job with the suites, one bad
     # signature (#1389) suppressed EVERY test result on that PR.
     name: test / typecheck
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
 
     steps:
       - uses: actions/checkout@v7
         with:
-          # Full history. The control-plane self-update compatibility floor is a
-          # fixed commit (see services/platform-updates/compatibility.ts), and
-          # the admin `platform-updates/check` route proves the target descends
-          # from it by fetching both commits out of PLATFORM_SOURCE_REPO — which
-          # the route test points at this checkout. Under the default shallow
-          # (depth 1) checkout the floor commit is absent, ancestry cannot be
-          # proven, and the route correctly fails closed with 400 — a CI-only
-          # failure of a genuinely-correct implementation. The pack is ~35 MiB.
+          # History is used by changed-path and Git-backed test fixtures.
           fetch-depth: 0
 
       - name: Use Node.js 24
@@ -336,8 +313,7 @@ jobs:
           # repo's test graph (exit 133, main-thread trap) before any test runs
           # — the AMTP node-conformance suite (apps/core/src/services/amtp/
           # node-conformance-readiness.test.ts) is the canary. Validate any bump
-          # against that suite before moving the pin. See
-          # docs/wiki/testing/bun-platform-tests.md.
+          # against that suite before moving the pin.
           bun-version: 1.3.8
 
       - name: Cache Bun dependencies
@@ -421,19 +397,12 @@ jobs:
     # apps/core, the sterile secret-boundary suite, and the persistent-restart proof.
     # Needs Postgres.
     name: test / core
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
 
     steps:
       - uses: actions/checkout@v7
         with:
-          # Full history. The control-plane self-update compatibility floor is a
-          # fixed commit (see services/platform-updates/compatibility.ts), and
-          # the admin `platform-updates/check` route proves the target descends
-          # from it by fetching both commits out of PLATFORM_SOURCE_REPO — which
-          # the route test points at this checkout. Under the default shallow
-          # (depth 1) checkout the floor commit is absent, ancestry cannot be
-          # proven, and the route correctly fails closed with 400 — a CI-only
-          # failure of a genuinely-correct implementation. The pack is ~35 MiB.
+          # History is used by changed-path and Git-backed test fixtures.
           fetch-depth: 0
 
       - name: Use Node.js 24
@@ -448,8 +417,7 @@ jobs:
           # repo's test graph (exit 133, main-thread trap) before any test runs
           # — the AMTP node-conformance suite (apps/core/src/services/amtp/
           # node-conformance-readiness.test.ts) is the canary. Validate any bump
-          # against that suite before moving the pin. See
-          # docs/wiki/testing/bun-platform-tests.md.
+          # against that suite before moving the pin.
           bun-version: 1.3.8
 
       - name: Cache Bun dependencies
@@ -570,19 +538,12 @@ jobs:
     # shared a job, and on 2026-09-04 the web gate's failure aborted the job before
     # the mobile suite ran at all, hiding a second break for hours.
     name: test / web
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
 
     steps:
       - uses: actions/checkout@v7
         with:
-          # Full history. The control-plane self-update compatibility floor is a
-          # fixed commit (see services/platform-updates/compatibility.ts), and
-          # the admin `platform-updates/check` route proves the target descends
-          # from it by fetching both commits out of PLATFORM_SOURCE_REPO — which
-          # the route test points at this checkout. Under the default shallow
-          # (depth 1) checkout the floor commit is absent, ancestry cannot be
-          # proven, and the route correctly fails closed with 400 — a CI-only
-          # failure of a genuinely-correct implementation. The pack is ~35 MiB.
+          # History is used by changed-path and Git-backed test fixtures.
           fetch-depth: 0
 
       - name: Use Node.js 24
@@ -597,8 +558,7 @@ jobs:
           # repo's test graph (exit 133, main-thread trap) before any test runs
           # — the AMTP node-conformance suite (apps/core/src/services/amtp/
           # node-conformance-readiness.test.ts) is the canary. Validate any bump
-          # against that suite before moving the pin. See
-          # docs/wiki/testing/bun-platform-tests.md.
+          # against that suite before moving the pin.
           bun-version: 1.3.8
 
       - name: Cache Bun dependencies
@@ -639,7 +599,7 @@ jobs:
     name: test
     needs: [test-gates, test-typecheck, test-core, test-web]
     if: ${{ always() }}
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
     steps:
       - uses: actions/checkout@v7
       - name: Use Node.js 24
@@ -657,7 +617,7 @@ jobs:
         run: bun .github/lane-gate.ts verify-result
 
   subprocess-tests:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
     timeout-minutes: 15
 
     steps:
@@ -786,7 +746,7 @@ jobs:
   # End-to-end proof that `bun run setup` produces a running, self-updatable
   # local install (docs/history/superpowers/specs/2026-09-02-local-setup-installer-design.md §9).
   local-setup:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
     # Two full installs (the second instance has its own checkout, install and
     # build) plus an in-app update apply.
     timeout-minutes: 40
@@ -799,8 +759,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # Full history — see the `test` job's identical checkout step for why
-          # (platform-updates ancestry proof needs it).
+          # Full history is needed to exercise a real fast-forward update.
           fetch-depth: 0
           # The in-app updater fetches with its own bearer extraheader; a persisted
           # checkout credential would make git send two Authorization headers (400).
@@ -1189,7 +1148,7 @@ jobs:
   core-typecheck-diagnostics:
     name: core-typecheck-diagnostics (manual only; a skipped run is not evidence)
     if: github.event_name == 'workflow_dispatch'
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7

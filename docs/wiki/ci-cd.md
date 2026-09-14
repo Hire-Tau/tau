@@ -13,6 +13,22 @@ guards require every expected lane and test file to finish successfully.
 The [CLA workflow](../../.github/workflows/cla.yml) checks contributor agreements.
 See [CONTRIBUTING.md](../../CONTRIBUTING.md) for the signing process.
 
+Build, test, lint and documentation jobs run on `pull_request` with read-only
+repository permissions and no stored secrets. The setup/update fixture uses the
+automatically issued, read-only `github.token`; contributors do not configure a
+personal token or production credentials. First-time contributors may need a
+maintainer to approve the workflow run in GitHub.
+
+CLA automation runs separately on trusted base-branch code, with a pinned bot
+implementation. It never checks out the contributor's code with its registry
+credential. Release jobs run on main pushes, version tags or manual dispatch,
+and use GitHub's automatic token to publish; PR jobs do not publish releases or
+container images. The unsigned Core build is retained as a workflow artifact.
+
+Linux jobs use GitHub-hosted Ubuntu 24.04 runners for public repositories and
+Blacksmith for private repositories. Native portability tests remain on macOS.
+Runner selection does not change required checks, tests or completion guards.
+
 Run `bun typecheck` and the relevant package test entrypoints before opening a
 pull request. See [development](development.md) for local commands and isolated
 test databases.
