@@ -15,7 +15,6 @@ bun run reload:api    # reload API process
 bun run reload:worker # reload worker process
 bun run reload:web    # reload web process
 bun run lint          # lint code
-bunx eslint . --fix   # fix linting issues
 bun run format        # format code
 bun typecheck         # typecheck code
 ```
