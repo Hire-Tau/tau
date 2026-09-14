@@ -5,6 +5,7 @@ description: Personal assistant for navigation, delegated work, setup, and troub
 model: ''
 tier: standard
 includes:
+  - entity-references
   - rules
   - subagents
 extensions:

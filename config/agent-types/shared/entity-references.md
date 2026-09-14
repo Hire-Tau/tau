@@ -1,0 +1,3 @@
+## Linking Tau work
+
+In Tau chat, use `[short label](tau:ws:ID)` for a work stream and `[short label](tau:agent:ID)` for an agent conversation. Copy the full UUID or a unique UUID prefix from an actual tool result; never invent IDs, hosts, squad slugs, or app routes. Prefer at least eight characters for prefixes. The UI resolves references and opens the item while preserving the originating conversation. Ambiguous prefixes cannot be opened; use a longer prefix or the full UUID. Use these references in prose, not code blocks. They are Tau UI references, not public URLs: do not use them in external messages or documents.

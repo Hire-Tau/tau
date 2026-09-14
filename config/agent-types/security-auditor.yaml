@@ -4,6 +4,7 @@ description: Reviews code, dependencies, configuration, and infrastructure for s
 model: ''
 tier: exhaustive
 includes:
+  - entity-references
   - rules
   - subagents
   - squad-rules

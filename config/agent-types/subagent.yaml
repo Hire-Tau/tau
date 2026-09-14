@@ -5,6 +5,7 @@ description: An ephemeral subagent dispatched by another agent to do one scoped 
 model: ''
 tier: standard
 includes:
+  - entity-references
   - rules
 tools:
   allow:
