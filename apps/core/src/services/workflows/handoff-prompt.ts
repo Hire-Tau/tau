@@ -45,6 +45,7 @@ export function flowMessage(
     `Work stream ${stream.id}: ${stream.title}\nStep: ${step.id} (attempt ${attempt.id}, version ${run.version})`,
     `${step.instructions}\nExpected output: ${step.output}`,
     workspace.length ? workspace.map(([label, value]) => `${label}: ${value}`).join('\n') : '',
+    attempt.feedback ? `Rework request:\n${attempt.feedback}` : '',
     results.length ? `Incoming results:\n\n${results.join('\n\n')}` : '',
     `History: tau workstream flow ${stream.id} returns state.attempts (evidence, feedback, sourceAttemptIds) and state.returns (rework requests). Query it when you need earlier results or handoff context.`,
     attempt.sourceAttemptIds === undefined
@@ -62,7 +63,7 @@ export function flowMessage(
       ? 'Parallel agents share this workspace. Coordinate file ownership; use a stream-scoped blocker only for an issue affecting everyone.'
       : '',
     `Submit with tau workstream advance ${stream.id} --file COMMAND.json. Choose the appropriate outcome above and replace the evidence string:\n\`\`\`json\n${JSON.stringify(example, null, 2)}\n\`\`\``,
-    `After submitting, end your turn if workStreamStatus is done. Otherwise follow deliveryInstructions when present; if another step is active, end your turn. Read tau workstream flow ${stream.id} for current state or after a version conflict. Retry only if this attempt is still running.`,
+    `After submitting, end your turn if workStreamStatus is done. Otherwise continue any assignments returned directly to you in the command response; no separate inbox notification will be sent for them. Follow deliveryInstructions when present; if only another agent has work, end your turn. Read tau workstream flow ${stream.id} for current state or after a version conflict. Retry only if this attempt is still running.`,
   ]
     .filter(Boolean)
     .join('\n\n')

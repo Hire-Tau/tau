@@ -20,6 +20,44 @@ authorized return, delegation, or revision. `finish` checks the completion polic
 once the graph is complete. All three take a **work stream ID**; `tau ws` is an
 alias for `tau workstream`. `tau workflow` manages reusable presets/templates.
 
+When a transition immediately assigns work to the calling agent, its response
+includes `assignments` with the attempt ID, version, and full handoff content.
+Continue that assignment directly; no duplicate inbox notification is sent.
+The handoff is recorded on the attempt and returned on retries of the same request
+ID. Other agents, fresh sessions, and assignments deferred by waits or capacity
+still receive inbox notifications when they can run.
+
+### Rework after delivery becomes ready
+
+CI failures, requested changes, or merge conflicts can arrive after the graph reaches
+`completion-ready`. Verify that the feedback still applies to the current PR head,
+then read `tau workstream flow STREAM_ID` and submit:
+
+```json
+{
+  "action": "rework",
+  "expectedVersion": 4,
+  "attemptId": 3,
+  "feedback": "Current CI failure and the correction required"
+}
+```
+
+Use the current version and the latest completed attempt ID for `completion.changeEventsTo.step`
+when configured, otherwise the last completed **agent** attempt. Pass the
+file to `tau workstream advance STREAM_ID --file command.json --request-id REQUEST_UUID`.
+The delivery participant or a flow manager may request rework. It creates a tracked
+attempt at that delivery step; normal outcomes can return corrections to an engineer
+and repeat review. A terminal parallel branch restarts its outer fork to preserve
+sibling checks and joins. History, evidence, and attempt limits remain intact.
+
+Final delivery approval is sent back when rework starts and must be requested again.
+An explicit human-approval step, manual pause, question, or unrelated wait is not
+bypassed. Code-host notifications are retained behind unrelated waits and pauses,
+then retried after resolution/resume; final delivery review itself does not block
+CI/review feedback. For parked work, the owner receives the event and can request rework;
+execution waits for normal capacity admission. There is no need to add a manual wait for native CI or PR-merge
+delivery. Reuse the request ID when retrying a command; do not recreate the stream.
+
 ## Repository setup
 
 For code-changing work, `--repository` prepares a worktree in the squad's runtime

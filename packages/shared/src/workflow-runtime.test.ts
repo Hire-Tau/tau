@@ -369,3 +369,152 @@ test('nested direct corrections return to each requester instead of replaying th
   expect(state.attempts.filter((attempt) => attempt.stepId === 'security')).toHaveLength(1)
   expect(complete(state, 'approved').status).toBe('completion-ready')
 })
+
+describe('completion-ready rework', () => {
+  test('CI feedback reactivates review, then follows implementation and review again', async () => {
+    const ready = complete(complete(await run('builder-reviewer')), 'approved')
+    let state = advanceWorkflowRun(ready, {
+      action: 'rework',
+      expectedVersion: ready.version,
+      attemptId: 2,
+      feedback: 'CI found a literal type error',
+    })
+    expect(active(state)).toBe('review')
+    expect(state.attempts[1]!.status).toBe('completed')
+    expect(state.attempts[2]).toMatchObject({ feedback: 'CI found a literal type error', sourceAttemptIds: [1, 2] })
+    state = complete(state, 'changes-requested')
+    expect(active(state)).toBe('build')
+    state = complete(state)
+    expect(active(state)).toBe('review')
+    state = complete(state, 'approved')
+    expect(state.status).toBe('completion-ready')
+    expect(state.attempts).toHaveLength(5)
+    expect(() =>
+      advanceWorkflowRun(state, {
+        action: 'rework',
+        expectedVersion: ready.version,
+        attemptId: 2,
+        feedback: 'Duplicate',
+      })
+    ).toThrow('Stale workflow version')
+    expect(() =>
+      advanceWorkflowRun(state, {
+        action: 'rework',
+        expectedVersion: state.version,
+        attemptId: 2,
+        feedback: 'Old attempt',
+      })
+    ).toThrow('latest completed delivery agent')
+  })
+
+  test('rework repeats the downstream human gate and cannot bypass it', async () => {
+    const initial = await run('builder-reviewer')
+    initial.definition.steps.push({
+      id: 'approval',
+      kind: 'human-approval',
+      instructions: 'Approve',
+      output: 'Decision',
+      outcomes: { approved: { next: 'finish' } },
+      approver: 'assigned-reviewers',
+    })
+    initial.definition.steps[1]!.outcomes.approved = { next: 'approval' }
+    let state = complete(complete(initial), 'approved')
+    expect(active(state)).toBe('approval')
+    expect(() =>
+      advanceWorkflowRun(state, {
+        action: 'rework',
+        expectedVersion: state.version,
+        attemptId: 2,
+        feedback: 'Not ready',
+      })
+    ).toThrow('completion-ready')
+    state = complete(state, 'approved')
+    state = advanceWorkflowRun(state, {
+      action: 'rework',
+      expectedVersion: state.version,
+      attemptId: 2,
+      feedback: 'CI failure',
+    })
+    state = complete(state, 'approved')
+    expect(active(state)).toBe('approval')
+    expect(state.status).toBe('running')
+  })
+
+  test('rework preserves attempt limits and its feedback across an authorized limit revision', async () => {
+    const initial = await run('solo')
+    initial.definition.limits.maxStepAttempts = 1
+    let state = complete(initial)
+    state = advanceWorkflowRun(state, {
+      action: 'rework',
+      expectedVersion: state.version,
+      attemptId: 1,
+      feedback: 'CI correction',
+    })
+    expect(state.status).toBe('paused')
+    expect(state.pendingStarts?.[0]?.feedback).toBe('CI correction')
+    expect(state.attempts).toHaveLength(1)
+    state = advanceWorkflowRun(state, {
+      action: 'revise',
+      expectedVersion: state.version,
+      attemptId: null,
+      active: 'keep',
+      reason: 'Allow CI rework',
+      operations: [{ op: 'set-limits', limits: { ...state.definition.limits, maxStepAttempts: 2 } }],
+    })
+    expect(state.status).toBe('running')
+    expect(state.attempts[1]?.feedback).toBe('CI correction')
+    expect(complete(state).status).toBe('completion-ready')
+  })
+
+  test('terminal parallel branches replay their fork without losing sibling joins', async () => {
+    const initial = await run('solo')
+    initial.definition.steps[0]!.outcomes.completed = { parallel: ['a', 'b'], join: 'finish' }
+    for (const id of ['a', 'b'])
+      initial.definition.steps.push({
+        ...initial.definition.steps[0]!,
+        id,
+        outcomes: { completed: { next: 'finish' } },
+      })
+    // Start against the changed definition so the fork's attempt snapshot is current.
+    let state = complete(createWorkflowRun(initial.definition))
+    state = complete(state)
+    state = complete(state)
+    expect(state.status).toBe('completion-ready')
+    state = advanceWorkflowRun(state, {
+      action: 'rework',
+      expectedVersion: state.version,
+      attemptId: 3,
+      feedback: 'Repeat parallel checks',
+    })
+    expect(active(state)).toBe(initial.definition.entry)
+    state = complete(state)
+    expect(state.attempts.filter((a) => a.status === 'running')).toHaveLength(2)
+    state = complete(complete(state))
+    expect(state.status).toBe('completion-ready')
+    expect(state.joins?.map((join) => join.status)).toEqual(['joined', 'joined'])
+  })
+})
+
+test('completion-ready rework honors the configured code-host engineer and repeats downstream review', async () => {
+  const initial = await run('builder-reviewer')
+  initial.definition.completion.changeEventsTo = { step: 'build' }
+  const ready = complete(complete(initial), 'approved')
+  expect(() =>
+    advanceWorkflowRun(ready, {
+      action: 'rework',
+      expectedVersion: ready.version,
+      attemptId: 2,
+      feedback: 'Wrong recipient',
+    })
+  ).toThrow('delivery agent')
+  let state = advanceWorkflowRun(ready, {
+    action: 'rework',
+    expectedVersion: ready.version,
+    attemptId: 1,
+    feedback: 'Current CI failure',
+  })
+  expect(active(state)).toBe('build')
+  state = complete(state)
+  expect(active(state)).toBe('review')
+  expect(complete(state, 'approved').status).toBe('completion-ready')
+})

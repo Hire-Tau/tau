@@ -19,7 +19,14 @@ import {
 } from '../../../db'
 import { Agent } from '../../../entities/Agent'
 import { WorkStream } from '../../../entities/WorkStream'
-import { attachFlow, dispatchFlow, getFlow, advanceFlow, isCurrentFlowMessage } from '../../workflows/execution'
+import {
+  attachFlow,
+  dispatchFlow,
+  getFlow,
+  advanceFlow,
+  isCurrentFlowMessage,
+  ensureFlowDispatch,
+} from '../../workflows/execution'
 import { publishIntegrationOutput, reconcileOutputDeliveries } from './runtime'
 import { lockFlowInboxDelivery } from '../../work-streams/wait-scope'
 
@@ -61,7 +68,14 @@ function definition() {
 }
 async function create(
   number: number,
-  options: { queued?: boolean; paused?: boolean; inactive?: boolean; parallel?: boolean; codeHost?: boolean } = {}
+  options: {
+    queued?: boolean
+    paused?: boolean
+    inactive?: boolean
+    parallel?: boolean
+    codeHost?: boolean
+    codeHostTarget?: string
+  } = {}
 ) {
   const flow = definition()
   if (options.inactive) {
@@ -102,6 +116,7 @@ async function create(
   }
   if (options.codeHost) {
     flow.completion.followChanges = true
+    if (options.codeHostTarget) flow.completion.changeEventsTo = { step: options.codeHostTarget }
     delete flow.subscriptions
   }
   return db.transaction(async (tx) => {
@@ -295,13 +310,16 @@ test('a squad trigger atomically creates a configured solo flow and binds metada
   }
 })
 
-test('integration information reaches a waiting attempt without resolving its question or advancing the flow', async () => {
-  const { openWait, listOpenWaits } = await import('../../work-streams/waits')
+test('integration information is retained during unrelated waits and delivered after resolution', async () => {
+  const { openWait, listOpenWaits, closeOpenWaits } = await import('../../work-streams/waits')
   const id = await create(10)
   await openWait(db, { workStreamId: id, type: 'manual', flowAttemptId: 1, message: 'Need more context' })
   await publish(fact(10))
-  expect((await deliveries(id))[0]!.targets[0]!.attemptId).toBe(1)
+  expect((await deliveries(id))[0]!.targets).toHaveLength(0)
   expect(await listOpenWaits(db, id)).toHaveLength(1)
+  await closeOpenWaits(db, { workStreamId: id, type: 'manual' }, 'cleared')
+  await reconcileOutputDeliveries(id)
+  expect((await deliveries(id))[0]!.targets[0]!.attemptId).toBe(1)
   expect((await getFlow(id))!.state.activeAttemptId).toBe(1)
 })
 
@@ -1574,4 +1592,85 @@ test('pre-existing self-comment deliveries are fenced at worker and parked-owner
       expect((await deliveries(id))[0]!.reason).toBe('Event suppressed by integration notification policy')
     }
   })
+})
+
+test('code-host CI reaches completion-ready delivery review but is retained behind unrelated blockers', async () => {
+  const { openWait, closeOpenWaits } = await import('../../work-streams/waits')
+  const id = await create(901, { codeHost: true, codeHostTarget: 'execute' })
+  let run = (await getFlow(id))!
+  await advanceFlow(
+    id,
+    { action: 'complete', expectedVersion: run.version, attemptId: 1, outcome: 'completed', evidence: 'Ready' },
+    randomUUID(),
+    { type: 'legacy' }
+  )
+  run = (await getFlow(id))!
+  await openWait(db, { workStreamId: id, type: 'review', message: 'Await PR delivery approval' })
+  const { wait } = await openWait(db, {
+    workStreamId: id,
+    type: 'manual',
+    scope: 'stream',
+    message: 'Unrelated maintenance',
+  })
+  const event = fact(901, { output: 'pull_request.ci_completed' })
+  await publish(event)
+  expect((await deliveries(id))[0]!.targets).toHaveLength(0)
+  await closeOpenWaits(db, { waitId: wait.id }, 'cleared')
+  await reconcileOutputDeliveries(id)
+  const target = (await deliveries(id))[0]!.targets[0]!
+  expect(target.agentId).toBe(run.attemptAgents['1'])
+  expect(target.version).toBe(run.version)
+  const [message] = await db.select().from(inbox).where(eq(inbox.id, target.inboxId))
+  expect(await isCurrentFlowMessage(message!)).toBe(true)
+  const second = await openWait(db, {
+    workStreamId: id,
+    type: 'manual',
+    scope: 'stream',
+    message: 'Pause before inbox acceptance',
+  })
+  expect(await isCurrentFlowMessage(message!)).toBe(false)
+  await closeOpenWaits(db, { waitId: second.wait.id }, 'cleared')
+  expect(await isCurrentFlowMessage(message!)).toBe(true)
+  await publish(event)
+  expect(await deliveries(id)).toHaveLength(1)
+  await advanceFlow(
+    id,
+    {
+      action: 'rework',
+      expectedVersion: run.version,
+      attemptId: 1,
+      feedback: 'Verified current PR head: CI needs a literal type fix',
+    },
+    randomUUID(),
+    { type: 'legacy' }
+  )
+  const reworked = (await getFlow(id))!
+  expect(reworked.state.status).toBe('running')
+  expect(reworked.state.attempts[1]).toMatchObject({
+    stepId: 'execute',
+    status: 'running',
+    feedback: 'Verified current PR head: CI needs a literal type fix',
+  })
+  expect(reworked.attemptAgents['2']).toBe(target.agentId)
+})
+
+test('code-host delivery returns to the active engineer after its question clears even without an assignee', async () => {
+  const { openWait, closeOpenWaits } = await import('../../work-streams/waits')
+  const id = await create(902, { codeHost: true })
+  const run = (await getFlow(id))!
+  await db.update(workStreams).set({ assigneeAgentId: null }).where(eq(workStreams.id, id))
+  const { wait } = await openWait(db, {
+    workStreamId: id,
+    type: 'question',
+    scope: 'attempt',
+    flowAttemptId: 1,
+    message: 'Which target?',
+  })
+  await publish(fact(902, { output: 'pull_request.ci_completed' }))
+  expect((await deliveries(id))[0]!.targets).toHaveLength(0)
+  await closeOpenWaits(db, { waitId: wait.id }, 'answered')
+  await ensureFlowDispatch(id)
+  const target = (await deliveries(id))[0]!.targets[0]!
+  expect(target).toMatchObject({ agentId: run.attemptAgents['1'], attemptId: 1 })
+  expect((await getFlow(id))!.version).toBe(run.version)
 })
