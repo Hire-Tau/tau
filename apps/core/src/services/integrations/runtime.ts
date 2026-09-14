@@ -31,11 +31,11 @@ import {
 } from './deployment/settings'
 import { importLegacyLinearCredential } from './linear/legacy-import'
 import {
-  channelIntegrationCatalog,
   isChannelIntegration,
   getChannelIntegrationSettings,
   configureChannelIntegration,
   initializeChannelIntegrationStates,
+  slackAppManifest,
 } from './channels/settings'
 import { getSettingsStore } from '../settings'
 import { configureLinearWebhook, getLinearWebhookSettings } from './linear/webhook-settings'
@@ -514,7 +514,6 @@ export const integrationRoutesService = Object.assign(integrationConnectionServi
     Promise.all(
       [
         ...integrationRegistry.catalog(),
-        ...channelIntegrationCatalog,
         ...deploymentIntegrationCatalog,
         googleCloudIntegrationCatalog,
         ...pushIntegrationCatalog,
@@ -523,7 +522,7 @@ export const integrationRoutesService = Object.assign(integrationConnectionServi
         ...entry,
         enabled: await isIntegrationEnabled(entry.key),
         setup: isChannelIntegration(entry.key)
-          ? credentialSetupStatus(getChannelIntegrationSettings(entry.key).fields)
+          ? (await getChannelIntegrationSettings(entry.key)).setup
           : isDeploymentIntegration(entry.key)
             ? credentialSetupStatus(getDeploymentIntegrationSettings(entry.key).fields)
             : isPushIntegration(entry.key)
@@ -597,6 +596,7 @@ export const integrationRoutesService = Object.assign(integrationConnectionServi
   channelSettings: {
     get: getChannelIntegrationSettings,
     configure: configureChannelIntegration,
+    manifest: () => slackAppManifest(),
     initializeChannelIntegrationStates,
   },
   linearWebhook: {

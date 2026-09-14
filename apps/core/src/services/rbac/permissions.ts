@@ -47,7 +47,6 @@ function roleSlugForAgentType(agentTypeId: string | null | undefined): string {
   const ROLE_BY_AGENT_TYPE: Record<string, string> = {
     manager: 'default-manager',
     consultant: 'default-manager', // full manager-equivalent permissions
-    concierge: 'default-concierge',
   }
   return ROLE_BY_AGENT_TYPE[agentTypeId ?? ''] ?? 'default-worker'
 }
@@ -121,7 +120,11 @@ export async function resolveActingUser(identity: Identity | undefined): Promise
   return { type: 'user', userId: authority.ownerUserId }
 }
 
-async function resolveUserPermissions(userId: string, squadId?: string, executor: typeof db = db): Promise<string[]> {
+async function resolveUserPermissions(
+  userId: string,
+  squadId?: string,
+  executor: Pick<typeof db, 'select'> = db
+): Promise<string[]> {
   const permissions: string[] = []
 
   // System-scoped roles
@@ -441,7 +444,7 @@ export async function resolveRoleSummaries(identity: Identity, squadId?: string)
 }
 
 export async function hasUserPermissionWithExecutor(
-  executor: typeof db,
+  executor: Pick<typeof db, 'select'>,
   userId: string,
   permission: string,
   squadId?: string

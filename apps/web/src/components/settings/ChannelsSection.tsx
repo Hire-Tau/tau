@@ -1,3 +1,4 @@
+import { ChannelIdsEditor } from './ChannelIdsEditor'
 import { useEffect, useId, useState, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
@@ -294,7 +295,7 @@ function ProviderPicker({ value, onChange }: { value: ProviderId | null; onChang
 /** List builder for the channelSquadMap: zero or more [channel ID, squad] rows,
  * replacing the raw JSON textarea. Serializes to the exact same map shape the
  * backend already stores. */
-function SquadOverridesEditor({
+export function SquadOverridesEditor({
   provider,
   rows,
   onChange,
@@ -408,6 +409,7 @@ export function AddChannelForm({
   const [providerConfigValue, setProviderConfigValue] = useState('')
   const [defaultSquadId, setDefaultSquadId] = useState<string | null>(null)
   const [overrideRows, setOverrideRows] = useState<OverrideRow[]>([])
+  const [trustedChannels, setTrustedChannels] = useState<string[]>([])
   const [validationError, setValidationError] = useState('')
   const [createAttempted, setCreateAttempted] = useState(false)
 
@@ -446,6 +448,7 @@ export function AddChannelForm({
       provider,
       providerConfig: buildProviderConfig(provider, providerConfigValue),
       defaultSquadId,
+      trustedChannelIds: trustedChannels.map((id) => id.trim()),
       channelSquadMap: overrideRowsToMap(overrideRows),
     })
   }
@@ -474,6 +477,7 @@ export function AddChannelForm({
           <ProviderConfigField provider={provider} value={providerConfigValue} onChange={setProviderConfigValue} />
           <DefaultSquadField defaultSquadId={defaultSquadId} onChange={setDefaultSquadId} showError={createAttempted} />
           <SquadOverridesEditor provider={provider} rows={overrideRows} onChange={setOverrideRows} />
+          <TrustedChannelsField value={trustedChannels} onChange={setTrustedChannels} />
           <p className="text-xs text-muted font-mono">ID: {channelId}</p>
         </div>
       )}
@@ -591,6 +595,7 @@ export function ChannelRow({
     updateMutation.mutate({
       name: form.name,
       providerConfig: buildProviderConfig(channel.provider, form.providerConfigValue),
+      trustedChannelIds: form.trustedChannels.map((id) => id.trim()),
       channelSquadMap: overrideRowsToMap(form.overrideRows),
       defaultSquadId: form.defaultSquadId,
     })
@@ -727,6 +732,11 @@ export function ChannelRow({
               actions={fieldActions('channelSquadMap')}
             />
 
+            <TrustedChannelsField
+              value={form.trustedChannels}
+              onChange={(value) => canUpdate && setForm({ ...form, trustedChannels: value })}
+              actions={fieldActions('trustedChannelIds')}
+            />
             <div className="flex items-center gap-2 pt-2 flex-wrap">
               <button
                 onClick={handleSave}
@@ -792,9 +802,28 @@ function FormField({
 
 function channelToForm(ch: ChannelInstanceConfig) {
   return {
+    trustedChannels: ch.trustedChannelIds ?? [],
     name: ch.name,
     providerConfigValue: extractProviderConfigValue(ch.provider, ch.providerConfig),
     defaultSquadId: ch.defaultSquadId ?? null,
     overrideRows: mapToOverrideRows(ch.channelSquadMap),
   }
+}
+
+export function TrustedChannelsField({
+  value,
+  onChange,
+  actions,
+}: {
+  value: string[]
+  onChange: (value: string[]) => void
+  actions?: ReactNode
+}) {
+  return (
+    <ChannelIdsEditor kind="Trusted" value={value} onChange={onChange} actions={actions}>
+      By default, senders must link a Tau account with squad chat access. Everyone who can message Tau in a trusted
+      channel can direct its squad’s agents, including through the manager. Add only channels whose participants you
+      trust. Leave empty to require linked users everywhere.
+    </ChannelIdsEditor>
+  )
 }

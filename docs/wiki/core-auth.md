@@ -112,7 +112,6 @@ Some API requests originate from agents rather than human users. Agent tokens (p
 | ----------------------- | ------------------------------------------------------------------------- |
 | `manager`               | `default-manager`                                                         |
 | `consultant`            | `default-manager` (full manager-equivalent permissions; no `ownerUserId`) |
-| `concierge`             | `default-concierge`                                                       |
 | other squad-bound types | `default-worker`                                                          |
 
 The Consultant is a squad-bound agent (`squadId` set, `ownerUserId` null) that is granted manager-level permissions through this mapping. See [Consultant](consultant.md) for the full design.

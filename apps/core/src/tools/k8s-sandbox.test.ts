@@ -749,7 +749,7 @@ describe('squad file route: path-routed read/write/edit', () => {
     // Regression test for a squad-routed write injection: ops.mkdir used to run
     // `client.bash({ command: `mkdir -p "${path}"` })`, so a path containing
     // $(...)/backticks/; executed arbitrary commands as the SQUAD box's unix
-    // user — from a member (incl. concierge/subagents) that deliberately has no
+    // user — from a member (incl. consultant/subagents) that deliberately has no
     // squad_bash. The pi SDK write tool calls ops.mkdir(dirname) before EVERY
     // write, making any write with a crafted path an escalation.
     const { manager, memberClient, squadClient } = routingManager()

@@ -76,7 +76,7 @@ async function resolveInviteRoles(
       log.warn(`Default invite role '${identifier}' not found — inviting with no roles`)
       continue
     }
-    // Agent roles (default-worker/-manager/-concierge) are derived from an
+    // Agent roles (default-worker/-manager/-consultant) are derived from an
     // agent's type, never assigned to a person — granting one to a user would
     // silently do nothing useful.
     if (!isUserAssignable(role)) return { error: `Role ${role.slug} cannot be assigned to a user` }

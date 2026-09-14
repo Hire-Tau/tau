@@ -32,7 +32,14 @@ describe('SharedPromptSync', () => {
 
   test('loads every bundled include with its file stem as id', async () => {
     const ids = (await sync.loadFromDir()).map((i) => i.id).sort()
-    expect(ids).toEqual(['rules', 'slot-manager', 'squad-dynamic-context', 'squad-rules', 'subagents'])
+    expect(ids).toEqual([
+      'entity-references',
+      'rules',
+      'slot-manager',
+      'squad-dynamic-context',
+      'squad-rules',
+      'subagents',
+    ])
   })
 
   test('sync stores the blocks with a template and no overrides', async () => {

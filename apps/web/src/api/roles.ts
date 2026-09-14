@@ -17,7 +17,7 @@ export interface RoleSummary {
 
 /**
  * Whether a role belongs in a HUMAN role picker. Agent roles (default-worker,
- * default-manager, default-concierge) are derived from an agent's type and are
+ * default-manager, default-manager) are derived from an agent's type and are
  * meaningless on a person, so they never appear in one.
  */
 export function isUserAssignableRole(role: RoleSummary): boolean {

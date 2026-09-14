@@ -1,3 +1,5 @@
+import { channelLinkQueryKeys } from './queryKeys'
+import { getChannelLinks } from './api/channelLinks'
 import { listIntegrationOutputs } from './api/integrations'
 import { getSquadGitAuthorDefaults } from './api/integrations'
 import { getDeploymentIntegrationSettings } from './api/integrations'
@@ -121,6 +123,7 @@ import type { NormalizedSquadActivityFilters } from '@tau/shared'
  * invalidates every query under that domain via prefix matching.
  */
 export const queries = {
+  channelLinks: { list: () => queryOptions({ queryKey: channelLinkQueryKeys.all, queryFn: getChannelLinks }) },
   workflows: {
     reviewers: (squadId: string) =>
       queryOptions({

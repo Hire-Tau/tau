@@ -17,7 +17,7 @@ interface AgentSandboxControlsProps {
 /**
  * Live status + Stop/Restart controls for an agent's individual light sandbox.
  * Controls only appear when the box is this agent's own (`controllable`); a
- * shared box (squad/system-manager/concierge) is shown read-only.
+ * shared box (squad/system-manager/consultant) is shown read-only.
  */
 export function AgentSandboxControls({ agentId, compact = false }: AgentSandboxControlsProps) {
   const queryClient = useQueryClient()

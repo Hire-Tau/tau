@@ -11,7 +11,7 @@ The routing API and `suggest_squad` tool evaluate a question from the caller squ
 - `confidence`: the top suggestion score, or `0` when no usable candidate exists
 - `reason`: a short explanation of the recommendation
 
-The HTTP shape is available at `GET /api/routing/:squadId/suggest-squad?question=...`. Concierge agents use the `suggest_squad` tool before forwarding requests or creating work that appears to belong in another squad's domain.
+The HTTP shape is available at `GET /api/routing/:squadId/suggest-squad?question=...`. The squad manager can use this recommendation when coordinating work across squads. Channel consultants stay in the configured squad and consult its manager when a request belongs elsewhere.
 
 ## Signals
 
@@ -75,17 +75,15 @@ tau workstream create "Investigate refund failures" \
   --source-link '{"kind":"github_issue","url":"https://github.com/acme/app/issues/42"}'
 ```
 
-Concierges are instructed to attach Slack permalinks, cited memory documents, external URLs, or structured `--source-link` JSON when creating work. This makes routed work auditable without adding a new table.
+Work creators should attach Slack permalinks, cited memory documents, external URLs, or structured `--source-link` JSON when creating work. This makes routed work auditable without adding a new table.
 
-## Concierge behavior
+## Channel conversations
 
-Concierges are squad-scoped actors. For routine implementation work they create a work stream with the Tau CLI, own it with `--owner {{agent.id}}`, and attach source context. Before forwarding or creating work for another squad's domain, they call `suggest_squad` and follow the recommendation:
-
-- `route`: create or forward to the top suggestion and attach evidence sources to the work stream.
-- `clarify`: ask one focused clarifying question about the request itself, then call `suggest_squad` again after the user replies.
-- `escalate`: call `notify_contact` with the request and routing reason, then tell the user that a human has been looped in.
-
-Concierges must not ask users which squad to choose and must not silently guess a routing target. Requests that clearly belong to the concierge's own squad may be handled directly without consulting the suggester.
+External conversations use ordinary consultants. Ingress selects the squad from
+channel overrides or the connection default, before any model runs. Channel
+consultants own work requested through the channel so they can relay lifecycle
+updates, and coordinate cross-squad requests through their squad manager. The
+suggester is advisory; it never grants access or overrides channel authorization.
 
 ## Limitations
 

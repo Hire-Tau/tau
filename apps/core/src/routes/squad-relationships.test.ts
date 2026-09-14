@@ -49,9 +49,7 @@ afterAll(async () => {
   await cleanupTestRbac(srPrefix)
   await db
     .delete(roles)
-    .where(
-      inArray(roles.slug, ['admin', 'operator', 'viewer', 'default-worker', 'default-manager', 'default-concierge'])
-    )
+    .where(inArray(roles.slug, ['admin', 'operator', 'viewer', 'default-worker', 'default-manager']))
 })
 
 describe('squad-relationships routes', () => {

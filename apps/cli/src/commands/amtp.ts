@@ -197,7 +197,7 @@ export function registerRemoteCommands(program: Command): void {
         output(await apiGet('/api/amtp/peers'))
       } catch (error) {
         // GET /api/amtp/peers requires amtp:read, which only managers/operators have.
-        // A worker/concierge agent gets a 403 — degrade gracefully (exit 0) instead of a raw
+        // A worker agent gets a 403 — degrade gracefully (exit 0) instead of a raw
         // "Forbidden". (403 bodies are { error: 'Forbidden' }, surfaced as an Error message.)
         if (error instanceof Error && /forbidden/i.test(error.message)) {
           output(

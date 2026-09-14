@@ -32,7 +32,7 @@ afterAll(async () => {
 // ── The migration's backfill ─────────────────────────────────────────────────
 
 describe('migration 0078 backfills roles.applies_to by slug', () => {
-  const seeded = ['admin', 'operator', 'viewer', 'default-worker', 'default-manager', 'default-concierge']
+  const seeded = ['admin', 'operator', 'viewer', 'default-worker', 'default-manager']
   const custom = `${prefix}-custom`
 
   it('flips the agent-derived slugs to agent and leaves everyone else on user', async () => {
@@ -72,7 +72,6 @@ describe('migration 0078 backfills roles.applies_to by slug', () => {
     expect(bySlug['viewer']).toBe('user')
     expect(bySlug['default-worker']).toBe('agent')
     expect(bySlug['default-manager']).toBe('agent')
-    expect(bySlug['default-concierge']).toBe('agent')
     // Custom roles are only ever assignable to users today, so they stay 'user'.
     expect(bySlug[custom]).toBe('user')
 
@@ -129,7 +128,7 @@ describe('role sync carries appliesTo from defaults.yaml', () => {
 
   it('the shipped defaults.yaml declares every agent role as agent', async () => {
     const yaml = await readFile(join(MONOREPO_ROOT, 'config/roles/defaults.yaml'), 'utf-8')
-    for (const slug of ['default-worker', 'default-manager', 'default-concierge']) {
+    for (const slug of ['default-worker', 'default-manager']) {
       expect(yaml).toMatch(new RegExp(`slug: ${slug}[\\s\\S]{0,80}?appliesTo: agent`))
     }
     for (const slug of ['admin', 'operator', 'viewer']) {

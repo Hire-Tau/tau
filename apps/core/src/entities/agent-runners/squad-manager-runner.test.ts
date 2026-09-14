@@ -335,6 +335,56 @@ describe('SquadManagerRunner typeContext injection', () => {
     expect((squadBashCalls[0] as any[])[2]).toBe(TEST_SQUAD_ID)
     expect(capturedToolNames(sessionSpy)).toEqual(expect.arrayContaining(['squad_bash']))
   })
+  it('gives channel consultants reply tools and asks questions in the channel', async () => {
+    squadFindSpy = spyOn(Squad, 'find').mockResolvedValue({
+      id: TEST_SQUAD_ID,
+      name: 'S',
+      purpose: 'p',
+      defaultAgents: [],
+      context: '',
+      typeContext: null,
+      sandboxId: `squad_${TEST_SQUAD_ID}`,
+      managerAgentId: 'm1',
+      isMemoryEnabled: false,
+      getActiveAgents: async () => [],
+      getTypeContext: () => null,
+      withRelationships: async () =>
+        ({
+          relationships: {
+            reportsTo: [],
+            collaborates: [],
+            dependsOn: [],
+            reportedBy: [],
+            dependedOnBy: [],
+          },
+        }) as any,
+    } as any)
+
+    const agent = {
+      id: 'm1',
+      agentTypeId: 'consultant',
+      context: { type: 'consultant', channelInstance: { id: 'test-channel', provider: 'telegram' } },
+      squadId: TEST_SQUAD_ID,
+      metadata: null,
+      modelOverride: null,
+      selectedModel: null,
+      getOrCreateToken: async () => undefined,
+      getSandboxId: async () => 'agent_manager_m1',
+      getEffectiveModelSpec: async (m: string) => m,
+    } as any
+    const runner = new TestableSquadManagerRunner(
+      { id: 'e1', agentId: 'm1', message: 'go', imageIds: null } as any,
+      agent,
+      makeAgentType({ id: 'consultant' })
+    )
+    await runner.exposeCreateSession()
+
+    expect(capturedToolNames(sessionSpy)).toEqual(
+      expect.arrayContaining(['channel_respond', 'channel_send', 'channel_edit', 'set_agent_purpose'])
+    )
+    expect(capturedToolNames(sessionSpy)).not.toContain('ask_human')
+    expect(sessionSpy.mock.calls[0][0].systemPrompt).toContain('External channel conversation')
+  })
 })
 
 describe('SquadManagerRunner placeholder interpolation', () => {

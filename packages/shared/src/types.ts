@@ -45,7 +45,6 @@ export type ChatScopeType =
   | 'task'
   | 'squad-manager'
   | 'squad-worker'
-  | 'concierge'
   | 'consultant'
   | 'artifact-builder'
 

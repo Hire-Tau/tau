@@ -14,7 +14,4 @@ ALTER TABLE "assistant_conversation_agents" ADD CONSTRAINT "assistant_conversati
 CREATE UNIQUE INDEX "uq_assistant_conversation_agents_general" ON "assistant_conversation_agents" USING btree ("conversation_id") WHERE "assistant_conversation_agents"."squad_id" IS NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "uq_assistant_conversation_agents_squad" ON "assistant_conversation_agents" USING btree ("conversation_id","squad_id") WHERE "assistant_conversation_agents"."squad_id" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "idx_assistant_conversation_agents_agent" ON "assistant_conversation_agents" USING btree ("agent_id");--> statement-breakpoint
-INSERT INTO "assistant_conversation_agents" ("conversation_id", "squad_id", "agent_id")
-SELECT "id", NULL, "manager_agent_id" FROM "assistant_conversations" WHERE "manager_agent_id" IS NOT NULL;
---> statement-breakpoint
 ALTER TABLE "assistant_conversations" DROP COLUMN "manager_agent_id";

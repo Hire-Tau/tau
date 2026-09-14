@@ -1,3 +1,6 @@
+import { useState } from 'react'
+import { ChannelIdsEditor } from './ChannelIdsEditor'
+import { ChannelLinkCommand } from './LinkedChatAccounts'
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { renderToString } from 'react-dom/server'
@@ -535,5 +538,63 @@ describe('required default squad', () => {
       />
     )
     expect(window.document.body.textContent).not.toContain('Needs configuration')
+  })
+})
+
+function ChannelListFixture() {
+  const [ids, setIds] = useState(['first', 'second'])
+  return (
+    <>
+      <ChannelIdsEditor kind="Allowed" value={ids} onChange={setIds}>
+        All channels when empty.
+      </ChannelIdsEditor>
+      <output>{JSON.stringify(ids)}</output>
+    </>
+  )
+}
+
+describe('channel access list and linking controls', () => {
+  test('adds, edits and removes individual channel IDs without losing other rows', async () => {
+    const { window } = await renderComponent(<ChannelListFixture />)
+    const button = (label: string) => window.document.querySelector(`[aria-label="${label}"]`)!
+    await click(window, button('Remove allowed channel 1'))
+    expect(window.document.querySelector('output')!.textContent).toBe('["second"]')
+    const add = [...window.document.querySelectorAll('button')].find((el) =>
+      el.textContent?.includes('Add allowed channel')
+    )!
+    await click(window, add)
+    await typeInput(window, button('Allowed channel ID 2') as HTMLInputElement, 'third')
+    expect(window.document.querySelector('output')!.textContent).toBe('["second","third"]')
+    await click(window, button('Remove allowed channel 2'))
+    await click(window, button('Remove allowed channel 1'))
+    expect(window.document.querySelector('output')!.textContent).toBe('[]')
+  })
+
+  test('copies the complete linking command and reports a failed clipboard write accurately', async () => {
+    const { window } = await renderComponent(<ChannelLinkCommand code="fixture-code" />)
+    const clipboard = navigator.clipboard
+    const descriptor = Object.getOwnPropertyDescriptor(clipboard, 'writeText')
+    const writes: string[] = []
+    let fail = false
+    Object.defineProperty(clipboard, 'writeText', {
+      configurable: true,
+      value: async (text: string) => {
+        if (fail) throw new Error('Permission denied')
+        writes.push(text)
+      },
+    })
+    try {
+      const copy = window.document.querySelector('[aria-label="Copy account linking command"]')!
+      await click(window, copy)
+      expect(writes).toEqual(['/tau link fixture-code'])
+      expect(copy.textContent).toBe('Copied')
+      fail = true
+      await click(window, copy)
+      expect(copy.textContent).toBe('Copy')
+      expect(window.document.querySelector('[role="alert"]')!.textContent).toContain('Couldn’t copy')
+    } finally {
+      if (descriptor) Object.defineProperty(clipboard, 'writeText', descriptor)
+      else delete (clipboard as any).writeText
+    }
   })
 })

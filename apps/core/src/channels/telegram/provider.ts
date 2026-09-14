@@ -78,17 +78,21 @@ async function apiRequest<T = TelegramApiResponse>(method: string, body: Record<
 // Helpers
 // =============================================================================
 
+const tauCommandPrefix = /^\/tau(?:@\w+)?(?:\s+|$)/i
+
 function parseCommand(text: string): { command: string; content: string } {
   const trimmed = text.trim()
 
   // Check for /tau command format
-  if (trimmed.startsWith('/tau')) {
-    const parts = trimmed.slice(4).trim().split(/\s+/)
+  const prefix = trimmed.match(tauCommandPrefix)
+  if (prefix) {
+    const commandText = trimmed.slice(prefix[0].length).trim()
+    const parts = commandText.split(/\s+/)
     const firstWord = parts[0]?.toLowerCase() || 'help'
     const command = (TAU_SLASH_COMMANDS as readonly string[]).includes(firstWord) ? firstWord : 'ask'
     const content =
       command === 'ask' && !(TAU_SLASH_COMMANDS as readonly string[]).includes(firstWord)
-        ? trimmed.slice(4).trim()
+        ? commandText
         : parts.slice(1).join(' ')
     return { command, content }
   }
@@ -176,7 +180,9 @@ export const telegramProvider: ChannelProvider = {
     const from = message.from
     const chatType = message.chat.type
     const isPrivate = chatType === 'private'
-    const isCommand = messageText.startsWith('/tau')
+    const isCommand =
+      tauCommandPrefix.test(messageText.trim()) ||
+      (isPrivate && /^\/(?:help|status|squad|link|ask|notify|unnotify)(?:@\w+)?(?:\s|$)/i.test(messageText.trim()))
     const botUserId = await this.getBotUserId()
 
     // Check if this is a reply to a bot message
@@ -198,19 +204,20 @@ export const telegramProvider: ChannelProvider = {
     const chatId = String(message.chat.id)
 
     // Use chat ID as "thread" since Telegram doesn't have threads
-    // This means one concierge per chat
+    // This means one consultant per chat
     return {
       type: isCommand ? 'slash_command' : 'message',
       command: isCommand ? command : 'message',
       text: isCommand ? content : messageText,
+      isDirectMessage: isPrivate,
       channelId: chatId,
       user: {
         id: String(from.id),
         name: from.username || `${from.first_name}${from.last_name ? ' ' + from.last_name : ''}`,
       },
-      threadId: chatId, // Use chat ID as thread - one concierge per chat
+      threadId: chatId, // Use chat ID as thread - one consultant per chat
       messageId: String(message.message_id),
-      isInThread: true, // Always "in thread" since we reuse the chat's concierge
+      isInThread: true, // Always "in thread" since we reuse the chat's consultant
       raw: { chatType, isReplyToBot },
     }
   },
@@ -230,7 +237,9 @@ export const telegramProvider: ChannelProvider = {
       chat_id: opts.channelId,
       text: truncated,
       parse_mode: 'Markdown',
-      reply_to_message_id: opts.threadId ? parseInt(opts.threadId) : undefined,
+      // A Tau conversation ID is the chat ID, not a Telegram message to reply to.
+      reply_to_message_id: opts.replyToMessageId ? Number(opts.replyToMessageId) : undefined,
+      allow_sending_without_reply: opts.replyToMessageId ? true : undefined,
     })
 
     return {
@@ -340,14 +349,14 @@ export const telegramProvider: ChannelProvider = {
     const result = await this.postMessage({
       channelId: event.channelId,
       text: '_Thinking..._',
-      threadId: event.messageId, // Reply to user's message
+      replyToMessageId: event.messageId,
     })
 
     return {
       context: {
         messageToEdit: result.messageId,
         threadId: event.channelId, // Use chat ID as thread
-        tauInitiated: false, // Reuse existing concierge for this chat
+        tauInitiated: false, // Reuse existing consultant for this chat
       },
       emptyResponse: true, // Return empty body since we used Bot API
     }

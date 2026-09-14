@@ -1,0 +1,1 @@
+ALTER TABLE "channel_instances" ADD COLUMN "allow_private_chats" boolean DEFAULT true NOT NULL;

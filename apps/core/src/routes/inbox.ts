@@ -339,7 +339,7 @@ export const inboxRouter = new Hono()
     // agent; its `amtpHandle` is the envelope `from`. Local sends fall through unchanged.
     if (parseAmtpAddress(body.recipientId) !== null) {
       const agent = identity.type === 'agent' ? await Agent.find(identity.agentId) : null
-      // Permission gate first (amtp:send is role-granted — default-manager/default-concierge —
+      // Permission gate first (amtp:send is role-granted — default-manager/default-manager —
       // plus optional per-agent-type scopes: top-ups or per-agent grants; admin '*' also passes).
       if (!(await hasPermission(identity, 'amtp:send', agent?.squadId ?? undefined))) {
         return c.json({ error: 'Forbidden' }, 403)

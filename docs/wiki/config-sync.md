@@ -80,7 +80,7 @@ Schedule templates support cron/interval actions such as inbox messages, agent s
 
 ### Channels
 
-`ChannelSync` parses channel instances, validates provider configuration, and creates a concierge agent if an instance does not have one.
+`ChannelSync` parses channel routing and access policies and validates provider configuration. Consultants are created on demand after ingress authorization, never during config sync.
 
 ### Notifications
 

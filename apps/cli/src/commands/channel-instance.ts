@@ -57,6 +57,10 @@ export function registerChannelInstanceCommands(program: Command) {
     .option('--config <json>', 'Provider config as JSON')
     .option('--channel-squad-map <json>', 'Channel-to-squad map as JSON')
     .option('--default-squad <squadId>', 'Default squad ID')
+    .option(
+      '--trusted-channels <json>',
+      'Explicit trusted channel IDs as a JSON array; [] requires linked users everywhere'
+    )
     .action(async (options) => {
       try {
         const body: Record<string, unknown> = {
@@ -64,6 +68,7 @@ export function registerChannelInstanceCommands(program: Command) {
           name: options.name,
           provider: options.provider,
         }
+        if (options.trustedChannels !== undefined) body.trustedChannelIds = JSON.parse(options.trustedChannels)
         if (options.config) body.providerConfig = JSON.parse(options.config)
         if (options.channelSquadMap) body.channelSquadMap = JSON.parse(options.channelSquadMap)
         if (options.defaultSquad) body.defaultSquadId = options.defaultSquad
@@ -83,11 +88,16 @@ export function registerChannelInstanceCommands(program: Command) {
     .option('--config <json>', 'Provider config as JSON')
     .option('--channel-squad-map <json>', 'Replace channel-to-squad map as JSON')
     .option('--default-squad <squadId>', 'Default squad ID')
+    .option(
+      '--trusted-channels <json>',
+      'Explicit trusted channel IDs as a JSON array; [] requires linked users everywhere'
+    )
     .action(async (id, options) => {
       try {
         const body: Record<string, unknown> = {}
         if (options.name) body.name = options.name
         if (options.provider) body.provider = options.provider
+        if (options.trustedChannels !== undefined) body.trustedChannelIds = JSON.parse(options.trustedChannels)
         if (options.config) body.providerConfig = JSON.parse(options.config)
         if (options.channelSquadMap) body.channelSquadMap = JSON.parse(options.channelSquadMap)
         if (options.defaultSquad) body.defaultSquadId = options.defaultSquad

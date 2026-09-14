@@ -44,6 +44,28 @@ describe('slackProvider.parseWebhook', () => {
     })
   })
 
+  it('verifies slash-command DMs with Slack, excluding group DMs', async () => {
+    process.env.SLACK_BOT_TOKEN = 'xoxb-test-token'
+    for (const isMulti of [false, true]) {
+      globalThis.fetch = (async () =>
+        Response.json({ ok: true, channel: { is_im: true, is_mpim: isMulti } })) as unknown as typeof fetch
+      const parsed = await slackProvider.parseWebhook(
+        {
+          team_id: 'T123',
+          channel_id: 'D123',
+          user_id: 'U123',
+          user_name: 'User',
+          command: '/tau',
+          text: 'squad my-squad',
+          trigger_id: 'trigger',
+          response_url: 'https://example.test',
+        },
+        {}
+      )
+      expect(parsed).toMatchObject({ isDirectMessage: !isMulti, command: 'squad', text: 'my-squad' })
+    }
+  })
+
   it('includes best available Slack human name when routing app mentions', async () => {
     process.env.SLACK_BOT_TOKEN = 'xoxb-test-token'
     const mockFetch = mock((url: string, _opts: RequestInit) => {
@@ -216,7 +238,7 @@ describe('slackProvider.parseWebhook', () => {
     ])
   })
 
-  it('routes direct messages to the app as mentions', async () => {
+  it('recognizes private DMs separately from channel mentions', async () => {
     const parsed = (await slackProvider.parseWebhook(
       {
         type: 'event_callback',
@@ -234,7 +256,8 @@ describe('slackProvider.parseWebhook', () => {
     )) as ChannelEvent
 
     expect(parsed).toMatchObject({
-      type: 'mention',
+      type: 'message',
+      isDirectMessage: true,
       text: 'can you help?',
       channelId: 'D123',
       user: { id: 'U123', name: '<@U123>' },

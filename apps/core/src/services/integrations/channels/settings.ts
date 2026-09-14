@@ -1,94 +1,77 @@
-import { readIntegrationCredentialFields, writeIntegrationCredentialFields } from '../credential-settings'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { CHANNELS_DIR } from '../../../lib/paths'
 import { getSecretStore } from '../../secrets'
 import { getSettingsStore } from '../../settings'
-import type { SafeIntegrationCatalogEntry } from '../plugin'
+import { channelConnections, enabledSettingKey, isLegacyChannelCredentialKey } from './connections'
+import { channelProviderKeys, isChannelProviderKey, type ChannelProviderKey } from './plugins'
 
-// Channel transports still consume these encrypted keys. Their management API
-// and presentation belong to integrations; transport/connection migration is separate.
-export const channelIntegrationFields = {
-  discord: [
-    { key: 'DISCORD_BOT_TOKEN', required: true, label: 'Bot token', secret: true, placeholder: 'Discord bot token' },
-    {
-      key: 'DISCORD_APPLICATION_ID',
-      required: true,
-      label: 'Application ID',
-      secret: false,
-      placeholder: '123456789012345678',
-    },
-    {
-      key: 'DISCORD_PUBLIC_KEY',
-      required: true,
-      label: 'Public key',
-      secret: false,
-      placeholder: 'Application public key (hex)',
-    },
-    { key: 'DISCORD_GUILD_ID', label: 'Default server ID', secret: false, placeholder: '123456789012345678' },
-  ],
-  slack: [
-    { key: 'SLACK_BOT_TOKEN', required: true, label: 'Bot token', secret: true, placeholder: 'xoxb-…' },
-    {
-      key: 'SLACK_SIGNING_SECRET',
-      required: true,
-      label: 'Signing secret',
-      secret: true,
-      placeholder: 'Slack app signing secret',
-    },
-  ],
-  telegram: [
-    { key: 'TELEGRAM_BOT_TOKEN', required: true, label: 'Bot token', secret: true, placeholder: '123456789:…' },
-    {
-      key: 'TELEGRAM_WEBHOOK_SECRET',
-      required: true,
-      label: 'Webhook secret',
-      secret: true,
-      placeholder: 'Telegram webhook secret token',
-    },
-    { key: 'TELEGRAM_BOT_ID', label: 'Bot ID', secret: false, placeholder: '123456789' },
-  ],
-} as const
-export type ChannelIntegrationKey = keyof typeof channelIntegrationFields
-export function isChannelIntegration(key: string): key is ChannelIntegrationKey {
-  return Object.hasOwn(channelIntegrationFields, key)
-}
-export function isChannelCredential(key: string): boolean {
-  return Object.values(channelIntegrationFields).some((fields) => fields.some((field) => field.key === key))
-}
-export const channelIntegrationCatalog: SafeIntegrationCatalogEntry[] = (
-  Object.keys(channelIntegrationFields) as ChannelIntegrationKey[]
-).map((key) => ({
-  manifestVersion: 1,
-  key,
-  adapterVersion: 1,
-  label: key[0].toUpperCase() + key.slice(1),
-  description: `Connect a ${key[0].toUpperCase() + key.slice(1)} bot, route conversations to squads, and deliver notifications.`,
-  icon: key,
-  connectionMode: 'channel',
-  assignable: false,
-  requiredCapabilities: [],
-  sandbox: { packages: [], skills: [], extensions: [], protectedBindingNames: [] },
-}))
+export { type ChannelSettingsView } from './connections'
 
-export function getChannelIntegrationSettings(provider: string) {
-  if (!isChannelIntegration(provider)) throw new Error('Unknown channel integration')
-  return readIntegrationCredentialFields(channelIntegrationFields[provider])
-}
-export async function configureChannelIntegration(provider: string, input: unknown, actor: string) {
-  if (!isChannelIntegration(provider)) throw new Error('Unknown channel integration')
-  return writeIntegrationCredentialFields(channelIntegrationFields[provider], input, actor)
-}
+export const isChannelIntegration = isChannelProviderKey
+/** Legacy secret-store keys the channel transports used before connections; still protected in the secrets UI. */
+export const isChannelCredential = isLegacyChannelCredentialKey
 
-/** Transport compatibility boundary; enable state is managed by the integration. */
+/**
+ * Transport compatibility boundary. The chat transports were written against
+ * named secret keys; each key now resolves to a field of the provider's
+ * connection (with the pre-connection secret keys as the fallback), so the
+ * transports read through the connection without knowing its shape. Undefined
+ * whenever the provider is switched off or has nothing usable.
+ */
 export function getChannelIntegrationValue(key: string): string | undefined {
-  const provider = key.split('_', 1)[0].toLowerCase()
-  if (getSettingsStore().getStoredValue(`__integration-enabled:${provider}`) === 'false') return undefined
-  return getSecretStore().get(key)
+  switch (key) {
+    case 'TELEGRAM_BOT_TOKEN':
+      return channelConnections.get('telegram')?.credential.botToken
+    case 'TELEGRAM_WEBHOOK_SECRET':
+      return channelConnections.get('telegram')?.credential.webhookSecret
+    case 'TELEGRAM_BOT_ID':
+      return channelConnections.get('telegram')?.configuration.botId
+    case 'SLACK_BOT_TOKEN':
+      return channelConnections.get('slack')?.credential.botToken
+    case 'SLACK_SIGNING_SECRET':
+      return channelConnections.get('slack')?.credential.signingSecret
+    case 'DISCORD_BOT_TOKEN':
+      return channelConnections.get('discord')?.credential.botToken
+    case 'DISCORD_APPLICATION_ID':
+      return channelConnections.get('discord')?.configuration.applicationId
+    case 'DISCORD_PUBLIC_KEY':
+      return channelConnections.get('discord')?.configuration.publicKey
+    case 'DISCORD_GUILD_ID':
+      return channelConnections.get('discord')?.configuration.guildId
+    default:
+      return undefined
+  }
 }
 
-/** Preserve configured channels on upgrade; fresh integrations remain disabled. */
+export const getChannelIntegrationSettings = (provider: string) => {
+  if (!isChannelProviderKey(provider)) throw new Error('Unknown channel integration')
+  return channelConnections.view(provider)
+}
+
+export const configureChannelIntegration = (provider: string, input: unknown, actor: string) => {
+  if (!isChannelProviderKey(provider)) throw new Error('Unknown channel integration')
+  return channelConnections.configure(provider, input, actor)
+}
+
+/** The Slack app manifest with this instance's URLs filled in. */
+export function slackAppManifest(
+  origin = channelConnections.webhookUrl('slack').replace(/\/api\/webhooks\/channels\/slack$/, '')
+): string {
+  const template = readFileSync(join(CHANNELS_DIR, 'slack-app-manifest.example.yaml'), 'utf8')
+  const host = origin.replace(/^https?:\/\//, '')
+  return template.replaceAll('https://YOUR_DOMAIN', origin).replaceAll('YOUR_DOMAIN', host)
+}
+
+/**
+ * Boot: keep the provider switches consistent (configured bots stay on,
+ * fresh ones start off), turn pre-connection secret keys into connections,
+ * and take the first snapshot the transports read from.
+ */
 export async function initializeChannelIntegrationStates() {
   const { db, settings } = await import('../../../db')
-  for (const provider of Object.keys(channelIntegrationFields)) {
-    const key = `__integration-enabled:${provider}`
+  for (const provider of channelProviderKeys) {
+    const key = enabledSettingKey(provider)
     const token = getSecretStore().get(`${provider.toUpperCase()}_BOT_TOKEN`)
     await db
       .insert(settings)
@@ -96,4 +79,10 @@ export async function initializeChannelIntegrationStates() {
       .onConflictDoNothing()
     await getSettingsStore().refreshKey(key)
   }
+  await channelConnections.migrateLegacy()
+  await channelConnections.refresh()
 }
+
+export const channelEnabledSettingKeys: readonly string[] = channelProviderKeys.map(enabledSettingKey)
+export const isChannelEnabledSettingKey = (key: string): key is `__integration-enabled:${ChannelProviderKey}` =>
+  channelEnabledSettingKeys.includes(key)

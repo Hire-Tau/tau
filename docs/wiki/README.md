@@ -105,7 +105,6 @@ Six concrete runners under `apps/core/src/entities/agent-runners/` extend the ba
 | `system-manager`   | User Assistant (user-scoped cross-squad operations)          |
 | `squad-manager`    | Per-squad manager and consultant                             |
 | `squad-worker`     | Per-squad workers (architect, engineer, reviewer, etc.)      |
-| `concierge`        | Channel-attached agent (Discord/Slack/Telegram entry points) |
 | `artifact-builder` | Artifact generation runs                                     |
 | `subagent`         | Ephemeral delegated child work                               |
 

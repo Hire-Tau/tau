@@ -159,6 +159,13 @@ class SlackApi {
     return result
   }
 
+  async isDirectMessage(channelId: string): Promise<boolean> {
+    const result = await this.request<{ channel?: { is_im?: boolean; is_mpim?: boolean } }>('conversations.info', {
+      channel: channelId,
+    })
+    return result.channel?.is_im === true && result.channel?.is_mpim !== true
+  }
+
   async postMessage(opts: {
     channel: string
     text: string
@@ -497,6 +504,7 @@ export const slackProvider: ChannelProvider = {
         command,
         text: content,
         channelId: cmd.channel_id,
+        isDirectMessage: cmd.channel_id.startsWith('D') ? await getApi().isDirectMessage(cmd.channel_id) : false,
         user: { id: cmd.user_id, name: cmd.user_name },
         messageId: cmd.trigger_id,
         isInThread: false,
@@ -523,6 +531,7 @@ export const slackProvider: ChannelProvider = {
         return {
           type: 'mention',
           text: (await expandUserMentions(cleanedText, botUserId)).trim(),
+          isDirectMessage: event.channel.startsWith('D') ? await getApi().isDirectMessage(event.channel) : false,
           channelId: event.channel,
           user: { id: event.user, name: await getUserLabel(event.user) },
           threadId: event.thread_ts,
@@ -542,7 +551,8 @@ export const slackProvider: ChannelProvider = {
         event.channel
       ) {
         return {
-          type: 'mention',
+          type: 'message',
+          isDirectMessage: true,
           text: (await expandUserMentions(event.text, botUserId)).trim(),
           channelId: event.channel,
           user: { id: event.user, name: await getUserLabel(event.user) },
@@ -649,7 +659,7 @@ export const slackProvider: ChannelProvider = {
   async sendResponse({ context, content, agentContext, updateAgentContext }): Promise<string | undefined> {
     const api = getApi()
 
-    // Empty content = delete the thinking message (concierge chose not to respond)
+    // Empty content = delete the thinking message (consultant chose not to respond)
     if (!content || !content.trim()) {
       if (context.messageToEdit) {
         await api.deleteMessage({ channel: context.channelId, ts: context.messageToEdit })

@@ -33,7 +33,7 @@ import { formatResolvedModel, modelChainWarnings } from './modelTierUi'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton, LoadingSurface, SkeletonBlock, SkeletonRows } from '../loading/Skeleton'
 
-const PROTECTED_AGENT_TYPES = ['manager', 'system-manager', 'concierge']
+const PROTECTED_AGENT_TYPES = ['manager', 'system-manager']
 
 export function TierFilterChip({ tierFilter, onClear }: { tierFilter?: string; onClear?: () => void }) {
   if (!tierFilter) return null

@@ -8,12 +8,12 @@ description: "Set up Discord bot integration — create the Discord application,
 ## Overview
 
 Discord integration gives users slash commands (`/tau status`, `/tau ask`, etc.)
-in their Discord server. A concierge agent handles incoming messages, answers
+in their Discord server. A consultant agent handles incoming messages, answers
 questions, and forwards action requests to squad managers.
 
 ## Who Uses This
 
-This is primarily a **System Manager / Concierge** skill — either agent can walk
+This is primarily a **System Manager** skill — either agent can walk
 the human through setup. All steps are instance-level. Squad managers do not
 need this — squad linking is configured in the channel instance (Step 7).
 
@@ -171,7 +171,7 @@ Ask the human to test in their Discord server:
 
 1. Type `/tau help` — should show available commands and linked squads
 2. Type `/tau status` — should show active work streams
-3. Type `/tau ask How are you?` — should get a response from the concierge
+3. Type `/tau ask How are you?` — should get a response from the consultant
 
 ## Optional: Channel-to-Squad Mapping
 
@@ -188,5 +188,5 @@ This can be configured via the Settings UI under the channel instance settings.
 | Interactions endpoint fails      | Verify `DISCORD_PUBLIC_KEY` matches, API is reachable          |
 | Commands not appearing           | Wait up to 1 hour for global commands, or set `DISCORD_GUILD_ID` |
 | Bot doesn't respond              | Check `DISCORD_BOT_TOKEN` is valid, bot is invited to server   |
-| "Thinking..." never goes away    | Check API logs for errors in concierge execution               |
+| "Thinking..." never goes away    | Check API logs for errors in consultant execution               |
 | Thread replies not working       | Verify **Message Content Intent** is enabled in bot settings   |

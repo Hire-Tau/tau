@@ -98,13 +98,7 @@ const log = createLogger('runner')
 const STRANDED_PENDING_RETRY_BUDGET = 3
 
 /** Supported agent runners */
-export type AgentRunnerType =
-  | 'system-manager'
-  | 'squad-manager'
-  | 'squad-worker'
-  | 'concierge'
-  | 'artifact-builder'
-  | 'subagent'
+export type AgentRunnerType = 'system-manager' | 'squad-manager' | 'squad-worker' | 'artifact-builder' | 'subagent'
 
 export function getSquadAgentTypeSkills(metadata: unknown, agentTypeId: string): string[] {
   if (!metadata || typeof metadata !== 'object') return []
@@ -563,7 +557,7 @@ export abstract class AgentRunner {
   /**
    * The AgentSession.create fields shared by every runner. `model` defaults to
    * the agent's effective spec for its type; runners with bespoke resolution
-   * (concierge, system-manager) pass their own.
+   * (consultant, system-manager) pass their own.
    *
    * Tool policy is split: the runner decides what it CAN offer (`core` +
    * `available`), the agent type's YAML decides what this type GETS — its

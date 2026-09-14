@@ -40,6 +40,7 @@ import { squadsRouter } from './routes/squads'
 import { slotResourcesRouter, slotsRouter } from './routes/slots'
 import { activityRouter } from './routes/activity'
 import { deploymentsRouter } from './routes/deployments'
+import { channelLinksRouter } from './routes/channel-links'
 import { channelInstancesRouter } from './routes/channel-instances'
 import { terminalRouter } from './routes/terminal'
 import { squadRelationshipsRouter } from './routes/squad-relationships'
@@ -304,6 +305,7 @@ app.route('/api/activity', activityRouter)
 app.route('/api/integrations', createIntegrationsRouter(integrationRoutesService))
 app.route('/api/squads', createSquadIntegrationsRouter(squadIntegrationRoutesService))
 app.route('/api', deploymentsRouter)
+app.route('/api/channel-links', channelLinksRouter)
 app.route('/api/channel-instances', channelInstancesRouter)
 app.route('/api/squad-relationships', squadRelationshipsRouter)
 app.route('/api/workstreams', workStreamsRouter)
@@ -799,11 +801,30 @@ if (import.meta.main) {
       )
       await settingsStore.startCrossProcessInvalidation()
 
-      settingsStore.onChange(async (key) => {
-        if (key === '__integration-enabled:discord') {
+      // Channel connections: the transports read a snapshot; provider-side
+      // setup (Telegram webhook, Discord slash commands, the gateway) follows
+      // it. Refresh on the provider switches, after local saves, and on a timer.
+      const { channelConnections } = await import('./services/integrations/channels/connections')
+      const { ChannelLifecycle } = await import('./services/integrations/channels/lifecycle')
+      const { isChannelEnabledSettingKey } = await import('./services/integrations/channels/settings')
+      const channelLifecycle = new ChannelLifecycle({
+        connections: channelConnections,
+        onDiscordChange: () => {
           stopDiscordGateway()
           startDiscordGateway()
-        }
+        },
+      })
+      channelConnections.onChange(() => channelLifecycle.reconcile())
+      await channelConnections.refresh()
+      const { createPeriodicRunner } = await import('./lib/infra/PeriodicRunner')
+      createPeriodicRunner({
+        name: 'channel-connections-refresh',
+        intervalMs: 30_000,
+        task: () => channelConnections.refresh(),
+      }).start()
+
+      settingsStore.onChange(async (key) => {
+        if (isChannelEnabledSettingKey(key)) await channelConnections.refresh()
         if (key === PROVIDER_HEALTH_STATE_KEY) await providerHealth.hydrateFromPersistence()
       })
 
@@ -896,7 +917,7 @@ if (import.meta.main) {
       }
 
       // React to settings changes
-      settingsStore.onChange(async (key, value) => {
+      settingsStore.onChange(async (key) => {
         if (key === 'EMBEDDINGS_ENABLED' || key === OPENAI_SERVICES_ENABLED_KEY) {
           const enabled = settingsStore.getTyped('EMBEDDINGS_ENABLED') as boolean
           const hasKey = !!getOpenAIServiceKey()
@@ -910,12 +931,13 @@ if (import.meta.main) {
         }
       })
 
-      // React to API key changes
-      getSecretStore().onChange(async (key, value) => {
-        if (key === 'DISCORD_BOT_TOKEN') {
-          stopDiscordGateway()
-          startDiscordGateway()
-        }
+      // React to API key changes. Legacy chat-bot keys flow through the
+      // channel snapshot (the lifecycle restarts the Discord gateway on a
+      // revision change), so refresh it rather than restarting here.
+      const { channelConnections, isLegacyChannelCredentialKey } =
+        await import('./services/integrations/channels/connections')
+      getSecretStore().onChange(async (key) => {
+        if (isLegacyChannelCredentialKey(key)) await channelConnections.refresh()
         await regenerateEnvFilesForSecretKey(key)
 
         if (key === 'OPENAI_API_KEY') {

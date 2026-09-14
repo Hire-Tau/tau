@@ -12,7 +12,7 @@ import { consultantScratchPath, consultantSandboxSquadId } from '../../services/
  * - **Squad agents**: a private box (where `bash` runs) PLUS the shared squad
  *   workspace. squad-manager / squad-worker get `squad_bash` (the shared squad
  *   warm box); subagents inherit it only when the parent actually exposed it;
- *   concierge does not.
+ *   a restricted custom agent may not.
  *
  * Pass the capabilities the runner actually wired up; the prompt then describes
  * exactly the areas and tools that agent has — nothing it lacks.
@@ -229,7 +229,7 @@ export function buildWorkspacePrompt(opts: WorkspacePromptOptions = {}): string 
       ''
     )
   } else if (workspaceMount && vm) {
-    // Squad agent without squad_bash (for example concierge) on the vm runtime.
+    // Squad agent without squad_bash (for example a restricted custom agent) on the vm runtime.
     if (hasBash || fileTools.length > 0) {
       out.push(
         `${hasBash ? `\`bash\` runs in the inherited private box; it sees ONLY \`${priv}\` and CANNOT see \`${workspaceMount}\`.` : 'You have no shell tool.'}${fileTools.length > 0 ? ` ${fileToolList} DO reach \`${workspaceMount}\` by absolute path.` : ''} You have no shared-runtime bash and cannot execute commands in the shared workspace.`,
@@ -237,7 +237,7 @@ export function buildWorkspacePrompt(opts: WorkspacePromptOptions = {}): string 
       )
     }
   } else if (workspaceMount && (hasBash || fileTools.length > 0)) {
-    // Squad agent without squad_bash (for example concierge).
+    // Squad agent without squad_bash (for example a restricted custom agent).
     out.push(
       `${hasBash ? `You have a single \`bash\`, running in the inherited private sandbox; it can reach \`${priv}\` and \`${workspaceMount}\`.` : 'You have no shell tool.'}${fileTools.length > 0 ? ` ${fileToolList} can reach both areas by absolute path.` : ''} You do not have a separate shared-runtime bash.`,
       ''

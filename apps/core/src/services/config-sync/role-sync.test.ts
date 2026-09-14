@@ -15,7 +15,7 @@ describe('RoleSync', () => {
 
   test('loads and syncs all default roles from config/roles/defaults.yaml', async () => {
     const result = await sync.sync()
-    expect(result.synced).toBeGreaterThanOrEqual(6) // admin, operator, viewer, default-worker, default-manager, default-concierge
+    expect(result.synced).toBeGreaterThanOrEqual(5) // admin, operator, viewer, default-worker, default-manager
     expect(result.skipped).toBe(0)
 
     const rows = await db.select().from(roles)

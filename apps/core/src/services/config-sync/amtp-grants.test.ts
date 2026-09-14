@@ -21,7 +21,7 @@ function rolePermissions(slug: string): string[] {
 }
 
 // Agent federation grants live on the per-agent-type ROLES (roleSlugForAgentType maps
-// manager/consultant -> default-manager, concierge -> default-concierge, everything else
+// manager/consultant -> default-manager, everything else
 // -> default-worker), NOT on per-agent-type extra scopes. This keeps engineer/worker (which
 // share default-worker) federation-free without a leaky role grant.
 describe('amtp grants (D6)', () => {
@@ -30,13 +30,6 @@ describe('amtp grants (D6)', () => {
     expect(perms).toContain('amtp:read')
     expect(perms).toContain('amtp:register')
     expect(perms).toContain('amtp:send')
-  })
-
-  test('default-concierge role grants amtp register + send, but NOT read', () => {
-    const perms = rolePermissions('default-concierge')
-    expect(perms).toContain('amtp:register')
-    expect(perms).toContain('amtp:send')
-    expect(perms).not.toContain('amtp:read')
   })
 
   test('default-worker role (engineer/worker map here) grants NO amtp scopes', () => {
@@ -51,14 +44,14 @@ describe('amtp grants (D6)', () => {
   })
 
   test('agent-type YAMLs carry NO amtp extra scopes (moved to roles)', () => {
-    // manager/concierge federate via their roles; engineer (default-worker) does not.
-    for (const file of ['manager.yaml', 'engineer.yaml', 'concierge.yaml']) {
+    // manager/consultant federate via their roles; engineer (default-worker) does not.
+    for (const file of ['manager.yaml', 'engineer.yaml', 'consultant.yaml']) {
       expect(scopesOf(file).filter((s) => s.startsWith('amtp:'))).toEqual([])
     }
   })
 
   test('all amtp permissions granted in roles are valid Permissions constants', () => {
-    for (const slug of ['default-manager', 'default-concierge', 'operator']) {
+    for (const slug of ['default-manager', 'operator']) {
       for (const p of rolePermissions(slug).filter((s) => s.startsWith('amtp:'))) {
         expect(ALL_PERMISSIONS).toContain(p)
       }

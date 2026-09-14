@@ -15,7 +15,7 @@ Budget ~20 minutes for the happy path.
 - **Operator access** (a login with `amtp:write`/`read`) on both instances —
   for the web UI and, optionally, an operator-authenticated CLI.
 - **One agent on each instance** whose agent-type can federate — **manager** or
-  **concierge** (federation lives on the `default-manager` / `default-concierge` roles;
+  **consultant** (federation lives on the `default-manager` roles;
   engineer/worker and system-managers cannot federate). We use **`alice` on A** (the
   sender) and **`bob` on B** (the recipient).
 
@@ -190,7 +190,7 @@ agent. Use principal `any` to accept all senders from a given peer.
 | `403` key mismatch on send                                                    | The recipient pinned a different key for this handle (e.g. the agent was recreated → new identity). No rotation this release.                                                                      |
 | `400 agentSig verification failed` after an operator re-registered the handle | The delivered private key does not match the recorded identity. Do not copy, delete, regenerate, or reuse identity keys, and do not clear TOFU pins. Contact an operator for coordinated recovery. |
 | Attachment send fails `400`                                                   | Known edge case: attachment filenames containing a double-quote currently fail closed. Rename the file.                                                                                            |
-| `tau remote peers` says "operator-only"                                       | Expected for worker/concierge agents (no `amtp:read`) — ask an operator for valid `amtp://` targets.                                                                                               |
+| `tau remote peers` says "operator-only"                                       | Expected for worker agents (no `amtp:read`) — ask an operator for valid `amtp://` targets.                                                                                               |
 
 ## Teardown
 

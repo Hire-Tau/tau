@@ -12,7 +12,6 @@ function instance(overrides: Partial<ChannelInstance> = {}): ChannelInstance {
     providerConfig: {},
     channelSquadMap: {},
     defaultSquadId: null,
-    conciergeAgentId: null,
     yamlTemplate: null,
     yamlFieldOverrides: [],
     disabled: false,
@@ -50,10 +49,10 @@ describe('ChannelInstance.resolveTargetSquadOrThrow', () => {
   })
 })
 
-describe('ChannelInstance.buildConciergeInboxMessage', () => {
+describe('ChannelInstance.buildChannelInboxMessage', () => {
   it('includes Slack current-thread context and ingest command guidance', async () => {
     const inst = instance()
-    const content = await (inst as any).buildConciergeInboxMessage(
+    const content = await (inst as any).buildChannelInboxMessage(
       {
         command: 'mention',
         content: 'index this thread',
@@ -71,8 +70,7 @@ describe('ChannelInstance.buildConciergeInboxMessage', () => {
           },
         },
       },
-      'squad-1',
-      'agent-12345678'
+      'squad-1'
     )
 
     expect(content).toContain('Channel context (Slack)')
@@ -84,18 +82,19 @@ describe('ChannelInstance.buildConciergeInboxMessage', () => {
 
   it('omits Slack current-thread context for non-Slack inbound', async () => {
     const inst = instance({ provider: 'discord' })
-    const content = await (inst as any).buildConciergeInboxMessage(
+    const content = await (inst as any).buildChannelInboxMessage(
       {
         command: 'mention',
         content: 'hello',
         user: { id: 'u1', name: 'User' },
         responseContext: { provider: 'discord', channelId: 'D1' },
       },
-      null,
-      'agent-12345678'
+      null
     )
 
-    expect(content).not.toContain('Channel context (Slack)')
+    expect(content).toBe('**Discord from User:** "hello"')
+    expect(content).not.toContain('Target squad')
+    expect(content).not.toContain('Your agent ID')
   })
 })
 

@@ -25,6 +25,11 @@ export interface ChannelEvent {
 
   /** Channel/conversation ID */
   channelId: string
+  /** Verified parent channel ID for providers whose threads are separate channels. */
+  routingChannelId?: string
+
+  /** Verified one-to-one conversation with the bot, never a group DM or private channel. */
+  isDirectMessage?: boolean
 
   /** User who triggered the event */
   user: {
@@ -91,7 +96,7 @@ export interface ThreadContext {
 }
 
 /**
- * Inbound message from a channel (for queueing to concierge).
+ * Inbound message from a channel (for queueing to consultant).
  */
 export interface InboundMessage {
   command: string
@@ -109,6 +114,7 @@ export interface InboundMessage {
  * Response context passed through the system.
  */
 export interface ResponseContext {
+  routingChannelId?: string
   provider: string
   channelId: string
   threadId?: string
@@ -174,6 +180,10 @@ export interface ChannelInstanceYaml {
   name: string
   provider: string
   providerConfig?: ProviderConfig
+  trustedChannelIds?: string[]
+  allowedChannelIds?: string[]
+  deniedChannelIds?: string[]
+  allowPrivateChats?: boolean
   channelSquadMap?: Record<string, string>
   defaultSquadId?: string
 }
@@ -198,7 +208,7 @@ export interface ChannelProvider {
 
   /**
    * If true, this provider reuses a single agent/thread per chat (no real threads).
-   * Used by Telegram where all messages in a chat go to one concierge.
+   * Used by Telegram where all messages in a chat go to one consultant.
    */
   readonly reusesThreadForChat?: boolean
 
@@ -250,7 +260,12 @@ export interface ChannelProvider {
   /**
    * Post a message to a channel or thread.
    */
-  postMessage(opts: { channelId: string; text: string; threadId?: string }): Promise<PostMessageResult>
+  postMessage(opts: {
+    channelId: string
+    text: string
+    threadId?: string
+    replyToMessageId?: string
+  }): Promise<PostMessageResult>
 
   /**
    * Edit an existing message.

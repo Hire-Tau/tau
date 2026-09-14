@@ -12,7 +12,7 @@ skill covers creating a squad and configuring all its integrations.
 
 ## Who Uses This
 
-- **System Manager / Concierge** — Create squads during client onboarding or
+- **System Manager** — Create squads during client onboarding or
   when the human requests a new team.
 - **Squad Manager** — Configure integrations for their own squad (GitHub/Linear
   routing, notifications). Skip to the relevant section.

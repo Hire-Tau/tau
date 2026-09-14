@@ -123,7 +123,7 @@ export const amtpRouter = new Hono()
   })
   // Local consumer proxy for peer handle discovery (parent design §6.2). Gated
   // amtp:read OR amtp:send — discovery is most useful to senders
-  // (concierge holds send but not read). The server performs the instance-signed
+  // (custom roles may grant send without read). The server performs the instance-signed
   // GET; agents never hold the instance key.
   .get('/peers/:ref/handles', async (c) => {
     const identity: Identity | undefined = c.get('identity')

@@ -1720,7 +1720,7 @@ export const workStreamSubscriptions = pgTable(
   (table) => [primaryKey({ columns: [table.workStreamId, table.userId] })]
 )
 
-// Async agent questions. Managers/concierges/system-managers ask structured questions without
+// Async agent questions. Managers/consultants/system-managers ask structured questions without
 // halting (status stays open; the agent keeps working). Chat/history visibility follows canonical
 // agents:read on the agent; Action Center/push attention routes to durable direct recipients plus
 // compatible owners and authorized watchers. Answering delivers the answer to the agent as an inbox
@@ -2106,7 +2106,7 @@ export const sandboxProvisionRecoveries = pgTable(
 )
 
 // Channel Instances - external platform connections (Discord, Slack, Telegram, etc.)
-// Platform-level: concierge agents operate across multiple squads
+// Each external conversation is handled by a consultant in its routed squad.
 export const channelInstances = pgTable('channel_instances', {
   id: varchar('id', { length: 100 }).primaryKey(),
   name: varchar('name', { length: 255 }).notNull(),
@@ -2115,12 +2115,15 @@ export const channelInstances = pgTable('channel_instances', {
   // Provider-specific configuration (guildId for Discord, teamId for Slack, botId for Telegram, etc.)
   providerConfig: jsonb('provider_config').notNull().default({}),
 
+  // Only these exact provider channel IDs bypass linked-user authorization.
+  trustedChannelIds: jsonb('trusted_channel_ids').$type<string[]>().notNull().default([]),
+  allowedChannelIds: jsonb('allowed_channel_ids').$type<string[]>().notNull().default([]),
+  deniedChannelIds: jsonb('denied_channel_ids').$type<string[]>().notNull().default([]),
+  allowPrivateChats: boolean('allow_private_chats').notNull().default(true),
+
   // Multi-squad config
   channelSquadMap: jsonb('channel_squad_map').default({}), // channel_id → squad_id
   defaultSquadId: uuid('default_squad_id').references(() => squads.id, { onDelete: 'set null' }),
-
-  // Runtime state (set when concierge spawns)
-  conciergeAgentId: uuid('concierge_agent_id').references(() => agents.id, { onDelete: 'set null' }),
 
   yamlTemplate: jsonb('yaml_template'),
   yamlFieldOverrides: jsonb('yaml_field_overrides').notNull().default([]),
@@ -2155,6 +2158,71 @@ export const users = pgTable('users', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 })
 
+// An external sender is linked within a configured provider instance, never by display name.
+export const channelIdentityLinks = pgTable(
+  'channel_identity_links',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    instanceId: varchar('instance_id', { length: 100 })
+      .notNull()
+      .references(() => channelInstances.id, { onDelete: 'cascade' }),
+    identityScope: text('identity_scope').notNull(),
+    externalUserId: text('external_user_id').notNull(),
+    externalUserName: text('external_user_name').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('channel_identity_sender_unique').on(table.instanceId, table.externalUserId)]
+)
+
+// Private bot chats retain independent consultant histories for each linked user and squad.
+export const channelDirectChats = pgTable(
+  'channel_direct_chats',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    linkId: uuid('link_id')
+      .notNull()
+      .references(() => channelIdentityLinks.id, { onDelete: 'cascade' }),
+    channelId: text('channel_id').notNull(),
+    threadId: text('thread_id').notNull().default(''),
+    squadId: uuid('squad_id').references(() => squads.id, { onDelete: 'set null' }),
+  },
+  (table) => [unique('channel_direct_chat_identity_unique').on(table.linkId, table.channelId, table.threadId)]
+)
+
+export const channelDirectAgents = pgTable(
+  'channel_direct_agents',
+  {
+    chatId: uuid('chat_id')
+      .notNull()
+      .references(() => channelDirectChats.id, { onDelete: 'cascade' }),
+    squadId: uuid('squad_id')
+      .notNull()
+      .references(() => squads.id, { onDelete: 'cascade' }),
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+  },
+  (table) => [unique('channel_direct_agent_scope_unique').on(table.chatId, table.squadId)]
+)
+
+// The user starts in Tau, proves control in the provider, then confirms the sender in Tau.
+export const channelLinkChallenges = pgTable('channel_link_challenges', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  instanceId: varchar('instance_id', { length: 100 }).references(() => channelInstances.id, { onDelete: 'cascade' }),
+  identityScope: text('identity_scope'),
+  externalUserId: text('external_user_id'),
+  externalUserName: text('external_user_name'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 export const userCredentials = pgTable('user_credentials', {
   id: uuid('id').primaryKey().defaultRandom(),
   userId: uuid('user_id')
@@ -2185,7 +2253,7 @@ export const sessions = pgTable('sessions', {
  * otherwise — `role_assignments.subject_type` is always 'user' in practice, and
  * agents never get assignments at all (their permissions are derived from their
  * agent type in services/rbac/permissions.ts). Without this every human role
- * picker offers `default-worker` / `default-manager` / `default-concierge`,
+ * picker offers `default-worker` / `default-manager` / `default-manager`,
  * which are meaningless on a person.
  *
  * Deliberately a plain text column, not a pg enum: enums are painful to extend

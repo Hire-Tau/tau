@@ -2,7 +2,7 @@
 
 Ownership documents are Markdown files under `/memory/ownership/*.md` that provide canonical routing evidence for squad suggestions.
 
-See also [semantic routing](../../routing/semantic-routing.md) for how this evidence is scored and surfaced to concierges.
+See also [semantic routing](../../routing/semantic-routing.md) for how this evidence is scored and surfaced to consultants.
 
 ## Frontmatter contract
 

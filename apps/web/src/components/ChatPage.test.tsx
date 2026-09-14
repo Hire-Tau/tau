@@ -488,13 +488,13 @@ describe('ChatPage scope routing behavior', () => {
   })
 
   test('auto-selects the first eligible agent while preserving the selected scope', async () => {
-    mockAgentIds = ['concierge-agent']
-    mockAgentScopeTypes = { 'concierge-agent': 'concierge' }
-    const fixture = await renderChatRoute('/chat?scope=concierge', 1280)
+    mockAgentIds = ['squad-worker-agent']
+    mockAgentScopeTypes = { 'squad-worker-agent': 'squad-worker' }
+    const fixture = await renderChatRoute('/chat?scope=squad-worker', 1280)
     try {
-      expect(route(fixture.router)).toBe('/chat/concierge-agent?scope=concierge')
+      expect(route(fixture.router)).toBe('/chat/squad-worker-agent?scope=squad-worker')
       expect(fixture.navigations.map(({ route, action }) => ({ route, action }))).toEqual([
-        { route: '/chat/concierge-agent?scope=concierge', action: 'REPLACE' },
+        { route: '/chat/squad-worker-agent?scope=squad-worker', action: 'REPLACE' },
       ])
     } finally {
       await fixture.cleanup()
@@ -504,14 +504,14 @@ describe('ChatPage scope routing behavior', () => {
   test('changing scope clears the selected agent while preserving unrelated URL state', async () => {
     const fixture = await renderChatRoute('/chat/agent-1?scope=system-manager&view=info&fullscreen=1&keep=yes', 1280)
     try {
-      const conciergeButton = Array.from(fixture.rendered.container.querySelectorAll('button')).find(
-        (button) => button.textContent === 'Concierge'
+      const workerButton = Array.from(fixture.rendered.container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Squad Worker'
       )
-      expect(conciergeButton).toBeDefined()
+      expect(workerButton).toBeDefined()
 
-      await fixture.dom.act(async () => conciergeButton!.click())
+      await fixture.dom.act(async () => workerButton!.click())
 
-      expect(route(fixture.router)).toBe('/chat?scope=concierge&view=info&fullscreen=1&keep=yes')
+      expect(route(fixture.router)).toBe('/chat?scope=squad-worker&view=info&fullscreen=1&keep=yes')
       expect(fixture.navigations.at(-1)?.action).toBe('REPLACE')
     } finally {
       await fixture.cleanup()
@@ -519,24 +519,24 @@ describe('ChatPage scope routing behavior', () => {
   })
 
   test('auto-selects an eligible agent with the user-selected scope in the URL', async () => {
-    mockAgentIds = ['system-agent', 'concierge-agent']
+    mockAgentIds = ['system-agent', 'squad-worker-agent']
     mockAgentScopeTypes = {
       'system-agent': 'system-manager',
-      'concierge-agent': 'concierge',
+      'squad-worker-agent': 'squad-worker',
     }
     const fixture = await renderChatRoute('/chat/system-agent?scope=system-manager', 1280)
     try {
-      const conciergeButton = Array.from(fixture.rendered.container.querySelectorAll('button')).find(
-        (button) => button.textContent === 'Concierge'
+      const workerButton = Array.from(fixture.rendered.container.querySelectorAll('button')).find(
+        (button) => button.textContent === 'Squad Worker'
       )
-      expect(conciergeButton).toBeDefined()
+      expect(workerButton).toBeDefined()
 
-      await fixture.dom.act(async () => conciergeButton!.click())
+      await fixture.dom.act(async () => workerButton!.click())
 
-      expect(route(fixture.router)).toBe('/chat/concierge-agent?scope=concierge')
+      expect(route(fixture.router)).toBe('/chat/squad-worker-agent?scope=squad-worker')
       expect(fixture.navigations.map(({ route, action }) => ({ route, action }))).toEqual([
-        { route: '/chat?scope=concierge', action: 'REPLACE' },
-        { route: '/chat/concierge-agent?scope=concierge', action: 'REPLACE' },
+        { route: '/chat?scope=squad-worker', action: 'REPLACE' },
+        { route: '/chat/squad-worker-agent?scope=squad-worker', action: 'REPLACE' },
       ])
     } finally {
       await fixture.cleanup()
@@ -544,17 +544,17 @@ describe('ChatPage scope routing behavior', () => {
   })
 
   test('excludes agents whose declared scope is not recognized by ChatPage', async () => {
-    mockAgentIds = ['recognized-agent', 'unknown-agent', 'consultant-agent']
+    mockAgentIds = ['recognized-agent', 'unknown-agent', 'retired-agent']
     mockAgentScopeTypes = {
       'recognized-agent': 'system-manager',
       'unknown-agent': 'unrecognized-scope',
-      'consultant-agent': 'consultant',
+      'retired-agent': 'retired-scope',
     }
     const fixture = await renderChatRoute('/chat?scope=all', 375)
     try {
       expect(Boolean(fixture.rendered.container.querySelector('[title*="recognized-agent"]'))).toBe(true)
       expect(Boolean(fixture.rendered.container.querySelector('[title*="unknown-agent"]'))).toBe(false)
-      expect(Boolean(fixture.rendered.container.querySelector('[title*="consultant-agent"]'))).toBe(false)
+      expect(Boolean(fixture.rendered.container.querySelector('[title*="retired-agent"]'))).toBe(false)
       expect(fixture.navigations).toEqual([])
     } finally {
       await fixture.cleanup()
@@ -562,8 +562,8 @@ describe('ChatPage scope routing behavior', () => {
   })
 
   test('new system chat rejects a selected scope that cannot create that chat type', async () => {
-    mockAgentScopeTypes = { 'agent-1': 'concierge' }
-    const fixture = await renderChatRoute('/chat/agent-1?scope=concierge&keep=yes', 1280)
+    mockAgentScopeTypes = { 'agent-1': 'squad-worker' }
+    const fixture = await renderChatRoute('/chat/agent-1?scope=squad-worker&keep=yes', 1280)
     try {
       const newChatButton = Array.from(fixture.rendered.container.querySelectorAll('button')).find(
         (button) => button.textContent === 'New System Chat'

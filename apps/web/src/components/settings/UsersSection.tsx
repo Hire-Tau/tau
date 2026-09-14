@@ -36,7 +36,7 @@ export function UsersSection() {
   // `users.length` here, which would count disabled accounts as paid seats.
   const { data: seatData } = useQuery(queries.users.seatPricing())
   const seatPricing = seatData?.pricing ?? null
-  // Agent roles (default-worker/-manager/-concierge) are derived from an agent's
+  // Agent roles (default-worker/-manager/-consultant) are derived from an agent's
   // type and can't be held by a person, so they never belong in a human picker.
   const assignableRoles = roles.filter(isUserAssignableRole)
   const [showInvite, setShowInvite] = useState(false)

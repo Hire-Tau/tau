@@ -8,7 +8,7 @@ import { createSetAgentPurposeTool } from './agent-purpose'
 
 const testAgentTypeId = 'agent-purpose-test'
 const managerAgentTypeId = 'manager'
-const conciergeAgentTypeId = 'concierge'
+const consultantAgentTypeId = 'consultant'
 const systemManagerAgentTypeId = 'system-manager'
 const testSquadId = '00000000-0000-4000-8000-000000000001'
 
@@ -79,12 +79,12 @@ describe('createSetAgentPurposeTool', () => {
     }
   })
 
-  it('allows concierges and system managers', async () => {
+  it('allows consultants and system managers', async () => {
     await AgentType.upsert({
-      id: conciergeAgentTypeId,
+      id: consultantAgentTypeId,
       model: 'anthropic:claude-sonnet-4-5',
-      name: 'Concierge',
-      systemPrompt: 'You are a concierge.',
+      name: 'Consultant',
+      systemPrompt: 'You are a consultant.',
     })
     await AgentType.upsert({
       id: systemManagerAgentTypeId,
@@ -92,11 +92,11 @@ describe('createSetAgentPurposeTool', () => {
       name: 'System Manager',
       systemPrompt: 'You are a system manager.',
     })
-    const concierge = await Agent.create({ agentTypeId: conciergeAgentTypeId, name: 'Cora' })
+    const consultant = await Agent.create({ agentTypeId: consultantAgentTypeId, squadId: testSquadId, name: 'Cora' })
     const systemManager = await Agent.create({ agentTypeId: systemManagerAgentTypeId, name: 'Nova' })
 
     try {
-      await createSetAgentPurposeTool({ agentId: concierge.id }).execute(
+      await createSetAgentPurposeTool({ agentId: consultant.id }).execute(
         'call-1',
         { purpose: 'Route requests' },
         undefined,
@@ -111,12 +111,13 @@ describe('createSetAgentPurposeTool', () => {
         {} as any
       )
 
-      await concierge.reload()
+      await consultant.reload()
       await systemManager.reload()
-      expect(concierge.metadata?.purpose).toBe('Route requests')
+      expect(consultant.metadata?.purpose).toBe('Route requests')
       expect(systemManager.metadata?.purpose).toBe('Coordinate squads')
     } finally {
-      await concierge.delete()
+      await consultant.update({ squadId: null } as any)
+      await consultant.delete()
       await systemManager.delete()
     }
   })
