@@ -192,6 +192,8 @@ export class WebSocketManager {
     else if (topic === 'agents' && event === 'sandbox.status' && typeof payload.sandboxId === 'string') {
       if (payload.sandboxId.startsWith('agent_')) {
         scope = await agentTopicScope(payload.sandboxId.slice('agent_'.length))
+      } else if (payload.sandboxId.startsWith('consultants_')) {
+        scope = { kind: 'squad', squadId: payload.sandboxId.slice('consultants_'.length) }
       } else if (payload.sandboxId.startsWith('system_manager_')) {
         scope = { kind: 'owner', ownerUserId: payload.sandboxId.slice('system_manager_'.length) }
       }

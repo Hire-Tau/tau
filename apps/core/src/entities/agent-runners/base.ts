@@ -1,3 +1,5 @@
+import { consultantSandboxSquadId, consultantScratchPath } from '../../services/sandbox/consultant-sandbox'
+import { resolveWorkspaceLayout } from '../../services/sandbox/workspace-layout'
 import { messageTextForModel } from '../../services/chat/message-context'
 import { existsSync, readFileSync } from 'fs'
 import { markExecutionStartupFailure } from '../../services/execution/startup-retry'
@@ -524,6 +526,16 @@ export abstract class AgentRunner {
    * exists. Every caller must include it conditionally.
    */
   protected async buildSessionToolkit(opts: { workspacePath: string; sandboxId: string; squadId?: string }) {
+    if (consultantSandboxSquadId(opts.sandboxId)) {
+      const { getSandboxManager } = await import('../../services/sandbox/factory')
+      const root = resolveWorkspaceLayout({ sandboxId: opts.sandboxId }).privateMount
+      await getSandboxManager().exec(opts.sandboxId, [
+        'mkdir',
+        '-p',
+        '--',
+        consultantScratchPath(root, opts.sandboxId, this.agent.id),
+      ])
+    }
     const tauToken = await this.agent.getOrCreateToken()
     // The agent id is passed explicitly, not derived from the sandbox id: a
     // system-manager's box is `system_manager_<ownerUserId>` and a descendant can

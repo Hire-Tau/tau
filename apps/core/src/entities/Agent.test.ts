@@ -2038,6 +2038,18 @@ describe('agents service', () => {
   })
 
   describe('Agent.getSandboxId', () => {
+    it('shares consultant runtimes per squad, including existing chats, without sharing cleanup ownership', async () => {
+      const make = (id: string, squadId: string) => new Agent({ id, agentTypeId: 'consultant', squadId } as any)
+      const first = make('first', 'squad-one')
+      const second = make('second', 'squad-one')
+      expect(await first.getSandboxId()).toBe('consultants_squad-one')
+      expect(await second.getSandboxId()).toBe(await first.getSandboxId())
+      expect(await make('third', 'squad-two').getSandboxId()).not.toBe(await first.getSandboxId())
+      // Old per-agent storage can still be retired; the shared runtime cannot.
+      expect(first.getPersonalSandboxIdForCleanup()).toBe('agent_first')
+      expect(second.getPersonalSandboxIdForCleanup()).toBe('agent_second')
+    })
+
     it('returns the per-user shared sandbox for system-manager agents', async () => {
       const agent = new Agent({
         id: 'agent-1',

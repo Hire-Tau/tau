@@ -1,3 +1,4 @@
+import { consultantSandboxSquadId } from './consultant-sandbox'
 import { isLiveAgentStatus, WORK_STREAM_ADMITTED_STATUSES } from '@tau/shared'
 import type { Agent } from '../../entities/Agent'
 import { findAgentLifecycleState } from '../../entities/agent-queries'
@@ -169,7 +170,7 @@ export async function ensureAgentSandbox(
     // ordering against. System-managers share one sandbox + /private per user;
     // skip federation identity (same guard as the non-squad branch below, so
     // the invariant holds regardless of squadId).
-    if (agent.agentTypeId !== 'system-manager') {
+    if (agent.agentTypeId !== 'system-manager' && !consultantSandboxSquadId(sandboxId)) {
       const { ensureAgentIdentity } = await import('../amtp/agent-identity')
       await ensureAgentIdentity(agent, sandboxId)
     }
@@ -181,7 +182,7 @@ export async function ensureAgentSandbox(
       onLifecycleGenerationResolved: (generation) => (ensuredGeneration = generation),
       // vm runtime: honor an explicit machine pin on the agent's own light box
       // (explicit pin wins over squad-per-VM placement). Ignored by k8s/docker.
-      machineId: agent.machineId ?? undefined,
+      machineId: consultantSandboxSquadId(sandboxId) ? undefined : (agent.machineId ?? undefined),
       boxLiveness,
     })
     if (
@@ -205,7 +206,7 @@ export async function ensureAgentSandbox(
   // redundancy with ensure.ts's own generation are both intentional).
   // System-managers share one sandbox + /private per user, so their identity
   // key is not unique per agent row. Skip federation identity for them.
-  if (agent.agentTypeId !== 'system-manager') {
+  if (agent.agentTypeId !== 'system-manager' && !consultantSandboxSquadId(sandboxId)) {
     const { ensureAgentIdentity } = await import('../amtp/agent-identity')
     await ensureAgentIdentity(agent, sandboxId)
   }
@@ -217,7 +218,7 @@ export async function ensureAgentSandbox(
     workspaceId: sandboxId,
     onLifecycleGenerationResolved: (generation) => (ensuredGeneration = generation),
     // vm runtime: honor an explicit machine pin on the solo agent's box.
-    machineId: agent.machineId ?? undefined,
+    machineId: consultantSandboxSquadId(sandboxId) ? undefined : (agent.machineId ?? undefined),
     boxLiveness,
   })
   if (!(await warmupLifecycleFenceIsCurrent(agent.id, { generation: ensuredGeneration }, compareLifecycleGeneration))) {

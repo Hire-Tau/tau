@@ -1896,3 +1896,34 @@ describe('VM idempotent file transport recovery', () => {
     })
   })
 })
+
+test('concurrent consultant commands share a client but retain distinct tokens, scratch roots, and invocation owners', async () => {
+  const requests: Array<{ cwd: string; env: Record<string, string>; invocationId: string }> = []
+  const manager = {
+    getClientForSandbox: () => ({
+      bash: (request: (typeof requests)[number]) => {
+        requests.push(request)
+        const stream = createMockStream()
+        queueMicrotask(() => {
+          stream.emitData({ exitCode: 0 })
+          stream.emitEnd()
+        })
+        return stream
+      },
+    }),
+    podManager: { namespace: 'tau-sandboxes' },
+  } as unknown as K8sSandboxManager
+  const sandboxId = 'consultants_squad-one'
+  const tools = ['one', 'two'].map(
+    (id) =>
+      createK8sSandboxedCodingTools('/ignored', sandboxId, manager, `token-${id}`, 'squad-one', `exec-${id}`, id).find(
+        (tool) => tool.key === 'bash'
+      )!
+  )
+  await Promise.all(tools.map((tool) => tool.execute('call', { command: 'pwd' })))
+  expect(requests.map((request) => request.env.TAU_TOKEN).sort()).toEqual(['token-one', 'token-two'])
+  expect(requests.map((request) => request.cwd).sort()).toEqual(
+    ['one', 'two'].map((id) => resolveAgentBashCwd(sandboxId, id)).sort()
+  )
+  expect(new Set(requests.map((request) => request.invocationId)).size).toBe(2)
+})

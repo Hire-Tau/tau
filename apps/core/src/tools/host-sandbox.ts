@@ -149,7 +149,7 @@ export function createHostSandboxedCodingTools(
   agentId?: string
 ): SandboxedToolWithKey[] {
   const workRoot = resolveContainerWorkRoot({ squadId, sandboxId })
-  const bashCwd = resolveAgentBashCwd(sandboxId)
+  const bashCwd = resolveAgentBashCwd(sandboxId, agentId)
   const read = enforceAbsolutePaths(createReadTool(workRoot) as AgentTool<any>, workRoot)
   const write = enforceAbsolutePaths(createWriteTool(workRoot) as AgentTool<any>, workRoot)
   const edit = enforceAbsolutePaths(createVerifiedEditTool(workRoot, createLocalVerifiedEditOperations()), workRoot)

@@ -156,6 +156,7 @@ export class SquadManagerRunner extends AgentRunner {
       .text(typePrompt)
       .text(
         buildWorkspacePrompt({
+          agentId: this.agent.id,
           squadId: this.squad.id,
           squadName: this.squad.name,
           sandboxId,

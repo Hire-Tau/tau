@@ -202,6 +202,7 @@ export class SubagentRunner extends AgentRunner {
     const p = prompt().text(typePrompt)
     p.text(
       buildWorkspacePrompt({
+        agentId: this.agent.id,
         squadId: this.agent.squadId ?? undefined,
         squadName: squad?.name,
         sandboxId,

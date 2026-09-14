@@ -151,19 +151,35 @@ export function createCodingTools(
   const runtime = requireSandboxRuntime()
   if (isK8sRuntimeValue(runtime)) {
     const manager = getK8sManager() as K8sSandboxManager
-    return createK8sSandboxedCodingTools(workspacePath, sandboxId, manager, tauToken, squadId, invocationOwnerId)
+    return createK8sSandboxedCodingTools(
+      workspacePath,
+      sandboxId,
+      manager,
+      tauToken,
+      squadId,
+      invocationOwnerId,
+      agentId
+    )
   }
   if (isVmRuntimeValue(runtime)) {
     // The vm manager mirrors the k8s client-based tool surface (getClientForSandbox,
     // getSandboxStatus, resolveToolApiUrl), so it reuses the same HTTP tool path.
     const manager = getVmManager() as VmSandboxManager
-    return createK8sSandboxedCodingTools(workspacePath, sandboxId, manager, tauToken, squadId, invocationOwnerId)
+    return createK8sSandboxedCodingTools(
+      workspacePath,
+      sandboxId,
+      manager,
+      tauToken,
+      squadId,
+      invocationOwnerId,
+      agentId
+    )
   }
   if (isHostRuntimeValue(runtime)) {
     return createHostSandboxedCodingTools(workspacePath, sandboxId, tauToken, squadId, invocationOwnerId, agentId)
   }
   if (isDockerRuntimeValue(runtime)) {
-    return createDockerSandboxedCodingTools(workspacePath, sandboxId, tauToken, squadId, invocationOwnerId)
+    return createDockerSandboxedCodingTools(workspacePath, sandboxId, tauToken, squadId, invocationOwnerId, agentId)
   }
   // Unreachable: requireSandboxRuntime above returns one of exactly five values,
   // and all five are named. Present so adding a sixth is a compile/runtime

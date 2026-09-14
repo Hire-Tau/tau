@@ -1,3 +1,4 @@
+import { consultantSandboxSquadId } from '../sandbox/consultant-sandbox'
 import type { AgentStatus } from '@tau/shared'
 import { Agent } from '../../entities/Agent'
 import { Squad } from '../../entities/Squad'
@@ -254,9 +255,9 @@ export async function isOwnerTerminated(
     const agent = await loadAgent(sandboxId.slice('agent_'.length))
     return !agent || agent.status === 'terminated'
   }
-  if (sandboxId.startsWith('squad_')) {
+  if (sandboxId.startsWith('squad_') || consultantSandboxSquadId(sandboxId)) {
     const loadSquad = deps.loadSquad ?? ((id: string) => Squad.find(id))
-    const squad = await loadSquad(sandboxId.slice('squad_'.length))
+    const squad = await loadSquad(consultantSandboxSquadId(sandboxId) ?? sandboxId.slice('squad_'.length))
     return !squad || squad.archivedAt != null
   }
   return false
