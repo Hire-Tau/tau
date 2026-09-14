@@ -1181,6 +1181,45 @@ export const workStreams = pgTable(
   ]
 )
 
+/** Server-owned creation provenance. Never derived from editable work-stream metadata. */
+export const workStreamWorktrees = pgTable(
+  'work_stream_worktrees',
+  {
+    workStreamId: uuid('work_stream_id')
+      .primaryKey()
+      .references(() => workStreams.id, { onDelete: 'cascade' }),
+    squadId: uuid('squad_id')
+      .notNull()
+      .references(() => squads.id, { onDelete: 'cascade' }),
+    ownership: jsonb('ownership')
+      .$type<import('../services/work-streams/repository-setup').WorktreeOwnership>()
+      .notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('idx_owned_worktree_path').on(table.squadId, sql`(${table.ownership}->>'worktree')`)]
+)
+
+/** Durable done-transition outbox; a removing operation is never released merely by lease expiry. */
+export const worktreeCleanupJobs = pgTable(
+  'worktree_cleanup_jobs',
+  {
+    workStreamId: uuid('work_stream_id')
+      .primaryKey()
+      .references(() => workStreams.id, { onDelete: 'cascade' }),
+    status: text('status')
+      .$type<'pending' | 'deferred' | 'skipped' | 'removing' | 'succeeded' | 'error'>()
+      .notNull()
+      .default('pending'),
+    reason: text('reason'),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at').notNull().defaultNow(),
+    operationId: uuid('operation_id'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [index('idx_worktree_cleanup_due').on(table.status, table.nextAttemptAt)]
+)
+
 // Prepared flows are not dispatched until execution integration activates them.
 export const workStreamFlowRuns = pgTable('work_stream_flow_runs', {
   activated: boolean('activated').notNull().default(false),

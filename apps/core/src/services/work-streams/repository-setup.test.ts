@@ -146,3 +146,26 @@ test('creates missing parent directories and preserves an existing feature branc
   )
   expect(metadata.git).toMatchObject({ worktree: join(root, 'nested/trees/feature'), branch: 'existing-feature' })
 })
+
+test('only newly platform-created worktrees produce an ownership receipt', async () => {
+  const receipts: unknown[] = []
+  const input = { repository: 'repo', branch: 'feature/owned', baseBranch: 'main' }
+  const metadata = await prepareRepository(exec, root, input, 'owned', {}, (receipt) => receipts.push(receipt))
+  expect(receipts).toHaveLength(1)
+  expect(receipts[0]).toEqual(
+    expect.objectContaining({
+      workspace: root,
+      repository: repo,
+      commonDirectory: join(repo, '.git'),
+      worktree: join(root, 'worktrees/owned'),
+      branch: 'feature/owned',
+    })
+  )
+  expect(receipts[0]).toHaveProperty('directoryIdentity', expect.stringMatching(/^\d+:\d+$/))
+  expect(receipts[0]).toHaveProperty('gitDirectory', expect.stringContaining('/.git/worktrees/'))
+  expect(metadata).not.toHaveProperty('ownership')
+  await prepareRepository(exec, root, input, 'owned', { ...metadata, ownership: receipts[0] }, (receipt) =>
+    receipts.push(receipt)
+  )
+  expect(receipts).toHaveLength(1)
+})

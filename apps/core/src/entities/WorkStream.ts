@@ -1,11 +1,15 @@
 import { isDeepStrictEqual } from 'node:util'
-import { RepositorySetupError, setupWorkStreamRepository } from '../services/work-streams/repository-setup'
+import {
+  RepositorySetupError,
+  setupWorkStreamRepository,
+  type WorktreeOwnership,
+} from '../services/work-streams/repository-setup'
 import { validateAssignedReviewers } from '../services/workflows/reviewers'
 import { resolveCreationWorkflow } from '../services/workflows/creation-source'
 import { notifyFlowWaitResolution } from '../services/work-streams/wait-scope'
 import { eq, desc, and, sql, inArray, type SQL } from 'drizzle-orm'
 import { db, squads, workStreams, uuidPrefixCondition, AmbiguousPrefixError } from '../db'
-import { executions, workStreamWaits, workStreamFlowRuns } from '../db/schema'
+import { executions, workStreamWaits, workStreamFlowRuns, workStreamWorktrees, worktreeCleanupJobs } from '../db/schema'
 import { WORK_STREAM_ADMITTED_STATUSES, workStreamSourceLinkKindSchema } from '@tau/shared'
 import type {
   WorkStream as WorkStreamJson,
@@ -578,8 +582,11 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     await validateMetadataSources(mergedMetadata)
     if (input.gitRemote && !input.repository) throw new RepositorySetupError('gitRemote requires repository')
     const streamId = crypto.randomUUID()
+    let ownership: WorktreeOwnership | undefined
     if (input.repository)
-      mergedMetadata = await setupWorkStreamRepository(input.squadId, input, streamId, mergedMetadata)
+      mergedMetadata = await setupWorkStreamRepository(input.squadId, input, streamId, mergedMetadata, (receipt) => {
+        ownership = receipt
+      })
 
     // An ownerless stream notifies NOBODY at creation (the owner notice below
     // requires an owner), so it sits idle until someone happens to look — the
@@ -619,6 +626,8 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
           metadata: mergedMetadata,
         })
         .returning()
+      if (ownership)
+        await tx.insert(workStreamWorktrees).values({ workStreamId: created.id, squadId: created.squadId, ownership })
       // System-maintained dependency waits: one open record per unsatisfied
       // dependency, in the same transaction as the edge write.
       if (created.dependsOn?.length) {
@@ -1083,7 +1092,8 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       //   waits are already settled (the open-waits guard above).
       // - canceled force-clears the stream's remaining open waits (abandonment
       //   discards conversations by design — spec §5).
-      if (updated.status === 'done' && previousStatus !== 'done') {
+      if (updated.status === 'done' && locked.status !== 'done') {
+        await tx.insert(worktreeCleanupJobs).values({ workStreamId: this.id }).onConflictDoNothing()
         await closeDependencyWaitsForCompletedStream(tx, this.id)
       }
       if (updated.status === 'canceled' && previousStatus !== 'canceled') {

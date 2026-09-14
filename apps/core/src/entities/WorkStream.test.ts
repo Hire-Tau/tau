@@ -1,3 +1,4 @@
+import * as schema from '../db/schema'
 import * as repositorySetup from '../services/work-streams/repository-setup'
 import { storedLegacyWorkStream } from '../test-utils/stored-legacy-work-stream'
 import { createBlankWorkflow } from '@tau/shared'
@@ -150,6 +151,75 @@ describe('WorkStream entity', () => {
     })
   })
 
+  it('records cleanup intent exactly once on a committed done transition, never on cancel', async () => {
+    expect(schema.worktreeCleanupJobs).toBeDefined()
+    const stream = await storedLegacyWorkStream({
+      squadId: testSquad.id,
+      title: 'cleanup outbox',
+      completionMode: 'deliverable',
+    })
+    await stream.update({ autoCleanupWorktree: true })
+    expect(
+      await db.select().from(schema.worktreeCleanupJobs).where(eq(schema.worktreeCleanupJobs.workStreamId, stream.id))
+    ).toHaveLength(0)
+    await stream.update({ status: 'done' })
+    const [intent] = await db
+      .select()
+      .from(schema.worktreeCleanupJobs)
+      .where(eq(schema.worktreeCleanupJobs.workStreamId, stream.id))
+    expect(intent).toMatchObject({ workStreamId: stream.id, status: 'pending', attempts: 0 })
+    await stream.update({ status: 'done' })
+    expect(
+      await db.select().from(schema.worktreeCleanupJobs).where(eq(schema.worktreeCleanupJobs.workStreamId, stream.id))
+    ).toEqual([intent])
+    const canceled = await storedLegacyWorkStream({ squadId: testSquad.id, title: 'never clean cancellation' })
+    await canceled.update({ autoCleanupWorktree: true })
+    await canceled.cancel()
+    expect(
+      await db.select().from(schema.worktreeCleanupJobs).where(eq(schema.worktreeCleanupJobs.workStreamId, canceled.id))
+    ).toHaveLength(0)
+  })
+
+  it('persists only server-observed ownership, not an editable metadata claim', async () => {
+    expect(schema.workStreamWorktrees).toBeDefined()
+    const ownership = {
+      workspace: '/workspace',
+      repository: '/workspace/repo',
+      commonDirectory: '/workspace/repo/.git',
+      gitDirectory: '/workspace/repo/.git/worktrees/owned',
+      worktree: '/workspace/owned',
+      directoryIdentity: '1:2',
+      branch: 'feature',
+    }
+    const setup = spyOn(repositorySetup, 'setupWorkStreamRepository').mockImplementation(
+      async (_squad, _input, _key, metadata, record) => {
+        record?.(ownership)
+        return {
+          ...metadata,
+          git: { repository: ownership.repository, worktree: ownership.worktree, branch: ownership.branch },
+        }
+      }
+    )
+    try {
+      const stream = await WorkStream.create({ squadId: testSquad.id, title: 'owned', repository: 'repo' })
+      const [registered] = await db
+        .select()
+        .from(schema.workStreamWorktrees)
+        .where(eq(schema.workStreamWorktrees.workStreamId, stream.id))
+      expect(registered).toMatchObject({ workStreamId: stream.id, squadId: testSquad.id, ownership })
+      const forged = await WorkStream.create({
+        squadId: testSquad.id,
+        title: 'forged',
+        metadata: { ownership, git: { worktree: ownership.worktree } },
+      })
+      expect(
+        await db.select().from(schema.workStreamWorktrees).where(eq(schema.workStreamWorktrees.workStreamId, forged.id))
+      ).toHaveLength(0)
+    } finally {
+      setup.mockRestore()
+    }
+  })
+
   describe('repository setup', () => {
     it('attaches prepared metadata before the first workflow dispatch', async () => {
       const metadata = {
@@ -163,7 +233,13 @@ describe('WorkStream entity', () => {
           title: `${testPrefix} setup`,
           repository: 'repo',
         })
-        expect(setup).toHaveBeenCalledWith(testSquad.id, expect.objectContaining({ repository: 'repo' }), stream.id, {})
+        expect(setup).toHaveBeenCalledWith(
+          testSquad.id,
+          expect.objectContaining({ repository: 'repo' }),
+          stream.id,
+          {},
+          expect.any(Function)
+        )
         expect(stream.metadata).toMatchObject(metadata)
         const stored = await WorkStream.mustFind(stream.id)
         expect(stored.metadata).toMatchObject(metadata)
