@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { StrictMode } from 'react'
 import { acquireDomHarness } from '../test/domHarness'
-import { onboardingQueryKeys, queryKeys } from '../queryKeys'
+import { onboardingQueryKeys, queryKeys, agentSlotWaitQueryKeys } from '../queryKeys'
 
 /**
  * QueryInvalidator is the single source of truth for WS-event-driven cache
@@ -126,15 +126,20 @@ describe('QueryInvalidator', () => {
 
     await dom.act(async () => render(true))
     await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 200)))
-    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(2)
+    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(3)
 
     await dom.act(async () => render(true))
-    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(2)
+    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(3)
 
     await dom.act(async () => render(false))
     await dom.act(async () => render(true))
     await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 200)))
-    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(4)
+    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(6)
+    expect(
+      fakeQueryClient.invalidateQueries.mock.calls.filter(
+        ([options]) => JSON.stringify(options.queryKey) === JSON.stringify(agentSlotWaitQueryKeys.all)
+      )
+    ).toHaveLength(2)
   })
 
   test.each([

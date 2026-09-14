@@ -1,3 +1,4 @@
+import { agentSlotWaitQueryKeys } from './queryKeys'
 import { channelLinkQueryKeys } from './queryKeys'
 import { getChannelLinks } from './api/channelLinks'
 import { listIntegrationOutputs } from './api/integrations'
@@ -19,6 +20,7 @@ import { getGlobalActivityPresence, listGlobalActivity } from './api/activity'
 // API functions
 import {
   listAgents,
+  getAgentSlotWaits,
   getAgent,
   getActiveExecution,
   getAgentContext,
@@ -135,6 +137,14 @@ export const queries = {
       queryOptions({ queryKey: queryKeys.workflows.run(id), queryFn: () => client.workflows.run(id) }),
   },
   agents: {
+    slotWaits: (squadId: string, agentId: string) =>
+      queryOptions({
+        queryKey: agentSlotWaitQueryKeys.agent(squadId, agentId),
+        queryFn: () => getAgentSlotWaits(agentId),
+        // Lifecycle frames and authenticated reconnects repair this projection.
+        // Do not poll or retain the previous agent's data across navigation.
+        retry: false,
+      }),
     list: (filters?: { agentTypeId?: string; scopeType?: string; scopeId?: string }) =>
       queryOptions({
         queryKey: queryKeys.agents.list(filters),

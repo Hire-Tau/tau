@@ -76,6 +76,7 @@ export type TopicEventMap = {
     keyof EventMap,
     | 'squad.created'
     | 'squad.updated'
+    | 'slots.updated'
     | 'squad.archived'
     | 'squad.taskAssigned'
     | 'squad.agentSpawned'

@@ -1,3 +1,4 @@
+import { eventEmitter } from '../../lib/infra/event-emitter'
 import { afterAll, afterEach, beforeAll, expect, setSystemTime, test } from 'bun:test'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { agents, db, executions, inbox, slotClaims, slotNotifications, slotPools, slotWaiters, squads } from '../../db'
@@ -13,8 +14,11 @@ afterAll(() => setSlotPromptDrainEnabledForTest(true))
 
 const squadIds: string[] = []
 const agentIds: string[] = []
+let unsubscribeSlots: (() => void) | undefined
 
 afterEach(async () => {
+  unsubscribeSlots?.()
+  unsubscribeSlots = undefined
   setSystemTime()
   setDormancyEffectHookForTest(undefined)
   const poolIds =
@@ -59,6 +63,10 @@ test('pending termination preserves capacity until dormant CAS then promotes exa
   if (held.outcome !== 'granted' || queued.outcome !== 'queued') throw new Error('bad fixture')
   const [execution] = await db.insert(executions).values({ agentId: holder!.id, status: 'running' }).returning()
   const projectedHolder = new Agent(holder!)
+  const events: string[] = []
+  unsubscribeSlots = eventEmitter.on('slots.updated', (data) => {
+    if (data.squadId === squad.id) events.push(data.squadId)
+  })
 
   await makeDormant(projectedHolder)
   expect((await Agent.mustFind(holder!.id)).status).not.toBe('dormant')
@@ -80,6 +88,7 @@ test('pending termination preserves capacity until dormant CAS then promotes exa
   await reconcileSlotsOnce()
 
   expect((await Agent.mustFind(holder!.id)).status).toBe('dormant')
+  expect(events).toEqual([squad.id])
   expect(
     await db
       .select()

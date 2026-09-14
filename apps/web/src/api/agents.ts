@@ -263,3 +263,13 @@ export interface AgentContext {
 export async function getAgentContext(agentId: string): Promise<AgentContext> {
   return apiFetch<AgentContext>(`/agents/${agentId}/context`)
 }
+
+export interface AgentSlotWait {
+  waiterId: string
+  poolKey: string
+  queuedAt: string
+}
+
+export function getAgentSlotWaits(agentId: string): Promise<AgentSlotWait[]> {
+  return apiFetch<AgentSlotWait[]>(`/agents/${agentId}/slot-waits`)
+}

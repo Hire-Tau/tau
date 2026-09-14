@@ -140,6 +140,8 @@ export type EventMap = {
   // Squad events
   'squad.created': { squadId: string }
   'squad.updated': { squadId: string }
+  /** Content-free invalidation; queue details require a separately authorized read. */
+  'slots.updated': { squadId: string }
   'squad.archived': { squadId: string }
   'squad.agentSpawned': { squadId: string; agentId: string }
 

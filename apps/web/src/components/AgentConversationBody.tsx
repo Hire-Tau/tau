@@ -1,3 +1,4 @@
+import { AgentSlotWaitStatus } from './AgentSlotWaitStatus'
 import clsx from 'clsx'
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '../reactQueryHooks'
@@ -124,134 +125,137 @@ export function AgentConversation({
           executionStatus === 'running' && waitingForSandbox ? 'waiting-sandbox' : executionStatus
         const executionStatusLabel = displayStatus === 'waiting-sandbox' ? 'Waiting for sandbox' : displayStatus
         return (
-          <div className="flex items-center justify-end md:justify-start gap-2">
-            {displayStatus && (
-              <Badge color={executionStatusBadgeColors[displayStatus]} className="text-[11px] py-px">
-                {executionStatusLabel}
-              </Badge>
-            )}
-            {usage?.context && (
-              <div
-                aria-label="Context used"
-                title="Context used"
-                className="hidden md:flex items-center gap-1.5 flex-1 min-w-0"
-              >
-                <span className="text-[10px] text-placeholder shrink-0 hidden sm:inline">Context</span>
-                <div className="flex-1 h-1 bg-surface-secondary rounded-full overflow-hidden min-w-[40px]">
-                  <div
-                    className={clsx(
-                      'h-full rounded-full transition-all',
-                      usage.context.percent > 80
-                        ? 'bg-red-400'
-                        : usage.context.percent > 50
-                          ? 'bg-yellow-400'
-                          : 'bg-blue-400'
-                    )}
-                    style={{ width: `${Math.min(usage.context.percent, 100)}%` }}
-                  />
-                </div>
-                <span className="text-[10px] text-placeholder tabular-nums shrink-0 hidden sm:inline">
-                  {Math.round(usage.context.percent)}% · {formatTokens(usage.stats.tokens.total)}
-                  {showUsageCost && <> · ${usage.stats.cost.toFixed(2)}</>}
-                </span>
-                <span className="text-[10px] text-placeholder tabular-nums shrink-0 sm:hidden">
-                  {Math.round(usage.context.percent)}%
-                </span>
-              </div>
-            )}
-            {usage?.context && (
-              <details className="relative md:hidden">
-                <summary
-                  aria-label={`Context used: ${Math.round(usage.context.percent)}%`}
-                  className="cursor-pointer list-none rounded px-2 py-1.5 text-xs text-muted hover:bg-surface-hover [&::-webkit-details-marker]:hidden"
+          <div className="min-w-0">
+            <div className="flex items-center justify-end md:justify-start gap-2">
+              {displayStatus && (
+                <Badge color={executionStatusBadgeColors[displayStatus]} className="text-[11px] py-px">
+                  {executionStatusLabel}
+                </Badge>
+              )}
+              {usage?.context && (
+                <div
+                  aria-label="Context used"
+                  title="Context used"
+                  className="hidden md:flex items-center gap-1.5 flex-1 min-w-0"
                 >
-                  {Math.round(usage.context.percent)}%
-                </summary>
-                <div className="tau-overlay absolute right-0 top-full z-20 mt-1 w-52 rounded-lg border border-th-border bg-surface p-3 text-xs text-secondary shadow-theme-lg">
-                  <p className="font-medium text-primary">Context used: {Math.round(usage.context.percent)}%</p>
-                  <p className="mt-1">
-                    {formatTokens(usage.stats.tokens.total)} tokens
+                  <span className="text-[10px] text-placeholder shrink-0 hidden sm:inline">Context</span>
+                  <div className="flex-1 h-1 bg-surface-secondary rounded-full overflow-hidden min-w-[40px]">
+                    <div
+                      className={clsx(
+                        'h-full rounded-full transition-all',
+                        usage.context.percent > 80
+                          ? 'bg-red-400'
+                          : usage.context.percent > 50
+                            ? 'bg-yellow-400'
+                            : 'bg-blue-400'
+                      )}
+                      style={{ width: `${Math.min(usage.context.percent, 100)}%` }}
+                    />
+                  </div>
+                  <span className="text-[10px] text-placeholder tabular-nums shrink-0 hidden sm:inline">
+                    {Math.round(usage.context.percent)}% · {formatTokens(usage.stats.tokens.total)}
                     {showUsageCost && <> · ${usage.stats.cost.toFixed(2)}</>}
-                  </p>
+                  </span>
+                  <span className="text-[10px] text-placeholder tabular-nums shrink-0 sm:hidden">
+                    {Math.round(usage.context.percent)}%
+                  </span>
                 </div>
-              </details>
-            )}
-            {canStopExecution && (
-              <div className="flex items-center gap-0.5 shrink-0">
-                <ConfirmButton
-                  onConfirm={() => stopMutation.mutate()}
-                  disabled={stopMutation.isPending || !canRunAgent}
-                  label="Stop"
-                  className="tau-button px-1.5 py-0.5 text-[11px] font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors"
-                  confirmClassName="px-1.5 py-0.5 text-[11px] font-medium text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 rounded transition-colors"
-                />
-              </div>
-            )}
-            {agent.status === 'idle' && !activeExecution?.active && !isTerminated && (
-              <>
-                <div className="hidden md:flex items-center gap-0.5 shrink-0">
-                  <ConfirmButton
-                    onConfirm={() => compactMutation.mutate()}
-                    disabled={compactMutation.isPending}
-                    label="Compact"
-                    className="tau-button px-1.5 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded transition-colors"
-                    confirmClassName="px-1.5 py-0.5 text-[11px] font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded transition-colors"
-                  />
-                  <ConfirmButton
-                    onConfirm={() => resetMutation.mutate()}
-                    disabled={resetMutation.isPending}
-                    label="Reset"
-                    className="tau-button px-1.5 py-0.5 text-[11px] font-medium text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/30 rounded transition-colors"
-                    confirmClassName="px-1.5 py-0.5 text-[11px] font-medium text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-900/30 hover:bg-orange-100 dark:hover:bg-orange-900/50 rounded transition-colors"
-                  />
-                </div>
-                <div className="md:hidden relative shrink-0">
-                  <button
-                    type="button"
-                    aria-label="Agent actions"
-                    aria-expanded={agentActionsOpen}
-                    onClick={() => setAgentActionsOpen((open) => !open)}
-                    className="tau-button p-1 text-muted hover:text-primary hover:bg-surface-hover rounded transition-colors"
+              )}
+              {usage?.context && (
+                <details className="relative md:hidden">
+                  <summary
+                    aria-label={`Context used: ${Math.round(usage.context.percent)}%`}
+                    className="cursor-pointer list-none rounded px-2 py-1.5 text-xs text-muted hover:bg-surface-hover [&::-webkit-details-marker]:hidden"
                   >
-                    <MoreIcon className="w-4 h-4" />
-                  </button>
-                  {agentActionsOpen && (
-                    <div className="absolute right-0 top-full mt-1 z-20 min-w-28 rounded-md border border-th-border bg-surface p-1 space-y-1">
-                      <ConfirmButton
-                        onConfirm={() => {
-                          compactMutation.mutate()
-                          setAgentActionsOpen(false)
-                        }}
-                        disabled={compactMutation.isPending}
-                        label="Compact"
-                        className="tau-button w-full text-left px-2 py-1 text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded transition-colors"
-                        confirmClassName="w-full text-left px-2 py-1 text-[11px] font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded transition-colors"
-                      />
-                      <ConfirmButton
-                        onConfirm={() => {
-                          resetMutation.mutate()
-                          setAgentActionsOpen(false)
-                        }}
-                        disabled={resetMutation.isPending}
-                        label="Reset"
-                        className="tau-button w-full text-left px-2 py-1 text-[11px] font-medium text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/30 rounded transition-colors"
-                        confirmClassName="w-full text-left px-2 py-1 text-[11px] font-medium text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-900/30 hover:bg-orange-100 dark:hover:bg-orange-900/50 rounded transition-colors"
-                      />
-                    </div>
-                  )}
+                    {Math.round(usage.context.percent)}%
+                  </summary>
+                  <div className="tau-overlay absolute right-0 top-full z-20 mt-1 w-52 rounded-lg border border-th-border bg-surface p-3 text-xs text-secondary shadow-theme-lg">
+                    <p className="font-medium text-primary">Context used: {Math.round(usage.context.percent)}%</p>
+                    <p className="mt-1">
+                      {formatTokens(usage.stats.tokens.total)} tokens
+                      {showUsageCost && <> · ${usage.stats.cost.toFixed(2)}</>}
+                    </p>
+                  </div>
+                </details>
+              )}
+              {canStopExecution && (
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <ConfirmButton
+                    onConfirm={() => stopMutation.mutate()}
+                    disabled={stopMutation.isPending || !canRunAgent}
+                    label="Stop"
+                    className="tau-button px-1.5 py-0.5 text-[11px] font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors"
+                    confirmClassName="px-1.5 py-0.5 text-[11px] font-medium text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 rounded transition-colors"
+                  />
                 </div>
-              </>
-            )}
-            {agent.status === 'compacting' && (
-              <span className={clsx('px-1.5 py-0.5 text-[11px] font-medium', agentAttentionStatus.textClass)}>
-                Compacting...
-              </span>
-            )}
-            {agent.status === 'resetting' && (
-              <span className={clsx('px-1.5 py-0.5 text-[11px] font-medium', agentAttentionStatus.textClass)}>
-                Resetting...
-              </span>
-            )}
+              )}
+              {agent.status === 'idle' && !activeExecution?.active && !isTerminated && (
+                <>
+                  <div className="hidden md:flex items-center gap-0.5 shrink-0">
+                    <ConfirmButton
+                      onConfirm={() => compactMutation.mutate()}
+                      disabled={compactMutation.isPending}
+                      label="Compact"
+                      className="tau-button px-1.5 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded transition-colors"
+                      confirmClassName="px-1.5 py-0.5 text-[11px] font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded transition-colors"
+                    />
+                    <ConfirmButton
+                      onConfirm={() => resetMutation.mutate()}
+                      disabled={resetMutation.isPending}
+                      label="Reset"
+                      className="tau-button px-1.5 py-0.5 text-[11px] font-medium text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/30 rounded transition-colors"
+                      confirmClassName="px-1.5 py-0.5 text-[11px] font-medium text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-900/30 hover:bg-orange-100 dark:hover:bg-orange-900/50 rounded transition-colors"
+                    />
+                  </div>
+                  <div className="md:hidden relative shrink-0">
+                    <button
+                      type="button"
+                      aria-label="Agent actions"
+                      aria-expanded={agentActionsOpen}
+                      onClick={() => setAgentActionsOpen((open) => !open)}
+                      className="tau-button p-1 text-muted hover:text-primary hover:bg-surface-hover rounded transition-colors"
+                    >
+                      <MoreIcon className="w-4 h-4" />
+                    </button>
+                    {agentActionsOpen && (
+                      <div className="absolute right-0 top-full mt-1 z-20 min-w-28 rounded-md border border-th-border bg-surface p-1 space-y-1">
+                        <ConfirmButton
+                          onConfirm={() => {
+                            compactMutation.mutate()
+                            setAgentActionsOpen(false)
+                          }}
+                          disabled={compactMutation.isPending}
+                          label="Compact"
+                          className="tau-button w-full text-left px-2 py-1 text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded transition-colors"
+                          confirmClassName="w-full text-left px-2 py-1 text-[11px] font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded transition-colors"
+                        />
+                        <ConfirmButton
+                          onConfirm={() => {
+                            resetMutation.mutate()
+                            setAgentActionsOpen(false)
+                          }}
+                          disabled={resetMutation.isPending}
+                          label="Reset"
+                          className="tau-button w-full text-left px-2 py-1 text-[11px] font-medium text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/30 rounded transition-colors"
+                          confirmClassName="w-full text-left px-2 py-1 text-[11px] font-medium text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-900/30 hover:bg-orange-100 dark:hover:bg-orange-900/50 rounded transition-colors"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+              {agent.status === 'compacting' && (
+                <span className={clsx('px-1.5 py-0.5 text-[11px] font-medium', agentAttentionStatus.textClass)}>
+                  Compacting...
+                </span>
+              )}
+              {agent.status === 'resetting' && (
+                <span className={clsx('px-1.5 py-0.5 text-[11px] font-medium', agentAttentionStatus.textClass)}>
+                  Resetting...
+                </span>
+              )}
+            </div>
+            {agent.squadId && <AgentSlotWaitStatus agentId={agentId} squadId={agent.squadId} />}
           </div>
         )
       }

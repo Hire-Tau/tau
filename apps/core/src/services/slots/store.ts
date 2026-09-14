@@ -1,3 +1,4 @@
+import { eventEmitter } from '../../lib/infra/event-emitter'
 import { and, asc, eq, gt, inArray, isNull, lte, sql } from 'drizzle-orm'
 import { isLiveAgentStatus } from '@tau/shared'
 import { agents, db, slotClaims, slotNotifications, slotPools, slotWaiters, squads } from '../../db'
@@ -390,6 +391,7 @@ export async function expireAndPromoteLocked(tx: DbTx, pool: SlotPoolRow, now: D
 }
 
 function emitSlotSummary(squadId: string, operation: string, promotion: PromotionResult, releasedClaims = 0): void {
+  eventEmitter.emit('slots.updated', { squadId })
   log.info('Slot operation summary', {
     squadId,
     operation,
