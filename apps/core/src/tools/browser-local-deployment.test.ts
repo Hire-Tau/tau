@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { TypeGuard } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
 import { eq, inArray } from 'drizzle-orm'
 import { db, agents, agentExtraScopes, localDeployments, roleAssignments, squads } from '../db'
@@ -108,8 +109,12 @@ describe('browser_open local deployment handoff', () => {
   })
 
   test('schema accepts deployment IDs without requiring a literal capability URL', () => {
-    expect(Value.Check(open.parameters, { localDeploymentId: deploymentId })).toBe(true)
-    expect(Value.Check(open.parameters, { url: 'https://example.test' })).toBe(true)
+    // ToolDefinition erases the concrete schema type using typebox v1. Verify
+    // the actual @sinclair/typebox schema before using its matching validator.
+    const schema = open.parameters
+    if (!TypeGuard.IsSchema(schema)) throw new Error('Expected a TypeBox browser parameter schema')
+    expect(Value.Check(schema, { localDeploymentId: deploymentId })).toBe(true)
+    expect(Value.Check(schema, { url: 'https://example.test' })).toBe(true)
   })
 
   test('opens the exact current issued URL internally for an authorized caller without disclosing it', async () => {
