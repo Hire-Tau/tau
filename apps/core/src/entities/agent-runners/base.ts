@@ -1,4 +1,3 @@
-import { ENTITY_REFERENCE_GUIDANCE } from '../../lib/prompts/entity-references'
 import { messageTextForModel } from '../../services/chat/message-context'
 import { existsSync, readFileSync } from 'fs'
 import { markExecutionStartupFailure } from '../../services/execution/startup-retry'
@@ -574,7 +573,7 @@ export abstract class AgentRunner {
       model: opts.model ?? (await this.agent.getEffectiveModelSpec(this.agentType.model)),
       currentSelectedModel: this.agent.selectedModel ?? undefined,
       storage: { agentId: this.agent.id },
-      systemPrompt: `${opts.systemPrompt}\n\n${ENTITY_REFERENCE_GUIDANCE}`,
+      systemPrompt: opts.systemPrompt,
       skillPaths: opts.skillPaths,
       extensionPaths: opts.extensionPaths,
       earlyMarginTokens: this.agentType.earlyMarginTokens,

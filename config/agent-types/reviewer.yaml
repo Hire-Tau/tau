@@ -4,6 +4,7 @@ description: Reviews code for quality, bugs, and best practices within a squad
 model: ''
 tier: deep
 includes:
+  - entity-references
   - rules
   - subagents
   - squad-rules

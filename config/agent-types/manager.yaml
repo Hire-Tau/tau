@@ -11,6 +11,7 @@ tier: standard
 # Federation permissions (read + register + send) live on the default-manager role
 # (config/roles/defaults.yaml), which manager maps to 1:1 — no per-type extra scopes needed.
 includes:
+  - entity-references
   - rules
   - subagents
   - squad-rules

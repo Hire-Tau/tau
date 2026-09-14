@@ -28,6 +28,9 @@ describe('compact Action Center PR links', () => {
 const entityId = 'fa27abb6-4c92-4cc6-aff9-a8da616346c1'
 test('renders explicit work stream and agent references as in-place actions', () => {
   for (const kind of ['ws', 'agent']) {
+    expect(
+      renderToStaticMarkup(<MarkdownContent>{`[Short](tau:${kind}:${entityId.slice(0, 8)})`}</MarkdownContent>)
+    ).toContain('<button')
     const html = renderToStaticMarkup(<MarkdownContent>{`[Open item](tau:${kind}:${entityId})`}</MarkdownContent>)
     expect(html).toContain('<button')
     expect(html).toContain('Open item</button>')

@@ -5,6 +5,7 @@ description: Builds visual artifacts from voice requests in an assigned artifact
 model: ''
 tier: standard
 includes:
+  - entity-references
   - rules
 tools:
   allow:

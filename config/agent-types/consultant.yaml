@@ -10,6 +10,7 @@ description: |
 model: ''
 tier: deep
 includes:
+  - entity-references
   - rules
   - subagents
   - squad-rules
