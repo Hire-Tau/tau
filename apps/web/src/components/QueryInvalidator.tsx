@@ -1,3 +1,4 @@
+import { agentSlotWaitQueryKeys } from '../queryKeys'
 import { hashKey } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import { useQueryClient } from '../reactQueryHooks'
@@ -153,6 +154,7 @@ function createQueryInvalidationCoalescer(queryClient: QueryInvalidationClient) 
 
 function QueryInvalidatorEffects({ queryClient, subscribe, isConnected = false }: QueryInvalidatorDependencies) {
   const coalescerRef = useRef<ReturnType<typeof createInvalidationCoalescer> | null>(null)
+  const slotCoalescerRef = useRef<ReturnType<typeof createInvalidationCoalescer> | null>(null)
   const openFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const actionFrameBeforeOpenRef = useRef(false)
   const actionFrameExpiryRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -162,6 +164,10 @@ function QueryInvalidatorEffects({ queryClient, subscribe, isConnected = false }
     // so reusing a memoized instance would leave the replayed subscriptions inert.
     const coalescer = createQueryInvalidationCoalescer(queryClient)
     coalescerRef.current = coalescer
+    // Slot reconnect repair must not delay Action Center's independent open
+    // snapshot. Its own coalescer also replays invalidations landing mid-fetch.
+    const slotCoalescer = createQueryInvalidationCoalescer(queryClient)
+    slotCoalescerRef.current = slotCoalescer
     const invalidate = coalescer.queue
     const rosterThrottle = createRosterThrottle(invalidate)
     const unsubscribes = [
@@ -221,6 +227,7 @@ function QueryInvalidatorEffects({ queryClient, subscribe, isConnected = false }
           event === 'artifact.updated'
         ) {
           invalidateForAgent(invalidate, data.agentId)
+          if (data.squadId) slotCoalescer.queue(agentSlotWaitQueryKeys.agent(data.squadId, data.agentId))
           invalidate(queryKeys.artifacts.all)
           if (event !== 'artifact.updated') invalidate(queryKeys.activity.presence())
 
@@ -307,6 +314,13 @@ function QueryInvalidatorEffects({ queryClient, subscribe, isConnected = false }
 
       // ── Squad events ──────────────────────────────────────────────
       subscribe('squads', ({ event, data }) => {
+        if (event === 'slots.updated') {
+          slotCoalescer.queue(agentSlotWaitQueryKeys.squad(data.squadId))
+          return
+        }
+        if (event === 'squad.updated' || event === 'squad.archived') {
+          slotCoalescer.queue(agentSlotWaitQueryKeys.squad(data.squadId))
+        }
         // A sandbox-status tick is not squad-data churn — refetch only the
         // squad's sandbox status, not all squad queries.
         if (event === 'sandbox.status') {
@@ -399,6 +413,8 @@ function QueryInvalidatorEffects({ queryClient, subscribe, isConnected = false }
       unsubscribes.forEach((unsubscribe) => unsubscribe())
       rosterThrottle.dispose()
       coalescer.dispose()
+      slotCoalescer.dispose()
+      if (slotCoalescerRef.current === slotCoalescer) slotCoalescerRef.current = null
       if (coalescerRef.current === coalescer) {
         coalescerRef.current = null
         actionFrameBeforeOpenRef.current = false
@@ -425,6 +441,7 @@ function QueryInvalidatorEffects({ queryClient, subscribe, isConnected = false }
     }
     const coalescer = coalescerRef.current
     if (!coalescer) return
+    slotCoalescerRef.current?.queue(agentSlotWaitQueryKeys.all)
     if (actionFrameBeforeOpenRef.current) {
       actionFrameBeforeOpenRef.current = false
       if (actionFrameExpiryRef.current !== null) {

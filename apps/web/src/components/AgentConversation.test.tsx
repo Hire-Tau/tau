@@ -13,6 +13,8 @@ let _permissions = new Set<string>()
 // Control active execution in tests (for Stop-button RBAC test)
 let _activeExecution: { active: boolean; status?: string } | undefined = undefined
 let _agentStatus = 'idle'
+let _agentSquadId: string | undefined
+let _slotWaits: Array<{ waiterId: string; poolKey: string; queuedAt: string }> = []
 
 // Control the live sandbox-wait signal AgentChat's useAgentConversation would supply to the header
 let _waitingForSandbox = false
@@ -33,8 +35,9 @@ const reactQueryOverrides = {
     }
     // call 1 = agent: return a minimal agent so the header renders
     if (call === 1 && _activeExecution !== undefined) {
-      return { data: { id: 'a1', status: _agentStatus, terminatedAt: null, squadId: undefined } }
+      return { data: { id: 'a1', status: _agentStatus, terminatedAt: null, squadId: _agentSquadId } }
     }
+    if (call === 4) return { data: _slotWaits }
     return { data: undefined }
   },
   useMutation: () => ({ mutate: () => undefined, isPending: false }),
@@ -123,6 +126,24 @@ function render(props: Parameters<typeof AgentConversation>[0]) {
 // ---------------------------------------------------------------------------
 
 describe('AgentConversation wraps AgentChat', () => {
+  test('includes queued slot context in the current conversation header alongside execution status', () => {
+    _agentSquadId = 'squad-a'
+    _permissions = new Set(['slots:use'])
+    _activeExecution = { active: true, status: 'running' }
+    _slotWaits = [{ waiterId: 'waiter-a', poolKey: 'shared-box-intensive', queuedAt: '2026-09-14T21:49:49Z' }]
+    try {
+      const html = render({ agentId: 'a1' })
+      expect(html).toContain('Queued for slots:')
+      expect(html).toContain('shared-box-intensive')
+      expect(html).toContain('running')
+    } finally {
+      _agentSquadId = undefined
+      _permissions = new Set()
+      _activeExecution = undefined
+      _slotWaits = []
+    }
+  })
+
   test('renders AgentChat with agentId forwarded', () => {
     const html = render({ agentId: 'my-agent' })
     expect(html).toContain('data-testid="agent-chat"')

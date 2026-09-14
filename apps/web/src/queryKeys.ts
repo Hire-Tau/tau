@@ -50,3 +50,10 @@ export const feedQueryKeys = {
 }
 
 export const channelLinkQueryKeys = { all: ['channel-links'] as const }
+
+// Web-only queued-slot status; pool/admission management remains separate.
+export const agentSlotWaitQueryKeys = {
+  all: ['agent-slot-waits'] as const,
+  squad: (squadId: string) => ['agent-slot-waits', squadId] as const,
+  agent: (squadId: string, agentId: string) => ['agent-slot-waits', squadId, agentId] as const,
+}
