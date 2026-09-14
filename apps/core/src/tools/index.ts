@@ -68,7 +68,6 @@ export {
   createShortTermMemoryTools,
   createAgentShortTermMemoryStorage,
   getShortTermMemory,
-  formatShortTermMemoryPrompt,
   type ShortTermMemoryToolWithKey,
 } from './short-term-memory'
 

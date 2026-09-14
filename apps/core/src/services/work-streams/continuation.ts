@@ -1,3 +1,6 @@
+import { maintenanceStore } from '../maintenance/store'
+import { listActiveSlotWaits } from '../slots/active-waits'
+import { acquireAgentQueueLock } from '../execution/agent-admission'
 import { externalDeliveryStreamIds } from '../workflows/delivery-state'
 import { activeWorkflowAttempts } from '@tau/shared'
 import { waitsForAgent, waitingAssigneeStreamIds } from './wait-scope'
@@ -167,6 +170,8 @@ export async function blockCurrentContinuation(
     // Execution.start updates the agent row in its transition transaction. Lock
     // that same row so this final fact check and wait insertion serialize with
     // a concurrent start rather than trusting the earlier idle snapshot.
+    await acquireAgentQueueLock(tx, assigneeAgentId)
+    if ((await listActiveSlotWaits(tx, [assigneeAgentId])).length) return null
     await tx.execute(sql`select id from agents where id = ${assigneeAgentId} for update`)
     const [activeExecution] = await tx
       .select({ id: executions.id, status: executions.status })
@@ -542,6 +547,8 @@ export async function reportPersistentIdleIfCurrent(input: {
       return false
     }
 
+    await acquireAgentQueueLock(tx, input.assigneeAgentId)
+    if ((await listActiveSlotWaits(tx, [input.assigneeAgentId])).length) return false
     await tx.execute(sql`select id from agents where id = ${input.assigneeAgentId} for update`)
     const [agent] = await tx.select().from(agents).where(eq(agents.id, input.assigneeAgentId)).limit(1)
     const [normalTrigger] = await tx
@@ -783,7 +790,8 @@ export async function reconcileWorkStreamContinuationsOnce(
         ).map((row) => row.agentId)
       : []
   )
-  const readyAgentIds = new Set(idleAgentIds.filter((id) => !busyAgentIds.has(id)))
+  const slotWaitingAgentIds = new Set((await listActiveSlotWaits(db, idleAgentIds)).map((wait) => wait.agentId))
+  const readyAgentIds = new Set(idleAgentIds.filter((id) => !busyAgentIds.has(id) && !slotWaitingAgentIds.has(id)))
   const candidates = streams.filter((s) => readyAgentIds.has(s.assigneeAgentId!))
 
   const cycleByStreamId = new Map<string, typeof workStreamContinuations.$inferSelect>()
@@ -1137,6 +1145,8 @@ export async function reconcileWorkStreamContinuationsOnce(
       ) {
         return false
       }
+      await acquireAgentQueueLock(tx, agentId)
+      if ((await listActiveSlotWaits(tx, [agentId])).length) return false
       const [updated] = await tx
         .update(workStreamContinuations)
         .set({
@@ -1288,6 +1298,9 @@ export async function reconcileWorkStreamContinuationsOnce(
     let delivered = false
     try {
       await db.transaction(async (tx) => {
+        // queueExecutionInTransaction uses maintenance -> stream -> agent queue.
+        // Acquire maintenance first, before taking the new enqueue/nudge fence.
+        await maintenanceStore.readLocked(tx)
         await tx.execute(sql`select id from work_streams where id = ${candidate.workStreamId} for update`)
         const [currentStream] = await tx.select().from(workStreams).where(eq(workStreams.id, candidate.workStreamId))
         const [currentCycle] = await tx
@@ -1356,6 +1369,16 @@ export async function reconcileWorkStreamContinuationsOnce(
         }
 
         await options.testHooks?.beforeDispatchQueue?.()
+        // claim/subscribe acquire this same lock before enqueueing a waiter.
+        // Keep it through inbox persistence AND execution queueing: an earlier
+        // idle scan (or a pending continuation from a prior scan) is not a fence.
+        // This is deliberately not a general execution-admission restriction;
+        // human steering, real grants and other inbox notifications still wake.
+        await acquireAgentQueueLock(tx, assigneeAgentId)
+        if ((await listActiveSlotWaits(tx, [assigneeAgentId])).length) {
+          await deferClaim()
+          return
+        }
         const [lockedTrigger] = candidate.triggerExecutionId
           ? await tx
               .select({ endedAt: executions.endedAt })

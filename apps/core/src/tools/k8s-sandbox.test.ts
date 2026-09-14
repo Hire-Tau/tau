@@ -471,7 +471,10 @@ describe('complete remote read', () => {
     ])
 
     expect(rangedResult.content).toEqual(completeResult.content)
-    expect(requests.map(({ offset, limit }) => ({ offset, limit }))).toEqual([{ offset: 0, limit: 1024 * 1024 }])
+    expect(requests.map(({ offset, limit }) => ({ offset, limit }))).toEqual([
+      { offset: 0, limit: 4100 }, // Bounded image sniff before the unchanged text read.
+      { offset: 0, limit: 1024 * 1024 },
+    ])
   })
 
   test('line range hint scans past 50 KiB and returns enough input for pi to select the requested lines', async () => {
@@ -499,7 +502,9 @@ describe('complete remote read', () => {
       expect.objectContaining({ text: expect.stringContaining('line-06000\nline-06001') })
     )
     expect(requests.length).toBeGreaterThan(1)
-    expect(requests.map((request) => request.offset)).toEqual(requests.map((_, index) => index * 16 * 1024))
+    expect(requests[0]).toMatchObject({ offset: 0, limit: 4100 })
+    const textRequests = requests.slice(1)
+    expect(textRequests.map((request) => request.offset)).toEqual(textRequests.map((_, index) => index * 16 * 1024))
     expect((requests.at(-1)?.offset ?? 0) + 16 * 1024).toBeLessThan(original.byteLength)
   })
 
@@ -1307,8 +1312,71 @@ describe('createHttpBashOperations', () => {
     await expect(result).rejects.toThrow('Command aborted')
   })
 
+  test.each(['clean', 'failed'] as const)(
+    'abort owns settlement when stream ends before %s cleanup',
+    async (cleanup) => {
+      const stream = createMockStream()
+      const proof = Promise.withResolvers<void>()
+      stream.cancelAndWait = mock(() => {
+        // SandboxClient aborts its HTTP reader before awaiting remote cleanup.
+        stream.emitEnd()
+        return proof.promise
+      })
+      const manager = createMockManager(stream)
+      const controller = new AbortController()
+      let settled = false
+      const result = createHttpBashOperations(manager, 'test-sandbox')
+        .exec('long-running-command', '/workspace', { onData: () => {}, signal: controller.signal })
+        .finally(() => {
+          settled = true
+        })
+      const observed = result.catch((error: unknown) => error)
+      controller.abort()
+      try {
+        await Promise.resolve()
+        expect(settled).toBe(false)
+      } finally {
+        if (cleanup === 'clean') proof.resolve()
+        else proof.reject(new Error('remote process still alive'))
+        await observed
+      }
+      await expect(result).rejects.toThrow(cleanup === 'clean' ? 'Command aborted' : 'Command cleanup unproven')
+      expect(manager.getClientForSandbox).toHaveBeenCalledTimes(1)
+      expect(stream.cancelAndWait).toHaveBeenCalledTimes(1)
+    }
+  )
+
+  test('stream end without an exit code requires cleanup and rejects instead of succeeding', async () => {
+    const stream = createMockStream()
+    const proof = Promise.withResolvers<void>()
+    stream.cancelAndWait = mock(() => proof.promise)
+    let settled = false
+    const result = createHttpBashOperations(createMockManager(stream), 'test-sandbox')
+      .exec('command', '/workspace', { onData: () => {} })
+      .finally(() => {
+        settled = true
+      })
+    const observed = result.catch((error: unknown) => error)
+    stream.emitEnd()
+    try {
+      await Promise.resolve()
+      expect(settled).toBe(false)
+      expect(stream.cancelAndWait).toHaveBeenCalledWith('transport-loss')
+    } finally {
+      proof.resolve()
+      await observed
+    }
+    await expect(result).rejects.toThrow('outcome is unknown')
+  })
+
   test('handles pre-aborted signal', async () => {
     const mockStream = createMockStream()
+    mockStream.cancelAndWait = mock(async () => {
+      // Cancellation may synchronously trigger reader events, even before exec
+      // returns. Install listeners before processing an already-aborted signal.
+      mockStream.emitError(new Error('reader aborted'))
+      mockStream.emitEnd()
+    })
     const manager = createMockManager(mockStream)
     const operations = createHttpBashOperations(manager, 'test-sandbox')
 
@@ -1469,7 +1537,7 @@ describe('createHttpBashOperations', () => {
     expect(chunks).toEqual(['out1\n', 'err1\n', 'out2\n'])
   })
 
-  test('returns null exitCode when none provided', async () => {
+  test('rejects when output is followed by end without an exit code', async () => {
     const mockStream = createMockStream()
     const manager = createMockManager(mockStream)
     const operations = createHttpBashOperations(manager, 'test-sandbox')
@@ -1478,11 +1546,12 @@ describe('createHttpBashOperations', () => {
       onData: () => {},
     })
 
-    // Stream ends without exitCode
+    mockStream.emitData({ stdout: Buffer.from('partial output').toString('base64') })
+    // Partial output is not evidence of successful completion.
     mockStream.emitEnd()
 
-    const result = await execPromise
-    expect(result.exitCode).toBeNull()
+    await expect(execPromise).rejects.toThrow('outcome is unknown')
+    expect(mockStream.cancelAndWait).toHaveBeenCalledWith('transport-loss')
   })
 })
 

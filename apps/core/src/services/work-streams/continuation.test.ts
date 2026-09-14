@@ -1,3 +1,4 @@
+import { maintenanceStore } from '../maintenance/store'
 import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stream'
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { and, eq, inArray, sql } from 'drizzle-orm'
@@ -11,10 +12,23 @@ import {
   inbox,
   messages,
   squads,
+  slotPools,
+  slotClaims,
+  slotWaiters,
+  slotNotifications,
   workStreamContinuations,
   workStreams,
   workStreamWaits,
 } from '../../db/schema'
+import {
+  setSlotAfterPoolLockHookForTest,
+  claimSlot,
+  registerPool,
+  releaseSlot,
+  unsubscribeSlot,
+  setSlotPromptDrainEnabledForTest,
+} from '../slots/store'
+import { SlotNotificationNotifier } from '../slots/notifications'
 import * as schema from '../../db/schema'
 import { createPostgresConnection, getConnectionString } from '../../db/connection'
 import {
@@ -146,12 +160,264 @@ describe('work stream continuation', () => {
   })
 
   afterEach(async () => {
+    setSlotAfterPoolLockHookForTest(undefined)
+    setSlotPromptDrainEnabledForTest(true)
+    const poolIds = (await db.select({ id: slotPools.id }).from(slotPools).where(eq(slotPools.squadId, squad.id))).map(
+      (row) => row.id
+    )
+    if (poolIds.length) {
+      await db.delete(slotNotifications).where(inArray(slotNotifications.poolId, poolIds))
+      await db.delete(slotWaiters).where(inArray(slotWaiters.poolId, poolIds))
+      await db.delete(slotClaims).where(inArray(slotClaims.poolId, poolIds))
+      await db.delete(slotPools).where(inArray(slotPools.id, poolIds))
+    }
     await stopWorkStreamContinuationSweep()
     await workStream.delete()
     for (const id of extraAgentIds.splice(0)) await db.delete(agents).where(eq(agents.id, id))
     await db.delete(agents).where(eq(agents.id, agent.id))
     await db.delete(squads).where(eq(squads.id, squad.id))
     await db.delete(agentTypes).where(eq(agentTypes.id, agentTypeId))
+  })
+
+  async function contestedSlot(key = 'test-capacity') {
+    setSlotPromptDrainEnabledForTest(false)
+    const holder = await createExtraAgent()
+    const pool = await registerPool({ squadId: squad.id, key, createdBy: 'test' })
+    const held = await claimSlot(squad.id, key, holder.id)
+    if (held.outcome !== 'granted') throw new Error('Fixture must own capacity')
+    return { pool, holder, held, key }
+  }
+
+  async function idleSlotCandidate() {
+    await workStream.update({ status: 'active', assigneeAgentId: agent.id, ownerAgentId: agent.id })
+    const endedAt = new Date(Date.now() + 1_000)
+    await settleAgentExecutions(agent, 'completed', endedAt)
+    return new Date(endedAt.getTime() + 60_000)
+  }
+
+  async function queueSlot(key = 'test-capacity') {
+    const result = await claimSlot(squad.id, key, agent.id)
+    if (result.outcome !== 'queued') throw new Error('Fixture must queue')
+    return result.waiter.id
+  }
+
+  for (const boundary of ['before scan', 'after scan', 'before dispatch'] as const) {
+    it(`suppresses slot-wait continuation queued ${boundary} without consuming a nudge`, async () => {
+      await contestedSlot()
+      const now = await idleSlotCandidate()
+      if (boundary === 'before scan') await queueSlot()
+      await reconcileWorkStreamContinuationsOnce({
+        now,
+        testHooks: {
+          ...(boundary === 'after scan'
+            ? {
+                beforeCandidateSchedule: async () => {
+                  await queueSlot()
+                },
+              }
+            : {}),
+          ...(boundary === 'before dispatch'
+            ? {
+                beforeDispatchQueue: async () => {
+                  await queueSlot()
+                },
+              }
+            : {}),
+        },
+      })
+      expect((await readCycle()).normalAttemptCount).toBe(0)
+      expect(
+        await db
+          .select()
+          .from(executions)
+          .where(and(eq(executions.agentId, agent.id), eq(executions.status, 'queued')))
+      ).toHaveLength(0)
+      expect(
+        await db
+          .select()
+          .from(inbox)
+          .where(and(eq(inbox.recipientId, agent.id), sql`${inbox.metadata}->>'source' = 'work-stream-continuation'`))
+      ).toHaveLength(0)
+    })
+  }
+
+  it('acquires maintenance before the agent queue lock for slot-fenced delivery', async () => {
+    const now = await idleSlotCandidate()
+    const original = maintenanceStore.readLocked.bind(maintenanceStore)
+    let queueLockAlreadyHeld: boolean | undefined
+    const lockSpy = spyOn(maintenanceStore, 'readLocked').mockImplementation(async (tx) => {
+      if (queueLockAlreadyHeld === undefined) {
+        const rows = await tx.execute(sql`SELECT 1 FROM pg_locks WHERE pid = pg_backend_pid()
+          AND locktype = 'advisory' AND classid = 421100 AND granted`)
+        queueLockAlreadyHeld = rows.length > 0
+      }
+      return original(tx)
+    })
+    try {
+      await reconcileWorkStreamContinuationsOnce({ now })
+      expect((await readCycle()).normalAttemptCount).toBe(1)
+      expect(queueLockAlreadyHeld).toBe(false)
+    } finally {
+      lockSpy.mockRestore()
+    }
+  })
+
+  it('serializes racing enqueue and nudge delivery on the actual agent queue lock', async () => {
+    await contestedSlot()
+    const now = await idleSlotCandidate()
+    const entered = Promise.withResolvers<void>()
+    const release = Promise.withResolvers<void>()
+    let queued: Promise<string> | undefined
+    const sweep = reconcileWorkStreamContinuationsOnce({
+      now,
+      testHooks: {
+        beforeDispatchQueue: async () => {
+          setSlotAfterPoolLockHookForTest(async () => {
+            entered.resolve()
+            await release.promise
+          })
+          queued = queueSlot()
+          await entered.promise
+        },
+      },
+    })
+    try {
+      await entered.promise
+      // Observable lock acquisition, not a sleep: the enqueue transaction owns
+      // the agent lock while the production continuation transaction waits.
+      await waitFor(async () => {
+        const rows = await db.execute(sql`SELECT 1 FROM pg_locks WHERE locktype = 'advisory'
+          AND classid = 421100 AND objid = (hashtext(${agent.id})::bigint & 4294967295) AND NOT granted`)
+        return rows.length > 0
+      })
+    } finally {
+      release.resolve()
+      await queued
+      await sweep
+      setSlotAfterPoolLockHookForTest(undefined)
+    }
+    expect((await readCycle()).normalAttemptCount).toBe(0)
+    expect(
+      await db
+        .select()
+        .from(executions)
+        .where(and(eq(executions.agentId, agent.id), eq(executions.status, 'queued')))
+    ).toHaveLength(0)
+  })
+
+  it('still accepts human steering while queued and does not escalate a slot wait to a manual blocker', async () => {
+    await contestedSlot()
+    await idleSlotCandidate()
+    await queueSlot()
+    const cycle = await readCycle()
+    expect(
+      await blockCurrentContinuation(workStream.id, cycle.generation, agent.id, 'Unexpected exhaustion', () => true)
+    ).toBe(false)
+    expect(await db.select().from(workStreamWaits).where(eq(workStreamWaits.workStreamId, workStream.id))).toHaveLength(
+      0
+    )
+    await agent.sendMessage('Human steering: inspect this independently', { deliveryMode: 'steer' })
+    expect(
+      await db
+        .select()
+        .from(executions)
+        .where(and(eq(executions.agentId, agent.id), eq(executions.status, 'queued')))
+    ).toHaveLength(1)
+  })
+
+  it('defers trusted transport continuation while queued without spending its retry budget', async () => {
+    await contestedSlot()
+    const now = await idleSlotCandidate()
+    const [trigger] = await db
+      .update(executions)
+      .set({ status: 'failed', failureClass: 'provider_transport' })
+      .where(eq(executions.agentId, agent.id))
+      .returning()
+    await attachTrustedWorkStreamMessage(trigger.id)
+    const waiterId = await queueSlot()
+    await reconcileWorkStreamContinuationsOnce({ now })
+    expect((await readCycle()).transportAttemptCount).toBe(0)
+    await unsubscribeSlot(squad.id, 'test-capacity', agent.id, waiterId)
+    await reconcileWorkStreamContinuationsOnce({ now })
+    expect((await readCycle()).transportAttemptCount).toBe(1)
+  })
+
+  it('defers a previously scheduled nudge while any slot waiter remains and resumes after unsubscribe', async () => {
+    await contestedSlot('first')
+    await contestedSlot('second')
+    const now = await idleSlotCandidate()
+    await reconcileWorkStreamContinuationsOnce({ now: new Date(now.getTime() - 60_000) })
+    expect((await readCycle()).status).toBe('pending')
+    const first = await queueSlot('first')
+    const second = await queueSlot('second')
+    await reconcileWorkStreamContinuationsOnce({ now })
+    expect((await readCycle()).normalAttemptCount).toBe(0)
+    await unsubscribeSlot(squad.id, 'first', agent.id, first)
+    await reconcileWorkStreamContinuationsOnce({ now: new Date(now.getTime() + 30_000) })
+    expect((await readCycle()).normalAttemptCount).toBe(0)
+    await unsubscribeSlot(squad.id, 'second', agent.id, second)
+    await reconcileWorkStreamContinuationsOnce({ now: new Date(now.getTime() + 60_000) })
+    expect((await readCycle()).status).toBe('delivered')
+    expect((await readCycle()).normalAttemptCount).toBe(1)
+  })
+
+  it('allows the real slot grant wake while a different pool is still queued', async () => {
+    const { holder, held, pool } = await contestedSlot()
+    await contestedSlot('other-pool')
+    const now = await idleSlotCandidate()
+    await queueSlot()
+    await queueSlot('other-pool')
+    await reconcileWorkStreamContinuationsOnce({ now })
+    expect((await readCycle()).normalAttemptCount).toBe(0)
+    await releaseSlot(squad.id, pool.key, holder.id, held.claim.id)
+    const [notification] = await db.select().from(slotNotifications).where(eq(slotNotifications.poolId, pool.id))
+    await new SlotNotificationNotifier().drain({ now: notification.nextAttemptAt, notificationId: notification.id })
+    const grants = (await InboxMessage.listForRecipient('agent', agent.id)).filter((message) =>
+      message.subject?.startsWith('Slot granted')
+    )
+    expect(grants).toHaveLength(1)
+    await deliverInboxMessagesToAgent(agent.id)
+    expect(
+      await db
+        .select()
+        .from(executions)
+        .where(and(eq(executions.agentId, agent.id), eq(executions.status, 'queued')))
+    ).toHaveLength(1)
+  })
+
+  for (const state of ['canceled', 'granted', 'expired claim', 'unregistered pool'] as const) {
+    it(`does not treat ${state} as a queued slot wait`, async () => {
+      const { holder, held, pool } = await contestedSlot()
+      const now = await idleSlotCandidate()
+      const waiterId = await queueSlot()
+      if (state === 'canceled') await unsubscribeSlot(squad.id, pool.key, agent.id, waiterId)
+      if (state === 'granted' || state === 'expired claim') {
+        await releaseSlot(squad.id, pool.key, holder.id, held.claim.id)
+        if (state === 'expired claim')
+          await db
+            .update(slotClaims)
+            .set({ expiresAt: new Date(0) })
+            .where(eq(slotClaims.ownerAgentId, agent.id))
+      }
+      if (state === 'unregistered pool')
+        await db.update(slotPools).set({ unregisteredAt: new Date() }).where(eq(slotPools.id, pool.id))
+      await reconcileWorkStreamContinuationsOnce({ now })
+      expect((await readCycle()).normalAttemptCount).toBe(1)
+    })
+  }
+
+  it('does not send persistent idle escalation for a newly queued slot wait', async () => {
+    const { endedAt } = await finishNormalContinuationForNotice()
+    await contestedSlot()
+    await reconcileWorkStreamContinuationsOnce({
+      now: new Date(endedAt.getTime() + 60_000),
+      testHooks: {
+        beforeIdleNoticeCheck: async () => {
+          await queueSlot()
+        },
+      },
+    })
+    expect(await persistentIdleNotices()).toHaveLength(0)
   })
 
   it('a scoped sweep neither schedules nor dispatches another squad', async () => {

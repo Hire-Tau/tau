@@ -230,6 +230,17 @@ describe('WebSocket Event Bridge', () => {
     expect(broadcastSpy).toHaveBeenCalledWith('squads:squad-1', 'squad.created', data)
   })
 
+  test('routes content-free slot invalidation only through squad-scoped topics', () => {
+    const broadcastSpy = mock(async () => {})
+    manager.broadcast = broadcastSpy
+    setupEventBridge(manager)
+    const data = { squadId: 'squad-1' }
+    eventEmitter.emit('slots.updated', data)
+    expect(broadcastSpy).toHaveBeenCalledTimes(2)
+    expect(broadcastSpy).toHaveBeenCalledWith('squads', 'slots.updated', data)
+    expect(broadcastSpy).toHaveBeenCalledWith('squads:squad-1', 'slots.updated', data)
+  })
+
   test('broadcasts machine.created to machines topic + instance', () => {
     const broadcastSpy = mock(async () => {})
     manager.broadcast = broadcastSpy

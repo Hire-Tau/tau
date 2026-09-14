@@ -36,6 +36,14 @@ See [Single-origin and reverse proxy deployment](reverse-proxy.md) for copy-past
 
 Registered log paths must stay inside the squad's workspace: relative paths resolve against the workspace root, traversal (`..`), absolute paths outside the workspace, and cross-squad paths are rejected with a 400, and symlink escapes are re-checked inside the sandbox on every read. A registered file that is missing or unreadable shows a one-line notice in the log viewer instead of an error.
 
+### Opening local previews with browser tools
+
+Use `browser_open({ "localDeploymentId": "<full-deployment-uuid>" })` instead of copying the token-bearing URL into a tool argument. Tau checks the calling agent's current `deployments:read` permission for the deployment's squad and rejects missing, archived, stopped, or expired deployments. The issued URL travels only through the internal browser transport; the tool does not echo it in its result or navigation errors. Existing preview token/cookie authentication and normal `browser_open({ "url": "https://example.com" })` support are unchanged.
+
+Path-based apps require the operator's browser-reachable `APP_URL`; hosted app URLs retain their own origin. Inspect IDs/status without printing credentials using `tau deploy local list <squad-id> --json | jq '.[] | {id, name, status, port}'`. Do not reconstruct redacted URLs or paste credentials into logs/messages. App screenshots and content still need review before sharing.
+
+Direct loopback health probes do not verify proxy access. A provider-side `403` (such as Cloudflare error `1010` on unsigned requests) occurs before Tau authentication and needs separate operator investigation, not weaker preview access controls.
+
 ## Security and cost guardrails
 
 - Private local apps by default.

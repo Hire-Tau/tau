@@ -10,6 +10,8 @@ import { consultantScratchPath } from '../services/sandbox/consultant-sandbox'
  */
 
 import { readFileSync, accessSync } from 'fs'
+import { open } from 'node:fs/promises'
+import { detectReadImageMimeType, IMAGE_SNIFF_BYTES } from './read-image-mime'
 import { createHash } from 'node:crypto'
 import { runIdempotentSandboxOperation } from '../services/sandbox/vm/retry'
 import { FOREGROUND_BASH_GUIDANCE, normalizeBashTimeoutSeconds } from '../lib/bash-contract'
@@ -37,8 +39,8 @@ function processCarriageReturns(buf: Buffer): Buffer {
 }
 import { posix } from 'path'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
-import { createReadTool, createWriteTool, createBashTool } from '@earendil-works/pi-coding-agent'
-import { SandboxHttpError, type SandboxClient } from '../services/sandbox/k8s/http-client'
+import { createReadTool, createWriteTool, createBashTool, type ReadOperations } from '@earendil-works/pi-coding-agent'
+import { BashOutcomeUnknownError, SandboxHttpError, type SandboxClient } from '../services/sandbox/k8s/http-client'
 import { createVerifiedEditTool, type VerifiedEditOperations } from './verified-edit'
 import { withSharedWorkspaceHint } from './private-bash-hint'
 import { createLogger } from '../lib/infra/logger'
@@ -221,11 +223,6 @@ type ReadRangeHint = {
   maxBytes?: number
 }
 
-type ReadOperations = {
-  readFile: (absolutePath: string, range?: ReadRangeHint) => Promise<Buffer>
-  access: (absolutePath: string) => Promise<void>
-}
-
 type WriteOperations = {
   writeFile: (absolutePath: string, content: string) => Promise<void>
   mkdir: (dir: string) => Promise<void>
@@ -235,16 +232,16 @@ const FILE_PAGE_BYTES = 1024 * 1024
 const MAX_COMPLETE_FILE_BYTES = 64 * 1024 * 1024
 
 /**
- * Reads a complete remote file through pages with a stable advertised byte
- * count, without relying on the server's intentionally bounded default size.
- * The verified commit's expectedOriginal identity detects intervening changes.
+ * Read stable pages for a complete file, Pi's text selection, or a bounded MIME
+ * sniff. The sniff uses the same size/progress checks without changing the text
+ * page size or truncation behavior. Verified edits still read the complete file.
  */
-async function readCompleteFile(client: SandboxClient, path: string): Promise<Buffer> {
-  return readRemoteFile(client, path)
-}
-
-/** Reads a complete file, or a stable page prefix sufficient for Pi's local selection. */
-async function readRemoteFile(client: SandboxClient, path: string, range?: ReadRangeHint): Promise<Buffer> {
+async function readRemoteFile(
+  client: SandboxClient,
+  path: string,
+  range?: ReadRangeHint,
+  prefixBytes?: number
+): Promise<Buffer> {
   const chunks: Buffer[] = []
   let byteOffset = 0
   let expectedTotalSize: number | undefined
@@ -254,7 +251,8 @@ async function readRemoteFile(client: SandboxClient, path: string, range?: ReadR
   let selectedStartByte = startLine === 1 ? 0 : undefined
 
   while (expectedTotalSize === undefined || byteOffset < expectedTotalSize) {
-    const response = await client.read({ path, offset: byteOffset, limit: FILE_PAGE_BYTES })
+    const pageBytes = prefixBytes === undefined ? FILE_PAGE_BYTES : Math.min(FILE_PAGE_BYTES, prefixBytes - byteOffset)
+    const response = await client.read({ path, offset: byteOffset, limit: pageBytes })
     const { totalSize } = response
     if (!Number.isSafeInteger(totalSize) || totalSize < 0) {
       throw new Error('Complete remote file read failed: remote read advertised an invalid byte count')
@@ -270,7 +268,7 @@ async function readRemoteFile(client: SandboxClient, path: string, range?: ReadR
     }
 
     const chunk = Buffer.from(response.content, 'base64')
-    if (chunk.byteLength > FILE_PAGE_BYTES) {
+    if (chunk.byteLength > pageBytes) {
       throw new Error('Complete remote file read failed: remote read exceeded the requested page size')
     }
     const nextOffset = byteOffset + chunk.byteLength
@@ -295,6 +293,7 @@ async function readRemoteFile(client: SandboxClient, path: string, range?: ReadR
 
     chunks.push(chunk)
     byteOffset = nextOffset
+    if (prefixBytes !== undefined && byteOffset >= prefixBytes) break
 
     if (range) {
       const selectedBytes = selectedStartByte === undefined ? 0 : byteOffset - selectedStartByte
@@ -305,7 +304,7 @@ async function readRemoteFile(client: SandboxClient, path: string, range?: ReadR
   }
 
   const result = Buffer.concat(chunks, byteOffset)
-  if (!range && result.byteLength !== expectedTotalSize) {
+  if (!range && prefixBytes === undefined && result.byteLength !== expectedTotalSize) {
     throw new Error(
       `Complete remote file read failed: remote read returned ${result.byteLength} of ${expectedTotalSize} bytes`
     )
@@ -339,35 +338,45 @@ export function createHttpReadOperations(
   squadRoute?: SquadFileRoute
 ): ReadOperations {
   const route = createFileOpRouter(manager, sandboxId, squadRoute)
-  return {
-    readFile: async (absolutePath: string, range?: ReadRangeHint): Promise<Buffer> => {
-      // Serve config files (skills, extensions) directly from Core
-      if (isConfigPath(absolutePath)) {
-        return Buffer.from(readFileSync(absolutePath))
-      }
-
-      const target = route(absolutePath)
-      const client = target.getClient()
-      if (!client) {
-        throw await target.mapFailure(new Error(`No K8s sandbox client found for ${target.sandboxId}`))
-      }
-
+  const readFile = async (absolutePath: string, range?: ReadRangeHint, prefixBytes?: number): Promise<Buffer> => {
+    // Serve config files (skills, extensions) directly from Core
+    if (isConfigPath(absolutePath)) {
+      if (prefixBytes === undefined) return Buffer.from(readFileSync(absolutePath))
+      const file = await open(absolutePath, 'r')
       try {
-        return await runIdempotentSandboxOperation({
-          sandboxId: target.sandboxId,
-          operationClass: 'read',
-          getClient: () => client,
-          recoverClient: async (failed, cause) => {
-            if (!manager.recoverClient) throw cause
-            return manager.recoverClient(target.sandboxId, failed, cause)
-          },
-          operation: (current) =>
-            range ? readRemoteFile(current, target.path, range) : readCompleteFile(current, target.path),
-        })
-      } catch (err) {
-        throw await target.mapFailure(err as Error)
+        const buffer = Buffer.alloc(prefixBytes)
+        const { bytesRead } = await file.read(buffer, 0, prefixBytes, 0)
+        return buffer.subarray(0, bytesRead)
+      } finally {
+        await file.close()
       }
-    },
+    }
+
+    const target = route(absolutePath)
+    const client = target.getClient()
+    if (!client) {
+      throw await target.mapFailure(new Error(`No K8s sandbox client found for ${target.sandboxId}`))
+    }
+
+    try {
+      return await runIdempotentSandboxOperation({
+        sandboxId: target.sandboxId,
+        operationClass: 'read',
+        getClient: () => client,
+        recoverClient: async (failed, cause) => {
+          if (!manager.recoverClient) throw cause
+          return manager.recoverClient(target.sandboxId, failed, cause)
+        },
+        operation: (current) => readRemoteFile(current, target.path, range, prefixBytes),
+      })
+    } catch (err) {
+      throw await target.mapFailure(err as Error)
+    }
+  }
+  return {
+    readFile,
+    detectImageMimeType: async (absolutePath) =>
+      detectReadImageMimeType(await readFile(absolutePath, undefined, IMAGE_SNIFF_BYTES)),
 
     access: async (absolutePath: string): Promise<void> => {
       // Check config files locally
@@ -592,33 +601,8 @@ export function createHttpBashOperations(
           }
         }
 
-        // Abort settlement is gated on the remote zero-owned-process proof so
-        // Pi/worker retry cannot overlap the predecessor invocation.
-        if (options.signal) {
-          const abortHandler = () => {
-            void stream.cancelAndWait('tool-abort').then(
-              () => settle(() => reject(new Error('Command aborted'))),
-              (error) => settle(() => reject(new Error(`Command cleanup unproven: ${error.message}`)))
-            )
-          }
-
-          if (options.signal.aborted) {
-            abortHandler()
-            return
-          }
-
-          options.signal.addEventListener('abort', abortHandler, { once: true })
-
-          // Clean up listener when stream ends
-          stream.on('end', () => {
-            options.signal?.removeEventListener('abort', abortHandler)
-          })
-          stream.on('error', () => {
-            options.signal?.removeEventListener('abort', abortHandler)
-          })
-        }
-
         stream.on('data', (response) => {
+          if (settled) return
           if (response.stdout) {
             options.onData(processCarriageReturns(Buffer.from(response.stdout, 'base64')))
           }
@@ -633,7 +617,7 @@ export function createHttpBashOperations(
           }
         })
 
-        stream.on('error', (err: Error) => {
+        const handleStreamError = (err: Error) => {
           // Claim settlement synchronously, then require remote cleanup before
           // surfacing the transport failure. If cleanup cannot be proven, the
           // invocation fence remains nonterminal and prevents a replay.
@@ -658,11 +642,46 @@ export function createHttpBashOperations(
             const mapped = await mapFailure(err).catch(() => err)
             reject(cleanupError ? attachSecondaryFailure(mapped, cleanupError) : mapped)
           })()
-        })
+        }
+        stream.on('error', handleStreamError)
 
         stream.on('end', () => {
+          if (finalExitCode === null) {
+            handleStreamError(new BashOutcomeUnknownError(stream.invocationId, 'protocol_truncated'))
+            return
+          }
           settle(() => resolve({ exitCode: finalExitCode }))
         })
+
+        // Abort settlement is gated on the remote zero-owned-process proof so
+        // Pi/worker retry cannot overlap the predecessor invocation.
+        if (options.signal) {
+          const abortHandler = () => {
+            // Cancelling the HTTP reader can emit end before the remote cleanup
+            // promise settles. Claim the result first: end is not an exit code.
+            if (settled) return
+            settled = true
+            void stream.cancelAndWait('tool-abort').then(
+              () => reject(new Error('Command aborted')),
+              (error) => reject(new Error(`Command cleanup unproven: ${error.message}`))
+            )
+          }
+
+          if (options.signal.aborted) {
+            abortHandler()
+            return
+          }
+
+          options.signal.addEventListener('abort', abortHandler, { once: true })
+
+          // Clean up listener when stream ends
+          stream.on('end', () => {
+            options.signal?.removeEventListener('abort', abortHandler)
+          })
+          stream.on('error', () => {
+            options.signal?.removeEventListener('abort', abortHandler)
+          })
+        }
       })
     },
   }

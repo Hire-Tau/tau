@@ -54,6 +54,10 @@ function focusVisibleSquadAgentPanel() {
 // Derived display states considered "waiting" for filtering/grouping purposes.
 const WS_WAITING_DERIVED_STATES: WorkStreamDerivedState[] = ['waiting_on_answer', 'waiting_on_dependency', 'blocked']
 
+// Keep metadata links above the feed row's stretched work-stream button.
+const FEED_METADATA_LINK_CLASS =
+  'relative z-10 rounded-sm text-muted hover:text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
+
 const WS_STATUS_ICONS: Record<WorkStreamPresentationState, string> = {
   active: '●',
   in_progress: '●',
@@ -514,8 +518,27 @@ function WorkStreamRow({
           <WorkStreamStatusBadges workStream={workStream} />
         </button>
         <div className="ml-4 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-          {squad && <span>{squad.name}</span>}
-          {!isDone && assigneeTypeName && <span>· {assigneeTypeName}</span>}
+          {squad && (
+            <Link
+              to={`/squads/${slugFor(squad.id)}`}
+              className={FEED_METADATA_LINK_CLASS}
+              title={`Open ${squad.name} squad`}
+            >
+              {squad.name}
+            </Link>
+          )}
+          {!isDone && assigneeTypeName && assigneeTarget && (
+            <>
+              <span aria-hidden="true">·</span>
+              <Link
+                to={assigneeTarget}
+                className={FEED_METADATA_LINK_CLASS}
+                title={`Open ${assigneeTypeName} agent thread`}
+              >
+                {assigneeTypeName}
+              </Link>
+            </>
+          )}
           {isDone && Number.isFinite(completedAt.getTime()) && (
             <time dateTime={completedAt.toISOString()}>
               · {completedAt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
@@ -529,7 +552,7 @@ function WorkStreamRow({
                 href={github.prUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="relative z-10 inline-flex items-center gap-1 text-muted hover:text-link"
+                className={clsx(FEED_METADATA_LINK_CLASS, 'inline-flex items-center gap-1')}
                 aria-label={`Open PR #${github.prNumber}`}
               >
                 <PullRequestIcon className="h-3.5 w-3.5" /> #{github.prNumber}

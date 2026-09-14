@@ -96,6 +96,15 @@ test('waits for successful visible loading, freezes the visit baseline, and ackn
   await render()
   expect(countWindows.at(-1)).toEqual(['2026-01-01T00:00:00.000Z', observedAt])
   expect(saved).toEqual([observedAt])
+  const dismiss = dom.window.document.querySelector<HTMLButtonElement>(
+    'button[aria-label="Dismiss updates since your last visit"]'
+  )!
+  expect(dismiss).not.toBeNull()
+  await dom.act(async () => dismiss.click())
+  expect(dom.window.document.querySelector('[data-testid="feed-visit-summary"]')).toBeNull()
+  await render()
+  expect(dom.window.document.querySelector('[data-testid="feed-visit-summary"]')).toBeNull()
+  expect(saved).toEqual([observedAt])
 })
 
 test('first visit establishes a watermark without claiming previous completions', async () => {

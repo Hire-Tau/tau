@@ -136,6 +136,18 @@ tau slot unsubscribe <waiter-id>
 (`unavailable`, queueing nobody). `queued` is not ownership: wait for the grant
 before starting protected work.
 
+A live queued subscription suppresses automatic work-stream continuation nudges
+and idle escalation until no queued waits remain. It does not block human
+steering, actual grant notifications, or other inbox work. Waiters do not expire
+by age; cancellation, unsubscription, promotion, and owner/pool lifecycle end the
+wait. An owned claim (including an expired claim) is not a queued subscription.
+
+The web agent conversation shows **Queued for slots** with the current pool keys
+when the viewer can read the agent and use or manage slots in its squad. Multiple
+waits appear together; this is additional context, not the only possible reason
+for inactivity. Status refreshes on lifecycle events and reconnect without
+polling, and does not imply queue position or an estimated grant time.
+
 Pool capacity is bounded from 1 through 1000 units. Claims expire automatically but expiry does not stop external work. Release claims immediately when protected work finishes. Slot commands use exit code 0 for every successfully retrieved authoritative outcome, including `unavailable`, `queued`, `expired`, and `already_released`; automation must branch on the JSON `outcome` rather than treating admission state as a transport error. Invalid input, authorization failures, and API failures exit nonzero.
 
 `tau slot list` prints each pool with the caller's own recovery state — a held claim with its expiry and release/renew commands, or a queued waiter with its queue time and unsubscribe command — so the identifiers needed for release, renew, and unsubscribe are directly copyable. Foreign holders stay redacted to short IDs; pass `--json` for the untouched server projection. Slot pools of an archived squad answer `410 Squad is archived`.

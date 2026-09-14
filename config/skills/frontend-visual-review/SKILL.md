@@ -16,7 +16,7 @@ description: Use when previewing a UI, capturing screenshots, or iterating visua
 ## Prerequisites
 
 - The `browser_*` tools (`browser_open`, `browser_click`, `browser_type`, `browser_scroll`, `browser_screenshot`, `browser_read`, `browser_console`) are available in your agent type.
-- `APP_URL` env var is set in the sandbox (it is, for every Tau squad — see the Platform URLs section of your system prompt).
+- The instance has a browser-reachable `APP_URL` configured for path-based local apps (hosted app URLs already have their own origin).
 - A working dev server command (e.g. `bun run dev`, `npm run dev`, `python3 -m http.server`).
 
 ## Command runtime
@@ -26,7 +26,7 @@ Run every command in this skill with `squad_bash` from the project worktree. Sta
 ## The 5-step loop
 
 1. **Start the dev server** bound to `0.0.0.0` so the sandbox's local-deployment proxy can reach it.
-2. **Register it as a Tau local app** so it gets a public, token-protected URL.
+2. **Register it as a private Tau local app** so Tau can authorize the browser handoff.
 3. **Open it** with `browser_open`.
 4. **Screenshot / read / interact** with the other `browser_*` tools.
 5. **Iterate** — edit code, the dev server hot-reloads, repeat steps 3–4.
@@ -43,28 +43,40 @@ RUN_NAME=<unique-project-name>
 tau deploy local start "$SQUAD_ID" \
   --name "$RUN_NAME" \
   --cwd "$PWD" \
-  --command 'bun run dev -- --host 0.0.0.0 --port $PORT --base $TAU_APP_BASE_PATH'
+  --command 'bun run dev -- --host 0.0.0.0 --port $PORT --base $TAU_APP_BASE_PATH' \
+  --json | jq '{id, name, status, port}'
 
-# Then derive the browser URL.
-DEPLOYMENT=$(tau deploy local list "$SQUAD_ID" --json | jq -r '.[] | select(.name==env.RUN_NAME) | .urlPathOrHost' | head -1)
-PUBLIC_URL="${APP_URL%/}${DEPLOYMENT}"
-echo "$PUBLIC_URL"
+# Find an existing run without printing its credential URL.
+tau deploy local list "$SQUAD_ID" --json | \
+  jq --arg name "$RUN_NAME" '.[] | select(.name == $name) | {id, name, status, port}'
 ```
 
 For other frameworks, adapt only `--command`; keep the managed launch, bind address, assigned `$PORT`, and base-path support. Managed local apps are supervised and restartable conveniences, not a durability mechanism for one-shot builds, migrations, tests, or generation jobs.
 
-Verify reachability from your sandbox:
+Verify app health directly in the shared runtime, without putting a launch credential in a shell command or log:
 
 ```bash
-curl -sS -o /dev/null -w "%{http_code}\n" "$PUBLIC_URL"
-# Expect 200 (or whatever your route returns; never 404 from the proxy).
+DEPLOYMENT_ID=<full-id-from-the-output-above>
+APP_PORT=$(tau deploy local get "$DEPLOYMENT_ID" --json | jq -r '.port')
+curl -sS -o /dev/null -w '%{http_code}\n' "http://127.0.0.1:$APP_PORT/"
+# Use the app's own health route/base path if it does not serve /.
 ```
+
+A loopback success proves the app is listening, not that proxy/browser access works. Verify that separately with the next step.
 
 ## Step 3: Open it with `browser_open`
 
-Call `browser_open` with `$PUBLIC_URL`. The browser tool runs on the Tau host (Playwright Chromium, headless) and reaches your sandbox via the `/api/app/<id>/` proxy. The output reports the resolved page title and an attached screenshot.
+Pass the **full deployment UUID**, not its credential URL:
 
-If you see `ERR_CONNECTION_REFUSED` or a timeout, you almost certainly tried to point the browser at `127.0.0.1` or a sandbox-internal IP. Use the `$PUBLIC_URL` you derived above — nothing else is reachable.
+```json
+{ "localDeploymentId": "<full-deployment-uuid>" }
+```
+
+Tau checks the calling agent's current `deployments:read` permission for that squad and the deployment's current state, resolves the issued URL internally, and passes it directly to the browser backend. Both hosted app origins and path-based proxy URLs are supported. The result includes a screenshot without echoing the launch URL or page title. The proxy's existing token/cookie authentication remains in force; subsequent asset requests use its app-scoped cookie.
+
+Never print, copy into tool arguments, or post `urlPathOrHost`/`_tau_token` values. Redaction is intentional, not something to work around. Ordinary non-credential URLs still use `browser_open({ "url": "https://example.com" })`; provide exactly one of `url` or `localDeploymentId`. On an older instance without the ID option, ask for an upgrade rather than copying a redacted credential.
+
+If opening fails, check the deployment status and your access, then the instance's `APP_URL` and browser-to-proxy connectivity. A `403` from an edge provider (for example Cloudflare error `1010`, even on unsigned requests) is not evidence that Tau rejected the launch credential. Report that separately to the operator; do not weaken authentication or change edge settings. Screenshots and page content can contain app-owned sensitive data: use synthetic fixtures and inspect before sharing.
 
 ## Step 4: Capture / inspect / interact
 
@@ -75,7 +87,7 @@ If you see `ERR_CONNECTION_REFUSED` or a timeout, you almost certainly tried to 
 
 ## Step 5: Iterate
 
-Most dev servers (Vite, Next.js, Remix, etc.) hot-reload on file change. After editing, re-run `browser_open` (or `browser_screenshot` on the same page) and compare. If the change didn't take effect, hard-reload by re-calling `browser_open` on the same URL — the browser session is reused per agent run, so this re-navigates the existing page.
+Most dev servers (Vite, Next.js, Remix, etc.) hot-reload on file change. After editing, re-run `browser_open` (or `browser_screenshot` on the same page) and compare. If the change didn't take effect, re-call `browser_open` with the same `localDeploymentId` — the browser session is reused per agent run, so this re-navigates the existing page using the current authorized URL.
 
 ## Saving screenshots for handoff
 
@@ -100,13 +112,13 @@ tau deploy local archive <deployment-id>
 
 ## Troubleshooting
 
-| Symptom                                                     | Cause / fix                                                                                                                                                        |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `browser_open` returns `ERR_CONNECTION_REFUSED` or timeout. | You're pointing at `localhost`/`127.0.0.1` or a sandbox-internal IP. Use `${APP_URL}${urlPathOrHost}` — the browser runs on the Tau host, not in the sandbox.      |
-| Page loads but is blank/white.                              | Check `browser_console` for JS errors and bundler messages first. Then verify the dev server actually serves index.html at `/` (some frameworks need a base path). |
-| Auth-walled app (login redirect, etc.).                     | Either point at a public route or seed cookies via a `browser_open` to a login URL followed by `browser_type`/`browser_click`.                                     |
-| Old screenshot is reused.                                   | Browser session is per-run. Call `browser_open` on the same URL to force a fresh navigation, or scroll to top with `browser_scroll`.                               |
-| Squad has hit the local-deployment limit.                   | `tau deploy local list --include-archived` then archive stale ones with `tau deploy local archive <id>`.                                                           |
+| Symptom                                           | Cause / fix                                                                                                                                                                      |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local preview cannot be opened.                   | Use the full `localDeploymentId`; check caller access, active deployment state, configured `APP_URL`, and browser connectivity. Do not guess a proxy origin or copy credentials. |
+| Page loads but is blank/white.                    | Check `browser_console` for JS errors and bundler messages first. Then verify the dev server actually serves index.html at `/` (some frameworks need a base path).               |
+| App-owned login redirect after the preview opens. | The app's login is separate from Tau preview access. Use its supported login flow with authorized synthetic test accounts; do not bypass either authentication layer.            |
+| Old screenshot is reused.                         | Browser session is per-run. Call `browser_open` with the same deployment ID to navigate again, or scroll to top with `browser_scroll`.                                           |
+| Squad has hit the local-deployment limit.         | `tau deploy local list --include-archived` then archive stale ones with `tau deploy local archive <id>`.                                                                         |
 
 ## See also
 
