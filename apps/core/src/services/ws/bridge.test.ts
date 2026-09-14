@@ -236,10 +236,9 @@ describe('WebSocket Event Bridge', () => {
     setupEventBridge(manager)
     const data = { squadId: 'squad-1' }
     eventEmitter.emit('slots.updated', data)
-    expect(broadcastSpy.mock.calls).toEqual([
-      ['squads', 'slots.updated', data],
-      ['squads:squad-1', 'slots.updated', data],
-    ])
+    expect(broadcastSpy).toHaveBeenCalledTimes(2)
+    expect(broadcastSpy).toHaveBeenCalledWith('squads', 'slots.updated', data)
+    expect(broadcastSpy).toHaveBeenCalledWith('squads:squad-1', 'slots.updated', data)
   })
 
   test('broadcasts machine.created to machines topic + instance', () => {
