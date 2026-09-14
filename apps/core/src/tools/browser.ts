@@ -4,12 +4,15 @@ import { getSandboxManager } from '../services/sandbox/factory'
 import { SandboxHttpError } from '../services/sandbox/k8s/http-client'
 import type { BrowserBackend } from '../services/sandbox/browser-backend'
 import type { SandboxToolsManager } from './k8s-sandbox'
+import { resolveLocalDeploymentBrowserUrl } from '../services/deploy/local-deployment-browser-url'
 
 // --- Types ---
 
 export type BrowserToolWithKey = ToolDefinition & { key: string }
 
 const NO_SANDBOX_ERROR = 'Sandbox is not running — browser tools need the agent sandbox up.'
+const LOCAL_DEPLOYMENT_ERROR =
+  'Could not open local preview. Check deployment access, current state, APP_URL configuration, and browser connectivity.'
 
 // --- Helper: screenshot as base64 content block ---
 
@@ -96,7 +99,13 @@ function getClient(sandboxId: string, getManager: typeof getSandboxManager): Bro
 // --- TypeBox Schemas ---
 
 const BrowserOpenSchema = Type.Object({
-  url: Type.String({ description: 'URL to navigate to.' }),
+  url: Type.Optional(Type.String({ description: 'URL to navigate to. Omit when using localDeploymentId.' })),
+  localDeploymentId: Type.Optional(
+    Type.String({
+      description:
+        'Full UUID of an authorized local deployment. Opens its current URL internally without exposing the launch credential. Use instead of url.',
+    })
+  ),
 })
 
 const BrowserClickSchema = Type.Object({
@@ -151,16 +160,33 @@ export function createBrowserTools(
     name: 'browser_open',
     key: 'browser_open',
     label: 'Open URL',
-    description: 'Open a URL in the browser. Returns a screenshot and the page title.',
+    description:
+      'Open a URL or an authorized local deployment in the browser. Prefer localDeploymentId for private previews: no credential URL needs to be copied. Returns a screenshot; URL mode also returns the page title.',
     parameters: BrowserOpenSchema,
-    async execute(_toolCallId: string, params: { url: string }): Promise<AgentToolResult<unknown>> {
+    async execute(
+      _toolCallId: string,
+      params: { url?: string; localDeploymentId?: string }
+    ): Promise<AgentToolResult<unknown>> {
+      const isLocalDeployment = params.localDeploymentId !== undefined
+      if ((params.url !== undefined) === isLocalDeployment) {
+        return errorResult('Provide exactly one of url or localDeploymentId.')
+      }
       const client = getClient(sandboxId, getManager)
       if (!client) return errorResult(NO_SANDBOX_ERROR)
       try {
-        const res = await client.browserOpen(runId, params.url)
-        return actionResult(`Page loaded: "${res.title}" (${params.url})`, res.screenshotBase64)
+        const url = isLocalDeployment
+          ? await resolveLocalDeploymentBrowserUrl(runId, params.localDeploymentId!)
+          : params.url!
+        if (!url) return errorResult(isLocalDeployment ? LOCAL_DEPLOYMENT_ERROR : 'URL is required.')
+        const res = await client.browserOpen(runId, url)
+        // Navigation errors and even page titles can echo location.href. Never
+        // reflect the internally resolved capability into the agent transcript.
+        return actionResult(
+          isLocalDeployment ? 'Local preview opened.' : `Page loaded: "${res.title}" (${params.url})`,
+          res.screenshotBase64
+        )
       } catch (err) {
-        return errorResult(mapBrowserError(err, true))
+        return errorResult(isLocalDeployment ? LOCAL_DEPLOYMENT_ERROR : mapBrowserError(err, true))
       }
     },
   }

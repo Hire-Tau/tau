@@ -113,6 +113,8 @@ page, and the browser console shows 404s (or Tau's own HTML) for every
 
 ### Access is token-gated; you do not manage it
 
+For browser tools, prefer `browser_open({ "localDeploymentId": "<full-deployment-uuid>" })`. Tau checks the calling agent's current deployment-read permission and deployment state, then passes the issued URL directly to the browser backend. You do not need to print or copy a capability through tool output. To inspect a run without its credential URL, use `tau deploy local get <id> --json | jq '{id, name, status, port}'`. See `frontend-visual-review` for the full loop.
+
 The URL Tau gives you carries `?_tau_token=…`. That token authenticates the
 first request and Tau then sets a cookie scoped to that one app, so the app's
 own scripts, styles and fetches authenticate automatically — nothing to
@@ -125,12 +127,18 @@ requires WebSockets.
 Two consequences worth knowing:
 
 - **The URL is the credential.** Anyone you send it to can open the app. Treat it
-  like a password, and prefer sharing it with the requesting human rather than
-  posting it somewhere durable.
+  like a password: do not echo it, paste it into browser-tool arguments, or post
+  it in messages/logs. Use the deployment-ID handoff for agents and the Apps UI
+  for humans; do not try to reconstruct a redacted token.
 - **`curl` without the token returns 401**, not a connection error. When probing
   from a shell, hit the app directly on `127.0.0.1:$PORT` inside the sandbox
   instead of going through the proxy URL — a 401 there means your credential is
   missing, not that the app is down.
+
+A proxy failure and an edge-provider rejection are different layers. For example,
+Cloudflare `403`/error `1010` on unsigned requests occurs before Tau's launch
+validation. Report that environment restriction to the operator; neither copying
+credentials nor weakening preview authentication fixes it.
 
 ## Consent gates
 
@@ -168,15 +176,15 @@ Provider CLI commands in squad sandboxes can only read Secret Store values after
 
 Use the provider's expected environment variable name while mapping from the Tau secret:
 
-| Provider     | Tau secret key              | CLI environment variable                      |
-| ------------ | --------------------------- | --------------------------------------------- |
-| Vercel       | `DEPLOY_VERCEL_TOKEN`       | `VERCEL_TOKEN`                                |
-| Netlify      | `DEPLOY_NETLIFY_TOKEN`      | `NETLIFY_AUTH_TOKEN`                          |
-| Cloudflare   | `DEPLOY_CLOUDFLARE_TOKEN`   | `CLOUDFLARE_API_TOKEN`                        |
+| Provider     | Tau secret key                | CLI environment variable                      |
+| ------------ | ----------------------------- | --------------------------------------------- |
+| Vercel       | `DEPLOY_VERCEL_TOKEN`         | `VERCEL_TOKEN`                                |
+| Netlify      | `DEPLOY_NETLIFY_TOKEN`        | `NETLIFY_AUTH_TOKEN`                          |
+| Cloudflare   | `DEPLOY_CLOUDFLARE_TOKEN`     | `CLOUDFLARE_API_TOKEN`                        |
 | GitHub Pages | GitHub integration connection | Tau resolves the assigned account per command |
-| Railway      | `DEPLOY_RAILWAY_TOKEN`      | `RAILWAY_API_TOKEN` for account/project flows |
-| DigitalOcean | `DEPLOY_DIGITALOCEAN_TOKEN` | `DIGITALOCEAN_ACCESS_TOKEN`                   |
-| Supabase     | `DEPLOY_SUPABASE_TOKEN`     | `SUPABASE_ACCESS_TOKEN`                       |
+| Railway      | `DEPLOY_RAILWAY_TOKEN`        | `RAILWAY_API_TOKEN` for account/project flows |
+| DigitalOcean | `DEPLOY_DIGITALOCEAN_TOKEN`   | `DIGITALOCEAN_ACCESS_TOKEN`                   |
+| Supabase     | `DEPLOY_SUPABASE_TOKEN`       | `SUPABASE_ACCESS_TOKEN`                       |
 
 Token troubleshooting:
 
