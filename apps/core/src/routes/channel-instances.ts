@@ -1,3 +1,4 @@
+import { parseTrustedChannelIds } from '../services/channel-access'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { ChannelInstance } from '../entities/ChannelInstance'
@@ -18,6 +19,7 @@ export const channelInstancesRouter = new Hono()
         name: inst.name,
         provider: inst.provider,
         providerConfig: inst.providerConfig,
+        trustedChannelIds: inst.trustedChannelIds,
         channelSquadMap: inst.channelSquadMap,
         defaultSquadId: inst.defaultSquadId,
         yamlFieldOverrides: inst.yamlFieldOverrides ?? [],
@@ -42,6 +44,7 @@ export const channelInstancesRouter = new Hono()
       name: inst.name,
       provider: inst.provider,
       providerConfig: inst.providerConfig,
+      trustedChannelIds: inst.trustedChannelIds,
       channelSquadMap: inst.channelSquadMap,
       defaultSquadId: inst.defaultSquadId,
       conciergeAgentId: inst.conciergeAgentId,
@@ -66,6 +69,7 @@ export const channelInstancesRouter = new Hono()
       name,
       provider,
       providerConfig: providerConfig || {},
+      trustedChannelIds: parseTrustedChannelIds(body.trustedChannelIds ?? []),
       channelSquadMap: channelSquadMap || {},
       defaultSquadId,
     })
@@ -90,6 +94,7 @@ export const channelInstancesRouter = new Hono()
     if (!nextDefaultSquadId) {
       return c.json(missingDefaultResponse(), 400)
     }
+    if (body.trustedChannelIds !== undefined) body.trustedChannelIds = parseTrustedChannelIds(body.trustedChannelIds)
     await existing.update(body)
     await channelSync.recomputeFieldOverrides(id)
     const updated = await ChannelInstance.find(id)

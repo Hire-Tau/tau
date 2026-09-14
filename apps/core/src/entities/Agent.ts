@@ -424,8 +424,13 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
    * @param threadId - The thread ID to search for
    * @returns The agent or null if not found
    */
-  static async findByThreadId(provider: string, threadId: string): Promise<Agent | null> {
-    const row = await findAgentRowByThreadId(provider, threadId)
+  static async findByThreadId(
+    provider: string,
+    threadId: string,
+    instanceId?: string,
+    channelId?: string
+  ): Promise<Agent | null> {
+    const row = await findAgentRowByThreadId(provider, threadId, instanceId, channelId)
     return row ? new Agent(row) : null
   }
 

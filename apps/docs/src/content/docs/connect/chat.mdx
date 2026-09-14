@@ -6,7 +6,7 @@ description: Connect a Slack, Discord, or Telegram bot and route its conversatio
 import ModeContent from '../../../components/ModeContent.astro'
 
 Chat channels let you ask about work and send requests to a squad from Slack,
-Discord, or Telegram. Tau's concierge answers questions and can create work in the routed squad,
+Discord, or Telegram. A consultant in Tau answers questions and can create work in the routed squad,
 using its configured tools and permissions. Create a squad and
 [connect its model provider](/configure/models/) before testing a conversation.
 
@@ -82,21 +82,58 @@ Reinstall the Slack app after changing its scopes.
 ## Route messages to a squad
 
 On the provider card, choose a **Default squad**. Messages arriving through
-that bot go to this squad, and the routing entry under **Channel routing** is
+that bot go to this squad, and the routing entry under **Channel routing and access** is
 created for you.
 
-To send one channel or chat somewhere else, open the entry under **Channel
-routing**, choose **+ Add override**, and pair the channel or chat ID with
-another squad. The override uses the individual channel or chat ID, not the
-server or workspace ID.
+To send one channel or chat somewhere else, choose **Add override** under
+**Channel routing and access** and pair the channel or chat ID with another squad.
+These are routing rules for the configured bot, not additional bot connections.
+Discord threads inherit their parent channel's routing override.
+
+## Link your chat account
+
+By default, only linked Tau users can send requests through a bot. Linking proves
+which account you control; it does not give you new squad permissions.
+
+1. Sign in to Tau and open **Settings → Account → Linked chat accounts**.
+2. Choose **Link a chat account** and copy the `/tau link CODE` command.
+3. Send it to the bot from your own external account. In Slack or Discord you can
+   also mention Tau with `link CODE`.
+4. Return to Tau. Check the provider, account name, and account ID shown, then
+   choose **Link this account**. Only confirm an account from which you sent the code.
+
+Codes expire after 10 minutes. Choose **Cancel** and start again if a code expires
+or you lose it. Use **Unlink** to remove a connection to your external account.
+Your Tau account needs permission to chat in the squad selected by the routing
+rule. Tau checks that permission on every incoming message.
+
+### Trust a channel instead
+
+An administrator can enter specific **Trusted channel IDs** in the provider's
+routing settings. Everyone who can send messages to Tau in one of those channels
+can direct the squad's agents without linking a Tau account. For Discord, trusting
+a parent channel also covers its threads. Keep this list empty to require linked
+users everywhere.
+
+Treat trusted channels like access to squad chat, including requests that agents
+may forward to the manager. Answers are posted where the question was asked;
+choose the audience accordingly. Changing routing does not make a channel private.
 
 ## Test and continue a conversation
 
-Send `/tau status`, then `/tau ask What is this squad working on?`. Reply to the
-bot's response to continue that conversation. Slack uses native thread replies,
-Discord uses threads, and Telegram uses reply-to-message. In Slack, start `/tau`
-from the channel composer; use replies, rather than another slash command, to
-continue an existing conversation.
+Send `/tau help` to check connectivity; help works before linking. After linking,
+send `/tau ask What is this squad working on?`.
+
+- **Slack:** start `/tau` in the channel composer. Mention the bot in its reply
+  thread to continue; ordinary unmentioned thread replies are ignored.
+- **Discord:** use `/tau` or mention the bot. Mention it again in the thread for
+  follow-ups, or use a slash command in that thread.
+- **Telegram:** messages in a private bot chat continue the same conversation.
+  In a group, use `/tau` or reply to a bot message.
+
+Tau uses a consultant for these conversations, with tools to reply and post
+updates to the originating channel. Questions are asked there, rather than in a
+separate Tau question form. Existing channel conversation history is retained.
 
 If there is no reply, check the card: the integration switch, the
 **Connection** status (a rejected token is explained there), the default
@@ -105,3 +142,10 @@ Interactions Endpoint URL was saved in the portal.
 If the request arrives but the agent cannot answer, check the squad's model
 provider. To send work updates into this chat, configure
 [notifications](/connect/notifications/) separately.
+
+### Use a bot with one Tau instance
+
+Use a separate Telegram bot token for each Tau instance. Telegram stores one
+webhook destination per bot: configuring the same token on another instance
+replaces that destination. Turning either copy off can also remove the shared
+webhook. A healthy token alone does not prove messages are reaching this instance.

@@ -21,13 +21,14 @@ export type ChannelInstanceRow = InferSelectModel<typeof channelInstances>
 export type { ProviderConfig } from '../channels/provider'
 import { Squad } from './Squad'
 
-const CONCIERGE_AGENT_TYPE = 'concierge'
+const CHANNEL_AGENT_TYPE = 'consultant'
 
 export interface CreateChannelInstanceInput {
   id: string
   name: string
   provider: string
   providerConfig: ProviderConfig
+  trustedChannelIds?: string[]
   channelSquadMap?: Record<string, string>
   defaultSquadId?: string
 }
@@ -35,6 +36,7 @@ export interface CreateChannelInstanceInput {
 export interface UpdateChannelInstanceInput {
   name?: string
   providerConfig?: ProviderConfig
+  trustedChannelIds?: string[]
   channelSquadMap?: Record<string, string>
   defaultSquadId?: string | null
   conciergeAgentId?: string | null
@@ -45,6 +47,7 @@ export class ChannelInstance implements ChannelInstanceRow {
   declare name: string
   declare provider: string
   declare providerConfig: ProviderConfig
+  declare trustedChannelIds: string[]
   declare channelSquadMap: Record<string, string>
   declare defaultSquadId: string | null
   declare conciergeAgentId: string | null
@@ -57,6 +60,7 @@ export class ChannelInstance implements ChannelInstanceRow {
   constructor(data: ChannelInstanceRow) {
     Object.assign(this, data)
     // Normalize arrays and objects from Postgres
+    this.trustedChannelIds = data.trustedChannelIds ?? []
     this.providerConfig = (data.providerConfig as ProviderConfig) || {}
     this.channelSquadMap = (data.channelSquadMap as Record<string, string>) || {}
   }
@@ -122,6 +126,7 @@ export class ChannelInstance implements ChannelInstanceRow {
         name: input.name,
         provider: input.provider,
         providerConfig: input.providerConfig,
+        trustedChannelIds: input.trustedChannelIds ?? [],
         channelSquadMap: input.channelSquadMap || {},
         defaultSquadId: input.defaultSquadId || null,
       })
@@ -141,6 +146,7 @@ export class ChannelInstance implements ChannelInstanceRow {
         name: input.name,
         provider: input.provider,
         providerConfig: input.providerConfig,
+        trustedChannelIds: input.trustedChannelIds ?? [],
         channelSquadMap: input.channelSquadMap || {},
         defaultSquadId: input.defaultSquadId || null,
       })
@@ -149,6 +155,7 @@ export class ChannelInstance implements ChannelInstanceRow {
         set: {
           name: input.name,
           providerConfig: input.providerConfig,
+          trustedChannelIds: input.trustedChannelIds ?? [],
           channelSquadMap: input.channelSquadMap || {},
           defaultSquadId: input.defaultSquadId || null,
           updatedAt: new Date(),
@@ -169,6 +176,7 @@ export class ChannelInstance implements ChannelInstanceRow {
   async update(updates: UpdateChannelInstanceInput): Promise<void> {
     const updateValues: Record<string, unknown> = { updatedAt: new Date() }
 
+    if (updates.trustedChannelIds !== undefined) updateValues.trustedChannelIds = updates.trustedChannelIds
     if (updates.name !== undefined) updateValues.name = updates.name
     if (updates.providerConfig !== undefined) updateValues.providerConfig = updates.providerConfig
     if (updates.channelSquadMap !== undefined) updateValues.channelSquadMap = updates.channelSquadMap
@@ -223,11 +231,11 @@ export class ChannelInstance implements ChannelInstanceRow {
 
     // Spawn new concierge in the deterministic target squad
     const agent = await Agent.create({
-      agentTypeId: CONCIERGE_AGENT_TYPE,
+      agentTypeId: CHANNEL_AGENT_TYPE,
       squadId: warmSquadId,
       persist: true,
       context: {
-        scope: { type: 'concierge' },
+        scope: { type: 'consultant' },
         // Only store id and provider - other fields can change in DB
         channelInstance: {
           id: this.id,
@@ -248,10 +256,11 @@ export class ChannelInstance implements ChannelInstanceRow {
    */
   resolveTargetSquad(inbound: InboundMessage): string | null {
     const { responseContext } = inbound
+    const channelId = responseContext.routingChannelId ?? responseContext.channelId
 
     // 1. Channel mapping (e.g., #frontend channel → frontend-squad)
-    if (this.channelSquadMap && responseContext.channelId) {
-      const mapped = this.channelSquadMap[responseContext.channelId]
+    if (this.channelSquadMap && channelId) {
+      const mapped = this.channelSquadMap[channelId]
       if (mapped) return mapped
     }
 
@@ -292,14 +301,25 @@ export class ChannelInstance implements ChannelInstanceRow {
     const { InboxMessage } = await import('./InboxMessage')
 
     const targetSquad = this.resolveTargetSquadOrThrow(inbound)
+    const { canUseChannel } = await import('../services/channel-access')
+    if (
+      !(await canUseChannel(
+        this,
+        inbound.responseContext.routingChannelId ?? inbound.responseContext.channelId,
+        inbound.user.id,
+        targetSquad
+      ))
+    ) {
+      throw new Error('Channel sender is not authorized for this squad')
+    }
 
     // Spawn a NEW concierge agent for this conversation
     const agent = await Agent.create({
-      agentTypeId: CONCIERGE_AGENT_TYPE,
+      agentTypeId: CHANNEL_AGENT_TYPE,
       squadId: targetSquad,
       persist: true,
       context: {
-        scope: { type: 'concierge' },
+        scope: { type: 'consultant' },
         channelInstance: {
           id: this.id,
           provider: this.provider,

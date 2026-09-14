@@ -2115,6 +2115,9 @@ export const channelInstances = pgTable('channel_instances', {
   // Provider-specific configuration (guildId for Discord, teamId for Slack, botId for Telegram, etc.)
   providerConfig: jsonb('provider_config').notNull().default({}),
 
+  // Only these exact provider channel IDs bypass linked-user authorization.
+  trustedChannelIds: jsonb('trusted_channel_ids').$type<string[]>().notNull().default([]),
+
   // Multi-squad config
   channelSquadMap: jsonb('channel_squad_map').default({}), // channel_id → squad_id
   defaultSquadId: uuid('default_squad_id').references(() => squads.id, { onDelete: 'set null' }),
@@ -2153,6 +2156,40 @@ export const users = pgTable('users', {
   disabledAt: timestamp('disabled_at'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
+})
+
+// An external sender is linked within a configured provider instance, never by display name.
+export const channelIdentityLinks = pgTable(
+  'channel_identity_links',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    instanceId: varchar('instance_id', { length: 100 })
+      .notNull()
+      .references(() => channelInstances.id, { onDelete: 'cascade' }),
+    identityScope: text('identity_scope').notNull(),
+    externalUserId: text('external_user_id').notNull(),
+    externalUserName: text('external_user_name').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('channel_identity_sender_unique').on(table.instanceId, table.externalUserId)]
+)
+
+// The user starts in Tau, proves control in the provider, then confirms the sender in Tau.
+export const channelLinkChallenges = pgTable('channel_link_challenges', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  tokenHash: text('token_hash').notNull().unique(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  instanceId: varchar('instance_id', { length: 100 }).references(() => channelInstances.id, { onDelete: 'cascade' }),
+  identityScope: text('identity_scope'),
+  externalUserId: text('external_user_id'),
+  externalUserName: text('external_user_name'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
 export const userCredentials = pgTable('user_credentials', {

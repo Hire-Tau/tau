@@ -55,6 +55,7 @@ interface DiscordInteraction {
   }
   guild_id?: string
   channel_id?: string
+  channel?: { type?: number; parent_id?: string }
   member?: { user: { id: string; username: string; global_name?: string } }
   user?: { id: string; username: string; global_name?: string }
   token: string
@@ -200,12 +201,15 @@ export const discordProvider: ChannelProvider = {
         command,
         text: extractOptionValue(options, [...TAU_DISCORD_OPTION_NAMES]),
         channelId: interaction.channel_id || '',
+        routingChannelId: [10, 11, 12].includes(interaction.channel?.type ?? -1)
+          ? interaction.channel?.parent_id
+          : undefined,
         user: {
           id: user?.id || '',
           name: user?.global_name || user?.username || 'User',
         },
         messageId: interaction.id,
-        isInThread: false,
+        isInThread: [10, 11, 12].includes(interaction.channel?.type ?? -1),
         raw: {
           interactionToken: interaction.token,
           applicationId: interaction.application_id,

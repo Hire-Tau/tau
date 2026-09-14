@@ -32,6 +32,19 @@ export const TAU_DISCORD_COMMANDS = [
         type: DiscordOptionType.SUB_COMMAND,
         options: [{ name: 'squad', type: DiscordOptionType.STRING, required: true, description: 'Squad name or ID' }],
       },
+      {
+        name: 'link',
+        description: 'Link your Discord account to Tau',
+        type: DiscordOptionType.SUB_COMMAND,
+        options: [
+          {
+            name: 'code',
+            type: DiscordOptionType.STRING,
+            required: true,
+            description: 'Code from Tau Settings → Account',
+          },
+        ],
+      },
       { name: 'help', description: 'Show available commands and linked squads', type: DiscordOptionType.SUB_COMMAND },
     ],
   },

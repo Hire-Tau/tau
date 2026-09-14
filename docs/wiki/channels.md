@@ -22,7 +22,7 @@ gateway, and saving a new token reconnects it. Slack clients pick up token
 changes on their next request.
 
 Channels connect external platforms (Discord, Slack, Telegram) to Tau squads via
-a **concierge agent**. The current bundled concierge is a member of its routed
+a **consultant agent**. The consultant is a member of its routed
 squad: it answers questions and creates work streams directly, with its configured
 permissions and tools. It forwards squad-specific operational decisions when
 appropriate rather than forwarding every action request to a manager.
@@ -34,7 +34,7 @@ Discord/Slack User
        ↓
   Webhook Endpoint
        ↓
-  Concierge Agent (per conversation, in the routed squad)
+  Consultant Agent (per conversation, in the routed squad)
        ↓
   ┌─────────────────────────────────────┐
   │ Can handle directly:                │
@@ -53,34 +53,51 @@ Discord/Slack User
 
 ## Commands
 
-| Command          | Description                    | Handler   |
-| ---------------- | ------------------------------ | --------- |
-| `/tau status`    | Show active work streams       | Immediate |
-| `/tau <message>` | Ask questions or make requests | Concierge |
+| Command          | Description                    | Handler    |
+| ---------------- | ------------------------------ | ---------- |
+| `/tau status`    | Show active work streams       | Immediate  |
+| `/tau <message>` | Ask questions or make requests | Consultant |
 
-The concierge handles all freeform messages intelligently:
+The consultant handles all freeform messages intelligently:
 
 - **Questions** — Answered directly by searching memory, checking status, etc.
-- **Action requests** — The concierge can create and own work in its routed
+- **Action requests** — The consultant can create and own work in its routed
   squad. Operational decisions may be forwarded to the squad manager.
 
-## Thread Replies
+## Sender authorization and conversation reuse
 
-Users can continue conversations with the concierge by replying to bot messages:
+Ingress verifies the provider signature (or Discord gateway session) before using
+its sender ID. `channel-access.ts` checks either an exact trusted channel ID or a
+confirmed external identity linked to an enabled Tau user with current `chat:send`
+permission for the routed squad. Permission lookup bypasses the RBAC cache so
+revocation applies to the next message. Help and account linking do not start an
+agent and are available before this check. Notification commands can change only
+the squad routed to that channel.
 
-- **Each slash command creates a new thread** — When you run `/tau ask` or any other command, the bot's response starts a conversation thread.
-- **Replies are routed to the same concierge** — Simply reply to the bot's message in the thread to continue the conversation. The concierge maintains context within the thread.
-- **Thread isolation** — Each thread is an independent conversation. Starting a new slash command creates a new thread.
+`/api/channel-links` is a personal authenticated-user API. A user starts a random,
+short-lived challenge in Tau, submits it through authenticated provider ingress,
+and confirms the displayed sender in Tau. Only hashes are stored. Confirmation
+and uniqueness checks happen in a transaction. Links bind the instance and its
+provider identity, not display names; reusing a routing record for another Slack
+workspace invalidates old proofs and access. Unlink and disabled users fail closed.
 
-This works across all platforms (Discord, Slack, Telegram) with platform-native threading:
+Trusted channels explicitly bypass user linking. Anyone who can message there can
+direct squad agents, including asking the manager to act. This is not a restricted
+query interface. Replies remain in the originating channel; the sender chooses
+the audience. Thread history excludes unlinked/unpermitted senders outside trusted
+channels. Discord routing and trust use a verified parent channel for threads.
 
-| Platform | Threading Behavior                                                  |
-| -------- | ------------------------------------------------------------------- |
-| Discord  | Uses Discord threads; slash commands in threads route to same agent |
-| Slack    | Uses Slack's native thread replies                                  |
-| Telegram | Uses Telegram's reply-to-message feature                            |
+Slack and Discord continue a conversation on an explicit bot mention in a thread;
+unmentioned replies are ignored. Discord also accepts slash commands in a thread.
+Telegram reuses one conversation per chat and responds to private messages, group
+`/tau` commands, and replies to bot messages. Lookups are scoped to provider,
+instance, channel, thread, and the currently routed squad. A changed squad override
+does not resume an agent in the old squad.
 
-> **Slack note:** Start custom slash commands in the channel composer. To continue a conversation in Slack, **reply to the bot's message** instead of starting another `/tau` command.
+Telegram's persistent conversation ID is its chat ID. It must never be passed as
+`reply_to_message_id`: `postMessage.replyToMessageId` carries an optional incoming
+message ID separately. Follow-up acknowledgements reply to that message; later
+updates may post without a reply target.
 
 ## Connecting a provider
 
@@ -89,7 +106,7 @@ Each provider is one **connection** on the instance, saved from its card in
 validates it against the provider, records who the bot is (bot id, workspace,
 application), and does the provider-side setup that used to be manual. Pick a
 **Default squad** on the same card and the routing entry is created for you;
-**Channel routing** below it is only for per-channel overrides.
+**Channel routing and access** below it is only for per-channel overrides.
 
 Connections are ordinary integration connections: they appear in
 `GET /api/integrations/connections?provider=<provider>`, are re-validated by the
@@ -161,22 +178,22 @@ is kept and explained there rather than silently ignored.
 
 ## Channel routing
 
-A routing entry (a *channel instance*) links one provider identity — Discord
+A routing entry (a _channel instance_) links one provider identity — Discord
 server, Slack workspace, Telegram bot — to squads:
 
-| Field                    | Description                                   |
-| ------------------------ | --------------------------------------------- |
-| `id`                     | Unique identifier for the channel instance    |
-| `name`                   | Human-readable name                           |
-| `provider`               | `discord`, `slack`, or `telegram`             |
-| `providerConfig.guildId` | Discord guild/server ID                       |
-| `providerConfig.teamId`  | Slack workspace ID                            |
-| `providerConfig.botId`   | Telegram numeric bot ID                       |
-| `channelSquadMap`        | Map specific platform channels to squads      |
-| `defaultSquadId`         | Default squad for unrouted requests           |
+| Field                    | Description                                |
+| ------------------------ | ------------------------------------------ |
+| `id`                     | Unique identifier for the channel instance |
+| `name`                   | Human-readable name                        |
+| `provider`               | `discord`, `slack`, or `telegram`          |
+| `providerConfig.guildId` | Discord guild/server ID                    |
+| `providerConfig.teamId`  | Slack workspace ID                         |
+| `providerConfig.botId`   | Telegram numeric bot ID                    |
+| `channelSquadMap`        | Map specific platform channels to squads   |
+| `defaultSquadId`         | Default squad for unrouted requests        |
 
 Choosing a **Default squad** on the provider card creates or updates the entry
-for the connection's own identity; **Channel routing** on the card edits it and
+for the connection's own identity; **Channel routing and access** on the card edits it and
 adds per-channel overrides. `config/channels/*.yaml` templates are still synced
 for existing installs (`channelSquadMap` keyed by channel id, `defaultSquadId`),
 but new installs do not need them.
@@ -189,24 +206,20 @@ A channel instance can route to multiple squads. Inbound routing is deterministi
 2. **Default squad** — Use `defaultSquadId` if set
 
 If neither resolves a squad, routing fails with a configuration error. New UI
-and API entries require a default squad. The concierge's later decision to
+and API entries require a default squad. The consultant's later decision to
 consult another squad is separate from this initial routing.
 
-## Concierge Agent
+## Channel consultants
 
-The current concierge is **squad-scoped**:
+New channel conversations use `agentTypeId: consultant`, scoped to the resolved
+squad. The regular consultant runner adds `channel_respond`, `channel_send`, and
+`channel_edit` when the agent has channel-instance context, and omits `ask_human`.
+Its added instructions ask clarification questions and send updates in the channel.
 
-- `agentTypeId: concierge`
-- `squadId` is the resolved target squad
-- New conversational commands create their own concierge for thread isolation;
-  replies continue the associated conversation
-- The bundled prompt permits work-stream creation and ownership and delegates
-  implementation to work streams rather than writing code itself
-
-The reusable warm-concierge path is also scoped to the resolved/default squad.
-See [ChannelInstance](../../apps/core/src/entities/ChannelInstance.ts) and the
-[bundled concierge type](../../config/agent-types/concierge.yaml) for the current
-routing and agent contract.
+Legacy concierge conversations are adopted as consultants on their next authorized
+inbound message, preserving history. The old type remains for compatibility with
+existing records; new channel agents do not use it. Config sync no longer creates
+idle warm concierges. Agent allocation happens after sender authorization.
 
 ## Credentials and legacy environment variables
 
@@ -218,17 +231,17 @@ the same material lived in these secret-store keys / environment variables; on
 first boot after upgrading, a complete set is migrated into a connection, and the
 keys keep serving as a fallback for one release:
 
-| Variable                  | Now                                                          |
-| ------------------------- | ------------------------------------------------------------ |
-| `DISCORD_BOT_TOKEN`       | Discord credential                                            |
-| `DISCORD_APPLICATION_ID`  | Discovered from `/applications/@me`                          |
-| `DISCORD_PUBLIC_KEY`      | Discovered from `/applications/@me`                          |
-| `DISCORD_GUILD_ID`        | Chosen on the card (server for commands and routing)          |
-| `SLACK_BOT_TOKEN`         | Slack credential                                              |
-| `SLACK_SIGNING_SECRET`    | Slack credential                                              |
-| `TELEGRAM_BOT_TOKEN`      | Telegram credential                                           |
-| `TELEGRAM_WEBHOOK_SECRET` | Generated by Tau when a token is saved                        |
-| `TELEGRAM_BOT_ID`         | Discovered from `getMe`                                       |
+| Variable                  | Now                                                  |
+| ------------------------- | ---------------------------------------------------- |
+| `DISCORD_BOT_TOKEN`       | Discord credential                                   |
+| `DISCORD_APPLICATION_ID`  | Discovered from `/applications/@me`                  |
+| `DISCORD_PUBLIC_KEY`      | Discovered from `/applications/@me`                  |
+| `DISCORD_GUILD_ID`        | Chosen on the card (server for commands and routing) |
+| `SLACK_BOT_TOKEN`         | Slack credential                                     |
+| `SLACK_SIGNING_SECRET`    | Slack credential                                     |
+| `TELEGRAM_BOT_TOKEN`      | Telegram credential                                  |
+| `TELEGRAM_WEBHOOK_SECRET` | Generated by Tau when a token is saved               |
+| `TELEGRAM_BOT_ID`         | Discovered from `getMe`                              |
 
 Platform-managed keys (`TAU_MANAGED_SECRET_KEYS`) are not migrated or editable;
 the transports keep reading them directly.
@@ -247,6 +260,10 @@ the transports keep reading them directly.
 - Check that your server's clock is synchronized (signatures have a 5-minute window)
 
 ### Telegram: Bot not responding
+
+A bot has one webhook destination. Reusing its token on another Tau instance
+replaces the destination; disabling that copy may delete the shared webhook.
+Use separate bots for separate instances.
 
 - Check webhook is registered: `curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"`
 - Verify `TELEGRAM_WEBHOOK_SECRET` matches what you set in `setWebhook`
@@ -267,7 +284,7 @@ the transports keep reading them directly.
 
 ## Architecture
 
-See `/memory/decisions/discord-slack-concierge.md` for the full design document.
+The ingress contract is implemented in `apps/core/src/channels/handler.ts`, the Discord gateway, and `apps/core/src/services/channel-access.ts`.
 
 ## Notifications
 
@@ -281,13 +298,13 @@ require an explicit custom rule.
 
 ### Option 1: Use slash commands (easiest)
 
-From any channel where your bot is present:
+From a channel where your bot is present, after authorization for its routed squad:
 
 ```
 /tau notify <squad-name>
 ```
 
-This configures the current channel to receive notifications for that squad. To
+This configures the current channel to receive notifications for its routed squad. Other squads must be configured from Tau. To
 unsubscribe:
 
 ```

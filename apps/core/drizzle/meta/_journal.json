@@ -1212,6 +1212,13 @@
       "when": 1789168855164,
       "tag": "0172_warm_black_tarantula",
       "breakpoints": true
+    },
+    {
+      "idx": 173,
+      "version": "7",
+      "when": 1789354285955,
+      "tag": "0173_exotic_banshee",
+      "breakpoints": true
     }
   ]
 }

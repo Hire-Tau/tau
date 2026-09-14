@@ -9,6 +9,7 @@ import { registerProvider, type ChannelProvider } from '../provider'
 function createGateway(): DiscordGateway {
   const gateway = new DiscordGateway('test-token')
   ;(gateway as unknown as { botUserId: string }).botUserId = 'UBOT'
+  spyOn(gateway as any, 'getChannelRouting').mockResolvedValue({ isThread: true, parentId: 'channel-1' })
   return gateway
 }
 
@@ -27,6 +28,8 @@ describe('DiscordGateway mention routing', () => {
   it('ignores a regular message in a Tau-created thread when Tau is not mentioned', async () => {
     findByThreadIdSpy = spyOn(Agent, 'findByThreadId').mockResolvedValue({
       id: 'agent-1',
+      squadId: 'squad-test',
+      agentTypeId: 'consultant',
       context: {
         thread: {
           id: 'thread-1',
@@ -62,6 +65,8 @@ describe('DiscordGateway mention routing', () => {
   it('processes a mention in a Tau-created thread through the mention path', async () => {
     findByThreadIdSpy = spyOn(Agent, 'findByThreadId').mockResolvedValue({
       id: 'agent-1',
+      squadId: 'squad-test',
+      agentTypeId: 'consultant',
       context: {
         thread: {
           id: 'thread-1',
@@ -71,7 +76,14 @@ describe('DiscordGateway mention routing', () => {
         },
       },
     } as unknown as Agent)
-    findByProviderSpy = spyOn(ChannelInstance, 'findByProvider').mockResolvedValue({} as ChannelInstance)
+    findByProviderSpy = spyOn(ChannelInstance, 'findByProvider').mockResolvedValue(
+      new ChannelInstance({
+        id: 'instance-test',
+        defaultSquadId: 'squad-test',
+        trustedChannelIds: ['channel-1'],
+        disabled: false,
+      } as any)
+    )
     inboxSendSpy = spyOn(InboxMessage, 'send').mockResolvedValue({} as InboxMessage)
 
     const provider = {
@@ -117,6 +129,7 @@ describe('DiscordGateway mention routing', () => {
         type: 'channel_message',
         channelContext: {
           provider: 'discord',
+          routingChannelId: 'channel-1',
           channelId: 'thread-1',
           messageToEdit: 'thinking-1',
         },
@@ -125,6 +138,66 @@ describe('DiscordGateway mention routing', () => {
         command: 'mention',
       },
     })
+  })
+
+  it('rejects unlinked users before reading history or waking an existing thread agent', async () => {
+    findByThreadIdSpy = spyOn(Agent, 'findByThreadId').mockResolvedValue({
+      id: 'agent-1',
+      squadId: 'squad-test',
+      agentTypeId: 'consultant',
+      context: {
+        thread: {
+          id: 'thread-1',
+          channelId: 'thread-1',
+          originalMessageId: 'parent-1',
+          tauCreated: true,
+        },
+      },
+    } as unknown as Agent)
+    findByProviderSpy = spyOn(ChannelInstance, 'findByProvider').mockResolvedValue(
+      new ChannelInstance({
+        id: 'instance-test',
+        defaultSquadId: 'squad-test',
+        trustedChannelIds: [],
+        disabled: false,
+      } as any)
+    )
+    inboxSendSpy = spyOn(InboxMessage, 'send').mockResolvedValue({} as InboxMessage)
+
+    const provider = {
+      name: 'discord',
+      getThreadHistory: mock(() =>
+        Promise.resolve([
+          {
+            messageId: 'parent-1',
+            userId: 'user-2',
+            text: 'Earlier context',
+            timestamp: 'parent-1',
+            isBotMessage: false,
+          },
+        ])
+      ),
+      postMessage: mock(() => Promise.resolve({ messageId: 'thinking-1' })),
+    } as unknown as ChannelProvider
+    registerProvider(provider)
+
+    await (
+      createGateway() as unknown as { handleMessageCreate: (message: unknown) => Promise<void> }
+    ).handleMessageCreate({
+      id: 'message-1',
+      channel_id: 'thread-1',
+      guild_id: 'guild-1',
+      content: '<@UBOT> current follow-up',
+      author: { id: 'user-1', username: 'Ada' },
+      mentions: [{ id: 'UBOT', username: 'Tau' }],
+    })
+
+    expect(provider.getThreadHistory).not.toHaveBeenCalled()
+    expect(provider.postMessage).toHaveBeenCalledWith({
+      channelId: 'thread-1',
+      text: expect.stringContaining('Link your account'),
+    })
+    expect(inboxSendSpy).not.toHaveBeenCalled()
   })
 })
 

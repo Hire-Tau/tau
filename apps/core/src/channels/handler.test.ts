@@ -5,6 +5,18 @@ import { Agent } from '../entities/Agent'
 import { InboxMessage } from '../entities/InboxMessage'
 import type { ChannelProvider, InboundMessage } from './provider'
 
+function trustedInstance(extra: Partial<ChannelInstance> = {}) {
+  return Object.assign(
+    new ChannelInstance({
+      id: 'instance-test',
+      defaultSquadId: 'squad-test',
+      trustedChannelIds: ['C123', 'chat-1', '12345', 'telegram-chat-1'],
+      disabled: false,
+    } as any),
+    extra
+  )
+}
+
 describe('handleChannelEvent mention routing', () => {
   let findByProviderSpy: ReturnType<typeof spyOn>
   let findByThreadIdSpy: ReturnType<typeof spyOn>
@@ -18,7 +30,7 @@ describe('handleChannelEvent mention routing', () => {
 
   it('queues a Slack app mention in a channel for concierge with a managed thread context', async () => {
     const queueForConcierge = mock(() => Promise.resolve('agent-1'))
-    const channelInstance = { queueForConcierge } as unknown as ChannelInstance
+    const channelInstance = trustedInstance({ queueForConcierge })
     findByProviderSpy = spyOn(ChannelInstance, 'findByProvider').mockResolvedValue(channelInstance)
 
     const postMessage = mock(() => Promise.resolve({ messageId: 'unused', threadId: 'unused' }))
@@ -75,10 +87,12 @@ describe('handleChannelEvent mention routing', () => {
   })
 
   it('processes a mention in a Tau-created Slack thread instead of relying on regular message handling', async () => {
-    const channelInstance = {} as ChannelInstance
+    const channelInstance = trustedInstance()
     findByProviderSpy = spyOn(ChannelInstance, 'findByProvider').mockResolvedValue(channelInstance)
     findByThreadIdSpy = spyOn(Agent, 'findByThreadId').mockResolvedValue({
       id: 'agent-1',
+      squadId: 'squad-test',
+      agentTypeId: 'consultant',
       context: {
         thread: {
           id: '1710000000.000100',
@@ -155,10 +169,12 @@ describe('handleChannelEvent mention routing', () => {
   })
 
   it('ignores a regular message in a Tau-created Slack thread when Tau is not mentioned', async () => {
-    const channelInstance = {} as ChannelInstance
+    const channelInstance = trustedInstance()
     findByProviderSpy = spyOn(ChannelInstance, 'findByProvider').mockResolvedValue(channelInstance)
     findByThreadIdSpy = spyOn(Agent, 'findByThreadId').mockResolvedValue({
       id: 'agent-1',
+      squadId: 'squad-test',
+      agentTypeId: 'consultant',
       context: {
         thread: {
           id: '1710000000.000100',
@@ -198,9 +214,13 @@ describe('handleChannelEvent mention routing', () => {
   })
 
   it('routes active concierge mentions with history only since the latest Tau response', async () => {
-    const channelInstance = {} as ChannelInstance
+    const channelInstance = trustedInstance()
     findByProviderSpy = spyOn(ChannelInstance, 'findByProvider').mockResolvedValue(channelInstance)
-    findByThreadIdSpy = spyOn(Agent, 'findByThreadId').mockResolvedValue({ id: 'agent-1' } as unknown as Agent)
+    findByThreadIdSpy = spyOn(Agent, 'findByThreadId').mockResolvedValue({
+      id: 'agent-1',
+      squadId: 'squad-test',
+      agentTypeId: 'consultant',
+    } as unknown as Agent)
     inboxSendSpy = spyOn(InboxMessage, 'send').mockResolvedValue({} as InboxMessage)
 
     const provider = {
@@ -268,7 +288,7 @@ describe('handleChannelEvent mention routing', () => {
       queued = inbound
       return Promise.resolve('agent-replacement')
     })
-    const channelInstance = { queueForConcierge } as unknown as ChannelInstance
+    const channelInstance = trustedInstance({ queueForConcierge })
     findByProviderSpy = spyOn(ChannelInstance, 'findByProvider').mockResolvedValue(channelInstance)
     findByThreadIdSpy = spyOn(Agent, 'findByThreadId').mockResolvedValue(null)
 
@@ -337,7 +357,7 @@ describe('handleChannelEvent mention routing', () => {
       queued = inbound
       return Promise.resolve('agent-1')
     })
-    const channelInstance = { queueForConcierge } as unknown as ChannelInstance
+    const channelInstance = trustedInstance({ queueForConcierge })
     findByProviderSpy = spyOn(ChannelInstance, 'findByProvider').mockResolvedValue(channelInstance)
     findByThreadIdSpy = spyOn(Agent, 'findByThreadId').mockResolvedValue(null)
 
@@ -390,5 +410,90 @@ describe('handleChannelEvent mention routing', () => {
     expect(queued?.content).toContain('Katherine Johnson (@katherine, <@U789>): Additional historical context')
     expect(queued?.content).toContain('Countess (Ada Lovelace, @ada, <@U123>): @Tau current follow-up')
     expect(queued?.content).not.toContain('<@U123>: @Tau current follow-up')
+  })
+})
+
+describe('channel sender boundary', () => {
+  it('queues Telegram follow-ups using the incoming message ID for the acknowledgement', async () => {
+    const instance = trustedInstance()
+    const findByProviderSpy = spyOn(ChannelInstance, 'findByProvider').mockResolvedValue(instance)
+    const findByThreadIdSpy = spyOn(Agent, 'findByThreadId').mockResolvedValue({
+      id: 'agent-1',
+      squadId: 'squad-test',
+      agentTypeId: 'consultant',
+    } as Agent)
+    const inboxSendSpy = spyOn(InboxMessage, 'send').mockResolvedValue({} as never)
+    const postMessage = mock(async (_opts: Parameters<ChannelProvider['postMessage']>[0]) => ({ messageId: '43' }))
+    const provider = {
+      name: 'telegram',
+      reusesThreadForChat: true,
+      postMessage,
+      formatUserMention: (id: string) => id,
+    } as unknown as ChannelProvider
+    try {
+      await handleChannelEvent(
+        provider,
+        {
+          type: 'message',
+          text: 'Follow up',
+          channelId: '12345',
+          threadId: '12345',
+          messageId: '42',
+          user: { id: 'user-1', name: 'Ada' },
+          isInThread: true,
+          raw: {},
+        },
+        'bot-1'
+      )
+      expect(postMessage.mock.calls[0][0]).toMatchObject({ channelId: '12345', replyToMessageId: '42' })
+      expect(inboxSendSpy).toHaveBeenCalledTimes(1)
+      expect(inboxSendSpy.mock.calls[0][0].metadata?.channelContext).toMatchObject({
+        threadId: '12345',
+        messageToEdit: '43',
+      })
+    } finally {
+      findByProviderSpy.mockRestore()
+      findByThreadIdSpy.mockRestore()
+      inboxSendSpy.mockRestore()
+    }
+  })
+
+  it('rejects an unknown sender before fetching history, posting thinking, or creating an agent', async () => {
+    const instance = trustedInstance({ trustedChannelIds: [] })
+    const lookup = spyOn(ChannelInstance, 'findByProvider').mockResolvedValue(instance)
+    const queue = spyOn(instance, 'queueForConcierge')
+    const history = mock(async () => [])
+    const thinking = mock(async () => ({ messageId: 'thinking' }))
+    const post = mock(async (_opts: Parameters<ChannelProvider['postMessage']>[0]) => ({ messageId: 'denied' }))
+    const provider = {
+      name: 'slack',
+      getThreadHistory: history,
+      postThinkingIndicator: thinking,
+      postMessage: post,
+    } as unknown as ChannelProvider
+    try {
+      await handleChannelEvent(
+        provider,
+        {
+          type: 'mention',
+          user: { id: 'unlinked', name: 'Unknown' },
+          channelId: 'C123',
+          messageId: 'M1',
+          isInThread: true,
+          threadId: 'T1',
+          text: 'Do work',
+          raw: {},
+        },
+        'workspace'
+      )
+      expect(post).toHaveBeenCalledTimes(1)
+      expect(post.mock.calls[0][0].text).toContain('Link your account')
+      expect(history).not.toHaveBeenCalled()
+      expect(thinking).not.toHaveBeenCalled()
+      expect(queue).not.toHaveBeenCalled()
+    } finally {
+      lookup.mockRestore()
+      queue.mockRestore()
+    }
   })
 })

@@ -13,6 +13,9 @@ import { createSubagentLifecycleTools } from '../../tools/subagents'
 import { createSquadTodoTools } from '../../tools/squad-todo'
 import { AgentSession } from '../AgentSession'
 import {
+  createChannelRespondTool,
+  createChannelSendTool,
+  createChannelEditTool,
   createBrowserTools,
   createAsyncAskHumanTool,
   createWebTools,
@@ -191,6 +194,17 @@ export class SquadManagerRunner extends AgentRunner {
     }
 
     // Platform URLs (web UI, API, webhook endpoints)
+    if (this.agent.context && 'channelInstance' in this.agent.context && this.agent.context.channelInstance) {
+      p.section(
+        'External channel conversation',
+        [
+          'You are a consultant speaking through an external channel. Incoming requests have passed the channel’s linked-user or trusted-channel access policy. Reply in the originating channel; users are responsible for choosing an appropriate audience.',
+          'Use channel_respond once/early for each inbound inbox message. It replaces the thinking placeholder and marks the message read. Ask clarification questions there, not through ask_human.',
+          'Use channel_send for later progress and final results. Use channel_edit only for Tau-sent message IDs returned by these tools.',
+          'For work requested here, create a work stream owned by you so its lifecycle updates return to this conversation. Coordinate operational decisions with the squad manager, and relay progress back through channel_send.',
+        ].join('\n')
+      )
+    }
     p.text(buildPlatformUrlsPrompt())
 
     // Interpolate all {{...}} placeholders in the system prompt.
@@ -276,15 +290,22 @@ export class SquadManagerRunner extends AgentRunner {
     const environmentTools = [...baseTools, squadBashTool, ...webTools, ...browserTools]
     // Managers (and consultants) never block on a human answer: they keep coordinating and act
     // on the answer when it arrives. Only work-stream agents open question waits.
-    const askHumanTool = createAsyncAskHumanTool(
-      {
-        agentId: this.agent.id,
-        executionId: this.execution.id,
-        flushPersistence: () => this.persistence.waitForAll(),
-      },
-      undefined,
-      { allowBlocking: false }
+    const isChannelConversation = !!(
+      this.agent.context &&
+      'channelInstance' in this.agent.context &&
+      this.agent.context.channelInstance
     )
+    const askHumanTool = isChannelConversation
+      ? null
+      : createAsyncAskHumanTool(
+          {
+            agentId: this.agent.id,
+            executionId: this.execution.id,
+            flushPersistence: () => this.persistence.waitForAll(),
+          },
+          undefined,
+          { allowBlocking: false }
+        )
     const notifyContactTool = createNotifyContactTool({ agentId: this.agent.id })
     const subagentLifecycleTools = createSubagentLifecycleTools({ agentId: this.agent.id })
     const monitorTool = createMonitorTool({
@@ -311,7 +332,10 @@ export class SquadManagerRunner extends AgentRunner {
         squadId: this.squad.id,
         tools: {
           core: [
-            askHumanTool,
+            ...(askHumanTool ? [askHumanTool] : []),
+            ...(isChannelConversation
+              ? [createChannelRespondTool(), createChannelSendTool(this.agent.id), createChannelEditTool(this.agent.id)]
+              : []),
             ...(setAgentPurposeTool ? [setAgentPurposeTool] : []),
             notifyContactTool,
             ...subagentLifecycleTools,

@@ -324,13 +324,22 @@ export async function findMessageById(messageId: string): Promise<Message | null
 }
 
 /** Row-level select behind Agent.findByThreadId (no construction). */
-export async function findAgentRowByThreadId(provider: string, threadId: string): Promise<AgentRow | null> {
+export async function findAgentRowByThreadId(
+  provider: string,
+  threadId: string,
+  instanceId?: string,
+  channelId?: string
+): Promise<AgentRow | null> {
   const [row] = await db
     .select()
     .from(agents)
     .where(
       and(
-        eq(agents.agentTypeId, 'concierge'),
+        inArray(agents.agentTypeId, ['consultant', 'concierge']),
+        instanceId ? sql`${agents.context}->'channelInstance'->>'id' = ${instanceId}` : undefined,
+        channelId
+          ? sql`(${agents.context}->'thread'->>'channelId' = ${channelId} OR ${agents.context}->'thread'->>'id' = ${channelId})`
+          : undefined,
         inArray(agents.status, [...ADDRESSABLE_AGENT_STATUSES]),
         sql`${agents.context}->'channelInstance'->>'provider' = ${provider}`,
         sql`${agents.context}->'thread'->>'id' = ${threadId}`

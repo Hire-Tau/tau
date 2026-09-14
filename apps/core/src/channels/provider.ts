@@ -25,6 +25,8 @@ export interface ChannelEvent {
 
   /** Channel/conversation ID */
   channelId: string
+  /** Verified parent channel ID for providers whose threads are separate channels. */
+  routingChannelId?: string
 
   /** User who triggered the event */
   user: {
@@ -109,6 +111,7 @@ export interface InboundMessage {
  * Response context passed through the system.
  */
 export interface ResponseContext {
+  routingChannelId?: string
   provider: string
   channelId: string
   threadId?: string
@@ -174,6 +177,7 @@ export interface ChannelInstanceYaml {
   name: string
   provider: string
   providerConfig?: ProviderConfig
+  trustedChannelIds?: string[]
   channelSquadMap?: Record<string, string>
   defaultSquadId?: string
 }
@@ -250,7 +254,12 @@ export interface ChannelProvider {
   /**
    * Post a message to a channel or thread.
    */
-  postMessage(opts: { channelId: string; text: string; threadId?: string }): Promise<PostMessageResult>
+  postMessage(opts: {
+    channelId: string
+    text: string
+    threadId?: string
+    replyToMessageId?: string
+  }): Promise<PostMessageResult>
 
   /**
    * Edit an existing message.

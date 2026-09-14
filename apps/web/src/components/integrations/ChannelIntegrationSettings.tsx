@@ -8,7 +8,7 @@ import {
 import { usePermissions } from '../../hooks/usePermissions'
 import { integrationQueries, queries } from '../../queryOptions'
 import { integrationQueryKeys, queryKeys } from '../../queryKeys'
-import { ChannelsSection } from '../settings/ChannelsSection'
+import { ProviderChannelRouting } from './ProviderChannelRouting'
 import type { ProviderId } from '../settings/channelFormHelpers'
 import { useSquadsApi } from '../settings/squadsApi'
 import { IntegrationCredentialSettings } from './IntegrationCredentialSettings'
@@ -178,8 +178,12 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
         </section>
       )}
 
-      {!permissions.isLoading && !permissions.isError && permissions.can('channels:read') && (
-        <ChannelsSection provider={provider} />
+      {!permissions.isLoading && !permissions.isError && permissions.can('channels:read') && data?.routing && (
+        <ProviderChannelRouting
+          provider={provider}
+          instanceId={data.routing.instanceId}
+          canWrite={permissions.can('channels:update')}
+        />
       )}
     </div>
   )

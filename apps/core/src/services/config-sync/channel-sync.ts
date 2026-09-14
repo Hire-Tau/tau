@@ -3,7 +3,7 @@ import { channelInstances } from '../../db'
 import { getProvider } from '../../channels'
 import type { ChannelInstanceYaml, ProviderConfig } from '../../channels/provider'
 import { CHANNELS_DIR } from '../../lib/paths'
-import { ChannelInstance } from '../../entities/ChannelInstance'
+import { parseTrustedChannelIds } from '../channel-access'
 import { ConfigSync } from './ConfigSync'
 
 interface ParsedChannel {
@@ -11,6 +11,7 @@ interface ParsedChannel {
   name: string
   provider: string
   providerConfig: ProviderConfig
+  trustedChannelIds: string[]
   channelSquadMap: Record<string, string>
   defaultSquadId: string | null
 }
@@ -51,6 +52,7 @@ export class ChannelSync extends ConfigSync<ParsedChannel> {
       name: config.name,
       provider: config.provider,
       providerConfig: config.providerConfig || {},
+      trustedChannelIds: parseTrustedChannelIds(config.trustedChannelIds ?? []),
       channelSquadMap: config.channelSquadMap || {},
       defaultSquadId: config.defaultSquadId,
     }
@@ -66,6 +68,7 @@ export class ChannelSync extends ConfigSync<ParsedChannel> {
       name: parsed.name,
       provider: parsed.provider,
       providerConfig: parsed.providerConfig,
+      trustedChannelIds: parsed.trustedChannelIds,
       channelSquadMap: parsed.channelSquadMap,
       defaultSquadId: parsed.defaultSquadId,
     }
@@ -77,6 +80,7 @@ export class ChannelSync extends ConfigSync<ParsedChannel> {
       name: row.name as string,
       provider: row.provider as string,
       providerConfig: (row.providerConfig as ProviderConfig) || {},
+      trustedChannelIds: row.trustedChannelIds ?? [],
       channelSquadMap: (row.channelSquadMap as Record<string, string>) || {},
       defaultSquadId: (row.defaultSquadId as string) || null,
     }
@@ -91,6 +95,8 @@ export class ChannelSync extends ConfigSync<ParsedChannel> {
     if (row.providerConfig && Object.keys(row.providerConfig as object).length > 0) {
       obj.providerConfig = row.providerConfig
     }
+    if (Array.isArray(row.trustedChannelIds) && row.trustedChannelIds.length)
+      obj.trustedChannelIds = row.trustedChannelIds
     const channelSquadMap = row.channelSquadMap as Record<string, string> | null
     if (channelSquadMap && Object.keys(channelSquadMap).length > 0) obj.channelSquadMap = channelSquadMap
     if (row.defaultSquadId) obj.defaultSquadId = row.defaultSquadId
@@ -98,10 +104,5 @@ export class ChannelSync extends ConfigSync<ParsedChannel> {
     return stringify(obj, { lineWidth: 120 })
   }
 
-  async afterSync(id: string): Promise<void> {
-    const instance = await ChannelInstance.find(id)
-    if (instance && !instance.conciergeAgentId) {
-      await instance.getOrSpawnConcierge()
-    }
-  }
+  // Channel conversations are created on demand after sender authorization.
 }
