@@ -1,4 +1,4 @@
-import { agentToolRenderers } from '../lib/tool-renderers'
+import { agentToolRenderers, siteAssistantToolRenderers } from '../lib/tool-renderers'
 import { pageEditorToolRenderers } from '../components/pageEditorToolRenderers'
 import { expect, test } from 'bun:test'
 import { acquireDomHarness } from '../test/domHarness'
@@ -45,6 +45,68 @@ test('editor tool arguments use their own renderer and failed edits keep full de
       )
     )
     expect(document.body.textContent).toContain('/tmp/example.ts')
+  } finally {
+    await dom.cleanup()
+  }
+})
+
+test('rendered tool entries keep a label: the summary or text when present, the raw name otherwise', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const { root } = dom.createRoot()
+  try {
+    // (a) a rendered tool with toolArgs shows the summary, not the raw tool name.
+    await dom.act(async () =>
+      root.render(
+        <VoiceTranscriptInspector
+          history={[
+            {
+              role: 'tool' as const,
+              text: '',
+              final: true,
+              toolName: 'delegate_task',
+              toolArgs: JSON.stringify({ label: 'Check enabled schedules', request: 'x' }),
+            },
+          ]}
+          toolRenderers={siteAssistantToolRenderers}
+        />
+      )
+    )
+    expect(document.body.textContent).toContain('Started: Check enabled schedules')
+    expect(document.body.textContent).not.toContain('delegate_task')
+
+    // (b) an un-rendered tool still shows its raw name.
+    await dom.act(async () =>
+      root.render(
+        <VoiceTranscriptInspector
+          history={[{ role: 'tool' as const, text: '', final: true, toolName: 'get_work', toolArgs: '{}' }]}
+          toolRenderers={siteAssistantToolRenderers}
+        />
+      )
+    )
+    expect(document.body.textContent).toContain('get_work')
+
+    // (c) a rendered tool with no toolArgs but text keeps the text label, hides the raw name.
+    await dom.act(async () =>
+      root.render(
+        <VoiceTranscriptInspector
+          history={[{ role: 'tool' as const, text: 'Task update', final: true, toolName: 'assistant_inbox' }]}
+          toolRenderers={siteAssistantToolRenderers}
+        />
+      )
+    )
+    expect(document.body.textContent).toContain('Task update')
+    expect(document.body.textContent).not.toContain('assistant_inbox')
+
+    // (d) a rendered tool with neither toolArgs nor text falls back to the raw name.
+    await dom.act(async () =>
+      root.render(
+        <VoiceTranscriptInspector
+          history={[{ role: 'tool' as const, text: '', final: true, toolName: 'search_tau' }]}
+          toolRenderers={siteAssistantToolRenderers}
+        />
+      )
+    )
+    expect(document.body.textContent).toContain('search_tau')
   } finally {
     await dom.cleanup()
   }

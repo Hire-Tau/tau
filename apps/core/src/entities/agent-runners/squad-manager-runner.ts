@@ -2,6 +2,7 @@ import type { SessionUsage, MessageMetadata, Squad as SquadJson } from '@tau/sha
 import { AgentRunner } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
 import { Squad } from '../Squad'
+import { isAssistantDelegate } from '../../services/assistant-agents'
 import { getSquadManagerCliHelp } from '../../lib/utils/cli-help'
 import { prompt, interpolateTemplate, buildActiveSchedulesPrompt, buildPlatformUrlsPrompt } from '../../lib/prompts'
 import { composeAgentTypePrompt } from '../../services/agent-types/compose-prompt'
@@ -34,6 +35,10 @@ import { readSquadMemoryFile } from '../../services/memory/paths'
 import { buildModelOverridePrompt } from '../../lib/prompts/model-overrides-prompt'
 
 export class SquadManagerRunner extends AgentRunner {
+  protected async isAssistantDelegate(): Promise<boolean> {
+    return isAssistantDelegate(this.agent.id)
+  }
+
   private squad!: Squad
   private workspacePath!: string
 
@@ -276,15 +281,18 @@ export class SquadManagerRunner extends AgentRunner {
     const environmentTools = [...baseTools, squadBashTool, ...webTools, ...browserTools]
     // Managers (and consultants) never block on a human answer: they keep coordinating and act
     // on the answer when it arrives. Only work-stream agents open question waits.
-    const askHumanTool = createAsyncAskHumanTool(
-      {
-        agentId: this.agent.id,
-        executionId: this.execution.id,
-        flushPersistence: () => this.persistence.waitForAll(),
-      },
-      undefined,
-      { allowBlocking: false }
-    )
+    // Owned consultants communicate through the Assistant inbox, including clarification questions.
+    const askHumanTool = (await this.isAssistantDelegate())
+      ? null
+      : createAsyncAskHumanTool(
+          {
+            agentId: this.agent.id,
+            executionId: this.execution.id,
+            flushPersistence: () => this.persistence.waitForAll(),
+          },
+          undefined,
+          { allowBlocking: false }
+        )
     const notifyContactTool = createNotifyContactTool({ agentId: this.agent.id })
     const subagentLifecycleTools = createSubagentLifecycleTools({ agentId: this.agent.id })
     const monitorTool = createMonitorTool({
@@ -311,7 +319,7 @@ export class SquadManagerRunner extends AgentRunner {
         squadId: this.squad.id,
         tools: {
           core: [
-            askHumanTool,
+            ...(askHumanTool ? [askHumanTool] : []),
             ...(setAgentPurposeTool ? [setAgentPurposeTool] : []),
             notifyContactTool,
             ...subagentLifecycleTools,

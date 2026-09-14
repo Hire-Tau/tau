@@ -6,7 +6,6 @@ import { createHandleAgentWaitingInputEvent } from '../../agentInputAnnouncement
 import { createSiteOperatorAssistant } from './siteOperatorAssistant'
 import { siteOperatorTools } from './siteOperatorTools'
 
-const listAgents = mock(async () => [{ id: 'system-manager-agent', agentTypeId: 'system-manager' }])
 const listSquads = mock(async () => [{ id: 'squad-1', name: 'Engineering', purpose: 'Build things', status: 'active' }])
 const listSquadAgents = mock(async () => [
   { id: 'manager-agent-id', squadId: 'squad-1', agentTypeId: 'manager', status: 'idle' },
@@ -69,7 +68,6 @@ function createRuntime(initialState: SiteOperatorAssistantState): VoiceAssistant
 }
 
 const { __siteOperatorAssistantTest, siteOperatorVoiceAssistant } = createSiteOperatorAssistant({
-  listAgents: listAgents as any,
   listSquads: listSquads as any,
   listSquadAgents: listSquadAgents as any,
   getMyInbox: getHumanInbox as any,
@@ -79,7 +77,6 @@ const { __siteOperatorAssistantTest, siteOperatorVoiceAssistant } = createSiteOp
 
 describe('siteOperatorVoiceAssistant', () => {
   beforeEach(() => {
-    listAgents.mockClear()
     listSquads.mockClear()
     listSquadAgents.mockClear()
     agentFixture = { id: 'agent-id', agentTypeId: 'manager', squadId: 'squad-1', status: 'idle' }
@@ -100,7 +97,6 @@ describe('siteOperatorVoiceAssistant', () => {
     })
 
     expect(listSquads).toHaveBeenCalledWith()
-    expect(listAgents).toHaveBeenCalled()
     expect(listSquadAgents).toHaveBeenCalledWith('squad-1')
     expect(session.sessionConfig.model).toBe('gpt-realtime-2.1')
     expect(session.sessionConfig.audio?.output?.voice).toBe('cedar')
@@ -113,7 +109,7 @@ describe('siteOperatorVoiceAssistant', () => {
     })
     expect(session.sessionConfig.truncation).toEqual({ type: 'retention_ratio', retention_ratio: 0.8 })
     expect(session.sessionConfig.tools).toEqual(siteOperatorTools.definitions)
-    expect(session.sessionConfig.instructions).toContain('User assistant agent ID: system-manager-agent')
+    expect(session.sessionConfig.instructions).toContain('**Engineering** (id: squad-1, manager: manager-agent-id)')
     expect(session.sessionConfig.instructions).toContain('Current squad manager ID: manager-agent-id')
     expect(session.sessionConfig.instructions).not.toContain('Current primary visible agent ID: manager-agent-id')
   })
@@ -233,7 +229,6 @@ describe('siteOperatorVoiceAssistant', () => {
 test('page conversations expose only scoped editor tools and delegation, without loading unrelated squads', async () => {
   const { assistantEditorInstructions, assistantEditorToolDefinitions } = await import('@tau/shared')
   const { siteOperatorVoiceAssistant: controller } = createSiteOperatorAssistant({
-    listAgents: listAgents as any,
     listSquads: listSquads as any,
     listSquadAgents: listSquadAgents as any,
     getMyInbox: getHumanInbox,
@@ -242,9 +237,9 @@ test('page conversations expose only scoped editor tools and delegation, without
   })
   const prepare = mock(async () => {})
   const execute = mock(async () => ({ result: { revision: 3 }, followUp: 'auto' as const }))
-  const messageUserAssistant = mock(async () => ({ accepted: true }))
+  const delegateTask = mock(async () => ({ accepted: true }))
   const env = {
-    messageUserAssistant,
+    delegateTask,
     currentPath: '/settings/workflows',
     getCurrentPath: () => '/settings/workflows',
     navigate() {},
@@ -256,6 +251,9 @@ test('page conversations expose only scoped editor tools and delegation, without
   expect(prepare).toHaveBeenCalledTimes(1)
   expect(listSquads.mock.calls.length).toBe(calls)
   expect(session.sessionConfig.tools.map((tool) => tool.name)).toEqual(['read', 'edit', 'delegate'])
+  const delegate = session.sessionConfig.tools.find((tool) => tool.name === 'delegate')!
+  // Page-editor delegation is always the conversation's general helper: no squad target.
+  expect(Object.keys((delegate as any).parameters.properties)).not.toContain('squadId')
   expect(session.sessionConfig.model).toBe('gpt-realtime-2.1')
   expect(session.sessionConfig.instructions).toContain(assistantEditorInstructions)
   await controller.executeTool({ name: 'read', toolArgs: {}, env, runtime: {} as any })
@@ -264,10 +262,26 @@ test('page conversations expose only scoped editor tools and delegation, without
   expect(execute.mock.calls.at(-1)).toEqual(['edit', { baseRevision: 3 }])
   await controller.executeTool({
     name: 'delegate',
-    toolArgs: { request: 'Design an independent review flow' },
+    toolArgs: { label: 'Review flow design', request: 'Design an independent review flow' },
     env,
     runtime: {} as any,
   })
-  expect(messageUserAssistant).toHaveBeenCalledWith('Design an independent review flow', undefined, undefined)
+  expect(delegateTask).toHaveBeenCalledWith('Design an independent review flow', {
+    label: 'Review flow design',
+    squadId: undefined,
+    mode: 'steer',
+    inReplyTo: undefined,
+  })
+  // The schema omits squadId, so a squad the model emits anyway must be dropped, not honoured.
+  await controller.executeTool({
+    name: 'delegate',
+    toolArgs: { label: 'Review flow design', request: 'Design an independent review flow', squadId: 'tau' },
+    env,
+    runtime: {} as any,
+  })
+  expect(delegateTask).toHaveBeenCalledTimes(2)
+  const forwarded = (delegateTask.mock.calls.at(-1) as any)?.[1]
+  expect(forwarded.label).toBe('Review flow design')
+  expect(forwarded.squadId).toBeUndefined()
   expect(execute.mock.calls).toHaveLength(2)
 })

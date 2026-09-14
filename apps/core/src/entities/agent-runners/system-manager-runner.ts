@@ -1,8 +1,7 @@
 import { assistantEditorInstructions } from '@tau/shared'
 import { createPageEditorTools } from '../../tools/page-editor'
-import { eq } from 'drizzle-orm'
-import { assistantConversations, db } from '../../db'
 import { getAccessibleSquadIds, hasPermission, type Identity } from '../../services/rbac/permissions'
+import { findOwningConversation, isAssistantDelegate } from '../../services/assistant-agents'
 import type { SessionUsage, MessageMetadata } from '@tau/shared'
 import { AgentRunner } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
@@ -32,23 +31,13 @@ import {
 
 export class SystemManagerRunner extends AgentRunner {
   protected async isAssistantDelegate(): Promise<boolean> {
-    const [conversation] = await db
-      .select({ id: assistantConversations.id })
-      .from(assistantConversations)
-      .where(eq(assistantConversations.managerAgentId, this.agent.id))
-      .limit(1)
-    return Boolean(conversation)
+    return isAssistantDelegate(this.agent.id)
   }
 
   protected async getPageEditorConversation(): Promise<
     { id: string; editor: import('@tau/shared').AssistantEditorState | null } | undefined
   > {
-    const [conversation] = await db
-      .select({ id: assistantConversations.id, editor: assistantConversations.editor })
-      .from(assistantConversations)
-      .where(eq(assistantConversations.managerAgentId, this.agent.id))
-      .limit(1)
-    return conversation
+    return findOwningConversation(this.agent.id)
   }
 
   protected ensureWorkspaceSandbox(args: Parameters<typeof ensureWorkspaceSandbox>[0]): Promise<string> {

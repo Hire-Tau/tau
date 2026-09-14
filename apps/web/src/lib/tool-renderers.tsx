@@ -61,6 +61,15 @@ function tryParseArgs(args: string): Record<string, any> | null {
   }
 }
 
+function parseObject(text: string): Record<string, any> | undefined {
+  try {
+    const v = JSON.parse(text)
+    return v && typeof v === 'object' ? v : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s
   return s.slice(0, max) + '...'
@@ -906,6 +915,32 @@ export function ToolResultView({
   return <renderer.ResultView result={result} isError={isError ?? false} autoScroll={autoScroll} />
 }
 
+const delegateTaskRenderer: ToolRenderer = {
+  summary: (args) => `Started: ${truncate(args.label ?? 'background task', 60)}`,
+  ArgsView: ({ args }) => <div className="whitespace-pre-wrap text-[12px]">{args.request ?? ''}</div>,
+  ResultView: ({ result, isError }) => {
+    const parsed = parseObject(result)
+    if (isError || !parsed || parsed.error) return <CodeBlock isError>{extractResultText(result)}</CodeBlock>
+    return <div className="text-[11px] text-muted">Running in the background. Updates will appear here.</div>
+  },
+}
+
+const taskUpdateRenderer: ToolRenderer = {
+  summary: () => 'Task update',
+  ArgsView: () => null,
+  ResultView: ({ result }) => {
+    const parsed = parseObject(result)
+    const content = typeof parsed?.content === 'string' ? parsed.content : extractResultText(result)
+    return <div className="whitespace-pre-wrap text-[12px]">{content}</div>
+  },
+}
+
+const searchTauRenderer: ToolRenderer = {
+  summary: (args) => `Searched Tau for “${truncate(args.query ?? '', 40)}”`,
+  ArgsView: ({ args }) => <InlineCode>{args.query ?? ''}</InlineCode>,
+  ResultView: ({ result, isError }) => <CodeBlock isError={isError}>{extractResultText(result)}</CodeBlock>,
+}
+
 /** Site assistant tools share only these semantics with the normal agent tools. */
 export const siteAssistantToolRenderers: ToolRenderers = {
   navigate: navigateRenderer,
@@ -913,4 +948,7 @@ export const siteAssistantToolRenderers: ToolRenderers = {
   memory_get: memoryGetRenderer,
   request_next_beat: requestNextBeatRenderer,
   notify_contact: notifyContactRenderer,
+  delegate_task: delegateTaskRenderer,
+  assistant_inbox: taskUpdateRenderer,
+  search_tau: searchTauRenderer,
 }
