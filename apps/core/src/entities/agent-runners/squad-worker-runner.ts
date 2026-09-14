@@ -17,14 +17,7 @@ import { resolveWorkspaceLayout } from '../../services/sandbox/workspace-layout'
 import { Squad } from '../Squad'
 import { ensureSquadSandbox, ensureWorkspaceSandbox } from '../../services/sandbox/ensure'
 import { AgentSession } from '../AgentSession'
-import {
-  createAsyncAskHumanTool,
-  getShortTermMemory,
-  formatShortTermMemoryPrompt,
-  createMemoryTools,
-  createSetAgentPurposeTool,
-  createMonitorTool,
-} from '../../tools'
+import { createAsyncAskHumanTool, createMemoryTools, createSetAgentPurposeTool, createMonitorTool } from '../../tools'
 import { createSquadBashTool } from '../../tools/squad-bash'
 import {
   AGENT_PURPOSE_DISPLAY_SECTION_TITLE,
@@ -70,10 +63,9 @@ export class SquadWorkerRunner extends AgentRunner {
       : ''
 
     const sandboxId = await this.agent.getSandboxId()
-    const [cliHelp, activeSchedules, shortTermMemory] = await Promise.all([
+    const [cliHelp, activeSchedules] = await Promise.all([
       getSquadWorkerCliHelp(),
       buildActiveSchedulesPrompt(this.squad.id, this.agent.id, 'worker'),
-      getShortTermMemory(this.agent.id),
     ])
 
     // Build context for template interpolation
@@ -99,7 +91,6 @@ export class SquadWorkerRunner extends AgentRunner {
       'manager.id': this.squad.managerAgentId ?? '',
     }
 
-    const shortTermMemorySection = formatShortTermMemoryPrompt(shortTermMemory)
     const typePrompt = await composeAgentTypePrompt(this.agentType)
 
     const p = prompt()
@@ -136,7 +127,7 @@ export class SquadWorkerRunner extends AgentRunner {
       p.text(buildMemorySystemPrompt(this.squad.id, mapContent))
     }
 
-    p.text(shortTermMemorySection).section(AGENT_PURPOSE_DISPLAY_SECTION_TITLE, SET_AGENT_PURPOSE_INSTRUCTIONS)
+    p.section(AGENT_PURPOSE_DISPLAY_SECTION_TITLE, SET_AGENT_PURPOSE_INSTRUCTIONS)
 
     return interpolateTemplate(p.build(), context)
   }

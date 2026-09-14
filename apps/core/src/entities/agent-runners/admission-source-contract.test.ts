@@ -26,7 +26,7 @@ describe('runner admission source contract', () => {
   })
 
   test.each([
-    ['artifact-builder-runner.ts', 'getShortTermMemory(this.agent.id)'],
+    ['artifact-builder-runner.ts', 'composeAgentTypePrompt(this.agentType)'],
     ['system-manager-runner.ts', 'SystemManagerRunner.buildManagerPrompt('],
   ])('%s performs unrelated session construction after sandbox setup', (file, unrelatedWork) => {
     const source = readFileSync(join(import.meta.dir, file), 'utf8')

@@ -8,7 +8,6 @@ import { buildWorkspacePrompt } from '../../lib/prompts/workspace-prompt'
 import { createWebTools } from '../../tools/web-search'
 import { createBrowserTools } from '../../tools/browser'
 import { createSquadTodoTools } from '../../tools/squad-todo'
-import { getShortTermMemory, formatShortTermMemoryPrompt } from '../../tools'
 import { createImDoneTool, type CompletionSignal, type CompletionStatus } from '../../tools/subagent-completion'
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { ensureSquadSandbox, ensureWorkspaceSandbox } from '../../services/sandbox/ensure'
@@ -243,8 +242,6 @@ export class SubagentRunner extends AgentRunner {
           ]
       p.section('Talking to your parent', parentProtocol.join('\n'))
     }
-    const shortTermMemory = await getShortTermMemory(this.agent.id)
-    p.text(formatShortTermMemoryPrompt(shortTermMemory))
     return p.build()
   }
 

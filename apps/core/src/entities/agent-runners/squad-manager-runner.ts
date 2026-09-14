@@ -20,8 +20,6 @@ import {
   createBrowserTools,
   createAsyncAskHumanTool,
   createWebTools,
-  getShortTermMemory,
-  formatShortTermMemoryPrompt,
   createMemoryTools,
   createMonitorTool,
   createSetAgentPurposeTool,
@@ -143,13 +141,8 @@ export class SquadManagerRunner extends AgentRunner {
 
   private async buildSquadManagerPrompt(): Promise<string> {
     const sandboxId = await this.agent.getSandboxId()
-    const [cliHelp, squadContext, shortTermMemory] = await Promise.all([
-      getSquadManagerCliHelp(),
-      this.buildSquadContext(),
-      getShortTermMemory(this.agent.id),
-    ])
+    const [cliHelp, squadContext] = await Promise.all([getSquadManagerCliHelp(), this.buildSquadContext()])
 
-    const shortTermMemorySection = formatShortTermMemoryPrompt(shortTermMemory)
     const typePrompt = await composeAgentTypePrompt(this.agentType)
 
     const p = prompt()
@@ -189,9 +182,6 @@ export class SquadManagerRunner extends AgentRunner {
       const mapContent = readSquadMemoryFile(this.squad.id, 'map.md')
       p.text(buildMemorySystemPrompt(this.squad.id, mapContent))
     }
-
-    // Add short-term memory section (always shown so agents know about it)
-    p.text(shortTermMemorySection)
 
     // Consultants set a dynamic display purpose like squad workers do — reuse the same shared
     // guidance/constant so the wording stays in one place. The manager keeps a static identity.

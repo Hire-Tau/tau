@@ -34,6 +34,9 @@ import {
 } from '../services/agent/precompaction/baker'
 import { resolveEarlyMarginTokens, resolveInFlightMarginTokens } from '../services/agent/precompaction/config'
 import { bindPrecompactionController } from '../services/agent/precompaction/registry'
+import { ShortTermMemoryContext } from '../services/agent/short-term-memory-context'
+import { getShortTermMemory } from '../tools/short-term-memory'
+import { createLogger } from '../lib/infra/logger'
 
 export interface CreateAgentSessionOptions {
   /** Model. Format: provider:model-name[:thinking-level] (e.g. 'anthropic:claude-sonnet-4-5:high') */
@@ -194,6 +197,16 @@ export class AgentSession {
     })
 
     const wrapper = new AgentSession(session, selected, switchedBack, authBackend, accountId)
+
+    if (storage) {
+      const memoryContext = new ShortTermMemoryContext(
+        session.sessionManager,
+        () => getShortTermMemory(storage.agentId),
+        (error) => createLogger('short-term-memory').warn('Could not capture recovery snapshot', error)
+      )
+      resourceLoader.setShortTermMemoryContext(memoryContext)
+      await memoryContext.captureInitial()
+    }
 
     let precompaction: PrecompactionController | undefined
     const bakerOptions: PiCompactionBakerOptions = storage

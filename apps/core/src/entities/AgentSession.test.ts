@@ -198,7 +198,7 @@ describe('AgentSession', () => {
         { spec: 'anthropic:claude-sonnet-4-5', provider: 'anthropic', modelId: 'claude-sonnet-4-5', usable: true },
       ],
     })
-    const agentId = `precompaction-guard-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    const agentId = crypto.randomUUID()
 
     try {
       // Default: a stored session wires the background precompaction controller.
