@@ -179,6 +179,23 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
         Number.isSafeInteger(item!.run_attempt)
           ? { key: String(item!.workflow_id ?? item!.name), position: [item!.run_number, item!.run_attempt] }
           : undefined
+      const ci = output === 'pull_request.ci_completed'
+      const workflow = data.workflow.trim() || 'Workflow'
+      const ciDetails = ci
+        ? [
+            `${workflow}: ${data.state}`,
+            [
+              'pullRequest' in data && data.pullRequest.headSha ? `Head: ${data.pullRequest.headSha}` : '',
+              data.ci?.runNumber ? `Run #${data.ci.runNumber}` : '',
+              data.ci?.runAttempt ? `Attempt ${data.ci.runAttempt}` : '',
+            ]
+              .filter(Boolean)
+              .join(' · '),
+            url,
+          ]
+            .filter(Boolean)
+            .join('\n')
+        : ''
       return [
         {
           output,
@@ -201,8 +218,10 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
             ...(data.requestedTeam ? [data.requestedTeam] : []),
           ]),
           data,
-          subject: `${outputs[output]}: ${repo}#${number}`,
-          body: `${outputs[output]}${actor ? ` by ${actor}` : ''}${data.state ? ` (${data.state})` : ''}.${data.mergeConflict ? '\nMerge conflicts need resolution.' : ''}${output === 'pull_request.review_comment' ? `\n${data.path}:${data.line ?? '?'} — reply in this review thread.` : ''}${url ? `\n${url}` : ''}${body ? `\n\n${body}` : ''}`,
+          subject: ci ? `CI ${data.state}: ${repo}#${number} · ${workflow}` : `${outputs[output]}: ${repo}#${number}`,
+          body: ci
+            ? ciDetails
+            : `${outputs[output]}${actor ? ` by ${actor}` : ''}${data.state ? ` (${data.state})` : ''}.${data.mergeConflict ? '\nMerge conflicts need resolution.' : ''}${output === 'pull_request.review_comment' ? `\n${data.path}:${data.line ?? '?'} — reply in this review thread.` : ''}${url ? `\n${url}` : ''}${body ? `\n\n${body}` : ''}`,
           ...(url ? { url } : {}),
           ...(ordering ? { ordering } : {}),
         },

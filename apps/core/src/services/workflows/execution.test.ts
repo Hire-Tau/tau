@@ -576,7 +576,7 @@ test('PR and direct-merge delivery require independently fetched merge evidence'
         const id = await create('active', definition)
         const [assignment] = await messages(id)
         expect(assignment!.content).not.toContain('Delivery policy:')
-        expect(assignment!.content).toContain('deliveryInstructions')
+        expect(assignment!.content).toContain(`tau workstream advance ${id}`)
         await advance(id, 'completed')
         await advance(id, 'approved')
         await db
@@ -994,7 +994,9 @@ describe('attempt-scoped waits', () => {
       .from(inbox)
       .where(eq(inbox.idempotencyKey, `flow-wait:${wait.id}:${security.id}`))
     expect(resolution?.recipientId).toBe(securityAgent)
-    expect(resolution?.content).toContain('not step approval')
+    expect(resolution?.content).toBe(
+      `Work stream ${id}, step security (attempt ${security.id})\nWait resolved: Confirm threat model\n\nUse the documented threat model`
+    )
     await completeStep(id, 'security')
     expect(activeWorkflowAttempts((await getFlow(id))!.state).map((a) => a.stepId)).toEqual(['deliver'])
   })
