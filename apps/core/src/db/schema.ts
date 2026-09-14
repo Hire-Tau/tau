@@ -1213,7 +1213,11 @@ export const worktreeCleanupJobs = pgTable(
     reason: text('reason'),
     attempts: integer('attempts').notNull().default(0),
     nextAttemptAt: timestamp('next_attempt_at').notNull().defaultNow(),
+    deliveredHead: text('delivered_head'),
+    deliveryMetadata: jsonb('delivery_metadata').$type<Record<string, unknown>>(),
     operationId: uuid('operation_id'),
+    removalInput:
+      jsonb('removal_input').$type<import('../services/work-streams/worktree-cleanup-runtime').WorktreeRemovalInput>(),
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),
   },

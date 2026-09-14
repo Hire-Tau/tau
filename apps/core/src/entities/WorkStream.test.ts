@@ -220,6 +220,31 @@ describe('WorkStream entity', () => {
     }
   })
 
+  it('new creation cannot attach to an in-flight cleanup-owned path', async () => {
+    const old = await storedLegacyWorkStream({ squadId: testSquad.id, title: 'removing' })
+    await db
+      .insert(schema.workStreamWorktrees)
+      .values({
+        workStreamId: old.id,
+        squadId: testSquad.id,
+        ownership: {
+          workspace: '/workspace',
+          repository: '/workspace/repo',
+          commonDirectory: '/workspace/repo/.git',
+          gitDirectory: '/workspace/repo/.git/worktrees/owned',
+          worktree: '/workspace/owned',
+          directoryIdentity: '1:2',
+          branch: 'feature',
+        },
+      })
+    await db
+      .insert(schema.worktreeCleanupJobs)
+      .values({ workStreamId: old.id, status: 'removing', operationId: crypto.randomUUID() })
+    await expect(
+      WorkStream.create({ squadId: testSquad.id, title: 'conflicting', worktree: '/workspace/owned' })
+    ).rejects.toThrow(/cleanup|removal/i)
+  })
+
   describe('repository setup', () => {
     it('attaches prepared metadata before the first workflow dispatch', async () => {
       const metadata = {
@@ -269,10 +294,24 @@ describe('WorkStream entity', () => {
       })
       await db.update(workStreams).set({ status: 'queued' }).where(eq(workStreams.id, stream.id))
       const queued = await WorkStream.mustFind(stream.id)
-      const setup = spyOn(repositorySetup, 'setupWorkStreamRepository').mockResolvedValue({
-        git: { worktree: '/workspace/queued', branch: 'feature', baseBranch: 'main' },
-        codeHost: { integration: 'github', repository: 'example/repo' },
-      })
+      const owned = {
+        workspace: '/workspace',
+        repository: '/workspace/repo',
+        commonDirectory: '/workspace/repo/.git',
+        gitDirectory: '/workspace/repo/.git/worktrees/queued',
+        worktree: '/workspace/queued',
+        directoryIdentity: '1:2',
+        branch: 'feature',
+      }
+      const setup = spyOn(repositorySetup, 'setupWorkStreamRepository').mockImplementation(
+        async (_squad, _input, _key, _metadata, record) => {
+          record?.(owned)
+          return {
+            git: { worktree: '/workspace/queued', branch: 'feature', baseBranch: 'main' },
+            codeHost: { integration: 'github', repository: 'example/repo' },
+          }
+        }
+      )
       try {
         await queued.update({ repository: 'repo' })
         expect(queued.metadata).toMatchObject({
@@ -281,6 +320,11 @@ describe('WorkStream entity', () => {
           codeHost: { repository: 'example/repo' },
         })
         expect(queued.status).toBe('queued')
+        const [registration] = await db
+          .select()
+          .from(schema.workStreamWorktrees)
+          .where(eq(schema.workStreamWorktrees.workStreamId, queued.id))
+        expect(registration?.ownership).toEqual(owned)
       } finally {
         setup.mockRestore()
       }

@@ -48,6 +48,12 @@ if (exists(active)) { replay(); process.exit(0); }
 if (process.argv[2] === 'probe') fail('No terminal cleanup receipt; keep the reuse fence');
 try { fs.mkdirSync(active, { mode: 0o700 }); }
 catch (e) { if (e.code !== 'EEXIST') throw e; replay(); process.exit(0); }
+// Persist the exclusive claim before any destructive action. A duplicate may
+// read a terminal receipt, but never takes over an interrupted active record.
+for (const directory of [o.commonDirectory, records, active]) {
+  const fd = fs.openSync(directory, 'r');
+  try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+}
 let removalStarted = false;
 let outcome;
 try {

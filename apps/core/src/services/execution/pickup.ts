@@ -1,3 +1,4 @@
+import { cleanupWorktreeForAgent } from '../work-streams/worktree-cleanup-store'
 import { createLogger } from '../../lib/infra/logger'
 import { Execution } from '../../entities/Execution'
 import { Agent } from '../../entities/Agent'
@@ -289,6 +290,7 @@ async function doAttemptPickup(execution: Execution): Promise<PickupResult> {
       return false
     }
     await acquireAgentQueueLock(tx, execution.agentId)
+    if (await cleanupWorktreeForAgent(execution.agentId, tx)) return false
     if (await pausedWorkStreamForAgent(execution.agentId, tx)) {
       workStreamPaused = true
       return false

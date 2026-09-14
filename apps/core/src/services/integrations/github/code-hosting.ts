@@ -7,12 +7,19 @@ export const githubCodeHostingAdapter: CodeHostingAdapter = {
   validateRepository: (repository) => /^[\w.-]+\/[\w.-]+$/.test(repository),
   async changeRequest(reference, squadId) {
     if (!reference.changeRequest) return null
-    const pr = await githubApiGet<{ merged: boolean; base: { ref: string }; head: { ref: string } }>(
+    const pr = await githubApiGet<{ merged: boolean; base: { ref: string }; head: { ref: string; sha?: string } }>(
       `/repos/${reference.repository}/pulls/${reference.changeRequest.number}`,
       squadId,
       reference.connectionId
     )
-    return pr ? { merged: pr.merged, headBranch: pr.head.ref, baseBranch: pr.base.ref } : null
+    return pr
+      ? {
+          merged: pr.merged,
+          headBranch: pr.head.ref,
+          baseBranch: pr.base.ref,
+          ...(pr.head.sha ? { headSha: pr.head.sha } : {}),
+        }
+      : null
   },
   async containsCommit(reference, squadId, base, commit) {
     const comparison = await githubApiGet<{ status: string }>(

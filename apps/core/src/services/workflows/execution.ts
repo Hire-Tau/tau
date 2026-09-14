@@ -586,6 +586,7 @@ export async function finishFlow(id: string, version: number, identity: Identity
     throw new WorkflowError('Flow is not ready for completion or its version changed', 409)
   if (identity.type === 'agent' && !(stream.agentIds ?? []).includes(identity.agentId))
     throw new WorkflowError('Only a participant can finish this flow', 403)
+  let deliveredHead: string | undefined
   const mode = run.state.definition.completion.mode
   const metadata = stream.metadata as Record<string, any>
   if (mode === 'review-approval' && identity.type !== 'user')
@@ -604,10 +605,12 @@ export async function finishFlow(id: string, version: number, identity: Identity
         throw new WorkflowError('Direct merge requires codeHost.repository, git.commit (full SHA), and git.baseBranch')
       if (!(await adapter.containsCommit(reference, stream.squadId, base, head)))
         throw new WorkflowError('The deliverable commit must be included in the base branch', 409)
+      deliveredHead = head
     } else {
       if (!reference.changeRequest) throw new WorkflowError('Set codeHost.changeRequest.number before completion')
       const change = await adapter.changeRequest(reference, stream.squadId)
       if (!change?.merged) throw new WorkflowError('The change request must be merged before completion', 409)
+      if (change.headSha && /^[a-f0-9]{40}$/.test(change.headSha)) deliveredHead = change.headSha
       if (
         (metadata.git?.branch && change.headBranch !== metadata.git.branch) ||
         (metadata.git?.baseBranch && change.baseBranch !== metadata.git.baseBranch)
@@ -620,7 +623,7 @@ export async function finishFlow(id: string, version: number, identity: Identity
       { status: 'done' },
       {
         actorAgentId: identity.type === 'agent' ? identity.agentId : null,
-        flowCompletion: { version, metadataHash: workflowFingerprint(stream.metadata) },
+        flowCompletion: { version, metadataHash: workflowFingerprint(stream.metadata), deliveredHead },
       }
     )
   } catch (error) {

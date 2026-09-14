@@ -11,7 +11,7 @@ export interface CodeHostingAdapter {
   changeRequest(
     reference: CodeHostReference,
     squadId: string
-  ): Promise<{ merged: boolean; headBranch: string; baseBranch: string } | null>
+  ): Promise<{ merged: boolean; headBranch: string; baseBranch: string; headSha?: string } | null>
   containsCommit(reference: CodeHostReference, squadId: string, base: string, commit: string): Promise<boolean>
   subscriptions(reference: CodeHostReference): IntegrationSubscription[]
   issueSubscriptions?(reference: CodeHostReference, metadata: unknown): IntegrationSubscription[]
