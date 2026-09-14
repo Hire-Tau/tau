@@ -20,6 +20,13 @@ authorized return, delegation, or revision. `finish` checks the completion polic
 once the graph is complete. All three take a **work stream ID**; `tau ws` is an
 alias for `tau workstream`. `tau workflow` manages reusable presets/templates.
 
+When a transition immediately assigns work to the calling agent, its response
+includes `assignments` with the attempt ID, version, and full handoff content.
+Continue that assignment directly; no duplicate inbox notification is sent.
+The handoff is recorded on the attempt and returned on retries of the same request
+ID. Other agents, fresh sessions, and assignments deferred by waits or capacity
+still receive inbox notifications when they can run.
+
 ### Rework after delivery becomes ready
 
 CI failures, requested changes, or merge conflicts can arrive after the graph reaches

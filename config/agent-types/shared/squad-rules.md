@@ -73,8 +73,11 @@ stream or schedule a wakeup to bypass a pause or wait.
 
 ### Delivery
 
-After submitting an outcome, read the run. If another step is needed, end your
-turn. At `completion-ready`, follow `deliveryInstructions` from the advance response
+After submitting a transition, continue any `assignments` returned directly to
+you in its response; Tau records the handoff without sending you a duplicate inbox
+notification. Other agents and deferred assignments still receive inbox handoffs.
+Retry the same request ID if the response is lost. If only another agent has work,
+end your turn. At `completion-ready`, follow `deliveryInstructions` from the advance response
 or `tau workstream flow` and use
 `tau workstream finish` with the current `--version`. A completed step is not
 necessarily a completed stream. A PR link, passing CI, or review approval is

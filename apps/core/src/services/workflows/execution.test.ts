@@ -1281,7 +1281,11 @@ test('completion-ready rework is authorized, idempotent, tracked, and respects u
   expect(run.state.attempts).toHaveLength(3)
   expect(run.attemptAgents['3']).toBe(ready.attemptAgents['2'])
   expect(await listOpenWaits(db, id)).toHaveLength(0)
-  expect((await messages(id)).some((m) => m.content.includes('CI literal-type failure'))).toBe(true)
+  expect(result.assignments?.[0]).toMatchObject({ attemptId: 3, stepId: 'review', version: result.version })
+  expect(result.assignments?.[0]?.content).toContain('CI literal-type failure')
+  expect((await messages(id)).some((m) => m.metadata?.attemptId === 3)).toBe(false)
+  await ensureFlowDispatch(id)
+  expect((await messages(id)).some((m) => m.metadata?.attemptId === 3)).toBe(false)
   await advance(id, 'changes-requested')
   await advance(id, 'completed')
   await advance(id, 'approved')
@@ -1312,9 +1316,10 @@ test('parked completion-ready rework clears delivery review but waits for capaci
         feedback: 'CI needs correction after delivery was parked',
       },
       randomUUID(),
-      actor
+      { type: 'agent', agentId: ready.attemptAgents['2']!, squadId }
     )
     expect(result.stateStatus).toBe('running')
+    expect(result.assignments).toBeUndefined()
     expect((await WorkStream.mustFind(id)).status).toBe('queued')
     expect((await getFlow(id))!.attemptAgents['3']).toBeUndefined()
     expect(await listOpenWaits(db, id)).toHaveLength(0)
@@ -1322,10 +1327,118 @@ test('parked completion-ready rework clears delivery review but waits for capaci
     await promoteEligibleQueuedStreams(squadId)
     expect((await WorkStream.mustFind(id)).status).toBe('active')
     expect((await getFlow(id))!.attemptAgents['3']).toBe(ready.attemptAgents['2'])
+    expect((await messages(id)).find((m) => m.metadata?.attemptId === 3)?.recipientId).toBe(ready.attemptAgents['2'])
   } finally {
     await db
       .update(squads)
       .set({ maxConcurrentWorkStreams: squad!.maxConcurrentWorkStreams })
       .where(eq(squads.id, squadId))
   }
+})
+
+test('same-agent step transitions return durable assignments without inbox duplicates, including racing retries', async () => {
+  const definition = structuredClone(flow)
+  definition.steps[1] = { ...definition.steps[1]!, kind: 'agent', participant: 'builder' }
+  const id = await create('active', definition)
+  const initial = (await getFlow(id))!
+  const worker = { type: 'agent' as const, agentId: initial.attemptAgents['1']!, squadId }
+  const requestId = randomUUID()
+  const command = {
+    action: 'complete',
+    expectedVersion: initial.version,
+    attemptId: 1,
+    outcome: 'completed',
+    evidence: 'Build checks passed',
+  }
+  const [first, retry] = await Promise.all([
+    advanceFlow(id, command, requestId, worker),
+    advanceFlow(id, command, requestId, worker),
+  ])
+  expect(retry).toEqual(first)
+  expect(first.assignments).toHaveLength(1)
+  expect(first.assignments![0]).toMatchObject({ workStreamId: id, stepId: 'review', attemptId: 2, version: 1 })
+  expect(first.assignments![0]!.content).toContain('Build checks passed')
+  expect(await messages(id)).toHaveLength(1) // Only the original assignment.
+  expect(await bindings(id)).toHaveLength(1)
+  await db.update(workStreams).set({ title: 'Changed after response' }).where(eq(workStreams.id, id))
+  await ensureFlowDispatch(id)
+  expect(await advanceFlow(id, command, requestId, worker)).toEqual(first)
+  expect(await messages(id)).toHaveLength(1)
+  expect((await getFlow(id))!.state.attempts[1]!.responseAssignment).toMatchObject({
+    requestId,
+    agentId: worker.agentId,
+  })
+  const correction = await advanceFlow(
+    id,
+    {
+      action: 'complete',
+      expectedVersion: 1,
+      attemptId: 2,
+      outcome: 'changes-requested',
+      evidence: 'Correct the literal type',
+    },
+    randomUUID(),
+    worker
+  )
+  expect(correction.assignments?.[0]).toMatchObject({ attemptId: 3, stepId: 'build' })
+  expect(correction.assignments?.[0]?.content).toContain('Correct the literal type')
+  await ensureFlowDispatch(id)
+  expect(await messages(id)).toHaveLength(1)
+  expect(await advanceFlow(id, command, requestId, worker)).toEqual(first)
+})
+
+test.each(['different-participant', 'fresh-session'] as const)(
+  'a %s handoff still notifies the receiving agent',
+  async (mode) => {
+    const definition = structuredClone(flow)
+    if (mode === 'fresh-session') {
+      definition.participants.builder!.session = 'fresh-per-attempt'
+      definition.steps[1] = { ...definition.steps[1]!, kind: 'agent', participant: 'builder' }
+    }
+    const id = await create('active', definition)
+    const initial = (await getFlow(id))!
+    const caller = initial.attemptAgents['1']!
+    const result = await advanceFlow(
+      id,
+      { action: 'complete', expectedVersion: 0, attemptId: 1, outcome: 'completed', evidence: 'Ready' },
+      randomUUID(),
+      { type: 'agent', agentId: caller, squadId }
+    )
+    expect(result.assignments).toBeUndefined()
+    const next = (await getFlow(id))!.attemptAgents['2']!
+    expect(next).not.toBe(caller)
+    expect((await messages(id)).find((m) => m.metadata?.attemptId === 2)?.recipientId).toBe(next)
+  }
+)
+
+test('a self-handoff in a parallel branch stays durable while an earlier sibling remains active', async () => {
+  const definition = parallelDefinition()
+  definition.steps.find((step) => step.id === 'qa')!.outcomes.completed = { next: 'qa-followup' }
+  definition.steps.push(
+    workflowStepSchema.parse({
+      id: 'qa-followup',
+      participant: 'worker',
+      instructions: 'Follow up QA',
+      output: 'Evidence',
+      outcomes: { completed: { next: 'deliver' } },
+    })
+  )
+  const id = await create('active', definition)
+  await completeStep(id, 'execute')
+  const run = (await getFlow(id))!
+  const qa = run.state.attempts.find((attempt) => attempt.stepId === 'qa')!
+  const worker = { type: 'agent' as const, agentId: run.attemptAgents[String(qa.id)]!, squadId }
+  const result = await advanceFlow(
+    id,
+    { action: 'complete', expectedVersion: run.version, attemptId: qa.id, outcome: 'completed', evidence: 'QA passed' },
+    randomUUID(),
+    worker
+  )
+  expect(result.assignments?.[0]).toMatchObject({ stepId: 'qa-followup', attemptId: 4 })
+  await ensureFlowDispatch(id)
+  expect((await messages(id)).some((message) => message.metadata?.attemptId === 4)).toBe(false)
+  expect(activeWorkflowAttempts((await getFlow(id))!.state).map((attempt) => attempt.stepId)).toEqual([
+    'security',
+    'qa-followup',
+  ])
 })

@@ -119,8 +119,34 @@ export async function attachFlow(tx: DbTx, stream: Stream, source: WorkflowSourc
   return run!
 }
 
-/** The inbox row IS the durable dispatch intent, committed with state and bindings. */
-export async function dispatchFlow(tx: DbTx, stream: Stream, run: Run, afterCommit: Array<() => void>) {
+/** Immediate self-handoffs are recorded in the attempt; other handoffs use durable inbox intents. */
+type AssignmentCaller = { agentId: string; requestId: string }
+
+function responseAssignments(id: string, run: Run, requestId: string, identity: Identity) {
+  const assignments = run.state.attempts.flatMap((attempt) => {
+    const delivery = attempt.responseAssignment
+    return delivery?.requestId === requestId && identity.type === 'agent' && delivery.agentId === identity.agentId
+      ? [
+          {
+            workStreamId: id,
+            attemptId: attempt.id,
+            stepId: attempt.stepId,
+            version: delivery.version,
+            content: delivery.content,
+          },
+        ]
+      : []
+  })
+  return assignments.length ? { assignments } : {}
+}
+
+export async function dispatchFlow(
+  tx: DbTx,
+  stream: Stream,
+  run: Run,
+  afterCommit: Array<() => void>,
+  caller?: AssignmentCaller
+) {
   if (!run.activated || stream.pause || ['done', 'canceled'].includes(stream.status)) return
   const deliveryReference = flowWaitReference(stream.id, 'delivery', 0)
   if (run.state.status === 'completion-ready' && run.state.definition.completion.mode === 'review-approval') {
@@ -153,7 +179,7 @@ export async function dispatchFlow(tx: DbTx, stream: Stream, run: Run, afterComm
   if (run.state.status !== 'running' || stream.status !== 'active') return
   const previousAssignee = stream.assigneeAgentId
   for (const attempt of activeWorkflowAttempts(run.state)) {
-    await dispatchFlowAttempt(tx, stream, run, attempt, afterCommit)
+    await dispatchFlowAttempt(tx, stream, run, attempt, afterCommit, caller)
     stream = (await tx.select().from(workStreams).where(eq(workStreams.id, stream.id)))[0]!
     run = (await tx.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, stream.id)))[0]!
   }
@@ -173,8 +199,10 @@ async function dispatchFlowAttempt(
   stream: Stream,
   run: Run,
   attempt: WorkflowAttempt,
-  afterCommit: Array<() => void>
+  afterCommit: Array<() => void>,
+  caller?: AssignmentCaller
 ) {
+  if (attempt.responseAssignment) return
   const step = attempt.step ?? run.state.definition.steps.find((entry) => entry.id === attempt.stepId)!
   if (step.kind === 'human-approval') {
     const referenceId = flowWaitReference(stream.id, 'human', attempt.id)
@@ -245,6 +273,18 @@ async function dispatchFlowAttempt(
     .update(workStreams)
     .set({ assigneeAgentId: binding!.agentId, agentIds: crew, updatedAt: new Date() })
     .where(eq(workStreams.id, stream.id))
+  if (caller?.agentId === binding!.agentId) {
+    // dispatchFlow reloads the run between parallel siblings; update that current
+    // state, not an attempt object from the loop's original snapshot.
+    run.state.attempts.find((entry) => entry.id === attempt.id)!.responseAssignment = {
+      requestId: caller.requestId,
+      agentId: binding!.agentId,
+      version: run.version,
+      content: flowMessage(stream, run, attempt),
+    }
+    await tx.update(workStreamFlowRuns).set({ state: run.state }).where(eq(workStreamFlowRuns.workStreamId, stream.id))
+    return
+  }
   await InboxMessage.persistSystemAgentOnceInTransaction(
     tx,
     {
@@ -310,7 +350,12 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
       .where(and(eq(workStreamFlowTransitions.workStreamId, id), eq(workStreamFlowTransitions.requestId, requestId)))
     if (prior) {
       if (prior.requestHash !== fingerprint) throw new WorkflowError('Request ID already used', 409)
-      return { version: prior.version, stateStatus: prior.stateStatus, activeAttemptId: prior.activeAttemptId }
+      return {
+        version: prior.version,
+        stateStatus: prior.stateStatus,
+        activeAttemptId: prior.activeAttemptId,
+        ...responseAssignments(id, run, requestId, identity),
+      }
     }
     if (stream.pause && command.action !== 'revise')
       throw new WorkflowError('Work stream is paused; resume before advancing', 409)
@@ -465,12 +510,19 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
       .update(workStreams)
       .set({ metadata: { ...(stream.metadata as object), completion: { mode: state.definition.completion.mode } } })
       .where(eq(workStreams.id, id))
-    await dispatchFlow(tx, stream, updated, callbacks)
+    await dispatchFlow(
+      tx,
+      stream,
+      updated,
+      callbacks,
+      identity.type === 'agent' ? { agentId: identity.agentId, requestId } : undefined
+    )
     const receipt = { version: state.version, stateStatus: state.status, activeAttemptId: state.activeAttemptId }
     await tx
       .insert(workStreamFlowTransitions)
       .values({ workStreamId: id, requestId, requestHash: fingerprint, command, actorKey: actor, ...receipt })
-    return receipt
+    const [dispatched] = await tx.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, id))
+    return { ...receipt, ...responseAssignments(id, dispatched!, requestId, identity) }
   })
   callbacks.forEach((callback) => callback())
   if (command.action === 'rework') {
