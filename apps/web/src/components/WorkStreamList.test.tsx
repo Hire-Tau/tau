@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import { queryKeys } from '../queryKeys'
 import type { Agent, Squad, WorkStream, WorkStreamMetrics, WorkStreamWait } from '@tau/shared'
 import { acquireDomHarness, withDomOwnership } from '../test/domHarness'
@@ -144,6 +144,59 @@ function renderWorkStreamList(
 }
 
 describe('WorkStreamList', () => {
+  test.each([
+    ['Tau', '/squads/squad-1'],
+    ['Engineer', '/squads/squad-1/agents?agent=agent-1'],
+  ])('feed metadata links open %s without opening the work stream', async (label, destination) => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/feed' })
+    const rendered = dom.createRoot()
+    const client = createTestQueryClient([engineer])
+    function CurrentRoute() {
+      const location = useLocation()
+      return (
+        <output data-testid="current-route">
+          {location.pathname}
+          {location.search}
+        </output>
+      )
+    }
+    try {
+      await dom.act(async () =>
+        rendered.root.render(
+          <MemoryRouter initialEntries={['/feed']}>
+            <QueryClientProvider client={client}>
+              <WorkStreamList
+                workStreams={[workStream({ assigneeAgentId: engineer.id })]}
+                squadMap={new Map([[squad.id, squad]])}
+                agentMap={new Map([[engineer.id, engineer]])}
+                feedLayout
+                hideFilters
+              />
+              <CurrentRoute />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+      const row = rendered.container.querySelector('[data-testid="feed-work-row"]')!
+      const link = [...row.querySelectorAll('a')].find((element) => element.textContent === label)!
+      expect(link).toBeTruthy()
+      expect(link.getAttribute('href')).toBe(destination)
+      expect(link.closest('button')).toBeNull()
+      // The row's pseudo-element covers its surface; links must sit above it.
+      expect(link.className).toContain('relative z-10')
+      expect(link.className).toContain('hover:underline')
+      expect(link.className).toContain('focus-visible:ring-2')
+      link.focus()
+      expect(dom.window.document.activeElement).toBe(link)
+      await dom.act(async () => link.click())
+      expect(rendered.container.querySelector('[data-testid="current-route"]')!.textContent).toBe(destination)
+      expect(rendered.container.querySelector('[role="dialog"]')).toBeNull()
+    } finally {
+      await dom.cleanup()
+      client.clear()
+    }
+  })
+
   test('renders agent runtime instead of wall-clock since createdAt', () => {
     const oldCreated = new Date(now.getTime() - 60 * 60 * 1000)
     const ws = workStream({
