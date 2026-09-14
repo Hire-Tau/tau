@@ -54,6 +54,7 @@ async function reschedule(job: Job, status: Job['status'], reason: string): Prom
       and(
         eq(worktreeCleanupJobs.workStreamId, job.workStreamId),
         eq(worktreeCleanupJobs.status, job.status),
+        eq(worktreeCleanupJobs.generation, job.generation),
         job.operationId ? eq(worktreeCleanupJobs.operationId, job.operationId) : isNull(worktreeCleanupJobs.operationId)
       )
     )
@@ -111,6 +112,7 @@ export async function processWorktreeCleanup(
         others.filter((other) => other.id !== id)
       )
       input = await claimWorktreeCleanup(id, {
+        generation: job.generation,
         ownership: registered.ownership,
         head,
         metadata: stream.metadata,
@@ -134,11 +136,22 @@ export async function processWorktreeCleanup(
         nextAttemptAt: new Date(Date.now() + cleanupRetryDelay(job.attempts)),
         updatedAt: new Date(),
       })
-      .where(and(eq(worktreeCleanupJobs.workStreamId, id), eq(worktreeCleanupJobs.operationId, input!.operationId)))
+      .where(
+        and(
+          eq(worktreeCleanupJobs.workStreamId, id),
+          eq(worktreeCleanupJobs.generation, job.generation),
+          eq(worktreeCleanupJobs.operationId, input!.operationId)
+        )
+      )
   } catch (error) {
     // Never expose raw remote output, paths to secrets, or provider credentials.
     const [current] = await db.select().from(worktreeCleanupJobs).where(eq(worktreeCleanupJobs.workStreamId, id))
-    if (current && !['succeeded', 'skipped'].includes(current.status)) {
+    if (
+      current &&
+      current.generation === job.generation &&
+      current.operationId === (input?.operationId ?? job.operationId) &&
+      !['succeeded', 'skipped'].includes(current.status)
+    ) {
       const unknown = Boolean(current.operationId)
       await reschedule(
         current,

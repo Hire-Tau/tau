@@ -5,7 +5,7 @@ import {
 } from './worktree-cleanup-attachments'
 import { posix as path } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
-import { and, eq, inArray, or, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import {
   db,
   squads,
@@ -48,6 +48,7 @@ export function referencesOwnedWorktree(metadata: Record<string, unknown>, owner
 export async function claimWorktreeCleanup(
   id: string,
   verified: {
+    generation: string
     ownership: WorktreeOwnership
     head: string
     metadata: Record<string, unknown>
@@ -64,6 +65,7 @@ export async function claimWorktreeCleanup(
       .from(worktreeCleanupJobs)
       .where(eq(worktreeCleanupJobs.workStreamId, id))
       .for('update')
+    if (job && job.generation !== verified.generation) return null
     if (!stream || !job || !['pending', 'deferred', 'error'].includes(job.status) || job.operationId) return null
     const defer = async (reason: string, status: 'deferred' | 'skipped' = 'deferred') => {
       await tx
@@ -332,5 +334,22 @@ export async function enqueueWorktreeCleanup(
   await tx
     .insert(worktreeCleanupJobs)
     .values({ workStreamId: id, deliveredHead, deliveryMetadata: cleanupDeliveryBinding(metadata) })
-    .onConflictDoNothing()
+    .onConflictDoUpdate({
+      target: worktreeCleanupJobs.workStreamId,
+      set: {
+        generation: crypto.randomUUID(),
+        status: 'pending',
+        reason: null,
+        deliveredHead: deliveredHead ?? null,
+        deliveryMetadata: cleanupDeliveryBinding(metadata),
+        attempts: 0,
+        nextAttemptAt: new Date(),
+        updatedAt: new Date(),
+        removalInput: null,
+      },
+      setWhere: and(
+        isNull(worktreeCleanupJobs.operationId),
+        inArray(worktreeCleanupJobs.status, ['pending', 'deferred', 'skipped', 'error'])
+      ),
+    })
 }

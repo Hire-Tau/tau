@@ -57,7 +57,13 @@ afterEach(async () => {
 })
 const claim = async () => {
   expect(store.claimWorktreeCleanup).toBeDefined()
-  return store.claimWorktreeCleanup(streamId, { ownership, head, metadata })
+  return store.claimWorktreeCleanup(streamId, {
+    generation: (await db.select().from(worktreeCleanupJobs).where(eq(worktreeCleanupJobs.workStreamId, streamId)))[0]!
+      .generation,
+    ownership,
+    head,
+    metadata,
+  })
 }
 
 test('one concurrent claim wins and durably pins an exact removal input', async () => {
@@ -204,13 +210,11 @@ test('attached evidence and historical missing ownership both fail closed', asyn
 })
 
 test('another stream using the owned tree as its source repository prevents removal', async () => {
-  await db
-    .insert(workStreams)
-    .values({
-      squadId,
-      title: 'uses owned source',
-      metadata: { git: { repository: ownership.worktree, worktree: '/workspace/other' } },
-    })
+  await db.insert(workStreams).values({
+    squadId,
+    title: 'uses owned source',
+    metadata: { git: { repository: ownership.worktree, worktree: '/workspace/other' } },
+  })
   expect(await claim()).toBeNull()
 })
 
@@ -231,8 +235,28 @@ test('stale or newly attached canonical observations cannot authorize deletion',
   const attachments = [
     { id: other.id, raw: { worktree: '/workspace/earlier' }, canonical: { worktree: '/workspace/unrelated' } },
   ]
-  expect(await store.claimWorktreeCleanup(streamId, { ownership, head, metadata, attachments })).toBeNull()
-  expect(await store.claimWorktreeCleanup(streamId, { ownership, head, metadata, attachments: [] })).toBeNull()
+  expect(
+    await store.claimWorktreeCleanup(streamId, {
+      generation: (
+        await db.select().from(worktreeCleanupJobs).where(eq(worktreeCleanupJobs.workStreamId, streamId))
+      )[0]!.generation,
+      ownership,
+      head,
+      metadata,
+      attachments,
+    })
+  ).toBeNull()
+  expect(
+    await store.claimWorktreeCleanup(streamId, {
+      generation: (
+        await db.select().from(worktreeCleanupJobs).where(eq(worktreeCleanupJobs.workStreamId, streamId))
+      )[0]!.generation,
+      ownership,
+      head,
+      metadata,
+      attachments: [],
+    })
+  ).toBeNull()
 })
 
 test('a stale attachment writer cannot bypass a newly claimed resource fence', async () => {

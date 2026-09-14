@@ -1210,6 +1210,8 @@ export const worktreeCleanupJobs = pgTable(
       .$type<'pending' | 'deferred' | 'skipped' | 'removing' | 'succeeded' | 'error'>()
       .notNull()
       .default('pending'),
+    // Invalidates snapshots from an earlier delivery or retention decision.
+    generation: uuid('generation').notNull().defaultRandom(),
     reason: text('reason'),
     attempts: integer('attempts').notNull().default(0),
     nextAttemptAt: timestamp('next_attempt_at').notNull().defaultNow(),

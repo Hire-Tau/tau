@@ -105,14 +105,24 @@ test('lost remote response remains fenced and restart recovers the immutable rec
 })
 
 test('restart redelivers the exact persisted operation after a crash before dispatch', async () => {
-  const input = await claimWorktreeCleanup(streamId, { ownership, head, metadata })
+  const input = await claimWorktreeCleanup(streamId, {
+    generation: (await job()).generation,
+    ownership,
+    head,
+    metadata,
+  })
   expect(input).not.toBeNull()
   await processJob()
   expect(await job()).toMatchObject({ status: 'succeeded', operationId: input!.operationId })
 })
 
 test('an interrupted active operation without terminal proof is never taken over', async () => {
-  const input = await claimWorktreeCleanup(streamId, { ownership, head, metadata })
+  const input = await claimWorktreeCleanup(streamId, {
+    generation: (await job()).generation,
+    ownership,
+    head,
+    metadata,
+  })
   await mkdir(join(ownership.commonDirectory, 'tau-worktree-cleanup', input!.operationId), { recursive: true })
   await processJob()
   expect((await job()).status).toBe('removing')
@@ -157,7 +167,12 @@ test('explicit opt-in after delivery revives a skipped intent without sweeping o
 
 test('terminal partial failures keep their operation fence and use capped backoff on recovery', async () => {
   const { createHash } = await import('node:crypto')
-  const input = (await claimWorktreeCleanup(streamId, { ownership, head, metadata }))!
+  const input = (await claimWorktreeCleanup(streamId, {
+    generation: (await job()).generation,
+    ownership,
+    head,
+    metadata,
+  }))!
   const active = join(ownership.commonDirectory, 'tau-worktree-cleanup', input.operationId)
   await mkdir(active, { recursive: true })
   const serialized = JSON.stringify({
@@ -210,7 +225,7 @@ test('metadata-only alias binding updates cannot race an already claimed removal
   const alias = join(root, 'alias')
   await symlink(ownership.worktree, alias)
   const [other] = await db.insert(workStreams).values({ squadId, title: 'new alias binding' }).returning()
-  await claimWorktreeCleanup(streamId, { ownership, head, metadata })
+  await claimWorktreeCleanup(streamId, { generation: (await job()).generation, ownership, head, metadata })
   const ensureSpy = spyOn(ensure, 'ensureSquadSandbox').mockResolvedValue(root)
   const managerSpy = spyOn(factory, 'getSandboxManager').mockReturnValue({
     exec: async (_id: string, args: string[]) => exec(args),
@@ -223,5 +238,96 @@ test('metadata-only alias binding updates cannot race an already claimed removal
   } finally {
     ensureSpy.mockRestore()
     managerSpy.mockRestore()
+  }
+})
+
+test('redelivery re-arms a skipped intent with fresh proof and preserves same-transition idempotence', async () => {
+  const stream = await WorkStream.mustFind(streamId)
+  await stream.reopen()
+  await processJob()
+  expect((await job()).status).toBe('skipped')
+  const newHead = 'b'.repeat(40)
+  await stream.update(
+    {
+      status: 'done',
+      metadata: { ...metadata, git: { ...(metadata.git as Record<string, unknown>), baseBranch: 'release' } },
+    },
+    { flowCompletion: { version: 0, metadataHash: 'fixture', deliveredHead: newHead } }
+  )
+  const refreshed = await job()
+  expect(refreshed.deliveryMetadata).toMatchObject({ git: { baseBranch: 'release' } })
+  expect(refreshed).toMatchObject({ status: 'pending', deliveredHead: newHead, attempts: 0, operationId: null })
+  await stream.update({ status: 'done' })
+  expect(await job()).toEqual(refreshed)
+})
+
+test('a stale disabled snapshot cannot skip a successfully committed opt-in', async () => {
+  await db.update(workStreams).set({ autoCleanupWorktree: false }).where(eq(workStreams.id, streamId))
+  const original = WorkStream.find.bind(WorkStream)
+  let enabled = false
+  const find = spyOn(WorkStream, 'find').mockImplementation(async (id) => {
+    const snapshot = await original(id)
+    if (id === streamId && !enabled) {
+      enabled = true
+      await (await original(streamId))!.update({ autoCleanupWorktree: true })
+    }
+    return snapshot
+  })
+  try {
+    await processJob()
+  } finally {
+    find.mockRestore()
+  }
+  expect((await WorkStream.mustFind(streamId)).autoCleanupWorktree).toBe(true)
+  expect((await job()).status).toBe('pending')
+  await processJob()
+  expect((await job()).status).toBe('succeeded')
+})
+
+test('a stale prior-delivery failure cannot overwrite the new delivery generation', async () => {
+  const newHead = 'c'.repeat(40)
+  await processJob({
+    verify: async () => {
+      const stream = await WorkStream.mustFind(streamId)
+      await stream.reopen()
+      await stream.update(
+        { status: 'done' },
+        { flowCompletion: { version: 0, metadataHash: 'fixture', deliveredHead: newHead } }
+      )
+      throw Error('old delivery verification failed')
+    },
+  })
+  expect(await job()).toMatchObject({ status: 'pending', deliveredHead: newHead, attempts: 0 })
+})
+
+test('stale verification cannot claim or defer a newer delivery generation', async () => {
+  const newHead = 'd'.repeat(40)
+  await processJob({
+    verify: async () => {
+      const stream = await WorkStream.mustFind(streamId)
+      await stream.reopen()
+      await stream.update(
+        { status: 'done' },
+        { flowCompletion: { version: 0, metadataHash: 'fixture', deliveredHead: newHead } }
+      )
+      return { head, metadata }
+    },
+  })
+  expect(await job()).toMatchObject({ status: 'pending', deliveredHead: newHead, attempts: 0, operationId: null })
+  expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(true)
+})
+
+test('new delivery intent never resets removing, uncertain, or succeeded resources', async () => {
+  const { enqueueWorktreeCleanup } = await import('./worktree-cleanup-store')
+  for (const state of [
+    { status: 'removing' as const, operationId: null },
+    { status: 'removing' as const, operationId: crypto.randomUUID() },
+    { status: 'error' as const, operationId: crypto.randomUUID() },
+    { status: 'succeeded' as const, operationId: crypto.randomUUID() },
+  ]) {
+    await db.update(worktreeCleanupJobs).set(state).where(eq(worktreeCleanupJobs.workStreamId, streamId))
+    const before = await job()
+    await db.transaction((tx) => enqueueWorktreeCleanup(tx, streamId, metadata, 'e'.repeat(40)))
+    expect(await job()).toEqual(before)
   }
 })

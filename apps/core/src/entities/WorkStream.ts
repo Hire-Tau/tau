@@ -1162,15 +1162,21 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       //   waits are already settled (the open-waits guard above).
       // - canceled force-clears the stream's remaining open waits (abandonment
       //   discards conversations by design — spec §5).
-      if (updated.status === 'done' && input.autoCleanupWorktree === true && locked.status === 'done') {
+      if (updated.status === 'done' && input.autoCleanupWorktree !== undefined && locked.status === 'done') {
         await tx.insert(worktreeCleanupJobs).values({ workStreamId: this.id }).onConflictDoNothing()
         await tx
           .update(worktreeCleanupJobs)
-          .set({ status: 'pending', reason: null, nextAttemptAt: now, updatedAt: now })
+          .set({
+            generation: crypto.randomUUID(),
+            status: input.autoCleanupWorktree ? 'pending' : 'skipped',
+            reason: input.autoCleanupWorktree ? null : 'Automatic cleanup is disabled; worktree retained.',
+            nextAttemptAt: now,
+            updatedAt: now,
+          })
           .where(
             and(
               eq(worktreeCleanupJobs.workStreamId, this.id),
-              inArray(worktreeCleanupJobs.status, ['skipped', 'deferred']),
+              inArray(worktreeCleanupJobs.status, ['pending', 'skipped', 'deferred', 'error']),
               sql`${worktreeCleanupJobs.operationId} IS NULL`
             )
           )
@@ -1360,6 +1366,22 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         .set({ status: 'queued', pause: null, metadata, updatedAt: now })
         .where(eq(workStreams.id, this.id))
         .returning()
+      // Invalidate in-flight non-destructive decisions from the prior delivery.
+      await tx
+        .update(worktreeCleanupJobs)
+        .set({
+          generation: crypto.randomUUID(),
+          status: 'skipped',
+          reason: 'Work stream reopened; awaiting a new delivery.',
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(worktreeCleanupJobs.workStreamId, this.id),
+            sql`${worktreeCleanupJobs.operationId} IS NULL`,
+            sql`${worktreeCleanupJobs.status} <> 'succeeded'`
+          )
+        )
       // Dependencies may have changed while this stream was terminal (or been
       // reopened themselves): re-open one dependency wait per not-done dep.
       await syncDependencyWaits(tx, this.id, updated.dependsOn ?? [])

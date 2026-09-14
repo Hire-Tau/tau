@@ -216,3 +216,37 @@ test('retains Git index locks and committed submodule registrations', async () =
   head = (await exec(['git', '-C', ownership.worktree, 'rev-parse', 'HEAD'])).trim()
   expect(await remove()).toMatchObject({ status: 'retained', reason: 'Submodule worktrees require manual retention' })
 })
+
+test('preserves an unpublished detached commit protected only by this worktree HEAD reflog', async () => {
+  await exec(['git', '-C', ownership.worktree, 'checkout', '--detach', head])
+  await writeFile(join(ownership.worktree, 'README'), 'unpublished detached work')
+  await exec(['git', '-C', ownership.worktree, 'add', 'README'])
+  await exec([
+    'git',
+    '-C',
+    ownership.worktree,
+    '-c',
+    'user.name=Test',
+    '-c',
+    'user.email=test@example.com',
+    'commit',
+    '-m',
+    'unpublished',
+  ])
+  const unpublished = (await exec(['git', '-C', ownership.worktree, 'rev-parse', 'HEAD'])).trim()
+  await exec(['git', '-C', ownership.worktree, 'checkout', 'feature'])
+  expect(await exec(['git', '-C', ownership.worktree, 'status', '--porcelain'])).toBe('')
+  expect(await remove()).toMatchObject({ status: 'retained' })
+  expect(await readFile(join(ownership.gitDirectory, 'logs/HEAD'), 'utf8')).toContain(unpublished)
+  expect(await exec(['git', '-C', repo, 'fsck', '--unreachable'])).not.toContain(unpublished)
+})
+
+for (const state of ['local-ref', 'in-progress']) {
+  test(`preserves worktree-only Git recovery state: ${state}`, async () => {
+    if (state === 'local-ref')
+      await exec(['git', '-C', ownership.worktree, 'update-ref', 'refs/worktree/recovery', head])
+    else await writeFile(join(ownership.gitDirectory, 'MERGE_HEAD'), `${head}\n`)
+    expect(await remove()).toMatchObject({ status: 'retained' })
+    expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(true)
+  })
+}

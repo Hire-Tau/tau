@@ -296,7 +296,9 @@ files** are retained. There is currently no repository-approved disposable
 artifact classifier; even ignored build/dependency outputs conservatively defer
 cleanup. Remove only known disposable outputs through normal project tooling if
 appropriate, or keep the retention setting disabled. Cleanup never deletes
-branches, remote refs, caches, Docker resources, or arbitrary directories.
+branches, remote refs, caches, Docker resources, or arbitrary directories. Worktree-local
+refs and in-progress Git state are retained; HEAD reflog and original-HEAD commits
+must remain reachable through surviving shared refs before removal.
 
 `worktreeCleanup` exposes status, actionable reason, retry timing and operation
 ID, without private removal inputs. Exceptional blockers are deduplicated owner
@@ -306,5 +308,7 @@ Unknown/partial removal keeps the same-worktree reuse fence: a missing directory
 alone is **not** proof that a late command cannot arrive. Never reset that fence
 or delete its marker to force reuse. Reopening after successful removal is
 explicitly blocked; provision a new stream instead. Git and delivery metadata
-remain available after reclamation. No reclaimed-byte estimate is reported,
+remain available after reclamation. Reopening before removal invalidates old cleanup
+decisions; a fresh delivered transition captures fresh proof and re-arms the intent.
+Retention changes also invalidate stale reconciliation snapshots. No reclaimed-byte estimate is reported,
 because hardlinked dependencies can make summed sizes misleading.

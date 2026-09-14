@@ -643,7 +643,15 @@ describeSubprocess('attemptPickup result matrix', () => {
         await db
           .insert(worktreeCleanupJobs)
           .values({ workStreamId: stream.id, deliveredHead: head, deliveryMetadata: metadata })
-        const claim = () => claimWorktreeCleanup(stream.id, { ownership, metadata, head })
+        const claim = async () =>
+          claimWorktreeCleanup(stream.id, {
+            generation: (
+              await db.select().from(worktreeCleanupJobs).where(eq(worktreeCleanupJobs.workStreamId, stream.id))
+            )[0]!.generation,
+            ownership,
+            metadata,
+            head,
+          })
         const queue = () => agent.queueExecution({ message: 'late associated inbox work' })
         const [removal, execution] = concurrent ? await Promise.all([claim(), queue()]) : [await claim(), await queue()]
         createdExecutionIds.push(execution.id)

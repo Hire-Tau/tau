@@ -767,6 +767,7 @@ test('native review requests create one bound flow and keep code-host delivery i
       github: { repo: `${prefix}/repo`, pr: { number: 32 } },
     })
     const waiting = await WorkStream.mustFind(id)
+    expect(waiting.autoCleanupWorktree).toBe(true)
     expect(waiting.status).toBe('queued')
     expect(waiting.pause?.reason).toContain('awaiting owner preparation')
     expect(waiting.agentIds?.length ?? 0).toBe(0)
@@ -798,6 +799,10 @@ test('native review requests create one bound flow and keep code-host delivery i
     try {
       await waiting.update({ repository: 'repo' })
       expect(waiting.metadata?.git).toMatchObject({ worktree: `/workspace/worktrees/${id}` })
+      expect((await WorkStream.mustFind(id)).autoCleanupWorktree).toBe(true)
+      await waiting.update({ autoCleanupWorktree: false })
+      await waiting.update({ repository: 'repo' })
+      expect((await WorkStream.mustFind(id)).autoCleanupWorktree).toBe(false)
       expect((await getFlow(id))!.attemptAgents).toEqual({})
     } finally {
       setup.mockRestore()
@@ -1820,4 +1825,79 @@ test('code-host delivery returns to the active engineer after its question clear
   const target = (await deliveries(id))[0]!.targets[0]!
   expect(target).toMatchObject({ agentId: run.attemptAgents['1'], attemptId: 1 })
   expect((await getFlow(id))!.version).toBe(run.version)
+})
+
+test('event-created streams preserve their default or explicit opt-out through real repository provisioning', async () => {
+  const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const workspace = await mkdtemp(join(tmpdir(), 'tau-event-cleanup-'))
+  const repo = join(workspace, 'repo')
+  const exec = async (args: string[]) => {
+    const proc = Bun.spawn(args, { stdout: 'pipe', stderr: 'pipe' })
+    const [output, error, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ])
+    if (code) throw Error(error)
+    return output
+  }
+  try {
+    await mkdir(repo)
+    await exec(['git', 'init', '-b', 'main', repo])
+    await writeFile(join(repo, 'README'), 'fixture')
+    await exec(['git', '-C', repo, 'add', 'README'])
+    await exec([
+      'git',
+      '-C',
+      repo,
+      '-c',
+      'user.name=Test',
+      '-c',
+      'user.email=test@example.com',
+      'commit',
+      '-m',
+      'fixture',
+    ])
+    await exec(['git', '-C', repo, 'remote', 'add', 'origin', `https://github.com/${prefix}/repo.git`])
+    await withNativeRouting(async (connectionId) => {
+      const repositorySetup = await import('../../work-streams/repository-setup')
+      const setup = spyOn(repositorySetup, 'setupWorkStreamRepository').mockImplementation(
+        async (_squad, input, id, metadata, record) =>
+          repositorySetup.prepareRepository(exec, workspace, input, id, metadata, record)
+      )
+      try {
+        for (const optOut of [false, true]) {
+          const number = optOut ? 1721 : 1720
+          const review = fact(number, {
+            output: 'pull_request.review_requested',
+            data: { repository: `${prefix}/repo`, pullRequest: { number }, requestedReviewer: 'tau-bot' },
+          })
+          eventIds.push(
+            (await publishIntegrationOutput('github', review, { kind: 'connection', connectionId, squadId }))!
+          )
+          const [run] = await db
+            .select()
+            .from(integrationOutputTriggerRuns)
+            .where(eq(integrationOutputTriggerRuns.resourceKey, review.resourceKey))
+          const stream = await WorkStream.mustFind(run!.workStreamId!)
+          expect(stream.autoCleanupWorktree).toBe(true)
+          if (optOut) await stream.update({ autoCleanupWorktree: false })
+          await stream.update({ repository: 'repo', baseBranch: 'main' })
+          const { workStreamWorktrees } = await import('../../../db')
+          const [owned] = await db
+            .select()
+            .from(workStreamWorktrees)
+            .where(eq(workStreamWorktrees.workStreamId, stream.id))
+          expect(await Bun.file(join(owned!.ownership.worktree, 'README')).exists()).toBe(true)
+          expect((await WorkStream.mustFind(stream.id)).autoCleanupWorktree).toBe(!optOut)
+        }
+      } finally {
+        setup.mockRestore()
+      }
+    })
+  } finally {
+    await rm(workspace, { recursive: true, force: true })
+  }
 })

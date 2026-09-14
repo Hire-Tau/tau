@@ -899,6 +899,8 @@ async function applyOutputTriggers(event: Event) {
                 .filter(Boolean)
                 .join('\n\n'),
               ownerAgentId: squad.managerAgentId,
+              // New streams opt in; the DB default remains false for historical rows.
+              autoCleanupWorktree: true,
               // Commit the preparation hold with the flow and receipt. No scheduler
               // can admit this stream before its owner has prepared and resumed it.
               status: 'queued',
