@@ -433,7 +433,11 @@ export async function ensureWorkspaceSandbox(
         // on the freshly stamped box.
         const inflightRecreate = inflightDriftRecreates.get(sandboxId)
         if (inflightRecreate) {
-          await inflightRecreate
+          // Warmup can own a cold rebuild for longer than the runner's 30s
+          // admission lease. Joining it is part of this runner's setup too:
+          // keep our own phase heartbeated, without taking over or canceling
+          // the shared rebuild. The normal ensure below checks our fence again.
+          await runSandboxEffect(admissionScope, 'sandbox-ensure', sandboxId, () => inflightRecreate)
         } else if (inspectionAllowed) {
           const runningHash = await manager.getRunningSandboxSpecHash(sandboxId)
           if (runningHash !== manager.computeSpecHash(sandboxOpts) && !deps.isSessionActive(agentId)) {
