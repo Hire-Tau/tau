@@ -32,6 +32,7 @@ export function AccountFeedVisit({
   const visit = useQuery(feedQueries.visit(userId))
   const work = useQuery(queries.squads.activeWorkStreams())
   const [snapshot, setSnapshot] = useState<FeedVisit | null>(null)
+  const [dismissed, setDismissed] = useState(false)
   const acknowledged = useRef(false)
   useEffect(() => {
     // Do not use another mount/device's cached watermark or change this visit's
@@ -58,7 +59,7 @@ export function AccountFeedVisit({
     return () => document.removeEventListener('visibilitychange', save)
   }, [loaded, snapshot, acknowledge])
 
-  if (!snapshot?.lastVisitedAt || !completed.data || !ready) return null
+  if (dismissed || !snapshot?.lastVisitedAt || !completed.data || !ready) return null
   const since = Date.parse(snapshot.lastVisitedAt)
   const until = Date.parse(snapshot.observedAt)
   const newActions = actions.filter((action) => {
@@ -83,6 +84,18 @@ export function AccountFeedVisit({
         </span>
         <span className="text-sm font-semibold text-secondary">Since your last visit</span>
         <span className="text-xs text-muted">{parts.join(' · ')}</span>
+        <button
+          type="button"
+          className="tau-button ml-auto shrink-0 rounded px-2 py-1 text-xs text-muted hover:text-primary"
+          aria-label="Dismiss updates since your last visit"
+          onClick={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            setDismissed(true)
+          }}
+        >
+          Dismiss
+        </button>
       </summary>
       <div className="space-y-3 pb-3 pt-3">
         {streams.length > 0 && (
