@@ -92,3 +92,65 @@ test('the final connected chain stays adjacent instead of stretching Finish acro
   expect(node('finish').x - node('publish').x).toBe(196 + 64)
   expect(node('review').y - Math.max(node('audience').y, node('correctness').y) - 92).toBe(44)
 })
+
+test('code hosting sits below its recipient without taking a column from the normal flow', () => {
+  const flow = createBlankWorkflow()
+  const withoutEvents = layoutWorkflowGraph(flow)
+  flow.completion.followChanges = true
+  const withEvents = layoutWorkflowGraph(flow)
+  for (const width of [300, 520, 900, 1100, 1800]) {
+    const baseline = fitWorkflowGraph(withoutEvents, width, 196, 92)
+    const graph = fitWorkflowGraph(withEvents, width, 196, 92)
+    const hosting = graph.nodes.find((node) => node.kind === 'code-host')!
+    const finish = graph.nodes.find((node) => node.kind === 'finish')!
+    expect(graph.nodes.filter((node) => node.kind !== 'code-host')).toEqual(baseline.nodes)
+    expect(hosting.x).toBe(finish.x)
+    expect(hosting.y).toBeGreaterThanOrEqual(Math.max(...baseline.nodes.map((node) => node.y + 92)) + 44)
+    expect(graph.width).toBe(baseline.width)
+    expect(graph.height).toBeGreaterThan(hosting.y + 92)
+    expect(graph.edges).toEqual(withEvents.edges)
+  }
+  // Fitting a preview must not mutate the original layout (also used by native previews).
+  expect(layoutWorkflowGraph(flow)).toEqual(withEvents)
+  expect(withEvents.nodes.find((node) => node.kind === 'code-host')!.x).toBe(
+    withEvents.nodes.find((node) => node.kind === 'finish')!.x
+  )
+})
+
+test('retargeted code hosting aligns with the agent recipient in its own attribute row', () => {
+  const flow = createBlankWorkflow()
+  flow.completion.followChanges = true
+  flow.completion.changeEventsTo = { step: flow.entry }
+  const graph = fitWorkflowGraph(layoutWorkflowGraph(flow), 1100, 196, 92)
+  const hosting = graph.nodes.find((node) => node.kind === 'code-host')!
+  const recipient = graph.nodes.find((node) => node.id === flow.entry)!
+  expect(hosting.x).toBe(recipient.x)
+  expect(hosting.y).toBeGreaterThan(
+    Math.max(...graph.nodes.filter((node) => node !== hosting).map((node) => node.y + 92))
+  )
+  expect(graph.edges.find((edge) => edge.from === hosting.id)?.to).toBe(flow.entry)
+})
+
+test('multiple event attributes share the separate area without overlapping or shifting branch lanes', () => {
+  const original = layoutWorkflowGraph(definition)
+  const source = { id: 'integration:test', kind: 'integration' as const, label: 'Issue events', x: 24, y: 400 }
+  const graph = {
+    ...original,
+    nodes: [...original.nodes, source, { ...source, id: 'code-host:delivery', kind: 'code-host' as const }],
+    edges: [
+      ...original.edges,
+      { from: source.id, to: 'finish', label: 'events', rework: false, subscriptionId: 'test' },
+      { from: 'code-host:delivery', to: 'finish', label: 'events', rework: false },
+    ],
+  }
+  for (const width of [300, 520, 1100]) {
+    const fitted = fitWorkflowGraph(graph, width, 196, 92)
+    expect(fitted.nodes.filter((node) => node.kind !== 'integration' && node.kind !== 'code-host')).toEqual(
+      fitWorkflowGraph(original, width, 196, 92).nodes
+    )
+    for (const a of fitted.nodes)
+      for (const b of fitted.nodes) {
+        if (a.id !== b.id) expect(Math.abs(a.x - b.x) >= 196 || Math.abs(a.y - b.y) >= 92).toBe(true)
+      }
+  }
+})

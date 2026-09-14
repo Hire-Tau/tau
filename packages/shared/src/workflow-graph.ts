@@ -71,6 +71,33 @@ export function placeNewWorkflowNodes(
   })
 }
 
+const isWorkflowAttribute = (node: FlowGraphNode) => node.kind === 'integration' || node.kind === 'code-host'
+
+/** Event sources configure recipients; they do not occupy ranks in the execution flow. */
+function placeWorkflowAttributes(
+  nodes: FlowGraphNode[],
+  edges: FlowGraphEdge[],
+  nodeWidth: number,
+  nodeHeight: number,
+  gap: number
+) {
+  const flow = nodes.filter((node) => !isWorkflowAttribute(node))
+  const top = Math.max(0, ...flow.map((node) => node.y + nodeHeight)) + gap
+  const placed: FlowGraphNode[] = []
+  for (const node of nodes.filter(isWorkflowAttribute)) {
+    const recipient = edges
+      .filter((edge) => edge.from === node.id)
+      .map((edge) => flow.find((candidate) => candidate.id === edge.to))
+      .find((candidate) => candidate !== undefined)
+    node.x = (recipient ?? flow.find((candidate) => candidate.kind === 'finish') ?? flow[0])?.x ?? 32
+    node.y = top
+    while (placed.some((other) => Math.abs(other.x - node.x) < nodeWidth && other.y === node.y)) {
+      node.y += nodeHeight + gap
+    }
+    placed.push(node)
+  }
+}
+
 /** Pure, bounded layout: draft graphs may be incomplete or cyclic while editing. */
 export function layoutWorkflowGraph(definition: WorkflowDefinition): FlowGraph {
   const nodes: FlowGraphNode[] = definition.steps.map((step) => ({
@@ -192,6 +219,7 @@ export function layoutWorkflowGraph(definition: WorkflowDefinition): FlowGraph {
         rework: false,
       })
   }
+  placeWorkflowAttributes(nodes, edges, FLOW_NODE_WIDTH, FLOW_NODE_HEIGHT, 44)
   return {
     nodes,
     edges,
@@ -206,7 +234,9 @@ export function fitWorkflowGraph(graph: FlowGraph, width: number, nodeWidth: num
     gapY = 44,
     padding = 32
   const columns = Math.max(1, Math.floor((width - padding * 2 + gapX) / (nodeWidth + gapX)))
-  const middle = graph.nodes.filter((node) => node.kind !== 'start' && node.kind !== 'finish')
+  const middle = graph.nodes.filter(
+    (node) => node.kind !== 'start' && node.kind !== 'finish' && !isWorkflowAttribute(node)
+  )
   const ranks = [...new Set(middle.map((node) => node.x))].sort((a, b) => a - b)
   const groups = [
     graph.nodes.filter((node) => node.kind === 'start'),
@@ -235,6 +265,8 @@ export function fitWorkflowGraph(graph: FlowGraph, width: number, nodeWidth: num
     })
     top += lanes * (nodeHeight + gapY)
   }
+  nodes.push(...graph.nodes.filter(isWorkflowAttribute).map((node) => ({ ...node })))
+  placeWorkflowAttributes(nodes, graph.edges, nodeWidth, nodeHeight, gapY)
   return {
     ...graph,
     nodes,
