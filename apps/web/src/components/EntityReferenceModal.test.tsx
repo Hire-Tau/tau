@@ -56,3 +56,52 @@ test('work stream references resolve by ID and present a closable permission/err
     client.clear()
   }
 })
+
+test('agent prefixes navigate to squad Chats with the full ID and preserve Back history', async () => {
+  const { createMemoryRouter, RouterProvider } = await import('react-router-dom')
+  const { queries } = await import('../queryOptions')
+  const dom = await acquireDomHarness({})
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  const prefix = id.slice(0, 8)
+  client.setQueryData(queries.agents.detail(prefix).queryKey, { id, squadId: 'tau' })
+  let closed = false
+  const router = createMemoryRouter(
+    [
+      {
+        path: '/source',
+        element: (
+          <EntityReferenceModal
+            reference={{ kind: 'agent', id: prefix }}
+            onClose={() => {
+              closed = true
+            }}
+          />
+        ),
+      },
+      { path: '/squads/:squadId/agents', element: <p>Squad chats</p> },
+    ],
+    { initialEntries: ['/source'] }
+  )
+  try {
+    const { root } = dom.createRoot()
+    await dom.act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <RouterProvider router={router} />
+        </QueryClientProvider>
+      )
+    )
+    expect(closed).toBe(true)
+    expect(router.state.location.pathname).toBe('/squads/tau/agents')
+    expect(router.state.location.search).toBe(`?agent=${id}`)
+    expect(router.state.historyAction).toBe('PUSH')
+    // Unmount the resolver before going back, as closing the reference does in the app.
+    await dom.act(async () => root.unmount())
+    await router.navigate(-1)
+    expect(router.state.location.pathname).toBe('/source')
+  } finally {
+    router.dispose()
+    await dom.cleanup()
+    client.clear()
+  }
+})
