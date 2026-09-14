@@ -1,7 +1,7 @@
 import { PermissionsProvider } from '../../hooks/usePermissions'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent } from '@testing-library/dom'
+import { fireEvent, getByRole, queryAllByRole } from '@testing-library/dom'
 import { type ComponentProps } from 'react'
 import type { Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -41,7 +41,7 @@ const threadsDependencies = {
       </button>
     </div>
   ),
-  AgentConversation: () => <div>Agent chat body</div>,
+  AgentConversation: () => <div data-agent-conversation>Agent chat body</div>,
   SubagentsInlinePanel: ({ parentAgentId }: { parentAgentId: string }) => <div>Subagents panel {parentAgentId}</div>,
   AgentWorkStreamsPanel: () => <div>Agent work streams</div>,
   AgentInboxPanel: () => <div>Agent inbox</div>,
@@ -1256,7 +1256,7 @@ describe('SquadAgentThreads compose-mode picker', () => {
     expect(html).toContain('data-testid="agent-picker-trigger"')
   })
 
-  test('a filtered single category is always expanded with no collapse toggle', () => {
+  test('a filtered single category starts expanded', () => {
     const html = renderThreads(
       [
         agent({ id: 'c1', agentTypeId: 'consultant', metadata: { name: 'Sage' } }),
@@ -1268,12 +1268,10 @@ describe('SquadAgentThreads compose-mode picker', () => {
       {},
       { agentTypeFilter: 'consultant' }
     )
-    // Both consultants are visible (expanded) even though 'consultant' is collapsed by default.
+    // Consultant recents start expanded even without workers.
     expect(html).toContain('Sage')
     expect(html).toContain('Cassius')
-    // No collapse chevron — the lone category can't be toggled.
-    expect(html).not.toContain('▸')
-    expect(html).not.toContain('▾')
+    expect(html).toContain('aria-expanded="true"')
   })
 
   test('the New consultant header has no picker when there is nothing to switch to', () => {
@@ -1485,7 +1483,7 @@ describe('SquadAgentThreads consultant recency', () => {
       })
     )
 
-  test('shows the last ten unarchived consultants by human recency regardless of status or age', () => {
+  test('shows the last five unarchived consultants by human recency regardless of status or age', () => {
     includeIdleAgents = false
     const chats = history()
     chats[0] = {
@@ -1510,7 +1508,7 @@ describe('SquadAgentThreads consultant recency', () => {
       ]
     )
     const listed = [...html.matchAll(/title="Chat (\d+) · consultant · chat-\d+"/g)].map((match) => match[1])
-    expect(listed).toEqual(['11', '10', '09', '08', '07', '06', '05', '04', '03', '02'])
+    expect(listed).toEqual(['11', '10', '09', '08', '07'])
     expect(html).toContain('View all (12)')
     expect(html).not.toContain('Archived Chat')
     expect(html).not.toContain('Terminated Chat')
@@ -1543,7 +1541,7 @@ describe('SquadAgentThreads consultant recency', () => {
       await dom.act(async () => renderThreadsDom(root, client, [agent(), ...chats]))
       const section = () => dom.window.document.querySelector('[data-agent-type-section="consultant"]')!
       const rows = () => Array.from(section().querySelectorAll('button[title*=" · consultant · "]'))
-      expect(rows()).toHaveLength(10)
+      expect(rows()).toHaveLength(5)
       const toggle = Array.from(section().querySelectorAll('button')).find((button) =>
         button.textContent?.includes('View all')
       )!
@@ -1551,7 +1549,7 @@ describe('SquadAgentThreads consultant recency', () => {
       expect(rows()).toHaveLength(12)
       expect(section().textContent).toContain('Show recent')
       await dom.act(async () => toggle.click())
-      expect(rows()).toHaveLength(10)
+      expect(rows()).toHaveLength(5)
       const search = dom.window.document.querySelector('input[type="search"]') as HTMLInputElement
       await dom.act(async () => changeSearchInput(dom.window, search, 'Chat 00'))
       expect(rows()).toHaveLength(1)
@@ -1566,9 +1564,130 @@ describe('SquadAgentThreads consultant recency', () => {
       chats = chats.map((chat) => (chat.id === 'chat-0' ? { ...chat, status: 'dormant' } : chat))
       await dom.act(async () => renderThreadsDom(root, client, [agent(), ...chats]))
       expect(rows().some((row) => row.getAttribute('title')?.includes('chat-0'))).toBe(false)
-      expect(rows()).toHaveLength(10)
+      expect(rows()).toHaveLength(5)
     } finally {
       await dom.cleanup()
+    }
+  })
+
+  test.each([0, 2, 5])('keeps %i consultants without an unnecessary View all action', (count) => {
+    const html = renderThreads([agent(), ...history().slice(0, count)])
+    expect([...html.matchAll(/title="Chat \d+ · consultant · chat-\d+"/g)]).toHaveLength(count)
+    expect(html).not.toContain('View all')
+    expect(html.includes('Recent chats')).toBe(count > 0)
+  })
+
+  test('offers View all as soon as a sixth consultant exists, including during a cached refresh', () => {
+    const html = renderThreads([agent(), ...history().slice(0, 6)], [], true)
+    expect([...html.matchAll(/title="Chat \d+ · consultant · chat-\d+"/g)]).toHaveLength(5)
+    expect(html).toContain('View all (6)')
+    expect(html).not.toContain('Chat 00 · consultant')
+    expect(html).not.toContain('Loading agent conversations')
+  })
+
+  test('collapses only consultant contents, retaining selection, worker nodes and focus', async () => {
+    includeIdleAgents = false
+    initialSearchParams = 'agent=chat-11'
+    const dom = await installDom()
+    try {
+      const { root } = dom.createRoot()
+      await dom.act(async () =>
+        renderThreadsDom(root, makeQueryClient(), [
+          agent(),
+          ...history(),
+          agent({ id: 'engineer', agentTypeId: 'engineer', status: 'active' }),
+          agent({ id: 'reviewer', agentTypeId: 'reviewer', status: 'waiting-input' }),
+        ])
+      )
+      const doc = dom.window.document
+      const section = doc.querySelector<HTMLElement>('[data-agent-type-section="consultant"]')!
+      const toggle = getByRole(section, 'button', { name: 'Collapse Recent chats' })
+      const contents = doc.getElementById(toggle.getAttribute('aria-controls')!)!
+      const header = doc.querySelector('[data-testid="agent-picker-static"]')!
+      const conversation = doc.querySelector('[data-agent-conversation]')
+      expect(conversation).not.toBeNull()
+      const workers = [
+        ...doc.querySelectorAll('[data-agent-type-section="engineer"], [data-agent-type-section="reviewer"]'),
+      ]
+      const workerMarkup = workers.map((worker) => worker.outerHTML)
+      expect(toggle.getAttribute('aria-expanded')).toBe('true')
+      expect(contents.hidden).toBe(false)
+      expect(queryAllByRole(contents, 'button', { name: /Chat/ })).toHaveLength(5)
+      expect(header.textContent).toContain('Chat 11')
+      expect(toggle.querySelector('button, a, input')).toBeNull()
+      // Also protect click-without-focus browsers: focus must leave the rows before hiding them.
+      getByRole(contents, 'button', { name: /Chat 11/ }).focus()
+      await dom.act(async () => toggle.click())
+      expect(toggle.getAttribute('aria-expanded')).toBe('false')
+      expect(contents.hidden).toBe(true)
+      expect(queryAllByRole(contents, 'button')).toHaveLength(0)
+      expect(doc.activeElement).toBe(toggle)
+      expect(header.textContent).toContain('Chat 11')
+      expect(doc.body.textContent).toContain('Agent chat body')
+      expect(doc.querySelector('[data-agent-conversation]')).toBe(conversation)
+      expect(workers.map((worker) => worker.outerHTML)).toEqual(workerMarkup)
+      expect([
+        ...doc.querySelectorAll('[data-agent-type-section="engineer"], [data-agent-type-section="reviewer"]'),
+      ]).toEqual(workers)
+      await dom.act(async () => toggle.click())
+      expect(toggle.getAttribute('aria-expanded')).toBe('true')
+      expect(queryAllByRole(contents, 'button', { name: /Chat/ })).toHaveLength(5)
+      expect(getByRole(contents, 'button', { name: /Chat 11/ }).getAttribute('aria-pressed')).toBe('true')
+      expect(doc.activeElement).toBe(toggle)
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('search reveals older chats while collapsed and restores the disclosure on clearing', async () => {
+    const dom = await installDom()
+    try {
+      const { root } = dom.createRoot()
+      await dom.act(async () => renderThreadsDom(root, makeQueryClient(), [agent(), ...history()]))
+      const section = dom.window.document.querySelector<HTMLElement>('[data-agent-type-section="consultant"]')!
+      const toggle = getByRole(section, 'button', { name: 'Collapse Recent chats' })
+      await dom.act(async () => toggle.click())
+      const search = dom.window.document.querySelector<HTMLInputElement>('input[type="search"]')!
+      await dom.act(async () => changeSearchInput(dom.window, search, 'Chat 00'))
+      const older = getByRole(section, 'button', { name: /Chat 00/ })
+      await dom.act(async () => older.click())
+      expect(dom.window.document.querySelector('[data-testid="agent-picker-static"]')?.textContent).toContain('Chat 00')
+      await dom.act(async () => changeSearchInput(dom.window, search, ''))
+      expect(toggle.getAttribute('aria-expanded')).toBe('false')
+      expect(dom.window.document.querySelector('[data-testid="agent-picker-static"]')?.textContent).toContain('Chat 00')
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('the responsive panel picker has its own disclosure target, but the standalone page keeps ten recents', async () => {
+    for (const layout of ['panel', 'page'] as const) {
+      const dom = await installDom()
+      try {
+        const { root } = dom.createRoot()
+        await dom.act(async () => renderThreadsDom(root, makeQueryClient(), [agent(), ...history()], [], { layout }))
+        await dom.act(async () =>
+          dom.window.document.querySelector<HTMLButtonElement>('[data-testid="agent-picker-trigger"]')!.click()
+        )
+        const dialog = dom.window.document.querySelector<HTMLElement>('[role="dialog"]')!
+        const section = dialog.querySelector<HTMLElement>('[data-agent-type-section="consultant"]')!
+        expect(section.querySelectorAll('button[title*=" · consultant · "]')).toHaveLength(layout === 'page' ? 10 : 5)
+        const toggle = section.querySelector<HTMLButtonElement>('button[aria-controls]')
+        if (layout === 'page') {
+          expect(toggle).toBeNull()
+        } else {
+          expect(toggle).not.toBeNull()
+          const targetId = toggle!.getAttribute('aria-controls')!
+          expect([...dom.window.document.querySelectorAll('[id]')].filter((node) => node.id === targetId)).toHaveLength(
+            1
+          )
+          expect(dialog.contains(dom.window.document.getElementById(targetId))).toBe(true)
+          await dom.act(async () => toggle!.click())
+          expect(toggle!.getAttribute('aria-expanded')).toBe('false')
+        }
+      } finally {
+        await dom.cleanup()
+      }
     }
   })
 
@@ -1587,13 +1706,13 @@ describe('SquadAgentThreads consultant recency', () => {
       const filter = dom.window.document.querySelector('[aria-label="Active workers only"]') as HTMLButtonElement
       const consultantRows = () =>
         dom.window.document.querySelectorAll('[data-agent-type-section="consultant"] button[title*=" · consultant · "]')
-      expect(consultantRows()).toHaveLength(10)
+      expect(consultantRows()).toHaveLength(5)
       expect(dom.window.document.querySelector('[data-agent-type-section="engineer"]')).toBeNull()
       await dom.act(async () => filter.click())
-      expect(consultantRows()).toHaveLength(10)
+      expect(consultantRows()).toHaveLength(5)
       expect(dom.window.document.querySelector('[data-agent-type-section="engineer"]')).not.toBeNull()
       await dom.act(async () => filter.click())
-      expect(consultantRows()).toHaveLength(10)
+      expect(consultantRows()).toHaveLength(5)
     } finally {
       await dom.cleanup()
     }

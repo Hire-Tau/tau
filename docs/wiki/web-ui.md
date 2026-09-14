@@ -57,7 +57,7 @@ Home presents a conversation entry point, active work, recent chats, and a label
 
 The chat picker keeps the manager, search, and New chat action accessible. The pulse toggle starts enabled and limits the worker list to live/non-idle agents, hiding empty categories. Consultant recents remain available. Show **No active agents** when the filtered worker region is empty.
 
-The picker shows up to ten unarchived recent consultants, ordered by the last human message or creation time, without a fixed age cutoff. Home shows three. Browsing/search gives access to older chats.
+Squad Home and the Chats panel show up to five unarchived recent consultants, ordered by the last human message or creation time, without a fixed age cutoff. The Chats panel’s Recent chats section starts expanded and can collapse independently of workers and the open conversation; search reveals matching chats. Home has no recent-chat disclosure. Browsing/search gives access to older chats. Standalone chat page pickers retain ten recents.
 
 Titles use `Manager (Name)`, `Purpose (Type • Name)`, or `Type (Name)` when there is no purpose. Display types in title case.
 
