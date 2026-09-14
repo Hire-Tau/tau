@@ -245,7 +245,7 @@ describe('private squad conversations', () => {
     const trusted = new ChannelInstance({ ...instance, trustedChannelIds: ['DM'] })
     expect((await resolve({ user: { id: 'unlinked', name: 'Person' } }, trusted)).reply).toContain('Link your account')
   })
-  test('direct response and follow-up tools keep messages in the DM and identify the squad', async () => {
+  test('direct response and follow-up tools keep messages in the DM without adding a squad prefix', async () => {
     const { createChannelSendTool } = await import('../tools/channel-send')
     const { createChannelRespondTool } = await import('../tools/channel-respond')
     const { telegramProvider } = await import('./telegram/provider')
@@ -280,7 +280,7 @@ describe('private squad conversations', () => {
         {} as any
       )
       expect(response.details).toMatchObject({ success: true })
-      expect(edited).toEqual([{ channelId: 'DM', messageId: 'thinking', text: `${current.squadName}:\n\nAnswer` }])
+      expect(edited).toEqual([{ channelId: 'DM', messageId: 'thinking', text: 'Answer' }])
       const sent = await createChannelSendTool(current.agent!.id).execute(
         'test',
         { content: 'Update' },
@@ -289,11 +289,26 @@ describe('private squad conversations', () => {
         {} as any
       )
       expect(sent.details).toMatchObject({ success: true })
-      expect(posted).toEqual([{ channelId: 'DM', threadId: undefined, text: `${current.squadName}:\n\nUpdate` }])
+      expect(posted).toEqual([{ channelId: 'DM', threadId: undefined, text: 'Update' }])
     } finally {
       find.mockRestore()
       registerProvider(telegramProvider)
     }
+  })
+  test('disabling private chats blocks existing replies and re-enabling preserves the consultant', async () => {
+    const active = await resolve()
+    expect(instance.allowPrivateChats).toBe(true)
+    await instance.update({ allowPrivateChats: false })
+    try {
+      expect((await resolve()).agent).toBeUndefined()
+      await expect(requireAllowedChannelReply(instance.id, 'DM', active.agent!.id)).rejects.toThrow(
+        'Private chats are disabled'
+      )
+    } finally {
+      await instance.update({ allowPrivateChats: true })
+    }
+    expect((await resolve()).agent!.id).toBe(active.agent!.id)
+    await requireAllowedChannelReply(instance.id, 'DM', active.agent!.id)
   })
   test('permission revocation blocks new messages and delayed responses, without falling back to another squad', async () => {
     await resolve({ command: 'squad', text: scope[1]!.id })

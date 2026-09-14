@@ -14,6 +14,7 @@ interface ParsedChannel {
   trustedChannelIds: string[]
   allowedChannelIds: string[]
   deniedChannelIds: string[]
+  allowPrivateChats: boolean
   channelSquadMap: Record<string, string>
   defaultSquadId: string | null
 }
@@ -49,6 +50,9 @@ export class ChannelSync extends ConfigSync<ParsedChannel> {
       throw new Error(`${filename}: channel instance requires defaultSquadId for unmapped channels`)
     }
 
+    if (config.allowPrivateChats !== undefined && typeof config.allowPrivateChats !== 'boolean')
+      throw new Error(`${filename}: allowPrivateChats must be a boolean`)
+
     return {
       id: config.id,
       name: config.name,
@@ -57,6 +61,7 @@ export class ChannelSync extends ConfigSync<ParsedChannel> {
       trustedChannelIds: parseTrustedChannelIds(config.trustedChannelIds ?? []),
       allowedChannelIds: parseChannelIds(config.allowedChannelIds ?? []),
       deniedChannelIds: parseChannelIds(config.deniedChannelIds ?? []),
+      allowPrivateChats: config.allowPrivateChats ?? true,
       channelSquadMap: config.channelSquadMap || {},
       defaultSquadId: config.defaultSquadId,
     }
@@ -75,6 +80,7 @@ export class ChannelSync extends ConfigSync<ParsedChannel> {
       trustedChannelIds: parsed.trustedChannelIds,
       allowedChannelIds: parsed.allowedChannelIds,
       deniedChannelIds: parsed.deniedChannelIds,
+      allowPrivateChats: parsed.allowPrivateChats,
       channelSquadMap: parsed.channelSquadMap,
       defaultSquadId: parsed.defaultSquadId,
     }
@@ -89,6 +95,7 @@ export class ChannelSync extends ConfigSync<ParsedChannel> {
       trustedChannelIds: row.trustedChannelIds ?? [],
       allowedChannelIds: row.allowedChannelIds ?? [],
       deniedChannelIds: row.deniedChannelIds ?? [],
+      allowPrivateChats: row.allowPrivateChats ?? true,
       channelSquadMap: (row.channelSquadMap as Record<string, string>) || {},
       defaultSquadId: (row.defaultSquadId as string) || null,
     }
@@ -108,6 +115,7 @@ export class ChannelSync extends ConfigSync<ParsedChannel> {
     for (const key of ['allowedChannelIds', 'deniedChannelIds'] as const) {
       if (Array.isArray(row[key]) && row[key].length) obj[key] = row[key]
     }
+    if (row.allowPrivateChats === false) obj.allowPrivateChats = false
     const channelSquadMap = row.channelSquadMap as Record<string, string> | null
     if (channelSquadMap && Object.keys(channelSquadMap).length > 0) obj.channelSquadMap = channelSquadMap
     if (row.defaultSquadId) obj.defaultSquadId = row.defaultSquadId

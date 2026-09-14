@@ -1240,6 +1240,13 @@
       "when": 1789362009973,
       "tag": "0176_thin_sauron",
       "breakpoints": true
+    },
+    {
+      "idx": 177,
+      "version": "7",
+      "when": 1789364131962,
+      "tag": "0177_watery_hobgoblin",
+      "breakpoints": true
     }
   ]
 }

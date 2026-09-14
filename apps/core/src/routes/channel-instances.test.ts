@@ -76,6 +76,21 @@ describe('channel-instances routes', () => {
     await db.delete(squads).where(eq(squads.id, '11111111-1111-4111-8111-111111111111'))
   })
 
+  it('defaults private chats on and persists explicit disabling through reads and YAML export', async () => {
+    const read = () => app.request('/channel-instances/ci-export', authReq())
+    expect(await (await read()).json()).toMatchObject({ allowPrivateChats: true })
+    expect(
+      (await app.request('/channel-instances/ci-export', authReq('PUT', { allowPrivateChats: false }))).status
+    ).toBe(200)
+    expect(await (await read()).json()).toMatchObject({ allowPrivateChats: false })
+    const exported = await app.request('/channel-instances/ci-export/export', authReq())
+    expect(await exported.text()).toContain('allowPrivateChats: false')
+    expect(
+      (await app.request('/channel-instances/ci-export', authReq('PUT', { allowPrivateChats: 'false' }))).status
+    ).toBe(400)
+    expect(await (await read()).json()).toMatchObject({ allowPrivateChats: false })
+  })
+
   it('GET / returns list of channel instances with default routing fields', async () => {
     listSpy = spyOn(ChannelInstance, 'list' as any).mockResolvedValue([
       { id: 'inst-1', name: 'Acme Discord', provider: 'discord', channelSquadMap: {}, defaultSquadId: 's1' },

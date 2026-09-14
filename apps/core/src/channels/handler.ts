@@ -67,7 +67,8 @@ export async function handleChannelEvent(
   if (event.type === 'message' && !event.isDirectMessage && !provider.reusesThreadForChat)
     return { response: { ok: true } }
   if (!isChannelAllowed(channelInstance, event.routingChannelId ?? event.channelId)) return { response: { ok: true } }
-  if (event.isDirectMessage) {
+  if (event.isDirectMessage && channelInstance.allowPrivateChats === false) return { response: { ok: true } }
+  if (event.isDirectMessage && (!event.command || event.command === 'message')) {
     const command = parseDirectCommand(event.text)
     if (command) event = { ...event, ...command }
   }

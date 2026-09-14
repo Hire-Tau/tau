@@ -29,9 +29,11 @@ export function ProviderChannelRouting({
   const [trusted, setTrusted] = useState<string[]>([])
   const [allowed, setAllowed] = useState<string[]>([])
   const [denied, setDenied] = useState<string[]>([])
+  const [allowPrivateChats, setAllowPrivateChats] = useState(query.data?.allowPrivateChats ?? true)
   const [error, setError] = useState('')
   useEffect(() => {
     if (!query.data) return
+    setAllowPrivateChats(query.data.allowPrivateChats ?? true)
     setRows(mapToOverrideRows(query.data.channelSquadMap))
     setTrusted(query.data.trustedChannelIds ?? [])
     setAllowed(query.data.allowedChannelIds ?? [])
@@ -41,6 +43,7 @@ export function ProviderChannelRouting({
     mutationFn: () =>
       updateChannelInstance(instanceId, {
         channelSquadMap: overrideRowsToMap(rows),
+        allowPrivateChats,
         trustedChannelIds: trusted.map((id) => id.trim()),
         allowedChannelIds: allowed.map((id) => id.trim()),
         deniedChannelIds: denied.map((id) => id.trim()),
@@ -62,6 +65,20 @@ export function ProviderChannelRouting({
         <p role="alert">{query.error.message}</p>
       ) : (
         <fieldset disabled={!canWrite || save.isPending} className="space-y-4">
+          <div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={allowPrivateChats}
+                onChange={(event) => setAllowPrivateChats(event.target.checked)}
+              />
+              Allow private chats
+            </label>
+            <p className="text-muted mt-1">
+              Let linked users talk to Tau and choose squads in bot DMs. Turn off to ignore private messages, including
+              commands and account linking, and stop replies to existing private chats.
+            </p>
+          </div>
           <SquadOverridesEditor provider={provider} rows={rows} onChange={setRows} />
           {(provider === 'slack' || provider === 'discord') && (
             <div className="space-y-4">

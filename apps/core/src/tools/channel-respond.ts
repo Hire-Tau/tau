@@ -104,7 +104,7 @@ export function createChannelRespondTool(): ToolDefinition {
 
         if (provider) {
           if (agentContext.directMessage) {
-            const content = params.content.trim() ? `${agentContext.directMessageSquadName}:\n\n${params.content}` : ''
+            const content = params.content.trim() ? params.content : ''
             if (channelContext.extras?.interactionToken && channelContext.provider === 'discord') {
               const { editInteractionResponse } = await import('../channels/discord/provider')
               await editInteractionResponse(

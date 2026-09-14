@@ -103,7 +103,7 @@ updates may post without a reply target.
 
 Only verified one-to-one bot DMs use `channels/direct-messages.ts`. Telegram marks
 native `chat.type=private`, Slack uses `channel_type=im` (and verifies slash-command
-DMs with `conversations.info`), and Discord verifies native channel type 1. Group
+DMs with `conversations.info`), and Discord uses native channel type 1 or the authenticated `BOT_DM` interaction context. Group
 DMs and private server channels do not enable user-directed routing. Discord
 subscribes to `DIRECT_MESSAGES`; since a DM has no guild ID, it uses the configured
 bot connection's server to resolve the routing instance and linked identity.
@@ -134,7 +134,7 @@ Unlinking cascades both mapping tables. Agent history is retained, but unlinked 
 disabled users and revoked squad permissions cannot resume it or receive delayed
 responses. Direct response/send/edit tools validate the linked binding and current
 RBAC in addition to administrator channel policies. Switching does not cancel old
-work; direct responses include the originating squad's name.
+work. Only switch confirmations name the squad; ordinary replies and updates have no added prefix.
 
 ## Connecting a provider
 
@@ -473,3 +473,20 @@ before database or agent work, then edits the response with the result. Link
 commands receive a private acknowledgement. An unsuccessful acknowledgement
 prevents command execution. With an endpoint configured, check its reachability
 and signature verification instead; Discord chooses one interaction transport.
+
+### Disable private conversations
+
+Each bot connection has `allowPrivateChats`, defaulting to `true`. The integration's
+**Channel routing and access** checkbox persists this setting; channel configuration
+YAML can also set `allowPrivateChats: false`. Migration 177 adds the default-enabled
+column without changing existing behavior. Inbound DM policy runs before command
+parsing, linking, or consultant allocation. Delayed DM consultant responses, edits,
+and follow-up sends recheck it. The switch does not clear conversation bindings or
+change shared-channel routing. Turning it back on resumes the saved conversations.
+
+Discord slash interactions use the same early callback acknowledgement path for
+both the gateway and verified HTTP ingress. HTTP ingress returns an empty 202
+because the acknowledgement is sent via Discord's callback endpoint. The native
+`BOT_DM` context identifies private interactions when the channel object is omitted.
+Public-channel `/tau squad` requests explain the administrator-managed route and
+never change it. Private `/tau help` lists commands without requiring a squad.

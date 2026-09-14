@@ -232,11 +232,18 @@ describe('Telegram private-chat access', () => {
     expect(findAgent).not.toHaveBeenCalled()
   })
 
-  it('explains private squad selection in help without requiring linkage', async () => {
-    expect((await receive(update('/tau help'))).status).toBe(200)
-    expect(requests[0]?.body.text).toContain('/tau squad')
-    expect(linkedUser).not.toHaveBeenCalled()
-  })
+  for (const command of ['/help', '/help@TauBot', '/tau help', '/tau@TauBot help', '/tau']) {
+    it(`shows the full menu for ${command} without linkage or a selected squad`, async () => {
+      expect((await receive(update(command))).status).toBe(200)
+      expect(requests[0]?.body.text).toContain('Commands:')
+      expect(requests[0]?.body.text).toContain('/tau status')
+      expect(requests[0]?.body.text).toContain('/tau ask')
+      expect(requests[0]?.body.text).toContain('/tau link')
+      expect(linkedUser).not.toHaveBeenCalled()
+      expect(queue).not.toHaveBeenCalled()
+      expect(inbox).not.toHaveBeenCalled()
+    })
+  }
 })
 
 describe('Telegram silence before Thinking', () => {

@@ -48,9 +48,7 @@ export function createChannelEditTool(agentId: string): ToolDefinition {
         await provider.editMessage({
           channelId: knownMessage.channelId,
           messageId: params.messageId,
-          text: agentContext.directMessage
-            ? `${agentContext.directMessageSquadName}:\n\n${params.content}`
-            : params.content,
+          text: params.content,
         })
         return {
           content: [{ type: 'text', text: `Message ${params.messageId} edited via ${providerName}.` }],

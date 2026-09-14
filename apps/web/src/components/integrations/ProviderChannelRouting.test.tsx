@@ -31,6 +31,22 @@ describe('channel connection settings', () => {
     expect(html).not.toContain('Bot ID')
     expect(html).not.toContain('Add channel instance')
   })
+  for (const provider of ['telegram', 'slack', 'discord'] as const) {
+    for (const allowed of [undefined, false]) {
+      test(`${provider} private chat checkbox reflects ${allowed ?? 'default enabled'} policy`, () => {
+        const html = render(<ProviderChannelRouting provider={provider} instanceId="bot" canWrite />, (client) => {
+          client.setQueryData(queryKeys.channelInstances.detail('bot'), {
+            id: 'bot',
+            channelSquadMap: {},
+            allowPrivateChats: allowed,
+          })
+          client.setQueryData(queryKeys.squads.list(), [])
+        })
+        expect(html).toContain('Allow private chats')
+        expect(html.includes('checked=""')).toBe(allowed !== false)
+      })
+    }
+  }
   test('read-only channel access cannot edit routing', () => {
     const html = render(<ProviderChannelRouting provider="discord" instanceId="bot" canWrite={false} />, (client) => {
       client.setQueryData(queryKeys.channelInstances.detail('bot'), {

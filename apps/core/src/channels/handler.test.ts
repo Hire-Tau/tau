@@ -28,6 +28,35 @@ describe('handleChannelEvent mention routing', () => {
     inboxSendSpy?.mockRestore()
   })
 
+  for (const provider of ['telegram', 'slack', 'discord']) {
+    for (const command of [undefined, 'help', 'link', 'squad']) {
+      it(`ignores disabled ${provider} DMs before handling ${command ?? 'messages'}`, async () => {
+        findByProviderSpy = spyOn(ChannelInstance, 'findByProvider').mockResolvedValue(
+          trustedInstance({ allowPrivateChats: false })
+        )
+        findByThreadIdSpy = spyOn(Agent, 'findByThreadId')
+        inboxSendSpy = spyOn(InboxMessage, 'send')
+        const postMessage = mock(async () => ({ messageId: 'reply' }))
+        const result = await handleChannelEvent(
+          { name: provider, postMessage } as any,
+          {
+            type: command ? 'slash_command' : 'message',
+            command,
+            text: 'hello',
+            channelId: 'C123',
+            isDirectMessage: true,
+            user: { id: 'user', name: 'User' },
+          } as any,
+          'platform'
+        )
+        expect(result.response).toEqual({ ok: true })
+        expect(postMessage).not.toHaveBeenCalled()
+        expect(findByThreadIdSpy).not.toHaveBeenCalled()
+        expect(inboxSendSpy).not.toHaveBeenCalled()
+      })
+    }
+  }
+
   for (const command of ['help', 'link', 'ask']) {
     it(`ignores ${command} in excluded channels before replying or creating an agent`, async () => {
       const instance = trustedInstance({ deniedChannelIds: ['parent'], trustedChannelIds: ['parent'] })
@@ -54,7 +83,7 @@ describe('handleChannelEvent mention routing', () => {
 
   it('queues a Slack app mention in a channel for consultant with a managed thread context', async () => {
     const queueForConsultant = mock(() => Promise.resolve('agent-1'))
-    const channelInstance = trustedInstance({ queueForConsultant })
+    const channelInstance = trustedInstance({ queueForConsultant, allowPrivateChats: false })
     findByProviderSpy = spyOn(ChannelInstance, 'findByProvider').mockResolvedValue(channelInstance)
 
     const postMessage = mock(() => Promise.resolve({ messageId: 'unused', threadId: 'unused' }))

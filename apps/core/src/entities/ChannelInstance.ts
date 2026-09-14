@@ -30,6 +30,7 @@ export interface CreateChannelInstanceInput {
   trustedChannelIds?: string[]
   allowedChannelIds?: string[]
   deniedChannelIds?: string[]
+  allowPrivateChats?: boolean
   channelSquadMap?: Record<string, string>
   defaultSquadId?: string
 }
@@ -40,6 +41,7 @@ export interface UpdateChannelInstanceInput {
   trustedChannelIds?: string[]
   allowedChannelIds?: string[]
   deniedChannelIds?: string[]
+  allowPrivateChats?: boolean
   channelSquadMap?: Record<string, string>
   defaultSquadId?: string | null
 }
@@ -52,6 +54,7 @@ export class ChannelInstance implements ChannelInstanceRow {
   declare trustedChannelIds: string[]
   declare allowedChannelIds: string[]
   declare deniedChannelIds: string[]
+  declare allowPrivateChats: boolean
   declare channelSquadMap: Record<string, string>
   declare defaultSquadId: string | null
   declare yamlTemplate: unknown
@@ -60,12 +63,13 @@ export class ChannelInstance implements ChannelInstanceRow {
   declare createdAt: Date | null
   declare updatedAt: Date | null
 
-  constructor(data: ChannelInstanceRow) {
+  constructor(data: Omit<ChannelInstanceRow, 'allowPrivateChats'> & { allowPrivateChats?: boolean }) {
     Object.assign(this, data)
     // Normalize arrays and objects from Postgres
     this.trustedChannelIds = data.trustedChannelIds ?? []
     this.allowedChannelIds = data.allowedChannelIds ?? []
     this.deniedChannelIds = data.deniedChannelIds ?? []
+    this.allowPrivateChats = data.allowPrivateChats ?? true
     this.providerConfig = (data.providerConfig as ProviderConfig) || {}
     this.channelSquadMap = (data.channelSquadMap as Record<string, string>) || {}
   }
@@ -134,6 +138,7 @@ export class ChannelInstance implements ChannelInstanceRow {
         trustedChannelIds: input.trustedChannelIds ?? [],
         allowedChannelIds: input.allowedChannelIds ?? [],
         deniedChannelIds: input.deniedChannelIds ?? [],
+        allowPrivateChats: input.allowPrivateChats ?? true,
         channelSquadMap: input.channelSquadMap || {},
         defaultSquadId: input.defaultSquadId || null,
       })
@@ -156,6 +161,7 @@ export class ChannelInstance implements ChannelInstanceRow {
         trustedChannelIds: input.trustedChannelIds ?? [],
         allowedChannelIds: input.allowedChannelIds ?? [],
         deniedChannelIds: input.deniedChannelIds ?? [],
+        allowPrivateChats: input.allowPrivateChats ?? true,
         channelSquadMap: input.channelSquadMap || {},
         defaultSquadId: input.defaultSquadId || null,
       })
@@ -167,6 +173,7 @@ export class ChannelInstance implements ChannelInstanceRow {
           trustedChannelIds: input.trustedChannelIds ?? [],
           allowedChannelIds: input.allowedChannelIds ?? [],
           deniedChannelIds: input.deniedChannelIds ?? [],
+          allowPrivateChats: input.allowPrivateChats ?? true,
           channelSquadMap: input.channelSquadMap || {},
           defaultSquadId: input.defaultSquadId || null,
           updatedAt: new Date(),
@@ -190,6 +197,7 @@ export class ChannelInstance implements ChannelInstanceRow {
     if (updates.trustedChannelIds !== undefined) updateValues.trustedChannelIds = updates.trustedChannelIds
     if (updates.allowedChannelIds !== undefined) updateValues.allowedChannelIds = updates.allowedChannelIds
     if (updates.deniedChannelIds !== undefined) updateValues.deniedChannelIds = updates.deniedChannelIds
+    if (updates.allowPrivateChats !== undefined) updateValues.allowPrivateChats = updates.allowPrivateChats
     if (updates.name !== undefined) updateValues.name = updates.name
     if (updates.providerConfig !== undefined) updateValues.providerConfig = updates.providerConfig
     if (updates.channelSquadMap !== undefined) updateValues.channelSquadMap = updates.channelSquadMap

@@ -21,6 +21,7 @@ import {
   markWebhookError,
 } from '../services/webhooks'
 import { getProvider, hasProvider, handleChannelEvent, InteractionResponseType } from '../channels'
+import { handleDiscordInteraction } from '../channels/discord/interactions'
 import { sendChannelConfigurationError } from '../channels/handler'
 import { Schedule } from '../entities/Schedule'
 import { createLogger } from '../lib/infra/logger'
@@ -177,6 +178,11 @@ webhooksRouter.post('/channels/:provider', async (c) => {
     if ('type' in parsed && parsed.type === 'challenge') {
       log.info(`[${providerName}] URL verification challenge`)
       return c.json({ challenge: parsed.value })
+    }
+
+    if (providerName === 'discord' && parsed.type === 'slash_command') {
+      await handleDiscordInteraction(payload, parsed)
+      return c.body(null, 202)
     }
 
     // Handle event

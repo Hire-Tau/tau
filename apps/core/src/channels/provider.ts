@@ -183,6 +183,7 @@ export interface ChannelInstanceYaml {
   trustedChannelIds?: string[]
   allowedChannelIds?: string[]
   deniedChannelIds?: string[]
+  allowPrivateChats?: boolean
   channelSquadMap?: Record<string, string>
   defaultSquadId?: string
 }

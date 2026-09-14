@@ -180,7 +180,9 @@ export const telegramProvider: ChannelProvider = {
     const from = message.from
     const chatType = message.chat.type
     const isPrivate = chatType === 'private'
-    const isCommand = tauCommandPrefix.test(messageText.trim())
+    const isCommand =
+      tauCommandPrefix.test(messageText.trim()) ||
+      (isPrivate && /^\/(?:help|status|squad|link|ask|notify|unnotify)(?:@\w+)?(?:\s|$)/i.test(messageText.trim()))
     const botUserId = await this.getBotUserId()
 
     // Check if this is a reply to a bot message

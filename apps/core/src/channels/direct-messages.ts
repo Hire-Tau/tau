@@ -20,6 +20,7 @@ type DirectChatResult =
   | { reply: string; agent?: undefined; squadName?: undefined; squadId?: undefined }
   | { reply?: undefined; agent?: Agent; squadName: string; squadId: string }
 export async function resolveDirectChat(instance: ChannelInstance, event: ChannelEvent): Promise<DirectChatResult> {
+  if (instance.allowPrivateChats === false) return { reply: 'Private chats are disabled for this integration.' }
   if (!event.isDirectMessage) return { reply: 'Squad switching requires a private bot conversation.' }
   const link = await findLinkedChannelUser(instance, event.user.id)
   if (!link) return { reply: linkRequired }
@@ -96,7 +97,7 @@ export async function resolveDirectChat(instance: ChannelInstance, event: Channe
     const selected = accessible.find((s) => s.id === target)
     if (!selected) return { reply: picker() }
     if (event.command === 'status') return { squadName: selected.name, squadId: selected.id }
-    const agent = await resolveDirectAgent(tx, chat.id, selected.id, selected.name, instance, event, afterCommit)
+    const agent = await resolveDirectAgent(tx, chat.id, selected.id, instance, event, afterCommit)
     return { agent, squadName: selected.name, squadId: selected.id }
   })
   afterCommit.forEach((callback) => callback())
@@ -107,7 +108,6 @@ async function resolveDirectAgent(
   tx: Tx,
   chatId: string,
   squadId: string,
-  squadName: string,
   instance: ChannelInstance,
   event: ChannelEvent,
   afterCommit: Array<() => void>
@@ -128,7 +128,6 @@ async function resolveDirectAgent(
         scope: { type: 'consultant' },
         channelInstance: { id: instance.id, provider: instance.provider },
         directMessage: true,
-        directMessageSquadName: squadName,
         thread: {
           id: instance.provider === 'slack' ? (event.threadId ?? event.messageId) : event.channelId,
           channelId: event.channelId,
@@ -148,6 +147,7 @@ async function resolveDirectAgent(
 }
 
 export async function handleDirectMessage(provider: ChannelProvider, event: ChannelEvent, instance: ChannelInstance) {
+  if (instance.allowPrivateChats === false) return { response: { ok: true }, emptyResponse: true }
   // Slack slash commands have no message timestamp; establish a real parent first.
   let commandParent: string | undefined
   if (provider.name === 'slack' && event.type === 'slash_command') {
@@ -173,7 +173,17 @@ export async function handleDirectMessage(provider: ChannelProvider, event: Chan
   }
   if (event.command === 'help')
     return reply(
-      'Send /tau squad to choose a squad, then chat here normally. Use /tau squad <slug, name or ID> to switch and resume that squad’s conversation. Link your account first in Tau → Settings → Account → Linked chat accounts.'
+      [
+        'Commands:',
+        '/tau help — Show this menu',
+        '/tau link <code> — Link your Tau account',
+        '/tau squad — List available squads and the current selection',
+        '/tau squad <slug, name or ID> — Switch squads',
+        '/tau status — Show the selected squad’s active and queued work',
+        '/tau ask <message> — Send a request to the selected squad',
+        '',
+        'You can also send ordinary messages. Help and linking do not require a selected squad. Set up account linking in Tau → Settings → Account → Linked chat accounts.',
+      ].join('\n')
     )
   if (event.command === 'notify' || event.command === 'unnotify')
     return reply(
@@ -199,7 +209,7 @@ export async function handleDirectMessage(provider: ChannelProvider, event: Chan
   const interaction = event.type === 'slash_command' && provider.name === 'discord'
   const thinking = interaction
     ? undefined
-    : await provider.postMessage({ channelId: event.channelId, threadId, text: `Thinking · ${result.squadName}…` })
+    : await provider.postMessage({ channelId: event.channelId, threadId, text: 'Thinking…' })
   if (commandParent)
     await provider.editMessage({
       channelId: event.channelId,

@@ -2119,6 +2119,7 @@ export const channelInstances = pgTable('channel_instances', {
   trustedChannelIds: jsonb('trusted_channel_ids').$type<string[]>().notNull().default([]),
   allowedChannelIds: jsonb('allowed_channel_ids').$type<string[]>().notNull().default([]),
   deniedChannelIds: jsonb('denied_channel_ids').$type<string[]>().notNull().default([]),
+  allowPrivateChats: boolean('allow_private_chats').notNull().default(true),
 
   // Multi-squad config
   channelSquadMap: jsonb('channel_squad_map').default({}), // channel_id → squad_id

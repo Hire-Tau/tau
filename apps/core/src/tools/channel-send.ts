@@ -42,9 +42,7 @@ export function createChannelSendTool(agentId: string): ToolDefinition {
         const result = await provider.postMessage({
           channelId: thread.channelId,
           threadId: agentContext.directMessage && providerName !== 'slack' ? undefined : thread.id,
-          text: agentContext.directMessage
-            ? `${agentContext.directMessageSquadName}:\n\n${params.content}`
-            : params.content,
+          text: params.content,
         })
         await agent.update({
           context: appendKnownChannelMessage(agentContext, {

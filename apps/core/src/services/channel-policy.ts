@@ -49,6 +49,7 @@ export async function requireAllowedChannelReply(
   if (!instance) throw new Error('Channel connection no longer exists')
   await requireAllowedChannel(instance, channelId)
   if (directAgentId) {
+    if (instance.allowPrivateChats === false) throw new Error('Private chats are disabled for this integration.')
     const { db, channelDirectAgents, channelDirectChats, channelIdentityLinks } = await import('../db')
     const { and, eq } = await import('drizzle-orm')
     const { findLinkedChannelUser } = await import('./channel-access')

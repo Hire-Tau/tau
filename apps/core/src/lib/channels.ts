@@ -30,6 +30,6 @@ export function isTauSyncCommand(cmd: string): cmd is TauSyncCommand {
 export function parseDirectCommand(text: string): { command: string; text: string } | null {
   const match = text
     .trim()
-    .match(/^(?:\/(?:tau(?:@\w+)?\s+)?|@?tau\s+)(squad|help|status|link)(?:@\w+)?(?:\s+(.*))?$/is)
+    .match(/^(?:\/(?:tau(?:@\w+)?\s+)?|@?tau\s+)(squad|help|status|link|ask|notify|unnotify)(?:@\w+)?(?:\s+(.*))?$/is)
   return match ? { command: match[1].toLowerCase(), text: match[2]?.trim() ?? '' } : null
 }

@@ -54,6 +54,7 @@ interface DiscordInteraction {
     }>
   }
   guild_id?: string
+  context?: number
   channel_id?: string
   channel?: { type?: number; parent_id?: string }
   member?: { user: { id: string; username: string; global_name?: string } }
@@ -209,7 +210,7 @@ export const discordProvider: ChannelProvider = {
           name: user?.global_name || user?.username || 'User',
         },
         messageId: interaction.id,
-        isDirectMessage: !interaction.guild_id && interaction.channel?.type === 1,
+        isDirectMessage: !interaction.guild_id && (interaction.channel?.type === 1 || interaction.context === 1),
         isInThread: [10, 11, 12].includes(interaction.channel?.type ?? -1),
         raw: {
           interactionToken: interaction.token,
@@ -228,7 +229,9 @@ export const discordProvider: ChannelProvider = {
     const interaction = payload as DiscordInteraction
     return (
       interaction.guild_id ??
-      (interaction.channel?.type === 1 ? getChannelIntegrationValue('DISCORD_GUILD_ID') : undefined)
+      (!interaction.guild_id && (interaction.channel?.type === 1 || interaction.context === 1)
+        ? getChannelIntegrationValue('DISCORD_GUILD_ID')
+        : undefined)
     )
   },
 

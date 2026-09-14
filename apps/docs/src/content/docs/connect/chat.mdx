@@ -111,6 +111,15 @@ rule. Tau checks that permission on every incoming message.
 
 ## Talk to different squads in a private chat
 
+Send `/tau help` at any time for the command menu; it does not require a selected
+squad. Telegram also accepts `/help` and shorthand commands such as `/squad`.
+
+**Allow private chats** is enabled by default under each integration's **Channel
+routing and access** settings. Administrators can turn it off and save to ignore
+bot DMs, including commands and account linking, and stop replies from existing
+private conversations. Shared channels continue working. Turning it back on
+preserves saved squad selections and conversation history.
+
 Link your account, then send `/tau squad` in a private chat with the bot. Tau lists
 squads you have permission to chat in, using the same slugs as their Tau page URLs.
 Choose one with `/tau squad my-squad`. A full squad name or ID also works. Tau
@@ -132,7 +141,7 @@ This is useful while Discord's native DM commands are still propagating.
 
 Squad switching requires a linked account, even if the chat is trusted. It does
 not change administrator routing for group chats or server channels. Existing
-work can still send updates after you switch; replies identify their squad.
+work can still send updates after you switch.
 Tau keeps each squad's history separate instead of importing the whole private
 chat. Permission changes apply to new messages and delayed replies, and unlinking
 removes your saved selections and conversation bindings.
