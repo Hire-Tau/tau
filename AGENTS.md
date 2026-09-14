@@ -11,12 +11,12 @@ bun run build         # build all packages (core and web)
 bun run build:core    # build core package
 bun run build:web     # build web package
 bun run reload        # reload all processes (core and web)
-bun run reload:core   # reload core process
+bun run reload:api    # reload API process
+bun run reload:worker # reload worker process
 bun run reload:web    # reload web process
 bun run lint          # lint code
-bun run lint:fix      # fix linting issues
+bunx eslint . --fix   # fix linting issues
 bun run format        # format code
-bun run format:check  # check formatting
 bun typecheck         # typecheck code
 ```
 

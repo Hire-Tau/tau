@@ -184,7 +184,11 @@ export function validateMacosWorkflow(workflow: Workflow): string[] {
 
   const jobs = workflow.jobs ?? {}
   const classifier = jobs['macos-paths']
-  if (classifier?.['runs-on'] !== 'blacksmith-4vcpu-ubuntu-2404') errors.push('classifier must use cheap Linux')
+  if (
+    classifier?.['runs-on'] !==
+    "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
+  )
+    errors.push('classifier must use cheap Linux')
   if (classifier?.outputs?.run_macos !== '${{ steps.classify.outputs.run_macos }}')
     errors.push('classifier output is missing')
   const classifierCheckout = classifier?.steps?.find((step) => step.uses?.startsWith('actions/checkout@'))
@@ -258,7 +262,10 @@ export function validateMacosWorkflow(workflow: Workflow): string[] {
     errors.push('aggregate must verify all dependency outcomes')
 
   const linux = jobs['test-gates']
-  if (linux?.['runs-on'] !== 'blacksmith-4vcpu-ubuntu-2404') errors.push('test job runner changed')
+  if (
+    linux?.['runs-on'] !== "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
+  )
+    errors.push('test job runner changed')
   const validation = linux?.steps?.filter((step) => step.name === 'Validate macOS portability gate') ?? []
   if (
     validation.length !== 1 ||

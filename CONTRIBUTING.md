@@ -6,7 +6,7 @@ Thanks for your interest in contributing to Tau! This page explains how to send 
 
 1. Fork the repo and create a branch off `main`.
 2. Read [`AGENTS.md`](AGENTS.md) for the project conventions (Bun, monorepo layout, formatting, tests).
-3. Make your change, run `bun typecheck` and `bun run format:check`, and open a PR against `main`.
+3. Make your change, run `bun typecheck` and `bun run lint`, and open a PR against `main`.
 4. The **CLA Check** on your PR will ask contributors without an existing signature to sign the [Contributor License Agreement](CLA.md) — see below.
 5. A maintainer will review and merge.
 
@@ -32,7 +32,7 @@ If you contribute on behalf of your employer, the Corporate CLA in Part B also a
 
 - The change matches an open issue or has clear motivation in the PR description.
 - Tests are added or updated where behavior changes.
-- `bun typecheck` and `bun run format:check` pass.
+- `bun typecheck` and `bun run lint` pass.
 - No unrelated drive-by changes.
 
 ## Reporting security issues
