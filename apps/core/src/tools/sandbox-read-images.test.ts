@@ -174,7 +174,7 @@ describe('sandbox read image attachments', () => {
           new Set()
         )
         const nativeImages = input
-          .flatMap((item) => ('output' in item && Array.isArray(item.output) ? item.output : []))
+          .flatMap((item) => (item.type === 'function_call_output' && Array.isArray(item.output) ? item.output : []))
           .filter((part) => part.type === 'input_image')
         expect(nativeImages).toHaveLength(1)
         const url = (nativeImages[0] as { image_url: string }).image_url
