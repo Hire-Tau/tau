@@ -40,7 +40,7 @@ function processCarriageReturns(buf: Buffer): Buffer {
 import { posix } from 'path'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 import { createReadTool, createWriteTool, createBashTool, type ReadOperations } from '@earendil-works/pi-coding-agent'
-import { SandboxHttpError, type SandboxClient } from '../services/sandbox/k8s/http-client'
+import { BashOutcomeUnknownError, SandboxHttpError, type SandboxClient } from '../services/sandbox/k8s/http-client'
 import { createVerifiedEditTool, type VerifiedEditOperations } from './verified-edit'
 import { withSharedWorkspaceHint } from './private-bash-hint'
 import { createLogger } from '../lib/infra/logger'
@@ -601,33 +601,8 @@ export function createHttpBashOperations(
           }
         }
 
-        // Abort settlement is gated on the remote zero-owned-process proof so
-        // Pi/worker retry cannot overlap the predecessor invocation.
-        if (options.signal) {
-          const abortHandler = () => {
-            void stream.cancelAndWait('tool-abort').then(
-              () => settle(() => reject(new Error('Command aborted'))),
-              (error) => settle(() => reject(new Error(`Command cleanup unproven: ${error.message}`)))
-            )
-          }
-
-          if (options.signal.aborted) {
-            abortHandler()
-            return
-          }
-
-          options.signal.addEventListener('abort', abortHandler, { once: true })
-
-          // Clean up listener when stream ends
-          stream.on('end', () => {
-            options.signal?.removeEventListener('abort', abortHandler)
-          })
-          stream.on('error', () => {
-            options.signal?.removeEventListener('abort', abortHandler)
-          })
-        }
-
         stream.on('data', (response) => {
+          if (settled) return
           if (response.stdout) {
             options.onData(processCarriageReturns(Buffer.from(response.stdout, 'base64')))
           }
@@ -642,7 +617,7 @@ export function createHttpBashOperations(
           }
         })
 
-        stream.on('error', (err: Error) => {
+        const handleStreamError = (err: Error) => {
           // Claim settlement synchronously, then require remote cleanup before
           // surfacing the transport failure. If cleanup cannot be proven, the
           // invocation fence remains nonterminal and prevents a replay.
@@ -667,11 +642,46 @@ export function createHttpBashOperations(
             const mapped = await mapFailure(err).catch(() => err)
             reject(cleanupError ? attachSecondaryFailure(mapped, cleanupError) : mapped)
           })()
-        })
+        }
+        stream.on('error', handleStreamError)
 
         stream.on('end', () => {
+          if (finalExitCode === null) {
+            handleStreamError(new BashOutcomeUnknownError(stream.invocationId, 'protocol_truncated'))
+            return
+          }
           settle(() => resolve({ exitCode: finalExitCode }))
         })
+
+        // Abort settlement is gated on the remote zero-owned-process proof so
+        // Pi/worker retry cannot overlap the predecessor invocation.
+        if (options.signal) {
+          const abortHandler = () => {
+            // Cancelling the HTTP reader can emit end before the remote cleanup
+            // promise settles. Claim the result first: end is not an exit code.
+            if (settled) return
+            settled = true
+            void stream.cancelAndWait('tool-abort').then(
+              () => reject(new Error('Command aborted')),
+              (error) => reject(new Error(`Command cleanup unproven: ${error.message}`))
+            )
+          }
+
+          if (options.signal.aborted) {
+            abortHandler()
+            return
+          }
+
+          options.signal.addEventListener('abort', abortHandler, { once: true })
+
+          // Clean up listener when stream ends
+          stream.on('end', () => {
+            options.signal?.removeEventListener('abort', abortHandler)
+          })
+          stream.on('error', () => {
+            options.signal?.removeEventListener('abort', abortHandler)
+          })
+        }
       })
     },
   }

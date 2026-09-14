@@ -248,7 +248,7 @@ export function WorkStreamDetailModal({
   // Open waits win over a running execution, sorted by display precedence (review > question >
   // dependency > manual) by the server. A review wait gets the Approve/Request-changes panel; a
   // manual wait gets a free-text respond panel. Dependency waits are read-only; a question wait
-  // renders its agent question with the answer form in the Open Waits list below.
+  // renders its agent question with the answer form above the usage metrics.
   const openWaits = workStream.openWaits ?? []
   const focusedWait = focusWaitId ? openWaits.find((wait) => wait.id === focusWaitId) : undefined
   const actionableFocusedWait =
@@ -260,7 +260,8 @@ export function WorkStreamDetailModal({
   const manualWait = calloutWait?.type === 'manual' ? calloutWait : undefined
   const needsResponse = !!calloutWait && calloutWait.resolutionHandler !== 'workflow'
   const missingFocusedWait = !!focusWaitId && !actionableFocusedWait && focusedWait?.type !== 'question'
-  const remainingWaits = openWaits.filter((wait) => wait.id !== calloutWait?.id)
+  const questionWaits = openWaits.filter((wait) => wait.type === 'question')
+  const remainingWaits = openWaits.filter((wait) => wait.id !== calloutWait?.id && wait.type !== 'question')
 
   const [isResponding, setIsResponding] = useState(false)
   const [response, setResponse] = useState('')
@@ -595,6 +596,37 @@ export function WorkStreamDetailModal({
           )}
         </div>
 
+        {/* Question waits take priority over usage statistics, even while metrics load. */}
+        {questionWaits.length > 0 && (
+          <section aria-label="Pending questions">
+            <h3 className="text-xs font-medium text-secondary">Pending Questions</h3>
+            <ul className="mt-1 space-y-1.5">
+              {questionWaits.map((wait) => (
+                <li key={wait.id} className="text-xs rounded-lg p-3 bg-surface-secondary">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge color={WAIT_TYPE_BADGE_COLORS.question}>{WAIT_TYPE_LABELS.question}</Badge>
+                    {wait.flowAttemptId != null && <span className="text-muted">Attempt {wait.flowAttemptId}</span>}
+                    <span className="text-muted ml-auto">{new Date(wait.openedAt).toLocaleString()}</span>
+                  </div>
+                  {wait.message && (
+                    <div className="mt-1 text-primary">
+                      <MarkdownContent className="prose-xs">{wait.message}</MarkdownContent>
+                    </div>
+                  )}
+                  <WorkStreamQuestionWait
+                    wait={wait}
+                    agentThreadHref={
+                      wait.createdByAgentId
+                        ? `/squads/${slugFor(workStream.squadId)}?agent=${wait.createdByAgentId}`
+                        : undefined
+                    }
+                  />
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         {/* Metrics */}
         {metrics && (
           <div className="border-t border-panel-border pt-4">
@@ -810,7 +842,7 @@ export function WorkStreamDetailModal({
           </details>
         )}
 
-        {/* Open waits not already shown in the respond panel above */}
+        {/* Open waits not already shown in the respond panel or question section above */}
         {remainingWaits.length > 0 && (
           <div>
             <label className="text-xs font-medium text-secondary">Open Waits</label>
@@ -829,16 +861,6 @@ export function WorkStreamDetailModal({
                     <div className="mt-1 text-primary">
                       <MarkdownContent className="prose-xs">{wait.message}</MarkdownContent>
                     </div>
-                  )}
-                  {wait.type === 'question' && (
-                    <WorkStreamQuestionWait
-                      wait={wait}
-                      agentThreadHref={
-                        wait.createdByAgentId
-                          ? `/squads/${slugFor(workStream.squadId)}?agent=${wait.createdByAgentId}`
-                          : undefined
-                      }
-                    />
                   )}
                 </li>
               ))}
