@@ -214,21 +214,10 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
       conversation.editor && !conversation.editor.closed
         ? `${input.request}\n\n${assistantEditorContext(conversation.editor)}\n\n[Page editor conversation: brainstorm or edit the draft using read and edit. Read the latest draft before edits. Do not modify or publish saved presets via CLI or other tools; valid edits apply automatically and can be undone; the user saves to publish.]`
         : input.request
-    let agent: Agent | null
-    let kind: AssistantMessageReceipt['kind']
-    let targetSquadId: string | null = null
-    if (input.agentId) {
-      agent = await Agent.find(input.agentId)
-      if (!agent || !(await hasAgentResourcePermission(c.get('identity'), agent, 'chat:send')))
-        return c.json({ error: 'Agent not found' }, 404)
-      kind = 'agent'
-    } else {
-      let squadId = input.squadId ?? null
-      // A reply continues the task it answers. Without an explicit target, resolve the owned agent
-      // that sent the update so a follow-up stays on that squad's consultant instead of silently
-      // landing on the general helper.
-      if (!input.squadId && input.inReplyTo) {
-        const [replied] = await db
+    // Validate replies before resolving or creating a helper. A reply always addresses its actual
+    // sender, even if that helper has since become dormant or its scope has been replaced.
+    const [reply] = input.inReplyTo
+      ? await db
           .select({ senderId: inbox.senderId })
           .from(inbox)
           .where(
@@ -239,53 +228,61 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
               eq(inbox.senderType, 'agent')
             )
           )
-        if (replied?.senderId) {
-          const [owned] = await db
-            .select({ squadId: assistantConversationAgents.squadId })
-            .from(assistantConversationAgents)
-            .where(
-              and(
-                eq(assistantConversationAgents.conversationId, conversation.id),
-                eq(assistantConversationAgents.agentId, replied.senderId)
-              )
+      : []
+    const replyAgentId = reply?.senderId
+    if (input.inReplyTo && (!replyAgentId || (input.agentId && replyAgentId !== input.agentId)))
+      return c.json({ error: 'Reply not found in this conversation' }, 404)
+    let agent: Agent | null
+    let kind: AssistantMessageReceipt['kind']
+    let targetSquadId: string | null = null
+    if (input.agentId) {
+      agent = await Agent.find(input.agentId)
+      if (!agent || !(await hasAgentResourcePermission(c.get('identity'), agent, 'chat:send')))
+        return c.json({ error: 'Agent not found' }, 404)
+      kind = 'agent'
+    } else {
+      let squadId = input.squadId ?? null
+      if (replyAgentId) {
+        const [ownedAgent] = await db
+          .select({ squadId: assistantConversationAgents.squadId })
+          .from(assistantConversationAgents)
+          .where(
+            and(
+              eq(assistantConversationAgents.conversationId, conversation.id),
+              eq(assistantConversationAgents.agentId, replyAgentId)
             )
-          if (owned) squadId = owned.squadId
-        }
+          )
+        if (!ownedAgent)
+          return c.json({ error: 'This task helper is no longer attached. Start a new task without inReplyTo.' }, 409)
+        if (input.squadId && input.squadId !== ownedAgent.squadId)
+          return c.json({ error: 'Reply not found in this conversation' }, 404)
+        squadId = ownedAgent.squadId
       }
-      // Every squad target is checked the same way, however it was resolved: a squad reached through
-      // a reply can have been archived, or the user's access to it revoked, since the task started.
+      // Explicit scopes and reply-inferred scopes pass through the same current authorization check.
       if (squadId) {
         const squad = await Squad.find(squadId)
         if (!squad || squad.status !== 'active' || !(await hasPermission(c.get('identity'), 'chat:send', squad.id)))
           return c.json({ error: 'Squad not found' }, 404)
       }
       targetSquadId = squadId
-      agent = await db.transaction(async (tx) => {
-        await tx
-          .select({ id: assistantConversations.id })
-          .from(assistantConversations)
-          .where(eq(assistantConversations.id, conversation.id))
-          .for('update')
-        return resolveOwnedAgent(tx, conversation, { squadId })
-      })
+      const afterCommit: Array<() => void> = []
+      agent = replyAgentId
+        ? await Agent.find(replyAgentId)
+        : await db.transaction(async (tx) => {
+            await tx
+              .select({ id: assistantConversations.id })
+              .from(assistantConversations)
+              .where(eq(assistantConversations.id, conversation.id))
+              .for('update')
+            return resolveOwnedAgent(tx, conversation, { squadId }, afterCommit)
+          })
+      for (const emit of afterCommit) emit()
       kind = squadId ? 'squad' : 'background'
     }
+    if (!agent) return c.json({ error: 'Agent not found' }, 404)
+    if (replyAgentId && agent.status === 'terminated')
+      return c.json({ error: 'This task helper was terminated. Start a new task without inReplyTo.' }, 409)
     const agentId = agent.id
-    if (input.inReplyTo) {
-      const [reply] = await db
-        .select({ id: inbox.id })
-        .from(inbox)
-        .where(
-          and(
-            eq(inbox.id, input.inReplyTo),
-            eq(inbox.recipientType, 'voice_assistant'),
-            eq(inbox.recipientId, address),
-            eq(inbox.senderType, 'agent'),
-            eq(inbox.senderId, agent.id)
-          )
-        )
-      if (!reply) return c.json({ error: 'Reply not found in this conversation' }, 404)
-    }
     const history = await db
       .select()
       .from(assistantEntries)

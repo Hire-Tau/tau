@@ -578,3 +578,97 @@ test('a reply without an explicit target continues the squad task that sent it, 
   })
   expect(afterArchive.status).toBe(404)
 })
+
+for (const scoped of [false, true]) {
+  test(`replies target dormant helpers and reject terminated helpers without replacing them (squad=${scoped})`, async () => {
+    const { id, owner, request } = await fixture()
+    const role = await createTestRole({ prefix, permissions: ['chat:send'] })
+    const squad = scoped ? await squadFixture(owner, role) : null
+    const delegated = await request(`/${id}/messages`, {
+      clientId: randomUUID(),
+      request: 'Check deployment',
+      ...(squad ? { squadId: squad.id } : {}),
+    })
+    expect(delegated.status).toBe(200)
+    const receipt = await delegated.json()
+    agentIds.push(receipt.agentId)
+    const token = await createTestAgentToken({ agentId: receipt.agentId, squadId: squad?.id ?? null })
+    const replied = await app.request('/api/inbox', {
+      method: 'POST',
+      headers: { ...authHeaders(token.token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        recipientType: 'voice_assistant',
+        recipientId: assistantInboxRecipientId(id),
+        content: 'Which environment?',
+        inReplyTo: receipt.id,
+      }),
+    })
+    expect(replied.status).toBe(201)
+    const reply = await replied.json()
+    // Simulate a dormant recipient; the route must preserve its identity and enqueue a wake-eligible reply.
+    await db.delete(executions).where(eq(executions.agentId, receipt.agentId))
+    await db.update(agents).set({ status: 'dormant', dormantAt: new Date() }).where(eq(agents.id, receipt.agentId))
+    const followUp = await request(`/${id}/messages`, {
+      clientId: randomUUID(),
+      request: 'Staging',
+      inReplyTo: reply.id,
+    })
+    expect(followUp.status).toBe(200)
+    expect(await followUp.clone().json()).toMatchObject({ agentId: receipt.agentId })
+    const replyReceipt = await InboxMessage.mustFind((await followUp.json()).id)
+    expect(replyReceipt.recipientId).toBe(receipt.agentId)
+    expect(replyReceipt.metadata.wakeEligible).toBe(true)
+    await db.delete(executions).where(eq(executions.agentId, receipt.agentId))
+    await db
+      .update(agents)
+      .set({ status: 'terminated', terminatedAt: new Date() })
+      .where(eq(agents.id, receipt.agentId))
+    const ended = await request(`/${id}/messages`, {
+      clientId: randomUUID(),
+      request: 'Continue',
+      inReplyTo: reply.id,
+    })
+    expect(ended.status).toBe(409)
+    expect((await ended.json()).error).toContain('Start a new task without inReplyTo')
+    expect(
+      await db
+        .select({ agentId: assistantConversationAgents.agentId })
+        .from(assistantConversationAgents)
+        .where(eq(assistantConversationAgents.conversationId, id))
+    ).toEqual([{ agentId: receipt.agentId }])
+    const restarted = await request(`/${id}/messages`, {
+      clientId: randomUUID(),
+      request: 'New task',
+      ...(squad ? { squadId: squad.id } : {}),
+    })
+    expect(restarted.status).toBe(200)
+    const fresh = await restarted.json()
+    agentIds.push(fresh.agentId)
+    expect(fresh.agentId).not.toBe(receipt.agentId)
+    const oldReply = await request(`/${id}/messages`, {
+      clientId: randomUUID(),
+      request: 'Continue old task',
+      inReplyTo: reply.id,
+    })
+    expect(oldReply.status).toBe(409)
+    expect(
+      await db
+        .select({ agentId: assistantConversationAgents.agentId })
+        .from(assistantConversationAgents)
+        .where(eq(assistantConversationAgents.conversationId, id))
+    ).toEqual([{ agentId: fresh.agentId }])
+  })
+}
+
+test('invalid replies do not allocate a helper', async () => {
+  const { id, request } = await fixture()
+  const response = await request(`/${id}/messages`, {
+    clientId: randomUUID(),
+    request: 'Answer',
+    inReplyTo: randomUUID(),
+  })
+  expect(response.status).toBe(404)
+  expect(
+    await db.select().from(assistantConversationAgents).where(eq(assistantConversationAgents.conversationId, id))
+  ).toEqual([])
+})

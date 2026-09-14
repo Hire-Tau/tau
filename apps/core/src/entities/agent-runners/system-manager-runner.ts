@@ -1,7 +1,7 @@
 import { assistantEditorInstructions } from '@tau/shared'
 import { createPageEditorTools } from '../../tools/page-editor'
 import { getAccessibleSquadIds, hasPermission, type Identity } from '../../services/rbac/permissions'
-import { findOwningConversation } from '../../services/assistant-agents'
+import { findOwningConversation, isAssistantDelegate } from '../../services/assistant-agents'
 import type { SessionUsage, MessageMetadata } from '@tau/shared'
 import { AgentRunner } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
@@ -31,7 +31,7 @@ import {
 
 export class SystemManagerRunner extends AgentRunner {
   protected async isAssistantDelegate(): Promise<boolean> {
-    return Boolean(await findOwningConversation(this.agent.id))
+    return isAssistantDelegate(this.agent.id)
   }
 
   protected async getPageEditorConversation(): Promise<
