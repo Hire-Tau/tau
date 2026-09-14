@@ -745,3 +745,18 @@ test('provider switches require provider write permission and a strict boolean b
     }
   }
 })
+
+test('output catalog exposes event-specific predicate types only to authenticated callers', async () => {
+  expect((await createApp().app.request('/api/integrations/outputs')).status).toBe(401)
+  const { app, calls } = createApp({ type: 'system', systemTokenId: 'token-1', name: 'test', scopes: [] })
+  const response = await app.request('/api/integrations/outputs')
+  expect(response.status).toBe(200)
+  const catalog: import('@tau/shared').IntegrationOutputDescriptor[] = await response.json()
+  const assigned = catalog.find((event) => event.integration === 'github' && event.output === 'issue.assigned')!
+  expect(assigned.predicateFields!['issue.number'].type).toBe('number')
+  expect(assigned.predicateFields!.labels.type).toBe('string[]')
+  expect(assigned.predicateFields!['pullRequest.number']).toBeUndefined()
+  expect(assigned.predicateFields!.body).toBeUndefined()
+  expect(calls.list).not.toHaveBeenCalled()
+  expect(calls.get).not.toHaveBeenCalled()
+})

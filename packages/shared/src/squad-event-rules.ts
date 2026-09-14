@@ -1,3 +1,5 @@
+import { eventPredicateSchema, validateEventPredicates, eventPredicateMatches } from './event-predicates'
+import { eventPredicateField } from './event-predicate-catalog'
 import { z } from 'zod'
 import { integrationSubscriptionSchema, integrationValueAt, type IntegrationOutputFact } from './integration-outputs'
 import { workflowEventTriggerSchema, workflowSourceSchema, type WorkflowSource } from './workflows'
@@ -8,6 +10,7 @@ export const squadEventRuleSchema = z
     enabled: z.boolean().default(true),
     source: integrationSubscriptionSchema.shape.source,
     match: workflowEventTriggerSchema.shape.match.optional(),
+    predicates: z.array(eventPredicateSchema).max(16).optional(),
     filters: z
       .object({
         squadRouting: z.boolean().default(false),
@@ -37,6 +40,9 @@ export const squadEventRuleSchema = z
     ]),
   })
   .strict()
+  .superRefine((rule, ctx) => {
+    if (rule.predicates?.length) validateEventPredicates(rule.source, rule.predicates, ctx)
+  })
 export type SquadEventRule = z.infer<typeof squadEventRuleSchema>
 export const squadEventRulesSchema = z
   .record(
@@ -144,6 +150,45 @@ export function isGitHubSelfComment(fact: IntegrationOutputFact, login: string):
   )
 }
 
+export interface EventRuleCheck {
+  kind:
+    | 'enabled'
+    | 'source'
+    | 'connection'
+    | 'shared-scope'
+    | 'repository'
+    | 'labels'
+    | 'team'
+    | 'legacy-match'
+    | 'predicate'
+    | 'audience'
+  description: string
+  passed: boolean
+}
+export interface SquadEventRulePreview {
+  selectedRuleId: string | null
+  action: SquadEventRule['action']['type'] | null
+  suppression: 'self-comment' | null
+  rules: Array<{
+    id: string
+    position: number
+    status: 'disabled' | 'not-matched' | 'selected' | 'shadowed' | 'suppressed'
+    checks: EventRuleCheck[]
+  }>
+}
+
+/** Read-only rule selection, NOT a promise of delivery: runtime authorization, subscriptions and receipts still apply.
+ * Reports contain no event values, bodies, configured operands, workflow metadata or additional instructions.
+ */
+export function previewSquadEventRules(
+  metadata: unknown,
+  integration: string,
+  fact: IntegrationOutputFact,
+  login: string,
+  connectionId?: string
+): SquadEventRulePreview {
+  return evaluateSquadEventRules(metadata, integration, fact, login, connectionId).preview
+}
 export function selectSquadEventRule(
   metadata: unknown,
   integration: string,
@@ -151,67 +196,165 @@ export function selectSquadEventRule(
   login: string,
   connectionId?: string
 ) {
-  if (integration === 'github' && isGitHubSelfComment(fact, login)) return undefined
+  return evaluateSquadEventRules(metadata, integration, fact, login, connectionId).selected
+}
+
+/** Stored array order is authoritative. Both preview and live dispatch use this single evaluation path. */
+function evaluateSquadEventRules(
+  metadata: unknown,
+  integration: string,
+  fact: IntegrationOutputFact,
+  login: string,
+  connectionId?: string
+) {
+  const suppression = integration === 'github' && isGitHubSelfComment(fact, login) ? 'self-comment' : null
+  const preview: SquadEventRulePreview = { selectedRuleId: null, action: null, suppression, rules: [] }
+  let selected: SquadEventRule | undefined
   const data = record(fact.data)
-  return effectiveSquadEventRules(metadata, integration).find((rule) => {
+  for (const [index, rule] of effectiveSquadEventRules(metadata, integration).entries()) {
+    const checks: EventRuleCheck[] = []
+    const result: SquadEventRulePreview['rules'][number] = {
+      id: rule.id,
+      position: index + 1,
+      status: 'not-matched',
+      checks,
+    }
+    preview.rules.push(result)
+    if (suppression) {
+      result.status = 'suppressed'
+      continue
+    }
+    if (selected) {
+      result.status = 'shadowed'
+      continue
+    }
+    const check = (kind: EventRuleCheck['kind'], passed: boolean, description: string) => {
+      checks.push({ kind, passed, description })
+      return passed
+    }
+    if (!check('enabled', rule.enabled, 'Rule is enabled.')) {
+      result.status = 'disabled'
+      continue
+    }
     if (
-      !rule.enabled ||
-      rule.source.output !== fact.output ||
-      rule.source.version !== fact.version ||
-      (rule.source.connectionId && rule.source.connectionId !== connectionId)
+      !check(
+        'source',
+        rule.source.integration === integration &&
+          rule.source.output === fact.output &&
+          rule.source.version === fact.version,
+        'Provider, event and version must match.'
+      )
     )
-      return false
+      continue
+    if (
+      !check(
+        'connection',
+        !rule.source.connectionId || rule.source.connectionId === connectionId,
+        rule.source.connectionId ? 'Event must use the rule’s selected account.' : 'Any authorized account can match.'
+      )
+    )
+      continue
     const filters = rule.filters
+    let sharedScope = true
     if (filters.squadRouting) {
-      if (
-        integration === 'github' &&
-        !matchesGitHubRouting(
+      if (integration === 'github')
+        sharedScope = matchesGitHubRouting(
           metadata,
           data.repository,
           fact.output.startsWith('issue.') && fact.output !== 'issue.comment' ? data.labels : undefined
         )
-      )
-        return false
       if (integration === 'linear') {
         const routes = record(metadata).linear
-        if (
-          typeof data.teamId !== 'string' ||
-          !(Array.isArray(routes) ? routes : [routes]).some((route) => route?.teamId === data.teamId)
-        )
-          return false
+        sharedScope =
+          typeof data.teamId === 'string' &&
+          (Array.isArray(routes) ? routes : [routes]).some((route) => route?.teamId === data.teamId)
       }
     }
-    if (filters.repository && !eventRepositoryMatches(filters.repository, String(data.repository ?? ''))) return false
-    if (filters.labels?.length && !filters.labels.some((label) => strings(data.labels).includes(label))) return false
-    if (filters.teamId && filters.teamId !== data.teamId) return false
-    if (
-      rule.match &&
-      !Object.entries(rule.match).every(([path, binding]) => {
-        const actual = integrationValueAt(fact.data, path)
-        return typeof actual === 'string' && ['repository', 'assignee', 'actor', 'requestedReviewer'].includes(path)
-          ? actual.toLowerCase() === String(binding.value).toLowerCase()
-          : actual === binding.value
-      })
+    check(
+      'shared-scope',
+      sharedScope,
+      !filters.squadRouting
+        ? 'Shared scope ignored for this rule.'
+        : integration === 'github'
+          ? fact.output.startsWith('issue.') && fact.output !== 'issue.comment'
+            ? 'Shared repository AND any configured shared label must match; empty scope matches nothing.'
+            : 'Shared repository must match; shared labels do not filter comments or pull requests. Empty scope matches nothing.'
+          : 'Shared team must match; empty scope matches nothing.'
     )
-      return false
-    if (integration !== 'github' || filters.audience === 'any') return true
-    if (!login) return false
-    if (filters.audience === 'connected-account') {
-      if (fact.output === 'pull_request.review_requested')
-        return !!data.requestedTeam || String(data.requestedReviewer).toLowerCase() === login.toLowerCase()
-      if (['issue.assigned', 'issue.unassigned'].includes(fact.output))
-        return String(data.assignee).toLowerCase() === login.toLowerCase()
+    if (filters.repository)
+      check(
+        'repository',
+        eventRepositoryMatches(filters.repository, String(data.repository ?? '')),
+        'Per-rule repository pattern must match (case-insensitive; * is a wildcard).'
+      )
+    if (filters.labels?.length)
+      check(
+        'labels',
+        filters.labels.some((label) => strings(data.labels).includes(label)),
+        'At least one per-rule label must be present (case-sensitive).'
+      )
+    if (filters.teamId) check('team', filters.teamId === data.teamId, 'Per-rule team must match exactly.')
+    if (rule.match)
+      check(
+        'legacy-match',
+        Object.entries(rule.match).every(([path, binding]) => {
+          const actual = integrationValueAt(fact.data, path)
+          return typeof actual === 'string' && ['repository', 'assignee', 'actor', 'requestedReviewer'].includes(path)
+            ? actual.toLowerCase() === String(binding.value).toLowerCase()
+            : actual === binding.value
+        }),
+        'All saved legacy equality filters must match.'
+      )
+    for (const predicate of rule.predicates ?? []) {
+      const field = eventPredicateField(rule.source, predicate.field)
+      check(
+        'predicate',
+        !!field && eventPredicateMatches(predicate, field, fact.data),
+        `${predicate.field} ${predicate.op}: ${predicate.op === 'exists' ? 'missing and null are absent.' : 'requires a present, correctly typed value.'}`
+      )
     }
-    if (String(data.actor).toLowerCase() === login.toLowerCase() || data.actorType === 'Bot') return false
-    const mention = new RegExp(
-      `(^|[^a-zA-Z0-9_])@${login.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![a-zA-Z0-9_-])`,
-      'i'
+    check(
+      'audience',
+      matchesAudience(integration, fact, login, filters.audience),
+      integration !== 'github' || filters.audience === 'any'
+        ? 'No account-involvement restriction.'
+        : filters.audience === 'connected-account' && fact.output === 'pull_request.review_requested'
+          ? 'Review requested from this account or a team delivered to this connection.'
+          : filters.audience === 'connected-account' && ['issue.assigned', 'issue.unassigned'].includes(fact.output)
+            ? 'Assigned or unassigned login must be the connected account.'
+            : 'Connected account must be assigned or @mentioned; self and bot authors do not match.'
     )
-    return (
-      strings(data.assignees).some((assignee) => assignee.toLowerCase() === login.toLowerCase()) ||
-      mention.test(fact.body)
-    )
-  })
+    if (checks.every((check) => check.passed)) {
+      selected = rule
+      result.status = 'selected'
+      preview.selectedRuleId = rule.id
+      preview.action = rule.action.type
+    }
+  }
+  return { selected, preview }
+}
+
+function matchesAudience(
+  integration: string,
+  fact: IntegrationOutputFact,
+  login: string,
+  audience: SquadEventRule['filters']['audience']
+) {
+  const data = record(fact.data)
+  if (integration !== 'github' || audience === 'any') return true
+  if (!login) return false
+  if (audience === 'connected-account') {
+    if (fact.output === 'pull_request.review_requested')
+      return !!data.requestedTeam || String(data.requestedReviewer).toLowerCase() === login.toLowerCase()
+    if (['issue.assigned', 'issue.unassigned'].includes(fact.output))
+      return String(data.assignee).toLowerCase() === login.toLowerCase()
+  }
+  if (String(data.actor).toLowerCase() === login.toLowerCase() || data.actorType === 'Bot') return false
+  const mention = new RegExp(`(^|[^a-zA-Z0-9_])@${login.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![a-zA-Z0-9_-])`, 'i')
+  return (
+    strings(data.assignees).some((assignee) => assignee.toLowerCase() === login.toLowerCase()) ||
+    mention.test(fact.body)
+  )
 }
 
 export function eventRuleWorkflow(rule: SquadEventRule, metadata: unknown): WorkflowSource {

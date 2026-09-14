@@ -1,3 +1,4 @@
+import type { EventPredicateField } from './event-predicate-catalog'
 import { z } from 'zod'
 
 const name = z
@@ -61,6 +62,7 @@ export interface IntegrationOutputDescriptor {
   title: string
   description: string
   fields: Record<string, IntegrationOutputField>
+  predicateFields?: Record<string, EventPredicateField>
 }
 export interface IntegrationOutputFact {
   output: string
