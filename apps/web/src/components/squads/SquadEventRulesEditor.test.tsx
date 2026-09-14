@@ -101,7 +101,9 @@ test('event rules expose four actions, persist workflow selection, and allow pri
     })
     expect(document.body.textContent).toContain('shared scope above is ignored')
     await change(select('Account involvement'), 'any')
-    expect(document.body.textContent).toContain('Includes events from the account itself and bots')
+    expect(document.body.textContent).toContain(
+      'Comments and reviews authored by the selected account are always ignored'
+    )
     await change(select('Account involvement'), 'assigned-or-mentioned')
     expect(document.body.textContent).toContain('Ignore events authored by that account or a bot')
     await click('Add event rule')

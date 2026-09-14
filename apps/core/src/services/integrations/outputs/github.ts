@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { IntegrationOutputDescriptor, IntegrationOutputFact } from '@tau/shared'
+import { isGitHubSelfComment, type IntegrationOutputDescriptor, type IntegrationOutputFact } from '@tau/shared'
 import type { IntegrationOutputAdapter } from './types'
 
 const fields: IntegrationOutputDescriptor['fields'] = {
@@ -55,6 +55,9 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
         ? { 'github.pr.number': { event: 'pullRequest.number' } }
         : { 'github.issue': { event: 'issue.number' } }),
     }
+  },
+  shouldNotify(fact, configuration) {
+    return !isGitHubSelfComment(fact, String(record(configuration)?.login ?? ''))
   },
   normalize(event) {
     const payload = record(event.payload)

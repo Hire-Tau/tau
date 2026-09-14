@@ -97,3 +97,39 @@ test.each(['start-workstream', 'notify-manager', 'notify-consultant'] as const)(
     ).toBe(false)
   }
 )
+
+test('own comments and reviews never select squad actions, even with any-account involvement', () => {
+  for (const output of [
+    'issue.comment',
+    'pull_request.comment',
+    'pull_request.reviewed',
+    'pull_request.review_comment',
+  ]) {
+    for (const audience of ['any', 'connected-account', 'assigned-or-mentioned'] as const) {
+      const item = rule('comment')
+      item.source.output = output
+      item.filters.audience = audience
+      const metadata = { integrationRules: { github: [item] } }
+      const comment = {
+        ...fact,
+        output,
+        body: '@bot please review',
+        data: { ...fact.data, actor: 'BoT', assignees: ['bot'] },
+      }
+      expect(selectSquadEventRule(metadata, 'github', comment, 'bot')).toBeUndefined()
+      expect(
+        selectSquadEventRule(metadata, 'github', { ...comment, data: { ...comment.data, actor: 'reviewer' } }, 'bot')
+          ?.id
+      ).toBe(item.id)
+    }
+  }
+  // Self-assignment still starts work; lifecycle events are not comment echoes.
+  expect(
+    selectSquadEventRule(
+      { integrationRules: { github: [rule('assignment')] } },
+      'github',
+      { ...fact, data: { ...fact.data, actor: 'bot' } },
+      'bot'
+    )?.id
+  ).toBe('assignment')
+})
