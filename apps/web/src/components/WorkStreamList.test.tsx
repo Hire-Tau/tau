@@ -771,7 +771,7 @@ describe('WorkStreamList', () => {
     expect(html).not.toContain('parked')
   })
 
-  test('shows a "<state> — parked" annotation for a queued row with an open wait', () => {
+  test('shows separate consistently capitalized status and Parked pills with a scheduling explanation', () => {
     const html = renderWorkStreamList([
       workStream({
         id: 'parked-ws',
@@ -784,7 +784,54 @@ describe('WorkStreamList', () => {
 
     expect(html).toContain('Parked while in review')
     expect(html).toContain('#4 in queue')
-    expect(html).toContain('in review — parked')
+    expect(html).toContain('>In Review</span>')
+    expect(html).toContain('>Parked</span>')
+    expect(html).not.toContain('in review — parked')
+    expect(html).toContain('This work stream has released its squad concurrency slot.')
+    expect(html).toContain('once its blockers or pause are cleared and capacity is available.')
+  })
+
+  test('parked rows use shared wait precedence rather than the order of open waits', () => {
+    const html = renderWorkStreamList([
+      workStream({
+        status: 'queued',
+        openWaits: [workStreamWait({ type: 'manual' }), workStreamWait({ id: 'review', type: 'review' })],
+      }),
+    ])
+    expect(html).toContain('>In Review</span>')
+    expect(html).toContain('>Parked</span>')
+    expect(html).not.toContain('>Blocked</span>')
+  })
+
+  test('parked pause remains Paused instead of being replaced by a wait label', () => {
+    const html = renderWorkStreamList([
+      workStream({
+        status: 'queued',
+        pause: {
+          id: 'pause',
+          reason: 'Waiting for approval',
+          pausedAt: now.toISOString(),
+          parkAt: now.toISOString(),
+          agentIds: [],
+        },
+        openWaits: [workStreamWait({ type: 'manual' })],
+      }),
+    ])
+    expect(html).toContain('>Paused</span>')
+    expect(html).toContain('>Parked</span>')
+    expect(html).not.toContain('>Blocked</span>')
+  })
+
+  test.each([
+    ['manual', 'Blocked'],
+    ['question', 'Waiting on Answer'],
+    ['dependency', 'Waiting on Dependency'],
+  ] as const)('uses the same %s label before and after parking', (type, label) => {
+    for (const status of ['active', 'queued'] as const) {
+      const html = renderWorkStreamList([workStream({ status, openWaits: [workStreamWait({ type })] })])
+      expect(html).toContain(`>${label}</span>`)
+      expect(html.includes('>Parked</span>')).toBe(status === 'queued')
+    }
   })
 })
 
@@ -938,6 +985,18 @@ describe('squad WorkStreamList dependency navigation', () => {
 })
 
 describe('WorkStreamDetailModal', async () => {
+  test('detail status agrees with the list for a parked blocked stream', async () => {
+    const html = await renderWorkStreamDetailModal(
+      workStream({
+        status: 'queued',
+        openWaits: [workStreamWait({ type: 'manual' })],
+      })
+    )
+    expect(html).toContain('>Blocked</span>')
+    expect(html).toContain('>Parked</span>')
+    expect(html).toContain('once its blockers or pause are cleared and capacity is available.')
+  })
+
   test('shows an exact queue position in queued status and omits it otherwise', async () => {
     const queuedHtml = await renderWorkStreamDetailModal(workStream({ status: 'queued', queuePosition: 3 }))
     const pendingHtml = await renderWorkStreamDetailModal(

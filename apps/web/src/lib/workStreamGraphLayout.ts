@@ -1,7 +1,7 @@
 import { compareCanonicalWorkStreams, type WorkStream } from '@tau/shared'
 
 export const WORK_STREAM_GRAPH_NODE_WIDTH = 240
-export const WORK_STREAM_GRAPH_NODE_HEIGHT = 104
+export const WORK_STREAM_GRAPH_NODE_HEIGHT = 128
 const COLUMN_GAP = 96
 const ROW_GAP = 28
 const CLUSTER_GAP = 72
