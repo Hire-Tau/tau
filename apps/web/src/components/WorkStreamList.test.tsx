@@ -1204,7 +1204,7 @@ describe('WorkStreamDetailModal', async () => {
     expect(html).toContain(closedAt.toLocaleString())
   })
 
-  test('lists only waits the respond panel did not consume, once each', async () => {
+  test('shows review and question waits once in their dedicated sections', async () => {
     const html = await renderWorkStreamDetailModal(
       workStream({
         status: 'active',
@@ -1227,8 +1227,9 @@ describe('WorkStreamDetailModal', async () => {
     )
 
     expect(html.split('Panel-owned review message').length - 1).toBe(1)
-    expect(html).toContain('Open Waits')
-    expect(html).toContain('Which region should we deploy to?')
+    expect(html).not.toContain('Open Waits')
+    expect(html).toContain('Pending Questions')
+    expect(html.split('Which region should we deploy to?').length - 1).toBe(1)
   })
 
   test('omits the review history section when no review round has closed yet', async () => {
