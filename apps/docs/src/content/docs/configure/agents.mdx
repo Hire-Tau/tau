@@ -58,7 +58,7 @@ Agent types use one expertise prompt. The former `flowPrompt` field has been rem
 
 ## Worker and system-only types
 
-Worker choices in workflows, the squad spawn dialog, and schedules exclude disabled types and types marked **System-only**. Use `systemOnly: true` in an agent-type YAML definition to reserve a type for a Tau-managed role. It defaults to `false` for custom types. Manager, System Manager, Consultant, Concierge, Artifact Builder, and the internal Subagent type are reserved this way; SysOps remains a worker type.
+Worker choices in workflows, the squad spawn dialog, and schedules exclude disabled types and types marked **System-only**. Use `systemOnly: true` in an agent-type YAML definition to reserve a type for a Tau-managed role. It defaults to `false` for custom types. Manager, System Manager, Consultant, Artifact Builder, and the internal Subagent type are reserved this way; SysOps remains a worker type.
 
 System-only types remain visible in Agent Types administration. The flag describes how a type is used; it does not grant permissions. Workflow validation also rejects system-only participant types, including definitions supplied through YAML or assistant proposals.
 

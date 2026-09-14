@@ -68,7 +68,7 @@ describe('buildWorkspacePrompt — squad agent with squad_bash (manager/worker)'
   })
 })
 
-describe('buildWorkspacePrompt — squad agent without squad_bash (concierge / squad subagent)', () => {
+describe('buildWorkspacePrompt — squad agent without squad_bash (restricted custom agent / squad subagent)', () => {
   const p = buildWorkspacePrompt({ squadId: 'S1', squadName: 'Acme', hasSquadBash: false })
 
   it('mentions the shared workspace + /private but offers a single bash, no squad_bash', () => {

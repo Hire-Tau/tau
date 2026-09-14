@@ -257,14 +257,14 @@ describe('resolvePermissions', () => {
     await db.delete(roles).where(inArray(roles.slug, ['default-worker', 'default-manager']))
   })
 
-  test('subagent inherits concierge authority without child scope escalation', async () => {
+  test('subagent inherits consultant authority without child scope escalation', async () => {
     await createTestRole({ prefix: PREFIX, slug: 'default-worker', permissions: ['deployments:write'] })
-    await createTestRole({ prefix: PREFIX, slug: 'default-concierge', permissions: ['workstreams:create'] })
+    await createTestRole({ prefix: PREFIX, slug: 'default-manager', permissions: ['workstreams:create'] })
     const [squad] = await db
       .insert(squads)
-      .values({ name: `${PREFIX}-concierge-child-squad`, purpose: 'test' })
+      .values({ name: `${PREFIX}-consultant-child-squad`, purpose: 'test' })
       .returning()
-    const [parent] = await db.insert(agents).values({ agentTypeId: 'concierge', squadId: squad.id }).returning()
+    const [parent] = await db.insert(agents).values({ agentTypeId: 'consultant', squadId: squad.id }).returning()
     const [child] = await db
       .insert(agents)
       .values({ agentTypeId: 'subagent', squadId: squad.id, parentAgentId: parent.id })
@@ -279,7 +279,7 @@ describe('resolvePermissions', () => {
     await db.delete(agentExtraScopes).where(eq(agentExtraScopes.agentId, child.id))
     await db.delete(agents).where(inArray(agents.id, [child.id, parent.id]))
     await db.delete(squads).where(eq(squads.id, squad.id))
-    await db.delete(roles).where(inArray(roles.slug, ['default-worker', 'default-concierge']))
+    await db.delete(roles).where(inArray(roles.slug, ['default-worker', 'default-manager']))
   })
 
   test('subagent authority fails closed for missing parents, cycles, and squad mismatches', async () => {
@@ -619,12 +619,12 @@ describe('getAccessibleSquadIds', () => {
     }
   })
 
-  test('concierge returns only its own (single) squad', async () => {
+  test('consultant returns only its own (single) squad', async () => {
     const [squad] = await db
       .insert(squads)
-      .values({ name: `${PREFIX} Concierge Single Squad`, purpose: 'test' })
+      .values({ name: `${PREFIX} Consultant Single Squad`, purpose: 'test' })
       .returning()
-    const [agent] = await db.insert(agents).values({ agentTypeId: 'concierge', squadId: squad.id }).returning()
+    const [agent] = await db.insert(agents).values({ agentTypeId: 'consultant', squadId: squad.id }).returning()
 
     const result = await getAccessibleSquadIds({
       type: 'agent',
@@ -669,7 +669,7 @@ describe('resolveAgentPermissions returns [] when no default role exists', () =>
     await db.delete(roles).where(eq(roles.slug, 'default-worker'))
     await db.delete(roles).where(eq(roles.slug, 'default-manager'))
 
-    // Create a real squad and agent (worker type — not manager, not concierge, no userId/channelId)
+    // Create a real squad and agent (worker type — not manager, not consultant, no userId/channelId)
     const [squad] = await db
       .insert(squads)
       .values({ name: `${PREFIX}-no-default-role-squad`, purpose: 'test' })

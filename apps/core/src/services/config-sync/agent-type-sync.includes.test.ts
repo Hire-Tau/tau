@@ -19,7 +19,7 @@ describe('agent type includes', () => {
 
   test('loadFromDir keeps the include list and leaves systemPrompt free of include text', async () => {
     const sysops = (await sync.loadFromDir()).find((t) => t.id === 'sysops')!
-    expect(sysops.includes).toEqual(['rules', 'subagents', 'squad-rules'])
+    expect(sysops.includes).toEqual(['entity-references', 'rules', 'subagents', 'squad-rules'])
     expect(sysops.systemPrompt).toContain('### Incident Response')
     expect(sysops.systemPrompt).not.toContain('### Questions, waits, and pause')
   })
@@ -29,7 +29,13 @@ describe('agent type includes', () => {
     const files = await loadSharedPromptFiles()
     const composed = composeFromYaml(sysops, files)
     expect(composed).toBe(
-      [sysops.systemPrompt, files.get('rules'), files.get('subagents'), files.get('squad-rules')].join('\n\n')
+      [
+        sysops.systemPrompt,
+        files.get('entity-references'),
+        files.get('rules'),
+        files.get('subagents'),
+        files.get('squad-rules'),
+      ].join('\n\n')
     )
   })
 
@@ -56,8 +62,13 @@ describe('agent type includes', () => {
   test('sync stores includes on the row and the template', async () => {
     await sync.sync()
     const [row] = await db.select().from(agentTypes).where(eq(agentTypes.id, 'engineer'))
-    expect(row.includes).toEqual(['rules', 'subagents', 'squad-rules'])
-    expect((row.yamlTemplate as { includes?: string[] }).includes).toEqual(['rules', 'subagents', 'squad-rules'])
+    expect(row.includes).toEqual(['entity-references', 'rules', 'subagents', 'squad-rules'])
+    expect((row.yamlTemplate as { includes?: string[] }).includes).toEqual([
+      'entity-references',
+      'rules',
+      'subagents',
+      'squad-rules',
+    ])
     expect(row.systemPrompt).not.toContain('## Run Identity')
   })
 

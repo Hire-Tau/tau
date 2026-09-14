@@ -220,10 +220,12 @@ squad. The regular consultant runner adds `channel_respond`, `channel_send`, and
 `channel_edit` when the agent has channel-instance context, and omits `ask_human`.
 Its added instructions ask clarification questions and send updates in the channel.
 
-Legacy concierge conversations are adopted as consultants on their next authorized
-inbound message, preserving history. The old type remains for compatibility with
-existing records; new channel agents do not use it. Config sync no longer creates
-idle warm concierges. Agent allocation happens after sender authorization.
+Startup migration converts all existing concierge agents to consultants in place,
+including dormant and terminated agents. IDs, histories, lifecycle state, channel
+context, ownership and resource-generation metadata remain intact. Squad-specific instructions
+are merged into consultant instructions. The old runner, built-in role and unused
+warm-agent cache are removed; exceptional explicit role grants retain their exact
+permissions in a renamed custom role. Agent allocation happens after authorization.
 
 ## Credentials and legacy environment variables
 
@@ -294,7 +296,7 @@ including no Thinking indicator, can happen at several distinct stages:
 5. **Send failure:** a missing/invalid bot token, blocked bot, unavailable chat,
    invalid reply target, or HTTP/network/API error can prevent either Thinking
    or the configuration reply. Check the outgoing API result, not just the
-   incoming webhook status. Chat IDs identify reused concierges, while Telegram
+   incoming webhook status. Chat IDs identify reused consultants, while Telegram
    `reply_to_message_id` must be the incoming **message** ID. Older versions used
    the chat ID for Thinking in an existing chat, which could be rejected.
 
@@ -413,3 +415,18 @@ tau squad set-meta <squad-id> notifications.discord null
 # Or remove all notifications
 tau squad set-meta <squad-id> notifications null
 ```
+
+## Channel allowlists and denylists
+
+In **Settings → Integrations → Slack/Discord → Channel routing and access**, use
+**Allowed channel IDs** to limit the bot to specific channels, or leave it empty
+to permit all channels. **Denied channel IDs** always take precedence, even for
+linked users and trusted channels. Use exact provider IDs separated by commas or
+spaces. Threads inherit their native parent channel's policy, not a Discord
+category's policy.
+
+Excluded channels are ignored before help, account linking, history retrieval,
+thinking indicators or agent allocation. Delayed consultant replies and squad
+notifications also check the current policy. This does not grant squad access:
+allowed channels still require a linked user with `chat:send` or explicit trust.
+YAML and API fields are `allowedChannelIds` and `deniedChannelIds` (arrays of IDs).

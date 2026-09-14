@@ -149,3 +149,16 @@ Use a separate Telegram bot token for each Tau instance. Telegram stores one
 webhook destination per bot: configuring the same token on another instance
 replaces that destination. Turning either copy off can also remove the shared
 webhook. A healthy token alone does not prove messages are reaching this instance.
+
+## Limit where the bot responds
+
+For Slack and Discord, open **Settings → Integrations**, then the provider's
+**Channel routing and access** section. Enter channel IDs under **Allowed channel
+IDs** to restrict Tau to those channels. Leave it empty to allow all channels.
+Use **Denied channel IDs** for exclusions; denials take precedence over allowlists
+and trusted channels. Save the policy when finished.
+
+Threads follow their parent channel's policy. Tau ignores excluded channels,
+including help and linking requests, and stops sending delayed replies or squad
+notifications there. Users still need their linked account's squad chat permission
+unless the channel is explicitly trusted.

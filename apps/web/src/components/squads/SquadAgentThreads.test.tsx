@@ -404,21 +404,6 @@ describe('SquadAgentThreads terminated agent collapse', () => {
   })
 })
 
-describe('SquadAgentThreads concierge collapse', () => {
-  test('collapses the concierge section by default and hides concierge rows', () => {
-    const html = renderThreads([
-      agent({ id: 'm1', agentTypeId: 'manager' }),
-      agent({ id: 'c1', agentTypeId: 'concierge' }),
-      agent({ id: 'c2', agentTypeId: 'concierge' }),
-      agent({ id: 'c3', agentTypeId: 'concierge' }),
-    ])
-
-    expect(html.toLowerCase()).toContain('concierge</span><span class="ml-auto">3</span>')
-    expect(html).not.toContain('Pearl · concierge · c1')
-    expect(html).toContain('m1')
-  })
-})
-
 describe('SquadAgentThreads header', () => {
   test('uses Manager (name), including when the manager has a purpose', () => {
     for (const purpose of [undefined, 'Review PRs']) {

@@ -577,7 +577,7 @@ domains).
 - **GitHub and Linear webhooks** — [docs/wiki/webhooks.md](webhooks.md)
   (webhook secrets, `gh`/UI setup, verification, event routing).
 - **Discord / Slack / Telegram** — [docs/wiki/channels.md](channels.md): the
-  concierge bot (slash commands, thread replies) and squad notifications for
+  consultant bot (slash commands, thread replies) and squad notifications for
   work streams that finish or need review.
 
 ## Manual setup reference

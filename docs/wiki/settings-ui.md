@@ -114,7 +114,7 @@ CRUD management for agent type definitions. Each agent type defines a model, sys
 
 - **Compare to Template** — Opens the template diff dialog (only shown for template-based items that have been edited by admin).
 - **Export YAML** — Copies the YAML representation to clipboard.
-- **Enable / Disable** — Toggle availability. Protected agent types (`manager`, `system-manager`, `concierge`, `consultant`) cannot be disabled or deleted.
+- **Enable / Disable** — Toggle availability. Protected agent types (`manager`, `system-manager`, `consultant`) cannot be disabled or deleted.
 - **Delete** — Only available for custom (non-template) agent types that aren't protected.
 - **+ Add New** — Form to create a new agent type with all fields.
 
@@ -192,7 +192,7 @@ The "Compare to Template" link only appears when:
 
 ### Protected Items
 
-- **Agent types** `manager`, `system-manager`, `concierge`, and `consultant` cannot be disabled or deleted.
+- **Agent types** `manager`, `system-manager`, and `consultant` cannot be disabled or deleted.
 - **Template-based items** (any entity with `hasTemplate`) cannot be deleted — only disabled. This prevents losing config that would be recreated from templates on restart anyway.
 
 ### YAML Export

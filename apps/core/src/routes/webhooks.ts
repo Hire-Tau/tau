@@ -111,7 +111,7 @@ webhooksRouter.post('/trigger/:scheduleId', async (c) => {
 })
 
 // =============================================================================
-// Channel Webhooks (Discord, Slack, Telegram → Concierge)
+// Channel Webhooks (Discord, Slack, Telegram → Consultant)
 // =============================================================================
 
 /**

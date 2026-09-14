@@ -335,7 +335,7 @@ export async function findAgentRowByThreadId(
     .from(agents)
     .where(
       and(
-        inArray(agents.agentTypeId, ['consultant', 'concierge']),
+        eq(agents.agentTypeId, 'consultant'),
         instanceId ? sql`${agents.context}->'channelInstance'->>'id' = ${instanceId}` : undefined,
         channelId
           ? sql`(${agents.context}->'thread'->>'channelId' = ${channelId} OR ${agents.context}->'thread'->>'id' = ${channelId})`

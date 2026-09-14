@@ -199,7 +199,7 @@ describe('tau remote commands', () => {
     expect(apiGet).toHaveBeenCalledWith('/api/amtp/peers')
   })
   test('peers degrades gracefully on a 403 (operator-only), not a raw Forbidden', async () => {
-    // Worker/concierge agents lack amtp:read → the route 403s. The command must resolve
+    // Worker/consultant agents lack amtp:read → the route 403s. The command must resolve
     // (exit 0) rather than calling outputError (which would process.exit(1)).
     ;(apiGet as ReturnType<typeof mock>).mockRejectedValueOnce(new Error('Forbidden'))
     await expect(run(['remote', 'peers'])).resolves.toBeUndefined()

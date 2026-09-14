@@ -20,9 +20,9 @@ describe('amtp skill', () => {
     expect(md.toLowerCase()).toContain('not a trusted human')
   })
 
-  test('is attached to the manager and concierge agent types (not engineer/worker)', () => {
+  test('is attached to the manager and consultant agent types (not engineer/worker)', () => {
     expect(skillsOf('manager.yaml')).toContain('amtp')
-    expect(skillsOf('concierge.yaml')).toContain('amtp')
+    expect(skillsOf('consultant.yaml')).toContain('amtp')
     expect(skillsOf('engineer.yaml')).not.toContain('amtp')
   })
 })

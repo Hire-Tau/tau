@@ -3,7 +3,7 @@ import { channelInstances } from '../../db'
 import { getProvider } from '../../channels'
 import type { ChannelInstanceYaml, ProviderConfig } from '../../channels/provider'
 import { CHANNELS_DIR } from '../../lib/paths'
-import { parseTrustedChannelIds } from '../channel-access'
+import { parseTrustedChannelIds, parseChannelIds } from '../channel-access'
 import { ConfigSync } from './ConfigSync'
 
 interface ParsedChannel {
@@ -12,6 +12,8 @@ interface ParsedChannel {
   provider: string
   providerConfig: ProviderConfig
   trustedChannelIds: string[]
+  allowedChannelIds: string[]
+  deniedChannelIds: string[]
   channelSquadMap: Record<string, string>
   defaultSquadId: string | null
 }
@@ -53,6 +55,8 @@ export class ChannelSync extends ConfigSync<ParsedChannel> {
       provider: config.provider,
       providerConfig: config.providerConfig || {},
       trustedChannelIds: parseTrustedChannelIds(config.trustedChannelIds ?? []),
+      allowedChannelIds: parseChannelIds(config.allowedChannelIds ?? []),
+      deniedChannelIds: parseChannelIds(config.deniedChannelIds ?? []),
       channelSquadMap: config.channelSquadMap || {},
       defaultSquadId: config.defaultSquadId,
     }
@@ -69,6 +73,8 @@ export class ChannelSync extends ConfigSync<ParsedChannel> {
       provider: parsed.provider,
       providerConfig: parsed.providerConfig,
       trustedChannelIds: parsed.trustedChannelIds,
+      allowedChannelIds: parsed.allowedChannelIds,
+      deniedChannelIds: parsed.deniedChannelIds,
       channelSquadMap: parsed.channelSquadMap,
       defaultSquadId: parsed.defaultSquadId,
     }
@@ -81,6 +87,8 @@ export class ChannelSync extends ConfigSync<ParsedChannel> {
       provider: row.provider as string,
       providerConfig: (row.providerConfig as ProviderConfig) || {},
       trustedChannelIds: row.trustedChannelIds ?? [],
+      allowedChannelIds: row.allowedChannelIds ?? [],
+      deniedChannelIds: row.deniedChannelIds ?? [],
       channelSquadMap: (row.channelSquadMap as Record<string, string>) || {},
       defaultSquadId: (row.defaultSquadId as string) || null,
     }
@@ -97,6 +105,9 @@ export class ChannelSync extends ConfigSync<ParsedChannel> {
     }
     if (Array.isArray(row.trustedChannelIds) && row.trustedChannelIds.length)
       obj.trustedChannelIds = row.trustedChannelIds
+    for (const key of ['allowedChannelIds', 'deniedChannelIds'] as const) {
+      if (Array.isArray(row[key]) && row[key].length) obj[key] = row[key]
+    }
     const channelSquadMap = row.channelSquadMap as Record<string, string> | null
     if (channelSquadMap && Object.keys(channelSquadMap).length > 0) obj.channelSquadMap = channelSquadMap
     if (row.defaultSquadId) obj.defaultSquadId = row.defaultSquadId

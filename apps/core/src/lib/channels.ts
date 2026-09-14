@@ -13,7 +13,7 @@ export const TAU_DISCORD_OPTION_NAMES = ['message', 'squad', 'code'] as const
 
 export type TauSlashCommand = (typeof TAU_SLASH_COMMANDS)[number]
 
-/** Commands that return immediately without concierge/agent. */
+/** Commands that return immediately without consultant/agent. */
 export const TAU_SYNC_COMMANDS = ['status', 'help', 'notify', 'unnotify'] as const
 
 export type TauSyncCommand = (typeof TAU_SYNC_COMMANDS)[number]

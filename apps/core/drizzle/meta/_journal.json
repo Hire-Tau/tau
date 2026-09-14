@@ -1226,6 +1226,13 @@
       "when": 1789356859639,
       "tag": "0174_elite_rage",
       "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "7",
+      "when": 1789357115092,
+      "tag": "0175_stiff_scrambler",
+      "breakpoints": true
     }
   ]
 }

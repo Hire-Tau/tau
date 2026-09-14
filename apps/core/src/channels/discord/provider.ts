@@ -339,7 +339,7 @@ export const discordProvider: ChannelProvider = {
     const token = getChannelIntegrationValue('DISCORD_BOT_TOKEN')
     if (!token) throw new Error('DISCORD_BOT_TOKEN not configured')
 
-    // Empty content = delete the thinking message (concierge chose not to respond)
+    // Empty content = delete the thinking message (consultant chose not to respond)
     if (!content || !content.trim()) {
       if (context.messageToEdit) {
         const channelId = agentContext.thread?.id || context.channelId

@@ -29,7 +29,6 @@ import { LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from './loa
 const SCOPE_FILTERS: { label: string; value: ChatScopeType | 'all' }[] = [
   { label: 'All', value: 'all' },
   { label: 'System', value: 'system-manager' },
-  { label: 'Concierge', value: 'concierge' },
   { label: 'Artifact', value: 'artifact-builder' },
   { label: 'Squad Manager', value: 'squad-manager' },
   { label: 'Squad Worker', value: 'squad-worker' },
@@ -42,7 +41,6 @@ const RECOGNIZED_AGENT_SCOPES = new Set<ChatScopeType>(
 
 const SCOPE_LABELS: Partial<Record<ChatScopeType, string>> = {
   'system-manager': 'System',
-  concierge: 'Concierge',
   'artifact-builder': 'Artifact Builder',
   'squad-manager': 'Squad Manager',
   'squad-worker': 'Squad Worker',
@@ -51,10 +49,7 @@ const SCOPE_LABELS: Partial<Record<ChatScopeType, string>> = {
 
 function getAgentScopeType(agent: Agent): ChatScopeType | null {
   let scope: unknown
-  // Concierge agents are identified by agentTypeId
-  if (agent.agentTypeId === 'concierge') {
-    scope = 'concierge'
-  } else if (agent.agentTypeId === 'artifact-builder-default') {
+  if (agent.agentTypeId === 'artifact-builder-default') {
     // Artifact builders are non-squad agents with a dedicated type.
     scope = 'artifact-builder'
   } else if (agent.squadId) {
@@ -77,7 +72,6 @@ const VALID_TABS = ['chat', 'work', 'monitors', 'inbox', 'context', 'subagents',
 
 const SCOPE_COLORS: Record<string, string> = {
   'system-manager': 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300',
-  concierge: 'bg-teal-100 dark:bg-teal-900/50 text-teal-700 dark:text-teal-300',
   'artifact-builder': 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300',
   'squad-manager': 'bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300',
   'squad-worker': 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300',
@@ -118,7 +112,6 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
   const [scopeFilter, setScopeFilter] = useURLStringState<ChatScopeType | 'all'>('scope', 'all', [
     'all',
     'system-manager',
-    'concierge',
     'artifact-builder',
     'squad-manager',
     'squad-worker',

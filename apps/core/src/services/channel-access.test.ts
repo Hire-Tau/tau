@@ -125,6 +125,11 @@ describe('channel identity proof and authorization', () => {
     const trusted = new ChannelInstance({ ...instance, trustedChannelIds: ['C-trusted'] })
     expect(await canUseChannel(trusted, 'C-trusted', 'unknown', squadId)).toBe(true)
     expect(await canUseChannel(trusted, 'C-other', 'unknown', squadId)).toBe(false)
+    trusted.deniedChannelIds = ['C-trusted']
+    expect(await canUseChannel(trusted, 'C-trusted', 'unknown', squadId)).toBe(false)
+    trusted.deniedChannelIds = []
+    trusted.allowedChannelIds = ['C-other']
+    expect(await canUseChannel(trusted, 'C-trusted', 'unknown', squadId)).toBe(false)
     trusted.disabled = true
     expect(await canUseChannel(trusted, 'C-trusted', 'unknown', squadId)).toBe(false)
     expect(await canUseChannel(trusted, 'C-other', 'U1', squadId)).toBe(false)

@@ -301,18 +301,18 @@ export class SquadManagerRunner extends AgentRunner {
       'channelInstance' in this.agent.context &&
       this.agent.context.channelInstance
     )
-    const askHumanTool = isChannelConversation || (await this.isAssistantDelegate())
-
-      ? null
-      : createAsyncAskHumanTool(
-          {
-            agentId: this.agent.id,
-            executionId: this.execution.id,
-            flushPersistence: () => this.persistence.waitForAll(),
-          },
-          undefined,
-          { allowBlocking: false }
-        )
+    const askHumanTool =
+      isChannelConversation || (await this.isAssistantDelegate())
+        ? null
+        : createAsyncAskHumanTool(
+            {
+              agentId: this.agent.id,
+              executionId: this.execution.id,
+              flushPersistence: () => this.persistence.waitForAll(),
+            },
+            undefined,
+            { allowBlocking: false }
+          )
     const notifyContactTool = createNotifyContactTool({ agentId: this.agent.id })
     const subagentLifecycleTools = createSubagentLifecycleTools({ agentId: this.agent.id })
     const monitorTool = createMonitorTool({

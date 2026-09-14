@@ -9,7 +9,7 @@ import { SearchService, type SearchResult } from '../memory/SearchService'
  *
  * Heuristic ranking of the squads a caller can see by likely relevance to a
  * free-text question. Used for "ask the right squad" UI hints and for the
- * concierge deciding whether to forward to another squad. It does NOT resolve
+ * consultant deciding whether to forward to another squad. It does NOT resolve
  * a channel's starting squad.
  */
 

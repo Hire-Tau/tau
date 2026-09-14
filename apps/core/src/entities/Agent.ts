@@ -419,7 +419,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
   }
 
   /**
-   * Find a concierge agent by thread ID and provider.
+   * Find a consultant agent by thread ID and provider.
    * Used for routing reply messages to the correct agent handling a thread.
    * @param provider - The channel provider (e.g. 'discord', 'slack')
    * @param threadId - The thread ID to search for
@@ -654,9 +654,6 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     if (this.agentTypeId === 'system-manager') {
       return 'system-manager'
     }
-    if (this.agentTypeId === 'concierge') {
-      return 'concierge'
-    }
     if (this.agentTypeId === ARTIFACT_BUILDER_AGENT_TYPE_ID) {
       return ARTIFACT_BUILDER_RUNNER_TYPE
     }
@@ -789,7 +786,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
   /** Whether this runner can access its squad's shared sandbox during a turn. */
   hasSquadSandboxAccessForExecution(): boolean {
     if (!this.squadId) return false
-    return ['squad-manager', 'squad-worker', 'concierge', 'subagent'].includes(this.runnerType)
+    return ['squad-manager', 'squad-worker', 'subagent'].includes(this.runnerType)
   }
 
   /** Every sandbox whose migration fence must serialize with execution pickup. */

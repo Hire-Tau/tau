@@ -83,7 +83,7 @@ const ALL_TYPES = [
 ]
 
 const NON_WORKER_TYPES = [
-  { id: 'concierge', name: 'Concierge', systemOnly: true },
+  { id: 'consultant', name: 'Consultant', systemOnly: true },
   { id: 'system-manager', name: 'System Manager', systemOnly: true },
   { id: 'artifact-builder-default', name: 'Artifact Builder Default', systemOnly: true },
 ]
@@ -174,7 +174,7 @@ describe('SquadAgentContextEditor', () => {
     expect(html).toContain('Engineer')
     expect(html).toContain('Reviewer')
     // Non-worker types must NOT appear as picker options
-    expect(html).not.toContain('Concierge')
+    expect(html).not.toContain('Consultant')
     expect(html).not.toContain('System Manager')
     expect(html).not.toContain('Artifact Builder Default')
   })
@@ -193,15 +193,15 @@ describe('SquadAgentContextEditor', () => {
   test('does not exclude a non-worker type that already has context set', () => {
     const html = renderEditor({
       squadId: 's1',
-      typeContext: { concierge: 'be-helpful' },
+      typeContext: { consultant: 'be-helpful' },
       agentTypes: [...ALL_TYPES, ...NON_WORKER_TYPES],
     })
-    // Existing concierge context field must still render and be editable.
-    expect(html).toContain('Concierge')
+    // Existing consultant context field must still render and be editable.
+    expect(html).toContain('Consultant')
     expect(html).toContain('be-helpful')
-    expect(html).toContain('Instructions for Concierge agents')
-    // But concierge must NOT appear as a selectable picker option.
-    // (Concierge appears only as the field label, never as an <option>.)
+    expect(html).toContain('Instructions for Consultant agents')
+    // But consultant must NOT appear as a selectable picker option.
+    // (Consultant appears only as the field label, never as an <option>.)
     expect(html).not.toContain('System Manager')
     expect(html).not.toContain('Artifact Builder Default')
   })

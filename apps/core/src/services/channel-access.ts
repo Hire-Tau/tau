@@ -1,7 +1,8 @@
+import { isChannelAllowed } from './channel-policy'
 import { createHash, randomBytes } from 'node:crypto'
 import { and, eq, gt, lte, isNull, sql } from 'drizzle-orm'
 import { HTTPException } from 'hono/http-exception'
-import { db, agents, channelIdentityLinks, channelLinkChallenges, channelInstances, users } from '../db'
+import { db, channelIdentityLinks, channelLinkChallenges, channelInstances, users } from '../db'
 import { ChannelInstance } from '../entities/ChannelInstance'
 import { hasUserPermissionWithExecutor } from './rbac/permissions'
 
@@ -9,16 +10,18 @@ const identityScope = (instance: ChannelInstance) => JSON.stringify([instance.pr
 
 const hashCode = (code: string) => createHash('sha256').update(code).digest('hex')
 
-export function parseTrustedChannelIds(value: unknown): string[] {
+export function parseChannelIds(value: unknown): string[] {
   if (
     !Array.isArray(value) ||
     value.length > 100 ||
     value.some((id) => typeof id !== 'string' || !id.trim() || id.length > 200 || id.trim() === '*')
   ) {
-    throw new HTTPException(400, { message: 'Trusted channels must be a list of explicit channel IDs (no wildcard).' })
+    throw new HTTPException(400, { message: 'Channel IDs must be a list of explicit channel IDs (no wildcard).' })
   }
   return [...new Set(value.map((id) => id.trim()))]
 }
+
+export const parseTrustedChannelIds = parseChannelIds
 
 /** Fresh RBAC lookup on every message; no cached permission survives revocation. */
 export async function canUseChannel(
@@ -27,7 +30,7 @@ export async function canUseChannel(
   externalUserId: string,
   squadId: string
 ): Promise<boolean> {
-  if (instance.disabled || !externalUserId) return false
+  if (!isChannelAllowed(instance, channelId) || !externalUserId) return false
   if (instance.trustedChannelIds.includes(channelId)) return true
   const [link] = await db
     .select({ userId: users.id })
@@ -163,14 +166,3 @@ export async function channelLinkReply(
 
 export const CHANNEL_ACCESS_DENIED =
   'Link your account in Tau → Settings → Account → Linked chat accounts. Your Tau account must have permission to chat in this squad. An administrator can also explicitly trust this channel.'
-
-export async function adoptChannelConsultant(agent: import('../entities/Agent').Agent) {
-  if (agent.agentTypeId === 'concierge') {
-    await db
-      .update(agents)
-      .set({ agentTypeId: 'consultant', updatedAt: new Date() })
-      .where(and(eq(agents.id, agent.id), eq(agents.agentTypeId, 'concierge')))
-    agent.agentTypeId = 'consultant'
-  }
-  return agent
-}

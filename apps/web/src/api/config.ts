@@ -177,6 +177,8 @@ export async function exportSquadPresetYaml(id: string): Promise<string> {
 
 export interface ChannelInstanceConfig {
   trustedChannelIds?: string[]
+  allowedChannelIds?: string[]
+  deniedChannelIds?: string[]
   id: string
   name: string
   provider: string

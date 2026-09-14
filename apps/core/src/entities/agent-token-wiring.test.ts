@@ -36,7 +36,7 @@ async function seedRole(slug: string, name: string, permissions: string[]): Prom
 afterEach(async () => {
   if (agentIds.length) await db.delete(agents).where(inArray(agents.id, agentIds))
   if (squadIds.length) await db.delete(squads).where(inArray(squads.id, squadIds))
-  await db.delete(roles).where(inArray(roles.slug, ['default-worker', 'default-manager', 'default-concierge']))
+  await db.delete(roles).where(inArray(roles.slug, ['default-worker', 'default-manager']))
   await cleanupTestRbac(PREFIX)
   agentIds.length = 0
   squadIds.length = 0
@@ -95,8 +95,8 @@ describe('per-agent token wiring', () => {
     expect(await hasPermission(identity!, 'agents:delete', squadId)).toBe(false)
   })
 
-  it('scopes a concierge token to its single squad via the default-concierge role', async () => {
-    await seedRole('default-concierge', 'Default Concierge', [
+  it('scopes a consultant token to its single squad via the default-manager role', async () => {
+    await seedRole('default-manager', 'Default Manager', [
       'chat:send',
       'inbox:read',
       'inbox:write',
@@ -112,12 +112,12 @@ describe('per-agent token wiring', () => {
       'workstreams:respond',
       'workstreams:manage-agents',
     ])
-    const ownSquad = await makeSquad('agent-token-wiring concierge own')
-    const otherSquad = await makeSquad('agent-token-wiring concierge other')
-    const concierge = await makeAgent(ownSquad, 'concierge')
-    const identity = await resolveToken((await concierge.getOrCreateToken())!)
+    const ownSquad = await makeSquad('agent-token-wiring consultant own')
+    const otherSquad = await makeSquad('agent-token-wiring consultant other')
+    const consultant = await makeAgent(ownSquad, 'consultant')
+    const identity = await resolveToken((await consultant.getOrCreateToken())!)
     expect(identity).not.toBeNull()
-    // resolves the default-concierge role via the agent's own squadId (no channelId
+    // resolves the default-manager role via the agent's own squadId (no channelId
     // on the token); includes chat access + manager-like work-stream ownership.
     expect(await hasPermission(identity!, 'chat:send', ownSquad)).toBe(true)
     expect(await hasPermission(identity!, 'workstreams:create', ownSquad)).toBe(true)

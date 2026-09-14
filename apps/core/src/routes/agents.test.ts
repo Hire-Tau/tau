@@ -1269,30 +1269,30 @@ describe('Agent.getSandboxId', () => {
     await db.delete(squads).where(eq(squads.id, squad.id))
   })
 
-  it('returns agent_<id> for concierge agents (not concierge_channel_<channelId>)', async () => {
-    // Ensure the shared concierge agent type exists without racing other test files.
+  it('returns agent_<id> for consultant agents (not consultant_channel_<channelId>)', async () => {
+    // Ensure the shared consultant agent type exists without racing other test files.
     await AgentType.upsert({
-      id: 'concierge',
+      id: 'consultant',
       model: 'anthropic:claude-sonnet-4-5',
-      name: 'Concierge',
+      name: 'Consultant',
       systemPrompt: 'Test',
     })
 
     const channelId = 'test-channel-123'
     const agent = await Agent.create({
-      agentTypeId: 'concierge',
+      agentTypeId: 'consultant',
       context: { channelInstance: { id: channelId } },
     })
     expect(await agent.getSandboxId()).toBe(`agent_${agent.id}`)
 
     // Clean up
     await db.delete(agents).where(eq(agents.id, agent.id))
-    // Don't delete concierge type — it may be shared
+    // Don't delete consultant type — it may be shared
   })
 
-  it('returns agent_<id> for concierge agents without channelInstance', async () => {
+  it('returns agent_<id> for consultant agents without channelInstance', async () => {
     const agent = await Agent.create({
-      agentTypeId: 'concierge',
+      agentTypeId: 'consultant',
       context: {},
     })
     expect(await agent.getSandboxId()).toBe(`agent_${agent.id}`)

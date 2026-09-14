@@ -649,7 +649,7 @@ export const slackProvider: ChannelProvider = {
   async sendResponse({ context, content, agentContext, updateAgentContext }): Promise<string | undefined> {
     const api = getApi()
 
-    // Empty content = delete the thinking message (concierge chose not to respond)
+    // Empty content = delete the thinking message (consultant chose not to respond)
     if (!content || !content.trim()) {
       if (context.messageToEdit) {
         await api.deleteMessage({ channel: context.channelId, ts: context.messageToEdit })

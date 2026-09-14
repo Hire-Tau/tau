@@ -93,7 +93,7 @@ export interface ThreadContext {
 }
 
 /**
- * Inbound message from a channel (for queueing to concierge).
+ * Inbound message from a channel (for queueing to consultant).
  */
 export interface InboundMessage {
   command: string
@@ -178,6 +178,8 @@ export interface ChannelInstanceYaml {
   provider: string
   providerConfig?: ProviderConfig
   trustedChannelIds?: string[]
+  allowedChannelIds?: string[]
+  deniedChannelIds?: string[]
   channelSquadMap?: Record<string, string>
   defaultSquadId?: string
 }
@@ -202,7 +204,7 @@ export interface ChannelProvider {
 
   /**
    * If true, this provider reuses a single agent/thread per chat (no real threads).
-   * Used by Telegram where all messages in a chat go to one concierge.
+   * Used by Telegram where all messages in a chat go to one consultant.
    */
   readonly reusesThreadForChat?: boolean
 

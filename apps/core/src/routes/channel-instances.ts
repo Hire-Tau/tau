@@ -1,4 +1,4 @@
-import { parseTrustedChannelIds } from '../services/channel-access'
+import { parseTrustedChannelIds, parseChannelIds } from '../services/channel-access'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { ChannelInstance } from '../entities/ChannelInstance'
@@ -20,6 +20,8 @@ export const channelInstancesRouter = new Hono()
         provider: inst.provider,
         providerConfig: inst.providerConfig,
         trustedChannelIds: inst.trustedChannelIds,
+        allowedChannelIds: inst.allowedChannelIds,
+        deniedChannelIds: inst.deniedChannelIds,
         channelSquadMap: inst.channelSquadMap,
         defaultSquadId: inst.defaultSquadId,
         yamlFieldOverrides: inst.yamlFieldOverrides ?? [],
@@ -45,9 +47,10 @@ export const channelInstancesRouter = new Hono()
       provider: inst.provider,
       providerConfig: inst.providerConfig,
       trustedChannelIds: inst.trustedChannelIds,
+      allowedChannelIds: inst.allowedChannelIds,
+      deniedChannelIds: inst.deniedChannelIds,
       channelSquadMap: inst.channelSquadMap,
       defaultSquadId: inst.defaultSquadId,
-      conciergeAgentId: inst.conciergeAgentId,
       yamlFieldOverrides: inst.yamlFieldOverrides ?? [],
       hasTemplate: inst.yamlTemplate != null,
       disabled: inst.disabled,
@@ -70,6 +73,8 @@ export const channelInstancesRouter = new Hono()
       provider,
       providerConfig: providerConfig || {},
       trustedChannelIds: parseTrustedChannelIds(body.trustedChannelIds ?? []),
+      allowedChannelIds: parseChannelIds(body.allowedChannelIds ?? []),
+      deniedChannelIds: parseChannelIds(body.deniedChannelIds ?? []),
       channelSquadMap: channelSquadMap || {},
       defaultSquadId,
     })
@@ -95,6 +100,8 @@ export const channelInstancesRouter = new Hono()
       return c.json(missingDefaultResponse(), 400)
     }
     if (body.trustedChannelIds !== undefined) body.trustedChannelIds = parseTrustedChannelIds(body.trustedChannelIds)
+    if (body.allowedChannelIds !== undefined) body.allowedChannelIds = parseChannelIds(body.allowedChannelIds)
+    if (body.deniedChannelIds !== undefined) body.deniedChannelIds = parseChannelIds(body.deniedChannelIds)
     await existing.update(body)
     await channelSync.recomputeFieldOverrides(id)
     const updated = await ChannelInstance.find(id)

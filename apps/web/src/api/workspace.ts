@@ -168,7 +168,7 @@ export interface SandboxStatus {
   /**
    * Set on the per-agent status endpoint: true when the sandbox is this agent's
    * own box (so it may be stopped/restarted individually), false when it is a
-   * shared box (squad/system-manager/concierge). Absent on the squad endpoint.
+   * shared box (squad/system-manager/consultant). Absent on the squad endpoint.
    */
   controllable?: boolean
   /**

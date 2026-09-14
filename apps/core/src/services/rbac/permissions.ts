@@ -47,7 +47,6 @@ function roleSlugForAgentType(agentTypeId: string | null | undefined): string {
   const ROLE_BY_AGENT_TYPE: Record<string, string> = {
     manager: 'default-manager',
     consultant: 'default-manager', // full manager-equivalent permissions
-    concierge: 'default-concierge',
   }
   return ROLE_BY_AGENT_TYPE[agentTypeId ?? ''] ?? 'default-worker'
 }

@@ -10,7 +10,6 @@ import type { InferSelectModel } from 'drizzle-orm'
 import { db, channelInstances } from '../db'
 import { getProvider } from '../channels'
 import type { ProviderConfig, InboundMessage } from '../channels/provider'
-import { isAddressableAgentStatus } from '@tau/shared'
 import { createLogger } from '../lib/infra/logger'
 
 const log = createLogger('channel-instance')
@@ -29,6 +28,8 @@ export interface CreateChannelInstanceInput {
   provider: string
   providerConfig: ProviderConfig
   trustedChannelIds?: string[]
+  allowedChannelIds?: string[]
+  deniedChannelIds?: string[]
   channelSquadMap?: Record<string, string>
   defaultSquadId?: string
 }
@@ -37,9 +38,10 @@ export interface UpdateChannelInstanceInput {
   name?: string
   providerConfig?: ProviderConfig
   trustedChannelIds?: string[]
+  allowedChannelIds?: string[]
+  deniedChannelIds?: string[]
   channelSquadMap?: Record<string, string>
   defaultSquadId?: string | null
-  conciergeAgentId?: string | null
 }
 
 export class ChannelInstance implements ChannelInstanceRow {
@@ -48,9 +50,10 @@ export class ChannelInstance implements ChannelInstanceRow {
   declare provider: string
   declare providerConfig: ProviderConfig
   declare trustedChannelIds: string[]
+  declare allowedChannelIds: string[]
+  declare deniedChannelIds: string[]
   declare channelSquadMap: Record<string, string>
   declare defaultSquadId: string | null
-  declare conciergeAgentId: string | null
   declare yamlTemplate: unknown
   declare yamlFieldOverrides: string[]
   declare disabled: boolean
@@ -61,6 +64,8 @@ export class ChannelInstance implements ChannelInstanceRow {
     Object.assign(this, data)
     // Normalize arrays and objects from Postgres
     this.trustedChannelIds = data.trustedChannelIds ?? []
+    this.allowedChannelIds = data.allowedChannelIds ?? []
+    this.deniedChannelIds = data.deniedChannelIds ?? []
     this.providerConfig = (data.providerConfig as ProviderConfig) || {}
     this.channelSquadMap = (data.channelSquadMap as Record<string, string>) || {}
   }
@@ -127,6 +132,8 @@ export class ChannelInstance implements ChannelInstanceRow {
         provider: input.provider,
         providerConfig: input.providerConfig,
         trustedChannelIds: input.trustedChannelIds ?? [],
+        allowedChannelIds: input.allowedChannelIds ?? [],
+        deniedChannelIds: input.deniedChannelIds ?? [],
         channelSquadMap: input.channelSquadMap || {},
         defaultSquadId: input.defaultSquadId || null,
       })
@@ -147,6 +154,8 @@ export class ChannelInstance implements ChannelInstanceRow {
         provider: input.provider,
         providerConfig: input.providerConfig,
         trustedChannelIds: input.trustedChannelIds ?? [],
+        allowedChannelIds: input.allowedChannelIds ?? [],
+        deniedChannelIds: input.deniedChannelIds ?? [],
         channelSquadMap: input.channelSquadMap || {},
         defaultSquadId: input.defaultSquadId || null,
       })
@@ -156,6 +165,8 @@ export class ChannelInstance implements ChannelInstanceRow {
           name: input.name,
           providerConfig: input.providerConfig,
           trustedChannelIds: input.trustedChannelIds ?? [],
+          allowedChannelIds: input.allowedChannelIds ?? [],
+          deniedChannelIds: input.deniedChannelIds ?? [],
           channelSquadMap: input.channelSquadMap || {},
           defaultSquadId: input.defaultSquadId || null,
           updatedAt: new Date(),
@@ -177,22 +188,16 @@ export class ChannelInstance implements ChannelInstanceRow {
     const updateValues: Record<string, unknown> = { updatedAt: new Date() }
 
     if (updates.trustedChannelIds !== undefined) updateValues.trustedChannelIds = updates.trustedChannelIds
+    if (updates.allowedChannelIds !== undefined) updateValues.allowedChannelIds = updates.allowedChannelIds
+    if (updates.deniedChannelIds !== undefined) updateValues.deniedChannelIds = updates.deniedChannelIds
     if (updates.name !== undefined) updateValues.name = updates.name
     if (updates.providerConfig !== undefined) updateValues.providerConfig = updates.providerConfig
     if (updates.channelSquadMap !== undefined) updateValues.channelSquadMap = updates.channelSquadMap
     if (updates.defaultSquadId !== undefined) updateValues.defaultSquadId = updates.defaultSquadId
-    if (updates.conciergeAgentId !== undefined) updateValues.conciergeAgentId = updates.conciergeAgentId
 
     await db.update(channelInstances).set(updateValues).where(eq(channelInstances.id, this.id))
 
     Object.assign(this, updates)
-  }
-
-  /**
-   * Set the concierge agent for this channel instance.
-   */
-  async setConciergeAgent(agentId: string | null): Promise<void> {
-    await this.update({ conciergeAgentId: agentId })
   }
 
   /**
@@ -202,53 +207,6 @@ export class ChannelInstance implements ChannelInstanceRow {
     const channelProvider = getProvider(this.provider)
     if (!channelProvider) return null
     return channelProvider.getPlatformIdFromConfig(this.providerConfig)
-  }
-
-  // ---------------------------------------------------------------------------
-  // Concierge Methods
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Get or spawn a concierge agent for this channel instance.
-   * Concierge is scoped to this instance's deterministic target squad.
-   */
-  async getOrSpawnConcierge(inbound?: InboundMessage): Promise<import('./Agent').Agent> {
-    // Lazy import to avoid circular dependency
-    const { Agent } = await import('./Agent')
-
-    // Check for existing concierge
-    if (this.conciergeAgentId) {
-      const existing = await Agent.find(this.conciergeAgentId)
-      if (existing && isAddressableAgentStatus(existing.status)) {
-        return existing
-      }
-    }
-
-    const warmSquadId = inbound ? this.resolveTargetSquad(inbound) : this.defaultSquadId
-    if (!warmSquadId) {
-      throw new Error(`Channel instance ${this.id} cannot warm a concierge: no resolvable target squad`)
-    }
-
-    // Spawn new concierge in the deterministic target squad
-    const agent = await Agent.create({
-      agentTypeId: CHANNEL_AGENT_TYPE,
-      squadId: warmSquadId,
-      persist: true,
-      context: {
-        scope: { type: 'consultant' },
-        // Only store id and provider - other fields can change in DB
-        channelInstance: {
-          id: this.id,
-          provider: this.provider,
-        },
-      },
-    })
-
-    // Update channel instance with concierge reference
-    await this.setConciergeAgent(agent.id)
-
-    log.info(`Spawned ${agent.id} for ${this.provider}:${this.id}`)
-    return agent
   }
 
   /**
@@ -293,10 +251,10 @@ export class ChannelInstance implements ChannelInstanceRow {
   }
 
   /**
-   * Queue a message for a new per-conversation concierge agent.
-   * Each slash command spawns its own concierge for thread isolation.
+   * Queue a message for a new per-conversation consultant agent.
+   * Each slash command spawns its own consultant for thread isolation.
    */
-  async queueForConcierge(inbound: InboundMessage): Promise<string> {
+  async queueForConsultant(inbound: InboundMessage): Promise<string> {
     const { Agent } = await import('./Agent')
     const { InboxMessage } = await import('./InboxMessage')
 
@@ -313,7 +271,7 @@ export class ChannelInstance implements ChannelInstanceRow {
       throw new Error('Channel sender is not authorized for this squad')
     }
 
-    // Spawn a NEW concierge agent for this conversation
+    // Spawn a NEW consultant agent for this conversation
     const agent = await Agent.create({
       agentTypeId: CHANNEL_AGENT_TYPE,
       squadId: targetSquad,
@@ -328,9 +286,9 @@ export class ChannelInstance implements ChannelInstanceRow {
       },
     })
 
-    const content = await this.buildConciergeInboxMessage(inbound, targetSquad, agent.id)
+    const content = await this.buildChannelInboxMessage(inbound, targetSquad, agent.id)
 
-    // Genuine channel correspondence explicitly wakes a dormant concierge.
+    // Genuine channel correspondence explicitly wakes a dormant consultant.
     await InboxMessage.send({
       recipientId: agent.id,
       senderType: 'system',
@@ -349,21 +307,21 @@ export class ChannelInstance implements ChannelInstanceRow {
       },
     })
 
-    log.info(`Spawned concierge ${agent.id} for ${inbound.command} from ${inbound.user.name}`)
+    log.info(`Spawned consultant ${agent.id} for ${inbound.command} from ${inbound.user.name}`)
     return agent.id
   }
 
   /**
-   * Build inbox message for concierge based on command type.
+   * Build inbox message for consultant based on command type.
    */
-  private async buildConciergeInboxMessage(
+  private async buildChannelInboxMessage(
     inbound: InboundMessage,
     targetSquad: string | null,
-    conciergeAgentId: string
+    consultantAgentId: string
   ): Promise<string> {
     const { content, user, responseContext } = inbound
     const platform = responseContext.provider.charAt(0).toUpperCase() + responseContext.provider.slice(1)
-    const shortAgentId = conciergeAgentId.slice(0, 8)
+    const shortAgentId = consultantAgentId.slice(0, 8)
 
     // Build squad context with manager agent IDs for easy forwarding
     let squadContext = ''
@@ -407,7 +365,7 @@ If the user asks to "index this thread" (or similar), ingest with:
       }
     }
 
-    // All freeform commands use the same template - concierge decides how to handle
+    // All freeform commands use the same template - consultant decides how to handle
     // Status and help are handled as sync commands, so they don't reach here
     return `**${platform} from ${user.name}:** "${content}"${squadContext ? `\n\n${squadContext}` : ''}${channelContext}
 
@@ -415,7 +373,7 @@ If the user asks to "index this thread" (or similar), ingest with:
   }
 
   /**
-   * Handle sync commands (immediate response, no concierge needed).
+   * Handle sync commands (immediate response, no consultant needed).
    */
   async handleSyncCommand(inbound: InboundMessage): Promise<string> {
     if (inbound.command === 'status') {

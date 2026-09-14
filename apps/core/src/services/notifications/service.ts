@@ -1,3 +1,4 @@
+import { requireAllowedChannel } from '../channel-policy'
 import { getVapidContactSubject } from '../push/vapid'
 import { getSettingsStore } from '../settings'
 import { pushRelayConfig, sendRelayAlert } from '../push/relay'
@@ -183,6 +184,7 @@ export class NotificationService {
       return
     }
 
+    await requireAllowedChannel(instance, channelConfig.channelId)
     await provider.sendNotification!({ instance, channelId: channelConfig.channelId, event })
     log.info(`${channel}: sent to ${channelConfig.channelId}`)
   }

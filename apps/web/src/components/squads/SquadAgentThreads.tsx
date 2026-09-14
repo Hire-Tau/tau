@@ -351,7 +351,7 @@ export function SquadAgentThreads({
   // nothing to collapse it against.
   const onlyOneCategory = agentTypeGroups.length === 1
 
-  const [collapsedTypes, setCollapsedTypes] = useState<Set<string>>(() => new Set(['concierge']))
+  const [collapsedTypes, setCollapsedTypes] = useState<Set<string>>(() => new Set())
   const [terminatedCollapsed, setTerminatedCollapsed] = useState(true)
   const effectiveTerminatedCollapsed = isSearching ? false : terminatedCollapsed
   const terminatedLoadMoreRef = useRef<HTMLDivElement | null>(null)

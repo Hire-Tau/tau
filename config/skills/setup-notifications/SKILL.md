@@ -14,7 +14,7 @@ Telegram). Each squad configures its own notification targets.
 
 ## Who Uses This
 
-- **System Manager / Concierge** — Can configure notifications for any squad during onboarding.
+- **System Manager** — Can configure notifications for any squad during onboarding.
 - **Squad Manager** — Can configure notifications for their own squad.
 
 Both roles use the same steps. Notifications are per-squad, so there's no

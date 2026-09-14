@@ -43,9 +43,5 @@ export function createSetAgentPurposeTool(ctx: SetAgentPurposeToolContext): Tool
 }
 
 function canSetAgentPurpose(agent: Agent): boolean {
-  return (
-    agent.agentTypeId === 'system-manager' ||
-    agent.agentTypeId === 'concierge' ||
-    (!!agent.squadId && agent.agentTypeId !== 'manager')
-  )
+  return agent.agentTypeId === 'system-manager' || (!!agent.squadId && agent.agentTypeId !== 'manager')
 }

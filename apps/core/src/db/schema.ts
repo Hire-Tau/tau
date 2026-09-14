@@ -1720,7 +1720,7 @@ export const workStreamSubscriptions = pgTable(
   (table) => [primaryKey({ columns: [table.workStreamId, table.userId] })]
 )
 
-// Async agent questions. Managers/concierges/system-managers ask structured questions without
+// Async agent questions. Managers/consultants/system-managers ask structured questions without
 // halting (status stays open; the agent keeps working). Chat/history visibility follows canonical
 // agents:read on the agent; Action Center/push attention routes to durable direct recipients plus
 // compatible owners and authorized watchers. Answering delivers the answer to the agent as an inbox
@@ -2106,7 +2106,7 @@ export const sandboxProvisionRecoveries = pgTable(
 )
 
 // Channel Instances - external platform connections (Discord, Slack, Telegram, etc.)
-// Platform-level: concierge agents operate across multiple squads
+// Each external conversation is handled by a consultant in its routed squad.
 export const channelInstances = pgTable('channel_instances', {
   id: varchar('id', { length: 100 }).primaryKey(),
   name: varchar('name', { length: 255 }).notNull(),
@@ -2117,13 +2117,12 @@ export const channelInstances = pgTable('channel_instances', {
 
   // Only these exact provider channel IDs bypass linked-user authorization.
   trustedChannelIds: jsonb('trusted_channel_ids').$type<string[]>().notNull().default([]),
+  allowedChannelIds: jsonb('allowed_channel_ids').$type<string[]>().notNull().default([]),
+  deniedChannelIds: jsonb('denied_channel_ids').$type<string[]>().notNull().default([]),
 
   // Multi-squad config
   channelSquadMap: jsonb('channel_squad_map').default({}), // channel_id → squad_id
   defaultSquadId: uuid('default_squad_id').references(() => squads.id, { onDelete: 'set null' }),
-
-  // Runtime state (set when concierge spawns)
-  conciergeAgentId: uuid('concierge_agent_id').references(() => agents.id, { onDelete: 'set null' }),
 
   yamlTemplate: jsonb('yaml_template'),
   yamlFieldOverrides: jsonb('yaml_field_overrides').notNull().default([]),
@@ -2222,7 +2221,7 @@ export const sessions = pgTable('sessions', {
  * otherwise — `role_assignments.subject_type` is always 'user' in practice, and
  * agents never get assignments at all (their permissions are derived from their
  * agent type in services/rbac/permissions.ts). Without this every human role
- * picker offers `default-worker` / `default-manager` / `default-concierge`,
+ * picker offers `default-worker` / `default-manager` / `default-manager`,
  * which are meaningless on a person.
  *
  * Deliberately a plain text column, not a pg enum: enums are painful to extend

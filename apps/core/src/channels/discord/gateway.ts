@@ -1,3 +1,4 @@
+import { isChannelAllowed } from '../../services/channel-policy'
 /**
  * Discord Gateway Connection
  *
@@ -5,12 +6,7 @@
  * MESSAGE_CREATE events in threads.
  */
 
-import {
-  adoptChannelConsultant,
-  canUseChannel,
-  channelLinkReply,
-  CHANNEL_ACCESS_DENIED,
-} from '../../services/channel-access'
+import { canUseChannel, channelLinkReply, CHANNEL_ACCESS_DENIED } from '../../services/channel-access'
 import { createLogger } from '../../lib/infra/logger'
 import { getChannelIntegrationValue } from '../../services/integrations/channels/settings'
 
@@ -194,6 +190,7 @@ export class DiscordGateway {
     const routing = await this.getChannelRouting(message.channel_id)
     if (!routing) return // Fail closed if Discord cannot establish the channel's parent.
     const routingChannelId = routing.parentId ?? message.channel_id
+    if (!isChannelAllowed(channelInstance, routingChannelId)) return
     const targetSquad = channelInstance.resolveTargetSquad({
       responseContext: { provider: 'discord', channelId: routingChannelId },
     } as import('../provider').InboundMessage)
@@ -218,8 +215,6 @@ export class DiscordGateway {
       await provider.postMessage({ channelId: message.channel_id, text: CHANNEL_ACCESS_DENIED })
       return
     }
-
-    if (agent) await adoptChannelConsultant(agent)
 
     // Threaded Discord conversations only respond to explicit mentions, even
     // when Tau created the thread.
@@ -285,8 +280,8 @@ export class DiscordGateway {
             },
           })
         } else {
-          // First time in this thread - queue for concierge
-          await channelInstance.queueForConcierge({
+          // First time in this thread - queue for consultant
+          await channelInstance.queueForConsultant({
             command: 'mention',
             content,
             user: { id: message.author.id, name: message.author.username },
@@ -314,7 +309,7 @@ export class DiscordGateway {
         text: '_Thinking..._',
       })
 
-      await channelInstance.queueForConcierge({
+      await channelInstance.queueForConsultant({
         command: 'mention',
         content: cleanedContent,
         user: { id: message.author.id, name: message.author.username },

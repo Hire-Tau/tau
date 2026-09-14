@@ -12,7 +12,6 @@ function instance(overrides: Partial<ChannelInstance> = {}): ChannelInstance {
     providerConfig: {},
     channelSquadMap: {},
     defaultSquadId: null,
-    conciergeAgentId: null,
     yamlTemplate: null,
     yamlFieldOverrides: [],
     disabled: false,
@@ -50,10 +49,10 @@ describe('ChannelInstance.resolveTargetSquadOrThrow', () => {
   })
 })
 
-describe('ChannelInstance.buildConciergeInboxMessage', () => {
+describe('ChannelInstance.buildChannelInboxMessage', () => {
   it('includes Slack current-thread context and ingest command guidance', async () => {
     const inst = instance()
-    const content = await (inst as any).buildConciergeInboxMessage(
+    const content = await (inst as any).buildChannelInboxMessage(
       {
         command: 'mention',
         content: 'index this thread',
@@ -84,7 +83,7 @@ describe('ChannelInstance.buildConciergeInboxMessage', () => {
 
   it('omits Slack current-thread context for non-Slack inbound', async () => {
     const inst = instance({ provider: 'discord' })
-    const content = await (inst as any).buildConciergeInboxMessage(
+    const content = await (inst as any).buildChannelInboxMessage(
       {
         command: 'mention',
         content: 'hello',

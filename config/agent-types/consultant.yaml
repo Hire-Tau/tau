@@ -19,6 +19,7 @@ includes:
 extensions:
   - code-ast
 skills:
+  - amtp
   - brainstorming
   - writing-plans
   - using-git-worktrees

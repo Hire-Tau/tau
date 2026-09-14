@@ -11,7 +11,6 @@ This doc is the runner-by-runner companion to [`agents-and-executions.md`](agent
 | `system-manager`   | `system-manager`                           | Per-user shared sandbox | Cross-squad operations within the owning user’s access; UI navigation        |
 | `squad-manager`    | `manager` or `consultant` (with `squadId`) | Private + shared squad  | Orchestrates one squad: work streams, agents, schedules, memory, todos       |
 | `squad-worker`     | other squad agent types                    | Private + shared squad  | Architect/engineer/reviewer/etc.; teammate-aware; role-specific instructions |
-| `concierge`        | `concierge`                                | Workspace sandbox       | Channel entry point (Discord/Slack/Telegram); responds via `channel_*` tools |
 | `artifact-builder` | `artifact-builder-default`                 | Workspace sandbox       | Artifact generation runs with `artifact_*` tools                             |
 | `subagent`         | any agent with `parentAgentId`             | Parent's light sandbox  | Narrow delegated work in the parent’s sandbox with scoped authority          |
 
@@ -22,7 +21,6 @@ This doc is the runner-by-runner companion to [`agents-and-executions.md`](agent
 ```
 if parentAgentId is set                     → 'subagent'
 else if agentTypeId == 'system-manager'     → 'system-manager'
-else if agentTypeId == 'concierge'               → 'concierge'
 else if agentTypeId == 'artifact-builder-default' → 'artifact-builder'
 else if squadId is set:
     if agentTypeId in ['manager', 'consultant'] → 'squad-manager'
@@ -119,17 +117,14 @@ Used by squad agents routed here after the special runner cases (`architect`, `e
 
 → Source: `squad-worker-runner.ts`
 
-### `concierge`
+### External channel consultants
 
-Used by `concierge` agents attached to a channel instance (Discord / Slack / Telegram). Concierges are platform-level, not bound to a single squad.
-
-- **Inbound flow:** webhook → `channelInstance.queueForConcierge()` → inbox message with `metadata.channelContext` carrying provider-specific response handles (Discord `interactionToken`, Slack `responseUrl`, Telegram `chatId`).
-- **Response tools:** `channel_respond` (reply to a specific inbox message), `channel_send` (follow-up in the same thread), `channel_edit` (update a previously sent Tau message).
-- **Linked squads:** the concierge knows which squads it can forward action requests to.
-- **Marks messages read** after responding to each one.
-- **Sandbox:** workspace sandbox.
-
-→ Source: `concierge-runner.ts`. Channel flow: [`channels.md`](channels.md).
+Channel conversations use `consultant` agents and the squad-manager runner. The
+channel context enables `channel_respond`, `channel_send`, and `channel_edit` and
+omits `ask_human`; clarification questions go back to the originating channel.
+Incoming messages pass channel policy and sender authorization before an agent
+is allocated. Consultants stay in their routed squad and use the manager for
+cross-squad coordination. See [channels](channels.md).
 
 ### `subagent`
 
@@ -162,7 +157,6 @@ Used by agents of type `artifact-builder-default` (constant in `agent-runners/co
 | `apps/core/src/entities/agent-runners/system-manager-runner.ts`   | User Assistant runner                                   |
 | `apps/core/src/entities/agent-runners/squad-manager-runner.ts`    | Squad manager runner                                    |
 | `apps/core/src/entities/agent-runners/squad-worker-runner.ts`     | Squad worker runner                                     |
-| `apps/core/src/entities/agent-runners/concierge-runner.ts`        | Concierge runner                                        |
 | `apps/core/src/entities/agent-runners/artifact-builder-runner.ts` | Artifact builder runner                                 |
 | `apps/core/src/entities/agent-runners/subagent-runner.ts`         | Ephemeral subagent runner                               |
 | `apps/core/src/entities/agent-runners/constants.ts`               | Agent-type → runner-type constants                      |

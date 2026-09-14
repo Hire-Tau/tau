@@ -202,7 +202,7 @@ export const telegramProvider: ChannelProvider = {
     const chatId = String(message.chat.id)
 
     // Use chat ID as "thread" since Telegram doesn't have threads
-    // This means one concierge per chat
+    // This means one consultant per chat
     return {
       type: isCommand ? 'slash_command' : 'message',
       command: isCommand ? command : 'message',
@@ -212,9 +212,9 @@ export const telegramProvider: ChannelProvider = {
         id: String(from.id),
         name: from.username || `${from.first_name}${from.last_name ? ' ' + from.last_name : ''}`,
       },
-      threadId: chatId, // Use chat ID as thread - one concierge per chat
+      threadId: chatId, // Use chat ID as thread - one consultant per chat
       messageId: String(message.message_id),
-      isInThread: true, // Always "in thread" since we reuse the chat's concierge
+      isInThread: true, // Always "in thread" since we reuse the chat's consultant
       raw: { chatType, isReplyToBot },
     }
   },
@@ -353,7 +353,7 @@ export const telegramProvider: ChannelProvider = {
       context: {
         messageToEdit: result.messageId,
         threadId: event.channelId, // Use chat ID as thread
-        tauInitiated: false, // Reuse existing concierge for this chat
+        tauInitiated: false, // Reuse existing consultant for this chat
       },
       emptyResponse: true, // Return empty body since we used Bot API
     }

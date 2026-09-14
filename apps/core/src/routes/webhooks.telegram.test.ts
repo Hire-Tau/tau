@@ -22,7 +22,7 @@ let requests: Array<{ method: string; body: Record<string, unknown> }>
 let transportError: 'http' | 'api' | 'network' | undefined
 let findInstance: ReturnType<typeof spyOn<typeof ChannelInstance, 'findByProvider'>>
 let findAgent: ReturnType<typeof spyOn<typeof Agent, 'findByThreadId'>>
-let queue: ReturnType<typeof spyOn<ChannelInstance, 'queueForConcierge'>>
+let queue: ReturnType<typeof spyOn<ChannelInstance, 'queueForConsultant'>>
 let inbox: ReturnType<typeof spyOn<typeof InboxMessage, 'send'>>
 let getSetting: ReturnType<typeof spyOn<typeof settings, 'getChannelIntegrationValue'>>
 let botId: ReturnType<typeof spyOn<typeof telegramProvider, 'getBotUserId'>>
@@ -35,8 +35,10 @@ beforeEach(() => {
     provider: 'telegram',
     providerConfig: { botId: '42' },
     defaultSquadId: null,
+    trustedChannelIds: [chatId, groupChatId],
+    allowedChannelIds: [],
+    deniedChannelIds: [],
     channelSquadMap: {},
-    conciergeAgentId: null,
     yamlTemplate: null,
     yamlFieldOverrides: [],
     disabled: false,
@@ -54,7 +56,7 @@ beforeEach(() => {
   botId = spyOn(telegramProvider, 'getBotUserId').mockResolvedValue('42')
   findInstance = spyOn(ChannelInstance, 'findByProvider').mockResolvedValue(instance)
   findAgent = spyOn(Agent, 'findByThreadId').mockResolvedValue(null)
-  queue = spyOn(instance, 'queueForConcierge').mockResolvedValue('new-agent')
+  queue = spyOn(instance, 'queueForConsultant').mockResolvedValue('new-agent')
   inbox = spyOn(InboxMessage, 'send').mockResolvedValue({} as InboxMessage)
   globalThis.fetch = (async (url, init) => {
     const method = String(url).split('/').at(-1)!
@@ -109,6 +111,7 @@ function expectConfigurationReply(expectedChatId = chatId) {
         text: configurationError,
         parse_mode: 'Markdown',
         reply_to_message_id: messageId,
+        allow_sending_without_reply: true,
       },
     },
   ])
@@ -158,8 +161,9 @@ describe('Telegram received-message routing', () => {
     }
   }
 
-  it('reuses an addressable chat concierge without a default and replies to the message ID, not the chat ID', async () => {
-    findAgent.mockResolvedValue({ id: 'existing-agent' } as Agent)
+  it('reuses an addressable chat consultant with current routing and replies to the message ID, not the chat ID', async () => {
+    instance.defaultSquadId = 'default-squad'
+    findAgent.mockResolvedValue({ id: 'existing-agent', squadId: 'default-squad' } as Agent)
     expect((await receive()).status).toBe(200)
     expect(requests[0]).toMatchObject({ body: { text: '_Thinking..._', reply_to_message_id: messageId } })
     expect(queue).not.toHaveBeenCalled()
@@ -179,16 +183,15 @@ describe('Telegram received-message routing', () => {
     expect(queue).not.toHaveBeenCalled()
   })
 
-  it('keeps slash-command reuse independent of the missing default', async () => {
-    findAgent.mockResolvedValue({ id: 'existing-agent' } as Agent)
+  it('does not reuse an old chat when current routing is missing', async () => {
+    findAgent.mockResolvedValue({ id: 'existing-agent', squadId: 'old-squad' } as Agent)
     expect((await receive(update('/tau ask hello'))).status).toBe(200)
-    expect(queue).not.toHaveBeenCalled()
-    expect(inbox).toHaveBeenCalledTimes(1)
-    expect(requests).toEqual([])
+    expectConfigurationReply()
+    expect(inbox).not.toHaveBeenCalled()
   })
 
   for (const failure of ['http', 'api', 'network'] as const) {
-    it(`does not claim a visible reply or queue a concierge when sending the config error fails (${failure})`, async () => {
+    it(`does not claim a visible reply or queue a consultant when sending the config error fails (${failure})`, async () => {
       transportError = failure
       expect((await receive()).status).toBe(500)
       expect(requests).toHaveLength(1)

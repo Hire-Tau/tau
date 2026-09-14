@@ -1,8 +1,9 @@
+import { requireAllowedChannelReply } from '../services/channel-policy'
 import { Type } from '@sinclair/typebox'
 import type { AgentToolResult, ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { getProvider } from '../channels'
 import { createLogger } from '../lib/infra/logger'
-import { appendKnownChannelMessage, type ConciergeChannelContext } from './channel-message-tracking'
+import { appendKnownChannelMessage, type ChannelConversationContext } from './channel-message-tracking'
 
 const log = createLogger('channel-send')
 
@@ -22,7 +23,7 @@ export function createChannelSendTool(agentId: string): ToolDefinition {
       const agent = await Agent.find(agentId)
       if (!agent) return failure('Agent not found')
 
-      const agentContext = (agent.context ?? {}) as ConciergeChannelContext
+      const agentContext = (agent.context ?? {}) as ChannelConversationContext
       const providerName = agentContext.channelInstance?.provider
       if (!providerName) return failure('No active channel provider found in agent context')
 
@@ -33,6 +34,7 @@ export function createChannelSendTool(agentId: string): ToolDefinition {
       if (!provider) return failure(`Unknown provider: ${providerName}`)
 
       try {
+        await requireAllowedChannelReply(agentContext.channelInstance?.id, thread.channelId)
         const result = await provider.postMessage({
           channelId: thread.channelId,
           threadId: thread.id,
