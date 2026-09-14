@@ -9,8 +9,8 @@ import {
 import { workspaceInboxMessageAgentTool } from '../../tools/agentMessagingTools'
 import { artifactTools } from '../../tools/artifactTools'
 import { createVoiceToolRegistry } from '../../tools/registry'
-import { getStatusTool } from '../../tools/statusTools'
-import { readMessageDetailTool, readThreadTool } from '../../tools/threadTools'
+import { getWorkTool } from '../../tools/statusTools'
+import { readThreadTool } from '../../tools/threadTools'
 import type { VoiceAssistantTool } from '../../tools/types'
 
 export type WorkspaceVoiceEnvironment = CanvasToolEnvironment
@@ -78,7 +78,7 @@ const displayLatestArtifactTool: VoiceAssistantTool<WorkspaceVoiceEnvironment> =
   followUp: 'auto',
 }
 
-const workspaceApiTools = [workspaceInboxMessageAgentTool, getStatusTool, readThreadTool, readMessageDetailTool].map(
+const workspaceApiTools = [workspaceInboxMessageAgentTool, getWorkTool, readThreadTool].map(
   // These shared Tau API tools do not read from the executor env; keep the workspace env route-free.
   (tool) => tool as unknown as VoiceAssistantTool<WorkspaceVoiceEnvironment>
 )

@@ -22,6 +22,11 @@ let codingToolCalls: unknown[] = []
 let squadBashCalls: unknown[] = []
 
 class TestableSquadManagerRunner extends SquadManagerRunner {
+  assistantDelegate = false
+  protected override async isAssistantDelegate() {
+    return this.assistantDelegate
+  }
+
   exposeCreateSession(): Promise<AgentSession> {
     return this.createSession()
   }
@@ -446,6 +451,22 @@ describe('SquadManagerRunner placeholder interpolation', () => {
       getSandboxId: async () => 'agent_manager_m1',
       getEffectiveModelSpec: async (m: string) => m,
     } as any
+  }
+
+  for (const delegated of [false, true]) {
+    it(`only offers ask_human for direct consultants (delegate=${delegated})`, async () => {
+      squadFindSpy = spyOn(Squad, 'find').mockResolvedValue(makeMockSquad())
+      const agent = { ...makeMockAgent(), agentTypeId: 'consultant' }
+      const runner = new TestableSquadManagerRunner(
+        { id: 'e1', agentId: agent.id, message: 'go', imageIds: null } as any,
+        agent,
+        makeAgentType({ id: 'consultant' })
+      )
+      runner.assistantDelegate = delegated
+      await runner.exposeCreateSession()
+      expect(capturedToolNames(sessionSpy).includes('ask_human')).toBe(!delegated)
+      expect(capturedToolNames(sessionSpy)).toContain('set_agent_purpose')
+    })
   }
 
   it('leaves no raw {{...}} placeholders when using the real squad-rules include', async () => {

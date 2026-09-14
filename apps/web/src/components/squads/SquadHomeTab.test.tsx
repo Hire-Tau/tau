@@ -131,7 +131,7 @@ describe('SquadHomeTab', () => {
 
   test('offers new consultant chats and a dedicated manager destination before active work', () => {
     const html = renderSquadHome([workStream()], managerAgent, [managerAgent])
-    expect(html).toContain('href="/squads/squad-1/consultant"')
+    expect(html).toContain('href="/squads/squad-1/agents?newConsultant=1"')
     expect(html).toContain('href="/squads/squad-1/agents?agent=manager-1"')
     expect(html).toContain('Manager (Manager Alpha)')
     expect(html.indexOf('Start with a conversation')).toBeLessThan(html.indexOf('Clean active work streams card'))

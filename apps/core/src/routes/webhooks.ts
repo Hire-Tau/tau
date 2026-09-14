@@ -21,6 +21,7 @@ import {
   markWebhookError,
 } from '../services/webhooks'
 import { getProvider, hasProvider, handleChannelEvent, InteractionResponseType } from '../channels'
+import { sendChannelConfigurationError } from '../channels/handler'
 import { Schedule } from '../entities/Schedule'
 import { createLogger } from '../lib/infra/logger'
 import { requirePermission } from '../middleware/require-permission'
@@ -182,6 +183,10 @@ webhooksRouter.post('/channels/:provider', async (c) => {
     const platformId = provider.extractPlatformId(payload)
     if (!platformId) {
       log.warn(`[${providerName}] No platform ID found`)
+      if (provider.sendsResponseViaApi) {
+        await sendChannelConfigurationError(provider, parsed)
+        return c.body(null, 200)
+      }
       return c.json(provider.formatErrorResponse('Invalid request'))
     }
 

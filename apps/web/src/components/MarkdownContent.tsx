@@ -1,12 +1,17 @@
 import clsx from 'clsx'
-import ReactMarkdown, { Components } from 'react-markdown'
+import ReactMarkdown, { Components, defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
-import { Children, type ComponentProps } from 'react'
+import { Children, lazy, Suspense, useState, type ComponentProps } from 'react'
 import remarkFrontmatter from 'remark-frontmatter'
 import { remarkAgentFileReferences } from '../lib/remarkAgentFileReferences'
+import { parseEntityReference } from '../lib/entityReference'
 import { FileIcon } from './icons'
+
+const EntityReferenceModal = lazy(() =>
+  import('./EntityReferenceModal').then((module) => ({ default: module.EntityReferenceModal }))
+)
 
 const plugins = [
   remarkGfm,
@@ -39,6 +44,7 @@ export function MarkdownContent({
       )}
     >
       <ReactMarkdown
+        urlTransform={(url) => (parseEntityReference(url) ? url : defaultUrlTransform(url))}
         remarkPlugins={agentId ? [...plugins, [remarkAgentFileReferences, { agentId }]] : plugins}
         components={{
           a: compactPullRequestLinks ? CompactPullRequestLink : AttachmentOrRemoteLink,
@@ -65,6 +71,26 @@ function CompactPullRequestLink({ children, href, ...props }: ComponentProps<'a'
 }
 
 function AttachmentOrRemoteLink({ children, ...props }: ComponentProps<'a'>) {
+  const [open, setOpen] = useState(false)
+  const reference = parseEntityReference(props.href)
+  if (reference)
+    return (
+      <>
+        <button
+          type="button"
+          className="tau-button inline text-accent-light underline underline-offset-2"
+          onClick={() => setOpen(true)}
+        >
+          {children}
+        </button>
+        {open && (
+          <Suspense fallback={<span role="status">Loading…</span>}>
+            <EntityReferenceModal reference={reference} onClose={() => setOpen(false)} />
+          </Suspense>
+        )}
+      </>
+    )
+
   if ((props as Record<string, unknown>)['data-agent-file-id']) {
     return (
       <a

@@ -4,6 +4,7 @@ description: Implements code based on designs and requirements within a squad
 model: ''
 tier: standard
 includes:
+  - entity-references
   - rules
   - subagents
   - squad-rules

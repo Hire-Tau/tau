@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull, inArray } from 'drizzle-orm'
 import { isDeepStrictEqual } from 'node:util'
 import { HTTPException } from 'hono/http-exception'
 import {
@@ -12,7 +12,7 @@ import {
   type AssistantEditorState,
   type AssistantEditorSync,
 } from '@tau/shared'
-import { assistantConversations, agentTypes, db } from '../../db'
+import { assistantConversations, assistantConversationAgents, agentTypes, db } from '../../db'
 import { canAccessWorkflow, authorizeWorkflow } from '../workflows/access'
 import { hasPermission, type Identity } from '../rbac'
 
@@ -58,7 +58,18 @@ async function lockedEditor(
         and(
           eq(assistantConversations.id, id),
           'agentId' in actor
-            ? eq(assistantConversations.managerAgentId, actor.agentId)
+            ? inArray(
+                assistantConversations.id,
+                tx
+                  .select({ id: assistantConversationAgents.conversationId })
+                  .from(assistantConversationAgents)
+                  .where(
+                    and(
+                      eq(assistantConversationAgents.agentId, actor.agentId),
+                      isNull(assistantConversationAgents.squadId)
+                    )
+                  )
+              )
             : eq(assistantConversations.ownerUserId, actor.userId)
         )
       )

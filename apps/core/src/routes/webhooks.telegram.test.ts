@@ -1,0 +1,255 @@
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
+import { Hono } from 'hono'
+import { webhooksRouter } from './webhooks'
+import { telegramProvider } from '../channels/telegram/provider'
+import { ChannelInstance } from '../entities/ChannelInstance'
+import { Agent } from '../entities/Agent'
+import { InboxMessage } from '../entities/InboxMessage'
+import * as settings from '../services/integrations/channels/settings'
+
+// Exercise the real webhook parser, signature check, handler and Telegram HTTP
+// payloads. Only storage/agent execution and external HTTP are replaced.
+const app = new Hono().route('/webhooks', webhooksRouter)
+app.onError((_error, c) => c.json({ error: 'Internal server error' }, 500))
+const chatId = '701234567'
+const groupChatId = '-100123456789'
+const messageId = 17
+const configurationError =
+  'This bot needs configuration. Ask an administrator to check the bot connection and select a Default Squad in the integration settings. New conversations without a matching routing override cannot be started.'
+let instance: ChannelInstance
+let credentials: Record<string, string>
+let requests: Array<{ method: string; body: Record<string, unknown> }>
+let transportError: 'http' | 'api' | 'network' | undefined
+let findInstance: ReturnType<typeof spyOn<typeof ChannelInstance, 'findByProvider'>>
+let findAgent: ReturnType<typeof spyOn<typeof Agent, 'findByThreadId'>>
+let queue: ReturnType<typeof spyOn<ChannelInstance, 'queueForConcierge'>>
+let inbox: ReturnType<typeof spyOn<typeof InboxMessage, 'send'>>
+let getSetting: ReturnType<typeof spyOn<typeof settings, 'getChannelIntegrationValue'>>
+let botId: ReturnType<typeof spyOn<typeof telegramProvider, 'getBotUserId'>>
+const originalFetch = globalThis.fetch
+
+beforeEach(() => {
+  instance = new ChannelInstance({
+    id: 'test-telegram',
+    name: 'Test bot',
+    provider: 'telegram',
+    providerConfig: { botId: '42' },
+    defaultSquadId: null,
+    channelSquadMap: {},
+    conciergeAgentId: null,
+    yamlTemplate: null,
+    yamlFieldOverrides: [],
+    disabled: false,
+    createdAt: null,
+    updatedAt: null,
+  })
+  credentials = {
+    TELEGRAM_BOT_ID: '42',
+    TELEGRAM_BOT_TOKEN: '42:fixture-token',
+    TELEGRAM_WEBHOOK_SECRET: 'fixture-secret',
+  }
+  requests = []
+  transportError = undefined
+  getSetting = spyOn(settings, 'getChannelIntegrationValue').mockImplementation((key) => credentials[key])
+  botId = spyOn(telegramProvider, 'getBotUserId').mockResolvedValue('42')
+  findInstance = spyOn(ChannelInstance, 'findByProvider').mockResolvedValue(instance)
+  findAgent = spyOn(Agent, 'findByThreadId').mockResolvedValue(null)
+  queue = spyOn(instance, 'queueForConcierge').mockResolvedValue('new-agent')
+  inbox = spyOn(InboxMessage, 'send').mockResolvedValue({} as InboxMessage)
+  globalThis.fetch = (async (url, init) => {
+    const method = String(url).split('/').at(-1)!
+    const body = JSON.parse(String(init?.body))
+    requests.push({ method, body })
+    if (transportError === 'network') throw new Error('fixture network failure')
+    if (transportError || (body.reply_to_message_id !== undefined && body.reply_to_message_id !== messageId)) {
+      return Response.json(
+        { ok: false, description: 'Bad Request: message to be replied not found' },
+        { status: transportError === 'api' ? 200 : 400 }
+      )
+    }
+    return Response.json({ ok: true, result: { message_id: 99 } })
+  }) as typeof fetch
+})
+
+afterEach(() => {
+  globalThis.fetch = originalFetch
+  getSetting.mockRestore()
+  botId.mockRestore()
+  findInstance.mockRestore()
+  findAgent.mockRestore()
+  queue.mockRestore()
+  inbox.mockRestore()
+})
+
+function update(text = 'hello', chatType = 'private', extra: Record<string, unknown> = {}) {
+  return {
+    update_id: 1,
+    message: {
+      message_id: messageId,
+      from: { id: 7, is_bot: false, first_name: 'Test' },
+      chat: { id: Number(chatType === 'private' ? chatId : groupChatId), type: chatType },
+      text,
+      ...extra,
+    },
+  }
+}
+function receive(payload: unknown = update(), secret = 'fixture-secret') {
+  return app.request('/webhooks/channels/telegram', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-telegram-bot-api-secret-token': secret },
+    body: JSON.stringify(payload),
+  })
+}
+function expectConfigurationReply(expectedChatId = chatId) {
+  expect(requests).toEqual([
+    {
+      method: 'sendMessage',
+      body: {
+        chat_id: expectedChatId,
+        text: configurationError,
+        parse_mode: 'Markdown',
+        reply_to_message_id: messageId,
+      },
+    },
+  ])
+  expect(queue).not.toHaveBeenCalled()
+  expect(inbox).not.toHaveBeenCalled()
+}
+
+describe('Telegram received-message routing', () => {
+  for (const text of ['hello', '/tau ask hello', '/tau status']) {
+    it(`replies with a safe configuration error, not Thinking, for an unmapped new chat (${text})`, async () => {
+      instance.channelSquadMap = { 'different-chat': 'other-squad' }
+      const response = await receive(update(text))
+      expect(response.status).toBe(200)
+      expectConfigurationReply()
+    })
+  }
+
+  it('sends a visible configuration reply when no channel instance matches (HTTP ok alone is not a reply)', async () => {
+    findInstance.mockResolvedValue(null)
+    expect((await receive()).status).toBe(200)
+    expectConfigurationReply()
+  })
+
+  it('sends a visible configuration reply when the integration bot ID is absent', async () => {
+    delete credentials.TELEGRAM_BOT_ID
+    expect((await receive()).status).toBe(200)
+    expect(findInstance).not.toHaveBeenCalled()
+    expectConfigurationReply()
+  })
+
+  for (const text of ['hello', '/tau ask hello']) {
+    for (const route of ['default', 'override', 'override-without-default']) {
+      it(`preserves ${route} routing for ${text}`, async () => {
+        instance.defaultSquadId = route === 'override-without-default' ? null : 'default-squad'
+        instance.channelSquadMap = route === 'default' ? {} : { [chatId]: 'override-squad' }
+        expect((await receive(update(text))).status).toBe(200)
+        expect(requests).toHaveLength(1)
+        expect(requests[0]).toMatchObject({
+          method: 'sendMessage',
+          body: { text: '_Thinking..._', reply_to_message_id: messageId },
+        })
+        expect(queue).toHaveBeenCalledTimes(1)
+        const inbound = queue.mock.calls[0]![0]
+        expect(instance.resolveTargetSquad(inbound)).toBe(route === 'default' ? 'default-squad' : 'override-squad')
+        expect(inbound.responseContext).toMatchObject({ channelId: chatId, threadId: chatId, messageToEdit: '99' })
+      })
+    }
+  }
+
+  it('reuses an addressable chat concierge without a default and replies to the message ID, not the chat ID', async () => {
+    findAgent.mockResolvedValue({ id: 'existing-agent' } as Agent)
+    expect((await receive()).status).toBe(200)
+    expect(requests[0]).toMatchObject({ body: { text: '_Thinking..._', reply_to_message_id: messageId } })
+    expect(queue).not.toHaveBeenCalled()
+    expect(inbox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recipientId: 'existing-agent',
+        metadata: expect.objectContaining({
+          channelContext: expect.objectContaining({ threadId: chatId, messageToEdit: '99' }),
+        }),
+      })
+    )
+  })
+
+  it('keeps help available without a default', async () => {
+    expect((await receive(update('/tau help'))).status).toBe(200)
+    expect(requests[0]!.body.text).toContain('Commands:')
+    expect(queue).not.toHaveBeenCalled()
+  })
+
+  it('keeps slash-command reuse independent of the missing default', async () => {
+    findAgent.mockResolvedValue({ id: 'existing-agent' } as Agent)
+    expect((await receive(update('/tau ask hello'))).status).toBe(200)
+    expect(queue).not.toHaveBeenCalled()
+    expect(inbox).toHaveBeenCalledTimes(1)
+    expect(requests).toEqual([])
+  })
+
+  for (const failure of ['http', 'api', 'network'] as const) {
+    it(`does not claim a visible reply or queue a concierge when sending the config error fails (${failure})`, async () => {
+      transportError = failure
+      expect((await receive()).status).toBe(500)
+      expect(requests).toHaveLength(1)
+      expect(requests[0]!.body.text).toBe(configurationError)
+      expect(queue).not.toHaveBeenCalled()
+      expect(inbox).not.toHaveBeenCalled()
+    })
+  }
+
+  it('does not queue when the initial Thinking send fails on a valid route', async () => {
+    instance.defaultSquadId = 'default-squad'
+    transportError = 'http'
+    expect((await receive()).status).toBe(500)
+    expect(requests[0]!.body.text).toBe('_Thinking..._')
+    expect(queue).not.toHaveBeenCalled()
+  })
+})
+
+describe('Telegram silence before Thinking', () => {
+  for (const [name, payload] of [
+    ['non-message update', { update_id: 1 }],
+    ['photo without text', update('', 'private', { photo: [{ file_id: 'fixture' }] })],
+    ['plain group text', update('hello', 'group')],
+    ['plain supergroup text', update('hello', 'supergroup')],
+  ] as const) {
+    it(`ignores ${name} without attempting a bot reply`, async () => {
+      expect((await receive(payload)).status).toBe(200)
+      expect(requests).toEqual([])
+      expect(findInstance).not.toHaveBeenCalled()
+      expect(queue).not.toHaveBeenCalled()
+    })
+  }
+
+  it('rejects a bad webhook signature without sending to an untrusted chat', async () => {
+    expect((await receive(update(), 'wrong-secret')).status).toBe(401)
+    expect(requests).toEqual([])
+    expect(findInstance).not.toHaveBeenCalled()
+  })
+
+  it('cannot send a configuration reply without this integration bot token', async () => {
+    delete credentials.TELEGRAM_BOT_TOKEN
+    findInstance.mockResolvedValue(null)
+    expect((await receive()).status).toBe(500)
+    expect(requests).toEqual([])
+    expect(queue).not.toHaveBeenCalled()
+  })
+
+  it('rejects a webhook when the integration is disabled or its secret is unavailable', async () => {
+    credentials = {}
+    expect((await receive()).status).toBe(401)
+    expect(requests).toEqual([])
+    expect(findInstance).not.toHaveBeenCalled()
+  })
+
+  for (const [name, payload] of [
+    ['command', update('/tau ask hello', 'group')],
+    ['reply', update('hello', 'group', { reply_to_message: { message_id: 10, from: { id: 42, is_bot: true } } })],
+  ] as const) {
+    it(`responds to a group ${name} when routing is missing`, async () => {
+      expect((await receive(payload)).status).toBe(200)
+      expectConfigurationReply(groupChatId)
+    })
+  }
+})

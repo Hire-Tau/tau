@@ -2,6 +2,7 @@ import type { SessionUsage, MessageMetadata, Squad as SquadJson } from '@tau/sha
 import { AgentRunner } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
 import { Squad } from '../Squad'
+import { isAssistantDelegate } from '../../services/assistant-agents'
 import { getSquadManagerCliHelp } from '../../lib/utils/cli-help'
 import { prompt, interpolateTemplate, buildActiveSchedulesPrompt, buildPlatformUrlsPrompt } from '../../lib/prompts'
 import { composeAgentTypePrompt } from '../../services/agent-types/compose-prompt'
@@ -37,6 +38,10 @@ import { readSquadMemoryFile } from '../../services/memory/paths'
 import { buildModelOverridePrompt } from '../../lib/prompts/model-overrides-prompt'
 
 export class SquadManagerRunner extends AgentRunner {
+  protected async isAssistantDelegate(): Promise<boolean> {
+    return isAssistantDelegate(this.agent.id)
+  }
+
   private squad!: Squad
   private workspacePath!: string
 
@@ -295,7 +300,8 @@ export class SquadManagerRunner extends AgentRunner {
       'channelInstance' in this.agent.context &&
       this.agent.context.channelInstance
     )
-    const askHumanTool = isChannelConversation
+    const askHumanTool = isChannelConversation || (await this.isAssistantDelegate())
+
       ? null
       : createAsyncAskHumanTool(
           {
@@ -336,6 +342,7 @@ export class SquadManagerRunner extends AgentRunner {
             ...(isChannelConversation
               ? [createChannelRespondTool(), createChannelSendTool(this.agent.id), createChannelEditTool(this.agent.id)]
               : []),
+
             ...(setAgentPurposeTool ? [setAgentPurposeTool] : []),
             notifyContactTool,
             ...subagentLifecycleTools,

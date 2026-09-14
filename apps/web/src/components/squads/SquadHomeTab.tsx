@@ -78,7 +78,7 @@ export function SquadHomeTab({
             </p>
           </div>
           <Link
-            to={`${base}/consultant`}
+            to={`${base}/agents?newConsultant=1`}
             className="tau-button tau-button-primary inline-flex shrink-0 items-center gap-2 px-3 py-2 text-sm"
           >
             <ChatIcon className="h-4 w-4" />

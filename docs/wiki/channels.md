@@ -17,6 +17,7 @@ require a YAML file or a configuration-sync restart. You need `channels:create`
 to add routing and `channels:update` to change it; credential edits require the
 provider's integration permission (`integrations:<provider>:write`).
 
+
 The integration switch gates the transport; disabling Discord also stops its
 gateway, and saving a new token reconnects it. Slack clients pick up token
 changes on their next request.
@@ -74,6 +75,7 @@ revocation applies to the next message. Help and account linking do not start an
 agent and are available before this check. Notification commands can change only
 the squad routed to that channel.
 
+
 `/api/channel-links` is a personal authenticated-user API. A user starts a random,
 short-lived challenge in Tau, submits it through authenticated provider ingress,
 and confirms the displayed sender in Tau. Only hashes are stored. Confirmation
@@ -93,6 +95,7 @@ Telegram reuses one conversation per chat and responds to private messages, grou
 `/tau` commands, and replies to bot messages. Lookups are scoped to provider,
 instance, channel, thread, and the currently routed squad. A changed squad override
 does not resume an agent in the old squad.
+
 
 Telegram's persistent conversation ID is its chat ID. It must never be passed as
 `reply_to_message_id`: `postMessage.replyToMessageId` carries an optional incoming
@@ -209,6 +212,7 @@ If neither resolves a squad, routing fails with a configuration error. New UI
 and API entries require a default squad. The consultant's later decision to
 consult another squad is separate from this initial routing.
 
+
 ## Channel consultants
 
 New channel conversations use `agentTypeId: consultant`, scoped to the resolved
@@ -269,6 +273,37 @@ Use separate bots for separate instances.
 - Verify `TELEGRAM_WEBHOOK_SECRET` matches what you set in `setWebhook`
 - Verify `TELEGRAM_BOT_ID` matches `botId` in your channel config
 - Check logs for webhook verification errors
+An HTTP 200 webhook acknowledgement is **not** proof of a visible bot reply.
+Telegram replies are separate `sendMessage` API requests. Complete silence,
+including no Thinking indicator, can happen at several distinct stages:
+
+1. **No delivery:** the webhook URL, TLS, ingress, or Telegram delivery may fail
+   before Tau receives anything. With authorized access, inspect Telegram's
+   `getWebhookInfo` and correlate receipt in Core logs. Do not change webhook
+   registration just to diagnose a missing reply.
+2. **Rejected delivery:** a disabled integration hides its credentials; a missing
+   or mismatched `TELEGRAM_WEBHOOK_SECRET` rejects the webhook with 401. Verify
+   the integration is enabled and the secret matches the registered webhook.
+3. **Ignored update:** only text messages are processed. Private plain text is
+   actionable without `/tau` or a reply. Group text requires `/tau` or a
+   reply-to-bot; photos without text and other non-message updates are ignored.
+4. **Missing bot/connection routing:** the credential settings' numeric
+   `TELEGRAM_BOT_ID` must match `providerConfig.botId` on the connection. Missing
+   IDs or connections now produce an in-chat configuration error when sending
+   is possible; older versions only returned an HTTP acknowledgement here.
+5. **Send failure:** a missing/invalid bot token, blocked bot, unavailable chat,
+   invalid reply target, or HTTP/network/API error can prevent either Thinking
+   or the configuration reply. Check the outgoing API result, not just the
+   incoming webhook status. Chat IDs identify reused concierges, while Telegram
+   `reply_to_message_id` must be the incoming **message** ID. Older versions used
+   the chat ID for Thinking in an existing chat, which could be rejected.
+
+A missing default alone does not establish the cause of a reported silent
+message. Before diagnosing an incident, collect the bot identity, deployment,
+private/group context, message time and timezone, and authorized receipt/send
+logs. Keep bot tokens, webhook secrets, credential-bearing URLs, and private
+message contents out of shared diagnostics.
+
 
 ### Commands not appearing
 

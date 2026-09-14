@@ -10,6 +10,7 @@ tier: standard
 # Federation permissions (register + send) live on the default-concierge role
 # (config/roles/defaults.yaml), which concierge maps to 1:1 — no per-type extra scopes needed.
 includes:
+  - entity-references
   - rules
   - subagents
 

@@ -1219,6 +1219,13 @@
       "when": 1789354285955,
       "tag": "0173_exotic_banshee",
       "breakpoints": true
+    },
+    {
+      "idx": 174,
+      "version": "7",
+      "when": 1789356859639,
+      "tag": "0174_elite_rage",
+      "breakpoints": true
     }
   ]
 }

@@ -3,11 +3,14 @@ import { SQUAD_TABS, SQUAD_SETTINGS_SECTIONS } from '../lib/squadNavigation'
 import { ALL_SECTIONS } from '../components/settings/settingsSections'
 import { visibleNavItems } from '../components/navModel'
 import { buildVoiceNavigationGuide } from './navigationGuide'
-import { navigationTool } from './tools/navigationTool'
+import { createAssistantTools } from './tools/assistantTools'
+
+const navigationTool = createAssistantTools().find((t) => t.definition.name === 'navigate')!
 
 test('voice navigation follows the shared UI definitions and canonical squad paths', () => {
   const guide = buildVoiceNavigationGuide()
-  expect(navigationTool.definition.description).toBe(guide)
+  expect(navigationTool.definition.description.length).toBeLessThan(600)
+  expect(navigationTool.definition.description).toContain('Navigation section')
   for (const tab of SQUAD_TABS) expect(guide).toContain(`${tab.label}: /squads/:squadId/${tab.path}`)
   for (const section of SQUAD_SETTINGS_SECTIONS)
     expect(guide).toContain(`/squads/:squadId/settings?section=${section.id}`)
@@ -25,5 +28,5 @@ test('settings navigation includes a description for every destination without i
     expect(section.description.length).toBeGreaterThan(10)
     expect(guide).toContain(section.description)
   }
-  expect(guide).toContain('not live form values')
+  expect(guide).toContain('not live values')
 })

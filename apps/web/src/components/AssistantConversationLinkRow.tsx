@@ -18,7 +18,7 @@ export function AssistantConversationLinkRow({
       type="button"
       onClick={() => onOpen(resolved)}
       className="tau-button my-1 flex w-full min-w-0 items-center gap-3 px-3 py-2.5 text-left hover:bg-selection"
-      aria-label={`Open conversation: ${resolved.label}`}
+      aria-label={`${conversation.kind === 'background' || conversation.kind === 'squad' ? 'View task' : 'Open conversation'}: ${resolved.label}`}
     >
       {agent.data ? (
         <AgentActivityDot status={agent.data.status} className="shrink-0" />
@@ -27,7 +27,9 @@ export function AssistantConversationLinkRow({
       )}
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium">{resolved.label}</span>
-        <span className="block text-xs text-muted">Open conversation</span>
+        <span className="block text-xs text-muted">
+          {conversation.kind === 'background' || conversation.kind === 'squad' ? 'View task' : 'Open conversation'}
+        </span>
       </span>
       <ChevronRightIcon className="h-4 w-4 shrink-0 text-muted" />
     </button>

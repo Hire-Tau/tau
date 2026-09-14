@@ -3580,7 +3580,6 @@ export const assistantConversations = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     title: text('title').notNull().default('New conversation'),
-    managerAgentId: uuid('manager_agent_id').references(() => agents.id, { onDelete: 'set null' }),
     editor: jsonb('editor').$type<import('@tau/shared').AssistantEditorState>(),
     inboxConsumerId: uuid('inbox_consumer_id'),
     inboxConsumerExpiresAt: timestamp('inbox_consumer_expires_at', { withTimezone: true }),
@@ -3588,6 +3587,31 @@ export const assistantConversations = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index('idx_assistant_conversations_owner_updated').on(table.ownerUserId, table.updatedAt)]
+)
+
+export const assistantConversationAgents = pgTable(
+  'assistant_conversation_agents',
+  {
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => assistantConversations.id, { onDelete: 'cascade' }),
+    // NULL = the conversation's general helper (system-manager); otherwise the owned consultant for that squad.
+    squadId: uuid('squad_id').references(() => squads.id, { onDelete: 'cascade' }),
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.conversationId, table.agentId] }),
+    uniqueIndex('uq_assistant_conversation_agents_general')
+      .on(table.conversationId)
+      .where(sql`${table.squadId} IS NULL`),
+    uniqueIndex('uq_assistant_conversation_agents_squad')
+      .on(table.conversationId, table.squadId)
+      .where(sql`${table.squadId} IS NOT NULL`),
+    index('idx_assistant_conversation_agents_agent').on(table.agentId),
+  ]
 )
 
 export const assistantEntries = pgTable(

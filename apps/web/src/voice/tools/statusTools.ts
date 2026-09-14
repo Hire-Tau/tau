@@ -1,11 +1,22 @@
 import { resolveVoiceSquadId } from '../squadReferences'
 import { getActiveExecution, getAgent } from '../../api/agents'
-import { listAllWorkStreams, listSquadAgents, listSquads, listWorkStreams } from '../../api/squads'
+import { getWorkStream, listAllWorkStreams, listSquadAgents, listSquads, listWorkStreams } from '../../api/squads'
 import { selectWorkStreamPresentationState, type WorkStream } from '@tau/shared'
 import type { VoiceAssistantTool, VoiceToolExecutor } from './types'
 
 export function voiceWorkStreamStatus(workStream: WorkStream) {
   return selectWorkStreamPresentationState(workStream)
+}
+
+const FINISHED = new Set(['done', 'canceled'])
+
+function summarize(workStream: WorkStream) {
+  return {
+    id: workStream.id,
+    title: workStream.title,
+    status: voiceWorkStreamStatus(workStream),
+    squadId: workStream.squadId,
+  }
 }
 
 export function createStatusTools(deps: {
@@ -15,92 +26,68 @@ export function createStatusTools(deps: {
   listAllWorkStreams: typeof listAllWorkStreams
   listSquadAgents: typeof listSquadAgents
   listWorkStreams: typeof listWorkStreams
+  getWorkStream: typeof getWorkStream
 }) {
-  const getStatusTool: VoiceAssistantTool<VoiceToolExecutor> = {
+  const getWorkTool: VoiceAssistantTool<VoiceToolExecutor> = {
     definition: {
       type: 'function',
-      name: 'get_status',
+      name: 'get_work',
       description:
-        "Get the current status of the system, a specific squad, or a specific agent. Use to answer questions about what's happening.",
+        'Read live work. With no arguments: active work streams across every accessible squad. With squadId: that squad’s agents (with status) and its work streams. With workStreamId: one work stream in full (description, status, assignments, waits). The squads themselves are already listed in your instructions.',
       parameters: {
         type: 'object',
         properties: {
-          scope: {
-            type: 'string',
-            enum: ['overview', 'squad', 'agent'],
-            description: "'overview' for all squads, 'squad' for a specific squad's agents, 'agent' for one agent",
-          },
-          id: {
-            type: 'string',
-            description:
-              'Full squad UUID or squad URL slug for squad scope; full agent ID for agent scope. Required except for overview.',
+          squadId: { type: 'string', description: 'Full squad ID or URL slug. Not with workStreamId.' },
+          workStreamId: { type: 'string', description: 'Work stream ID. Not with squadId.' },
+          includeFinished: {
+            type: 'boolean',
+            description: 'Include done and canceled work in list results. Default false.',
           },
         },
-        required: ['scope'],
       },
     },
     async execute(args) {
-      const { scope, id } = args as { scope: string; id?: string }
-      switch (scope) {
-        case 'overview': {
-          const squads = await deps.listSquads('active')
-          const streams = await deps.listAllWorkStreams()
+      const { squadId, workStreamId, includeFinished } = args as {
+        squadId?: string
+        workStreamId?: string
+        includeFinished?: boolean
+      }
+      const keep = (workStream: WorkStream) => includeFinished || !FINISHED.has(voiceWorkStreamStatus(workStream))
+      if (squadId && workStreamId) return { error: 'Pass squadId or workStreamId, not both' }
+      if (workStreamId) {
+        const id = workStreamId.replace(/^work:/, '')
+        return { workStream: await deps.getWorkStream(id) }
+      }
+      if (squadId) {
+        const resolved = resolveVoiceSquadId(squadId, await deps.listSquads())
+        if (!resolved)
           return {
-            squads: squads.map((s) => ({
-              id: s.id,
-              name: s.name,
-              purpose: s.purpose,
-              status: s.status,
-            })),
-            activeWorkStreams: streams.filter((workStream) => voiceWorkStreamStatus(workStream) === 'in_progress')
-              .length,
-            totalWorkStreams: streams.length,
+            error: `Unknown or ambiguous squad reference: ${squadId}. Use a full squad ID from your instructions.`,
           }
-        }
-        case 'squad': {
-          if (typeof id !== 'string' || !id.trim()) return { error: 'Squad ID or slug required' }
-          const squadId = resolveVoiceSquadId(id, await deps.listSquads())
-          if (!squadId)
-            return { error: `Unknown or ambiguous squad reference: ${id}. Use a full squad ID from overview.` }
-          const [agents, streams] = await Promise.all([deps.listSquadAgents(squadId), deps.listWorkStreams(squadId)])
-          return {
-            agents: agents.map((a) => ({
-              id: a.id,
-              type: a.agentTypeId,
-              status: a.status,
-            })),
-            workStreams: streams.map((w) => ({
-              id: w.id,
-              title: w.title,
-              status: voiceWorkStreamStatus(w),
-            })),
-          }
-        }
-        case 'agent': {
-          if (typeof id !== 'string' || !id.trim()) return { error: 'Agent ID required' }
-          const agent = await deps.getAgent(id)
-          const exec = await deps.getActiveExecution(agent.id)
-          return {
+        const [agents, streams] = await Promise.all([deps.listSquadAgents(resolved), deps.listWorkStreams(resolved)])
+        return {
+          agents: agents.map((agent) => ({
             id: agent.id,
             type: agent.agentTypeId,
             status: agent.status,
-            execution: exec.active ? { status: exec.status } : null,
-          }
+            name: agent.metadata?.name,
+          })),
+          workStreams: streams.filter(keep).map(summarize),
         }
-        default:
-          return { error: `Unknown scope: ${scope}` }
       }
+      const streams = await deps.listAllWorkStreams()
+      return { workStreams: streams.filter(keep).map(summarize) }
     },
   }
-
-  return { getStatusTool, statusTools: [getStatusTool] }
+  return { getWorkTool, statusTools: [getWorkTool] }
 }
 
-export const { getStatusTool, statusTools } = createStatusTools({
+export const { getWorkTool, statusTools } = createStatusTools({
   getAgent,
   getActiveExecution,
   listSquads,
   listAllWorkStreams,
   listSquadAgents,
   listWorkStreams,
+  getWorkStream,
 })

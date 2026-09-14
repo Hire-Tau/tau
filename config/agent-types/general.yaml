@@ -4,6 +4,7 @@ description: A versatile agent for various tasks
 model: ''
 tier: standard
 includes:
+  - entity-references
   - rules
   - squad-rules
 tools: {}

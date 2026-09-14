@@ -9,6 +9,7 @@ import { WebSocketContext } from '../hooks/useWebSocket'
 let permissions = new Set<string>()
 
 import { SquadDetailPage } from './SquadDetailPage'
+import { SquadAgentThreads } from './squads/SquadAgentThreads'
 import { activityAccessSignature } from './squads/squadActivityView'
 
 const dependencies = {
@@ -309,7 +310,7 @@ test('a cold slug route keeps placeholders until canonical queries settle withou
       )
     )
     const newChat = [...container.querySelectorAll('a')].find((link) => link.textContent?.includes('New chat'))!
-    expect(newChat.getAttribute('href')).toBe('/squads/tau/consultant')
+    expect(newChat.getAttribute('href')).toBe('/squads/tau/agents?newConsultant=1')
     expect(container.textContent).not.toContain('No active work streams')
     expect(requests.some((path) => path.includes('/squads/tau'))).toBe(false)
     await dom.act(async () => pending.get('/api/squads')!(new Response(JSON.stringify([canonical]))))
@@ -333,5 +334,62 @@ test('a cold slug route keeps placeholders until canonical queries settle withou
   } finally {
     client.clear()
     await dom.cleanup()
+  }
+})
+
+test('Home New chat opens the Chats composer instead of selecting an existing conversation', async () => {
+  const { acquireDomHarness } = await import('../test/domHarness')
+  const dom = await acquireDomHarness({ url: 'http://localhost/squads/tau' })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  const canonical = { ...squad, name: 'Tau' }
+  const consultant = {
+    id: 'consultant-1',
+    agentTypeId: 'consultant',
+    status: 'idle',
+    metadata: { name: 'Existing consultant' },
+    createdAt: now,
+  } as Agent
+  client.setQueryData(queryKeys.squads.list(), [canonical])
+  client.setQueryData(queryKeys.squads.detail(squad.id), canonical)
+  client.setQueryData(queryKeys.squads.agentsWithRecent(squad.id), { agents: [consultant], recentlyTerminated: [] })
+  client.setQueryData(queryKeys.squads.activeWorkStreams(squad.id), [])
+  client.setQueryData(queryKeys.auth.permissions(squad.id), { permissions: ['agents:read', 'agents:run'] })
+  const Threads = (props: React.ComponentProps<typeof SquadAgentThreads>) => (
+    <SquadAgentThreads
+      {...props}
+      dependencies={{
+        Chat: () => <div data-testid="consultant-chat-composer" />,
+        AgentConversation: () => <div data-testid="existing-conversation" />,
+      }}
+    />
+  )
+  const { root, container } = dom.createRoot()
+  try {
+    await dom.act(async () =>
+      root.render(
+        <MemoryRouter initialEntries={['/squads/tau']}>
+          <QueryClientProvider client={client}>
+            <Routes>
+              <Route
+                path="/squads/:squadId/:tab?"
+                element={<SquadDetailPage dependencies={{ ...dependencies, SquadAgentThreads: Threads }} />}
+              />
+            </Routes>
+          </QueryClientProvider>
+        </MemoryRouter>
+      )
+    )
+    expect(container.querySelector('[data-active-tab="home"]')).not.toBeNull()
+    const newChat = [...container.querySelectorAll('a')].find((link) => link.textContent?.includes('New chat'))!
+    await dom.act(async () => newChat.click())
+    expect(container.querySelector('[data-active-tab="agents"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="consultant-chat-composer"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="existing-conversation"]')).toBeNull()
+    expect(
+      container.querySelector('[title="Existing consultant · consultant · consultant-1"]')?.getAttribute('aria-pressed')
+    ).toBe('false')
+  } finally {
+    await dom.cleanup()
+    client.clear()
   }
 })
