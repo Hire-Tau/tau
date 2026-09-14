@@ -355,3 +355,27 @@ describe('ensureAgentSandbox', () => {
     expect(ws).toHaveBeenCalledTimes(1)
   })
 })
+
+test('consultant warmup shares a squad runtime without installing an agent key or using an individual machine pin', async () => {
+  stubSkills()
+  const owner = await Squad.create({ name: `shared-warmup-${crypto.randomUUID()}`, purpose: 'test' })
+  const ws = spyOn(ensureModule, 'ensureWorkspaceSandbox').mockResolvedValue('/w')
+  const sq = spyOn(ensureModule, 'ensureSquadSandbox').mockResolvedValue('/w')
+  const identity = spyOn(identityModule, 'ensureAgentIdentity').mockResolvedValue('/identity')
+  restores.push(ws, sq, identity)
+  const agent = {
+    ...squadAgent(crypto.randomUUID(), owner.id),
+    agentTypeId: 'consultant',
+    machineId: 'individual-machine',
+    getSandboxId: async () => `consultants_${owner.id}`,
+  }
+  try {
+    expect(await ensureAgentSandbox(agent)).toBe('ensured')
+    expect(ws.mock.calls[0]?.[0]).toMatchObject({ sandboxId: `consultants_${owner.id}`, squadId: owner.id })
+    expect(ws.mock.calls[0]?.[0].machineId).toBeUndefined()
+    expect(identity).not.toHaveBeenCalled()
+  } finally {
+    const { squads } = await import('../../db')
+    await db.delete(squads).where(eq(squads.id, owner.id))
+  }
+})

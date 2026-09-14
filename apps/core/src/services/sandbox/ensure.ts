@@ -1,3 +1,6 @@
+import { consultantSandboxSquadId } from './consultant-sandbox'
+import { sandboxHasActiveExecution } from '../machines/sandbox-activity'
+import { RECENT_ACTIVITY_WINDOW_MS } from './squad-activity'
 /**
  * Sandbox setup orchestration.
  *
@@ -344,6 +347,11 @@ export async function ensureWorkspaceSandbox(
   await ensureAgentIdentityForSandbox(sandboxId)
   // The sandbox owner row is authoritative. Callers (warmup, runners, direct
   // projection refresh) cannot select a different generation/spec identity.
+  const consultantSquadId = consultantSandboxSquadId(sandboxId)
+  if (consultantSquadId && squadId !== consultantSquadId) throw new Error('Consultant sandbox squad mismatch')
+  const consultantSquad = consultantSquadId ? await Squad.find(consultantSquadId) : null
+  if (consultantSquadId && (!consultantSquad || consultantSquad.status !== 'active'))
+    throw new Error('Consultant squad is not active')
   const lifecycleGeneration = await resolveLifecycleGenerationForSandbox(sandboxId)
   onLifecycleGenerationResolved?.(lifecycleGeneration)
 
@@ -402,7 +410,7 @@ export async function ensureWorkspaceSandbox(
         k8s: {
           sandboxType: 'agent',
           alwaysOn: false,
-          idleTimeout: AGENT_IDLE_TIMEOUT_MS,
+          idleTimeout: consultantSquad ? RECENT_ACTIVITY_WINDOW_MS : AGENT_IDLE_TIMEOUT_MS,
           privateStorageKey: sandboxId,
         },
       }
@@ -518,7 +526,11 @@ export async function ensureWorkspaceSandbox(
   // mid-turn would kill in-flight work. The docker manager reuses the drifted
   // box now and reconciles on a later idle ensure.
   const dockerAgentId = sandboxId.startsWith('agent_') ? sandboxId.slice('agent_'.length) : null
-  const hasActiveSession = dockerAgentId ? deps.isSessionActive(dockerAgentId) : false
+  const hasActiveSession = dockerAgentId
+    ? deps.isSessionActive(dockerAgentId)
+    : consultantSquad
+      ? await sandboxHasActiveExecution(sandboxId)
+      : false
 
   const manager = deps.getSandboxManager()
   const sandboxOpts = {

@@ -1,3 +1,4 @@
+import { ensureConsultantSandbox } from './consultant-warmup'
 import { Squad } from '../../entities/Squad'
 import { ensureSquadSandbox } from './ensure'
 import { shouldKeepSquadWarm, type ShouldKeepSquadWarmDeps } from './keep-warm'
@@ -13,6 +14,7 @@ interface Logger {
 
 interface WarmupOptions {
   ensure?: typeof ensureSquadSandbox
+  ensureConsultant?: typeof ensureConsultantSandbox
   /** Injected keep-warm signal deps (test seam); production uses the defaults. */
   keepWarmDeps?: ShouldKeepSquadWarmDeps
   /**
@@ -62,6 +64,7 @@ export async function warmupActiveSquadSandboxes(log: Logger, options: WarmupOpt
           restartManagedLocalDeployments: false,
           boxLiveness: options.resolveBoxLiveness?.(Squad.getSandboxId(squad.id)),
         })
+        await (options.ensureConsultant ?? ensureConsultantSandbox)(squad, options.resolveBoxLiveness)
       } catch (err) {
         log.warn(`Squad sandbox warmup failed for ${squad.id}:`, err)
       }

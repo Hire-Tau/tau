@@ -371,3 +371,23 @@ workspaces, memory and private dirs are host bind mounts.
 | `socket`  | `docker-socket`                                      |
 | `auto`    | choose `docker-sysbox` or `docker-socket` explicitly |
 | `docker`  | choose `docker-sysbox` or `docker-socket` explicitly |
+
+## Consultant conversations
+
+A squad's consultant chats share one light runtime (`consultants_<squad-id>`).
+Active squads warm this runtime alongside their squad workspace, so opening
+another consultant chat normally reuses an already prepared environment. The
+runtime can idle when squad activity expires; an always-on squad keeps it warm.
+
+Each conversation retains its own history and short-term memory. Its shell starts
+in `<private-root>/conversations/<agent-id>`, and each command receives the calling
+agent's Tau token. Scratch directories prevent accidental filename collisions;
+they are not security boundaries between consultants in the same squad. The
+runtime, installed tools, browser state, and shell configuration are shared, so
+coordinate changes and use squad resource slots where appropriate. Federation
+signing requires dedicated key custody and is unavailable to shared consultants.
+
+Terminating or deleting an individual conversation does not stop the shared
+runtime. Archiving the squad removes it. Existing consultant chats immediately
+use the shared runtime; old per-agent files are not migrated, and old personal
+sandboxes remain eligible for normal idle/agent cleanup.

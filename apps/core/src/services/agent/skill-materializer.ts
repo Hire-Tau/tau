@@ -1,3 +1,4 @@
+import { consultantSandboxSquadId } from '../sandbox/consultant-sandbox'
 import { mkdir, readFile, readdir, rm, writeFile } from 'fs/promises'
 import { dirname, join, relative } from 'path'
 import { Skill } from '../../entities/Skill'
@@ -99,5 +100,5 @@ export function materializeSandboxSkills(
   sandboxId: string,
   skillRefs: string[] | null | undefined
 ): Promise<string[] | undefined> {
-  return materializeSkills(skillRefs, getSandboxSkillsDir(sandboxId), true)
+  return materializeSkills(skillRefs, getSandboxSkillsDir(sandboxId), !consultantSandboxSquadId(sandboxId))
 }

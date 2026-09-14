@@ -83,6 +83,7 @@ function resolve(entry: EventEntry): ResolvedRoute | null {
     if (sandboxId.startsWith('agent_')) {
       return { topic: 'agents', instanceTopic: `agents:${sandboxId.slice('agent_'.length)}` }
     }
+    if (sandboxId.startsWith('consultants_')) return { topic: 'agents' }
     if (sandboxId.startsWith('system_manager_')) {
       // A per-user system-manager box backs many agents — collection topic only.
       return { topic: 'agents' }

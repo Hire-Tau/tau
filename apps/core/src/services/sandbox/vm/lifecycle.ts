@@ -1,3 +1,4 @@
+import { consultantSandboxSquadId } from '../consultant-sandbox'
 /**
  * The `vm-sandbox-lifecycle` periodic loop — the vm-runtime counterpart to the
  * k8s manager's 60s reconciliation loop (k8s/manager.ts:699-721). The vm runtime
@@ -381,7 +382,7 @@ export function createVmKeepAlive(deps: VmKeepAliveDeps): (sandboxId: string) =>
     hasRecentWorkStreamActivity: deps.hasRecentWorkStreamActivity,
   }
   return async (sandboxId) => {
-    const squadId = getSquadIdFromSandbox(sandboxId)
+    const squadId = consultantSandboxSquadId(sandboxId) ?? getSquadIdFromSandbox(sandboxId)
     if (squadId !== null) {
       const squad = await deps.findSquad(squadId)
       // shouldKeepSquadWarm already composes deploy + work-stream, so this is the
@@ -455,6 +456,7 @@ export interface VmSetupOwnerRecoveryDeps<TAgent = unknown> {
   classifyAgentOwner(agentId: string): Promise<VmSetupAgentOwner<TAgent>>
   ensureAgent(agent: TAgent): Promise<void>
   ensureSystemManager(sandboxId: string): Promise<void>
+  ensureConsultants?(squadId: string): Promise<void>
   /**
    * Retire a ready box whose owner is gone. Without this, a box owned by a
    * terminated agent stays 'ready' with no setup row and the sweep re-attempts
@@ -475,6 +477,8 @@ export async function recoverVmSetupOwner<TAgent>(
   }
   if (await deps.reconcileTracked(sandboxId)) return
   if (sandboxId.startsWith('squad_')) return deps.ensureSquad(sandboxId.slice('squad_'.length))
+  const consultantSquad = consultantSandboxSquadId(sandboxId)
+  if (consultantSquad && deps.ensureConsultants) return deps.ensureConsultants(consultantSquad)
   if (sandboxId.startsWith('system_manager_')) return deps.ensureSystemManager(sandboxId)
   throw new Error('unsupported durable sandbox id')
 }
@@ -511,6 +515,10 @@ export async function buildProductionTickDeps(): Promise<VmLifecycleTickDeps> {
       ensureSquad: (id) => ensureSquadSandbox(id).then(() => undefined),
       classifyAgentOwner: productionVmSetupAgentOwnerRecovery.classifyAgentOwner,
       ensureAgent: (agent) => ensureAgentSandbox(agent).then(() => undefined),
+      ensureConsultants: async (id) => {
+        const { ensureConsultantSandbox } = await import('../consultant-warmup')
+        await ensureConsultantSandbox(id)
+      },
       ensureSystemManager: (id) =>
         resolveManager()
           .ensureSandbox(id, {

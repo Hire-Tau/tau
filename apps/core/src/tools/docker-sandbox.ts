@@ -1,3 +1,5 @@
+import { consultantSandboxSquadId } from '../services/sandbox/consultant-sandbox'
+import { resolveAgentBashCwd } from './k8s-sandbox'
 /**
  * Docker Sandbox Tools
  *
@@ -118,7 +120,8 @@ export function createDockerSandboxedCodingTools(
   sandboxId: string,
   tauToken?: string,
   squadId?: string,
-  invocationOwnerId?: string
+  invocationOwnerId?: string,
+  agentId?: string
 ): SandboxedToolWithKey[] {
   // read/write/edit take absolute paths (cwd-independent). The docker bash exec cwd
   // is controlled by the spawn hook's -w (the container workspaceMount), so it is
@@ -131,7 +134,13 @@ export function createDockerSandboxedCodingTools(
   if (!manager.getClientForSandbox(sandboxId)) {
     throw new Error(`No sandbox executor found for ${sandboxId}. Ensure ensureSandbox() was called.`)
   }
-  const bash = createK8sSandboxedBashTool(workspaceMount, sandboxId, manager, tauToken, { invocationOwnerId })
+  const bash = createK8sSandboxedBashTool(
+    consultantSandboxSquadId(sandboxId) ? resolveAgentBashCwd(sandboxId, agentId) : workspaceMount,
+    sandboxId,
+    manager,
+    tauToken,
+    { invocationOwnerId, agentId }
+  )
   return [
     { ...read, key: 'read' },
     { ...write, key: 'write' },
