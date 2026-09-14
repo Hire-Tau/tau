@@ -56,7 +56,8 @@ research phases need no worktree; changes to plan documents in a repository do.
 4. For repository changes, prepare and verify the phase branch/worktree and
    record `git.branch`, `git.worktree`, and `git.baseBranch`.
 5. Create the work with `tau workstream create` and `--workflow <preset-id>`
-   or `--flow source.yaml`. Set dependencies with `--depends-on` and record the
+   or `--flow-content '<JSON source>'` for short payloads; use `--flow-stdin`
+   with a quoted heredoc for longer JSON/YAML. Saved definitions can still use `--flow`. Set dependencies with `--depends-on` and record the
    initiative and phase identifiers in metadata.
 6. Let flow outcomes, return paths, and joins route work. Participants start
    lazily when needed. Do not pre-spawn a crew, manually assign phase handoffs,

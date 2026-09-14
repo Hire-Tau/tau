@@ -31,16 +31,60 @@ Valid assistant edits apply directly to the draft. Undo/Redo covers both assista
 
 A saved preset has an ID, visibility scope, revision, and definition. Scopes are instance, squad, or private user. Presets participate in configuration synchronization and explicit overrides. Editing a preset does not rewrite a running stream: creation resolves a durable snapshot of the definition and participant settings.
 
-An inline source contains `{ kind: inline, definition: ... }`. It is durable within its stream but does not add a catalog preset. Managers can author one for a single job, inspect it with `tau workflow resolve source.yaml --squad SQUAD_ID`, then use `tau workstream create "Title" --squad SQUAD_ID --flow source.yaml`. Saved presets can also be customized at creation. The web and mobile interfaces support selecting presets and supplying inline definitions; web includes structured editing and a graph preview.
+An inline source contains `{ kind: inline, definition: ... }`. It is durable within its stream but does not add a catalog preset. Managers can author one for a single job, inspect it with `tau workflow resolve --content '<JSON source>' --squad SQUAD_ID`, then use `tau workstream create "Title" --squad SQUAD_ID --flow-content '<JSON source>'`. For longer JSON/YAML, prefer `--stdin` on resolve and `--flow-stdin` on create with quoted heredocs; no temporary file is required. Saved presets can also be customized at creation. The web and mobile interfaces support selecting presets and supplying inline definitions; web includes structured editing and a graph preview.
 
 ```sh
-tau workflow create preset.yaml
-tau workflow update PRESET_ID preset.yaml --revision REVISION_FROM_GET
+tau workflow create --content '<JSON preset>'
+tau workflow update PRESET_ID --content '<JSON preset>' --revision REVISION_FROM_GET
 tau workflow export PRESET_ID
 tau workflow template-diff PRESET_ID
 tau workflow revert PRESET_ID --revision REVISION_FROM_GET
 tau workflow disable PRESET_ID --revision REVISION_FROM_GET
 ```
+
+## Structured CLI input
+
+Choose **one** explicit source. Prefer single-quoted `--content` JSON for short
+payloads and a quoted heredoc or pipe for longer JSON/YAML. YAML is a shell
+string, not a native shell object; quote it rather than letting the shell expand
+it. Do not create a temporary file just to pass a payload.
+
+| Commands                                                           | Inline                         | Stdin          | Optional saved file              |
+| ------------------------------------------------------------------ | ------------------------------ | -------------- | -------------------------------- |
+| `workflow create`, `workflow update ID`, `workflow resolve`        | `--content '<JSON/YAML>'`      | `--stdin`      | positional file or `--file FILE` |
+| `workstream advance ID`                                            | `--content '<JSON/YAML>'`      | `--stdin`      | `--file FILE`                    |
+| `workstream create TITLE`, `schedule create`, `schedule update ID` | `--flow-content '<JSON/YAML>'` | `--flow-stdin` | `--flow FILE`                    |
+
+Creation/scheduling also accept `--workflow ID` instead of a structured source;
+omitting all workflow selectors preserves inheritance (or leaves an update's
+workflow unchanged). `resolve` accepts a source envelope; workstream/schedule
+inputs additionally accept a raw definition. Create/update presets use an envelope
+with `id` and `definition`, not a source. Update still requires the inspected
+`--revision`; advance still requires the inspected version/attempt and unchanged
+retry `--request-id`. `--json` only controls output.
+
+```bash
+tau workflow resolve --squad SQUAD_ID --content '{"kind":"preset","id":"solo"}'
+tau workflow resolve --squad SQUAD_ID --stdin <<'TAU_FLOW'
+kind: preset
+id: solo
+customizations:
+  - op: set-name
+    name: Daily audit
+TAU_FLOW
+
+printf '%s\n' '{"kind":"preset","id":"solo"}' | tau schedule update SCHEDULE_ID --flow-stdin
+```
+
+All sources are bounded to 1 MiB of UTF-8 and must contain one JSON/YAML object.
+Empty input, conflicting/repeated sources, duplicate or non-string mapping keys,
+unsupported tags/fields, malformed documents, cyclic aliases, and excessive
+nesting/alias expansion fail locally without sending an API request. Parsing is
+bounded to 100 levels, 100,000 expanded values, and an alias expansion factor of 100. Diagnostics omit source values. `--stdin`/`--flow-stdin` require a pipe or
+redirection and reject interactive terminals rather than waiting for typing.
+File arguments are always filenames, including `-`; stdin is never selected
+implicitly. Saved files remain useful for reusable or large authored definitions
+within the same bounds.
 
 ## Participants, steps, and handoffs
 
@@ -54,7 +98,7 @@ A return records feedback and where work must resume. Earlier reviews remain in 
 
 ```sh
 tau workstream flow STREAM_ID
-tau workstream advance STREAM_ID --file command.json --request-id REQUEST_UUID
+tau workstream advance STREAM_ID --content '{"expectedVersion":1,"attemptId":1,"action":"complete","outcome":"completed","evidence":"Tests passed"}' --request-id REQUEST_UUID
 ```
 
 Commands can complete, return, delegate, request completion-ready rework, or revise according to the flow and caller's permission. Authorized revisions may keep current attempt snapshots or restart with a new attempt/session. Retrying the same command uses the same request ID. Do not use legacy assignee/status edits to bypass a flow.

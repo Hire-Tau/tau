@@ -62,7 +62,7 @@ export function flowMessage(
     attempt.branch || activeWorkflowAttempts(run.state).length > 1
       ? 'Parallel agents share this workspace. Coordinate file ownership; use a stream-scoped blocker only for an issue affecting everyone.'
       : '',
-    `Submit with tau workstream advance ${stream.id} --file COMMAND.json. Choose the appropriate outcome above and replace the evidence string:\n\`\`\`json\n${JSON.stringify(example, null, 2)}\n\`\`\``,
+    `Prefer --content with single-quoted JSON for short commands, or --stdin with a quoted heredoc for longer evidence; no temporary file is needed. Choose the appropriate outcome above and replace the evidence string:\n\`\`\`bash\ntau workstream advance ${stream.id} --stdin <<'TAU_COMMAND'\n${JSON.stringify(example, null, 2)}\nTAU_COMMAND\n\`\`\``,
     `After submitting, end your turn if workStreamStatus is done. Otherwise continue any assignments returned directly to you in the command response; no separate inbox notification will be sent for them. Follow deliveryInstructions when present; if only another agent has work, end your turn. Read tau workstream flow ${stream.id} for current state or after a version conflict. Retry only if this attempt is still running.`,
   ]
     .filter(Boolean)

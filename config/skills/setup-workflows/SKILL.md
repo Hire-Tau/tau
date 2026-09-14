@@ -62,19 +62,23 @@ authority. Do not enable those policies without the user's authorization.
 For non-PR results, prefer `deliverable`; use `review-approval` when a human
 must approve final delivery.
 
-Preview each source before saving it:
+Preview each source before saving it. Prefer single-quoted inline JSON for short
+payloads and a quoted heredoc with `--stdin` for longer JSON/YAML, without a
+temporary file:
 
 ```bash
-tau workflow resolve source.yaml --squad <squad-id>
+tau workflow resolve --squad <squad-id> --content '{"kind":"preset","id":"solo"}'
+tau workflow resolve --squad <squad-id> --stdin <<'TAU_FLOW'
+kind: preset
+id: solo
+TAU_FLOW
 ```
 
-For a new reusable preset, write a YAML envelope with `id`, `description`,
+For a new reusable preset, provide a JSON/YAML envelope with `id`, `description`,
 `scope: {kind: squad, squadId: <squad-id>}`, and `definition`. Use an ID prefixed
-with the squad's short ID to avoid collisions. Then:
-
-```bash
-tau workflow create preset.yaml
-```
+with the squad's short ID to avoid collisions. Publish with `tau workflow create
+--content '<JSON preset>'` or `tau workflow create --stdin` and a quoted heredoc.
+Files remain optional for saved/reusable definitions (`tau workflow create preset.yaml`).
 
 Squad managers publish only inside their own squad scope. They do not need
 instance-wide catalog privileges. Private user presets remain private; copy
@@ -104,7 +108,9 @@ these choices.
 ## Use and revisit the setup
 
 For each new request, consult the recorded guidance and select the suitable
-source with `tau workstream create --workflow <id>` or `--flow source.yaml`.
+source with `tau workstream create --workflow <id>` or `--flow-content '<JSON source>'`;
+use `--flow-stdin` and a quoted heredoc for longer JSON/YAML. Schedule create/update
+uses the same `--workflow`, `--flow-content`, and `--flow-stdin` selection.
 Do not also supply legacy `--agents`, assignee, model, or completion options.
 The runtime creates only participants needed by active steps; queued
 streams, future steps, and branch starts waiting for concurrency create none. Reuse the within-stream session on
