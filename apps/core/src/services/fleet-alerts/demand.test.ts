@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { createBlankWorkflow, createWorkflowRun, resolveWorkflow } from '@tau/shared'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import {
@@ -9,6 +10,7 @@ import {
   schedules,
   squads,
   workStreamWaits,
+  workStreamFlowRuns,
   workStreams,
 } from '../../db/schema'
 import { getSquadDemandSnapshots } from './demand'
@@ -128,6 +130,154 @@ describe('actionable squad demand', () => {
     })
     return id
   }
+
+  test('paused streams suppress idle work, queued turns and inbox until explicitly resumed', async () => {
+    const id = await addWorkStream({ assigneeAgentId: targetAgentId, agentIds: [secondTargetAgentId] })
+    await db
+      .update(workStreams)
+      .set({
+        pause: { id: crypto.randomUUID(), pausedAt: NOW.toISOString(), reason: null, parkAt: null, agentIds: [] },
+      })
+      .where(eq(workStreams.id, id))
+    await db.insert(executions).values({ agentId: targetAgentId, status: 'queued', startedAt: at(4) })
+    await db.insert(inbox).values({
+      recipientType: 'agent',
+      recipientId: secondTargetAgentId,
+      senderType: 'user',
+      content: 'held',
+      createdAt: at(3),
+    })
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toEqual({ count: 0, firstDemandAt: null })
+    await db.update(workStreams).set({ pause: null }).where(eq(workStreams.id, id))
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toEqual({ count: 2, firstDemandAt: at(4) })
+  })
+
+  test('dormant non-waking notices are quiet, but an eligible message wakes the whole batch', async () => {
+    await db.update(agents).set({ status: 'dormant' }).where(eq(agents.id, targetAgentId))
+    await db.insert(inbox).values({
+      recipientType: 'agent',
+      recipientId: targetAgentId,
+      senderType: 'system',
+      content: 'FYI',
+      createdAt: at(3),
+    })
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toEqual({ count: 0, firstDemandAt: null })
+    await db.insert(inbox).values({
+      recipientType: 'agent',
+      recipientId: targetAgentId,
+      senderType: 'user',
+      content: 'continue',
+      createdAt: at(1),
+    })
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toEqual({ count: 2, firstDemandAt: at(3) })
+  })
+
+  test('workflow assignment inbox respects attempt input gates and resumes when resolved', async () => {
+    const id = await addWorkStream({ assigneeAgentId: targetAgentId })
+    const definition = createBlankWorkflow()
+    await db.insert(workStreamFlowRuns).values({
+      workStreamId: id,
+      activated: true,
+      state: createWorkflowRun(definition),
+      source: resolveWorkflow({ kind: 'inline', definition }),
+      attemptAgents: { '1': targetAgentId },
+      createRequestId: crypto.randomUUID(),
+      createRequestHash: 'test',
+      createdBy: 'test',
+    })
+    await db.insert(inbox).values({
+      recipientType: 'agent',
+      recipientId: targetAgentId,
+      senderType: 'system',
+      content: 'assignment',
+      metadata: { source: 'workflow', workStreamId: id, attemptId: 1 },
+      createdAt: at(3),
+    })
+    const [wait] = await db
+      .insert(workStreamWaits)
+      .values({ workStreamId: id, type: 'question', flowAttemptId: 1, openedAt: at(2) })
+      .returning()
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toEqual({ count: 0, firstDemandAt: null })
+    await db.update(workStreamWaits).set({ closedAt: NOW }).where(eq(workStreamWaits.id, wait!.id))
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(2)
+    await db
+      .update(inbox)
+      .set({ metadata: { source: 'workflow', workStreamId: id, attemptId: 999 } })
+      .where(eq(inbox.recipientId, targetAgentId))
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(1)
+    await db
+      .update(inbox)
+      .set({ metadata: { source: 'workflow-wait-resolution', workStreamId: id, attemptId: 999 } })
+      .where(eq(inbox.recipientId, targetAgentId))
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(1)
+    await db.update(workStreamWaits).set({ closedAt: null }).where(eq(workStreamWaits.id, wait!.id))
+    await db
+      .update(inbox)
+      .set({ metadata: { source: 'workflow-wait-resolution', workStreamId: id, attemptId: 1 } })
+      .where(eq(inbox.recipientId, targetAgentId))
+    // A current resolution message is deliverable even if another wait remains.
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(1)
+  })
+
+  test('workflow PR delivery and human gates are quiet while an unblocked parallel agent remains demand', async () => {
+    const id = await addWorkStream({ assigneeAgentId: targetAgentId, agentIds: [secondTargetAgentId] })
+    const definition = createBlankWorkflow()
+    const state = createWorkflowRun(definition)
+    await db.insert(workStreamFlowRuns).values({
+      workStreamId: id,
+      activated: true,
+      state,
+      source: resolveWorkflow({ kind: 'inline', definition }),
+      attemptAgents: { '1': targetAgentId, '2': secondTargetAgentId },
+      createRequestId: crypto.randomUUID(),
+      createRequestHash: 'test',
+      createdBy: 'test',
+    })
+    state.attempts[0]!.step = { ...definition.steps[0]!, kind: 'human-approval', approver: 'assigned-reviewers' }
+    await db.update(workStreamFlowRuns).set({ state }).where(eq(workStreamFlowRuns.workStreamId, id))
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(0)
+    state.attempts.push({ ...state.attempts[0]!, id: 2, step: definition.steps[0]! })
+    await db.update(workStreamFlowRuns).set({ state }).where(eq(workStreamFlowRuns.workStreamId, id))
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(1)
+    state.status = 'completion-ready'
+    state.definition.completion = { mode: 'pr-auto-merge', followChanges: true }
+    await db.update(workStreamFlowRuns).set({ state }).where(eq(workStreamFlowRuns.workStreamId, id))
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(1)
+    await db
+      .update(workStreams)
+      .set({
+        metadata: { codeHost: { integration: 'github', repository: 'Hire-Tau/tau', changeRequest: { number: 1 } } },
+      })
+      .where(eq(workStreams.id, id))
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)?.count).toBe(0)
+  })
+
+  test('obsolete resume notices for finished streams are not inbox demand', async () => {
+    const id = await addWorkStream({ status: 'done', assigneeAgentId: targetAgentId })
+    await db.insert(inbox).values({
+      recipientType: 'agent',
+      recipientId: targetAgentId,
+      senderType: 'system',
+      content: 'resume',
+      metadata: { source: 'work-stream-resume', workStreamId: id },
+      createdAt: at(90),
+    })
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toEqual({ count: 0, firstDemandAt: null })
+  })
+
+  test('queued execution startup backoff is not demand until its retry deadline', async () => {
+    await db.insert(executions).values({
+      agentId: targetAgentId,
+      status: 'queued',
+      startedAt: at(90),
+      startupRetryAt: new Date(NOW.getTime() + 60_000),
+    })
+    expect((await getSquadDemandSnapshots({ now: NOW })).get(targetSquadId)).toEqual({ count: 0, firstDemandAt: null })
+    expect((await getSquadDemandSnapshots({ now: new Date(NOW.getTime() + 60_000) })).get(targetSquadId)).toEqual({
+      count: 1,
+      firstDemandAt: at(90),
+    })
+  })
 
   test('ignores old merger notices for terminated reviewers without hiding deliverable inbox work', async () => {
     await db.insert(inbox).values([
