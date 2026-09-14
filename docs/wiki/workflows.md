@@ -263,3 +263,42 @@ tau workstream update <stream-id> --clear-reviewers
 `--reviewer` replaces the list on update and can also be passed to `workstream create`. Assignment requires `workstreams:update` on existing streams. Admin and Operator roles have this permission; custom roles can grant it separately from reviewing.
 
 Editor tool revisions increase after every graph edit, including Undo and Redo. Applied edits return the confirmed revision and history availability, so the assistant can chain edits without an extra read. A queued backend edit must still be acknowledged by the open page. Routine reads contain the current draft and revision; the assistant can request the editing contract, agent types, or integration output catalog with `include`, filtering outputs by `integration` when needed.
+
+## Automatic worktree cleanup
+
+New work streams default to `autoCleanupWorktree: true`. The API accepts only a
+boolean; CLI create/update accept `--auto-cleanup-worktree true|false`. The web
+stream detail shows the effective setting and cleanup status, with changes
+restricted to users who can update the stream. Set false **before delivery** to
+retain the worktree for any reason. No-worktree streams are harmless no-ops.
+Historical rows default false; explicit later opt-in does not invent ownership
+or missing delivery proof.
+
+Successful committed delivery creates a durable cleanup intent. A separate
+startup/periodic worker attempts prompt asynchronous cleanup after associated
+executions settle, with bounded retries. This does not delay or undo delivered
+`done`. Other registered stream attachments/dependencies block cleanup; unrelated
+executions continue. Undeclared cross-stream shell access is outside this
+cooperative model: register shared use and do not interfere with cleanup paths.
+
+Only a newly platform-provisioned dedicated worktree qualifies. Metadata-only or
+manually created paths are not ownership evidence. Before removal, the platform
+revalidates canonical Git identity, authoritative delivered head, live merge
+status and remote recoverability (including squash merges). Primary checkouts,
+locks, changed paths/heads, dirty/untracked files, submodules, and **all ignored
+files** are retained. There is currently no repository-approved disposable
+artifact classifier; even ignored build/dependency outputs conservatively defer
+cleanup. Remove only known disposable outputs through normal project tooling if
+appropriate, or keep the retention setting disabled. Cleanup never deletes
+branches, remote refs, caches, Docker resources, or arbitrary directories.
+
+`worktreeCleanup` exposes status, actionable reason, retry timing and operation
+ID, without private removal inputs. Exceptional blockers are deduplicated owner
+notifications, not approval requests for every cleanup. A durable operation
+marker and terminal receipt make retries safe after restarts or lost responses.
+Unknown/partial removal keeps the same-worktree reuse fence: a missing directory
+alone is **not** proof that a late command cannot arrive. Never reset that fence
+or delete its marker to force reuse. Reopening after successful removal is
+explicitly blocked; provision a new stream instead. Git and delivery metadata
+remain available after reclamation. No reclaimed-byte estimate is reported,
+because hardlinked dependencies can make summed sizes misleading.

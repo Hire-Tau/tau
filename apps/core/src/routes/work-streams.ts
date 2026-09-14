@@ -1,3 +1,4 @@
+import { WorktreeCleanupConflictError } from '../services/work-streams/worktree-cleanup-store'
 import { RepositorySetupError } from '../services/work-streams/repository-setup'
 import { resolveCreationWorkflow } from '../services/workflows/creation-source'
 import { z } from 'zod'
@@ -768,6 +769,8 @@ export const workStreamsRouter = new Hono()
       if (requestingUserId) await subscribeToWorkStream(stream.id, requestingUserId)
       return c.json(stream.toJson(), 201)
     } catch (error) {
+      if (error instanceof WorktreeCleanupConflictError)
+        return c.json({ error: error.message, code: 'worktree_cleanup_conflict' }, 409)
       const message = error instanceof Error ? error.message : String(error)
       const { WorkflowError } = await import('../services/workflows/catalog')
       if (error instanceof WorkflowError) return c.json({ error: message }, error.status)
@@ -902,6 +905,8 @@ export const workStreamsRouter = new Hono()
       await existing.update(input, { actorAgentId: actorAgentIdFrom(c.get('identity') as Identity | undefined) })
       return c.json(existing.toJson())
     } catch (error) {
+      if (error instanceof WorktreeCleanupConflictError)
+        return c.json({ error: error.message, code: 'worktree_cleanup_conflict' }, 409)
       // done with open waits (spec §5) and terminal-status backdoor writes
       // (spec §6) are state conflicts, not bad requests.
       if (error instanceof WorkStreamOpenWaitsError) {
@@ -1126,6 +1131,8 @@ export const workStreamsRouter = new Hono()
         await existing.reopen({ actorAgentId: actorAgentIdFrom(c.get('identity') as Identity | undefined) })
         return c.json(existing.toJson())
       } catch (error) {
+        if (error instanceof WorktreeCleanupConflictError)
+          return c.json({ error: error.message, code: 'worktree_cleanup_conflict' }, 409)
         if (error instanceof WorkStreamNotReopenableError) {
           return c.json({ error: error.message, code: 'not_reopenable' }, 409)
         }
@@ -1163,8 +1170,14 @@ export const workStreamsRouter = new Hono()
         return c.json({ error: 'Work stream not found' }, 404)
       }
 
-      await existing.delete()
-      return c.body(null, 204)
+      try {
+        await existing.delete()
+        return c.body(null, 204)
+      } catch (error) {
+        if (error instanceof WorktreeCleanupConflictError)
+          return c.json({ error: error.message, code: 'worktree_cleanup_conflict' }, 409)
+        throw error
+      }
     }
   )
   .get(

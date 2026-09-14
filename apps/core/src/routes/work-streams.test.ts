@@ -11,6 +11,7 @@ import { identityMiddleware } from '../middleware/identity'
 import { db } from '../db'
 import {
   workStreams,
+  worktreeCleanupJobs,
   workStreamOrderSnapshots,
   workStreamOrderSnapshotItems,
   squads,
@@ -108,6 +109,36 @@ describe('work-streams routes', () => {
   function post(url: string): Promise<Response> {
     return apiFetch(url, { method: 'POST' })
   }
+
+  it('returns actionable conflicts for cleanup-owned mutation, reopen, and deletion', async () => {
+    const stream = await storedLegacyWorkStream({ squadId: testSquadId, title: 'Cleanup conflict' })
+    await db.update(workStreams).set({ status: 'done' }).where(eq(workStreams.id, stream.id))
+    await db
+      .insert(worktreeCleanupJobs)
+      .values({ workStreamId: stream.id, status: 'removing', operationId: crypto.randomUUID() })
+    for (const response of [
+      await patchJson(`/api/workstreams/${stream.id}`, { autoCleanupWorktree: false }),
+      await post(`/api/workstreams/${stream.id}/reopen`),
+      await del(`/api/workstreams/${stream.id}`),
+    ]) {
+      expect(response.status).toBe(409)
+      expect((await response.json()).code).toBe('worktree_cleanup_conflict')
+    }
+    expect((await WorkStream.mustFind(stream.id)).status).toBe('done')
+  })
+
+  it('cleanup API preserves false, rejects non-booleans, and exposes only public status', async () => {
+    const stream = await storedLegacyWorkStream({ squadId: testSquadId, title: 'Cleanup retention' })
+    const disabled = await patchJson(`/api/workstreams/${stream.id}`, { autoCleanupWorktree: false })
+    expect(disabled.status).toBe(200)
+    expect((await disabled.json()).autoCleanupWorktree).toBe(false)
+    expect((await patchJson(`/api/workstreams/${stream.id}`, { autoCleanupWorktree: 'false' })).status).toBe(400)
+    await db
+      .insert(worktreeCleanupJobs)
+      .values({ workStreamId: stream.id, status: 'deferred', reason: 'Retain evidence' })
+    const detail = await apiFetch(`/api/workstreams/${stream.id}`)
+    expect((await detail.json()).worktreeCleanup).toMatchObject({ status: 'deferred', reason: 'Retain evidence' })
+  })
 
   beforeEach(async () => {
     testPrefix = `rt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`

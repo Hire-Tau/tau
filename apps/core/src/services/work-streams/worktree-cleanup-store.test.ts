@@ -158,3 +158,34 @@ for (const action of ['add', 'remove'] as const) {
     )
   })
 }
+
+test('repository provisioning cannot recreate a registered resource or replace its ownership', async () => {
+  expect(store.assertRepositoryTargetAvailable).toBeDefined()
+  await expect(store.assertRepositoryTargetAvailable(squadId, crypto.randomUUID(), ownership.worktree)).rejects.toThrow(
+    /owned|registered/i
+  )
+  await expect(store.assertRepositoryTargetAvailable(squadId, streamId, '/workspace/replacement')).rejects.toThrow(
+    /owned|registered/i
+  )
+  await expect(
+    store.assertRepositoryTargetAvailable(squadId, crypto.randomUUID(), '/workspace/unrelated')
+  ).resolves.toBeUndefined()
+})
+
+test('exceptional blockers notify the owner once without exposing raw runtime errors', async () => {
+  const { processWorktreeCleanup } = await import('./worktree-cleanup-reconciler')
+  const { inbox } = await import('../../db')
+  await db.update(workStreams).set({ ownerAgentId: agentId }).where(eq(workStreams.id, streamId))
+  const dependencies = {
+    execForSquad: async () => async () => '',
+    verify: async () => {
+      throw Error('private remote credential output')
+    },
+  }
+  await processWorktreeCleanup(streamId, dependencies)
+  await processWorktreeCleanup(streamId, dependencies)
+  const messages = await db.select().from(inbox).where(eq(inbox.recipientId, agentId))
+  expect(messages).toHaveLength(1)
+  expect(messages[0].content).toContain('No removal was dispatched')
+  expect(messages[0].content).not.toContain('credential')
+})

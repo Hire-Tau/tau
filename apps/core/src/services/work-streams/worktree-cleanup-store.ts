@@ -213,3 +213,18 @@ export async function assertWorktreeAttachmentsAvailable(
       )
   }
 }
+
+/** Ownership records do not expire when cleanup starts. Provisioning must never
+ * recreate such a path while an old remote command may still arrive. Existing
+ * owned streams use their provisioned tree, or create a new stream for new work. */
+export async function assertRepositoryTargetAvailable(squadId: string, id: string, target: string): Promise<void> {
+  const owned = await db.select().from(workStreamWorktrees).where(eq(workStreamWorktrees.squadId, squadId))
+  if (
+    owned.some(
+      (row) => row.workStreamId === id || referencesOwnedWorktree({ git: { worktree: target } }, row.ownership)
+    )
+  )
+    throw new WorktreeCleanupConflictError(
+      'Repository target is already owned or this stream already has a registered worktree. Use a new stream and a distinct worktree path.'
+    )
+}

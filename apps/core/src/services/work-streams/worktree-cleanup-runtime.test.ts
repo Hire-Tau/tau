@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
-import { mkdtemp, mkdir, realpath, rm, writeFile, readFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, realpath, rm, writeFile, readFile, rename, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { prepareRepository, type WorktreeOwnership } from './repository-setup'
@@ -20,7 +20,7 @@ const exec = async (args: string[]) => {
     new Response(child.stderr).text(),
     child.exited,
   ])
-  if (code) throw new Error(err || out)
+  if (code !== 0) throw new Error(`Child exit ${code} signal ${child.signalCode}: ${err || out}`)
   return out
 }
 beforeEach(async () => {
@@ -118,4 +118,78 @@ test('recovers a lost response through the same exact terminal receipt', async (
     status: 'succeeded',
     operationId: input.operationId,
   })
+})
+
+test('receipt identity survives database JSON object key reordering', async () => {
+  const input = { ownership, head, operationId: crypto.randomUUID() }
+  const first = await runtime.removeOwnedWorktree(exec, input)
+  const restored = {
+    operationId: input.operationId,
+    head,
+    ownership: Object.fromEntries(Object.entries(ownership).reverse()) as unknown as WorktreeOwnership,
+  }
+  expect(await runtime.readWorktreeRemovalReceipt(exec, restored)).toEqual(first)
+})
+
+for (const flag of ['--assume-unchanged', '--skip-worktree']) {
+  test(`retains tracked evidence hidden by ${flag}`, async () => {
+    await exec(['git', '-C', ownership.worktree, 'update-index', flag, 'README'])
+    await writeFile(join(ownership.worktree, 'README'), 'hidden evidence')
+    expect(await remove()).toMatchObject({ status: 'retained', reason: 'Hidden index flags require manual retention' })
+    expect(await readFile(join(ownership.worktree, 'README'), 'utf8')).toBe('hidden evidence')
+  })
+}
+
+test('never follows a replacement symlink or treats the primary checkout as removable', async () => {
+  const retained = join(root, 'retained')
+  await rename(ownership.worktree, retained)
+  await symlink(retained, ownership.worktree)
+  expect(await remove()).toMatchObject({ status: 'retained' })
+  expect(await readFile(join(retained, 'README'), 'utf8')).toBe('recoverable\n')
+  await expect(
+    runtime.removeOwnedWorktree(exec, {
+      ownership: { ...ownership, worktree: repo },
+      head,
+      operationId: crypto.randomUUID(),
+    })
+  ).rejects.toThrow()
+  expect(await Bun.file(join(repo, 'README')).exists()).toBe(true)
+})
+
+test('rejects cross-repository ownership and retains an already-missing worktree without claiming removal', async () => {
+  const other = join(root, 'other')
+  await exec(['git', 'init', '-b', 'main', other])
+  await expect(
+    runtime.removeOwnedWorktree(exec, {
+      ownership: { ...ownership, repository: other },
+      head,
+      operationId: crypto.randomUUID(),
+    })
+  ).rejects.toThrow()
+  expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(true)
+  await exec(['git', '-C', repo, 'worktree', 'remove', '--', ownership.worktree])
+  expect(await remove()).toMatchObject({ status: 'retained' })
+})
+
+test('partial removal yields an immutable failed receipt and never retries deletion against residual evidence', async () => {
+  const bin = join(root, 'bin')
+  await mkdir(bin)
+  const git = Bun.which('git')!
+  await writeFile(
+    join(bin, 'git'),
+    `#!/bin/sh
+case " $* " in
+  *" worktree remove "*) "${git}" "$@" || exit $?; mkdir "$FIXTURE_REMOVAL_TARGET" ;;
+  *) exec "${git}" "$@" ;;
+esac
+`,
+    { mode: 0o755 }
+  )
+  const withResidual = (args: string[]) =>
+    exec(['env', `PATH=${bin}:${process.env.PATH}`, `FIXTURE_REMOVAL_TARGET=${ownership.worktree}`, ...args])
+  const input = { ownership, head, operationId: crypto.randomUUID() }
+  expect(await runtime.removeOwnedWorktree(withResidual, input)).toMatchObject({ status: 'failed' })
+  await writeFile(join(ownership.worktree, 'evidence'), 'preserve residual data')
+  expect(await runtime.removeOwnedWorktree(exec, input)).toMatchObject({ status: 'failed' })
+  expect(await readFile(join(ownership.worktree, 'evidence'), 'utf8')).toBe('preserve residual data')
 })

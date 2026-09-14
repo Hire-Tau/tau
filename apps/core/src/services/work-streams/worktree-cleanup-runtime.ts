@@ -36,7 +36,12 @@ async function invoke(
   input: WorktreeRemovalInput,
   mode: 'remove' | 'probe'
 ): Promise<WorktreeRemovalReceipt> {
-  const serialized = JSON.stringify(input)
+  // PostgreSQL jsonb may reorder both outer and nested keys on recovery.
+  const serialized = JSON.stringify({
+    head: input.head,
+    operationId: input.operationId,
+    ownership: Object.fromEntries(Object.entries(input.ownership).sort(([a], [b]) => a.localeCompare(b))),
+  })
   const raw = await exec(['sh', '-c', runner, 'tau-worktree-cleanup', serialized, mode])
   const receipt = JSON.parse(raw) as WorktreeRemovalReceipt
   if (

@@ -476,6 +476,13 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           console.log(`ID:          ${ws.id}`)
           console.log(`Title:       ${ws.title}`)
           console.log(`Status:      ${formatState(ws)}`)
+          console.log(
+            `Auto cleanup: ${ws.autoCleanupWorktree ? 'enabled (after delivery and execution settlement)' : 'disabled (retain worktree)'}`
+          )
+          if (ws.worktreeCleanup)
+            console.log(
+              `Cleanup:     ${ws.worktreeCleanup.status}${ws.worktreeCleanup.reason ? ` — ${ws.worktreeCleanup.reason}` : ''}`
+            )
           console.log(`Priority:    ${formatWorkStreamPriorityDetail(ws)}`)
           if (ws.queuePosition !== undefined) {
             console.log(`Queue Pos:   ${ws.queuePosition}`)

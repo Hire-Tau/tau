@@ -1,3 +1,4 @@
+import { WorktreeCleanupSettings } from './WorktreeCleanupSettings'
 import { WORK_STREAM_STATUS_ROLE } from '@tau/shared'
 import { webStatus } from '../lib/statusPresentation'
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
@@ -774,6 +775,8 @@ export function WorkStreamDetailModal({
             </ul>
           </div>
         )}
+
+        <WorktreeCleanupSettings stream={workStream} />
 
         {/* Metadata */}
         {(hasMetadata || workStream.branch || workStream.baseBranch) && (

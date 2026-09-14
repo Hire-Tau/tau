@@ -169,3 +169,25 @@ test('only newly platform-created worktrees produce an ownership receipt', async
   )
   expect(receipts).toHaveLength(1)
 })
+
+test('canonical target admission runs before creating directories or worktrees', async () => {
+  const targets: string[] = []
+  await expect(
+    prepareRepository(
+      exec,
+      root,
+      { repository: repo, baseBranch: 'main', worktree: 'new-parent/owned' },
+      'blocked',
+      {},
+      undefined,
+      (target) => {
+        targets.push(target)
+        throw new Error('target reserved by another work stream')
+      }
+    )
+  ).rejects.toThrow('target reserved')
+  expect(targets).toEqual([join(root, 'new-parent/owned')])
+  expect(await exec(['sh', '-c', 'if [ -e "$1" ]; then printf exists; fi', 'fixture', join(root, 'new-parent')])).toBe(
+    ''
+  )
+})

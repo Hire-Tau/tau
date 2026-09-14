@@ -151,6 +151,31 @@ describe('WorkStream entity', () => {
     })
   })
 
+  it('rolls back both delivered status and cleanup intent when the transaction aborts', async () => {
+    const stream = await storedLegacyWorkStream({
+      squadId: testSquad.id,
+      title: 'atomic cleanup',
+      completionMode: 'deliverable',
+    })
+    const previousStatus = stream.status
+    const original = db.transaction.bind(db)
+    const transaction = spyOn(db, 'transaction').mockImplementation((fn: any) =>
+      original(async (tx) => {
+        await fn(tx)
+        throw new Error('injected abort before commit')
+      })
+    )
+    try {
+      await expect(stream.update({ status: 'done' })).rejects.toThrow('injected abort')
+    } finally {
+      transaction.mockRestore()
+    }
+    expect((await WorkStream.mustFind(stream.id)).status).toBe(previousStatus)
+    expect(
+      await db.select().from(schema.worktreeCleanupJobs).where(eq(schema.worktreeCleanupJobs.workStreamId, stream.id))
+    ).toHaveLength(0)
+  })
+
   it('records cleanup intent exactly once on a committed done transition, never on cancel', async () => {
     expect(schema.worktreeCleanupJobs).toBeDefined()
     const stream = await storedLegacyWorkStream({
@@ -222,21 +247,19 @@ describe('WorkStream entity', () => {
 
   it('new creation cannot attach to an in-flight cleanup-owned path', async () => {
     const old = await storedLegacyWorkStream({ squadId: testSquad.id, title: 'removing' })
-    await db
-      .insert(schema.workStreamWorktrees)
-      .values({
-        workStreamId: old.id,
-        squadId: testSquad.id,
-        ownership: {
-          workspace: '/workspace',
-          repository: '/workspace/repo',
-          commonDirectory: '/workspace/repo/.git',
-          gitDirectory: '/workspace/repo/.git/worktrees/owned',
-          worktree: '/workspace/owned',
-          directoryIdentity: '1:2',
-          branch: 'feature',
-        },
-      })
+    await db.insert(schema.workStreamWorktrees).values({
+      workStreamId: old.id,
+      squadId: testSquad.id,
+      ownership: {
+        workspace: '/workspace',
+        repository: '/workspace/repo',
+        commonDirectory: '/workspace/repo/.git',
+        gitDirectory: '/workspace/repo/.git/worktrees/owned',
+        worktree: '/workspace/owned',
+        directoryIdentity: '1:2',
+        branch: 'feature',
+      },
+    })
     await db
       .insert(schema.worktreeCleanupJobs)
       .values({ workStreamId: old.id, status: 'removing', operationId: crypto.randomUUID() })

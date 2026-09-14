@@ -1237,7 +1237,18 @@ export interface WorkStreamPause {
   agentIds: string[]
 }
 
+export interface WorktreeCleanupSummary {
+  status: 'pending' | 'deferred' | 'skipped' | 'removing' | 'succeeded' | 'error'
+  reason: string | null
+  attempts: number
+  nextAttemptAt: string
+  updatedAt: string
+  operationId: string | null
+}
+
 export interface WorkStream {
+  /** Durable platform cleanup state, when an intent exists. */
+  worktreeCleanup?: WorktreeCleanupSummary | null
   /** Effective retention setting. Older servers omit this field (retain). */
   autoCleanupWorktree?: boolean
   pause?: WorkStreamPause | null

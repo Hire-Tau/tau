@@ -146,7 +146,9 @@ this is already done.
    Keep all reads/writes/commands scoped to this directory.
 
 If `git.worktree`/`git.branch` metadata is present but the worktree directory
-wasn't actually created, you may set it up yourself rather than blocking:
+wasn't actually created, first inspect `worktreeCleanup`. Never recreate or
+manually modify a cleanup-owned path (pending, uncertain, or already removed).
+For a never-provisioned metadata-only stream, you may set it up yourself rather than blocking:
 
 ```
 git worktree add <git.worktree> -b <git.branch> <git.baseBranch>
@@ -168,6 +170,23 @@ tau workstream request-input <workstream-id> -m "No git.worktree/git.branch conf
 the work stream description or a direct message) that a worktree/separate
 branch is intentionally not used for read-only research or non-repository work.
 Proceed within that scope; repository mutations require a worktree-backed flow.
+
+### Platform-owned cleanup
+
+New streams default to `autoCleanupWorktree: true`. After delivered `done`, the
+platform queues prompt asynchronous cleanup once associated executions settle;
+it is not synchronous deletion. Do not linger, manually reuse, remove, or
+interfere with a cleanup-owned path. Unrelated workspace executions continue.
+Registered sharing/dependencies block cleanup; undeclared cross-stream shell
+access is not protected, so attach shared use before accessing another tree.
+
+To retain a worktree for any reason, set `--auto-cleanup-worktree false` through
+`tau workstream update` **before finishing** (or use the web stream setting).
+Inspect effective configuration and `worktreeCleanup` with `tau workstream get`.
+An uncertain removal blocks reuse even if the directory appears missing; do not
+clear operation markers. After successful cleanup, provision a new stream for
+further work. The branch and delivery history remain. Historical or manually
+created trees without platform ownership are retained, not swept.
 
 ## Public communication
 

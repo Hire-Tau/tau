@@ -17,6 +17,7 @@ import { executions, workStreamWaits, workStreamFlowRuns, workStreamWorktrees, w
 import { WORK_STREAM_ADMITTED_STATUSES, workStreamSourceLinkKindSchema } from '@tau/shared'
 import type {
   WorkStream as WorkStreamJson,
+  WorktreeCleanupSummary,
   WorkStreamStatus,
   WorkStreamPriority,
   WorkStreamCompletionMode,
@@ -366,6 +367,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
   declare assigneeAgentId: string | null
   declare ownerAgentId: string | null
   declare creatorAgentId: string | null
+  worktreeCleanup: WorktreeCleanupSummary | null = null
   declare autoCleanupWorktree: boolean
   declare assignedReviewerIds: string[]
   declare requestingUserId: string | null
@@ -414,6 +416,24 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       }
     }
     for (const stream of streams) stream.dependedOnBy = inverse.get(stream.id) ?? []
+    const cleanupRows = await db
+      .select()
+      .from(worktreeCleanupJobs)
+      .where(inArray(worktreeCleanupJobs.workStreamId, [...requestedIds]))
+    const cleanups = new Map(cleanupRows.map((row) => [row.workStreamId, row]))
+    for (const stream of streams) {
+      const cleanup = cleanups.get(stream.id)
+      stream.worktreeCleanup = cleanup
+        ? {
+            status: cleanup.status,
+            reason: cleanup.reason,
+            attempts: cleanup.attempts,
+            operationId: cleanup.operationId,
+            nextAttemptAt: cleanup.nextAttemptAt.toISOString(),
+            updatedAt: cleanup.updatedAt.toISOString(),
+          }
+        : null
+    }
     return streams
   }
 
@@ -1121,6 +1141,19 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       //   waits are already settled (the open-waits guard above).
       // - canceled force-clears the stream's remaining open waits (abandonment
       //   discards conversations by design — spec §5).
+      if (updated.status === 'done' && input.autoCleanupWorktree === true && locked.status === 'done') {
+        await tx.insert(worktreeCleanupJobs).values({ workStreamId: this.id }).onConflictDoNothing()
+        await tx
+          .update(worktreeCleanupJobs)
+          .set({ status: 'pending', reason: null, nextAttemptAt: now, updatedAt: now })
+          .where(
+            and(
+              eq(worktreeCleanupJobs.workStreamId, this.id),
+              inArray(worktreeCleanupJobs.status, ['skipped', 'deferred']),
+              sql`${worktreeCleanupJobs.operationId} IS NULL`
+            )
+          )
+      }
       if (updated.status === 'done' && locked.status !== 'done') {
         await tx
           .insert(worktreeCleanupJobs)
@@ -2204,6 +2237,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     return {
       id: this.id,
       autoCleanupWorktree: this.autoCleanupWorktree,
+      worktreeCleanup: this.worktreeCleanup,
       squadId: this.squadId,
       title: this.title,
       description: this.description,
