@@ -32,8 +32,15 @@ export async function canUseChannel(
 ): Promise<boolean> {
   if (!isChannelAllowed(instance, channelId) || !externalUserId) return false
   if (instance.trustedChannelIds.includes(channelId)) return true
+  const link = await findLinkedChannelUser(instance, externalUserId)
+  return !!link && hasUserPermissionWithExecutor(db, link.userId, 'chat:send', squadId)
+}
+
+/** A provider-verified identity; display names never establish authorization. */
+export async function findLinkedChannelUser(instance: ChannelInstance, externalUserId: string) {
+  if (instance.disabled || !externalUserId) return null
   const [link] = await db
-    .select({ userId: users.id })
+    .select({ id: channelIdentityLinks.id, userId: users.id })
     .from(channelIdentityLinks)
     .innerJoin(users, eq(users.id, channelIdentityLinks.userId))
     .where(
@@ -44,7 +51,7 @@ export async function canUseChannel(
         isNull(users.disabledAt)
       )
     )
-  return !!link && hasUserPermissionWithExecutor(db, link.userId, 'chat:send', squadId)
+  return link ?? null
 }
 
 export async function startChannelLink(userId: string) {

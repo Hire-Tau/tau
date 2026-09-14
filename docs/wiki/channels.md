@@ -87,9 +87,9 @@ query interface. Replies remain in the originating channel; the sender chooses
 the audience. Thread history excludes unlinked/unpermitted senders outside trusted
 channels. Discord routing and trust use a verified parent channel for threads.
 
-Slack and Discord continue a conversation on an explicit bot mention in a thread;
+In shared channels, Slack and Discord continue a conversation on an explicit bot mention in a thread;
 unmentioned replies are ignored. Discord also accepts slash commands in a thread.
-Telegram reuses one conversation per chat and responds to private messages, group
+Telegram group chats reuse one conversation per chat and respond to group
 `/tau` commands, and replies to bot messages. Lookups are scoped to provider,
 instance, channel, thread, and the currently routed squad. A changed squad override
 does not resume an agent in the old squad.
@@ -98,6 +98,43 @@ Telegram's persistent conversation ID is its chat ID. It must never be passed as
 `reply_to_message_id`: `postMessage.replyToMessageId` carries an optional incoming
 message ID separately. Follow-up acknowledgements reply to that message; later
 updates may post without a reply target.
+
+## Private bot conversations and squad selection
+
+Only verified one-to-one bot DMs use `channels/direct-messages.ts`. Telegram marks
+native `chat.type=private`, Slack uses `channel_type=im` (and verifies slash-command
+DMs with `conversations.info`), and Discord verifies native channel type 1. Group
+DMs and private server channels do not enable user-directed routing. Discord
+subscribes to `DIRECT_MESSAGES`; since a DM has no guild ID, it uses the configured
+bot connection's server to resolve the routing instance and linked identity.
+
+`/tau squad <slug, name or ID>` selects a permitted squad; no argument lists choices.
+Slug assignment uses shared `squadSlugMap` over the user's visible, non-anonymous,
+non-archived squad list, matching web URLs and duplicate-name suffixes. Choices
+are additionally filtered by fresh `chat:send` permission. Trusted-channel bypass
+does not apply to this private flow.
+
+Telegram and Discord scope the selection to a linked identity and DM. Slack
+scopes it to each DM thread: a new top-level message gets a reply thread, and a
+root slash command creates a real parent message before binding the thread.
+Ordinary DM thread replies need no mention. Inside a Slack thread, use
+`@Tau squad <slug>` or `tau squad <slug>` because Slack custom slash commands are
+not available there. Discord has no native DM threads. Guild commands remain
+registered for immediate availability; a DM-only global copy propagates separately.
+
+`channel_direct_chats` stores `(link_id, channel_id, thread_id)` and the selected
+squad. `channel_direct_agents` stores a consultant binding per `(chat_id, squad_id)`.
+The chat row lock serializes selection and first-agent creation across replicas.
+All work under the lock uses the transaction executor; agent events emit after
+commit. Dormant consultants resume, terminated consultants are replaced, and
+creation rolls back with its binding on failure. No provider-wide DM transcript
+is imported, since it may mix multiple squads' conversations.
+
+Unlinking cascades both mapping tables. Agent history is retained, but unlinked or
+disabled users and revoked squad permissions cannot resume it or receive delayed
+responses. Direct response/send/edit tools validate the linked binding and current
+RBAC in addition to administrator channel policies. Switching does not cancel old
+work; direct responses include the originating squad's name.
 
 ## Connecting a provider
 

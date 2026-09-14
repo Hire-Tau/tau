@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { TAU_DISCORD_COMMANDS } from '@tau/shared/discord-commands'
+import { TAU_DISCORD_COMMANDS, TAU_DISCORD_DM_COMMANDS } from '@tau/shared/discord-commands'
 import type { ChannelConnectionState } from './connections'
 import { ChannelLifecycle } from './lifecycle'
 
@@ -128,13 +128,17 @@ describe('ChannelLifecycle', () => {
     expect(h.discordChanges).toEqual(['d1'])
     h.states.discord = discord('d2', 'g-9')
     await h.lifecycle.reconcile()
-    expect(h.calls.at(-1)?.url).toBe('https://discord.com/api/v10/applications/app-1/guilds/g-9/commands')
+    expect(h.calls.at(-2)?.url).toBe('https://discord.com/api/v10/applications/app-1/guilds/g-9/commands')
+    expect(h.calls.at(-1)).toMatchObject({
+      url: 'https://discord.com/api/v10/applications/app-1/commands',
+      body: TAU_DISCORD_DM_COMMANDS,
+    })
     expect(h.discordChanges).toEqual(['d1', 'd2'])
     h.states.discord = undefined
     await h.lifecycle.reconcile()
     await h.lifecycle.reconcile()
     expect(h.discordChanges).toEqual(['d1', 'd2', undefined])
-    expect(h.calls).toHaveLength(2)
+    expect(h.calls).toHaveLength(3)
   })
 
   test('nothing is registered without a discovered Discord application id', async () => {

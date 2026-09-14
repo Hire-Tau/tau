@@ -40,11 +40,17 @@ export function createChannelEditTool(agentId: string): ToolDefinition {
       if (!provider) return failure(`Unknown provider: ${providerName}`)
 
       try {
-        await requireAllowedChannelReply(agentContext.channelInstance?.id, knownMessage.channelId)
+        await requireAllowedChannelReply(
+          agentContext.channelInstance?.id,
+          knownMessage.channelId,
+          agentContext.directMessage ? agentId : undefined
+        )
         await provider.editMessage({
           channelId: knownMessage.channelId,
           messageId: params.messageId,
-          text: params.content,
+          text: agentContext.directMessage
+            ? `${agentContext.directMessageSquadName}:\n\n${params.content}`
+            : params.content,
         })
         return {
           content: [{ type: 'text', text: `Message ${params.messageId} edited via ${providerName}.` }],

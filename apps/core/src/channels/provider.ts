@@ -28,6 +28,9 @@ export interface ChannelEvent {
   /** Verified parent channel ID for providers whose threads are separate channels. */
   routingChannelId?: string
 
+  /** Verified one-to-one conversation with the bot, never a group DM or private channel. */
+  isDirectMessage?: boolean
+
   /** User who triggered the event */
   user: {
     id: string

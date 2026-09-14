@@ -288,3 +288,44 @@ describe('DiscordGateway slash commands', () => {
     }
   })
 })
+
+describe('Discord bot DMs', () => {
+  it('routes verified one-to-one DMs without a mention, and excludes group DMs', async () => {
+    const settings = await import('../../services/integrations/channels/settings')
+    const handler = await import('../handler')
+    const setting = spyOn(settings, 'getChannelIntegrationValue').mockImplementation((key) =>
+      key === 'DISCORD_GUILD_ID' ? 'configured-server' : undefined
+    )
+    const dispatch = spyOn(handler, 'handleChannelEvent').mockResolvedValue({ response: { ok: true } })
+    const gateway = new DiscordGateway('test-token')
+    const routing = spyOn(gateway as any, 'getChannelRouting').mockResolvedValue({ type: 1, isThread: false })
+    registerProvider(discordProvider)
+    const message = {
+      id: 'm',
+      channel_id: 'dm',
+      author: { id: 'person', username: 'Person' },
+      content: 'tau squad my-team',
+      mentions: [],
+    }
+    try {
+      await (gateway as any).handleMessageCreate(message)
+      expect(dispatch).toHaveBeenCalledWith(
+        discordProvider,
+        expect.objectContaining({
+          isDirectMessage: true,
+          text: 'tau squad my-team',
+          channelId: 'dm',
+          user: { id: 'person', name: 'Person' },
+        }),
+        'configured-server'
+      )
+      routing.mockResolvedValue({ type: 3, isThread: false })
+      await (gateway as any).handleMessageCreate(message)
+      expect(dispatch).toHaveBeenCalledTimes(1)
+    } finally {
+      setting.mockRestore()
+      dispatch.mockRestore()
+      routing.mockRestore()
+    }
+  })
+})

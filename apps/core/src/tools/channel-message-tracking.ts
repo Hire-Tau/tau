@@ -10,6 +10,8 @@ export interface KnownChannelMessage {
 }
 
 export interface ChannelConversationContext extends Record<string, unknown> {
+  directMessage?: boolean
+  directMessageSquadName?: string
   channelInstance?: { id: string; provider: string }
   thread?: ThreadContext | null
   channelMessages?: KnownChannelMessage[]

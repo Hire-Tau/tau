@@ -207,6 +207,7 @@ export const telegramProvider: ChannelProvider = {
       type: isCommand ? 'slash_command' : 'message',
       command: isCommand ? command : 'message',
       text: isCommand ? content : messageText,
+      isDirectMessage: isPrivate,
       channelId: chatId,
       user: {
         id: String(from.id),

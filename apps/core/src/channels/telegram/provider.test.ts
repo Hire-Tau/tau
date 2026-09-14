@@ -97,3 +97,28 @@ describe('telegramProvider.sendNotification', () => {
     }
   })
 })
+
+describe('Telegram private squad switching', () => {
+  it('marks private chats distinctly from group replies', async () => {
+    const bot = spyOn(telegramProvider, 'getBotUserId').mockResolvedValue('99')
+    try {
+      for (const type of ['private', 'group', 'supergroup']) {
+        const parsed = await telegramProvider.parseWebhook(
+          {
+            update_id: 1,
+            message: {
+              message_id: 2,
+              chat: { id: 123, type },
+              from: { id: 7, first_name: 'User' },
+              text: '/tau squad my-squad',
+            },
+          },
+          {}
+        )
+        expect(parsed).toMatchObject({ isDirectMessage: type === 'private', command: 'squad', text: 'my-squad' })
+      }
+    } finally {
+      bot.mockRestore()
+    }
+  })
+})

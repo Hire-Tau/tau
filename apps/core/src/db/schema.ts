@@ -2176,6 +2176,37 @@ export const channelIdentityLinks = pgTable(
   (table) => [uniqueIndex('channel_identity_sender_unique').on(table.instanceId, table.externalUserId)]
 )
 
+// Private bot chats retain independent consultant histories for each linked user and squad.
+export const channelDirectChats = pgTable(
+  'channel_direct_chats',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    linkId: uuid('link_id')
+      .notNull()
+      .references(() => channelIdentityLinks.id, { onDelete: 'cascade' }),
+    channelId: text('channel_id').notNull(),
+    threadId: text('thread_id').notNull().default(''),
+    squadId: uuid('squad_id').references(() => squads.id, { onDelete: 'set null' }),
+  },
+  (table) => [unique('channel_direct_chat_identity_unique').on(table.linkId, table.channelId, table.threadId)]
+)
+
+export const channelDirectAgents = pgTable(
+  'channel_direct_agents',
+  {
+    chatId: uuid('chat_id')
+      .notNull()
+      .references(() => channelDirectChats.id, { onDelete: 'cascade' }),
+    squadId: uuid('squad_id')
+      .notNull()
+      .references(() => squads.id, { onDelete: 'cascade' }),
+    agentId: uuid('agent_id')
+      .notNull()
+      .references(() => agents.id, { onDelete: 'cascade' }),
+  },
+  (table) => [unique('channel_direct_agent_scope_unique').on(table.chatId, table.squadId)]
+)
+
 // The user starts in Tau, proves control in the provider, then confirms the sender in Tau.
 export const channelLinkChallenges = pgTable('channel_link_challenges', {
   id: uuid('id').primaryKey().defaultRandom(),

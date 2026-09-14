@@ -92,34 +92,69 @@ export function createChannelRespondTool(): ToolDefinition {
       let agentContext = agent.context as AgentContext
 
       try {
-        await requireAllowedChannelReply(agentContext.channelInstance?.id, channelContext.channelId)
+        await requireAllowedChannelReply(
+          agentContext.channelInstance?.id,
+          channelContext.channelId,
+          agentContext.directMessage ? agent.id : undefined
+        )
         let threadId: string | undefined
 
         // Get the provider
         const provider = getProvider(channelContext.provider)
 
         if (provider) {
-          // Add user info to context extras for thread parent editing
-          if (channelContext.provider === 'slack') {
-            channelContext.extras = {
-              ...channelContext.extras,
-              userId: metadata?.userId,
-              question: extractQuestion(message.content),
-            }
-          }
-
-          // Use provider's sendResponse method
-          threadId = await provider.sendResponse({
-            context: channelContext,
-            content: params.content,
-            agentContext,
-            updateAgentContext: async (thread) => {
-              agentContext = { ...agentContext, thread }
-              await agent.update({
-                context: agentContext,
+          if (agentContext.directMessage) {
+            const content = params.content.trim() ? `${agentContext.directMessageSquadName}:\n\n${params.content}` : ''
+            if (channelContext.extras?.interactionToken && channelContext.provider === 'discord') {
+              const { editInteractionResponse } = await import('../channels/discord/provider')
+              await editInteractionResponse(
+                channelContext.extras.applicationId as string,
+                channelContext.extras.interactionToken as string,
+                content || '…'
+              )
+            } else if (channelContext.messageToEdit) {
+              if (content)
+                await provider.editMessage({
+                  channelId: channelContext.channelId,
+                  messageId: channelContext.messageToEdit,
+                  text: content,
+                })
+              else
+                await provider.deleteMessage({
+                  channelId: channelContext.channelId,
+                  messageId: channelContext.messageToEdit,
+                })
+            } else if (content) {
+              await provider.postMessage({
+                channelId: channelContext.channelId,
+                threadId: channelContext.provider === 'slack' ? channelContext.threadId : undefined,
+                text: content,
               })
-            },
-          })
+            }
+            threadId = channelContext.threadId
+          } else {
+            // Add user info to context extras for thread parent editing
+            if (channelContext.provider === 'slack') {
+              channelContext.extras = {
+                ...channelContext.extras,
+                userId: metadata?.userId,
+                question: extractQuestion(message.content),
+              }
+            }
+
+            // Use provider's sendResponse method
+            threadId = await provider.sendResponse({
+              context: channelContext,
+              content: params.content,
+              agentContext,
+              updateAgentContext: async (thread) => {
+                agentContext = { ...agentContext, thread }
+                await agent.update({
+                  context: agentContext,
+                })
+              },
+            })
+          }
         } else {
           throw new Error(`Unknown provider: ${channelContext.provider}`)
         }

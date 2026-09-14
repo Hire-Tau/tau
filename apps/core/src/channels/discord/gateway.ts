@@ -30,6 +30,7 @@ const GatewayOpcode = {
 const GatewayIntents = {
   GUILDS: 1 << 0,
   GUILD_MESSAGES: 1 << 9,
+  DIRECT_MESSAGES: 1 << 12,
   MESSAGE_CONTENT: 1 << 15,
 } as const
 
@@ -234,6 +235,29 @@ export class DiscordGateway {
 
     const provider = getProvider('discord')
     if (!provider) return
+
+    if (!message.guild_id) {
+      // DM events do not contain a guild. Bind to the configured bot connection,
+      // then verify the native channel type (group DMs are deliberately excluded).
+      const guildId = getChannelIntegrationValue('DISCORD_GUILD_ID')
+      const routing = await this.getChannelRouting(message.channel_id)
+      if (!guildId || routing?.type !== 1) return
+      await handleChannelEvent(
+        provider,
+        {
+          type: 'message',
+          text: message.content,
+          channelId: message.channel_id,
+          user: { id: message.author.id, name: message.author.username },
+          messageId: message.id,
+          isInThread: false,
+          isDirectMessage: true,
+          raw: {},
+        },
+        guildId
+      )
+      return
+    }
 
     // Check if bot is mentioned
     const isBotMentioned = !!this.botUserId && !!message.mentions?.some((m) => m.id === this.botUserId)
@@ -458,7 +482,9 @@ export class DiscordGateway {
     return response.json()
   }
 
-  private async getChannelRouting(channelId: string): Promise<{ isThread: boolean; parentId?: string } | null> {
+  private async getChannelRouting(
+    channelId: string
+  ): Promise<{ isThread: boolean; parentId?: string; type: number } | null> {
     try {
       const response = await fetch(`https://discord.com/api/v10/channels/${channelId}`, {
         headers: { Authorization: `Bot ${this.botToken}` },
@@ -471,7 +497,7 @@ export class DiscordGateway {
       // Thread types: 10 = news thread, 11 = public thread, 12 = private thread
       const isThread = channel.type === 10 || channel.type === 11 || channel.type === 12
       if (isThread && !channel.parent_id) return null
-      return { isThread, parentId: isThread ? channel.parent_id : undefined }
+      return { type: channel.type, isThread, parentId: isThread ? channel.parent_id : undefined }
     } catch {
       return null
     }
@@ -493,7 +519,11 @@ export class DiscordGateway {
   }
 
   private identify(): void {
-    const intents = GatewayIntents.GUILDS | GatewayIntents.GUILD_MESSAGES | GatewayIntents.MESSAGE_CONTENT
+    const intents =
+      GatewayIntents.GUILDS |
+      GatewayIntents.GUILD_MESSAGES |
+      GatewayIntents.DIRECT_MESSAGES |
+      GatewayIntents.MESSAGE_CONTENT
 
     this.ws?.send(
       JSON.stringify({

@@ -3,7 +3,7 @@
  */
 
 /** All known slash command subcommands. Used for parsing user input. */
-export const TAU_SLASH_COMMANDS = ['status', 'help', 'ask', 'link', 'notify', 'unnotify'] as const
+export const TAU_SLASH_COMMANDS = ['status', 'help', 'ask', 'squad', 'link', 'notify', 'unnotify'] as const
 
 /**
  * Discord option names for extracting content from slash command subcommands.
@@ -24,4 +24,12 @@ export function isTauSlashCommand(cmd: string): cmd is TauSlashCommand {
 
 export function isTauSyncCommand(cmd: string): cmd is TauSyncCommand {
   return (TAU_SYNC_COMMANDS as readonly string[]).includes(cmd)
+}
+
+/** Text commands also work in bot DMs without provider slash-command registration. */
+export function parseDirectCommand(text: string): { command: string; text: string } | null {
+  const match = text
+    .trim()
+    .match(/^(?:\/(?:tau(?:@\w+)?\s+)?|@?tau\s+)(squad|help|status|link)(?:@\w+)?(?:\s+(.*))?$/is)
+  return match ? { command: match[1].toLowerCase(), text: match[2]?.trim() ?? '' } : null
 }

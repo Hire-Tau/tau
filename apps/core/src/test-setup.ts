@@ -534,11 +534,22 @@ if (schemaCache?.matches()) {
   {
     const { getTableConfig } = await import('drizzle-orm/pg-core')
     const { getTableName } = await import('drizzle-orm')
-    const { integrationOutputEvents, integrationOutputDeliveries, integrationOutputTriggerRuns } =
-      await import('./db/schema')
+    const {
+      integrationOutputEvents,
+      integrationOutputDeliveries,
+      integrationOutputTriggerRuns,
+      channelDirectChats,
+      channelDirectAgents,
+    } = await import('./db/schema')
     const quote = (name: string) => '"' + name.replaceAll('"', '""') + '"'
     const statements: string[] = []
-    for (const table of [integrationOutputEvents, integrationOutputDeliveries, integrationOutputTriggerRuns]) {
+    for (const table of [
+      integrationOutputEvents,
+      integrationOutputDeliveries,
+      integrationOutputTriggerRuns,
+      channelDirectChats,
+      channelDirectAgents,
+    ]) {
       const config = getTableConfig(table)
       const add = (name: string, clause: string) => {
         const literal = name.slice(0, 63).replaceAll("'", "''")

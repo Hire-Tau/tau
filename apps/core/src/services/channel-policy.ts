@@ -39,9 +39,39 @@ export async function requireAllowedChannel(
   if (!isChannelAllowed(instance, policyChannelId)) throw new Error('Channel excluded by administrator policy')
 }
 
-export async function requireAllowedChannelReply(instanceId: string | undefined, channelId: string): Promise<void> {
+export async function requireAllowedChannelReply(
+  instanceId: string | undefined,
+  channelId: string,
+  directAgentId?: string
+): Promise<void> {
   const { ChannelInstance } = await import('../entities/ChannelInstance')
   const instance = instanceId ? await ChannelInstance.find(instanceId) : null
   if (!instance) throw new Error('Channel connection no longer exists')
   await requireAllowedChannel(instance, channelId)
+  if (directAgentId) {
+    const { db, channelDirectAgents, channelDirectChats, channelIdentityLinks } = await import('../db')
+    const { and, eq } = await import('drizzle-orm')
+    const { findLinkedChannelUser } = await import('./channel-access')
+    const { hasUserPermissionWithExecutor } = await import('./rbac/permissions')
+    const [binding] = await db
+      .select()
+      .from(channelDirectAgents)
+      .innerJoin(channelDirectChats, eq(channelDirectChats.id, channelDirectAgents.chatId))
+      .innerJoin(channelIdentityLinks, eq(channelIdentityLinks.id, channelDirectChats.linkId))
+      .where(
+        and(
+          eq(channelDirectAgents.agentId, directAgentId),
+          eq(channelDirectChats.channelId, channelId),
+          eq(channelIdentityLinks.instanceId, instance.id)
+        )
+      )
+    const link = binding && (await findLinkedChannelUser(instance, binding.channel_identity_links.externalUserId))
+    if (
+      !link ||
+      link.id !== binding.channel_identity_links.id ||
+      !(await hasUserPermissionWithExecutor(db, link.userId, 'chat:send', binding.channel_direct_agents.squadId))
+    ) {
+      throw new Error('Private conversation access was revoked')
+    }
+  }
 }

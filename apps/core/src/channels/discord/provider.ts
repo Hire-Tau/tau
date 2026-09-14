@@ -209,6 +209,7 @@ export const discordProvider: ChannelProvider = {
           name: user?.global_name || user?.username || 'User',
         },
         messageId: interaction.id,
+        isDirectMessage: !interaction.guild_id && interaction.channel?.type === 1,
         isInThread: [10, 11, 12].includes(interaction.channel?.type ?? -1),
         raw: {
           interactionToken: interaction.token,
@@ -224,7 +225,11 @@ export const discordProvider: ChannelProvider = {
   },
 
   extractPlatformId(payload: unknown): string | undefined {
-    return (payload as DiscordInteraction).guild_id
+    const interaction = payload as DiscordInteraction
+    return (
+      interaction.guild_id ??
+      (interaction.channel?.type === 1 ? getChannelIntegrationValue('DISCORD_GUILD_ID') : undefined)
+    )
   },
 
   // ===========================================================================

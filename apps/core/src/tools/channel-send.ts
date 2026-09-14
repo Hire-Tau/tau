@@ -34,11 +34,17 @@ export function createChannelSendTool(agentId: string): ToolDefinition {
       if (!provider) return failure(`Unknown provider: ${providerName}`)
 
       try {
-        await requireAllowedChannelReply(agentContext.channelInstance?.id, thread.channelId)
+        await requireAllowedChannelReply(
+          agentContext.channelInstance?.id,
+          thread.channelId,
+          agentContext.directMessage ? agentId : undefined
+        )
         const result = await provider.postMessage({
           channelId: thread.channelId,
-          threadId: thread.id,
-          text: params.content,
+          threadId: agentContext.directMessage && providerName !== 'slack' ? undefined : thread.id,
+          text: agentContext.directMessage
+            ? `${agentContext.directMessageSquadName}:\n\n${params.content}`
+            : params.content,
         })
         await agent.update({
           context: appendKnownChannelMessage(agentContext, {

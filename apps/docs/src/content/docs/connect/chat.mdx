@@ -78,13 +78,13 @@ Reinstall the Slack app after changing its scopes.
    generated link and add the bot to your server.
 5. Back on the card, choose the **server**. When the bot is in exactly one
    server it is picked for you. Commands registered to a chosen server appear
-   immediately; without one they are registered globally and can take up to an
-   hour to show.
+   immediately. Tau also registers a global copy for private bot DMs, which
+   can take up to an hour to show.
 
 ## Route messages to a squad
 
-On the provider card, choose a **Default squad**. Messages arriving through
-that bot go to this squad, and the routing entry under **Channel routing and access** is
+On the provider card, choose a **Default squad**. New conversations through
+that bot start in this squad unless a linked user chooses another squad in a private DM, and the routing entry under **Channel routing and access** is
 created for you.
 
 To send one channel or chat somewhere else, choose **Add override** under
@@ -109,6 +109,34 @@ or you lose it. Use **Unlink** to remove a connection to your external account.
 Your Tau account needs permission to chat in the squad selected by the routing
 rule. Tau checks that permission on every incoming message.
 
+## Talk to different squads in a private chat
+
+Link your account, then send `/tau squad` in a private chat with the bot. Tau lists
+squads you have permission to chat in, using the same slugs as their Tau page URLs.
+Choose one with `/tau squad my-squad`. A full squad name or ID also works. Tau
+confirms the selection before you send your request.
+
+- **Telegram and Discord:** the selection applies to your private bot chat.
+  Switch again with `/tau squad another-squad`. Returning to a squad resumes its
+  consultant conversation. Discord bot DMs do not support server-style threads.
+- **Slack:** each new message in the bot DM starts a reply thread. `/tau squad
+my-squad` starts a thread for that squad. Continue by replying in the thread;
+  no mention is needed for ordinary DM replies. To switch squads within the
+  thread, send `@Tau squad another-squad`. Slack does not allow custom slash
+  commands inside threads. Each thread keeps its own selection and a separate
+  conversation for every squad used there.
+
+In Telegram or Discord, `/squad my-squad` or the plain message `tau squad my-squad`
+also works. In Slack threads, `tau squad my-squad` works without a mention too.
+This is useful while Discord's native DM commands are still propagating.
+
+Squad switching requires a linked account, even if the chat is trusted. It does
+not change administrator routing for group chats or server channels. Existing
+work can still send updates after you switch; replies identify their squad.
+Tau keeps each squad's history separate instead of importing the whole private
+chat. Permission changes apply to new messages and delayed replies, and unlinking
+removes your saved selections and conversation bindings.
+
 ### Trust a channel instead
 
 An administrator can enter specific **Trusted channel IDs** in the provider's
@@ -129,11 +157,11 @@ command when connecting an account.
 Send `/tau help` to check connectivity; help works before linking. After linking,
 send `/tau ask What is this squad working on?`.
 
-- **Slack:** start `/tau` in the channel composer. Mention the bot in its reply
+- **Slack channels:** start `/tau` in the channel composer. Mention the bot in its reply
   thread to continue; ordinary unmentioned thread replies are ignored.
-- **Discord:** use `/tau` or mention the bot. Mention it again in the thread for
+- **Discord server channels:** use `/tau` or mention the bot. Mention it again in the thread for
   follow-ups, or use a slash command in that thread.
-- **Telegram:** messages in a private bot chat continue the same conversation.
+- **Telegram:** messages in a private bot chat continue the selected squad’s conversation.
   In a group, use `/tau` or reply to a bot message.
 
 Tau uses a consultant for these conversations, with tools to reply and post
@@ -166,7 +194,7 @@ and trusted channels. Use the remove control beside a row to delete that ID,
 and **Add trusted channel** to add an explicit trust exception. Save the policy
 when finished.
 
-Threads follow their parent channel's policy. Tau ignores excluded channels,
+Threads follow their parent channel's policy. The same lists apply to private DM IDs; if you restrict allowed channels, include the DMs you want to permit. Tau ignores excluded channels,
 including help and linking requests, and stops sending delayed replies or squad
 notifications there. Users still need their linked account's squad chat permission
 unless the channel is explicitly trusted.

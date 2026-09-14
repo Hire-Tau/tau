@@ -1,3 +1,5 @@
+import { handleDirectMessage } from './direct-messages'
+import { parseDirectCommand } from '../lib/channels'
 import { isChannelAllowed } from '../services/channel-policy'
 /**
  * Shared Channel Event Handler
@@ -62,14 +64,26 @@ export async function handleChannelEvent(
   }
 
   // Ignore ordinary threaded chatter before issuing authorization notices.
-  if (event.type === 'message' && !provider.reusesThreadForChat) return { response: { ok: true } }
+  if (event.type === 'message' && !event.isDirectMessage && !provider.reusesThreadForChat)
+    return { response: { ok: true } }
   if (!isChannelAllowed(channelInstance, event.routingChannelId ?? event.channelId)) return { response: { ok: true } }
+  if (event.isDirectMessage) {
+    const command = parseDirectCommand(event.text)
+    if (command) event = { ...event, ...command }
+  }
   const linkReply = await channelLinkReply(
     channelInstance,
     event.user,
     event.command === 'link' ? `link ${event.text}` : event.text
   )
   if (linkReply) return sendImmediate(provider, event, linkReply)
+  if (event.isDirectMessage) return handleDirectMessage(provider, event, channelInstance)
+  if (event.command === 'squad')
+    return sendImmediate(
+      provider,
+      event,
+      'Squad switching is available in private bot DMs. This channel uses its administrator-defined squad route.'
+    )
   if (event.command !== 'help') {
     const targetSquad = channelInstance.resolveTargetSquad({
       responseContext: buildResponseContext(provider, event),
@@ -460,7 +474,7 @@ async function sendImmediate(provider: ChannelProvider, event: ChannelEvent, tex
     await provider.postMessage({
       channelId: event.channelId,
       text,
-      threadId: event.threadId ?? event.messageId,
+      threadId: event.isDirectMessage && provider.name !== 'slack' ? undefined : (event.threadId ?? event.messageId),
       replyToMessageId: event.messageId,
     })
     return { response: { ok: true }, emptyResponse: true }
