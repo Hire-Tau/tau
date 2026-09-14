@@ -126,7 +126,7 @@ export async function resumeWorkStream(workStreamId: string) {
         {
           recipientId: agentId,
           subject: 'Work stream resumed',
-          content: `Work stream ${id} has been explicitly resumed after an interruption.${pause.reason ? ` Pause reason: ${pause.reason}.` : ''} Continue the current work from its saved state. Re-read its workflow before advancing; do not restart completed work.`,
+          content: `Work stream ${id} has been explicitly resumed.${pause.reason ? `\nPrevious pause reason: ${pause.reason}` : ''}`,
           metadata: {
             source: attemptId ? 'workflow' : 'work-stream-resume',
             workStreamResume: true,

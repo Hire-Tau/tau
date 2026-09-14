@@ -72,9 +72,8 @@ test('handoffs include only recorded incoming attempts, retain all join inputs, 
   const prompt = flowMessage(stream, { state, version: 12 }, state.attempts[0]!)
   expect(prompt).not.toContain('Evidence 0')
   expect(prompt).toContain('research (attempt 12): Revised evidence')
-  expect(prompt).toContain(
-    'History: tau workstream flow stream-1 returns state.attempts (evidence, feedback, sourceAttemptIds)'
-  )
+  expect(prompt).not.toContain('History:')
+  expect(prompt).not.toContain('After submitting,')
   for (let index = 1; index < 10; index++)
     expect(prompt).toContain(`research (attempt ${index + 2}): Evidence ${index}`)
   expect(prompt).toContain('execute → review: Fix the missing default-path check.')
@@ -86,7 +85,7 @@ test('parallel guidance only appears for an active branch or concurrent attempts
   const state = createWorkflowRun(createBlankWorkflow())
   state.attempts[0]!.branch = { forkId: 1, branchId: 'left' }
   expect(flowMessage(stream, { state, version: 0 }, state.attempts[0]!)).toContain(
-    'Parallel agents share this workspace'
+    'Parallel work is active in this shared workspace.'
   )
 })
 
@@ -100,8 +99,7 @@ test('delivery instructions are available only for current active completion wor
   expect(instructions).toContain('Do not enable that policy yourself')
   expect(instructions).toContain('tau workstream finish stream-1 --version 4')
   expect(instructions).toContain('existing codeHost binding')
-  expect(instructions).toContain("tau workstream advance STREAM_ID --content '{")
-  expect(instructions).toContain('--stdin')
+  expect(instructions).not.toContain('"action":"rework"')
   expect(instructions).not.toContain('--file')
   expect(instructions).not.toContain('github.repo/github.pr')
   expect(deliveryInstructionsForRun({ ...stream, status: 'done' }, state, 4)).toBeUndefined()

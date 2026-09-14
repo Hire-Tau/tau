@@ -141,7 +141,7 @@ export async function notifyFlowWaitResolution(
           recipientId: agentId,
           senderType: 'system',
           subject: `Input resolved for ${attempt.stepId}`,
-          content: `Wait resolved: ${wait.message ?? 'Requested input'}\n\n${wait.resolutionNote ?? 'The blocker was cleared.'}\nContinue this attempt after checking for any remaining waits; this is not step approval.`,
+          content: `Work stream ${workStreamId}, step ${attempt.stepId} (attempt ${attempt.id})\nWait resolved: ${wait.message ?? 'Requested input'}\n\n${wait.resolutionNote ?? 'The blocker was cleared.'}`,
           deliveryMode: 'steer',
           metadata: { source: 'workflow-wait-resolution', workStreamId, attemptId: attempt.id },
         },

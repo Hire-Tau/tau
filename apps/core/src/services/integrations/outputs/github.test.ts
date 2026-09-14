@@ -117,9 +117,11 @@ test('CI outputs retain monotonic workflow run/attempt identity for every linked
         workflow_id: 1,
         run_number: 10,
         run_attempt: 2,
+        name: 'CI / Core',
         conclusion: 'failure',
         updated_at: date,
         head_sha: 'abc',
+        html_url: 'https://github.com/Acme/Project/actions/runs/50',
         pull_requests: [{ number: 3 }, { number: 4 }],
       },
     },
@@ -128,6 +130,24 @@ test('CI outputs retain monotonic workflow run/attempt identity for every linked
   expect(events[0]!.ordering).toEqual({ key: '1', position: [10, 2] })
   expect(events[0]!.data).toMatchObject({ pullRequest: { headSha: 'abc' }, state: 'failure' })
   expect(events[0]!.eventKey).not.toBe(events[1]!.eventKey)
+  expect(events[0]!.subject).toBe('CI failure: acme/project#3 · CI / Core')
+  expect(events[0]!.body).toBe(
+    'CI / Core: failure\nHead: abc · Run #10 · Attempt 2\nhttps://github.com/Acme/Project/actions/runs/50'
+  )
+})
+
+test('CI notifications tolerate missing optional workflow details without empty placeholders', () => {
+  const [event] = githubOutputAdapter.normalize({
+    type: 'workflow_run',
+    payload: {
+      action: 'completed',
+      repository,
+      sender: { login: 'tauagent' },
+      workflow_run: { id: 51, conclusion: 'success', updated_at: date, pull_requests: [{ number: 3 }] },
+    },
+  })
+  expect(event!.subject).toBe('CI success: acme/project#3 · Workflow')
+  expect(event!.body).toBe('Workflow: success')
 })
 
 test('invalid native identities cannot broaden correlation or cross a repository boundary', () => {
