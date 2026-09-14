@@ -56,11 +56,17 @@ export async function handleChannelEvent(
   const channelInstance = await ChannelInstance.findByProvider(provider.name, platformId)
   if (!channelInstance) {
     log.warn(`${provider.name}: no channel instance for platform ${platformId}`)
-    return { response: provider.formatErrorResponse('This server/workspace is not configured.') }
+    return sendChannelConfigurationError(provider, event)
   }
 
   // Handle sync commands (status, help, notify, unnotify)
   if (event.type === 'slash_command' && isTauSyncCommand(event.command || '')) {
+    // Status resolves a squad too; help and explicit notification subscriptions
+    // do not depend on the default route and remain available.
+    if (event.command === 'status' && isChatRouteMissing(provider, event, channelInstance)) {
+      return sendChannelConfigurationError(provider, event)
+    }
+
     const response = await channelInstance.handleSyncCommand({
       command: event.command!,
       content: event.text,
@@ -126,6 +132,10 @@ async function handleSlashCommand(
     })
 
     return { response: provider.formatDeferredResponse() }
+  }
+
+  if (isChatRouteMissing(provider, event, channelInstance)) {
+    return sendChannelConfigurationError(provider, event)
   }
 
   // Post "Thinking..." indicator (provider-specific)
@@ -338,7 +348,7 @@ async function handleMessage(
   const thinkingMsg = await provider.postMessage({
     channelId: event.channelId,
     text: '_Thinking..._',
-    threadId: event.threadId, // Keep the response in the tracked parent thread
+    threadId: event.messageId, // Chat IDs track concierges, but replies need a message ID
   })
 
   await InboxMessage.send({
@@ -373,6 +383,12 @@ async function handleNewChatMessage(
   event: ChannelEvent,
   channelInstance: ChannelInstance
 ): Promise<HandlerResult> {
+  // Resolve before posting: a missing target must never leave orphaned Thinking.
+  // Existing chat concierges bypass this check intentionally.
+  if (isChatRouteMissing(provider, event, channelInstance)) {
+    return sendChannelConfigurationError(provider, event)
+  }
+
   // Post "Thinking..." as reply to user's message
   const thinkingMsg = await provider.postMessage({
     channelId: event.channelId,
@@ -406,6 +422,36 @@ async function handleNewChatMessage(
 // =============================================================================
 // Helpers
 // =============================================================================
+
+/** Telegram ignores formatted HTTP error bodies; acknowledge only after the API
+ * accepts the in-chat reply. Transport errors propagate instead of claiming success. */
+export async function sendChannelConfigurationError(
+  provider: ChannelProvider,
+  event: ChannelEvent
+): Promise<HandlerResult> {
+  if (!provider.sendsResponseViaApi) {
+    return { response: provider.formatErrorResponse('This server/workspace is not configured.') }
+  }
+
+  await provider.postMessage({
+    channelId: event.channelId,
+    threadId: event.messageId,
+    text: 'This bot needs configuration. Ask an administrator to check the bot connection and select a Default Squad in the integration settings. New conversations without a matching routing override cannot be started.',
+  })
+  return { response: { ok: true }, emptyResponse: true }
+}
+
+function isChatRouteMissing(provider: ChannelProvider, event: ChannelEvent, instance: ChannelInstance): boolean {
+  return (
+    provider.reusesThreadForChat === true &&
+    !instance.resolveTargetSquad({
+      command: event.command || 'ask',
+      content: event.text,
+      user: event.user,
+      responseContext: buildResponseContext(provider, event),
+    })
+  )
+}
 
 function buildResponseContext(provider: ChannelProvider, event: ChannelEvent): ResponseContext {
   return {
