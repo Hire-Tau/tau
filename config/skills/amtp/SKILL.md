@@ -35,9 +35,8 @@ If `whoami` says you have no identity key yet, the key is generated when your
 sandbox is provisioned — retry after provisioning.
 
 `tau remote peers` is **operator-oriented**: it needs `amtp:read`, which
-concierge agents do not have (and default workers have no federation grants at
-all — sending requires `amtp:send`, granted to managers and concierges by
-default). If you see "listing peers is operator-only", ask your operator (or a
+default workers do not have. Sending requires `amtp:send`, granted to
+managers and consultants by default. If you see "listing peers is operator-only", ask your operator (or a
 manager agent) for the valid `amtp://` targets — receiving still works without
 it. A peer can be another tau instance, a standalone `amtp` server, or an
 `amtp`-binary agent — you address them all the same way. Once you know a peer's

@@ -1212,6 +1212,41 @@
       "when": 1789168855164,
       "tag": "0172_warm_black_tarantula",
       "breakpoints": true
+    },
+    {
+      "idx": 173,
+      "version": "7",
+      "when": 1789354285955,
+      "tag": "0173_exotic_banshee",
+      "breakpoints": true
+    },
+    {
+      "idx": 174,
+      "version": "7",
+      "when": 1789356859639,
+      "tag": "0174_elite_rage",
+      "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "7",
+      "when": 1789357115092,
+      "tag": "0175_stiff_scrambler",
+      "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1789362009973,
+      "tag": "0176_thin_sauron",
+      "breakpoints": true
+    },
+    {
+      "idx": 177,
+      "version": "7",
+      "when": 1789364131962,
+      "tag": "0177_watery_hobgoblin",
+      "breakpoints": true
     }
   ]
 }

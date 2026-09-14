@@ -1,10 +1,15 @@
+import { discordProvider } from './provider'
+import { handleDiscordInteraction } from './interactions'
+import { handleChannelEvent } from '../handler'
+import { isChannelAllowed } from '../../services/channel-policy'
 /**
  * Discord Gateway Connection
  *
  * Maintains WebSocket connection to Discord Gateway for receiving
- * MESSAGE_CREATE events in threads.
+ * messages and slash commands without requiring a public interactions webhook.
  */
 
+import { canUseChannel, channelLinkReply, CHANNEL_ACCESS_DENIED } from '../../services/channel-access'
 import { createLogger } from '../../lib/infra/logger'
 import { getChannelIntegrationValue } from '../../services/integrations/channels/settings'
 
@@ -26,6 +31,7 @@ const GatewayOpcode = {
 const GatewayIntents = {
   GUILDS: 1 << 0,
   GUILD_MESSAGES: 1 << 9,
+  DIRECT_MESSAGES: 1 << 12,
   MESSAGE_CONTENT: 1 << 15,
 } as const
 
@@ -154,10 +160,22 @@ export class DiscordGateway {
         break
       }
 
+      case 'INTERACTION_CREATE':
+        void this.handleInteractionCreate(data).catch(() => log.error('Discord interaction handling failed'))
+        break
+
       case 'MESSAGE_CREATE':
-        this.handleMessageCreate(data as DiscordMessage)
+        void this.handleMessageCreate(data as DiscordMessage).catch((error) =>
+          log.error('Discord message handling failed', error)
+        )
         break
     }
+  }
+
+  private async handleInteractionCreate(payload: unknown): Promise<void> {
+    const event = await discordProvider.parseWebhook(payload, {})
+    if (!event || event.type !== 'slash_command') return
+    await handleDiscordInteraction(payload, event, (id) => this.getChannelRouting(id))
   }
 
   private async handleMessageCreate(message: DiscordMessage): Promise<void> {
@@ -173,6 +191,29 @@ export class DiscordGateway {
     const provider = getProvider('discord')
     if (!provider) return
 
+    if (!message.guild_id) {
+      // DM events do not contain a guild. Bind to the configured bot connection,
+      // then verify the native channel type (group DMs are deliberately excluded).
+      const guildId = getChannelIntegrationValue('DISCORD_GUILD_ID')
+      const routing = await this.getChannelRouting(message.channel_id)
+      if (!guildId || routing?.type !== 1) return
+      await handleChannelEvent(
+        provider,
+        {
+          type: 'message',
+          text: message.content,
+          channelId: message.channel_id,
+          user: { id: message.author.id, name: message.author.username },
+          messageId: message.id,
+          isInThread: false,
+          isDirectMessage: true,
+          raw: {},
+        },
+        guildId
+      )
+      return
+    }
+
     // Check if bot is mentioned
     const isBotMentioned = !!this.botUserId && !!message.mentions?.some((m) => m.id === this.botUserId)
 
@@ -180,12 +221,37 @@ export class DiscordGateway {
     const threadId = message.channel_id
 
     // Check if we're tracking this thread
-    const agent = await Agent.findByThreadId('discord', threadId)
+    if (!isBotMentioned || !message.guild_id) return
+    const channelInstance = await ChannelInstance.findByProvider('discord', message.guild_id)
+    if (!channelInstance || channelInstance.disabled) return
+    const routing = await this.getChannelRouting(message.channel_id)
+    if (!routing) return // Fail closed if Discord cannot establish the channel's parent.
+    const routingChannelId = routing.parentId ?? message.channel_id
+    if (!isChannelAllowed(channelInstance, routingChannelId)) return
+    const targetSquad = channelInstance.resolveTargetSquad({
+      responseContext: { provider: 'discord', channelId: routingChannelId },
+    } as import('../provider').InboundMessage)
+    let agent = await Agent.findByThreadId('discord', threadId, channelInstance.id, message.channel_id)
+    if (agent?.squadId !== targetSquad) agent = null
 
     // Replace bot mentions with @Tau
     const cleanedContent = this.botUserId
       ? message.content.replace(new RegExp(`<@!?${this.botUserId}>`, 'g'), '@Tau').trim()
       : message.content
+
+    const linking = await channelLinkReply(
+      channelInstance,
+      { id: message.author.id, name: message.author.username },
+      cleanedContent
+    )
+    if (linking) {
+      await provider.postMessage({ channelId: message.channel_id, text: linking })
+      return
+    }
+    if (!targetSquad || !(await canUseChannel(channelInstance, routingChannelId, message.author.id, targetSquad))) {
+      await provider.postMessage({ channelId: message.channel_id, text: CHANNEL_ACCESS_DENIED })
+      return
+    }
 
     // Threaded Discord conversations only respond to explicit mentions, even
     // when Tau created the thread.
@@ -201,19 +267,25 @@ export class DiscordGateway {
       log.info(`Discord: @mention from ${message.author.username} in channel ${message.channel_id}`)
 
       // Find channel instance
-      if (!message.guild_id) return
-      const channelInstance = await ChannelInstance.findByProvider('discord', message.guild_id)
-      if (!channelInstance) return
 
       // Check if this is a mention in a thread (tracked or user-created)
-      const isThread = !agent ? await this.isChannelThread(message.channel_id) : false
+      const isThread = routing.isThread
 
       if (agent || isThread) {
         // Mention in thread - fetch history FIRST, then post thinking
         log.info(`Discord: mention in thread ${threadId}`)
 
         // Fetch history BEFORE posting thinking message
-        const history = await this.buildThreadHistory(provider, threadId, message.id, cleanedContent, message.author)
+        const history = await this.buildThreadHistory(
+          provider,
+          threadId,
+          message.id,
+          cleanedContent,
+          message.author,
+          channelInstance,
+          routingChannelId,
+          targetSquad
+        )
 
         // Now post thinking message
         const thinkingMsg = await provider.postMessage({
@@ -235,6 +307,7 @@ export class DiscordGateway {
               type: 'channel_message',
               channelContext: {
                 provider: 'discord',
+                routingChannelId,
                 channelId: threadId,
                 messageToEdit: thinkingMsg.messageId,
               },
@@ -244,13 +317,14 @@ export class DiscordGateway {
             },
           })
         } else {
-          // First time in this thread - queue for concierge
-          await channelInstance.queueForConcierge({
+          // First time in this thread - queue for consultant
+          await channelInstance.queueForConsultant({
             command: 'mention',
             content,
             user: { id: message.author.id, name: message.author.username },
             responseContext: {
               provider: 'discord',
+              routingChannelId,
               channelId: threadId,
               messageToEdit: thinkingMsg.messageId,
               tauInitiated: false, // User created this thread, not Tau
@@ -272,12 +346,13 @@ export class DiscordGateway {
         text: '_Thinking..._',
       })
 
-      await channelInstance.queueForConcierge({
+      await channelInstance.queueForConsultant({
         command: 'mention',
         content: cleanedContent,
         user: { id: message.author.id, name: message.author.username },
         responseContext: {
           provider: 'discord',
+          routingChannelId,
           channelId: thread.id,
           messageToEdit: thinkingMsg.messageId,
           tauInitiated: true,
@@ -291,7 +366,10 @@ export class DiscordGateway {
     threadId: string,
     currentMessageId: string,
     currentMessageText: string,
-    currentAuthor: { id: string; username: string }
+    currentAuthor: { id: string; username: string },
+    instance: import('../../entities/ChannelInstance').ChannelInstance,
+    routingChannelId: string,
+    squadId: string
   ): Promise<string> {
     try {
       const messages = await provider.getThreadHistory(threadId, threadId, 50)
@@ -320,7 +398,12 @@ export class DiscordGateway {
         },
       ]
 
-      const formatted = allMessages
+      const allowedMessages = []
+      for (const item of allMessages) {
+        if (item.userId === this.botUserId || (await canUseChannel(instance, routingChannelId, item.userId, squadId)))
+          allowedMessages.push(item)
+      }
+      const formatted = allowedMessages
         .filter((m) => m.text && m.text.trim()) // Skip empty messages
         .map((m) => {
           const label = m.isBotMessage ? '@Tau' : `<@${m.userId}>`
@@ -354,19 +437,24 @@ export class DiscordGateway {
     return response.json()
   }
 
-  private async isChannelThread(channelId: string): Promise<boolean> {
+  private async getChannelRouting(
+    channelId: string
+  ): Promise<{ isThread: boolean; parentId?: string; type: number } | null> {
     try {
       const response = await fetch(`https://discord.com/api/v10/channels/${channelId}`, {
         headers: { Authorization: `Bot ${this.botToken}` },
+        signal: AbortSignal.timeout(10_000),
       })
 
-      if (!response.ok) return false
+      if (!response.ok) return null
 
-      const channel = (await response.json()) as { type: number }
+      const channel = (await response.json()) as { type: number; parent_id?: string }
       // Thread types: 10 = news thread, 11 = public thread, 12 = private thread
-      return channel.type === 10 || channel.type === 11 || channel.type === 12
+      const isThread = channel.type === 10 || channel.type === 11 || channel.type === 12
+      if (isThread && !channel.parent_id) return null
+      return { type: channel.type, isThread, parentId: isThread ? channel.parent_id : undefined }
     } catch {
-      return false
+      return null
     }
   }
 
@@ -386,7 +474,11 @@ export class DiscordGateway {
   }
 
   private identify(): void {
-    const intents = GatewayIntents.GUILDS | GatewayIntents.GUILD_MESSAGES | GatewayIntents.MESSAGE_CONTENT
+    const intents =
+      GatewayIntents.GUILDS |
+      GatewayIntents.GUILD_MESSAGES |
+      GatewayIntents.DIRECT_MESSAGES |
+      GatewayIntents.MESSAGE_CONTENT
 
     this.ws?.send(
       JSON.stringify({

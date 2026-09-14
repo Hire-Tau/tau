@@ -7,14 +7,14 @@ description: "Set up Telegram bot integration — create the bot via BotFather, 
 
 ## Overview
 
-Telegram integration gives users bot commands in Telegram chats. A concierge
+Telegram integration gives users bot commands in Telegram chats. A consultant
 agent handles incoming messages, answers questions, and forwards action requests
 to squad managers. Thread replies via Telegram's reply-to-message feature
 maintain conversation context.
 
 ## Who Uses This
 
-This is primarily a **System Manager / Concierge** skill — either agent can walk
+This is primarily a **System Manager** skill — either agent can walk
 the human through setup. All steps are instance-level. Squad managers do not
 need this — squad linking is configured in the channel instance (Step 4).
 
@@ -123,7 +123,7 @@ Ask the human to test:
 
 1. Start a chat with the bot on Telegram
 2. Send `/tau help` or just `/help` — should show available commands
-3. Send a message — should get a response from the concierge
+3. Send a message — should get a response from the consultant
 
 Verify webhook info programmatically:
 

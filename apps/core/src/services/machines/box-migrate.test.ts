@@ -2232,7 +2232,7 @@ describe('sandboxHasActiveExecution (DB)', () => {
     const cases = [
       { agentTypeId: 'manager', status: 'running' },
       { agentTypeId: 'engineer', status: 'stopping' },
-      { agentTypeId: 'concierge', status: 'stopping' },
+      { agentTypeId: 'consultant', status: 'stopping' },
     ]
     for (const entry of cases) {
       const member = await insertAgentTracked({ agentTypeId: entry.agentTypeId, squadId: squad.id })
@@ -2295,7 +2295,7 @@ describe('sandboxHasActiveExecution (DB)', () => {
       { agentTypeId: 'manager' },
       { agentTypeId: 'consultant' },
       { agentTypeId: 'engineer' },
-      { agentTypeId: 'concierge' },
+      { agentTypeId: 'consultant' },
       { agentTypeId: 'system-manager' },
       { agentTypeId: ARTIFACT_BUILDER_AGENT_TYPE_ID },
       { agentTypeId: 'subagent', underParent: true },

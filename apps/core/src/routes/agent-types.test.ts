@@ -227,7 +227,7 @@ describe('agent type route validation', () => {
       headers: authHeaders(funcAdmin.token),
     })
     const body = await res.json()
-    expect(body.includes).toEqual(['rules', 'subagents', 'squad-rules'])
+    expect(body.includes).toEqual(['entity-references', 'rules', 'subagents', 'squad-rules'])
     expect(body.resolvedSystemPrompt).toContain('### Incident Response')
     expect(body.resolvedSystemPrompt).toContain('### Questions, waits, and pause')
     expect(body.systemPrompt).not.toContain('### Questions, waits, and pause')
@@ -270,7 +270,7 @@ describe('agent type route validation', () => {
     })
     expect(res.status).toBe(200)
     const body = await res.json()
-    expect(body.includes).toEqual(['rules', 'subagents', 'squad-rules'])
+    expect(body.includes).toEqual(['entity-references', 'rules', 'subagents', 'squad-rules'])
     expect(body.yamlFieldOverrides).not.toContain('includes')
   })
 })

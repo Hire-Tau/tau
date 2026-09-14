@@ -15,13 +15,7 @@ async function fixture(realtime: boolean) {
     stored.push(...entries)
     return {}
   })
-  const message = mock(async () => ({
-    id: 'task',
-    agentId: 'manager',
-    status: 'completed',
-    response: 'The task is complete',
-    error: null,
-  }))
+  const message = mock(async () => ({ id: 'task', agentId: 'manager', delivered: true, kind: 'background' }))
   const sendText = mock(async () => {})
   const voice = {
     history: [],
@@ -55,7 +49,7 @@ async function fixture(realtime: boolean) {
           pending: 0,
           messages: realtime
             ? []
-            : [{ id: 'reply', senderId: 'manager', senderName: 'User Assistant', content: 'The task is complete' }],
+            : [{ id: 'reply', senderId: 'manager', senderName: 'Assistant task', content: 'The task is complete' }],
         })),
         acknowledge: mock(async () => ({})),
         release: mock(async () => ({})),
@@ -136,7 +130,7 @@ test('sending returns immediately; waiting for replies does not disable the comp
   try {
     await f.dom.act(async () => f.render())
     expect(f.message).toHaveBeenCalledTimes(1)
-    expect(document.body.textContent).toContain('Waiting for an agent reply')
+    expect(document.body.textContent).toContain('Working in the background')
     expect((document.querySelector('textarea') as HTMLTextAreaElement).disabled).toBe(false)
     expect(f.stored.map((entry) => entry.role)).toEqual(['user'])
   } finally {
@@ -216,6 +210,29 @@ test('agent inbox updates are durable context, queued independently, and acknowl
     await f.dom.act(async () => queued[0].onDone())
     expect(f.props.dependencies.api.acknowledge.mock.calls[1][2]).toBe('one')
     expect(f.sendText).toHaveBeenCalledTimes(1)
+  } finally {
+    await f.dom.cleanup()
+    f.queryClient.clear()
+  }
+})
+
+test('Realtime inbox updates are saved as a compact "Task update" tool entry, not raw content', async () => {
+  const f = await fixture(true)
+  const enqueueMessage = mock(() => {})
+  Object.assign(f.voice, { isConnected: true, status: 'listening', enqueueMessage })
+  f.props.dependencies.api.inbox.mockImplementation(async () => ({
+    acquired: true,
+    pending: 0,
+    messages: [{ id: 'update', senderId: 'agent-1', senderName: 'Assistant task', content: 'The task is complete' }],
+  }))
+  try {
+    await f.dom.act(async () => f.render())
+    const update = f.stored.find((entry) => entry.toolName === 'assistant_inbox')!
+    expect(update).toBeDefined()
+    expect(update.text).toBe('Task update')
+    expect(update.role).toBe('tool')
+    expect(JSON.parse(update.toolResult!).content).toBe('The task is complete')
+    expect(enqueueMessage.mock.calls[0]?.[0].historyEntry.text).toBe('Task update')
   } finally {
     await f.dom.cleanup()
     f.queryClient.clear()
@@ -339,9 +356,14 @@ test('saved message receipts render an open row and preserve transcript scroll a
         role: 'tool',
         final: true,
         text: '',
-        toolName: 'message_squad_manager',
+        toolName: 'delegate_task',
         toolResult: JSON.stringify({
-          receipt: { id: 'message', agentId: 'manager', conversation: { agentId: 'manager', label: 'Manager' } },
+          id: 'message',
+          agentId: 'manager',
+          delivered: true,
+          kind: 'squad',
+          squadId: 'tau',
+          conversation: { agentId: 'manager', squadId: 'tau', label: 'Check schedules', kind: 'squad' },
         }),
       },
     ],
@@ -365,7 +387,7 @@ test('saved message receipts render an open row and preserve transcript scroll a
       transcript.scrollTop = 100
       transcript.dispatchEvent(new Event('scroll', { bubbles: true }))
     })
-    const row = document.querySelector<HTMLButtonElement>('button[aria-label^="Open conversation:"]')!
+    const row = document.querySelector<HTMLButtonElement>('button[aria-label^="View task:"]')!
     await f.dom.act(async () => row.click())
     expect(open.mock.calls[0]?.[0]).toMatchObject({ agentId: 'manager', squadId: 'tau' })
     expect(f.message).not.toHaveBeenCalled()
@@ -376,6 +398,32 @@ test('saved message receipts render an open row and preserve transcript scroll a
     expect(document.querySelector('[aria-label="Message Assistant"]')).toBe(draft)
     expect(draft.value).toBe('Keep this draft')
     expect(transcript.scrollTop).toBe(100)
+  } finally {
+    await f.dom.cleanup()
+    f.queryClient.clear()
+  }
+})
+
+test('legacy message receipts keep their Open conversation row', async () => {
+  const f = await fixture(true)
+  const open = mock()
+  ;(f.props as any).onOpenConversation = open
+  Object.assign(f.voice, {
+    history: [
+      {
+        id: 'sent',
+        role: 'tool',
+        final: true,
+        text: '',
+        toolName: 'message_squad_manager',
+        toolResult: JSON.stringify({ receipt: { id: 'message', agentId: 'manager' } }),
+      },
+    ],
+  })
+  try {
+    await f.dom.act(async () => f.render())
+    expect(document.querySelector('button[aria-label^="Open conversation:"]')).not.toBeNull()
+    expect(document.querySelector('button[aria-label^="View task:"]')).toBeNull()
   } finally {
     await f.dom.cleanup()
     f.queryClient.clear()

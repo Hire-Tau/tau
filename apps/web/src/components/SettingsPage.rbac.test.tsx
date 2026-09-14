@@ -499,6 +499,7 @@ describe('SettingsPage passkey management', () => {
       if (method === 'DELETE') return new Response(null, { status: 204 })
       if (method === 'PATCH') return json({ id: 'cred1', displayName: 'YubiKey 5C' })
       if (url.includes('/auth/me/credentials')) return json(CREDENTIALS)
+      if (url.includes('/channel-links')) return json({ links: [], pending: [] })
       return json({})
     }) as typeof globalThis.fetch
     ;({ container, root } = dom.createRoot())

@@ -7,7 +7,7 @@ description: "Help configure Tau credentials through their owning settings pages
 
 Tau encrypts stored secrets with AES-256-GCM. Server bootstrap requires `DATABASE_URL` and `TAU_ENCRYPTION_KEY`; provider and service credentials should normally be configured through the UI.
 
-This skill is for the System Manager or Concierge helping a human configure their instance. Check existing configuration before suggesting changes:
+This skill is for the System Manager helping a human configure their instance. Check existing configuration before suggesting changes:
 
 ```bash
 tau provider-auth list

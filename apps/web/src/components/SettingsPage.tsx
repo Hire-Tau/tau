@@ -1,3 +1,4 @@
+import { LinkedChatAccounts } from './settings/LinkedChatAccounts'
 import { SECTION_GROUPS, isSectionAllowed, isValidSection, type SectionId } from './settings/settingsSections'
 import { SettingsSearchDestination } from './settings/SettingsSearchDestination'
 import { useState, useEffect, useCallback, type FormEvent } from 'react'
@@ -684,6 +685,8 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
           </div>
         </div>
       )}
+
+      {user && <LinkedChatAccounts />}
 
       {/* Passkeys */}
       {isPasskeyMode && (

@@ -1,3 +1,4 @@
+import { consultantSandboxId } from '../services/sandbox/consultant-sandbox'
 import { lockFlowInboxDelivery } from '../services/work-streams/wait-scope'
 import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm'
 
@@ -418,14 +419,19 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
   }
 
   /**
-   * Find a concierge agent by thread ID and provider.
+   * Find a consultant agent by thread ID and provider.
    * Used for routing reply messages to the correct agent handling a thread.
    * @param provider - The channel provider (e.g. 'discord', 'slack')
    * @param threadId - The thread ID to search for
    * @returns The agent or null if not found
    */
-  static async findByThreadId(provider: string, threadId: string): Promise<Agent | null> {
-    const row = await findAgentRowByThreadId(provider, threadId)
+  static async findByThreadId(
+    provider: string,
+    threadId: string,
+    instanceId?: string,
+    channelId?: string
+  ): Promise<Agent | null> {
+    const row = await findAgentRowByThreadId(provider, threadId, instanceId, channelId)
     return row ? new Agent(row) : null
   }
 
@@ -648,9 +654,6 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     if (this.agentTypeId === 'system-manager') {
       return 'system-manager'
     }
-    if (this.agentTypeId === 'concierge') {
-      return 'concierge'
-    }
     if (this.agentTypeId === ARTIFACT_BUILDER_AGENT_TYPE_ID) {
       return ARTIFACT_BUILDER_RUNNER_TYPE
     }
@@ -751,11 +754,13 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
   }
 
   /**
-   * Get the agent's private sandbox ID. Subagents inherit the fully validated
+   * Get the agent's runtime sandbox ID. Subagents inherit the fully validated
    * live root owner's sandbox.
    */
   async getSandboxId(): Promise<string> {
     const owner = await this.resolveLiveSandboxOwner()
+    // Consultant conversations share one light runtime per squad.
+    if (owner.agentTypeId === 'consultant' && owner.squadId) return consultantSandboxId(owner.squadId)
     // A user's system-managers share one light sandbox + /private, scoped per
     // owning user (fall back to the per-agent box if owner is somehow unset).
     if (owner.agentTypeId === 'system-manager' && owner.ownerUserId) {
@@ -773,13 +778,15 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
   getPersonalSandboxIdForCleanup(): string | null {
     if (this.parentAgentId) return null
     if (this.agentTypeId === 'system-manager' && this.ownerUserId) return null
+    // Consultants may still have an old personal sandbox to collect; this
+    // never returns their squad's shared consultant runtime.
     return this.getAgentWorkspaceSandboxId()
   }
 
   /** Whether this runner can access its squad's shared sandbox during a turn. */
   hasSquadSandboxAccessForExecution(): boolean {
     if (!this.squadId) return false
-    return ['squad-manager', 'squad-worker', 'concierge', 'subagent'].includes(this.runnerType)
+    return ['squad-manager', 'squad-worker', 'subagent'].includes(this.runnerType)
   }
 
   /** Every sandbox whose migration fence must serialize with execution pickup. */

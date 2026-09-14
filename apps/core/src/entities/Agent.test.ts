@@ -2038,6 +2038,18 @@ describe('agents service', () => {
   })
 
   describe('Agent.getSandboxId', () => {
+    it('shares consultant runtimes per squad, including existing chats, without sharing cleanup ownership', async () => {
+      const make = (id: string, squadId: string) => new Agent({ id, agentTypeId: 'consultant', squadId } as any)
+      const first = make('first', 'squad-one')
+      const second = make('second', 'squad-one')
+      expect(await first.getSandboxId()).toBe('consultants_squad-one')
+      expect(await second.getSandboxId()).toBe(await first.getSandboxId())
+      expect(await make('third', 'squad-two').getSandboxId()).not.toBe(await first.getSandboxId())
+      // Old per-agent storage can still be retired; the shared runtime cannot.
+      expect(first.getPersonalSandboxIdForCleanup()).toBe('agent_first')
+      expect(second.getPersonalSandboxIdForCleanup()).toBe('agent_second')
+    })
+
     it('returns the per-user shared sandbox for system-manager agents', async () => {
       const agent = new Agent({
         id: 'agent-1',
@@ -2061,8 +2073,8 @@ describe('agents service', () => {
       expect(await agent.getSandboxId()).toBe('agent_agent-1')
     })
 
-    it('returns agent_<id> for concierge agents (not concierge_channel_<id>)', async () => {
-      const agent = new Agent({ id: 'agent-1', agentTypeId: 'concierge', squadId: null } as any)
+    it('returns agent_<id> for consultant agents (not consultant_channel_<id>)', async () => {
+      const agent = new Agent({ id: 'agent-1', agentTypeId: 'consultant', squadId: null } as any)
       expect(await agent.getSandboxId()).toBe('agent_agent-1')
     })
 
@@ -2161,9 +2173,12 @@ describe('agents service', () => {
 
   describe('Agent execution sandbox ids', () => {
     it('includes sorted private and squad boxes for squad-capable top-level runners', async () => {
-      for (const agentTypeId of ['manager', testAgentTypeId, 'concierge']) {
+      for (const agentTypeId of ['manager', testAgentTypeId, 'consultant']) {
         const agent = new Agent({ id: `agent-${agentTypeId}`, agentTypeId, squadId: 'squad-1' } as any)
-        expect(await agent.getExecutionSandboxIds()).toEqual([`agent_agent-${agentTypeId}`, 'squad_squad-1'])
+        expect(await agent.getExecutionSandboxIds()).toEqual([
+          agentTypeId === 'consultant' ? 'consultants_squad-1' : `agent_agent-${agentTypeId}`,
+          'squad_squad-1',
+        ])
       }
     })
 

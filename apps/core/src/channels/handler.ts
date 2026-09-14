@@ -1,3 +1,6 @@
+import { handleDirectMessage } from './direct-messages'
+import { parseDirectCommand } from '../lib/channels'
+import { isChannelAllowed } from '../services/channel-policy'
 /**
  * Shared Channel Event Handler
  *
@@ -6,6 +9,7 @@
  * processes them uniformly.
  */
 
+import { canUseChannel, channelLinkReply, CHANNEL_ACCESS_DENIED } from '../services/channel-access'
 import { isTauSyncCommand } from '../lib/channels'
 import type { ChannelProvider, ChannelEvent, ResponseContext, ThreadMessage } from './provider'
 import { Agent } from '../entities/Agent'
@@ -39,11 +43,11 @@ interface BuiltThreadHistory {
  * Handle a channel event.
  *
  * Flow:
- * 1. Slash command → post "Thinking..." parent → create thread → queue for concierge
+ * 1. Slash command → post "Thinking..." parent → create thread → queue for consultant
  * 2. @mention in channel → post "Thinking..." in thread on user's message → queue
  * 3. @mention in any thread → fetch history since last Tau → respond
  * 4. Message in regular thread → ignore (Tau only responds to mentions)
- * 5. Message in reusable chat provider → route to the chat concierge
+ * 5. Message in reusable chat provider → route to the chat consultant
  */
 export async function handleChannelEvent(
   provider: ChannelProvider,
@@ -56,11 +60,59 @@ export async function handleChannelEvent(
   const channelInstance = await ChannelInstance.findByProvider(provider.name, platformId)
   if (!channelInstance) {
     log.warn(`${provider.name}: no channel instance for platform ${platformId}`)
-    return { response: provider.formatErrorResponse('This server/workspace is not configured.') }
+    return sendChannelConfigurationError(provider, event)
+  }
+
+  // Ignore ordinary threaded chatter before issuing authorization notices.
+  if (event.type === 'message' && !event.isDirectMessage && !provider.reusesThreadForChat)
+    return { response: { ok: true } }
+  if (!isChannelAllowed(channelInstance, event.routingChannelId ?? event.channelId)) return { response: { ok: true } }
+  if (event.isDirectMessage && channelInstance.allowPrivateChats === false) return { response: { ok: true } }
+  if (event.isDirectMessage && (!event.command || event.command === 'message')) {
+    const command = parseDirectCommand(event.text)
+    if (command) event = { ...event, ...command }
+  }
+  const linkReply = await channelLinkReply(
+    channelInstance,
+    event.user,
+    event.command === 'link' ? `link ${event.text}` : event.text
+  )
+  if (linkReply) return sendImmediate(provider, event, linkReply)
+  if (event.isDirectMessage) return handleDirectMessage(provider, event, channelInstance)
+  if (event.command === 'squad')
+    return sendImmediate(
+      provider,
+      event,
+      'Squad switching is available in private bot DMs. This channel uses its administrator-defined squad route.'
+    )
+  if (event.command !== 'help') {
+    const targetSquad = channelInstance.resolveTargetSquad({
+      responseContext: buildResponseContext(provider, event),
+    } as import('./provider').InboundMessage)
+    if (!targetSquad) return sendChannelConfigurationError(provider, event)
+    if (
+      !(await canUseChannel(channelInstance, event.routingChannelId ?? event.channelId, event.user.id, targetSquad))
+    ) {
+      return sendImmediate(provider, event, CHANNEL_ACCESS_DENIED)
+    }
+    // Notification commands can name a different squad; authorize that target too.
+    if ((event.command === 'notify' || event.command === 'unnotify') && event.text.trim() !== targetSquad) {
+      return sendImmediate(
+        provider,
+        event,
+        'Notification commands must target this channel’s routed squad. Configure other notification destinations in Tau.'
+      )
+    }
   }
 
   // Handle sync commands (status, help, notify, unnotify)
   if (event.type === 'slash_command' && isTauSyncCommand(event.command || '')) {
+    // Status resolves a squad too; help and explicit notification subscriptions
+    // do not depend on the default route and remain available.
+    if (event.command === 'status' && isChatRouteMissing(provider, event, channelInstance)) {
+      return sendChannelConfigurationError(provider, event)
+    }
+
     const response = await channelInstance.handleSyncCommand({
       command: event.command!,
       content: event.text,
@@ -73,7 +125,8 @@ export async function handleChannelEvent(
       await provider.postMessage({
         channelId: event.channelId,
         text: response,
-        threadId: event.messageId, // Reply to user's message
+        threadId: event.messageId, // Parent thread for threaded providers
+        replyToMessageId: event.messageId,
       })
       return { response: { ok: true }, emptyResponse: true }
     }
@@ -105,8 +158,8 @@ async function handleSlashCommand(
   log.info(`${provider.name}: slash command '${event.command}' from ${event.user.name}`)
 
   // Check if command is in an existing active tracked thread. Terminated
-  // concierges are ignored so a later command can start a replacement agent.
-  const existingAgent = await Agent.findByThreadId(provider.name, event.channelId)
+  // consultants are ignored so a later command can start a replacement agent.
+  const existingAgent = await findChannelAgent(provider, event, channelInstance, event.channelId)
   if (existingAgent) {
     log.info(`${provider.name}: routing to existing agent ${existingAgent.id}`)
 
@@ -128,6 +181,10 @@ async function handleSlashCommand(
     return { response: provider.formatDeferredResponse() }
   }
 
+  if (isChatRouteMissing(provider, event, channelInstance)) {
+    return sendChannelConfigurationError(provider, event)
+  }
+
   // Post "Thinking..." indicator (provider-specific)
   const thinkingResult = await provider.postThinkingIndicator(event)
 
@@ -137,19 +194,17 @@ async function handleSlashCommand(
   }
 
   // If this command is happening inside a previously tracked thread whose
-  // concierge was terminated, findByThreadId() returns null. In that case,
-  // include the thread history so the replacement concierge has the full
+  // consultant was terminated, findByThreadId() returns null. In that case,
+  // include the thread history so the replacement consultant has the full
   // conversation context.
   const threadHistory = event.isInThread
-    ? await buildThreadHistory(
-        provider,
-        { ...event, threadId: event.threadId ?? event.channelId },
-        { includeAll: true }
-      )
+    ? await buildThreadHistory(provider, { ...event, threadId: event.threadId ?? event.channelId }, channelInstance, {
+        includeAll: true,
+      })
     : { content: event.text, imageIds: [] }
 
-  // Queue for concierge
-  await channelInstance.queueForConcierge({
+  // Queue for consultant
+  await channelInstance.queueForConsultant({
     command: event.command || 'ask',
     content: threadHistory.content || event.text,
     ...(threadHistory.imageIds.length ? { imageIds: threadHistory.imageIds } : {}),
@@ -157,7 +212,7 @@ async function handleSlashCommand(
     responseContext,
   })
 
-  log.info(`${provider.name}: queued ${event.command} for concierge`)
+  log.info(`${provider.name}: queued ${event.command} for consultant`)
 
   // Return based on provider's preference
   if (thinkingResult?.emptyResponse) {
@@ -179,7 +234,7 @@ async function handleMention(
 ): Promise<HandlerResult> {
   if (event.isInThread && event.threadId) {
     // Mention in a thread - fetch history and respond, regardless of who created the thread.
-    const existingAgent = await Agent.findByThreadId(provider.name, event.threadId)
+    const existingAgent = await findChannelAgent(provider, event, channelInstance!, event.threadId)
     return handleMentionInJoinedThread(provider, event, channelInstance, existingAgent)
   } else {
     // Mention in channel (not in thread) - create thread on user's message
@@ -203,22 +258,22 @@ async function handleMentionInChannel(
     : await provider.postMessage({
         channelId: event.channelId,
         text: '_Thinking..._',
-        threadId: event.messageId, // Reply to user's message
+        threadId: event.messageId, // Parent thread for threaded providers
+        replyToMessageId: event.messageId,
       })
 
-  const threadHistory = await buildThreadHistory(
-    provider,
-    { ...event, threadId: event.messageId },
-    { includeAll: true }
-  )
+  const threadHistory = await buildThreadHistory(provider, { ...event, threadId: event.messageId }, channelInstance, {
+    includeAll: true,
+  })
 
-  await channelInstance.queueForConcierge({
+  await channelInstance.queueForConsultant({
     command: 'mention',
     content: threadHistory.content || event.text,
     ...(threadHistory.imageIds.length ? { imageIds: threadHistory.imageIds } : {}),
     user: event.user,
     responseContext: {
       provider: provider.name,
+      routingChannelId: event.routingChannelId,
       channelId: event.channelId,
       threadId: event.messageId, // User's message is the thread parent
       messageToEdit: thinkingMsg.messageId,
@@ -239,7 +294,7 @@ async function handleMentionInJoinedThread(
   log.info(`${provider.name}: mention in thread, fetching history`)
 
   // Fetch thread history
-  const threadHistory = await buildThreadHistory(provider, event, { includeAll: !existingAgent })
+  const threadHistory = await buildThreadHistory(provider, event, channelInstance, { includeAll: !existingAgent })
 
   // Post "Thinking..." in thread
   const thinkingMsg = await provider.postMessage({
@@ -250,6 +305,7 @@ async function handleMentionInJoinedThread(
 
   const responseContext: ResponseContext = {
     provider: provider.name,
+    routingChannelId: event.routingChannelId,
     channelId: event.channelId,
     threadId: event.threadId,
     messageToEdit: thinkingMsg.messageId,
@@ -280,8 +336,8 @@ async function handleMentionInJoinedThread(
       },
     })
   } else {
-    // Queue for new concierge
-    await channelInstance.queueForConcierge({
+    // Queue for new consultant
+    await channelInstance.queueForConsultant({
       command: 'mention',
       content,
       ...(threadHistory.imageIds.length ? { imageIds: threadHistory.imageIds } : {}),
@@ -307,16 +363,16 @@ async function handleMessage(
     return { response: { ok: true } }
   }
 
-  const agent = await Agent.findByThreadId(provider.name, event.threadId)
+  const agent = await findChannelAgent(provider, event, channelInstance!, event.threadId)
 
-  // Some providers (like Telegram) reuse a single concierge per chat (no threads)
+  // Some providers (like Telegram) reuse a single consultant per chat (no threads)
   const reusesChat = provider.reusesThreadForChat === true
 
-  // For providers that reuse chats: create a concierge if none exists. Since
+  // For providers that reuse chats: create a consultant if none exists. Since
   // findByThreadId() ignores terminated agents, this also replaces terminated
-  // chat concierges and includes available history below.
+  // chat consultants and includes available history below.
   if (!agent && reusesChat && channelInstance) {
-    log.info(`${provider.name}: first active message in chat, creating concierge`)
+    log.info(`${provider.name}: first active message in chat, creating consultant`)
     return handleNewChatMessage(provider, event, channelInstance)
   }
 
@@ -328,7 +384,7 @@ async function handleMessage(
   }
 
   if (!agent) {
-    log.info(`${provider.name}: message without existing chat concierge, ignoring`)
+    log.info(`${provider.name}: message without existing chat consultant, ignoring`)
     return { response: { ok: true } }
   }
 
@@ -338,7 +394,8 @@ async function handleMessage(
   const thinkingMsg = await provider.postMessage({
     channelId: event.channelId,
     text: '_Thinking..._',
-    threadId: event.threadId, // Keep the response in the tracked parent thread
+    threadId: event.threadId,
+    replyToMessageId: event.messageId, // Telegram's chat ID is not a reply message ID
   })
 
   await InboxMessage.send({
@@ -373,26 +430,32 @@ async function handleNewChatMessage(
   event: ChannelEvent,
   channelInstance: ChannelInstance
 ): Promise<HandlerResult> {
+  // Resolve before posting: a missing target must never leave orphaned Thinking.
+  // Sender authorization and current routing are required for reused chats too.
+  if (isChatRouteMissing(provider, event, channelInstance)) {
+    return sendChannelConfigurationError(provider, event)
+  }
+
   // Post "Thinking..." as reply to user's message
   const thinkingMsg = await provider.postMessage({
     channelId: event.channelId,
     text: '_Thinking..._',
     threadId: event.messageId,
+    replyToMessageId: event.messageId,
   })
 
-  const threadHistory = await buildThreadHistory(
-    provider,
-    { ...event, threadId: event.channelId },
-    { includeAll: true }
-  )
+  const threadHistory = await buildThreadHistory(provider, { ...event, threadId: event.channelId }, channelInstance, {
+    includeAll: true,
+  })
 
-  await channelInstance.queueForConcierge({
+  await channelInstance.queueForConsultant({
     command: 'message',
     content: threadHistory.content || event.text,
     ...(threadHistory.imageIds.length ? { imageIds: threadHistory.imageIds } : {}),
     user: event.user,
     responseContext: {
       provider: provider.name,
+      routingChannelId: event.routingChannelId,
       channelId: event.channelId,
       threadId: event.channelId, // Use chat ID as thread
       messageToEdit: thinkingMsg.messageId,
@@ -407,9 +470,67 @@ async function handleNewChatMessage(
 // Helpers
 // =============================================================================
 
+async function sendImmediate(provider: ChannelProvider, event: ChannelEvent, text: string): Promise<HandlerResult> {
+  if (provider.sendsResponseViaApi || event.type !== 'slash_command') {
+    await provider.postMessage({
+      channelId: event.channelId,
+      text,
+      threadId: event.isDirectMessage && provider.name !== 'slack' ? undefined : (event.threadId ?? event.messageId),
+      replyToMessageId: event.messageId,
+    })
+    return { response: { ok: true }, emptyResponse: true }
+  }
+  return { response: provider.formatSyncResponse(text) }
+}
+
+async function findChannelAgent(
+  provider: ChannelProvider,
+  event: ChannelEvent,
+  instance: ChannelInstance,
+  threadId: string
+) {
+  const agent = await Agent.findByThreadId(provider.name, threadId, instance.id, event.channelId)
+  if (!agent) return null
+  const target = instance.resolveTargetSquad({
+    responseContext: buildResponseContext(provider, event),
+  } as import('./provider').InboundMessage)
+  return agent.squadId === target ? agent : null
+}
+
+/** Telegram ignores formatted HTTP error bodies; acknowledge only after the API
+ * accepts the in-chat reply. Transport errors propagate instead of claiming success. */
+export async function sendChannelConfigurationError(
+  provider: ChannelProvider,
+  event: ChannelEvent
+): Promise<HandlerResult> {
+  if (!provider.sendsResponseViaApi) {
+    return { response: provider.formatErrorResponse('This server/workspace is not configured.') }
+  }
+
+  await provider.postMessage({
+    channelId: event.channelId,
+    replyToMessageId: event.messageId,
+    text: 'This bot needs configuration. Ask an administrator to check the bot connection and select a Default Squad in the integration settings. New conversations without a matching routing override cannot be started.',
+  })
+  return { response: { ok: true }, emptyResponse: true }
+}
+
+function isChatRouteMissing(provider: ChannelProvider, event: ChannelEvent, instance: ChannelInstance): boolean {
+  return (
+    provider.reusesThreadForChat === true &&
+    !instance.resolveTargetSquad({
+      command: event.command || 'ask',
+      content: event.text,
+      user: event.user,
+      responseContext: buildResponseContext(provider, event),
+    })
+  )
+}
+
 function buildResponseContext(provider: ChannelProvider, event: ChannelEvent): ResponseContext {
   return {
     provider: provider.name,
+    routingChannelId: event.routingChannelId,
     channelId: event.channelId,
     threadId: event.threadId,
     extras: event.raw,
@@ -419,6 +540,7 @@ function buildResponseContext(provider: ChannelProvider, event: ChannelEvent): R
 async function buildThreadHistory(
   provider: ChannelProvider,
   event: ChannelEvent,
+  instance: ChannelInstance,
   options: { includeAll?: boolean } = {}
 ): Promise<BuiltThreadHistory> {
   if (!event.threadId) return { content: '', imageIds: [] }
@@ -427,8 +549,8 @@ async function buildThreadHistory(
     const messages = await provider.getThreadHistory(event.channelId, event.threadId, 50)
     const botUserId = await provider.getBotUserId()
 
-    // Existing active concierges only need the messages since the last Tau
-    // response. Replacement concierges need the full thread to recover context.
+    // Existing active consultants only need the messages since the last Tau
+    // response. Replacement consultants need the full thread to recover context.
     let startIndex = 0
     if (!options.includeAll) {
       for (let i = messages.length - 1; i >= 0; i--) {
@@ -454,11 +576,24 @@ async function buildThreadHistory(
       },
     ]
 
-    const imageIds = historyMessages.flatMap((m) =>
+    const targetSquad = instance.resolveTargetSquad({
+      responseContext: buildResponseContext(provider, event),
+    } as import('./provider').InboundMessage)
+    const allowedMessages: ThreadMessage[] = []
+    for (const message of historyMessages) {
+      // Do not treat unrelated bots as Tau, or import unauthorized human instructions.
+      if (
+        (botUserId && message.userId === botUserId) ||
+        (targetSquad &&
+          (await canUseChannel(instance, event.routingChannelId ?? event.channelId, message.userId, targetSquad)))
+      )
+        allowedMessages.push(message)
+    }
+    const imageIds = allowedMessages.flatMap((m) =>
       (m.attachments ?? []).flatMap((attachment) => (attachment.imageId ? [attachment.imageId] : []))
     )
 
-    const formatted = historyMessages
+    const formatted = allowedMessages
       .map((m) => {
         const userLabel = m.isBotMessage ? '@Tau' : m.userName || provider.formatUserMention(m.userId)
         const text = botUserId ? provider.replaceBotMention(m.text, botUserId) : m.text

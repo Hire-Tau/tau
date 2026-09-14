@@ -54,7 +54,9 @@ interface DiscordInteraction {
     }>
   }
   guild_id?: string
+  context?: number
   channel_id?: string
+  channel?: { type?: number; parent_id?: string }
   member?: { user: { id: string; username: string; global_name?: string } }
   user?: { id: string; username: string; global_name?: string }
   token: string
@@ -200,12 +202,16 @@ export const discordProvider: ChannelProvider = {
         command,
         text: extractOptionValue(options, [...TAU_DISCORD_OPTION_NAMES]),
         channelId: interaction.channel_id || '',
+        routingChannelId: [10, 11, 12].includes(interaction.channel?.type ?? -1)
+          ? interaction.channel?.parent_id
+          : undefined,
         user: {
           id: user?.id || '',
           name: user?.global_name || user?.username || 'User',
         },
         messageId: interaction.id,
-        isInThread: false,
+        isDirectMessage: !interaction.guild_id && (interaction.channel?.type === 1 || interaction.context === 1),
+        isInThread: [10, 11, 12].includes(interaction.channel?.type ?? -1),
         raw: {
           interactionToken: interaction.token,
           applicationId: interaction.application_id,
@@ -220,7 +226,13 @@ export const discordProvider: ChannelProvider = {
   },
 
   extractPlatformId(payload: unknown): string | undefined {
-    return (payload as DiscordInteraction).guild_id
+    const interaction = payload as DiscordInteraction
+    return (
+      interaction.guild_id ??
+      (!interaction.guild_id && (interaction.channel?.type === 1 || interaction.context === 1)
+        ? getChannelIntegrationValue('DISCORD_GUILD_ID')
+        : undefined)
+    )
   },
 
   // ===========================================================================
@@ -335,7 +347,7 @@ export const discordProvider: ChannelProvider = {
     const token = getChannelIntegrationValue('DISCORD_BOT_TOKEN')
     if (!token) throw new Error('DISCORD_BOT_TOKEN not configured')
 
-    // Empty content = delete the thinking message (concierge chose not to respond)
+    // Empty content = delete the thinking message (consultant chose not to respond)
     if (!content || !content.trim()) {
       if (context.messageToEdit) {
         const channelId = agentContext.thread?.id || context.channelId
@@ -526,11 +538,13 @@ export async function editInteractionResponse(
 ): Promise<void> {
   const truncated = content.length > 2000 ? content.slice(0, 1997) + '...' : content
 
-  await fetch(`${API_BASE}/webhooks/${applicationId}/${interactionToken}/messages/@original`, {
+  const response = await fetch(`${API_BASE}/webhooks/${applicationId}/${interactionToken}/messages/@original`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content: truncated }),
+    signal: AbortSignal.timeout(10_000),
   })
+  if (!response.ok) throw new Error(`Discord interaction response failed (HTTP ${response.status})`)
 }
 
 /**

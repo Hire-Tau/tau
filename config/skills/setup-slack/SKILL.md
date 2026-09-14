@@ -8,12 +8,12 @@ description: "Set up Slack app integration — create the Slack app (via manifes
 ## Overview
 
 Slack integration gives users slash commands (`/tau status`, `/tau ask`, etc.)
-and thread-based conversations in their Slack workspace. A concierge agent
+and thread-based conversations in their Slack workspace. A consultant agent
 handles incoming messages.
 
 ## Who Uses This
 
-This is primarily a **System Manager / Concierge** skill — either agent can walk
+This is primarily a **System Manager** skill — either agent can walk
 the human through setup. All steps are instance-level. Squad managers do not
 need this — squad linking is configured in the channel instance (Step 3).
 
@@ -183,7 +183,7 @@ Ask the human to test in their Slack workspace:
 
 1. Type `/tau help` in any channel — should show available commands
 2. Type `/tau status` — should show active work streams
-3. Type `/tau ask How are you?` — should get a response from the concierge
+3. Type `/tau ask How are you?` — should get a response from the consultant
 4. Reply to the bot's message in a thread — should continue the conversation
 
 > **Slack note:** Slash commands inside threads start new conversations.

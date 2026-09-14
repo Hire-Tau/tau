@@ -7,6 +7,7 @@ const conversationSchema = z.object({
   agentId: z.string().min(1).max(200),
   squadId: z.string().min(1).max(200).optional(),
   label: z.string().min(1).max(300),
+  kind: z.enum(['background', 'squad', 'agent']).optional(),
 })
 export type AssistantConversationLink = z.infer<typeof conversationSchema>
 
@@ -15,11 +16,14 @@ export function agentConversationLink(agent: Agent): AssistantConversationLink {
 }
 
 const messageTools = new Set([
+  'delegate_task',
   'message_agent',
+  // Legacy names kept so saved transcripts still render their rows.
   'message_squad_manager',
   'message_work_stream_manager',
   'message_user_assistant',
 ])
+const offerTools = new Set(['navigate', 'show_conversation'])
 function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined
 }
@@ -28,7 +32,7 @@ function record(value: unknown): Record<string, unknown> | undefined {
 export function assistantConversationLink(entry: VoiceTranscriptEntry): AssistantConversationLink | undefined {
   if (entry.role !== 'tool' || !entry.final || entry.toolError || !entry.toolResult) return
   const name = entry.toolName ?? ''
-  if (name !== 'show_conversation' && !messageTools.has(name)) return
+  if (!offerTools.has(name) && !messageTools.has(name)) return
   try {
     const result = record(JSON.parse(entry.toolResult))
     const receipt = record(result?.receipt) ?? result
@@ -46,7 +50,11 @@ export function assistantConversationLink(entry: VoiceTranscriptEntry): Assistan
     const link = conversationSchema.safeParse(receipt.conversation ?? result.conversation)
     if (link.success) return link.data
     // Existing saved message receipts also carry canonical agent IDs.
-    if (messageTools.has(name) && typeof receipt.id === 'string' && typeof receipt.agentId === 'string') {
+    if (
+      (messageTools.has(name) || name === 'show_conversation') &&
+      typeof receipt.id === 'string' &&
+      typeof receipt.agentId === 'string'
+    ) {
       const legacy = conversationSchema.safeParse({ agentId: receipt.agentId, label: 'Agent conversation' })
       if (legacy.success) return legacy.data
     }

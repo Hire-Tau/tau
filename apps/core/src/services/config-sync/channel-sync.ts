@@ -3,7 +3,7 @@ import { channelInstances } from '../../db'
 import { getProvider } from '../../channels'
 import type { ChannelInstanceYaml, ProviderConfig } from '../../channels/provider'
 import { CHANNELS_DIR } from '../../lib/paths'
-import { ChannelInstance } from '../../entities/ChannelInstance'
+import { parseTrustedChannelIds, parseChannelIds } from '../channel-access'
 import { ConfigSync } from './ConfigSync'
 
 interface ParsedChannel {
@@ -11,6 +11,10 @@ interface ParsedChannel {
   name: string
   provider: string
   providerConfig: ProviderConfig
+  trustedChannelIds: string[]
+  allowedChannelIds: string[]
+  deniedChannelIds: string[]
+  allowPrivateChats: boolean
   channelSquadMap: Record<string, string>
   defaultSquadId: string | null
 }
@@ -46,11 +50,18 @@ export class ChannelSync extends ConfigSync<ParsedChannel> {
       throw new Error(`${filename}: channel instance requires defaultSquadId for unmapped channels`)
     }
 
+    if (config.allowPrivateChats !== undefined && typeof config.allowPrivateChats !== 'boolean')
+      throw new Error(`${filename}: allowPrivateChats must be a boolean`)
+
     return {
       id: config.id,
       name: config.name,
       provider: config.provider,
       providerConfig: config.providerConfig || {},
+      trustedChannelIds: parseTrustedChannelIds(config.trustedChannelIds ?? []),
+      allowedChannelIds: parseChannelIds(config.allowedChannelIds ?? []),
+      deniedChannelIds: parseChannelIds(config.deniedChannelIds ?? []),
+      allowPrivateChats: config.allowPrivateChats ?? true,
       channelSquadMap: config.channelSquadMap || {},
       defaultSquadId: config.defaultSquadId,
     }
@@ -66,6 +77,10 @@ export class ChannelSync extends ConfigSync<ParsedChannel> {
       name: parsed.name,
       provider: parsed.provider,
       providerConfig: parsed.providerConfig,
+      trustedChannelIds: parsed.trustedChannelIds,
+      allowedChannelIds: parsed.allowedChannelIds,
+      deniedChannelIds: parsed.deniedChannelIds,
+      allowPrivateChats: parsed.allowPrivateChats,
       channelSquadMap: parsed.channelSquadMap,
       defaultSquadId: parsed.defaultSquadId,
     }
@@ -77,6 +92,10 @@ export class ChannelSync extends ConfigSync<ParsedChannel> {
       name: row.name as string,
       provider: row.provider as string,
       providerConfig: (row.providerConfig as ProviderConfig) || {},
+      trustedChannelIds: row.trustedChannelIds ?? [],
+      allowedChannelIds: row.allowedChannelIds ?? [],
+      deniedChannelIds: row.deniedChannelIds ?? [],
+      allowPrivateChats: row.allowPrivateChats ?? true,
       channelSquadMap: (row.channelSquadMap as Record<string, string>) || {},
       defaultSquadId: (row.defaultSquadId as string) || null,
     }
@@ -91,6 +110,12 @@ export class ChannelSync extends ConfigSync<ParsedChannel> {
     if (row.providerConfig && Object.keys(row.providerConfig as object).length > 0) {
       obj.providerConfig = row.providerConfig
     }
+    if (Array.isArray(row.trustedChannelIds) && row.trustedChannelIds.length)
+      obj.trustedChannelIds = row.trustedChannelIds
+    for (const key of ['allowedChannelIds', 'deniedChannelIds'] as const) {
+      if (Array.isArray(row[key]) && row[key].length) obj[key] = row[key]
+    }
+    if (row.allowPrivateChats === false) obj.allowPrivateChats = false
     const channelSquadMap = row.channelSquadMap as Record<string, string> | null
     if (channelSquadMap && Object.keys(channelSquadMap).length > 0) obj.channelSquadMap = channelSquadMap
     if (row.defaultSquadId) obj.defaultSquadId = row.defaultSquadId
@@ -98,10 +123,5 @@ export class ChannelSync extends ConfigSync<ParsedChannel> {
     return stringify(obj, { lineWidth: 120 })
   }
 
-  async afterSync(id: string): Promise<void> {
-    const instance = await ChannelInstance.find(id)
-    if (instance && !instance.conciergeAgentId) {
-      await instance.getOrSpawnConcierge()
-    }
-  }
+  // Channel conversations are created on demand after sender authorization.
 }

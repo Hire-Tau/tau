@@ -95,3 +95,33 @@ describe('discordProvider.sendNotification', () => {
     expect(body.embeds[0].color).toBe(0xe74c3c)
   })
 })
+
+describe('Discord bot DM classification', () => {
+  it('accepts one-to-one bot DMs but never treats group DMs or guild channels as private switching scopes', async () => {
+    for (const [type, guildId, expected] of [
+      [1, undefined, true],
+      [3, undefined, false],
+      [0, 'guild', false],
+      [11, 'guild', false],
+    ] as const) {
+      const parsed = await discordProvider.parseWebhook(
+        {
+          type: 2,
+          id: 'interaction',
+          token: 'token',
+          application_id: 'app',
+          channel_id: 'channel',
+          channel: { type },
+          guild_id: guildId,
+          user: { id: 'person', username: 'Person' },
+          data: {
+            name: 'tau',
+            options: [{ name: 'squad', type: 1, options: [{ name: 'squad', type: 3, value: 'my-squad' }] }],
+          },
+        },
+        {}
+      )
+      expect(parsed).toMatchObject({ isDirectMessage: expected, command: 'squad', text: 'my-squad' })
+    }
+  })
+})

@@ -98,7 +98,7 @@ export abstract class ConfigSync<TYaml> {
 
   /**
    * Optional hook called after a record is synced (insert or update).
-   * Use for catalog cache invalidation or spawning concierge agents.
+   * Use for catalog cache invalidation or spawning consultant agents.
    */
   async afterSync?(_id: string): Promise<void>
 

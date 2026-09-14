@@ -1,4 +1,5 @@
-import { describe, expect, it, mock } from 'bun:test'
+import { ChannelInstance } from '../entities/ChannelInstance'
+import { describe, expect, it, mock, beforeEach, afterEach, spyOn } from 'bun:test'
 import type { ChannelProvider } from '../channels'
 import { eq } from 'drizzle-orm'
 import { registerProvider } from '../channels/provider'
@@ -20,7 +21,7 @@ async function createTestAgent(context: Record<string, unknown>) {
     systemPrompt: 'You are a test agent.',
   })
 
-  return Agent.create({ agentTypeId, name: 'Concierge', context })
+  return Agent.create({ agentTypeId, name: 'Consultant', context })
 }
 
 function registerTestProvider(overrides: Partial<ChannelProvider>) {
@@ -53,6 +54,44 @@ function registerTestProvider(overrides: Partial<ChannelProvider>) {
 }
 
 describe('channel message tools', () => {
+  let connection: ReturnType<typeof spyOn>
+  beforeEach(() => {
+    connection = spyOn(ChannelInstance, 'find').mockResolvedValue(
+      new ChannelInstance({ id: 'instance-1', provider: providerName, disabled: false } as any)
+    )
+  })
+  afterEach(() => connection.mockRestore())
+
+  it('blocks delayed replies after a channel is excluded', async () => {
+    const postMessage = mock(async () => ({ messageId: 'reply' }))
+    registerTestProvider({ postMessage })
+    connection.mockResolvedValue(
+      new ChannelInstance({
+        id: 'instance-1',
+        provider: providerName,
+        deniedChannelIds: ['C1'],
+        disabled: false,
+      } as any)
+    )
+    const agent = await createTestAgent({
+      channelInstance: { id: 'instance-1', provider: providerName },
+      thread: { id: 'thread-1', channelId: 'C1', originalMessageId: 'm0', tauCreated: true },
+    })
+    try {
+      const result = await createChannelSendTool(agent.id).execute(
+        'call',
+        { content: 'Delayed result' },
+        undefined,
+        undefined,
+        {} as any
+      )
+      expect((result.details as { success: boolean }).success).toBe(false)
+      expect(postMessage).not.toHaveBeenCalled()
+    } finally {
+      await agent.delete()
+    }
+  })
+
   it('channel_send tracks the provider edit channel id when posting into a provider thread', async () => {
     const postMessage = mock(async () => ({
       messageId: 'provider-msg-1',
@@ -81,7 +120,7 @@ describe('channel message tools', () => {
     }
   })
 
-  it('channel_send posts to the active concierge thread and tracks the provider message id', async () => {
+  it('channel_send posts to the active consultant thread and tracks the provider message id', async () => {
     const postMessage = mock(async () => ({ messageId: 'provider-msg-1', threadId: 'thread-1' }))
     registerTestProvider({ postMessage })
     const agent = await createTestAgent({

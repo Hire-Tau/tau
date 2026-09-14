@@ -11,6 +11,12 @@ const env = { navigate() {}, can: () => true }
 function find(tools: ReturnType<typeof createAssistantTools>, name: string) {
   return tools.find((t) => t.definition.name === name)!
 }
+test('the manager and user-assistant message tools no longer exist', () => {
+  const names = createAssistantTools().map((tool) => tool.definition.name)
+  for (const gone of ['message_user_assistant', 'message_squad_manager', 'message_work_stream_manager'])
+    expect(names).not.toContain(gone)
+  expect(names).toContain('delegate_task')
+})
 test('memory, files, activity, and subscriptions resolve route slugs before calling permission-checked APIs', async () => {
   const memory = mock(async () => []),
     activity = mock(async () => []),
@@ -21,19 +27,23 @@ test('memory, files, activity, and subscriptions resolve route slugs before call
     searchMemory: memory as any,
     workspace: { ...workspace, getSquadMemoryFile: file },
   })
-  await find(tools, 'search_memory').execute({ squadId: 'tau', query: 'context' }, env)
+  await find(tools, 'read_squad_files').execute({ squadId: 'tau', source: 'memory', query: 'context' }, env)
   expect(memory.mock.calls).toEqual([[id, { query: 'context', limit: 10 }]])
   await find(tools, 'read_activity').execute({ squadId: 'tau', limit: 3 }, env)
   expect(activity.mock.calls).toEqual([[id, { limit: 3 }]])
   await find(tools, 'set_subscription').execute({ scope: 'squad', id: 'tau', watching: true }, env)
   expect(subscribe.mock.calls).toEqual([[id]])
-  const result = (await find(tools, 'read_squad_file').execute(
+  const result = (await find(tools, 'read_squad_files').execute(
     { squadId: 'tau', source: 'memory', path: '/context.md' },
     env
   )) as any
   expect(file.mock.calls).toEqual([[id, '/context.md']])
   expect(result.content.length).toBe(12000)
   expect(result.nextOffset).toBe(12000)
+  await expect(
+    find(tools, 'read_squad_files').execute({ squadId: 'tau', source: 'workspace', query: 'x' }, env)
+  ).rejects.toThrow()
+  expect(memory).toHaveBeenCalledTimes(1)
 })
 test('invalid inputs never reach mutations and forbidden responses remain errors', async () => {
   const answer = mock(async () => {
@@ -47,20 +57,44 @@ test('invalid inputs never reach mutations and forbidden responses remain errors
   ).rejects.toThrow('Forbidden')
   expect(answer.mock.calls).toEqual([['q', 'The user answer']])
 })
-test('delegation returns the actual server result; unavailable delegation is explicit', async () => {
-  const tools = createAssistantTools()
-  const messageUserAssistant = mock(async (_request: string) => ({
-    id: 'message',
-    agentId: 'assistant',
-    delivered: true,
-  }))
+test('delegate_task runs instance-wide without a squad and resolves squad slugs for squad tasks', async () => {
+  const tools = createAssistantTools({ squads: squadDeps })
+  const delegateTask = mock(async () => ({ id: 'message', agentId: 'helper', delivered: true, kind: 'background' }))
   expect(
-    await find(tools, 'message_user_assistant').execute(
-      { request: 'Investigate the stalled job' },
-      { ...env, messageUserAssistant }
+    await find(tools, 'delegate_task').execute(
+      { label: 'Check enabled schedules', request: 'Which schedules are enabled?' },
+      { ...env, delegateTask }
     )
-  ).toEqual({ id: 'message', agentId: 'assistant', delivered: true })
-  await expect(find(tools, 'message_user_assistant').execute({ request: 'Work' }, env)).rejects.toThrow('unavailable')
+  ).toEqual({ id: 'message', agentId: 'helper', delivered: true, kind: 'background' })
+  expect(delegateTask.mock.calls).toEqual([
+    [
+      'Which schedules are enabled?',
+      { label: 'Check enabled schedules', squadId: undefined, mode: 'steer', inReplyTo: undefined },
+    ],
+  ])
+  await find(tools, 'delegate_task').execute(
+    { label: 'Pause deploy stream', request: 'Pause work stream Ship Tau', squadId: 'tau', mode: 'follow-up' },
+    { ...env, delegateTask }
+  )
+  expect(delegateTask.mock.calls[1]).toEqual([
+    'Pause work stream Ship Tau',
+    { label: 'Pause deploy stream', squadId: id, mode: 'follow-up', inReplyTo: undefined },
+  ])
+})
+
+test('delegate_task rejects empty labels, unknown squads, and surfaces where delegation is unavailable', async () => {
+  const delegateTask = mock(async () => ({}))
+  const tools = createAssistantTools({ squads: squadDeps })
+  await expect(
+    find(tools, 'delegate_task').execute({ label: ' ', request: 'Work' }, { ...env, delegateTask })
+  ).rejects.toThrow()
+  await expect(
+    find(tools, 'delegate_task').execute({ label: 'Task', request: 'Work', squadId: 'nope' }, { ...env, delegateTask })
+  ).rejects.toThrow('Unknown or ambiguous squad')
+  expect(delegateTask).not.toHaveBeenCalled()
+  await expect(find(tools, 'delegate_task').execute({ label: 'Task', request: 'Work' }, env)).rejects.toThrow(
+    'unavailable'
+  )
 })
 test('search requests bounded backend results and retains explicit work context', async () => {
   const searchEntities = mock(async () => ({
@@ -92,162 +126,75 @@ test('search requests bounded backend results and retains explicit work context'
   })
 })
 
-const workId = '888b3fdd-6e16-429d-bf12-940268e5f4c8'
-const otherSquadId = '22222222-2222-4222-8222-222222222222'
-const work = { id: workId, squadId: id, title: 'Ship Tau', status: 'active' }
-
-test('inspect normalizes legacy work IDs and rejects malformed references before the API', async () => {
-  const getWorkStream = mock(async () => work as any)
-  const tools = createAssistantTools({ squads: { ...squadDeps, getWorkStream } })
-  await find(tools, 'inspect_work_stream').execute({ id: `work:${workId}` }, env)
-  expect(getWorkStream.mock.calls).toEqual([[workId]])
-  await expect(find(tools, 'inspect_work_stream').execute({ id: 'work:unknown' }, env)).rejects.toThrow()
-  expect(getWorkStream).toHaveBeenCalledTimes(1)
+test('answer_question dismisses with a flag and never both answers and dismisses', async () => {
+  const answer = mock(async () => ({ ok: true }))
+  const dismiss = mock(async () => ({ ok: true }))
+  const tools = createAssistantTools({ answerAgentQuestion: answer as any, dismissAgentQuestion: dismiss as any })
+  await find(tools, 'answer_question').execute({ questionId: 'q', dismiss: true, reason: 'stale' }, env)
+  expect(dismiss.mock.calls).toEqual([['q', 'stale']])
+  expect(answer).not.toHaveBeenCalled()
+  await expect(
+    find(tools, 'answer_question').execute({ questionId: 'q', dismiss: true, answer: 'x' }, env)
+  ).rejects.toThrow()
+  await expect(find(tools, 'answer_question').execute({ questionId: 'q' }, env)).rejects.toThrow()
+  expect(answer).not.toHaveBeenCalled()
 })
 
-test('work-stream coordination selects only the manager of the verified squad', async () => {
-  const manager = { id: 'right-manager', squadId: id, agentTypeId: 'manager', status: 'idle' }
-  const listSquadAgents = mock(async () => [{ ...manager, id: 'wrong-manager', squadId: otherSquadId }, manager] as any)
-  const sendAgentMessage = mock(async () => ({ success: true, status: 'active' }) as any)
-  const tools = createAssistantTools({
-    squads: { ...squadDeps, getWorkStream: async () => work as any, listSquadAgents },
-    getAgent: async () => manager as any,
-    sendAgentMessage,
-  })
-  const result = (await find(tools, 'message_work_stream_manager').execute(
-    { workStreamId: `work:${workId}`, content: 'Please pause this work.' },
-    env
-  )) as any
-  expect(listSquadAgents.mock.calls).toEqual([[id]])
-  expect(sendAgentMessage.mock.calls).toEqual([
-    ['right-manager', `Work stream: Ship Tau (${workId})\n\nPlease pause this work.`, undefined, 'steer'],
+test('read_inbox views call the action center or the notification inbox', async () => {
+  const listPendingActions = mock(async () => [{ id: 'a1' }])
+  const getMyInbox = mock(async () => [
+    {
+      id: 'n1',
+      readAt: null,
+      subject: null,
+      content: 'new',
+      senderType: 'agent',
+      senderId: 'x',
+      createdAt: '2026-01-01',
+    },
+    {
+      id: 'n2',
+      readAt: '2026-01-01',
+      subject: null,
+      content: 'old',
+      senderType: 'agent',
+      senderId: 'x',
+      createdAt: '2026-01-01',
+    },
   ])
-  expect(result.squadId).toBe(id)
+  const tools = createAssistantTools({ listPendingActions: listPendingActions as any, getMyInbox: getMyInbox as any })
+  expect(await find(tools, 'read_inbox').execute({ view: 'actions' }, env)).toEqual([{ id: 'a1' }])
+  const unread = (await find(tools, 'read_inbox').execute({ view: 'notifications' }, env)) as any
+  expect(getMyInbox.mock.calls).toEqual([[false]])
+  expect(unread.messages.map((m: any) => m.id)).toEqual(['n1'])
+  const all = (await find(tools, 'read_inbox').execute({ view: 'notifications', status: 'all' }, env)) as any
+  expect(getMyInbox.mock.calls[1]).toEqual([true])
+  expect(all.messages.map((m: any) => m.id)).toEqual(['n1', 'n2'])
 })
 
-test('work-stream routing fails without sending on lookup errors, ambiguity, or a changed squad', async () => {
-  const manager = { id: 'manager', squadId: id, agentTypeId: 'manager', status: 'idle' }
-  for (const scenario of ['lookup-error', 'missing', 'ambiguous', 'changed-squad', 'dormant']) {
-    const sendAgentMessage = mock(async () => ({ success: true }) as any)
-    const tools = createAssistantTools({
-      squads: {
-        ...squadDeps,
-        getWorkStream: async () => {
-          if (scenario === 'lookup-error') throw new Error('API error')
-          return work as any
-        },
-        listSquadAgents: async () =>
-          (scenario === 'missing'
-            ? []
-            : scenario === 'ambiguous'
-              ? [manager, { ...manager, id: 'another' }]
-              : [manager]) as any,
-      },
-      getAgent: async () =>
-        ({
-          ...manager,
-          ...(scenario === 'changed-squad' ? { squadId: otherSquadId } : {}),
-          ...(scenario === 'dormant' ? { status: 'dormant' } : {}),
-        }) as any,
-      sendAgentMessage,
-    })
-    await expect(
-      find(tools, 'message_work_stream_manager').execute({ workStreamId: workId, content: 'Pause' }, env)
-    ).rejects.toThrow()
-    expect(sendAgentMessage).not.toHaveBeenCalled()
-  }
-})
-
-test('a new DAO DAO incident routes directly to its verified manager without any work-stream search', async () => {
-  const manager = { id: 'dao-manager', squadId: id, agentTypeId: 'manager', status: 'idle' }
-  const getWorkStream = mock(async () => {
-    throw new Error('A new report has no work stream')
-  })
-  const searchEntities = mock(async () => [] as any)
-  const sendAgentMessage = mock(async () => ({ success: true, status: 'active' }) as any)
-  const messageAgent = mock(async () => ({ id: 'receipt', delivered: true }))
-  const listSquads = mock(
-    async () => [{ id, name: 'DAO DAO', purpose: 'Manage the DAO DAO platform', status: 'active' }] as any
-  )
-  const tools = createAssistantTools({
-    squads: { ...squadDeps, listSquads, getWorkStream, listSquadAgents: async () => [manager] as any },
-    getAgent: async () => manager as any,
-    searchEntities,
-    sendAgentMessage,
-  })
-  const content =
-    'The DAO DAO frontend is getting a 500 error on THORChain DAOs: https://daodao.zone/dao/thor1l2fyshlx6kngng08hs88jdgs3tvu0e3ny5aemfp3tuuu0ma2gklqkqydna'
-  const result = await find(tools, 'message_squad_manager').execute({ squadId: id, content }, { ...env, messageAgent })
-  expect(result).toEqual({ receipt: { id: 'receipt', delivered: true }, squadId: id, managerId: manager.id })
-  expect(messageAgent.mock.calls).toEqual([[manager.id, content, 'follow-up']])
-  expect(listSquads.mock.calls).toEqual([['active']])
-  expect(searchEntities).not.toHaveBeenCalled()
-  expect(getWorkStream).not.toHaveBeenCalled()
-  expect(sendAgentMessage).not.toHaveBeenCalled()
-  await find(tools, 'message_squad_manager').execute({ squadId: 'dao-dao', content }, env)
-  expect(sendAgentMessage.mock.calls).toEqual([[manager.id, content, undefined, 'follow-up']])
-})
-
-test('new-report routing never substitutes a manager after an unknown squad, ambiguous manager, or changed assignment', async () => {
-  const manager = { id: 'dao-manager', squadId: id, agentTypeId: 'manager', status: 'idle' }
-  for (const scenario of ['unknown-squad', 'missing-manager', 'ambiguous-manager', 'changed-squad', 'terminated']) {
-    const sendAgentMessage = mock(async () => ({ success: true }) as any)
-    const messageAgent = mock(async () => ({}))
-    const tools = createAssistantTools({
-      squads: {
-        ...squadDeps,
-        listSquads: async () => (scenario === 'unknown-squad' ? [] : ([{ id, name: 'DAO DAO' }] as any)),
-        listSquadAgents: async () =>
-          (scenario === 'missing-manager'
-            ? []
-            : scenario === 'ambiguous-manager'
-              ? [manager, { ...manager, id: 'another' }]
-              : [manager]) as any,
-      },
-      getAgent: async () =>
-        ({
-          ...manager,
-          ...(scenario === 'changed-squad' ? { squadId: otherSquadId } : {}),
-          ...(scenario === 'terminated' ? { status: 'terminated' } : {}),
-        }) as any,
-      sendAgentMessage,
-    })
-    await expect(
-      find(tools, 'message_squad_manager').execute(
-        { squadId: id, content: 'Report the outage' },
-        { ...env, messageAgent }
-      )
-    ).rejects.toThrow()
-    expect(sendAgentMessage).not.toHaveBeenCalled()
-    expect(messageAgent).not.toHaveBeenCalled()
-  }
-})
-
-test('conversation suggestions verify access, never send, and only explicit opens change the view', async () => {
+test('navigate takes exactly one of path, agentId, or drawer', async () => {
   const getAgent = mock(
     async (agentId: string) =>
       ({ id: agentId, squadId: 'squad', agentTypeId: 'manager', metadata: { name: 'Morgan' } }) as any
   )
-  const sendAgentMessage = mock(async () => ({ success: true }) as any)
   const openConversation = mock()
   const navigate = mock()
-  const tools = createAssistantTools({ getAgent, sendAgentMessage })
-  const show = find(tools, 'show_conversation')
-  const offered = (await show.execute({ agentId: 'manager' }, { navigate, openConversation })) as any
-  expect(offered.opened).toBe(false)
-  expect(offered.conversation.agentId).toBe('manager')
+  const tools = createAssistantTools({ getAgent })
+  const nav = find(tools, 'navigate')
+  const envWith = { navigate, openConversation, getCurrentPath: () => '/settings?section=providers' }
+  expect(await nav.execute({ path: '/squads/tau' }, envWith)).toEqual({ ok: true, navigatedTo: '/squads/tau' })
+  expect(navigate.mock.calls).toEqual([['/squads/tau']])
+  const offered = (await nav.execute({ agentId: 'manager' }, envWith)) as any
+  expect(offered.conversation).toMatchObject({ agentId: 'manager', squadId: 'squad', label: 'Morgan' })
   expect(openConversation).not.toHaveBeenCalled()
-  expect(navigate).not.toHaveBeenCalled()
-  expect(sendAgentMessage).not.toHaveBeenCalled()
-  await show.execute({ agentId: 'manager', open: true }, { navigate, openConversation })
+  await nav.execute({ agentId: 'manager', open: true }, envWith)
   expect(openConversation.mock.calls).toEqual([[offered.conversation]])
-  expect(navigate).not.toHaveBeenCalled()
-  getAgent.mockImplementation(async () => {
-    throw new Error('Forbidden')
+  expect(await nav.execute({ drawer: 'open' }, envWith)).toEqual({
+    ok: true,
+    drawerState: 'open',
+    navigatedTo: '/settings?section=providers&chat=open',
   })
-  await expect(show.execute({ agentId: 'private', open: true }, { navigate, openConversation })).rejects.toThrow(
-    'Forbidden'
-  )
-  expect(openConversation).toHaveBeenCalledTimes(1)
-  expect(sendAgentMessage).not.toHaveBeenCalled()
+  expect(navigate.mock.calls).toHaveLength(2)
+  await expect(nav.execute({}, envWith)).rejects.toThrow()
+  await expect(nav.execute({ path: '/x', drawer: 'open' }, envWith)).rejects.toThrow()
 })

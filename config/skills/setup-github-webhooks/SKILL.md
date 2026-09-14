@@ -15,7 +15,7 @@ routed to the correct squad based on metadata you configure.
 
 This skill has two audiences:
 
-- **System Manager / Concierge** — Initial setup: create the webhook, configure
+- **System Manager** — Initial setup: create the webhook, configure
   secrets (Steps 1–3). Done once per repo. Either agent can walk the human through it.
 - **Squad Manager** — Squad-specific config: set routing metadata and track
   issues/PRs on work streams (Steps 4–6). Done per squad.

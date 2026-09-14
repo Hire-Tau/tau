@@ -4,7 +4,6 @@ import { AgentRunner } from './base'
 import { SystemManagerRunner } from './system-manager-runner'
 import { SquadManagerRunner } from './squad-manager-runner'
 import { SquadWorkerRunner } from './squad-worker-runner'
-import { ConciergeRunner } from './concierge-runner'
 import { ArtifactBuilderRunner } from './artifact-builder-runner'
 import { SubagentRunner } from './subagent-runner'
 
@@ -24,8 +23,6 @@ export async function createRunner(agent: Agent, execution: Execution): Promise<
       return new SquadManagerRunner(execution, agent, agentType)
     case 'squad-worker':
       return new SquadWorkerRunner(execution, agent, agentType)
-    case 'concierge':
-      return new ConciergeRunner(execution, agent, agentType)
     case 'artifact-builder':
       return new ArtifactBuilderRunner(execution, agent, agentType)
     case 'subagent':

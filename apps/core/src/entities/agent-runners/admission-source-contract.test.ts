@@ -4,7 +4,6 @@ import { join } from 'node:path'
 
 const RUNNERS = [
   'artifact-builder-runner.ts',
-  'concierge-runner.ts',
   'squad-manager-runner.ts',
   'squad-worker-runner.ts',
   'subagent-runner.ts',
@@ -36,7 +35,7 @@ describe('runner admission source contract', () => {
     expect(source.indexOf(unrelatedWork, batch)).toBeGreaterThan(batch)
   })
 
-  test.each(['concierge-runner.ts', 'squad-manager-runner.ts', 'squad-worker-runner.ts', 'subagent-runner.ts'])(
+  test.each(['squad-manager-runner.ts', 'squad-worker-runner.ts', 'subagent-runner.ts'])(
     '%s serializes squad ensure before light ensure',
     (file) => {
       const source = readFileSync(join(import.meta.dir, file), 'utf8')

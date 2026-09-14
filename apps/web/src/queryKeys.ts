@@ -48,3 +48,5 @@ export const feedQueryKeys = {
   completed: (after: string, before: string) => ['squads', 'feed-completed', after, before, 'items'] as const,
   recent: (after: string, squads: readonly string[]) => ['squads', 'feed-recent', after, [...squads].sort()] as const,
 }
+
+export const channelLinkQueryKeys = { all: ['channel-links'] as const }

@@ -11,6 +11,19 @@ export const TAU_DISCORD_COMMANDS = [
     name: 'tau',
     description: 'Interact with Tau - your AI development assistant',
     options: [
+      {
+        name: 'squad',
+        description: 'Choose a squad in a private bot conversation',
+        type: DiscordOptionType.SUB_COMMAND,
+        options: [
+          {
+            name: 'squad',
+            type: DiscordOptionType.STRING,
+            required: false,
+            description: 'Squad slug, name or ID; omit to list squads',
+          },
+        ],
+      },
       { name: 'status', description: 'Show active work streams across squads', type: DiscordOptionType.SUB_COMMAND },
       {
         name: 'ask',
@@ -32,6 +45,19 @@ export const TAU_DISCORD_COMMANDS = [
         type: DiscordOptionType.SUB_COMMAND,
         options: [{ name: 'squad', type: DiscordOptionType.STRING, required: true, description: 'Squad name or ID' }],
       },
+      {
+        name: 'link',
+        description: 'Link your Discord account to Tau',
+        type: DiscordOptionType.SUB_COMMAND,
+        options: [
+          {
+            name: 'code',
+            type: DiscordOptionType.STRING,
+            required: true,
+            description: 'Code from Tau Settings → Account',
+          },
+        ],
+      },
       { name: 'help', description: 'Show available commands and linked squads', type: DiscordOptionType.SUB_COMMAND },
     ],
   },
@@ -43,3 +69,6 @@ export function discordCommandsPath(applicationId: string, guildId?: string): st
     ? `/applications/${encodeURIComponent(applicationId)}/guilds/${encodeURIComponent(guildId)}/commands`
     : `/applications/${encodeURIComponent(applicationId)}/commands`
 }
+
+/** Guild commands are not available in bot DMs; register a DM-only global copy too. */
+export const TAU_DISCORD_DM_COMMANDS = TAU_DISCORD_COMMANDS.map((command) => ({ ...command, contexts: [1] }))

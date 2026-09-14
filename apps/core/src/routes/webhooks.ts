@@ -21,6 +21,8 @@ import {
   markWebhookError,
 } from '../services/webhooks'
 import { getProvider, hasProvider, handleChannelEvent, InteractionResponseType } from '../channels'
+import { handleDiscordInteraction } from '../channels/discord/interactions'
+import { sendChannelConfigurationError } from '../channels/handler'
 import { Schedule } from '../entities/Schedule'
 import { createLogger } from '../lib/infra/logger'
 import { requirePermission } from '../middleware/require-permission'
@@ -110,7 +112,7 @@ webhooksRouter.post('/trigger/:scheduleId', async (c) => {
 })
 
 // =============================================================================
-// Channel Webhooks (Discord, Slack, Telegram → Concierge)
+// Channel Webhooks (Discord, Slack, Telegram → Consultant)
 // =============================================================================
 
 /**
@@ -178,10 +180,19 @@ webhooksRouter.post('/channels/:provider', async (c) => {
       return c.json({ challenge: parsed.value })
     }
 
+    if (providerName === 'discord' && parsed.type === 'slash_command') {
+      await handleDiscordInteraction(payload, parsed)
+      return c.body(null, 202)
+    }
+
     // Handle event
     const platformId = provider.extractPlatformId(payload)
     if (!platformId) {
       log.warn(`[${providerName}] No platform ID found`)
+      if (provider.sendsResponseViaApi) {
+        await sendChannelConfigurationError(provider, parsed)
+        return c.body(null, 200)
+      }
       return c.json(provider.formatErrorResponse('Invalid request'))
     }
 

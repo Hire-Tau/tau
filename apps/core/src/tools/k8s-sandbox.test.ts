@@ -749,7 +749,7 @@ describe('squad file route: path-routed read/write/edit', () => {
     // Regression test for a squad-routed write injection: ops.mkdir used to run
     // `client.bash({ command: `mkdir -p "${path}"` })`, so a path containing
     // $(...)/backticks/; executed arbitrary commands as the SQUAD box's unix
-    // user — from a member (incl. concierge/subagents) that deliberately has no
+    // user — from a member (incl. consultant/subagents) that deliberately has no
     // squad_bash. The pi SDK write tool calls ops.mkdir(dirname) before EVERY
     // write, making any write with a crafted path an escalation.
     const { manager, memberClient, squadClient } = routingManager()
@@ -1895,4 +1895,35 @@ describe('VM idempotent file transport recovery', () => {
       createDirs: true,
     })
   })
+})
+
+test('concurrent consultant commands share a client but retain distinct tokens, scratch roots, and invocation owners', async () => {
+  const requests: Array<{ cwd: string; env: Record<string, string>; invocationId: string }> = []
+  const manager = {
+    getClientForSandbox: () => ({
+      bash: (request: (typeof requests)[number]) => {
+        requests.push(request)
+        const stream = createMockStream()
+        queueMicrotask(() => {
+          stream.emitData({ exitCode: 0 })
+          stream.emitEnd()
+        })
+        return stream
+      },
+    }),
+    podManager: { namespace: 'tau-sandboxes' },
+  } as unknown as K8sSandboxManager
+  const sandboxId = 'consultants_squad-one'
+  const tools = ['one', 'two'].map(
+    (id) =>
+      createK8sSandboxedCodingTools('/ignored', sandboxId, manager, `token-${id}`, 'squad-one', `exec-${id}`, id).find(
+        (tool) => tool.key === 'bash'
+      )!
+  )
+  await Promise.all(tools.map((tool) => tool.execute('call', { command: 'pwd' })))
+  expect(requests.map((request) => request.env.TAU_TOKEN).sort()).toEqual(['token-one', 'token-two'])
+  expect(requests.map((request) => request.cwd).sort()).toEqual(
+    ['one', 'two'].map((id) => resolveAgentBashCwd(sandboxId, id)).sort()
+  )
+  expect(new Set(requests.map((request) => request.invocationId)).size).toBe(2)
 })

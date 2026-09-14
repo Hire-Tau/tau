@@ -76,7 +76,7 @@ allow-rules → security checks), follow the step-by-step runbook in
 | Send to a `amtp://` address                                      | `amtp:send` (agent self)     |
 
 Agent federation permissions live on the per-agent-type **roles**: `default-manager`
-(read + register + send) and `default-concierge` (register + send). Other agent types
+(read + register + send). Other agent types
 (engineer, worker → `default-worker`) do **not** federate. For human operators,
 `amtp:read`/`register`/`write` sit on the **Operator** user role. System-manager
 identities resolve via their owning user (not an agent role) and are not federation actors.

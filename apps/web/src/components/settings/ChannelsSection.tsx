@@ -1,4 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { ChannelIdsEditor } from './ChannelIdsEditor'
+import { useEffect, useId, useState, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { queries } from '../../queryOptions'
@@ -144,14 +145,20 @@ function SquadDropdown({
   value,
   squads,
   onChange,
-  allowNone,
+  required,
+  invalid,
+  describedBy,
+  id,
   placeholder,
   ariaLabel,
 }: {
   value: string | null
   squads: { id: string; name: string }[]
   onChange: (id: string | null) => void
-  allowNone?: boolean
+  required?: boolean
+  invalid?: boolean
+  describedBy?: string
+  id?: string
   placeholder?: string
   ariaLabel?: string
 }) {
@@ -160,11 +167,16 @@ function SquadDropdown({
     <select
       value={value || ''}
       onChange={(e) => onChange(e.target.value || null)}
+      id={id}
+      required={required}
+      aria-invalid={invalid || undefined}
+      aria-describedby={describedBy}
       aria-label={ariaLabel}
       className="tau-field w-full text-sm bg-surface-secondary border border-th-border rounded px-2 py-1 text-primary  focus:ring-1 focus:ring-accent"
     >
-      {allowNone && <option value="">None</option>}
-      {!allowNone && <option value="">{placeholder ?? 'Select a squad…'}</option>}
+      <option value="" disabled={required}>
+        {placeholder ?? 'Select a squad…'}
+      </option>
       {isUnknown && <option value={value ?? ''}>⚠ Unknown squad ({value})</option>}
       {squads.map((s) => (
         <option key={s.id} value={s.id}>
@@ -175,28 +187,50 @@ function SquadDropdown({
   )
 }
 
+const DEFAULT_SQUAD_ERROR = 'Select a default squad to route new conversations, even when overrides are configured.'
+
 function DefaultSquadField({
   defaultSquadId,
   onChange,
   actions,
+  showError,
 }: {
   defaultSquadId: string | null
+  showError?: boolean
   onChange: (id: string | null) => void
   actions?: ReactNode
 }) {
   const { listSquads } = useSquadsApi()
   const { data: squads = [] } = useQuery({ ...queries.squads.list(), queryFn: () => listSquads() })
 
+  const id = useId()
+  const invalid = showError && !defaultSquadId
+
   return (
     <div>
-      <label className="text-xs text-muted flex items-center gap-2 mb-0.5">
-        <span>Default Squad</span>
+      <label htmlFor={id} className="text-xs text-muted flex items-center gap-2 mb-0.5">
+        <span>Default Squad (required)</span>
         {actions}
       </label>
-      <SquadDropdown value={defaultSquadId} squads={squads} onChange={onChange} allowNone ariaLabel="Default Squad" />
-      <p className="text-xs text-muted mt-1">
-        Handles every message from this channel, unless a squad override below matches its specific channel ID.
+      <SquadDropdown
+        id={id}
+        value={defaultSquadId}
+        squads={squads}
+        onChange={onChange}
+        required
+        invalid={invalid}
+        describedBy={`${id}-help${invalid ? ` ${id}-error` : ''}`}
+        ariaLabel="Default Squad"
+      />
+      <p id={`${id}-help`} className="text-xs text-muted mt-1">
+        Routes new conversations without a matching channel override. Existing conversations may continue with their
+        current squad.
       </p>
+      {invalid && (
+        <p id={`${id}-error`} role="alert" className="text-xs text-red-600 dark:text-red-400 mt-1">
+          {DEFAULT_SQUAD_ERROR}
+        </p>
+      )}
     </div>
   )
 }
@@ -261,7 +295,7 @@ function ProviderPicker({ value, onChange }: { value: ProviderId | null; onChang
 /** List builder for the channelSquadMap: zero or more [channel ID, squad] rows,
  * replacing the raw JSON textarea. Serializes to the exact same map shape the
  * backend already stores. */
-function SquadOverridesEditor({
+export function SquadOverridesEditor({
   provider,
   rows,
   onChange,
@@ -375,7 +409,9 @@ export function AddChannelForm({
   const [providerConfigValue, setProviderConfigValue] = useState('')
   const [defaultSquadId, setDefaultSquadId] = useState<string | null>(null)
   const [overrideRows, setOverrideRows] = useState<OverrideRow[]>([])
+  const [trustedChannels, setTrustedChannels] = useState<string[]>([])
   const [validationError, setValidationError] = useState('')
+  const [createAttempted, setCreateAttempted] = useState(false)
 
   const createMutation = useMutation({
     mutationFn: (data: Partial<ChannelInstanceConfig> & { id: string; name: string; provider: string }) =>
@@ -395,6 +431,8 @@ export function AddChannelForm({
   const handleCreate = () => {
     if (!provider) return
     setValidationError('')
+    setCreateAttempted(true)
+    if (!defaultSquadId) return
     if (!name.trim()) {
       setValidationError('Name is required')
       return
@@ -410,6 +448,7 @@ export function AddChannelForm({
       provider,
       providerConfig: buildProviderConfig(provider, providerConfigValue),
       defaultSquadId,
+      trustedChannelIds: trustedChannels.map((id) => id.trim()),
       channelSquadMap: overrideRowsToMap(overrideRows),
     })
   }
@@ -436,8 +475,9 @@ export function AddChannelForm({
             </p>
           </div>
           <ProviderConfigField provider={provider} value={providerConfigValue} onChange={setProviderConfigValue} />
-          <DefaultSquadField defaultSquadId={defaultSquadId} onChange={setDefaultSquadId} />
+          <DefaultSquadField defaultSquadId={defaultSquadId} onChange={setDefaultSquadId} showError={createAttempted} />
           <SquadOverridesEditor provider={provider} rows={overrideRows} onChange={setOverrideRows} />
+          <TrustedChannelsField value={trustedChannels} onChange={setTrustedChannels} />
           <p className="text-xs text-muted font-mono">ID: {channelId}</p>
         </div>
       )}
@@ -489,9 +529,12 @@ export function ChannelRow({
   const [form, setForm] = useState(() => channelToForm(channel))
   const [copyMsg, setCopyMsg] = useState('')
   const [saveError, setSaveError] = useState('')
+  const [saveAttempted, setSaveAttempted] = useState(false)
+  const panelId = useId()
 
   useEffect(() => {
     setForm(channelToForm(channel))
+    setSaveAttempted(false)
   }, [channel])
 
   const updateMutation = useMutation({
@@ -540,7 +583,10 @@ export function ChannelRow({
   )
 
   const handleSave = () => {
+    if (!canUpdate) return
     setSaveError('')
+    setSaveAttempted(true)
+    if (!form.defaultSquadId) return
     if (invalidOverrideRowIndexes(form.overrideRows).length > 0) {
       setSaveError('Fill in both fields of each squad override below, or remove the incomplete row.')
       return
@@ -549,6 +595,7 @@ export function ChannelRow({
     updateMutation.mutate({
       name: form.name,
       providerConfig: buildProviderConfig(channel.provider, form.providerConfigValue),
+      trustedChannelIds: form.trustedChannels.map((id) => id.trim()),
       channelSquadMap: overrideRowsToMap(form.overrideRows),
       defaultSquadId: form.defaultSquadId,
     })
@@ -574,13 +621,22 @@ export function ChannelRow({
 
   return (
     <div className="px-4 py-3">
-      <div className="flex items-start gap-2 cursor-pointer" onClick={onToggle}>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
+      <button
+        type="button"
+        aria-expanded={isExpanded}
+        aria-controls={panelId}
+        className="tau-button w-full text-left flex items-start gap-2"
+        onClick={onToggle}
+      >
+        <span className="flex-1 min-w-0">
+          <span className="flex items-center gap-2 flex-wrap">
             <span className="text-sm font-medium text-primary">{channel.name}</span>
             <span className="text-xs px-1.5 py-0.5 rounded bg-surface-secondary text-muted">
               {getProviderMeta(channel.provider).label}
             </span>
+            {!channel.defaultSquadId && (
+              <span className="text-xs font-medium text-amber-700 dark:text-amber-400">Needs configuration</span>
+            )}
             {channel.disabled && (
               <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
                 Disabled
@@ -591,14 +647,23 @@ export function ChannelRow({
                 Modified
               </span>
             )}
-          </div>
-          <p className="text-xs text-muted font-mono mt-0.5">{channel.id}</p>
-        </div>
-        <span className="text-muted text-xs shrink-0">{isExpanded ? '▼' : '▶'}</span>
-      </div>
+          </span>
+          <span className="block text-xs text-muted font-mono mt-0.5">{channel.id}</span>
+        </span>
+        <span aria-hidden="true" className="text-muted text-xs shrink-0">
+          {isExpanded ? '▼' : '▶'}
+        </span>
+      </button>
 
       {isExpanded && (
-        <div className="mt-3 space-y-3">
+        <div id={panelId} className="mt-3 space-y-3">
+          {!channel.defaultSquadId && (
+            <p role="status" className="text-sm text-amber-700 dark:text-amber-400">
+              New conversations without a matching override cannot be routed. Existing conversations may continue with
+              their current squad.{' '}
+              {canUpdate ? 'Select a Default Squad below and save.' : 'Ask an administrator to select a Default Squad.'}
+            </p>
+          )}
           <div className="flex items-center gap-2 flex-wrap">
             {channel.hasTemplate && channel.yamlFieldOverrides.length > 0 && (
               <button
@@ -656,6 +721,7 @@ export function ChannelRow({
             />
             <DefaultSquadField
               defaultSquadId={form.defaultSquadId}
+              showError={saveAttempted}
               onChange={(id) => setForm({ ...form, defaultSquadId: id })}
               actions={fieldActions('defaultSquadId')}
             />
@@ -666,6 +732,11 @@ export function ChannelRow({
               actions={fieldActions('channelSquadMap')}
             />
 
+            <TrustedChannelsField
+              value={form.trustedChannels}
+              onChange={(value) => canUpdate && setForm({ ...form, trustedChannels: value })}
+              actions={fieldActions('trustedChannelIds')}
+            />
             <div className="flex items-center gap-2 pt-2 flex-wrap">
               <button
                 onClick={handleSave}
@@ -731,9 +802,28 @@ function FormField({
 
 function channelToForm(ch: ChannelInstanceConfig) {
   return {
+    trustedChannels: ch.trustedChannelIds ?? [],
     name: ch.name,
     providerConfigValue: extractProviderConfigValue(ch.provider, ch.providerConfig),
     defaultSquadId: ch.defaultSquadId ?? null,
     overrideRows: mapToOverrideRows(ch.channelSquadMap),
   }
+}
+
+export function TrustedChannelsField({
+  value,
+  onChange,
+  actions,
+}: {
+  value: string[]
+  onChange: (value: string[]) => void
+  actions?: ReactNode
+}) {
+  return (
+    <ChannelIdsEditor kind="Trusted" value={value} onChange={onChange} actions={actions}>
+      By default, senders must link a Tau account with squad chat access. Everyone who can message Tau in a trusted
+      channel can direct its squad’s agents, including through the manager. Add only channels whose participants you
+      trust. Leave empty to require linked users everywhere.
+    </ChannelIdsEditor>
+  )
 }

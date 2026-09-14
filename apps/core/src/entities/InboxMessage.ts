@@ -459,15 +459,6 @@ export class InboxMessage
     const sameSquad = fromAgent.squadId && toAgent.squadId && fromAgent.squadId === toAgent.squadId
 
     if (!sameSquad) {
-      // Allow concierge <-> squad manager communication
-      const isConciergeToManager = fromAgent.agentTypeId === 'concierge' && toAgent.agentTypeId === 'manager'
-      const isManagerToConcierge = fromAgent.agentTypeId === 'manager' && toAgent.agentTypeId === 'concierge'
-
-      if (isConciergeToManager || isManagerToConcierge) {
-        // Concierge can message squad managers and vice versa
-        return
-      }
-
       // Allow the platform system-manager (a squad-less router) and squad managers to message each
       // other, so the system-manager can route work to a squad and the manager can report back.
       const isSystemManagerToManager = fromAgent.agentTypeId === 'system-manager' && toAgent.agentTypeId === 'manager'

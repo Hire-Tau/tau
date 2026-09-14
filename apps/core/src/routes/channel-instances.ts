@@ -1,3 +1,4 @@
+import { parseTrustedChannelIds, parseChannelIds } from '../services/channel-access'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { ChannelInstance } from '../entities/ChannelInstance'
@@ -18,6 +19,10 @@ export const channelInstancesRouter = new Hono()
         name: inst.name,
         provider: inst.provider,
         providerConfig: inst.providerConfig,
+        trustedChannelIds: inst.trustedChannelIds,
+        allowedChannelIds: inst.allowedChannelIds,
+        deniedChannelIds: inst.deniedChannelIds,
+        allowPrivateChats: inst.allowPrivateChats,
         channelSquadMap: inst.channelSquadMap,
         defaultSquadId: inst.defaultSquadId,
         yamlFieldOverrides: inst.yamlFieldOverrides ?? [],
@@ -42,9 +47,12 @@ export const channelInstancesRouter = new Hono()
       name: inst.name,
       provider: inst.provider,
       providerConfig: inst.providerConfig,
+      trustedChannelIds: inst.trustedChannelIds,
+      allowedChannelIds: inst.allowedChannelIds,
+      deniedChannelIds: inst.deniedChannelIds,
+      allowPrivateChats: inst.allowPrivateChats,
       channelSquadMap: inst.channelSquadMap,
       defaultSquadId: inst.defaultSquadId,
-      conciergeAgentId: inst.conciergeAgentId,
       yamlFieldOverrides: inst.yamlFieldOverrides ?? [],
       hasTemplate: inst.yamlTemplate != null,
       disabled: inst.disabled,
@@ -52,6 +60,8 @@ export const channelInstancesRouter = new Hono()
   })
   .post('/', requirePermission('channels:create'), async (c) => {
     const body = await c.req.json()
+    if (body.allowPrivateChats !== undefined && typeof body.allowPrivateChats !== 'boolean')
+      return c.json({ error: 'allowPrivateChats must be a boolean' }, 400)
     const { id, name, provider, providerConfig, channelSquadMap, defaultSquadId } = body
     if (!id || !name || !provider) {
       return c.json({ error: 'id, name, and provider are required' }, 400)
@@ -66,6 +76,10 @@ export const channelInstancesRouter = new Hono()
       name,
       provider,
       providerConfig: providerConfig || {},
+      trustedChannelIds: parseTrustedChannelIds(body.trustedChannelIds ?? []),
+      allowedChannelIds: parseChannelIds(body.allowedChannelIds ?? []),
+      deniedChannelIds: parseChannelIds(body.deniedChannelIds ?? []),
+      allowPrivateChats: body.allowPrivateChats ?? true,
       channelSquadMap: channelSquadMap || {},
       defaultSquadId,
     })
@@ -84,12 +98,17 @@ export const channelInstancesRouter = new Hono()
   .put('/:id', requirePermission('channels:update'), async (c) => {
     const id = c.req.param('id')
     const body = await c.req.json()
+    if (body.allowPrivateChats !== undefined && typeof body.allowPrivateChats !== 'boolean')
+      return c.json({ error: 'allowPrivateChats must be a boolean' }, 400)
     const existing = await ChannelInstance.find(id)
     if (!existing) return c.json({ error: 'Channel instance not found' }, 404)
     const nextDefaultSquadId = body.defaultSquadId !== undefined ? body.defaultSquadId : existing.defaultSquadId
     if (!nextDefaultSquadId) {
       return c.json(missingDefaultResponse(), 400)
     }
+    if (body.trustedChannelIds !== undefined) body.trustedChannelIds = parseTrustedChannelIds(body.trustedChannelIds)
+    if (body.allowedChannelIds !== undefined) body.allowedChannelIds = parseChannelIds(body.allowedChannelIds)
+    if (body.deniedChannelIds !== undefined) body.deniedChannelIds = parseChannelIds(body.deniedChannelIds)
     await existing.update(body)
     await channelSync.recomputeFieldOverrides(id)
     const updated = await ChannelInstance.find(id)

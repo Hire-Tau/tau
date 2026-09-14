@@ -1,7 +1,7 @@
 import { Presence } from '../Presence'
 import { matchesSetting, settingMatchRank, SETTINGS_PAGE_KEYWORDS, SETTINGS_SEARCH_ENTRIES } from './settingsSearch'
 import clsx from 'clsx'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronDownIcon, SettingsIcon } from '../icons'
 import { SETTINGS_SECTION_ICONS as icons } from './settingsIcons'
@@ -33,6 +33,8 @@ export function SettingsNavigation({
   const mobileRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const [search, setSearch] = useState('')
+  const searchId = useId()
+  const [selection, setSelection] = useState({ key: '', index: 0 })
   const [mobileOpen, setMobileOpen] = useState(false)
   const [mobileMaxHeight, setMobileMaxHeight] = useState(0)
   useLayoutEffect(() => {
@@ -134,8 +136,33 @@ export function SettingsNavigation({
     onSectionChange(id)
     setSearch('')
   }
-  const content = () => (
-    <>
+  const showSetupResult = showOnboardingLink && !!search.trim() && matchesSetting(search, 'Set up Tau onboarding setup')
+  const resultCount = results.length + Number(showSetupResult)
+  const resultKey = JSON.stringify([search, results.map((result) => [result.section, result.id]), showSetupResult])
+  const selectedIndex = selection.key === resultKey ? Math.min(selection.index, resultCount - 1) : 0
+  const content = (surface: string) => (
+    <div
+      className="contents"
+      onKeyDown={(event) => {
+        if (!search.trim() || event.nativeEvent.isComposing || event.altKey || event.ctrlKey || event.metaKey) return
+        const target = event.target as HTMLElement
+        if (target.tagName !== 'INPUT' && !target.closest('[data-settings-result]')) return
+        if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return
+        if (event.key === 'Enter' && target.tagName !== 'INPUT') return
+        event.preventDefault()
+        event.stopPropagation()
+        if (!resultCount) return
+        const rows = event.currentTarget.querySelectorAll<HTMLElement>('[data-settings-result]')
+        if (event.key === 'Enter') {
+          rows[selectedIndex]?.click()
+          return
+        }
+        const index = (selectedIndex + (event.key === 'ArrowDown' ? 1 : -1) + resultCount) % resultCount
+        setSelection({ key: resultKey, index })
+        event.currentTarget.querySelector('input')?.focus()
+        rows[index]?.scrollIntoView?.({ block: 'nearest' })
+      }}
+    >
       {!scopeTitle && (
         <div className="mb-4 flex items-center gap-1 rounded-lg bg-surface-secondary p-1" aria-label="Settings areas">
           <button
@@ -168,13 +195,25 @@ export function SettingsNavigation({
       )}
       <input
         type="search"
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={!!search.trim()}
+        aria-controls={`${searchId}-${surface}-results`}
+        aria-activedescendant={
+          search.trim() && resultCount ? `${searchId}-${surface}-result-${selectedIndex}` : undefined
+        }
         aria-label="Search settings"
         placeholder="Find a setting…"
         value={search}
-        onChange={(event) => setSearch(event.target.value)}
+        onChange={(event) => {
+          setSearch(event.target.value)
+          setSelection({ key: '', index: 0 })
+        }}
         className="tau-field mb-4 h-9 w-full px-3 text-base md:text-sm"
       />
       <nav
+        id={`${searchId}-${surface}-results`}
+        role={search.trim() ? 'listbox' : undefined}
         aria-label={
           search
             ? 'Settings search results'
@@ -188,18 +227,27 @@ export function SettingsNavigation({
       >
         {search.trim() ? (
           <div className="space-y-1">
-            {results.map((result) => (
+            {results.map((result, index) => (
               <button
                 key={`${result.section}:${result.id}`}
+                id={`${searchId}-${surface}-result-${index}`}
+                role="option"
+                aria-selected={selectedIndex === index}
+                data-settings-result
+                onMouseEnter={() => setSelection({ key: resultKey, index })}
+                onFocus={() => setSelection({ key: resultKey, index })}
                 type="button"
                 onClick={() => select(result.section, result.id || undefined)}
-                className="tau-button tau-nav-item block w-full px-2.5 py-2.5 text-left"
+                className={clsx(
+                  'tau-button tau-nav-item block w-full px-2.5 py-2.5 text-left',
+                  selectedIndex === index && 'bg-accent/10 text-accent'
+                )}
               >
                 <span className="block text-sm text-primary">{result.label}</span>
                 <span className="mt-1 block text-xs text-secondary">{result.breadcrumb}</span>
               </button>
             ))}
-            {results.length === 0 && (
+            {resultCount === 0 && (
               <p role="status" className="px-2 text-sm text-secondary">
                 No settings match your search.
               </p>
@@ -240,14 +288,23 @@ export function SettingsNavigation({
           (search.trim() ? matchesSetting(search, 'Set up Tau onboarding setup') : inAdministration) && (
             <Link
               to="/onboarding"
-              className="tau-nav-item flex items-center gap-2.5 px-2.5 py-2 text-sm text-secondary"
+              id={`${searchId}-${surface}-result-${results.length}`}
+              role={search.trim() ? 'option' : undefined}
+              aria-selected={search.trim() ? selectedIndex === results.length : undefined}
+              data-settings-result={search.trim() ? '' : undefined}
+              onMouseEnter={() => setSelection({ key: resultKey, index: results.length })}
+              onFocus={() => setSelection({ key: resultKey, index: results.length })}
+              className={clsx(
+                'tau-nav-item flex items-center gap-2.5 px-2.5 py-2 text-sm text-secondary',
+                search.trim() && selectedIndex === results.length && 'bg-accent/10 text-accent'
+              )}
             >
               <SettingsIcon className="h-4 w-4" />
               Set up Tau
             </Link>
           )}
       </nav>
-    </>
+    </div>
   )
   return (
     <>
@@ -271,12 +328,12 @@ export function SettingsNavigation({
           style={{ maxHeight: `min(60dvh, ${mobileMaxHeight}px)` }}
           className="tau-overlay absolute left-0 right-0 top-full z-30 mt-2 overflow-y-auto overscroll-contain p-3"
         >
-          {content()}
+          {content('mobile')}
         </Presence>
       </div>
       <aside className="tau-panel tau-glass hidden md:block w-60 flex-shrink-0 h-full overflow-y-auto p-3">
         <h2 className="px-2 pb-4 pt-1 text-sm font-semibold text-primary">{scopeTitle ?? 'Settings'}</h2>
-        {content()}
+        {content('desktop')}
       </aside>
     </>
   )

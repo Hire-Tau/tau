@@ -10,7 +10,6 @@ import type { InferSelectModel } from 'drizzle-orm'
 import { db, channelInstances } from '../db'
 import { getProvider } from '../channels'
 import type { ProviderConfig, InboundMessage } from '../channels/provider'
-import { isAddressableAgentStatus } from '@tau/shared'
 import { createLogger } from '../lib/infra/logger'
 
 const log = createLogger('channel-instance')
@@ -21,13 +20,17 @@ export type ChannelInstanceRow = InferSelectModel<typeof channelInstances>
 export type { ProviderConfig } from '../channels/provider'
 import { Squad } from './Squad'
 
-const CONCIERGE_AGENT_TYPE = 'concierge'
+const CHANNEL_AGENT_TYPE = 'consultant'
 
 export interface CreateChannelInstanceInput {
   id: string
   name: string
   provider: string
   providerConfig: ProviderConfig
+  trustedChannelIds?: string[]
+  allowedChannelIds?: string[]
+  deniedChannelIds?: string[]
+  allowPrivateChats?: boolean
   channelSquadMap?: Record<string, string>
   defaultSquadId?: string
 }
@@ -35,9 +38,12 @@ export interface CreateChannelInstanceInput {
 export interface UpdateChannelInstanceInput {
   name?: string
   providerConfig?: ProviderConfig
+  trustedChannelIds?: string[]
+  allowedChannelIds?: string[]
+  deniedChannelIds?: string[]
+  allowPrivateChats?: boolean
   channelSquadMap?: Record<string, string>
   defaultSquadId?: string | null
-  conciergeAgentId?: string | null
 }
 
 export class ChannelInstance implements ChannelInstanceRow {
@@ -45,18 +51,25 @@ export class ChannelInstance implements ChannelInstanceRow {
   declare name: string
   declare provider: string
   declare providerConfig: ProviderConfig
+  declare trustedChannelIds: string[]
+  declare allowedChannelIds: string[]
+  declare deniedChannelIds: string[]
+  declare allowPrivateChats: boolean
   declare channelSquadMap: Record<string, string>
   declare defaultSquadId: string | null
-  declare conciergeAgentId: string | null
   declare yamlTemplate: unknown
   declare yamlFieldOverrides: string[]
   declare disabled: boolean
   declare createdAt: Date | null
   declare updatedAt: Date | null
 
-  constructor(data: ChannelInstanceRow) {
+  constructor(data: Omit<ChannelInstanceRow, 'allowPrivateChats'> & { allowPrivateChats?: boolean }) {
     Object.assign(this, data)
     // Normalize arrays and objects from Postgres
+    this.trustedChannelIds = data.trustedChannelIds ?? []
+    this.allowedChannelIds = data.allowedChannelIds ?? []
+    this.deniedChannelIds = data.deniedChannelIds ?? []
+    this.allowPrivateChats = data.allowPrivateChats ?? true
     this.providerConfig = (data.providerConfig as ProviderConfig) || {}
     this.channelSquadMap = (data.channelSquadMap as Record<string, string>) || {}
   }
@@ -122,6 +135,10 @@ export class ChannelInstance implements ChannelInstanceRow {
         name: input.name,
         provider: input.provider,
         providerConfig: input.providerConfig,
+        trustedChannelIds: input.trustedChannelIds ?? [],
+        allowedChannelIds: input.allowedChannelIds ?? [],
+        deniedChannelIds: input.deniedChannelIds ?? [],
+        allowPrivateChats: input.allowPrivateChats ?? true,
         channelSquadMap: input.channelSquadMap || {},
         defaultSquadId: input.defaultSquadId || null,
       })
@@ -141,6 +158,10 @@ export class ChannelInstance implements ChannelInstanceRow {
         name: input.name,
         provider: input.provider,
         providerConfig: input.providerConfig,
+        trustedChannelIds: input.trustedChannelIds ?? [],
+        allowedChannelIds: input.allowedChannelIds ?? [],
+        deniedChannelIds: input.deniedChannelIds ?? [],
+        allowPrivateChats: input.allowPrivateChats ?? true,
         channelSquadMap: input.channelSquadMap || {},
         defaultSquadId: input.defaultSquadId || null,
       })
@@ -149,6 +170,10 @@ export class ChannelInstance implements ChannelInstanceRow {
         set: {
           name: input.name,
           providerConfig: input.providerConfig,
+          trustedChannelIds: input.trustedChannelIds ?? [],
+          allowedChannelIds: input.allowedChannelIds ?? [],
+          deniedChannelIds: input.deniedChannelIds ?? [],
+          allowPrivateChats: input.allowPrivateChats ?? true,
           channelSquadMap: input.channelSquadMap || {},
           defaultSquadId: input.defaultSquadId || null,
           updatedAt: new Date(),
@@ -169,22 +194,18 @@ export class ChannelInstance implements ChannelInstanceRow {
   async update(updates: UpdateChannelInstanceInput): Promise<void> {
     const updateValues: Record<string, unknown> = { updatedAt: new Date() }
 
+    if (updates.trustedChannelIds !== undefined) updateValues.trustedChannelIds = updates.trustedChannelIds
+    if (updates.allowedChannelIds !== undefined) updateValues.allowedChannelIds = updates.allowedChannelIds
+    if (updates.deniedChannelIds !== undefined) updateValues.deniedChannelIds = updates.deniedChannelIds
+    if (updates.allowPrivateChats !== undefined) updateValues.allowPrivateChats = updates.allowPrivateChats
     if (updates.name !== undefined) updateValues.name = updates.name
     if (updates.providerConfig !== undefined) updateValues.providerConfig = updates.providerConfig
     if (updates.channelSquadMap !== undefined) updateValues.channelSquadMap = updates.channelSquadMap
     if (updates.defaultSquadId !== undefined) updateValues.defaultSquadId = updates.defaultSquadId
-    if (updates.conciergeAgentId !== undefined) updateValues.conciergeAgentId = updates.conciergeAgentId
 
     await db.update(channelInstances).set(updateValues).where(eq(channelInstances.id, this.id))
 
     Object.assign(this, updates)
-  }
-
-  /**
-   * Set the concierge agent for this channel instance.
-   */
-  async setConciergeAgent(agentId: string | null): Promise<void> {
-    await this.update({ conciergeAgentId: agentId })
   }
 
   /**
@@ -196,62 +217,16 @@ export class ChannelInstance implements ChannelInstanceRow {
     return channelProvider.getPlatformIdFromConfig(this.providerConfig)
   }
 
-  // ---------------------------------------------------------------------------
-  // Concierge Methods
-  // ---------------------------------------------------------------------------
-
-  /**
-   * Get or spawn a concierge agent for this channel instance.
-   * Concierge is scoped to this instance's deterministic target squad.
-   */
-  async getOrSpawnConcierge(inbound?: InboundMessage): Promise<import('./Agent').Agent> {
-    // Lazy import to avoid circular dependency
-    const { Agent } = await import('./Agent')
-
-    // Check for existing concierge
-    if (this.conciergeAgentId) {
-      const existing = await Agent.find(this.conciergeAgentId)
-      if (existing && isAddressableAgentStatus(existing.status)) {
-        return existing
-      }
-    }
-
-    const warmSquadId = inbound ? this.resolveTargetSquad(inbound) : this.defaultSquadId
-    if (!warmSquadId) {
-      throw new Error(`Channel instance ${this.id} cannot warm a concierge: no resolvable target squad`)
-    }
-
-    // Spawn new concierge in the deterministic target squad
-    const agent = await Agent.create({
-      agentTypeId: CONCIERGE_AGENT_TYPE,
-      squadId: warmSquadId,
-      persist: true,
-      context: {
-        scope: { type: 'concierge' },
-        // Only store id and provider - other fields can change in DB
-        channelInstance: {
-          id: this.id,
-          provider: this.provider,
-        },
-      },
-    })
-
-    // Update channel instance with concierge reference
-    await this.setConciergeAgent(agent.id)
-
-    log.info(`Spawned ${agent.id} for ${this.provider}:${this.id}`)
-    return agent
-  }
-
   /**
    * Determine target squad based on channel context.
    */
   resolveTargetSquad(inbound: InboundMessage): string | null {
     const { responseContext } = inbound
+    const channelId = responseContext.routingChannelId ?? responseContext.channelId
 
     // 1. Channel mapping (e.g., #frontend channel → frontend-squad)
-    if (this.channelSquadMap && responseContext.channelId) {
-      const mapped = this.channelSquadMap[responseContext.channelId]
+    if (this.channelSquadMap && channelId) {
+      const mapped = this.channelSquadMap[channelId]
       if (mapped) return mapped
     }
 
@@ -284,22 +259,33 @@ export class ChannelInstance implements ChannelInstanceRow {
   }
 
   /**
-   * Queue a message for a new per-conversation concierge agent.
-   * Each slash command spawns its own concierge for thread isolation.
+   * Queue a message for a new per-conversation consultant agent.
+   * Each slash command spawns its own consultant for thread isolation.
    */
-  async queueForConcierge(inbound: InboundMessage): Promise<string> {
+  async queueForConsultant(inbound: InboundMessage): Promise<string> {
     const { Agent } = await import('./Agent')
     const { InboxMessage } = await import('./InboxMessage')
 
     const targetSquad = this.resolveTargetSquadOrThrow(inbound)
+    const { canUseChannel } = await import('../services/channel-access')
+    if (
+      !(await canUseChannel(
+        this,
+        inbound.responseContext.routingChannelId ?? inbound.responseContext.channelId,
+        inbound.user.id,
+        targetSquad
+      ))
+    ) {
+      throw new Error('Channel sender is not authorized for this squad')
+    }
 
-    // Spawn a NEW concierge agent for this conversation
+    // Spawn a NEW consultant agent for this conversation
     const agent = await Agent.create({
-      agentTypeId: CONCIERGE_AGENT_TYPE,
+      agentTypeId: CHANNEL_AGENT_TYPE,
       squadId: targetSquad,
       persist: true,
       context: {
-        scope: { type: 'concierge' },
+        scope: { type: 'consultant' },
         channelInstance: {
           id: this.id,
           provider: this.provider,
@@ -308,9 +294,9 @@ export class ChannelInstance implements ChannelInstanceRow {
       },
     })
 
-    const content = await this.buildConciergeInboxMessage(inbound, targetSquad, agent.id)
+    const content = await this.buildChannelInboxMessage(inbound, targetSquad)
 
-    // Genuine channel correspondence explicitly wakes a dormant concierge.
+    // Genuine channel correspondence explicitly wakes a dormant consultant.
     await InboxMessage.send({
       recipientId: agent.id,
       senderType: 'system',
@@ -329,34 +315,16 @@ export class ChannelInstance implements ChannelInstanceRow {
       },
     })
 
-    log.info(`Spawned concierge ${agent.id} for ${inbound.command} from ${inbound.user.name}`)
+    log.info(`Spawned consultant ${agent.id} for ${inbound.command} from ${inbound.user.name}`)
     return agent.id
   }
 
   /**
-   * Build inbox message for concierge based on command type.
+   * Build inbox message for consultant based on command type.
    */
-  private async buildConciergeInboxMessage(
-    inbound: InboundMessage,
-    targetSquad: string | null,
-    conciergeAgentId: string
-  ): Promise<string> {
+  private async buildChannelInboxMessage(inbound: InboundMessage, targetSquad: string | null): Promise<string> {
     const { content, user, responseContext } = inbound
     const platform = responseContext.provider.charAt(0).toUpperCase() + responseContext.provider.slice(1)
-    const shortAgentId = conciergeAgentId.slice(0, 8)
-
-    // Build squad context with manager agent IDs for easy forwarding
-    let squadContext = ''
-    if (targetSquad) {
-      const targetSquadEntity = await Squad.find(targetSquad)
-      if (targetSquadEntity) {
-        const managerInfo = targetSquadEntity.managerAgentId
-          ? ` — manager agent: \`${targetSquadEntity.managerAgentId.slice(0, 8)}\``
-          : ''
-        squadContext = `**Target squad:** ${targetSquadEntity.name} (${targetSquadEntity.id.slice(0, 8)})${managerInfo}`
-      }
-    }
-
     let channelContext = ''
     if (responseContext.provider === 'slack') {
       const extras = responseContext.extras ?? {}
@@ -387,15 +355,13 @@ If the user asks to "index this thread" (or similar), ingest with:
       }
     }
 
-    // All freeform commands use the same template - concierge decides how to handle
+    // All freeform commands use the same template - consultant decides how to handle
     // Status and help are handled as sync commands, so they don't reach here
-    return `**${platform} from ${user.name}:** "${content}"${squadContext ? `\n\n${squadContext}` : ''}${channelContext}
-
-**Your agent ID:** \`${shortAgentId}\` (include this if you forward to a manager so they can reply back)`
+    return `**${platform} from ${user.name}:** "${content}"${channelContext}`
   }
 
   /**
-   * Handle sync commands (immediate response, no concierge needed).
+   * Handle sync commands (immediate response, no consultant needed).
    */
   async handleSyncCommand(inbound: InboundMessage): Promise<string> {
     if (inbound.command === 'status') {

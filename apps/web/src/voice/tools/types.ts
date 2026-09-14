@@ -10,6 +10,13 @@ export interface VoiceAssistantTool<TEnv = unknown> {
   followUp?: VoiceToolFollowUp
 }
 
+export interface DelegateTaskOptions {
+  label: string
+  squadId?: string
+  mode?: 'steer' | 'follow-up'
+  inReplyTo?: string
+}
+
 export interface VoiceToolExecutor {
   navigate: (path: string) => void
   openConversation?: (conversation: AssistantConversationLink) => void
@@ -19,5 +26,6 @@ export interface VoiceToolExecutor {
     mode?: 'steer' | 'follow-up',
     inReplyTo?: string
   ) => Promise<unknown>
+  delegateTask?: (request: string, options: DelegateTaskOptions) => Promise<unknown>
   getCurrentPath?: () => string
 }

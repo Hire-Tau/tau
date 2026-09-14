@@ -1,3 +1,4 @@
+import { consultantSandboxSquadId } from '../sandbox/consultant-sandbox'
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { createPrivateKey, createPublicKey, type KeyObject } from 'crypto'
@@ -37,6 +38,8 @@ export function samePublicKey(left: string, right: string): boolean {
  * operator-coordinated recovery.
  */
 export async function ensureAgentIdentity(agent: Agent, sandboxId: string): Promise<string> {
+  if (consultantSandboxSquadId(sandboxId))
+    throw new Error('Shared consultant sandboxes have no per-agent signing identity')
   const path = agentIdentityHostPath(sandboxId)
   let privateKeyPem: string | undefined
 

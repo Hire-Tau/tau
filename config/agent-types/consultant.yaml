@@ -10,6 +10,7 @@ description: |
 model: ''
 tier: deep
 includes:
+  - entity-references
   - rules
   - subagents
   - squad-rules
@@ -18,6 +19,7 @@ includes:
 extensions:
   - code-ast
 skills:
+  - amtp
   - brainstorming
   - writing-plans
   - using-git-worktrees

@@ -801,7 +801,7 @@ sandbox), and for a `system_manager_<userId>` box **all** of that user's
 system-manager agents. For `squad_<id>`, running and stopping executions block
 migration even if their agent or subagent has since terminated. Queued rows do
 not independently block: once migration owns the squad row lock, pickup cannot
-claim them. Squad managers, workers, concierges, and squad subagents qualify;
+claim them. Squad managers, workers, consultants, and squad subagents qualify;
 top-level system-manager and artifact-builder executions remain personal-only.
 
 Execution pickup locks every accessible box row (the private or inherited box

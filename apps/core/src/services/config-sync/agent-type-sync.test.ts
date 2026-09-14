@@ -90,13 +90,13 @@ describe('AgentTypeSync', () => {
     )
   })
 
-  test('manager and concierge include roadmap-phase-loop and shared planning skills', async () => {
+  test('manager and consultant include roadmap-phase-loop and shared planning skills', async () => {
     const parsed = await sync.loadFromDir()
     const manager = parsed.find((p) => p.id === 'manager')
-    const concierge = parsed.find((p) => p.id === 'concierge')
+    const consultant = parsed.find((p) => p.id === 'consultant')
 
     expect(manager).toBeTruthy()
-    expect(concierge).toBeTruthy()
+    expect(consultant).toBeTruthy()
 
     const planningSkills = [
       'brainstorming',
@@ -108,12 +108,10 @@ describe('AgentTypeSync', () => {
     ]
 
     expect(manager!.skills ?? []).toEqual(expect.arrayContaining(['roadmap-phase-loop']))
-    expect(concierge!.skills ?? []).toEqual(expect.arrayContaining(planningSkills))
+    expect(consultant!.skills ?? []).toEqual(expect.arrayContaining(planningSkills))
 
-    // Concierge keeps its existing setup/onboarding skills.
-    expect(concierge!.skills ?? []).toEqual(
-      expect.arrayContaining(['client-onboarding', 'setup-secrets', 'setup-squad', 'setup-notifications'])
-    )
+    // Consultant keeps its existing setup/onboarding skills.
+    expect(consultant!.skills ?? []).toEqual(expect.arrayContaining(['setup-squad', 'setup-notifications']))
   })
 
   test('engineering squad prompts include public communication guidance', async () => {
@@ -335,7 +333,7 @@ describe('AgentTypeSync', () => {
     const parsed = await loadComposed()
     const subagentCapableIds = [
       'system-manager',
-      'concierge',
+      'consultant',
       'manager',
       'architect',
       'engineer',
@@ -386,50 +384,17 @@ describe('AgentTypeSync', () => {
     }
   })
 
-  test('concierge prompt documents WorkStreamSourceLink source-link schema', async () => {
+  test('manager and consultant select flows without eagerly staffing a fixed team', async () => {
     const parsed = await sync.loadFromDir()
-    const concierge = parsed.find((p) => p.id === 'concierge')
-
-    expect(concierge).toBeTruthy()
-    expect(concierge!.systemPrompt).toContain('WorkStreamSourceLink JSON')
-    expect(concierge!.systemPrompt).toContain('memory_document')
-    expect(concierge!.systemPrompt).toContain('channel_message')
-    expect(concierge!.systemPrompt).toContain('sourceSquadId')
-    expect(concierge!.systemPrompt).toContain('memory_document` needs `sourceSquadId` + `path`')
-    expect(concierge!.systemPrompt).toContain('addedAt` is filled by create if omitted')
-  })
-
-  test('concierge prompt documents routing uncertainty and escalation policy', async () => {
-    const parsed = await sync.loadFromDir()
-    const concierge = parsed.find((p) => p.id === 'concierge')
-
-    expect(concierge).toBeTruthy()
-    expect(concierge!.systemPrompt).toContain('## Routing Decisions')
-    expect(concierge!.systemPrompt).toContain('Routing is unusual')
-    expect(concierge!.systemPrompt).toContain('default to handling the request in your current squad')
-    expect(concierge!.systemPrompt).toContain('entirely unrelated to your')
-    expect(concierge!.systemPrompt).toContain('`suggest_squad` tool')
-    expect(concierge!.systemPrompt).toContain('`route`:')
-    expect(concierge!.systemPrompt).toContain('`clarify`:')
-    expect(concierge!.systemPrompt).toContain('`escalate`:')
-    expect(concierge!.systemPrompt).toContain('notify_contact')
-    expect(concierge!.systemPrompt).toContain('Never ask the user which squad should handle a request')
-  })
-
-  test('manager, consultant, and concierge select flows without eagerly staffing a fixed team', async () => {
-    const parsed = await sync.loadFromDir()
-    for (const id of ['manager', 'consultant', 'concierge']) {
+    for (const id of ['manager', 'consultant']) {
       const type = parsed.find((row) => row.id === id)!
-      expect(type.systemPrompt).toContain(
-        '--workflow <preset-id>'.replace('preset-id', id === 'concierge' ? 'id' : 'preset-id')
-      )
+      expect(type.systemPrompt).toContain('--workflow <preset-id>')
       expect(type.systemPrompt).toContain('--flow source.yaml')
       expect(type.systemPrompt).not.toContain('--agents architect,engineer,reviewer')
       expect(type.systemPrompt).not.toContain('--assign-index 1')
       expect(type.skills).not.toContain('subagent-driven-development')
     }
     expect(parsed.find((row) => row.id === 'consultant')!.systemPrompt).toContain('--owner {{manager.id}}')
-    expect(parsed.find((row) => row.id === 'concierge')!.systemPrompt).toContain('channel_respond')
   })
 
   test('includes are kept as a list, not merged into systemPrompt', async () => {

@@ -1,3 +1,4 @@
+import { consultantSandboxSquadId } from '../sandbox/consultant-sandbox'
 import { sql } from 'drizzle-orm'
 import { agents, db, executions } from '../../db'
 import { ARTIFACT_BUILDER_AGENT_TYPE_ID } from '../../entities/agent-runners/constants'
@@ -31,6 +32,11 @@ async function ownerActivity(seedWhere: ReturnType<typeof sql>, executor: DbExec
  * fail safe as active so destructive callers choose the longer grace tier.
  */
 export async function sandboxActivity(sandboxId: string, executor: DbExecutor = db): Promise<SandboxActivity> {
+  const consultantSquad = consultantSandboxSquadId(sandboxId)
+  if (consultantSquad) {
+    if (!UUID_RE.test(consultantSquad)) return { active: true }
+    return ownerActivity(sql`${agents.squadId} = ${consultantSquad} AND ${agents.agentTypeId} = 'consultant'`, executor)
+  }
   if (sandboxId.startsWith('system_manager_')) {
     const userId = sandboxId.slice('system_manager_'.length)
     if (!UUID_RE.test(userId)) return { active: true }

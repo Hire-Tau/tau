@@ -32,7 +32,9 @@ const historicalAssignment = {
   'security-auditor': 'exhaustive',
 } as const
 const shippedAssignment = {
-  ...historicalAssignment,
+  engineer: 'standard',
+  reviewer: 'deep',
+  'security-auditor': 'exhaustive',
   'system-manager': 'standard',
   manager: 'standard',
   sysops: 'standard',
@@ -117,6 +119,7 @@ describeSubprocess('model tiers migration (real runner, fresh DB)', () => {
       `SELECT a.id,a.model,a.tier,t.chain FROM agent_types a JOIN model_tiers t ON t.slug=a.tier ORDER BY a.id`
     )
     expect(rows).toHaveLength(Object.keys(shippedAssignment).length)
+    expect(rows.some((row) => row.id === 'concierge')).toBe(false)
     for (const row of rows) {
       expect(row.tier).toBe(shippedAssignment[row.id as keyof typeof shippedAssignment])
       expect(row.chain).toBe(expectedChains.get(row.tier)!)

@@ -1,26 +1,24 @@
 import { z } from 'zod'
 import { agentConversationLink } from '../../lib/assistantConversationLinks'
 import * as squads from '../../api/squads'
-import { getAgent, sendAgentMessage } from '../../api/agents'
+import { getAgent } from '../../api/agents'
 import { listGlobalActivity } from '../../api/activity'
 import { listPendingActions } from '../../api/actions'
 import { answerAgentQuestion, dismissAgentQuestion } from '../../api/agentQuestions'
-import { markAsRead } from '../../api/inbox'
+import { getMyInbox, markAsRead } from '../../api/inbox'
 import * as workspace from '../../api/workspace'
 import { searchMemory } from '../../api/memory'
 import { searchEntities } from '../../api/search'
 import { hybridTauSearch } from '../../lib/hybridTauSearch'
 import { ALL_SECTIONS, isSectionAllowed } from '../../components/settings/settingsSections'
 import { resolveVoiceSquadId } from '../squadReferences'
+import { getChatDrawerPath, type ChatDrawerToolState } from '../chatDrawerTool'
 import type { VoiceAssistantTool, VoiceToolExecutor } from './types'
 
 export interface AssistantToolEnvironment extends VoiceToolExecutor {
   can?: (permission: string) => boolean
-  messageUserAssistant?: (request: string, mode?: 'steer' | 'follow-up', inReplyTo?: string) => Promise<unknown>
 }
 const text = z.string().trim().min(1)
-// Accept legacy UI result IDs at the tool boundary, never pass them to the API.
-const workStreamId = text.transform((value) => value.replace(/^work:/, '')).pipe(z.string().uuid())
 const limit = z.number().int().min(1).max(50).default(20)
 function tool(
   name: string,
@@ -44,12 +42,12 @@ const number = { type: 'integer', minimum: 1, maximum: 50 }
 const depsDefault = {
   squads,
   getAgent,
-  sendAgentMessage,
   listGlobalActivity,
   listPendingActions,
   answerAgentQuestion,
   dismissAgentQuestion,
   markAsRead,
+  getMyInbox,
   workspace,
   searchMemory,
   searchEntities,
@@ -63,47 +61,51 @@ export function createAssistantTools(
     if (!id) throw new Error('Unknown or ambiguous squad. Search for its full ID first.')
     return id
   }
-  async function verifiedSquadManager(id: string) {
-    const agents = await deps.squads.listSquadAgents(id)
-    const managers = agents.filter(
-      (agent) =>
-        agent.squadId === id && agent.agentTypeId === 'manager' && !['terminated', 'dormant'].includes(agent.status)
-    )
-    if (managers.length !== 1)
-      throw new Error('Could not identify one available manager for this squad. No message sent.')
-    const manager = await deps.getAgent(managers[0]!.id)
-    if (
-      manager.id !== managers[0]!.id ||
-      manager.squadId !== id ||
-      manager.agentTypeId !== 'manager' ||
-      ['terminated', 'dormant'].includes(manager.status)
-    )
-      throw new Error('The manager’s squad or availability changed. No message sent.')
-    return manager
-  }
   return [
-    tool(
-      'show_conversation',
-      'Offer a nested conversation link to an existing agent without sending a message. Use open=true only when the user asks to open or go to the conversation (in text or voice). Opening preserves the Assistant conversation and live voice recipient; Back returns here. Successful message tools already display a conversation link, so do not call this again after sending.',
-      {
-        agentId: string,
-        open: {
-          type: 'boolean',
-          description: 'Open immediately only for an explicit navigation request; otherwise show a link.',
+    {
+      ...tool(
+        'navigate',
+        'Operate the UI. Pass exactly one of: path (an app-relative route from the Navigation section of your instructions; only when it differs from the current screen), agentId (offer a conversation link row for an existing agent without sending anything; open=true opens it, only for an explicit request), or drawer (open, closed, expanded, or toggle the Assistant popup; closing during live voice keeps a compact voice strip). Sending a message never navigates; message receipts already show their link.',
+        {
+          path: { type: 'string', description: 'Route path with optional query, e.g. "/squads/abc123/work"' },
+          agentId: string,
+          open: { type: 'boolean', description: 'With agentId: open the conversation now (explicit request only).' },
+          drawer: { type: 'string', enum: ['open', 'closed', 'expanded', 'toggle'] },
         },
-      },
-      ['agentId'],
-      async (args, env) => {
-        const input = z.object({ agentId: text, open: z.boolean().default(false) }).parse(args)
-        const agent = await deps.getAgent(input.agentId)
-        const conversation = agentConversationLink(agent)
-        if (input.open && env.openConversation) env.openConversation(conversation)
-        return { ok: true, conversation, opened: input.open && Boolean(env.openConversation) }
-      }
-    ),
+        [],
+        async (args, env) => {
+          const input = z
+            .object({
+              path: z.string().trim().min(1).max(2000).optional(),
+              agentId: text.optional(),
+              open: z.boolean().default(false),
+              drawer: z.enum(['open', 'closed', 'expanded', 'toggle']).optional(),
+            })
+            .refine((value) => [value.path, value.agentId, value.drawer].filter(Boolean).length === 1, {
+              message: 'Pass exactly one of path, agentId, or drawer',
+            })
+            .parse(args)
+          if (input.path) {
+            env.navigate(input.path)
+            return { ok: true, navigatedTo: input.path }
+          }
+          if (input.drawer) {
+            const currentPath = env.getCurrentPath?.() ?? `${window.location.pathname}${window.location.search}`
+            const path = getChatDrawerPath(currentPath, input.drawer as ChatDrawerToolState)
+            env.navigate(path)
+            return { ok: true, drawerState: input.drawer, navigatedTo: path }
+          }
+          const agent = await deps.getAgent(input.agentId!)
+          const conversation = agentConversationLink(agent)
+          if (input.open && env.openConversation) env.openConversation(conversation)
+          return { ok: true, conversation, opened: input.open && Boolean(env.openConversation) }
+        }
+      ),
+      followUp: 'never' as const,
+    },
     tool(
       'search_tau',
-      'Find pages, settings, squads, consultant conversations, work streams, and saved Assistant conversations. Returns canonical IDs and links.',
+      'Look up Tau entities by name or keyword: squads, work streams, consultant conversations, saved Assistant conversations, and navigation targets (pages and settings sections). Returns canonical IDs and links. It does not read data or configuration: no schedules, environment variables, secrets, integrations, users, permissions, agent status, activity, or the value of any setting. For live state use get_work, read_thread, read_inbox, or read_activity; for anything else use delegate_task.',
       { query: string, limit: number },
       ['query'],
       async (args, env) => {
@@ -117,73 +119,48 @@ export function createAssistantTools(
       }
     ),
     tool(
-      'inspect_work_stream',
-      'Read a work stream’s description, status, assignments, waits, and metadata.',
-      { id: string },
-      ['id'],
-      async (args) => deps.squads.getWorkStream(z.object({ id: workStreamId }).parse(args).id)
-    ),
-    tool(
-      'message_squad_manager',
-      'Route a new project report, incident, or squad-owned work request directly to the relevant squad manager. Global or personal Tau settings, environment variables, secrets, and integration accounts belong to message_user_assistant unless the user explicitly requests a squad/project change. The current page alone does not establish squad ownership. Match the squad by name and purpose in session context and pass its ID. No existing work stream is required; the manager owns triage and work creation. Use this before investigating or searching for matching work. A successful receipt confirms submission, not completion.',
+      'delegate_task',
+      'Run a task in the background: with the user’s own permissions for instance-wide tasks, or as a squad consultant for squad tasks. Results are reported back here. Omit squadId for anything about the whole Tau instance or the user’s account: schedules, integrations, environment variables, secrets, users, permissions, billing, notifications, instance settings, and any investigation or sustained work that is not owned by one squad. Pass squadId (full ID or URL slug) only for work that belongs to that squad: its project, repositories, work streams, incidents, and squad settings. Give every task a short label. Results, progress, and clarification questions arrive in this conversation as task updates; a receipt is not a result and must never be described as one. To continue or answer a task, call this again with inReplyTo set to the update’s id and the same squadId. Delivery is steer (the new request takes priority); pass follow-up only when the user explicitly wants it queued behind the running task. Never send secret values.',
       {
-        squadId: { type: 'string', description: 'Full squad ID from session context or lookup, or its URL slug.' },
-        content: {
+        label: {
+          type: 'string',
+          description: '3–6 words naming the task, e.g. "Check enabled schedules". No status words or secrets.',
+        },
+        request: {
           type: 'string',
           description:
-            'Self-contained user report with exact URLs, symptoms, affected system, and constraints. Do not invent a diagnosis.',
+            'Self-contained request from the user’s perspective with every relevant detail, exact URLs, and constraints.',
+        },
+        squadId: {
+          type: 'string',
+          description:
+            'Full squad ID or URL slug when the task belongs to one squad. Omit for instance-wide or personal tasks.',
+        },
+        mode: { type: 'string', enum: ['steer', 'follow-up'] },
+        inReplyTo: {
+          type: 'string',
+          description: 'Full inbox update UUID when answering or continuing a task update.',
         },
       },
-      ['squadId', 'content'],
+      ['label', 'request'],
       async (args, env) => {
-        const input = z.object({ squadId: text, content: text.max(20000) }).parse(args)
-        const id = await squadId(input.squadId, true)
-        const manager = await verifiedSquadManager(id)
-        if (env.messageAgent)
-          return {
-            receipt: await env.messageAgent(manager.id, input.content, 'follow-up'),
-            squadId: id,
-            managerId: manager.id,
-          }
-        const result = await deps.sendAgentMessage(manager.id, input.content, undefined, 'follow-up')
-        return { ok: result.success, agentStatus: result.status, squadId: id, managerId: manager.id }
-      }
-    ),
-    tool(
-      'message_work_stream_manager',
-      'Ask the manager of a verified work stream to pause, resume, or coordinate that work. Resolves the manager from the work stream’s squad; never guesses an agent. Use this instead of message_agent for work-stream coordination. A successful send means the request was delivered, not that the requested action is complete.',
-      { workStreamId: string, content: string },
-      ['workStreamId', 'content'],
-      async (args, env) => {
-        const input = z.object({ workStreamId, content: text.max(20000) }).parse(args)
-        const work = await deps.squads.getWorkStream(input.workStreamId)
-        if (work.id !== input.workStreamId || !work.squadId)
-          throw new Error('Could not verify the work stream’s squad. No message sent.')
-        const manager = await verifiedSquadManager(work.squadId)
-        if (env.messageAgent)
-          return {
-            receipt: await env.messageAgent(
-              manager.id,
-              `Work stream: ${work.title} (${work.id})\n\n${input.content}`,
-              'steer'
-            ),
-            workStreamId: work.id,
-            squadId: work.squadId,
-            managerId: manager.id,
-          }
-        const result = await deps.sendAgentMessage(
-          manager.id,
-          `Work stream: ${work.title} (${work.id})\n\n${input.content}`,
-          undefined,
-          'steer'
-        )
-        return {
-          ok: result.success,
-          agentStatus: result.status,
-          workStreamId: work.id,
-          squadId: work.squadId,
-          managerId: manager.id,
-        }
+        if (!env.delegateTask) throw new Error('Background tasks are unavailable in this surface')
+        const input = z
+          .object({
+            label: text.max(80),
+            request: text.max(20000),
+            squadId: text.optional(),
+            mode: z.enum(['steer', 'follow-up']).default('steer'),
+            inReplyTo: z.string().uuid().optional(),
+          })
+          .parse(args)
+        const squad = input.squadId ? await squadId(input.squadId, true) : undefined
+        return env.delegateTask(input.request, {
+          label: input.label,
+          squadId: squad,
+          mode: input.mode,
+          inReplyTo: input.inReplyTo,
+        })
       }
     ),
     tool(
@@ -199,12 +176,13 @@ export function createAssistantTools(
       }
     ),
     tool(
-      'read_squad_file',
-      'List directories or read a bounded excerpt from squad workspace or memory. Paths are scoped by the server. Omit path to list the root.',
+      'read_squad_files',
+      'Read a squad’s shared workspace or its memory. Pass path for a file (paginated with offset) or a directory tree (directory=true or no path). Pass query with source=memory to search indexed memory for relevant context and sources instead of reading a path.',
       {
         squadId: string,
         source: { type: 'string', enum: ['workspace', 'memory'] },
         path: string,
+        query: { type: 'string', description: 'Memory search query. Only with source=memory.' },
         directory: { type: 'boolean' },
         offset: { type: 'integer', minimum: 0 },
       },
@@ -215,11 +193,14 @@ export function createAssistantTools(
             squadId: text,
             source: z.enum(['workspace', 'memory']),
             path: z.string().max(2000).optional(),
+            query: z.string().trim().max(1000).optional(),
             directory: z.boolean().default(false),
             offset: z.number().int().min(0).default(0),
           })
+          .refine((value) => !(value.query && value.source !== 'memory'), { message: 'query requires source=memory' })
           .parse(args)
         const id = await squadId(input.squadId)
+        if (input.query) return deps.searchMemory(id, { query: input.query, limit: 10 })
         const memory = input.source === 'memory'
         if (!input.path || input.directory)
           return memory
@@ -239,45 +220,68 @@ export function createAssistantTools(
       }
     ),
     tool(
-      'search_memory',
-      'Search a squad’s indexed memory for relevant context and sources.',
-      { squadId: string, query: string },
-      ['squadId', 'query'],
+      'read_inbox',
+      'Read what is waiting for the user. view=actions: the action center — agent questions awaiting an answer, blocked work, and decisions, each with its action ID; this is the tool for "what needs me". view=notifications: recent inbox notifications (task and agent updates, work-stream events); unread by default, status=all or read for earlier ones. Summarize unless asked for verbatim content.',
+      {
+        view: { type: 'string', enum: ['actions', 'notifications'] },
+        status: { type: 'string', enum: ['unread', 'read', 'all'], description: 'notifications only; default unread' },
+        limit: number,
+      },
+      ['view'],
       async (args) => {
-        const input = z.object({ squadId: text, query: text.max(1000) }).parse(args)
-        return deps.searchMemory(await squadId(input.squadId), { query: input.query, limit: 10 })
+        const input = z
+          .object({
+            view: z.enum(['actions', 'notifications']),
+            status: z.enum(['unread', 'read', 'all']).default('unread'),
+            limit: z.number().int().min(1).max(20).default(5),
+          })
+          .parse(args)
+        if (input.view === 'actions') return deps.listPendingActions()
+        const messages = await deps.getMyInbox(input.status !== 'unread')
+        const filtered = messages.filter((message) =>
+          input.status === 'all' ? true : input.status === 'read' ? Boolean(message.readAt) : !message.readAt
+        )
+        return {
+          messages: filtered.slice(0, input.limit).map((message) => ({
+            id: message.id,
+            subject: message.subject,
+            content: message.content,
+            senderType: message.senderType,
+            senderId: message.senderId,
+            senderAgent: message.senderAgent
+              ? { id: message.senderAgent.id, agentTypeId: message.senderAgent.agentTypeId }
+              : null,
+            readAt: message.readAt,
+            createdAt: message.createdAt,
+          })),
+        }
       }
-    ),
-    tool(
-      'list_attention',
-      'List the user’s actionable questions, blocked work, and items needing a decision, with their action IDs.',
-      {},
-      [],
-      async () => deps.listPendingActions()
     ),
     tool(
       'answer_question',
-      'Answer a specific agent question using the answer the user provided. Read the attention item first; do not invent a user decision.',
-      { questionId: string, answer: string },
-      ['questionId', 'answer'],
-      async (args) => {
-        const input = z.object({ questionId: text, answer: text.max(20000) }).parse(args)
-        return deps.answerAgentQuestion(input.questionId, input.answer)
-      }
-    ),
-    tool(
-      'dismiss_question',
-      'Dismiss an agent question when the user asks to dismiss it.',
-      { questionId: string, reason: string },
+      'Resolve an agent question from the action center. Pass the user’s own answer, or dismiss=true (with an optional reason) when the user asks to dismiss it. Read the item first; never invent a decision.',
+      { questionId: string, answer: string, dismiss: { type: 'boolean' }, reason: string },
       ['questionId'],
       async (args) => {
-        const input = z.object({ questionId: text, reason: z.string().max(2000).optional() }).parse(args)
-        return deps.dismissAgentQuestion(input.questionId, input.reason)
+        const input = z
+          .object({
+            questionId: text,
+            answer: z.string().trim().max(20000).optional(),
+            dismiss: z.boolean().default(false),
+            reason: z.string().max(2000).optional(),
+          })
+          .refine((value) => (value.dismiss ? !value.answer : Boolean(value.answer)), {
+            message: 'Pass an answer, or dismiss=true without an answer',
+          })
+          .parse(args)
+        return input.dismiss
+          ? deps.dismissAgentQuestion(input.questionId, input.reason)
+          : deps.answerAgentQuestion(input.questionId, input.answer!)
       }
     ),
     tool(
-      'dismiss_notification',
-      'Mark a notification read when the user asks to dismiss it. Does not resolve associated agent questions.',
+      'mark_read',
+      'Mark a notification read when the user asks to dismiss it. Does not resolve an agent question; use answer_question for that.',
       { messageId: string },
       ['messageId'],
       async (args) => deps.markAsRead(z.object({ messageId: text }).parse(args).messageId)
@@ -292,23 +296,6 @@ export function createAssistantTools(
         if (input.scope === 'squad')
           return (input.watching ? deps.squads.subscribeSquad : deps.squads.unsubscribeSquad)(await squadId(input.id))
         return (input.watching ? deps.squads.subscribeWorkStream : deps.squads.unsubscribeWorkStream)(input.id)
-      }
-    ),
-    tool(
-      'message_user_assistant',
-      'Send global or personal Tau administration, sustained work, or a question to your paired User Assistant, which works with the user’s Tau API permissions. Use this for environment variables, secrets, integration accounts/defaults, users, permissions, and instance settings, even while viewing a squad page. Unscoped settings requests go here for scope resolution; do not infer squad ownership from the current page. Returns an inbox receipt immediately, not the result. Progress, clarification questions and results arrive as separate inbox updates. Requests run sequentially on the same agent. Include inReplyTo when answering an update. Use steer for an explicit correction or stop request; follow-up otherwise. Ask the user here when clarification or approval is needed; never infer approval.',
-      { request: string, mode: { type: 'string', enum: ['steer', 'follow-up'] }, inReplyTo: string },
-      ['request'],
-      async (args, env) => {
-        if (!env.messageUserAssistant) throw new Error('Assistant messaging is unavailable in this surface')
-        const input = z
-          .object({
-            request: text.max(20000),
-            mode: z.enum(['steer', 'follow-up']).optional(),
-            inReplyTo: z.string().uuid().optional(),
-          })
-          .parse(args)
-        return env.messageUserAssistant(input.request, input.mode, input.inReplyTo)
       }
     ),
   ]

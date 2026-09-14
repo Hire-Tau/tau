@@ -4,6 +4,7 @@ description: Manages infrastructure, deployments, and operational tasks within a
 model: ''
 tier: standard
 includes:
+  - entity-references
   - rules
   - subagents
   - squad-rules

@@ -145,7 +145,7 @@ The shared command footer stays visible in search, squad, work stream, and actio
 
 Dragging into the horizontal center lane can snap to the upper-center command anchor as well as top/bottom center, using the nearest vertical anchor. On live-voice compaction, measure the final panel dimensions before paint and animate only its position; do not animate dimensions while recalculating a right/bottom dock on each resize frame.
 
-Assistant conversations show ongoing work in the transcript, independently of the expandable task details. Use brief activity labels while connecting, thinking, responding, or running delegated work. The delegated agent type is named User Assistant; questions and approvals return to the current Assistant conversation rather than opening a separate agent question form.
+Assistant conversations show ongoing work in the transcript, independently of the expandable task details. Use brief activity labels while connecting, thinking, responding, or running delegated work. Delegated work runs as a background task on an agent the conversation owns: a general system-manager helper for instance-wide and personal tasks, and one consultant per squad (named “Assistant task”) for squad tasks, each reachable from its “View task” row. Questions and approvals return to the current Assistant conversation rather than opening a separate agent question form.
 
 ## Field and container radii
 

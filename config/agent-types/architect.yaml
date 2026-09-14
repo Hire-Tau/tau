@@ -4,6 +4,7 @@ description: Plans and designs software solutions within a squad
 model: ''
 tier: exhaustive
 includes:
+  - entity-references
   - rules
   - subagents
   - squad-rules

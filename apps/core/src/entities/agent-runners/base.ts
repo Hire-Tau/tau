@@ -1,3 +1,5 @@
+import { consultantSandboxSquadId, consultantScratchPath } from '../../services/sandbox/consultant-sandbox'
+import { resolveWorkspaceLayout } from '../../services/sandbox/workspace-layout'
 import { messageTextForModel } from '../../services/chat/message-context'
 import { existsSync, readFileSync } from 'fs'
 import { markExecutionStartupFailure } from '../../services/execution/startup-retry'
@@ -96,13 +98,7 @@ const log = createLogger('runner')
 const STRANDED_PENDING_RETRY_BUDGET = 3
 
 /** Supported agent runners */
-export type AgentRunnerType =
-  | 'system-manager'
-  | 'squad-manager'
-  | 'squad-worker'
-  | 'concierge'
-  | 'artifact-builder'
-  | 'subagent'
+export type AgentRunnerType = 'system-manager' | 'squad-manager' | 'squad-worker' | 'artifact-builder' | 'subagent'
 
 export function getSquadAgentTypeSkills(metadata: unknown, agentTypeId: string): string[] {
   if (!metadata || typeof metadata !== 'object') return []
@@ -524,6 +520,16 @@ export abstract class AgentRunner {
    * exists. Every caller must include it conditionally.
    */
   protected async buildSessionToolkit(opts: { workspacePath: string; sandboxId: string; squadId?: string }) {
+    if (consultantSandboxSquadId(opts.sandboxId)) {
+      const { getSandboxManager } = await import('../../services/sandbox/factory')
+      const root = resolveWorkspaceLayout({ sandboxId: opts.sandboxId }).privateMount
+      await getSandboxManager().exec(opts.sandboxId, [
+        'mkdir',
+        '-p',
+        '--',
+        consultantScratchPath(root, opts.sandboxId, this.agent.id),
+      ])
+    }
     const tauToken = await this.agent.getOrCreateToken()
     // The agent id is passed explicitly, not derived from the sandbox id: a
     // system-manager's box is `system_manager_<ownerUserId>` and a descendant can
@@ -551,7 +557,7 @@ export abstract class AgentRunner {
   /**
    * The AgentSession.create fields shared by every runner. `model` defaults to
    * the agent's effective spec for its type; runners with bespoke resolution
-   * (concierge, system-manager) pass their own.
+   * (consultant, system-manager) pass their own.
    *
    * Tool policy is split: the runner decides what it CAN offer (`core` +
    * `available`), the agent type's YAML decides what this type GETS — its

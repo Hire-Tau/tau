@@ -1,3 +1,4 @@
+import { migrateChannelConsultants, migrateAssistantAgentBindings } from './channel-consultant-backfill'
 import { migrateWorkStyleParticipants } from './work-style-participant-backfill'
 import { detachSquadPresets } from './squad-preset-backfill'
 import { preserveAgentExpertise } from './agent-expertise-backfill'
@@ -388,7 +389,11 @@ export async function applyMigrations(
                     statement
                   )
                 ? migrateWorkStyleParticipants
-                : undefined
+                : /ALTER TABLE "channel_instances" DROP COLUMN "concierge_agent_id"/.test(statement)
+                  ? migrateChannelConsultants
+                  : /ALTER TABLE "assistant_conversations" DROP COLUMN "manager_agent_id"/.test(statement)
+                    ? migrateAssistantAgentBindings
+                    : undefined
           if (backfill) {
             await flush()
             await backfill(connection)

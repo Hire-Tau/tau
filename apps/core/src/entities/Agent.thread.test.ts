@@ -11,7 +11,7 @@ describe('Agent.findByThreadId', () => {
     // Create a test agent with thread context
     await db.insert(agents).values({
       id: testAgentId,
-      agentTypeId: 'concierge',
+      agentTypeId: 'consultant',
       squadId: null,
       status: 'idle',
       context: {

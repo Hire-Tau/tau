@@ -9,6 +9,14 @@ describe('ChannelSync', () => {
     await db.delete(channelInstances)
   })
 
+  test('private chat policy defaults on and preserves explicit false through YAML round trips', () => {
+    const yaml = 'id: bot\nname: Bot\nprovider: telegram\nproviderConfig:\n  botId: "42"\ndefaultSquadId: squad\n'
+    expect(sync.parse(yaml, 'bot.yaml').allowPrivateChats).toBe(true)
+    const parsed = sync.parse(yaml + 'allowPrivateChats: false\n', 'bot.yaml')
+    expect(sync.parse(sync.toYaml(sync.toRecord(parsed)), 'bot.yaml').allowPrivateChats).toBe(false)
+    expect(() => sync.parse(yaml + 'allowPrivateChats: "false"\n', 'bot.yaml')).toThrow('must be a boolean')
+  })
+
   test('loadFromDir skips all example-prefixed files', async () => {
     const parsed = await sync.loadFromDir()
     expect(parsed).toHaveLength(0)

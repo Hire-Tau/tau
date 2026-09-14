@@ -5,16 +5,7 @@ import { join } from 'node:path'
 import { MONOREPO_ROOT } from '../../lib/paths'
 const mapping: Record<string, string[]> = {
   fast: [],
-  standard: [
-    'subagent',
-    'artifact-builder-default',
-    'general',
-    'engineer',
-    'concierge',
-    'system-manager',
-    'manager',
-    'sysops',
-  ],
+  standard: ['subagent', 'artifact-builder-default', 'general', 'engineer', 'system-manager', 'manager', 'sysops'],
   deep: ['consultant', 'reviewer'],
   exhaustive: ['architect', 'security-auditor'],
 }
