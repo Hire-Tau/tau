@@ -714,6 +714,7 @@ jobs:
           bun ../../scripts/run-core-tests.ts --subprocess
           src/services/work-streams/repository-setup.test.ts
           src/services/work-streams/worktree-cleanup-runtime.test.ts
+          src/services/work-streams/worktree-cleanup-attachments.test.ts
           src/services/work-streams/worktree-cleanup-reconciler.test.ts
           src/services/execution/pickup.test.ts
           src/services/machines/cli-bundle.test.ts

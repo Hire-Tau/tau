@@ -85,3 +85,42 @@ test('cleanup toggle sends false explicitly and explains removal already in flig
     cache.clear()
   }
 })
+
+test('failed retention updates keep the effective setting and restore editing after pending state', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/cleanup' })
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  const stream = { id: 'stream', squadId: 'squad', autoCleanupWorktree: true } as WorkStream
+  cache.setQueryData(queryKeys.auth.permissions(stream.squadId), { permissions: ['workstreams:update'] })
+  let reject!: (error: Error) => void
+  const pending = new Promise<WorkStream>((_, fail) => {
+    reject = fail
+  })
+  const save = spyOn(client.workStreams, 'setAutoCleanupWorktree').mockReturnValue(pending)
+  const root = dom.createRoot()
+  try {
+    await dom.act(async () =>
+      root.root.render(
+        <QueryClientProvider client={cache}>
+          <WorktreeCleanupSettings stream={stream} />
+        </QueryClientProvider>
+      )
+    )
+    const checkbox = dom.window.document.querySelector('input') as HTMLInputElement
+    await dom.act(async () => {
+      checkbox.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(checkbox.disabled).toBe(true)
+    await dom.act(async () => {
+      reject(new Error('Retention update rejected'))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(checkbox.checked).toBe(true)
+    expect(checkbox.disabled).toBe(false)
+    expect(dom.window.document.querySelector('[role="alert"]')?.textContent).toContain('Retention update rejected')
+  } finally {
+    save.mockRestore()
+    await dom.cleanup()
+    cache.clear()
+  }
+})

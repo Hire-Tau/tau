@@ -1,3 +1,8 @@
+import {
+  resolveWorktreeAttachments,
+  worktreeAttachmentPaths,
+  type ResolvedWorktreeAttachment,
+} from './worktree-cleanup-attachments'
 import { posix as path } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { and, eq, inArray, or, sql } from 'drizzle-orm'
@@ -22,14 +27,19 @@ export function cleanupDeliveryBinding(metadata: Record<string, unknown>): Recor
 }
 
 export function referencesOwnedWorktree(metadata: Record<string, unknown>, ownership: WorktreeOwnership): boolean {
-  const candidate = (metadata.git as Record<string, unknown> | undefined)?.worktree
-  if (typeof candidate !== 'string') return false
-  const resolved = path.resolve(ownership.workspace, candidate)
-  return (
-    resolved === ownership.worktree ||
-    resolved.startsWith(`${ownership.worktree}/`) ||
-    ownership.worktree.startsWith(`${resolved}/`)
-  )
+  const git = metadata.git as Record<string, unknown> | undefined
+  return ['worktree', 'repository'].some((key) => {
+    const candidate = git?.[key]
+    if (typeof candidate !== 'string') return false
+    const resolved = path.resolve(ownership.workspace, candidate)
+    // Sharing the primary repository is normal. Using the reclaimable tree as
+    // a source repository is not: its removal would break the other binding.
+    return (
+      resolved === ownership.worktree ||
+      resolved.startsWith(`${ownership.worktree}/`) ||
+      (key === 'worktree' && ownership.worktree.startsWith(`${resolved}/`))
+    )
+  })
 }
 
 /** Only this transaction grants destructive dispatch. Shared squad locking protects
@@ -37,7 +47,12 @@ export function referencesOwnedWorktree(metadata: Record<string, unknown>, owner
  * Unrelated agents never participate in the fence. */
 export async function claimWorktreeCleanup(
   id: string,
-  verified: { ownership: WorktreeOwnership; head: string; metadata: Record<string, unknown> }
+  verified: {
+    ownership: WorktreeOwnership
+    head: string
+    metadata: Record<string, unknown>
+    attachments?: ResolvedWorktreeAttachment[]
+  }
 ): Promise<WorktreeRemovalInput | null> {
   const [before] = await db.select({ squadId: workStreams.squadId }).from(workStreams).where(eq(workStreams.id, id))
   if (!before) return null
@@ -89,6 +104,16 @@ export async function claimWorktreeCleanup(
       )
     )
       return defer('Another work stream is attached to this worktree or depends on it')
+    for (const other of otherStreams) {
+      if (other.id === id) continue
+      const raw = worktreeAttachmentPaths(other.metadata as Record<string, unknown>)
+      if (!Object.keys(raw).length) continue
+      const observed = verified.attachments?.find((entry) => entry.id === other.id)
+      if (!observed || !isDeepStrictEqual(observed.raw, raw))
+        return defer('Registered attachment identities are unresolved or changed; cleanup will retry')
+      if (referencesOwnedWorktree({ git: observed.canonical }, registered.ownership))
+        return defer('Another work stream is attached through a canonical worktree alias')
+    }
     const bindings = await tx
       .select({ agentId: workflowBindings.agentId })
       .from(workflowBindings)
@@ -189,6 +214,8 @@ export async function assertWorktreeAttachmentsAvailable(
     squadId: string
     metadata: Record<string, unknown>
     dependsOn: string[]
+    resolved?: ResolvedWorktreeAttachment
+    checkPaths?: boolean
   }
 ): Promise<void> {
   const protectedTrees = await tx
@@ -206,25 +233,104 @@ export async function assertWorktreeAttachmentsAvailable(
     const uncertain = tree.status === 'removing' || (tree.status === 'error' && tree.operationId)
     if (
       (uncertain && input.dependsOn.includes(tree.id)) ||
-      ((uncertain || tree.status === 'succeeded') && referencesOwnedWorktree(input.metadata, tree.ownership))
+      (input.checkPaths !== false &&
+        (uncertain || tree.status === 'succeeded') &&
+        referencesOwnedWorktree(input.metadata, tree.ownership))
     )
       throw new WorktreeCleanupConflictError(
         'The attached worktree is cleanup-owned or already reclaimed. Use a new provisioned worktree; do not interfere with removal.'
       )
+    if (
+      input.checkPaths !== false &&
+      (uncertain || tree.status === 'succeeded') &&
+      Object.keys(worktreeAttachmentPaths(input.metadata)).length
+    ) {
+      if (!input.resolved || !isDeepStrictEqual(input.resolved.raw, worktreeAttachmentPaths(input.metadata)))
+        throw new WorktreeCleanupConflictError(
+          'Attachment identity is unresolved or changed while cleanup owns a resource. Retry with resolved bindings.'
+        )
+      if (referencesOwnedWorktree({ git: input.resolved.canonical }, tree.ownership))
+        throw new WorktreeCleanupConflictError(
+          'The attachment aliases a cleanup-owned or reclaimed worktree. Use a distinct provisioned path.'
+        )
+    }
   }
 }
 
 /** Ownership records do not expire when cleanup starts. Provisioning must never
  * recreate such a path while an old remote command may still arrive. Existing
  * owned streams use their provisioned tree, or create a new stream for new work. */
-export async function assertRepositoryTargetAvailable(squadId: string, id: string, target: string): Promise<void> {
+export async function assertRepositoryTargetAvailable(
+  squadId: string,
+  id: string,
+  target: string,
+  repository?: string
+): Promise<void> {
   const owned = await db.select().from(workStreamWorktrees).where(eq(workStreamWorktrees.squadId, squadId))
   if (
     owned.some(
-      (row) => row.workStreamId === id || referencesOwnedWorktree({ git: { worktree: target } }, row.ownership)
+      (row) =>
+        row.workStreamId === id || referencesOwnedWorktree({ git: { worktree: target, repository } }, row.ownership)
     )
   )
     throw new WorktreeCleanupConflictError(
       'Repository target is already owned or this stream already has a registered worktree. Use a new stream and a distinct worktree path.'
     )
+}
+
+/** Observe aliases outside locks. If a protected resource appears after this
+ * observation, the final guard fails closed and asks the writer to retry. */
+export async function prepareWorktreeAttachmentCheck(
+  squadId: string,
+  id: string,
+  metadata: Record<string, unknown>
+): Promise<ResolvedWorktreeAttachment | undefined> {
+  if (!Object.keys(worktreeAttachmentPaths(metadata)).length) return undefined
+  const rows = await db
+    .select({ id: workStreamWorktrees.workStreamId, ownership: workStreamWorktrees.ownership })
+    .from(workStreamWorktrees)
+    .innerJoin(worktreeCleanupJobs, eq(worktreeCleanupJobs.workStreamId, workStreamWorktrees.workStreamId))
+    .where(
+      and(
+        eq(workStreamWorktrees.squadId, squadId),
+        or(
+          inArray(worktreeCleanupJobs.status, ['removing', 'succeeded']),
+          and(eq(worktreeCleanupJobs.status, 'error'), sql`${worktreeCleanupJobs.operationId} IS NOT NULL`)
+        )
+      )
+    )
+  const protectedTrees = rows.filter((row) => row.id !== id)
+  if (!protectedTrees.length || protectedTrees.some((row) => referencesOwnedWorktree(metadata, row.ownership)))
+    return undefined
+  try {
+    const { ensureSquadSandbox } = await import('../sandbox/ensure')
+    const { getSandboxManager } = await import('../sandbox/factory')
+    const { Squad } = await import('../../entities/Squad')
+    const workspace = await ensureSquadSandbox(squadId)
+    const manager = getSandboxManager()
+    return (
+      await resolveWorktreeAttachments(
+        async (args) => (await manager.exec(Squad.getSandboxId(squadId), args)).toString(),
+        workspace,
+        [{ id, metadata }]
+      )
+    )[0]
+  } catch {
+    throw new WorktreeCleanupConflictError(
+      'Cannot resolve attachment identity while cleanup owns a resource. No binding was changed; retry when the runtime is available.'
+    )
+  }
+}
+
+/** Called in the same transaction as every successful delivered transition. */
+export async function enqueueWorktreeCleanup(
+  tx: Store,
+  id: string,
+  metadata: Record<string, unknown>,
+  deliveredHead?: string
+): Promise<void> {
+  await tx
+    .insert(worktreeCleanupJobs)
+    .values({ workStreamId: id, deliveredHead, deliveryMetadata: cleanupDeliveryBinding(metadata) })
+    .onConflictDoNothing()
 }

@@ -1,6 +1,9 @@
+import { worktreeAttachmentPaths } from '../services/work-streams/worktree-cleanup-attachments'
 import {
   assertWorktreeCleanupMutable,
   assertWorktreeAttachmentsAvailable,
+  prepareWorktreeAttachmentCheck,
+  enqueueWorktreeCleanup,
 } from '../services/work-streams/worktree-cleanup-store'
 import { isDeepStrictEqual } from 'node:util'
 import {
@@ -612,6 +615,8 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         ownership = receipt
       })
 
+    const attachmentCheck = await prepareWorktreeAttachmentCheck(input.squadId, streamId, mergedMetadata)
+
     // An ownerless stream notifies NOBODY at creation (the owner notice below
     // requires an owner), so it sits idle until someone happens to look — the
     // consultant flow only worked because consultants pass the manager
@@ -635,6 +640,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         id: streamId,
         squadId: input.squadId,
         metadata: mergedMetadata,
+        resolved: attachmentCheck,
         dependsOn: input.dependsOn ?? [],
       })
       const [created] = await tx
@@ -998,6 +1004,16 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       ...dbInput
     } = input
 
+    const prospectiveMetadata =
+      prepared ??
+      WorkStream.mergeTypedFieldsIntoMetadata(input, deepMergeMetadata(this.metadata ?? {}, input.metadata ?? {}))
+    const attachmentCheck = isDeepStrictEqual(
+      worktreeAttachmentPaths(this.metadata ?? {}),
+      worktreeAttachmentPaths(prospectiveMetadata)
+    )
+      ? undefined
+      : await prepareWorktreeAttachmentCheck(this.squadId, this.id, prospectiveMetadata)
+
     const previousStatus = this.status
     const now = new Date()
     // Assigned inside the transaction, read after commit so the fast path
@@ -1080,6 +1096,11 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         id: this.id,
         squadId: this.squadId,
         metadata: mergedMetadata ?? currentMetadata,
+        checkPaths: !isDeepStrictEqual(
+          worktreeAttachmentPaths(currentMetadata),
+          worktreeAttachmentPaths(mergedMetadata ?? currentMetadata)
+        ),
+        resolved: attachmentCheck,
         dependsOn: input.dependsOn ?? locked.dependsOn ?? [],
       })
       const nextStatus = input.status ?? locked.status
@@ -1155,18 +1176,12 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
           )
       }
       if (updated.status === 'done' && locked.status !== 'done') {
-        await tx
-          .insert(worktreeCleanupJobs)
-          .values({
-            workStreamId: this.id,
-            deliveredHead: opts.flowCompletion?.deliveredHead,
-            deliveryMetadata: {
-              git: (updated.metadata as Record<string, unknown>).git,
-              codeHost: (updated.metadata as Record<string, unknown>).codeHost,
-              github: (updated.metadata as Record<string, unknown>).github,
-            },
-          })
-          .onConflictDoNothing()
+        await enqueueWorktreeCleanup(
+          tx,
+          this.id,
+          updated.metadata as Record<string, unknown>,
+          opts.flowCompletion?.deliveredHead
+        )
         await closeDependencyWaitsForCompletedStream(tx, this.id)
       }
       if (updated.status === 'canceled' && previousStatus !== 'canceled') {
@@ -1545,6 +1560,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         }
         throw new Error('Work stream status changed concurrently; approval aborted')
       }
+      await enqueueWorktreeCleanup(tx, this.id, updated.metadata as Record<string, unknown>)
       if (locked.status === 'active') {
         await invalidateContinuationCycle(tx, this.id, now)
       }

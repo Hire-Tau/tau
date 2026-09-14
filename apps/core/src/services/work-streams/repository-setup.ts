@@ -39,7 +39,7 @@ export async function prepareRepository(
   key: string,
   metadata: Record<string, unknown>,
   recordOwnership?: RecordOwnership,
-  validateTarget?: (target: string) => unknown
+  validateTarget?: (target: string, repository: string) => unknown
 ): Promise<Record<string, unknown>> {
   const physical = (dir: string) => exec(['sh', '-c', 'cd -- "$1" && pwd -P', 'tau-worktree', dir])
   const root = (await physical(workspace)).trim()
@@ -107,7 +107,7 @@ export async function prepareRepository(
   if (!inside(physicalAncestor)) throw new Error('Worktree parent resolves outside the squad workspace')
   const parent = path.join(physicalAncestor, ...missing)
   const target = path.join(parent, path.basename(requestedTarget))
-  await validateTarget?.(target)
+  await validateTarget?.(target, repo)
   if (target === repo || target === common || target.startsWith(`${common}/`))
     throw new Error('Worktree must be separate from the source checkout and its Git storage')
   if (target.startsWith(`${repo}/`)) {
@@ -195,9 +195,9 @@ export async function setupWorkStreamRepository(
       key,
       metadata,
       recordOwnership,
-      async (target) => {
+      async (target, repository) => {
         const { assertRepositoryTargetAvailable } = await import('./worktree-cleanup-store')
-        await assertRepositoryTargetAvailable(squadId, key, target)
+        await assertRepositoryTargetAvailable(squadId, key, target, repository)
       }
     )
   } catch (error) {

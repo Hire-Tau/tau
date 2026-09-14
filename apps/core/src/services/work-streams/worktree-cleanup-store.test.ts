@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, test } from 'bun:test'
+import { afterEach, beforeEach, expect, test, spyOn } from 'bun:test'
 import { eq } from 'drizzle-orm'
 import {
   db,
@@ -188,4 +188,93 @@ test('exceptional blockers notify the owner once without exposing raw runtime er
   expect(messages).toHaveLength(1)
   expect(messages[0].content).toContain('No removal was dispatched')
   expect(messages[0].content).not.toContain('credential')
+})
+
+test('attached evidence and historical missing ownership both fail closed', async () => {
+  await db
+    .update(workStreams)
+    .set({ files: [{ name: 'custody evidence', path: '/fixture/evidence' }] })
+    .where(eq(workStreams.id, streamId))
+  expect(await claim()).toBeNull()
+  await db.update(workStreams).set({ files: [] }).where(eq(workStreams.id, streamId))
+  await db.delete(workStreamWorktrees).where(eq(workStreamWorktrees.workStreamId, streamId))
+  expect(await claim()).toBeNull()
+  const [job] = await db.select().from(worktreeCleanupJobs).where(eq(worktreeCleanupJobs.workStreamId, streamId))
+  expect(job).toMatchObject({ status: 'skipped', operationId: null })
+})
+
+test('another stream using the owned tree as its source repository prevents removal', async () => {
+  await db
+    .insert(workStreams)
+    .values({
+      squadId,
+      title: 'uses owned source',
+      metadata: { git: { repository: ownership.worktree, worktree: '/workspace/other' } },
+    })
+  expect(await claim()).toBeNull()
+})
+
+test('provisioning rejects a registered worktree as source but allows its shared primary repository', async () => {
+  await expect(
+    store.assertRepositoryTargetAvailable(squadId, crypto.randomUUID(), '/workspace/new', ownership.worktree)
+  ).rejects.toThrow(/owned|registered/i)
+  await expect(
+    store.assertRepositoryTargetAvailable(squadId, crypto.randomUUID(), '/workspace/new', ownership.repository)
+  ).resolves.toBeUndefined()
+})
+
+test('stale or newly attached canonical observations cannot authorize deletion', async () => {
+  const [other] = await db
+    .insert(workStreams)
+    .values({ squadId, title: 'new binding', metadata: { git: { worktree: '/workspace/alias' } } })
+    .returning()
+  const attachments = [
+    { id: other.id, raw: { worktree: '/workspace/earlier' }, canonical: { worktree: '/workspace/unrelated' } },
+  ]
+  expect(await store.claimWorktreeCleanup(streamId, { ownership, head, metadata, attachments })).toBeNull()
+  expect(await store.claimWorktreeCleanup(streamId, { ownership, head, metadata, attachments: [] })).toBeNull()
+})
+
+test('a stale attachment writer cannot bypass a newly claimed resource fence', async () => {
+  await claim()
+  const input = {
+    id: crypto.randomUUID(),
+    squadId,
+    metadata: { git: { worktree: '/workspace/new-alias' } },
+    dependsOn: [],
+  }
+  await expect(store.assertWorktreeAttachmentsAvailable(db, input)).rejects.toThrow(/identity|resolved/i)
+  await expect(
+    store.assertWorktreeAttachmentsAvailable(db, {
+      ...input,
+      resolved: { id: input.id, raw: { worktree: '/workspace/old' }, canonical: { worktree: '/workspace/unrelated' } },
+    })
+  ).rejects.toThrow(/identity|changed/i)
+})
+
+test('retention-only changes remain available offline despite unrelated reclaimed worktrees', async () => {
+  const { WorkStream } = await import('../../entities/WorkStream')
+  const ensure = await import('../sandbox/ensure')
+  await claim()
+  await db
+    .update(worktreeCleanupJobs)
+    .set({ status: 'succeeded' })
+    .where(eq(worktreeCleanupJobs.workStreamId, streamId))
+  const [other] = await db
+    .insert(workStreams)
+    .values({
+      squadId,
+      title: 'retain offline',
+      autoCleanupWorktree: true,
+      metadata: { git: { worktree: '/workspace/unrelated' } },
+    })
+    .returning()
+  const unavailable = spyOn(ensure, 'ensureSquadSandbox').mockRejectedValue(Error('offline'))
+  try {
+    await (await WorkStream.mustFind(other.id)).update({ autoCleanupWorktree: false })
+    expect((await WorkStream.mustFind(other.id)).autoCleanupWorktree).toBe(false)
+    expect(unavailable).not.toHaveBeenCalled()
+  } finally {
+    unavailable.mockRestore()
+  }
 })

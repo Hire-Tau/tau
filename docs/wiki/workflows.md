@@ -280,6 +280,12 @@ executions settle, with bounded retries. This does not delay or undo delivered
 `done`. Other registered stream attachments/dependencies block cleanup; unrelated
 executions continue. Undeclared cross-stream shell access is outside this
 cooperative model: register shared use and do not interfere with cleanup paths.
+Metadata-only worktree and source-repository attachments are resolved read-only,
+including symlink aliases. Unresolved or concurrently changed identities defer
+removal. A new binding during an uncertain/completed cleanup may require the
+runtime to be available to prove its identity; otherwise it returns a conflict
+without changing the binding. Unchanged retention settings remain editable
+without this runtime check.
 
 Only a newly platform-provisioned dedicated worktree qualifies. Metadata-only or
 manually created paths are not ownership evidence. Before removal, the platform

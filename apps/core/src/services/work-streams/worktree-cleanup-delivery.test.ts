@@ -8,7 +8,15 @@ const metadata = {
 }
 
 function fixture(
-  overrides: { merged?: boolean; headSha?: string; remoteHead?: string; remote?: string; contains?: boolean } = {}
+  overrides: {
+    merged?: boolean
+    headSha?: string
+    remoteHead?: string
+    remote?: string
+    contains?: boolean
+    baseBranch?: string
+    headBranch?: string
+  } = {}
 ) {
   const adapter: CodeHostingAdapter = {
     integration: 'github',
@@ -16,8 +24,8 @@ function fixture(
     changeRequest: async () => ({
       merged: overrides.merged ?? true,
       headSha: overrides.headSha ?? head,
-      headBranch: 'feature',
-      baseBranch: 'main',
+      headBranch: overrides.headBranch ?? 'feature',
+      baseBranch: overrides.baseBranch ?? 'main',
     }),
     containsCommit: async () => overrides.contains ?? true,
     subscriptions: () => [],
@@ -46,11 +54,21 @@ test('merged squash delivery uses the exact recoverable PR head, not local ances
   expect(f.calls.some((args) => args.includes('merge-base'))).toBe(false)
 })
 
-for (const defect of ['unmerged', 'changed-head', 'unrecoverable', 'wrong-remote', 'missing-delivered-head'] as const) {
+for (const defect of [
+  'unmerged',
+  'changed-head',
+  'unrecoverable',
+  'wrong-remote',
+  'missing-delivered-head',
+  'wrong-base',
+  'wrong-branch',
+] as const) {
   test(`retains worktree when delivery is ${defect}`, async () => {
     expect(delivery.verifyWorktreeCleanupDelivery).toBeDefined()
     const f = fixture({
       merged: defect !== 'unmerged',
+      baseBranch: defect === 'wrong-base' ? 'other' : 'main',
+      headBranch: defect === 'wrong-branch' ? 'other' : 'feature',
       headSha: defect === 'changed-head' ? 'b'.repeat(40) : head,
       remoteHead: defect === 'unrecoverable' ? 'b'.repeat(40) : head,
       remote: defect === 'wrong-remote' ? 'git@github.com:other/repo.git' : undefined,

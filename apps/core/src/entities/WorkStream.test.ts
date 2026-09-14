@@ -1413,6 +1413,9 @@ describe('WorkStream entity', () => {
       expect(wait.completesOnApproval).toBe(true)
       await ws.resolveWait(wait.id, { resolution: 'approved' })
       expect(ws.status).toBe('done')
+      expect(
+        await db.select().from(schema.worktreeCleanupJobs).where(eq(schema.worktreeCleanupJobs.workStreamId, ws.id))
+      ).toHaveLength(1)
     })
 
     it('false: approval resolves the wait only — the stream continues, continuation resets, note delivered', async () => {

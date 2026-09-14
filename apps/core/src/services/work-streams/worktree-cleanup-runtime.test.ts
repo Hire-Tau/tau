@@ -193,3 +193,26 @@ esac
   expect(await runtime.removeOwnedWorktree(exec, input)).toMatchObject({ status: 'failed' })
   expect(await readFile(join(ownership.worktree, 'evidence'), 'utf8')).toBe('preserve residual data')
 })
+
+test('retains Git index locks and committed submodule registrations', async () => {
+  const lock = join(ownership.gitDirectory, 'index.lock')
+  await writeFile(lock, 'owned by another Git operation')
+  expect(await remove()).toMatchObject({ status: 'retained', reason: 'Git lock present' })
+  await rm(lock)
+  await exec(['git', '-C', ownership.worktree, 'update-index', '--add', '--cacheinfo', `160000,${head},module`])
+  await mkdir(join(ownership.worktree, 'module'))
+  await exec([
+    'git',
+    '-C',
+    ownership.worktree,
+    '-c',
+    'user.name=Test',
+    '-c',
+    'user.email=test@example.com',
+    'commit',
+    '-m',
+    'register submodule',
+  ])
+  head = (await exec(['git', '-C', ownership.worktree, 'rev-parse', 'HEAD'])).trim()
+  expect(await remove()).toMatchObject({ status: 'retained', reason: 'Submodule worktrees require manual retention' })
+})

@@ -1,5 +1,5 @@
-import { beforeEach, afterEach, expect, test } from 'bun:test'
-import { mkdtemp, mkdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { beforeEach, afterEach, expect, test, spyOn } from 'bun:test'
+import { mkdtemp, mkdir, realpath, rm, writeFile, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { eq } from 'drizzle-orm'
@@ -182,4 +182,46 @@ test('terminal partial failures keep their operation fence and use capped backof
   await expect((await WorkStream.mustFind(streamId)).update({ autoCleanupWorktree: false })).rejects.toThrow(
     /cleanup|removal/i
   )
+})
+
+for (const key of ['worktree', 'repository']) {
+  test(`registered ${key} symlink alias blocks cleanup while unrelated canonical bindings do not`, async () => {
+    const alias = join(root, 'alias')
+    await symlink(ownership.worktree, alias)
+    const [other] = await db
+      .insert(workStreams)
+      .values({ squadId, title: 'registered alias', metadata: { git: { [key]: alias } } })
+      .returning()
+    await processJob()
+    expect((await job()).status).toBe('deferred')
+    expect(await Bun.file(join(ownership.worktree, 'README')).exists()).toBe(true)
+    await db
+      .update(workStreams)
+      .set({ metadata: { git: { worktree: join(root, 'unrelated') } } })
+      .where(eq(workStreams.id, other.id))
+    await processJob()
+    expect((await job()).status).toBe('succeeded')
+  })
+}
+
+test('metadata-only alias binding updates cannot race an already claimed removal', async () => {
+  const ensure = await import('../sandbox/ensure')
+  const factory = await import('../sandbox/factory')
+  const alias = join(root, 'alias')
+  await symlink(ownership.worktree, alias)
+  const [other] = await db.insert(workStreams).values({ squadId, title: 'new alias binding' }).returning()
+  await claimWorktreeCleanup(streamId, { ownership, head, metadata })
+  const ensureSpy = spyOn(ensure, 'ensureSquadSandbox').mockResolvedValue(root)
+  const managerSpy = spyOn(factory, 'getSandboxManager').mockReturnValue({
+    exec: async (_id: string, args: string[]) => exec(args),
+  } as any)
+  try {
+    await expect(
+      (await WorkStream.mustFind(other.id)).update({ metadata: { git: { worktree: alias } } })
+    ).rejects.toThrow(/cleanup|attachment|worktree/i)
+    expect((await WorkStream.mustFind(other.id)).metadata).toEqual({})
+  } finally {
+    ensureSpy.mockRestore()
+    managerSpy.mockRestore()
+  }
 })

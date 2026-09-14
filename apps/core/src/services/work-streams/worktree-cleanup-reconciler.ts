@@ -1,3 +1,4 @@
+import { resolveWorktreeAttachments } from './worktree-cleanup-attachments'
 import { createHash } from 'node:crypto'
 import { and, eq, inArray, isNull, lte, sql, asc } from 'drizzle-orm'
 import { db, squads, workStreams, workStreamWorktrees, worktreeCleanupJobs } from '../../db'
@@ -100,7 +101,21 @@ export async function processWorktreeCleanup(
         },
         exec
       )
-      input = await claimWorktreeCleanup(id, { ownership: registered.ownership, head, metadata: stream.metadata })
+      const others = await db
+        .select({ id: workStreams.id, metadata: workStreams.metadata })
+        .from(workStreams)
+        .where(eq(workStreams.squadId, stream.squadId))
+      const attachments = await resolveWorktreeAttachments(
+        exec,
+        registered.ownership.workspace,
+        others.filter((other) => other.id !== id)
+      )
+      input = await claimWorktreeCleanup(id, {
+        ownership: registered.ownership,
+        head,
+        metadata: stream.metadata,
+        attachments,
+      })
       if (!input) return
     } else if (!input || input.operationId !== job.operationId) {
       await reschedule(job, 'error', 'Persisted removal identity is incomplete; do not reuse the worktree')
