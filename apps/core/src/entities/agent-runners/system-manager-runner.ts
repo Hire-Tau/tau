@@ -19,7 +19,7 @@ import { createSubagentLifecycleTools } from '../../tools/subagents'
 import { createWebTools } from '../../tools/web-search'
 import { ensureWorkspaceSandbox } from '../../services/sandbox/ensure'
 import { AgentSession } from '../AgentSession'
-import { getShortTermMemory, formatShortTermMemoryPrompt, createSetAgentPurposeTool } from '../../tools'
+import { createSetAgentPurposeTool } from '../../tools'
 import { prompt, interpolateTemplate, buildPlatformUrlsPrompt } from '../../lib/prompts'
 import { composeAgentTypePrompt } from '../../services/agent-types/compose-prompt'
 import { buildWorkspacePrompt, workspaceToolNamesForPolicy } from '../../lib/prompts/workspace-prompt'
@@ -116,18 +116,13 @@ export class SystemManagerRunner extends AgentRunner {
     )
 
     const editorConversation = await this.getPageEditorConversation()
-    const [managerPromptResult, shortTermMemory] = await Promise.all([
-      SystemManagerRunner.buildManagerPrompt({
-        type: 'agent',
-        agentId: this.agent.id,
-        squadId: this.agent.squadId ?? null,
-      }),
-      getShortTermMemory(this.agent.id),
-    ])
+    const managerPromptResult = await SystemManagerRunner.buildManagerPrompt({
+      type: 'agent',
+      agentId: this.agent.id,
+      squadId: this.agent.squadId ?? null,
+    })
     const managerModel = await this.agent.getEffectiveModelSpec(managerPromptResult.model)
 
-    // Append short-term memory section (always shown so agents know about it)
-    const shortTermMemorySection = formatShortTermMemoryPrompt(shortTermMemory)
     const systemPrompt = prompt()
       .text(managerPromptResult.systemPrompt)
       // Solo agent: one private box (its resolved private dir), no shared workspace, no squad_bash.
@@ -138,7 +133,6 @@ export class SystemManagerRunner extends AgentRunner {
           mayShareWithSubagents: true,
         })
       )
-      .text(shortTermMemorySection)
       .section(AGENT_PURPOSE_DISPLAY_SECTION_TITLE, SET_AGENT_PURPOSE_INSTRUCTIONS)
       .build()
 

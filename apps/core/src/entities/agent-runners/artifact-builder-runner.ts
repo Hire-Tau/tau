@@ -3,7 +3,7 @@ import { AgentRunner } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
 import { ensureWorkspaceSandbox, getAgentWorkspaceStoragePath } from '../../services/sandbox/ensure'
 import { AgentSession } from '../AgentSession'
-import { createArtifactTools, formatShortTermMemoryPrompt, getShortTermMemory } from '../../tools'
+import { createArtifactTools } from '../../tools'
 import { interpolateTemplate } from '../../lib/prompts'
 import { composeAgentTypePrompt } from '../../services/agent-types/compose-prompt'
 import { buildWorkspacePrompt } from '../../lib/prompts/workspace-prompt'
@@ -38,14 +38,12 @@ export class ArtifactBuilderRunner extends AgentRunner {
       })
     )
 
-    const shortTermMemory = await getShortTermMemory(this.agent.id)
-    const shortTermMemorySection = formatShortTermMemoryPrompt(shortTermMemory)
     const typePrompt = await composeAgentTypePrompt(this.agentType)
     const systemPrompt = `${interpolateTemplate(typePrompt, {
       'agent.id': this.agent.id,
       'agent.typeName': this.agentType.name,
       'agent.typeId': this.agent.agentTypeId,
-    })}\n\n${buildWorkspacePrompt({ sandboxId })}\n\n${shortTermMemorySection}`
+    })}\n\n${buildWorkspacePrompt({ sandboxId })}`
     const artifactWorkspacePath = this.getAgentWorkspaceStoragePath(sandboxId)
 
     // No squadId: artifact builders are always created squad-less (both

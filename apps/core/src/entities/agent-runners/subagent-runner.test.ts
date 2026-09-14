@@ -178,7 +178,7 @@ describe('SubagentRunner result delivery', () => {
     expect(systemPrompt).not.toContain('squad_bash')
   })
 
-  it('includes the Short-Term Memory section in the subagent system prompt', async () => {
+  it('keeps saved short-term memory out of the subagent system prompt', async () => {
     const parent = await Agent.create({ agentTypeId: testAgentTypeId })
     const child = await Agent.create({ agentTypeId: testAgentTypeId, parentAgentId: parent.id, persist: false })
     createdAgentIds.push(parent.id, child.id)
@@ -190,8 +190,10 @@ describe('SubagentRunner result delivery', () => {
     const runner = new TestSubagentRunner(execution, child, agentType)
 
     const systemPrompt = await runner.systemPromptText()
-    expect(systemPrompt).toContain('## Short-Term Memory')
-    expect(systemPrompt).toContain('short_term_memory_write')
+    expect(systemPrompt).not.toContain('## Short-Term Memory')
+    expect(systemPrompt).not.toContain('short_term_memory_write')
+    await child.update({ context: { shortTermMemory: 'private-recovery-marker' } })
+    expect(await runner.systemPromptText()).toBe(systemPrompt)
     expect(systemPrompt).toContain('You do not have a shell tool')
     expect(systemPrompt).not.toContain('tau inbox send')
   })

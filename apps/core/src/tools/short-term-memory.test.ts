@@ -1,9 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import {
-  createShortTermMemoryTools,
-  formatShortTermMemoryPrompt,
-  type ShortTermMemoryStorageOps,
-} from './short-term-memory'
+import { createShortTermMemoryTools, type ShortTermMemoryStorageOps } from './short-term-memory'
 
 // --- Mock storage for testing ---
 
@@ -20,31 +16,13 @@ function createMockStorage(initial: string = ''): ShortTermMemoryStorageOps & { 
   return storage
 }
 
-// --- formatShortTermMemoryPrompt tests ---
-
-describe('formatShortTermMemoryPrompt', () => {
-  test('returns empty state message when content is empty', () => {
-    const result = formatShortTermMemoryPrompt('')
-    expect(result).toContain('## Short-Term Memory')
-    expect(result).toContain('Empty')
-    expect(result).toContain('0/10000')
-    expect(result).toContain('short_term_memory_write')
-  })
-
-  test('returns content with character count when populated', () => {
-    const result = formatShortTermMemoryPrompt('Hello world')
-    expect(result).toContain('## Short-Term Memory')
-    expect(result).toContain('11/10000')
-    expect(result).toContain('Hello world')
-    expect(result).toContain('short_term_memory_write')
-    expect(result).toContain('short_term_memory_edit')
-  })
-
-  test('shows correct character count for longer content', () => {
-    const content = 'a'.repeat(500)
-    const result = formatShortTermMemoryPrompt(content)
-    expect(result).toContain('500/10000')
-  })
+test('write and edit describe recovery notes rather than a general scratchpad', () => {
+  const [, write, edit] = createShortTermMemoryTools(createMockStorage())
+  for (const tool of [write, edit]) {
+    expect(tool.description).toContain('last resort')
+    expect(tool.description).toContain('not in the system prompt')
+    expect(tool.description).toContain('Read the latest memory')
+  }
 })
 
 // --- short_term_memory_read tests ---
@@ -80,7 +58,7 @@ describe('short_term_memory_write', () => {
     expect(storage.content).toBe('New content')
     expect((result.content[0] as any).text).toContain('Short-term memory updated')
     expect((result.content[0] as any).text).toContain('11/10000')
-    expect((result.content[0] as any).text).toContain('New content')
+    expect((result.content[0] as any).text).not.toContain('New content')
   })
 
   test('replaces existing content', async () => {
@@ -141,7 +119,7 @@ describe('short_term_memory_edit', () => {
     )
     expect(storage.content).toBe('Hello there')
     expect((result.content[0] as any).text).toContain('Short-term memory updated')
-    expect((result.content[0] as any).text).toContain('Hello there')
+    expect((result.content[0] as any).text).not.toContain('Hello there')
   })
 
   test('rejects empty oldText', async () => {
@@ -168,9 +146,9 @@ describe('short_term_memory_edit', () => {
     const [, , editTool] = createShortTermMemoryTools(storage)
 
     const result = await editTool.execute('call-1', { oldText: 'foo', newText: 'bar' }, undefined, undefined, {} as any)
-    expect((result.content[0] as any).text).toContain('Could not find exact match')
-    expect((result.content[0] as any).text).toContain('foo') // shows what was searched
-    expect((result.content[0] as any).text).toContain('Hello world') // shows current content
+    expect((result.content[0] as any).text).toContain('Could not find an exact match')
+    expect((result.content[0] as any).text).toContain('short_term_memory_read')
+    expect((result.content[0] as any).text).not.toContain('Hello world')
     expect(result.details).toEqual({ error: 'no_match' })
     expect(storage.content).toBe('Hello world') // unchanged
   })

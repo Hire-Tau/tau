@@ -13,6 +13,7 @@ import {
 import { createLogger } from '../../lib/infra/logger'
 import type { PrecompactionController } from './precompaction/controller'
 import { createPrecompactionExtension } from './precompaction/extension'
+import { createShortTermMemoryContextExtension, type ShortTermMemoryContext } from './short-term-memory-context'
 
 const log = createLogger('resource-loader')
 
@@ -24,6 +25,8 @@ export class TauResourceLoader implements ResourceLoader {
   private extensions: LoadExtensionsResult | null = null
   private precompactionController?: PrecompactionController
   private fitCompactionFallback?: (event: SessionBeforeCompactEvent) => Promise<CompactionResult | undefined>
+  private shortTermMemoryContext?: ShortTermMemoryContext
+  private readonly shortTermMemoryExtension = createShortTermMemoryContextExtension(() => this.shortTermMemoryContext)
   private readonly precompactionExtension: Extension = createPrecompactionExtension(
     () => this.precompactionController,
     () => this.fitCompactionFallback
@@ -90,6 +93,10 @@ export class TauResourceLoader implements ResourceLoader {
     this.precompactionController = controller
   }
 
+  setShortTermMemoryContext(context: ShortTermMemoryContext): void {
+    this.shortTermMemoryContext = context
+  }
+
   setFitCompactionFallback(fn: (event: SessionBeforeCompactEvent) => Promise<CompactionResult | undefined>): void {
     this.fitCompactionFallback = fn
   }
@@ -103,7 +110,7 @@ export class TauResourceLoader implements ResourceLoader {
         runtime: createExtensionRuntime(),
       } satisfies LoadExtensionsResult)
 
-    return { ...base, extensions: [...base.extensions, this.precompactionExtension] }
+    return { ...base, extensions: [...base.extensions, this.precompactionExtension, this.shortTermMemoryExtension] }
   }
 
   getSkills() {

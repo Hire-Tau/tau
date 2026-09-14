@@ -5,12 +5,14 @@ import { Agent } from '../entities/Agent'
 /**
  * Short-term memory tool.
  *
- * Gives agents a 10,000 character scratchpad that persists across turns.
- * The current content is injected into the system prompt at session start,
- * so it's always visible in the agent's context window.
+ * Stores small recovery notes independently of the system prompt. Writes are
+ * immediate; automatic snapshots are frozen at compaction boundaries.
  */
 
 const MAX_LENGTH = 10_000
+
+const RECOVERY_GUIDANCE =
+  'Use sparingly as a last resort for a small private recovery note that must survive compaction and cannot be recovered from conversation history, work stream results, or existing files. Do not keep progress logs, task lists, copied evidence, or duplicate work stream state. Writes save immediately; a frozen snapshot is included as context after compaction, not in the system prompt. Read the latest memory whenever you need a refresher.'
 
 export type ShortTermMemoryToolWithKey = ToolDefinition & { key: string }
 
@@ -68,8 +70,7 @@ export function createShortTermMemoryTools(storage: ShortTermMemoryStorageOps): 
     name: 'short_term_memory_read',
     key: 'short_term_memory_read',
     label: 'Read Short-Term Memory',
-    description:
-      'Read your short-term memory. This is a 10,000 character scratchpad for notes, reminders, or any information you want to keep visible across turns.',
+    description: `Read your latest saved short-term memory whenever you need a refresher. This may be newer than the snapshot provided after compaction. Maximum ${MAX_LENGTH} characters.`,
     parameters: Type.Object({}),
     async execute(_toolCallId: string): Promise<AgentToolResult<unknown>> {
       const content = await storage.read()
@@ -90,7 +91,7 @@ export function createShortTermMemoryTools(storage: ShortTermMemoryStorageOps): 
     name: 'short_term_memory_write',
     key: 'short_term_memory_write',
     label: 'Write Short-Term Memory',
-    description: `Write to your short-term memory. This replaces the entire content. Maximum ${MAX_LENGTH} characters.`,
+    description: `Write to your short-term memory. This replaces the entire content. Maximum ${MAX_LENGTH} characters. ${RECOVERY_GUIDANCE}`,
     parameters: WriteSchema,
     async execute(_toolCallId: string, params: { content: string }): Promise<AgentToolResult<unknown>> {
       const content = params.content
@@ -113,7 +114,7 @@ export function createShortTermMemoryTools(storage: ShortTermMemoryStorageOps): 
         content: [
           {
             type: 'text' as const,
-            text: `Short-term memory updated (${content.length}/${MAX_LENGTH} chars):\n\n${content}`,
+            text: `Short-term memory updated (${content.length}/${MAX_LENGTH} chars).`,
           },
         ],
         details: { length: content.length, maxLength: MAX_LENGTH },
@@ -125,8 +126,7 @@ export function createShortTermMemoryTools(storage: ShortTermMemoryStorageOps): 
     name: 'short_term_memory_edit',
     key: 'short_term_memory_edit',
     label: 'Edit Short-Term Memory',
-    description:
-      'Make a precise edit to your short-term memory using exact match find/replace. The oldText must match exactly (including whitespace). Use this for surgical edits instead of rewriting the entire content.',
+    description: `Edit your saved recovery note using exact match find/replace. The oldText must match exactly (including whitespace). ${RECOVERY_GUIDANCE}`,
     parameters: EditSchema,
     async execute(
       _toolCallId: string,
@@ -165,7 +165,7 @@ export function createShortTermMemoryTools(storage: ShortTermMemoryStorageOps): 
           content: [
             {
               type: 'text' as const,
-              text: `Could not find exact match for oldText in short-term memory.\n\nSearched for:\n${oldText}\n\nCurrent content:\n${currentContent}`,
+              text: 'Could not find an exact match for oldText. Use short_term_memory_read to refresh your saved note before editing.',
             },
           ],
           details: { error: 'no_match' },
@@ -206,7 +206,7 @@ export function createShortTermMemoryTools(storage: ShortTermMemoryStorageOps): 
         content: [
           {
             type: 'text' as const,
-            text: `Short-term memory updated (${updatedContent.length}/${MAX_LENGTH} chars):\n\n${updatedContent}`,
+            text: `Short-term memory updated (${updatedContent.length}/${MAX_LENGTH} chars).`,
           },
         ],
         details: { length: updatedContent.length, maxLength: MAX_LENGTH },
@@ -218,24 +218,9 @@ export function createShortTermMemoryTools(storage: ShortTermMemoryStorageOps): 
 }
 
 /**
- * Helper to get current short-term memory for system prompt injection.
+ * Read current short-term memory for a recovery snapshot.
  */
 export async function getShortTermMemory(agentId: string): Promise<string> {
   const storage = createAgentShortTermMemoryStorage(agentId)
   return storage.read()
-}
-
-/**
- * Format short-term memory for inclusion in system prompt.
- * Always returns content so agents know the feature is available.
- */
-export function formatShortTermMemoryPrompt(content: string): string {
-  if (!content) {
-    return `## Short-Term Memory
-(Empty — 0/${MAX_LENGTH} chars. Use short_term_memory_write to store notes, reminders, or state you want to persist across turns. Do NOT use this as an action log or other low-signal content.)`
-  }
-  return `## Short-Term Memory
-(${content.length}/${MAX_LENGTH} chars. Use short_term_memory_write/short_term_memory_edit to update. Do NOT use this as an action log or other low-signal content.)
-
-${content}`
 }

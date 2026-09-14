@@ -70,7 +70,7 @@ These all live in `base.ts` or shared services, and every subclass uses them:
 
 - **Skills:** `resolveSkillPaths()` merges agent-type skills with squad-scoped extras (`squad.metadata.agentTypeSkills.<agentTypeId>`), de-duplicates, and materializes them into the sandbox.
 - **Extensions:** `resolveExtensionPaths()` resolves any agent-type `extensions:` (paths under `config/agent/extensions/`), including `pi.extensions` entry points from `package.json`.
-- **Short-term memory:** `getShortTermMemory(agent.id)` is read at session creation and formatted into the system prompt; corresponding tools are registered on the session.
+- **Short-term memory:** small private recovery notes are saved immediately and can be read with `short_term_memory_read` at any time. They never enter the system prompt. After a successful manual or automatic compaction (including a consumed background bake), the latest note is frozen in session metadata and presented as ordinary context immediately after the summary. A genuinely empty conversation gets one initial snapshot; reopening existing history does not refresh it. Empty notes produce no context text. Read failures do not fail compaction. Snapshots are context-only, so later compactions do not repeatedly summarize injected snapshots. Use this as a last resort for essential private state that cannot be recovered from history, work stream results, or existing files—not progress logs, task lists, or duplicate evidence. Write/edit results acknowledge the change without echoing the note.
 - **Sandbox:** Agents use a light/private sandbox; squad runners also access the retained shared squad workspace through `squad_bash`. User Assistant agents with the same owning user share their light sandbox, and subagents inherit their live root parent’s sandbox. The `tau` CLI is available in both private and squad environments.
 - **Template interpolation:** `interpolateTemplate()` resolves `{{agent.id}}`, `{{squad.id}}`, `{{squad.purpose}}`, `{{agent.typeName}}`, etc. in system prompts before they reach the SDK.
 - **Streaming:** One `StreamBuffer` per execution, mapped to the agent ID via `registerSession`. The same buffer powers the SSE endpoint and WebSocket bridge.
@@ -130,7 +130,7 @@ cross-squad coordination. See [channels](channels.md).
 
 Used for ephemeral children dispatched by another agent. A child starts with fresh conversation state and narrow assignment instructions; it does not copy the parent's prompt, conversation, `Agent.context`, token, secrets, paths, or short-term memory.
 
-- **Prompt context:** child role/platform rules first, workspace guidance derived from a versioned server snapshot second, explicitly non-overriding assignment context third, then parent communication and the child's own short-term memory. Task instructions remain a separate user message.
+- **Prompt context:** child role/platform rules first, workspace guidance derived from a versioned server snapshot second, explicitly non-overriding assignment context third, then parent communication. Its own recovery memory follows the shared compaction-snapshot behavior above. Task instructions remain a separate user message.
 - **Sandbox:** intentionally shares the parent's light/private box. Squad-backed children also see the authorized shared squad workspace; no-squad children remain private-only.
 - **Tools:** general environment tools are bounded first by what the parent runner actually exposed and then by the child type policy. When that intersection includes `squad_bash`, the child receives a child-attributed tool targeting the existing warm squad box. Child lifecycle tools remain separate.
 - **Authority:** child tokens retain the child's agent ID for authorship, while RBAC follows the live root parent's role, agent-type scopes, grants, owning user, and squad boundary. Missing parents, cycles, and squad mismatches fail closed; parent plaintext tokens are never reused.
@@ -141,7 +141,7 @@ Used for ephemeral children dispatched by another agent. A child starts with fre
 
 Used by agents of type `artifact-builder-default` (constant in `agent-runners/constants.ts`). Generates artifacts (renderable outputs) on demand.
 
-- **Prompt:** minimal — just the agent type's system prompt with `{{agent.id}}`-style placeholders interpolated, plus short-term memory.
+- **Prompt:** minimal — just the agent type's system prompt with `{{agent.id}}`-style placeholders interpolated and workspace guidance. Recovery memory follows the shared compaction-snapshot behavior above.
 - **Workspace path:** per-agent storage path (`getAgentWorkspaceStoragePath(sandboxId)`).
 - **Tools:** `createArtifactTools(...)` (write/manage artifacts), short-term memory, coding tools.
 - **Tool policy:** like every runner, its available tools are centrally narrowed by the agent type's `toolsAllow` / `toolsDeny` in `buildBaseSessionOptions()`.
