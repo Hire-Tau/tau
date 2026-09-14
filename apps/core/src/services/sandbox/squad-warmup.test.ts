@@ -60,7 +60,11 @@ describe('warmupActiveSquadSandboxes', () => {
     mockSquadList([])
     const ensure = mock<EnsureFn>(async () => '' as any)
 
-    await warmupActiveSquadSandboxes(logger(), { ensure, keepWarmDeps: noExtraSignals })
+    await warmupActiveSquadSandboxes(logger(), {
+      ensureConsultant: async () => {},
+      ensure,
+      keepWarmDeps: noExtraSignals,
+    })
 
     expect(ensure).toHaveBeenCalledTimes(0)
   })
@@ -74,6 +78,7 @@ describe('warmupActiveSquadSandboxes', () => {
       const ensure = mock<EnsureFn>(async () => '' as any)
 
       await warmupActiveSquadSandboxes(logger(), {
+        ensureConsultant: async () => {},
         ensure,
         keepWarmDeps: noExtraSignals,
         squads: squads as Squad[],
@@ -93,7 +98,11 @@ describe('warmupActiveSquadSandboxes', () => {
     ])
     const ensure = mock<EnsureFn>(async () => '' as any)
 
-    await warmupActiveSquadSandboxes(logger(), { ensure, keepWarmDeps: noExtraSignals })
+    await warmupActiveSquadSandboxes(logger(), {
+      ensureConsultant: async () => {},
+      ensure,
+      keepWarmDeps: noExtraSignals,
+    })
 
     expect(ensure).toHaveBeenCalledTimes(2)
     expect(ensure).toHaveBeenCalledWith(squads[0], { restartManagedLocalDeployments: false })
@@ -104,7 +113,11 @@ describe('warmupActiveSquadSandboxes', () => {
     const squads = mockSquadList([squad('recent', { agentLastMessageAt: [minutesAgo(5)] })])
     const ensure = mock<EnsureFn>(async () => '' as any)
 
-    await warmupActiveSquadSandboxes(logger(), { ensure, keepWarmDeps: noExtraSignals })
+    await warmupActiveSquadSandboxes(logger(), {
+      ensureConsultant: async () => {},
+      ensure,
+      keepWarmDeps: noExtraSignals,
+    })
 
     expect(ensure).toHaveBeenCalledTimes(1)
     expect(ensure).toHaveBeenCalledWith(squads[0], { restartManagedLocalDeployments: false })
@@ -118,7 +131,11 @@ describe('warmupActiveSquadSandboxes', () => {
     ])
     const ensure = mock<EnsureFn>(async () => '' as any)
 
-    await warmupActiveSquadSandboxes(logger(), { ensure, keepWarmDeps: noExtraSignals })
+    await warmupActiveSquadSandboxes(logger(), {
+      ensureConsultant: async () => {},
+      ensure,
+      keepWarmDeps: noExtraSignals,
+    })
 
     expect(ensure).toHaveBeenCalledTimes(0)
   })
@@ -128,6 +145,7 @@ describe('warmupActiveSquadSandboxes', () => {
     const ensure = mock<EnsureFn>(async () => '' as any)
 
     await warmupActiveSquadSandboxes(logger(), {
+      ensureConsultant: async () => {},
       ensure,
       keepWarmDeps: { hasActiveLocalDeployments: async () => true, hasRecentWorkStreamActivity: async () => false },
     })
@@ -140,7 +158,11 @@ describe('warmupActiveSquadSandboxes', () => {
     const squads = mockSquadList([squad('mixed', { agentLastMessageAt: [minutesAgo(120), minutesAgo(2)] })])
     const ensure = mock<EnsureFn>(async () => '' as any)
 
-    await warmupActiveSquadSandboxes(logger(), { ensure, keepWarmDeps: noExtraSignals })
+    await warmupActiveSquadSandboxes(logger(), {
+      ensureConsultant: async () => {},
+      ensure,
+      keepWarmDeps: noExtraSignals,
+    })
 
     expect(ensure).toHaveBeenCalledTimes(1)
     expect(ensure).toHaveBeenCalledWith(squads[0], { restartManagedLocalDeployments: false })
@@ -157,7 +179,11 @@ describe('warmupActiveSquadSandboxes', () => {
       return '' as any
     })
 
-    await warmupActiveSquadSandboxes(logger(), { ensure, keepWarmDeps: noExtraSignals })
+    await warmupActiveSquadSandboxes(logger(), {
+      ensureConsultant: async () => {},
+      ensure,
+      keepWarmDeps: noExtraSignals,
+    })
 
     expect(ensure).toHaveBeenCalledTimes(2)
   })
@@ -174,7 +200,11 @@ describe('warmupActiveSquadSandboxes', () => {
       return '' as any
     })
 
-    await warmupActiveSquadSandboxes(logger(), { ensure, keepWarmDeps: noExtraSignals })
+    await warmupActiveSquadSandboxes(logger(), {
+      ensureConsultant: async () => {},
+      ensure,
+      keepWarmDeps: noExtraSignals,
+    })
 
     expect(maxInFlight).toBeLessThanOrEqual(3)
   })
@@ -192,6 +222,7 @@ describe('box liveness hint', () => {
     }) as unknown as EnsureFn
     const asked: string[] = []
     await warmupActiveSquadSandboxes(logger(), {
+      ensureConsultant: async () => {},
       ensure,
       keepWarmDeps: noExtraSignals,
       squads: [squad('s1', { alwaysOn: true })] as unknown as Squad[],
@@ -203,4 +234,18 @@ describe('box liveness hint', () => {
     expect(asked).toEqual([Squad.getSandboxId('s1')])
     expect(seen).toEqual(['listening'])
   })
+})
+
+test('warms one consultant runtime for each warm squad, even before a consultant chat exists', async () => {
+  const owners = [squad('warm', { alwaysOn: true }), squad('cold')]
+  const warmed: string[] = []
+  await warmupActiveSquadSandboxes(logger(), {
+    squads: owners as Squad[],
+    ensure: async () => '' as any,
+    ensureConsultant: async (owner) => {
+      warmed.push((owner as Squad).id)
+    },
+    keepWarmDeps: noExtraSignals,
+  })
+  expect(warmed).toEqual(['warm'])
 })

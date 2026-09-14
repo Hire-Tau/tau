@@ -285,6 +285,11 @@ describe('createVmKeepAlive — squad boxes delegate to the shared keep-warm pre
     expect(await keepAlive('squad_s1')).toBe(true)
   })
 
+  test('consultant box uses the same squad activity window and can idle once it expires', async () => {
+    expect(await makeKeepAlive({ squad: makeSquad({ agentMsgMinutesAgo: 20 }) })('consultants_s1')).toBe(true)
+    expect(await makeKeepAlive({ squad: makeSquad({ agentMsgMinutesAgo: 120 }) })('consultants_s1')).toBe(false)
+  })
+
   test('squad box kept warm when always-on', async () => {
     const keepAlive = makeKeepAlive({ squad: makeSquad({ alwaysOn: true }) })
     expect(await keepAlive('squad_s1')).toBe(true)

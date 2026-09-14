@@ -19,6 +19,7 @@ export type AmtpSigningIdentityReason =
   | 'public_private_mismatch'
   | 'shared_system_manager_custody'
   | 'shared_parent_custody'
+  | 'shared_consultant_custody'
 
 export interface AmtpSigningIdentity {
   status: AmtpSigningIdentityStatus

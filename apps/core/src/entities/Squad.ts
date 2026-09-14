@@ -1,3 +1,4 @@
+import { consultantSandboxId } from '../services/sandbox/consultant-sandbox'
 import { and, asc, desc, eq, ilike, inArray, InferSelectModel, isNull, or, sql, type SQL } from 'drizzle-orm'
 import {
   db,
@@ -723,6 +724,7 @@ export class Squad extends BaseEntity<SquadJson, UpdateSquadInput> implements Sq
 
     // Kill the sandbox (inert) — tolerate already-gone
     await getSandboxManager().removeSandbox(`squad_${this.id}`)
+    await getSandboxManager().removeSandbox(consultantSandboxId(this.id))
 
     // Optional on-disk removal (default: preserve)
     if (options.deleteWorkspace) {

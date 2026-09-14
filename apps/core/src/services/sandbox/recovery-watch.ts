@@ -1,3 +1,4 @@
+import { consultantSandboxSquadId } from './consultant-sandbox'
 /**
  * Sandbox recovery watch.
  *
@@ -330,6 +331,9 @@ export async function defaultIsSandboxReady(sandboxId: string): Promise<boolean>
     if (squadId) {
       const { ensureSquadSandbox } = await import('./ensure')
       await ensureSquadSandbox(squadId)
+    } else if (consultantSandboxSquadId(sandboxId)) {
+      const { ensureConsultantSandbox } = await import('./consultant-warmup')
+      await ensureConsultantSandbox(consultantSandboxSquadId(sandboxId)!)
     } else if (sandboxId.startsWith('agent_')) {
       const { Agent } = await import('../../entities/Agent')
       const agent = await Agent.find(sandboxId.slice('agent_'.length))

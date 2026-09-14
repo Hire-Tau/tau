@@ -1,3 +1,4 @@
+import { consultantSandboxId } from '../services/sandbox/consultant-sandbox'
 import { lockFlowInboxDelivery } from '../services/work-streams/wait-scope'
 import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm'
 
@@ -751,11 +752,13 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
   }
 
   /**
-   * Get the agent's private sandbox ID. Subagents inherit the fully validated
+   * Get the agent's runtime sandbox ID. Subagents inherit the fully validated
    * live root owner's sandbox.
    */
   async getSandboxId(): Promise<string> {
     const owner = await this.resolveLiveSandboxOwner()
+    // Consultant conversations share one light runtime per squad.
+    if (owner.agentTypeId === 'consultant' && owner.squadId) return consultantSandboxId(owner.squadId)
     // A user's system-managers share one light sandbox + /private, scoped per
     // owning user (fall back to the per-agent box if owner is somehow unset).
     if (owner.agentTypeId === 'system-manager' && owner.ownerUserId) {
@@ -773,6 +776,8 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
   getPersonalSandboxIdForCleanup(): string | null {
     if (this.parentAgentId) return null
     if (this.agentTypeId === 'system-manager' && this.ownerUserId) return null
+    // Consultants may still have an old personal sandbox to collect; this
+    // never returns their squad's shared consultant runtime.
     return this.getAgentWorkspaceSandboxId()
   }
 

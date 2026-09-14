@@ -1,3 +1,4 @@
+import { consultantScratchPath } from '../services/sandbox/consultant-sandbox'
 /**
  * K8s Sandbox Tools
  *
@@ -674,8 +675,8 @@ export function createHttpBashOperations(
  * additionally see the shared squad workspace (use squad_bash for the shared
  * squad runtime), solo agents have only their private dir.
  */
-export function resolveAgentBashCwd(sandboxId?: string): string {
-  return resolveWorkspaceLayout({ sandboxId }).privateMount
+export function resolveAgentBashCwd(sandboxId?: string, agentId?: string): string {
+  return consultantScratchPath(resolveWorkspaceLayout({ sandboxId }).privateMount, sandboxId, agentId)
 }
 
 /**
@@ -786,14 +787,15 @@ export function createK8sSandboxedCodingTools(
   manager: SandboxToolsManager,
   tauToken?: string,
   squadId?: string,
-  invocationOwnerId?: string
+  invocationOwnerId?: string,
+  agentId?: string
 ): SandboxedToolWithKey[] {
   // read/write/edit take absolute paths (cwd-independent). The work root is the
   // shared squad workspace for squad members, the private dir for solo agents.
   // bash always runs in the agent's personal private dir. Both come from the
   // runtime-resolved layout, so on the vm runtime they are box-native paths.
   const workspaceMount = resolveContainerWorkRoot({ squadId, sandboxId })
-  const bashCwd = resolveAgentBashCwd(sandboxId)
+  const bashCwd = resolveAgentBashCwd(sandboxId, agentId)
   // vm-only: squad members' FILE ops on squad-workspace paths are served by the
   // squad warm box (undefined on container runtimes and for solo agents, which
   // keeps their ops byte-identical). bash is deliberately NOT routed — the
@@ -811,7 +813,7 @@ export function createK8sSandboxedCodingTools(
     createK8sSandboxedEditTool(workspaceMount, sandboxId, manager, squadRoute),
     workspaceMount
   )
-  const rawBash = createK8sSandboxedBashTool(bashCwd, sandboxId, manager, tauToken, { invocationOwnerId })
+  const rawBash = createK8sSandboxedBashTool(bashCwd, sandboxId, manager, tauToken, { invocationOwnerId, agentId })
   // vm-only: a squad member's private bash cannot reach the squad box's paths
   // (separate unix user). Answer a denied touch of them with a `squad_bash`
   // hint instead of leaving the model to conclude the tool does not exist.

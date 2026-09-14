@@ -7,6 +7,8 @@ import { agentIdentityHostPath, publicPemFromPrivate, samePublicKey } from './ag
 const MESSAGES: Record<AmtpSigningIdentityReason, string> = {
   shared_system_manager_custody:
     'System-manager federation is unsupported because the sandbox private root is shared; use a dedicated non-shared agent.',
+  shared_consultant_custody:
+    'Consultant federation is unsupported because squad consultant chats share a sandbox; use a dedicated agent.',
   shared_parent_custody:
     'Subagent federation is unsupported because the sandbox private root is shared with its parent; use a dedicated non-shared agent.',
   missing_public_key: 'Federation signing identity is not provisioned; start/retry the agent sandbox, then try again.',
@@ -27,6 +29,7 @@ function failed(status: 'unavailable' | 'unsupported', reason: AmtpSigningIdenti
 export async function inspectAgentSigningIdentity(agent: Agent): Promise<AmtpSigningIdentity> {
   if (agent.agentTypeId === 'system-manager') return failed('unsupported', 'shared_system_manager_custody')
   if (agent.parentAgentId) return failed('unsupported', 'shared_parent_custody')
+  if (agent.agentTypeId === 'consultant' && agent.squadId) return failed('unsupported', 'shared_consultant_custody')
   if (!agent.identityPublicKey) return failed('unavailable', 'missing_public_key')
 
   try {

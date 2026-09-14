@@ -5,7 +5,7 @@ import { META_COUNT } from './restart/types'
 
 const RECOVERY_EPISODE_LOCK_NAMESPACE = 1_730_921_441
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const SANDBOX_ID_PATTERN = /^(?:agent|squad|system_manager)_[A-Za-z0-9-]+$/
+const SANDBOX_ID_PATTERN = /^(?:agent|squad|system_manager|consultants)_[A-Za-z0-9-]+$/
 
 function isUuid(value: string): boolean {
   return UUID_PATTERN.test(value)

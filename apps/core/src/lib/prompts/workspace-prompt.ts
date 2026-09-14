@@ -1,3 +1,4 @@
+import { consultantScratchPath, consultantSandboxSquadId } from '../../services/sandbox/consultant-sandbox'
 /**
  * Workspace prompt section injected into every agent's system prompt.
  *
@@ -44,6 +45,7 @@ export interface WorkspacePromptOptions {
    * The agent's own sandbox id. Required for the vm runtime to resolve the
    * agent's box-native private dir; ignored by the container runtimes.
    */
+  agentId?: string
   sandboxId?: string
   /** Whether the `squad_bash` tool is actually available in this session. */
   hasSquadBash?: boolean
@@ -85,7 +87,7 @@ export function buildWorkspacePrompt(opts: WorkspacePromptOptions = {}): string 
   const fileTools = ['read', 'write', 'edit'].filter(hasTool)
   const fileToolList = fileTools.map((name) => `\`${name}\``).join('/')
   const layout = resolveWorkspaceLayout({ squadId, sandboxId })
-  const priv = layout.privateMount
+  const priv = consultantScratchPath(layout.privateMount, sandboxId, opts.agentId)
   const workspaceMount = squadId ? layout.workspaceMount : undefined
   const memoryMount = layout.memoryMount
   // On the vm runtime a squad member's box is a separate unix user from the
@@ -119,16 +121,21 @@ export function buildWorkspacePrompt(opts: WorkspacePromptOptions = {}): string 
     out.push('You have no general filesystem or shell tools in this session.', '')
   }
 
-  const privateVisibility = sharesParentBox
-    ? 'private from other squad teammates but shared with your parent agent and sibling subagents'
-    : mayShareWithSubagents
-      ? 'private from squad teammates, but shared with any subagents you dispatch'
-      : 'YOUR private directory; no teammate can read it'
-  const privateUse = sharesParentBox
-    ? 'Do not treat it as a secret store because your parent and siblings can read it.'
-    : mayShareWithSubagents
-      ? 'Do not treat it as a secret store because dispatched subagents can read it.'
-      : 'Use it for personal scratch, keys, and secrets.'
+  const sharedConsultants = Boolean(sandboxId && consultantSandboxSquadId(sandboxId))
+  const privateVisibility = sharedConsultants
+    ? 'your conversation scratch directory in the shared squad consultant runtime; other consultant chats can access this runtime'
+    : sharesParentBox
+      ? 'private from other squad teammates but shared with your parent agent and sibling subagents'
+      : mayShareWithSubagents
+        ? 'private from squad teammates, but shared with any subagents you dispatch'
+        : 'YOUR private directory; no teammate can read it'
+  const privateUse = sharedConsultants
+    ? 'Keep scratch files here to avoid collisions. Do not modify other conversations’ directories, shared shell configuration, or credentials. This directory is not a secret store.'
+    : sharesParentBox
+      ? 'Do not treat it as a secret store because your parent and siblings can read it.'
+      : mayShareWithSubagents
+        ? 'Do not treat it as a secret store because dispatched subagents can read it.'
+        : 'Use it for personal scratch, keys, and secrets.'
   const privateShellUse = sharesParentBox
     ? 'Because that area is shared with the parent and siblings, do not use it as a secret store.'
     : mayShareWithSubagents
