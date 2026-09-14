@@ -12,13 +12,18 @@
  * command, and the agent re-issued it. The command's own `timeoutSeconds`
  * never fired because the transport died first.
  *
- * `server.timeout(req, 0)` disables the idle timer for that one request; the
+ * On TCP, `server.timeout(req, 0)` disables the idle timer for that one request; the
  * invocation's own `timeoutSeconds` (enforced in services/bash.ts) remains the
- * bound on its lifetime.
+ * bound on its lifetime. Bun ignores this per-request override on Unix sockets
+ * (reproduced on 1.2.23 and 1.3.8), so VM listeners must disable it globally.
  */
 
 /** Routes whose response is a stream that legitimately outlives the idle window. */
 export const LONG_LIVED_STREAM_ROUTES: ReadonlySet<string> = new Set(['/bash'])
+
+export function sandboxListenerIdleTimeout(unixSocket: boolean): number {
+  return unixSocket ? 0 : 255
+}
 
 export interface IdleTimeoutServer {
   timeout(request: Request, seconds: number): void

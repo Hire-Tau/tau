@@ -56,7 +56,7 @@ import { cacheManagedToolchainEnv, prepareDevboxShellEnv, selfCacheDevboxEnvOnBo
 import { getHealthResponse, setDevboxReady } from './services/health'
 import { handleShell } from './services/shell'
 import { WorkspaceWatcher } from './services/watcher'
-import { exemptLongLivedStreamFromIdleTimeout } from './services/streaming-routes'
+import { exemptLongLivedStreamFromIdleTimeout, sandboxListenerIdleTimeout } from './services/streaming-routes'
 
 const watcher = new WorkspaceWatcher(process.env.WORKSPACE_PATH || '/workspace')
 
@@ -210,11 +210,11 @@ async function main(): Promise<void> {
   const server = Bun.serve({
     ...listen,
     maxRequestBodySize: MAX_BODY,
-    // Max value. NOT a keepalive-able inactivity timeout: Bun severs a streaming
-    // response this many seconds after the request regardless of output, so
-    // long-lived stream routes are exempted per request below
-    // (services/streaming-routes.ts).
-    idleTimeout: 255,
+    // Unix listeners ignore server.timeout(req, 0), so their listener timeout
+    // must be disabled. TCP retains its timeout with per-request exemptions.
+    // Bash deadlines and the idle self-exit coordinator still bound commands
+    // and unused boxes independently of the HTTP listener.
+    idleTimeout: sandboxListenerIdleTimeout(Boolean(SOCKET_PATH)),
 
     async fetch(req, server) {
       // This synchronous reservation is the first operation in fetch. It closes
