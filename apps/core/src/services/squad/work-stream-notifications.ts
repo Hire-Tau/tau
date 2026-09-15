@@ -264,10 +264,10 @@ function isSelfNotification(recipientAgentId: string, actorAgentId: WorkStreamAc
 
 const PUSH_COPY: Record<
   'review' | 'done',
-  { label: string; interruptionLevel: InboxPushPresentation['interruptionLevel'] }
+  { label: string; fallbackBody: string; interruptionLevel: InboxPushPresentation['interruptionLevel'] }
 > = {
-  review: { label: 'Ready for review', interruptionLevel: 'active' },
-  done: { label: 'Completed', interruptionLevel: 'passive' },
+  review: { label: 'Ready for review', fallbackBody: 'Awaiting your review.', interruptionLevel: 'active' },
+  done: { label: 'Completed', fallbackBody: 'Completed without notes.', interruptionLevel: 'passive' },
 }
 
 function clip(text: string, max: number): string {
@@ -279,20 +279,19 @@ function clip(text: string, max: number): string {
  * The phone-facing form of a watcher notice. The inbox subject/content are written for the
  * owning agent and read as "Work stream "#N · title" has been completed." twice over on a
  * lock screen; this carries the state once, the detail a human acts on, and the metadata iOS
- * uses to group per squad and replace an earlier "ready for review" with "completed".
+ * uses to group per squad (threadKey) and replace an earlier "ready for review" with
+ * "completed" (collapseKey). The squad name is deliberately not shown: the group already
+ * carries it, and a third text line makes the card cramped.
  */
 function buildWatcherPush(
   workStream: WorkStream,
   event: 'review' | 'done',
-  squadName: string | undefined,
   detail: string | undefined
 ): InboxPushPresentation | undefined {
   const copy = PUSH_COPY[event]
-  const body = detail?.trim() || squadName?.trim() || 'Open Tau to see details.'
   return parseInboxPushPresentation({
     title: clip(`${copy.label}: ${workStreamTitle(workStream)}`, 120),
-    body: clip(body, 300),
-    ...(squadName?.trim() ? { subtitle: clip(squadName, 80) } : {}),
+    body: clip(detail?.trim() || copy.fallbackBody, 300),
     collapseKey: `ws:${workStream.id}`,
     threadKey: `squad:${workStream.squadId}`,
     interruptionLevel: copy.interruptionLevel,
@@ -317,10 +316,9 @@ async function notifyWorkStreamSubscribers(
     ])
     const subscriberIds = [...new Set([...streamWatchers, ...squadWatchers])]
     if (subscriberIds.length === 0) return
-    const squad = await Squad.find(workStream.squadId)
-    const detail =
-      event === 'done' ? pushDetail || nextSteps : workStream.handoffMessage || workStream.description?.slice(0, 200)
-    const push = buildWatcherPush(workStream, event as 'review' | 'done', squad?.name, detail ?? undefined)
+    const description = workStream.description?.trim() ? workStream.description.slice(0, 200) : undefined
+    const detail = event === 'done' ? pushDetail || nextSteps || description : workStream.handoffMessage || description
+    const push = buildWatcherPush(workStream, event as 'review' | 'done', detail ?? undefined)
     for (const userId of subscriberIds) {
       await sendDeduped({
         recipientType: 'user',
