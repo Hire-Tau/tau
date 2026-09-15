@@ -27,6 +27,7 @@ import {
   authorizeTrackedResource,
   listTrackedResources,
   mergeTracked,
+  parseTrackedMetadata,
   removeTrackedResource,
   resolveEventTrackedResource,
   resolveTrackedResourceRequest,
@@ -340,4 +341,32 @@ test('tracked metadata is validated on write and only new entries are authorized
   expect(metadata.tracked).toEqual([{ ...trackedIssue(2501), addedAt: '2024-01-01T00:00:00.000Z' }])
   await validateTrackedMetadata(otherSquadId, { title: 'no tracked key' })
   expect(new TrackedResourceError('nope', 409).status).toBe(409)
+})
+
+test('origin is server-managed: a caller cannot claim an event it did not create from', async () => {
+  const eventId = randomUUID()
+  const claimed = {
+    ...trackedIssue(2601),
+    origin: { eventId, resourceKey: `${repo}#2601`, output: 'issue.assigned' },
+  }
+  await expect(validateTrackedMetadata(squadId, { tracked: [claimed] })).rejects.toMatchObject({
+    status: 400,
+    message: expect.stringContaining('origin is server-managed'),
+  })
+  await expect(
+    validateTrackedMetadata(squadId, { tracked: [claimed] }, undefined, { allowOriginEventId: randomUUID() })
+  ).rejects.toMatchObject({ status: 400 })
+  // The create-from-event path stamps the origin itself, so its own event id is allowed.
+  await validateTrackedMetadata(squadId, { tracked: [claimed] }, undefined, { allowOriginEventId: eventId })
+  // An entry already stored keeps the origin it was created with.
+  await validateTrackedMetadata(otherSquadId, { tracked: [claimed] }, { tracked: [claimed] })
+})
+
+test('parseTrackedMetadata validates shape without reading the database', () => {
+  const metadata: Record<string, unknown> = { tracked: [{ ...trackedIssue(2701), url: undefined }] }
+  expect(parseTrackedMetadata(metadata)).toEqual([trackedIssue(2701)])
+  expect(metadata.tracked).toEqual([trackedIssue(2701)])
+  expect(parseTrackedMetadata({ title: 'no tracked key' })).toBeNull()
+  expect(() => parseTrackedMetadata({ tracked: 'nope' })).toThrow('metadata.tracked must be an array')
+  expect(() => parseTrackedMetadata({ tracked: [{ bad: true }] })).toThrow('metadata.tracked[0] is invalid')
 })

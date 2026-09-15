@@ -109,15 +109,11 @@ export async function authorizeTrackedResource(squadId: string, resource: Tracke
 }
 
 /**
- * Validate every `metadata.tracked` entry and authorize the ones this write introduces.
- * Entries already present in `previous` keep their access: they were authorized when added.
+ * Shape-only validation: rewrites `metadata.tracked` with parsed entries and returns them
+ * (null when the key is absent). Reads nothing, so it is safe to call while holding a row lock.
  */
-export async function validateTrackedMetadata(
-  squadId: string,
-  metadata: Record<string, unknown>,
-  previous?: unknown
-): Promise<void> {
-  if (!Object.prototype.hasOwnProperty.call(metadata, 'tracked')) return
+export function parseTrackedMetadata(metadata: Record<string, unknown>): TrackedResource[] | null {
+  if (!Object.prototype.hasOwnProperty.call(metadata, 'tracked')) return null
   const raw = metadata.tracked
   if (!Array.isArray(raw)) throw new TrackedResourceError('metadata.tracked must be an array', 400)
   const parsed: TrackedResource[] = []
@@ -130,10 +126,32 @@ export async function validateTrackedMetadata(
       )
     parsed.push(result.data)
   }
-  const previousKeys = new Set(resolveTrackedResources(previous).map((resource) => resource.key))
-  for (const resource of parsed)
-    if (!previousKeys.has(trackedResourceKey(resource))) await authorizeTrackedResource(squadId, resource)
   metadata.tracked = parsed
+  return parsed
+}
+
+/**
+ * Validate every `metadata.tracked` entry and authorize the ones this write introduces.
+ * Entries already present in `previous` keep their access: they were authorized when added.
+ * Authorization reads the squad's connections, so callers must run this BEFORE opening a
+ * transaction: the provider lookup locks the squad row on its own connection.
+ */
+export async function validateTrackedMetadata(
+  squadId: string,
+  metadata: Record<string, unknown>,
+  previous?: unknown,
+  options?: { allowOriginEventId?: string }
+): Promise<void> {
+  const parsed = parseTrackedMetadata(metadata)
+  if (!parsed) return
+  const previousKeys = new Set(resolveTrackedResources(previous).map((resource) => resource.key))
+  for (const [index, resource] of parsed.entries()) {
+    if (previousKeys.has(trackedResourceKey(resource))) continue
+    // `origin` is the server's record of the event it observed; a client cannot claim one.
+    if (resource.origin && resource.origin.eventId !== options?.allowOriginEventId)
+      throw new TrackedResourceError(`metadata.tracked[${index}].origin is server-managed`, 400)
+    await authorizeTrackedResource(squadId, resource)
+  }
 }
 
 /** Pure: dedupe by identity, keep order, stamp `addedAt` only on entries that lack it. */

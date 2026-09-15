@@ -1,6 +1,6 @@
 import { useEnabledIntegrationFixtures } from '../test-utils/enabled-integrations'
 useEnabledIntegrationFixtures('github')
-import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'bun:test'
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, spyOn } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray, like } from 'drizzle-orm'
 import { Hono } from 'hono'
@@ -8,12 +8,14 @@ import { createBlankWorkflow, type IntegrationOutputFact } from '@tau/shared'
 import { workStreamsRouter } from './work-streams'
 import { identityMiddleware } from '../middleware/identity'
 import { db } from '../db'
-import { workStreams, squads, agents, agentTypes, integrationOutputEvents } from '../db/schema'
+import { workStreams, squads, agents, agentTypes, integrationOutputEvents, settings } from '../db/schema'
 import { AgentType } from '../entities/AgentType'
 
 import { Squad } from '../entities/Squad'
 import { WorkStream } from '../entities/WorkStream'
 import { createTestGitHubConnection } from '../test-utils/github-connection'
+import * as repositorySetup from '../services/work-streams/repository-setup'
+import { INTEGRATION_DEFAULT_PREFIX } from '../services/integrations/scope-settings'
 import type { IntegrationOutputAuthority } from '../services/integrations/outputs/types'
 import {
   createTestAdmin,
@@ -252,5 +254,83 @@ describe('work-stream tracked-resource routes', () => {
     })
     expect(accepted.status).toBe(200)
     expect((await WorkStream.mustFind(row!.id)).metadata).toMatchObject({ tracked: [{ number: 4501 }] })
+  })
+
+  it('rejects a PATCH that claims a server-managed origin', async () => {
+    const [row] = await db
+      .insert(workStreams)
+      .values({ squadId: testSquadId, title: `${testPrefix} origin`, metadata: {} })
+      .returning()
+    const response = await apiFetch(`/api/workstreams/${row!.id}`, {
+      method: 'PATCH',
+      body: {
+        metadata: {
+          tracked: [
+            {
+              integration: 'github',
+              repository: repo,
+              kind: 'issue',
+              number: 4601,
+              origin: { eventId: randomUUID(), resourceKey: `${repo}#4601`, output: 'issue.assigned' },
+            },
+          ],
+        },
+      },
+    })
+    expect(response.status).toBe(400)
+    expect((await response.json()).error).toContain('origin is server-managed')
+    expect((await WorkStream.mustFind(row!.id)).metadata).toEqual({})
+  })
+
+  it('authorizes tracked links outside the work-stream transaction', async () => {
+    // A configured global default makes the provider lookup open its own squad-locking
+    // transaction; authorizing under the update lock would wait on it forever.
+    await db
+      .insert(settings)
+      .values({ key: `${INTEGRATION_DEFAULT_PREFIX}github`, value: connection.id, updatedBy: 'test-fixture' })
+      .onConflictDoUpdate({ target: settings.key, set: { value: connection.id } })
+    try {
+      const [row] = await db
+        .insert(workStreams)
+        .values({ squadId: testSquadId, title: `${testPrefix} default`, metadata: {} })
+        .returning()
+      const response = await apiFetch(`/api/workstreams/${row!.id}`, {
+        method: 'PATCH',
+        body: { metadata: { tracked: [{ integration: 'github', repository: repo, kind: 'issue', number: 4701 }] } },
+      })
+      expect(response.status).toBe(200)
+      expect((await WorkStream.mustFind(row!.id)).metadata).toMatchObject({ tracked: [{ number: 4701 }] })
+    } finally {
+      await db.delete(settings).where(eq(settings.key, `${INTEGRATION_DEFAULT_PREFIX}github`))
+    }
+  })
+
+  it('settles an event replay before provisioning a repository', async () => {
+    const event = await insertEvent(issueFact(4801), {
+      kind: 'connection',
+      connectionId: connection.id,
+      squadId: testSquadId,
+    })
+    const setup = spyOn(repositorySetup, 'setupWorkStreamRepository').mockImplementation(
+      async (_squadId, _input, _key, metadata) => metadata
+    )
+    try {
+      const body = {
+        squadId: testSquadId,
+        title: `${testPrefix} replay`,
+        integrationEventId: event.id,
+        repository: 'demo',
+      }
+      const created = await apiFetch('/api/workstreams', { method: 'POST', body })
+      expect(created.status).toBe(201)
+      expect(setup).toHaveBeenCalledTimes(1)
+      const again = await apiFetch('/api/workstreams', { method: 'POST', body })
+      expect(again.status).toBe(200)
+      expect((await again.json()).reusedFromEvent).toBe(true)
+      // The replay is settled before any worktree is provisioned.
+      expect(setup).toHaveBeenCalledTimes(1)
+    } finally {
+      setup.mockRestore()
+    }
   })
 })
