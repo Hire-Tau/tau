@@ -3,12 +3,15 @@ import { assistantConversationLink, type AssistantConversationLink } from '../li
 import { AssistantConversationLinkRow } from './AssistantConversationLinkRow'
 import { siteAssistantToolRenderers, type ToolRenderers } from '../lib/tool-renderers'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { AssistantEntry, AssistantMessageReceipt } from '@tau/shared'
+import type { AssistantActivityUpdate, AssistantEntry, AssistantMessageReceipt } from '@tau/shared'
 import { useLocation } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { assistantApi } from '../api/assistant'
 import { assistantQueryKeys } from '../queryKeys'
+import { assistantQueries } from '../queryOptions'
 import { useStableRef } from '../hooks/useStableRef'
+import { useAssistantActivity } from '../hooks/useAssistantActivity'
+import { AssistantUpdateList } from './AssistantUpdateList'
 import { AssistantConversationContext, type AssistantConversationBridge } from '../voice/AssistantConversationContext'
 import { siteOperatorVoiceAssistant } from '../voice/assistants/siteOperator/siteOperatorAssistant'
 import { useRealtimeVoiceAssistant } from '../voice/useRealtimeVoiceAssistant'
@@ -307,6 +310,26 @@ function ConversationRuntime(
       void api.release(props.id, consumer).catch(() => {})
     }
   }, [api, props.id, props.ready, props.realtime, props.visible, voice.isConnected, propsRef, voiceRef])
+  // Durable task updates are readable independently of Realtime and of the mailbox consumer.
+  const { ownerId } = useAssistantActivity({ enabled: false })
+  const activity = useQuery({
+    ...assistantQueries.conversationActivity(ownerId ?? '', props.id),
+    queryFn: () => api.conversationActivity(props.id),
+    enabled: Boolean(ownerId) && props.ready,
+  })
+  const [olderUpdates, setOlderUpdates] = useState<AssistantActivityUpdate[]>([])
+  const [olderCursor, setOlderCursor] = useState<number | null>()
+  const queryClientForActivity = useQueryClient()
+  const refreshActivity = useCallback(
+    () => queryClientForActivity.invalidateQueries({ queryKey: assistantQueryKeys.activityPrefix }),
+    [queryClientForActivity]
+  )
+  const latestUpdates = activity.data?.updates ?? []
+  const oldestLoaded = olderCursor === undefined ? (activity.data?.beforeSequence ?? null) : olderCursor
+  const shownUpdates = [
+    ...olderUpdates.filter((update) => !latestUpdates.some((latest) => latest.messageId === update.messageId)),
+    ...latestUpdates,
+  ]
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
   const [pending, setPending] = useState<{ text: string; previousIds: Set<string | undefined> }>()
@@ -489,6 +512,32 @@ function ConversationRuntime(
               onInterrupt={voice.status === 'speaking' || voice.status === 'processing' ? voice.interrupt : undefined}
             />
           </div>
+          {activity.data && (activity.data.updates.length > 0 || activity.data.tasks.length > 0) && (
+            <AssistantUpdateList
+              updates={shownUpdates}
+              tasks={activity.data.tasks}
+              visible={props.visible}
+              latestSequence={activity.data.conversation.latestUpdateSequence}
+              hasMore={olderCursor === undefined ? activity.data.hasMore : olderCursor !== null}
+              onLoadMore={async () => {
+                if (oldestLoaded === null) return
+                const page = await api.conversationActivity(props.id, oldestLoaded)
+                setOlderUpdates((current) => [
+                  ...page.updates.filter((update) => !current.some((row) => row.messageId === update.messageId)),
+                  ...current,
+                ])
+                setOlderCursor(page.hasMore ? page.beforeSequence : null)
+              }}
+              onSeen={async (messageIds) => {
+                await api.seen(props.id, messageIds)
+                await refreshActivity()
+              }}
+              onSeenThrough={async (sequence) => {
+                await api.seenThrough(props.id, sequence)
+                await refreshActivity()
+              }}
+            />
+          )}
           {mailboxError && (
             <p role="status" className="px-4 py-2 text-xs text-muted">
               Updates are temporarily unavailable. Retrying…
