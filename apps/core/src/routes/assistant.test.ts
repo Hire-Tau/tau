@@ -877,3 +877,155 @@ test('generic metadata cannot smuggle task status or task identity', async () =>
   expect(update.reportedStatus).toBeNull()
   expect((await f.task(receipt.taskId)).status).toBe('working')
 })
+
+test('activity is available without acquiring a realtime lease', async () => {
+  const f = await activityFixture()
+  const receipt = await f.start()
+  await f.update(receipt.id, 'The task is complete.', 'completed')
+  const response = await f.request('/activity')
+  expect(response.status).toBe(200)
+  const activity = await response.json()
+  expect(activity.totals).toEqual({
+    unreadConversations: 1,
+    unreadUpdates: 1,
+    workingTasks: 0,
+    waitingTasks: 0,
+    needsInputTasks: 0,
+    unavailableTasks: 0,
+  })
+  expect(activity.hasMore).toBe(false)
+  expect(activity.conversations).toHaveLength(1)
+  expect(activity.conversations[0]).toMatchObject({
+    id: f.id,
+    unreadUpdates: 1,
+    latestUpdateSequence: 1,
+    latestUpdate: { preview: 'The task is complete.' },
+  })
+  const [conversation] = await db.select().from(assistantConversations).where(eq(assistantConversations.id, f.id))
+  expect(conversation.inboxConsumerId).toBeNull()
+  const detail = await (await f.request(`/${f.id}/activity`)).json()
+  expect(detail.tasks).toHaveLength(1)
+  expect(detail.tasks[0]).toMatchObject({ id: receipt.taskId, status: 'completed', unavailable: false })
+  expect(detail.updates).toHaveLength(1)
+  expect(detail.updates[0]).toMatchObject({
+    taskId: receipt.taskId,
+    sequence: 1,
+    reportedStatus: 'completed',
+    content: 'The task is complete.',
+    processedAt: null,
+    seenAt: null,
+  })
+  expect(detail.hasMore).toBe(false)
+  // Reads never process or acknowledge anything.
+  const [update] = await db.select().from(assistantUpdates).where(eq(assistantUpdates.conversationId, f.id))
+  expect(update.processedAt).toBeNull()
+  expect(update.seenAt).toBeNull()
+})
+
+test('viewing an update does not mark it processed', async () => {
+  const f = await activityFixture()
+  const receipt = await f.start()
+  const message = await f.update(receipt.id, 'Please choose an option.', 'needs-input')
+  expect((await f.request(`/${f.id}/updates/seen`, { messageIds: [message.id] })).status).toBe(200)
+  const [update] = await db.select().from(assistantUpdates).where(eq(assistantUpdates.messageId, message.id))
+  expect(update.seenAt).not.toBeNull()
+  expect(update.processedAt).toBeNull()
+  // Acknowledging already-seen IDs is harmless and keeps the first timestamp.
+  expect((await f.request(`/${f.id}/updates/seen`, { messageIds: [message.id] })).status).toBe(200)
+  const [again] = await db.select().from(assistantUpdates).where(eq(assistantUpdates.messageId, message.id))
+  expect(again.seenAt?.getTime()).toBe(update.seenAt!.getTime())
+  const activity = await (await f.request('/activity')).json()
+  expect(activity.totals).toMatchObject({ unreadConversations: 0, unreadUpdates: 0, needsInputTasks: 1 })
+  expect(activity.conversations.map((row: { id: string }) => row.id)).toEqual([f.id])
+})
+
+test('another owner cannot read or acknowledge activity', async () => {
+  const f = await activityFixture()
+  const receipt = await f.start()
+  const message = await f.update(receipt.id, 'Private result.', 'completed')
+  expect((await f.request(`/${f.id}/activity`, undefined, f.other.token)).status).toBe(404)
+  expect((await f.request(`/${f.id}/updates/seen`, { messageIds: [message.id] }, f.other.token)).status).toBe(404)
+  expect((await f.request(`/${f.id}/updates/seen-through`, { sequence: 1 }, f.other.token)).status).toBe(404)
+  const foreign = await (await f.request('/activity', undefined, f.other.token)).json()
+  expect(foreign.conversations).toEqual([])
+  expect(foreign.totals.unreadUpdates).toBe(0)
+  // A batch mixing in another conversation's update is rejected whole.
+  const otherId = randomUUID()
+  conversationIds.push(otherId)
+  expect((await f.request('/', { id: otherId }, f.other.token)).status).toBe(200)
+  expect((await f.request(`/${otherId}/updates/seen`, { messageIds: [message.id] }, f.other.token)).status).toBe(400)
+  const [update] = await db.select().from(assistantUpdates).where(eq(assistantUpdates.messageId, message.id))
+  expect(update.seenAt).toBeNull()
+  for (const bad of [{ messageIds: [] }, { messageIds: ['nope'] }, { sequence: -1 }, {}])
+    expect((await f.request(`/${f.id}/updates/seen`, bad)).status).toBe(400)
+  expect((await f.request(`/${f.id}/updates/seen-through`, { sequence: 1.5 })).status).toBe(400)
+})
+
+test('marking updates read acknowledges only the displayed snapshot', async () => {
+  const f = await activityFixture()
+  const receipt = await f.start()
+  await f.update(receipt.id, 'First')
+  await f.update(receipt.id, 'Second')
+  const snapshot = await (await f.request(`/${f.id}/activity`)).json()
+  expect(snapshot.conversation.latestUpdateSequence).toBe(2)
+  const third = await f.update(receipt.id, 'Third')
+  expect(
+    (await f.request(`/${f.id}/updates/seen-through`, { sequence: snapshot.conversation.latestUpdateSequence })).status
+  ).toBe(200)
+  const rows = await db.select().from(assistantUpdates).where(eq(assistantUpdates.conversationId, f.id))
+  expect(rows.filter((row) => row.seenAt === null).map((row) => row.messageId)).toEqual([third.id])
+  expect(rows.every((row) => row.processedAt === null)).toBe(true)
+  const activity = await (await f.request('/activity')).json()
+  expect(activity.totals).toMatchObject({ unreadConversations: 1, unreadUpdates: 1, workingTasks: 1 })
+})
+
+test('activity totals stay global under pagination and order deterministically', async () => {
+  const f = await activityFixture()
+  const second = randomUUID(),
+    third = randomUUID()
+  conversationIds.push(second, third)
+  for (const id of [second, third]) expect((await f.request('/', { id })).status).toBe(200)
+  const a = await f.start('Task A')
+  await f.update(a.id, 'Progress on A')
+  const receipts = await Promise.all(
+    [second, third].map(async (id) => {
+      const response = await f.request(`/${id}/messages`, {
+        clientId: randomUUID(),
+        request: `Task in ${id}`,
+        agentId: f.agent.id,
+      })
+      expect(response.status).toBe(200)
+      return { id, receipt: (await response.json()) as { id: string } }
+    })
+  )
+  const question = receipts.find((row) => row.id === third)!
+  await InboxMessage.send({
+    recipientType: 'voice_assistant',
+    recipientId: assistantInboxRecipientId(third),
+    senderType: 'agent',
+    senderId: f.agent.id,
+    content: 'Need a decision',
+    metadata: { inReplyTo: question.receipt.id },
+    assistantTaskStatus: 'needs-input',
+  })
+  // Equal timestamps for the two updated conversations keep the ID tie-breaker meaningful.
+  const pinned = new Date('2026-09-15T00:00:00.000Z')
+  await db
+    .update(assistantConversations)
+    .set({ updatedAt: pinned })
+    .where(inArray(assistantConversations.id, [f.id, second, third]))
+  const page = await (await f.request('/activity?limit=1')).json()
+  expect(page.totals).toMatchObject({ unreadConversations: 2, unreadUpdates: 2, workingTasks: 2, needsInputTasks: 1 })
+  expect(page.conversations).toHaveLength(1)
+  expect(page.conversations[0].id).toBe(third)
+  expect(page.hasMore).toBe(true)
+  const rest = await (await f.request('/activity?limit=1&offset=1')).json()
+  expect(rest.conversations[0].id).toBe(f.id)
+  const last = await (await f.request('/activity?limit=1&offset=2')).json()
+  expect(last.conversations[0].id).toBe(second)
+  expect(last.hasMore).toBe(false)
+  expect(last.totals).toEqual(page.totals)
+  // Finished tasks with no unread updates fall out of the list, and pagination still reads the same order.
+  const all = await (await f.request('/activity')).json()
+  expect(all.conversations.map((row: { id: string }) => row.id)).toEqual([third, f.id, second])
+})

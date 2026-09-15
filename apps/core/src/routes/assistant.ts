@@ -30,6 +30,7 @@ import {
   agents,
 } from '../db'
 import { ASSISTANT_DELEGATION_KEY, ASSISTANT_TASK_ID_KEY } from '../services/assistant-activity/project'
+import { assistantActivityRouter } from './assistant-activity'
 import { Agent } from '../entities/Agent'
 import { Squad } from '../entities/Squad'
 import { InboxMessage } from '../entities/InboxMessage'
@@ -107,6 +108,8 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
     if (!row) return c.json({ error: 'Conversation not found' }, 404)
     return c.json(row)
   })
+  // Activity discovery registers before `/:id` so `/activity` is never read as a conversation ID.
+  .route('/', assistantActivityRouter)
   .get('/:id', zValidator('query', z.object({ before: z.coerce.number().int().positive().optional() })), async (c) => {
     const conversation = await owned(c.req.param('id'), c.get('assistantOwner'))
     if (!conversation) return c.json({ error: 'Conversation not found' }, 404)
