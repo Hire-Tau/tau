@@ -31,6 +31,8 @@ export interface AssistantUpdateListProps {
   onLoadMore?: () => Promise<void>
   onSeen: (messageIds: string[]) => Promise<void>
   onSeenThrough: (sequence: number) => Promise<void>
+  /** Fires when the section opens or closes so the host can yield the chat area on narrow screens. */
+  onExpandedChange?: (expanded: boolean) => void
   dependencies?: { createObserver?: AssistantUpdateObserverFactory; documentVisible?: () => boolean }
 }
 
@@ -102,6 +104,10 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
     previousUnread.current = unread
   }, [unread])
   const expanded = expandedOverride ?? unread > 0
+  const onExpandedChange = useStableRef(props.onExpandedChange)
+  useEffect(() => {
+    onExpandedChange.current?.(expanded)
+  }, [expanded, onExpandedChange])
   const hideCard = useStableRef(async (messageId: string) => {
     setHidden((current) => new Set([...current, messageId]))
     if (acknowledged.current.has(messageId) || pendingSeen.current.has(messageId)) return
@@ -153,7 +159,13 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
   }, [props.visible, flush])
   const taskById = new Map(props.tasks.map((task) => [task.id, task]))
   return (
-    <section aria-label="Task updates" className="flex min-h-0 flex-col border-t border-th-border">
+    <section
+      aria-label="Task updates"
+      data-expanded={expanded || undefined}
+      // Open on a phone, the list takes the chat area (the host hides the transcript); on wider
+      // screens it keeps a bounded height and scrolls so the transcript stays in view.
+      className={clsx('flex min-h-0 flex-col border-t border-th-border', expanded && 'flex-1 md:flex-none')}
+    >
       <div className="flex shrink-0 items-center gap-2 px-3 py-1.5 text-xs">
         <button
           type="button"
@@ -206,7 +218,10 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
         id="assistant-task-updates"
         ref={region}
         hidden={!expanded}
-        className="min-h-0 max-h-64 overflow-y-auto overscroll-contain px-2 pb-2"
+        className={clsx(
+          'min-h-0 overflow-y-auto overscroll-contain px-2 pb-2',
+          expanded && 'flex-1 md:max-h-80 md:flex-none'
+        )}
       >
         {props.hasMore && props.onLoadMore && (
           <button

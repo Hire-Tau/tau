@@ -66,6 +66,7 @@ async function fixture(visible: boolean) {
   let documentVisible = true
   const onSeen = mock(async (_ids: string[]) => {})
   const onSeenThrough = mock(async (_sequence: number) => {})
+  const onExpandedChange = mock((_expanded: boolean) => {})
   const { root, container } = dom.createRoot()
   const render = (props: Partial<Parameters<typeof AssistantUpdateList>[0]> = {}) =>
     root.render(
@@ -77,6 +78,7 @@ async function fixture(visible: boolean) {
         hasMore={false}
         onSeen={onSeen}
         onSeenThrough={onSeenThrough}
+        onExpandedChange={onExpandedChange}
         dependencies={{ createObserver, documentVisible: () => documentVisible }}
         {...props}
       />
@@ -88,6 +90,7 @@ async function fixture(visible: boolean) {
     render,
     onSeen,
     onSeenThrough,
+    onExpandedChange,
     observed,
     disconnect,
     intersect: (ids: string[], isIntersecting = true) =>
@@ -170,13 +173,15 @@ test('the section stays collapsed while everything is seen, opens for unread upd
   try {
     const region = () => f.container.querySelector<HTMLElement>('#assistant-task-updates')!
     const toggle = () => f.container.querySelector<HTMLButtonElement>('button[aria-expanded]')!
-    // Two unread cards: open by default and observed.
+    // Two unread cards: open by default and observed; the host is told so it can yield the chat area.
     expect(toggle().getAttribute('aria-expanded')).toBe('true')
+    expect(f.onExpandedChange).toHaveBeenLastCalledWith(true)
     expect(region().hidden).toBe(false)
     expect(toggle().textContent).toContain('2 unread')
     // Everything seen: collapsed, count shows history size, nothing observed.
     await f.dom.act(async () => f.render({ updates: [update(1, true), update(2, true), update(3, true)] }))
     expect(toggle().getAttribute('aria-expanded')).toBe('false')
+    expect(f.onExpandedChange).toHaveBeenLastCalledWith(false)
     expect(region().hidden).toBe(true)
     expect(toggle().textContent).toContain('3')
     expect(toggle().textContent).not.toContain('unread')
@@ -191,6 +196,12 @@ test('the section stays collapsed while everything is seen, opens for unread upd
     await f.dom.act(async () => f.render({ updates: [update(1, true), update(2, true), update(3, true), update(4)] }))
     expect(region().hidden).toBe(false)
     expect(toggle().textContent).toContain('1 unread')
+    // Open, the section grows to fill the chat area on phones and stays bounded on wider screens.
+    const section = f.container.querySelector<HTMLElement>('section[aria-label="Task updates"]')!
+    expect(section.className).toContain('flex-1 md:flex-none')
+    expect(region().className).toContain('flex-1 md:max-h-80 md:flex-none')
+    await f.dom.act(async () => toggle().click())
+    expect(section.className).not.toContain('flex-1')
   } finally {
     await f.dom.cleanup()
   }
