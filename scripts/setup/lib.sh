@@ -143,6 +143,58 @@ bun_path_prepend() {
   return 0
 }
 
+# A bun pin as .bun-version and artifact.json record it: three dot-separated
+# integers and nothing else. Nothing that fails this is ever handed to an
+# installer, however it arrived.
+bun_pin_is_valid() { # VERSION
+  [[ $1 =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+}
+
+# The official installer, pinned to one version. A function of its own so
+# lib.test.sh can stub it — the real one needs the network.
+bun_official_install() { # VERSION
+  curl -fsSL https://bun.sh/install | bash -s "bun-v$1"
+}
+
+# Install exactly VERSION: for this user at ${HOME}/.bun (and on PATH for the
+# rest of this process), and — when a run user is known — at the managed
+# system path via ensure_system_bun_node, so a unit that runs
+# /usr/local/bin/bun picks it up on its next start. Returns non-zero, never
+# dies, when the version is malformed or the install did not produce it; the
+# caller decides how fatal that is.
+#
+# Exists because a Core bun bump used to strand every existing box: the pin
+# moved, setup-host.sh only runs at provision, and upgrade-host.sh refused the
+# mismatch (bun_mismatch) with no way forward but a hand install on each host
+# (2026-09-15, 1.3.8 → 1.4.2, control plane + three tenants).
+install_pinned_bun() { # VERSION
+  local version=$1 out
+  if ! bun_pin_is_valid "${version}"; then
+    log_error "refusing to install bun '${version}': not a pinned x.y.z version"
+    return 1
+  fi
+  log_info "installing bun ${version} (official installer, pinned)"
+  out=$(mktemp "/tmp/tau-bun-install.XXXXXX")
+  if ! bun_official_install "${version}" >"${out}" 2>&1; then
+    log_error "bun ${version}: the official installer failed (network to bun.sh / GitHub?):"
+    tail -n 5 "${out}" >&2
+    rm -f "${out}"
+    return 1
+  fi
+  rm -f "${out}"
+  export BUN_INSTALL="${HOME}/.bun"
+  export PATH="${BUN_INSTALL}/bin:${PATH}"
+  hash -r 2>/dev/null || true
+  if [[ "$(bun --version 2>/dev/null | tr -d '[:space:]')" != "${version}" ]]; then
+    log_error "bun $(bun --version 2>/dev/null || echo '<none>') is on PATH after installing ${version}"
+    return 1
+  fi
+  if [[ -n ${RUN_USER:-} ]] && declare -F ensure_system_bun_node >/dev/null; then
+    ensure_system_bun_node "${RUN_USER}" "${BUN_INSTALL}/bin/bun"
+  fi
+  log_info "bun: $(command -v bun) ($(bun --version))"
+}
+
 # Install Bun at a stable, root-owned system path and provide Node compatibility
 # for dependency entrypoints that use `#!/usr/bin/env node`. The smoke test runs
 # through that shebang as the service account, proving both PATH resolution and
@@ -2509,6 +2561,16 @@ artifact_acquire() { # DEST TARBALL_URL MANIFEST_URL SIG_URL PUBKEY_PEM_PATH
   host_bun=$(bun --version 2>/dev/null | tr -d '[:space:]')
   [[ -n ${manifest_bun} ]] ||
     _artifact_fail "${incoming}" manifest_invalid "artifact manifest does not record a bun version"
+  # A mismatch is repaired, not refused: the manifest is signature-verified by
+  # now, so its pin is trusted, and the release cannot run on any other bun.
+  # Only a pin the installer cannot produce (malformed, or the install fails)
+  # is still bun_mismatch.
+  if [[ ${host_bun} != "${manifest_bun}" ]]; then
+    log_warn "host bun ${host_bun:-<none>} != the ${manifest_bun} this artifact was built for — installing the pinned bun"
+    install_pinned_bun "${manifest_bun}" ||
+      _artifact_fail "${incoming}" bun_mismatch "host bun ${host_bun:-<none>} != the ${manifest_bun} this artifact was built for, and installing ${manifest_bun} failed"
+    host_bun=$(bun --version 2>/dev/null | tr -d '[:space:]')
+  fi
   [[ ${host_bun} == "${manifest_bun}" ]] ||
     _artifact_fail "${incoming}" bun_mismatch "host bun ${host_bun:-<none>} != the ${manifest_bun} this artifact was built for"
 
