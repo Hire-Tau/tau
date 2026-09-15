@@ -1,5 +1,5 @@
 {
-  "id": "3a71bdac-cb0a-414a-bdd0-e4e4f33b0fdf",
+  "id": "5b876fc6-eaed-47bf-aa52-93f2ee0b6462",
   "prevId": "f727eae7-10ff-40f8-8d97-c69491a230c8",
   "version": "7",
   "dialect": "postgresql",
@@ -16814,6 +16814,93 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.work_stream_worktrees": {
+      "name": "work_stream_worktrees",
+      "schema": "",
+      "columns": {
+        "work_stream_id": {
+          "name": "work_stream_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "squad_id": {
+          "name": "squad_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ownership": {
+          "name": "ownership",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_owned_worktree_path": {
+          "name": "idx_owned_worktree_path",
+          "columns": [
+            {
+              "expression": "squad_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "(\"ownership\"->>'worktree')",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "work_stream_worktrees_work_stream_id_work_streams_id_fk": {
+          "name": "work_stream_worktrees_work_stream_id_work_streams_id_fk",
+          "tableFrom": "work_stream_worktrees",
+          "tableTo": "work_streams",
+          "columnsFrom": [
+            "work_stream_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "work_stream_worktrees_squad_id_squads_id_fk": {
+          "name": "work_stream_worktrees_squad_id_squads_id_fk",
+          "tableFrom": "work_stream_worktrees",
+          "tableTo": "squads",
+          "columnsFrom": [
+            "squad_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.work_streams": {
       "name": "work_streams",
       "schema": "",
@@ -16824,12 +16911,6 @@
           "primaryKey": true,
           "notNull": true,
           "default": "gen_random_uuid()"
-        },
-        "number": {
-          "name": "number",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
         },
         "squad_id": {
           "name": "squad_id",
@@ -16857,6 +16938,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'active'"
+        },
+        "auto_cleanup_worktree": {
+          "name": "auto_cleanup_worktree",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "pause": {
           "name": "pause",
@@ -17063,15 +17151,7 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "work_streams_number_unique": {
-          "name": "work_streams_number_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "number"
-          ]
-        }
-      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
@@ -17234,6 +17314,133 @@
       },
       "indexes": {},
       "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.worktree_cleanup_jobs": {
+      "name": "worktree_cleanup_jobs",
+      "schema": "",
+      "columns": {
+        "work_stream_id": {
+          "name": "work_stream_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "generation": {
+          "name": "generation",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attempts": {
+          "name": "attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "next_attempt_at": {
+          "name": "next_attempt_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "delivered_head": {
+          "name": "delivered_head",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "delivery_metadata": {
+          "name": "delivery_metadata",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "operation_id": {
+          "name": "operation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "removal_input": {
+          "name": "removal_input",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_worktree_cleanup_due": {
+          "name": "idx_worktree_cleanup_due",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "next_attempt_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "worktree_cleanup_jobs_work_stream_id_work_streams_id_fk": {
+          "name": "worktree_cleanup_jobs_work_stream_id_work_streams_id_fk",
+          "tableFrom": "worktree_cleanup_jobs",
+          "tableTo": "work_streams",
+          "columnsFrom": [
+            "work_stream_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
