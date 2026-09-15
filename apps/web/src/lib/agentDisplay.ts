@@ -1,5 +1,15 @@
-import type { Agent } from '@tau/shared'
+import type { Agent, AgentStatus } from '@tau/shared'
 import { agentLabelParts } from '@tau/shared'
+
+export const AGENT_STATUS_LABELS: Record<AgentStatus, string> = {
+  active: 'Working',
+  idle: 'Idle',
+  'waiting-input': 'Waiting for input',
+  compacting: 'Compacting',
+  resetting: 'Resetting',
+  dormant: 'Dormant',
+  terminated: 'Terminated',
+}
 
 export function getAgentPurpose(agent: Agent): string | undefined {
   const purpose = agent.metadata?.purpose

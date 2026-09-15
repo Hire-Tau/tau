@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useStableRef } from '../hooks/useStableRef'
 import { useQuery, type QueryClient } from '@tanstack/react-query'
 import { queries } from '../queryOptions'
-import type { EntityReference } from '../lib/entityReference'
+import { agentChatPath, type EntityReference } from '../lib/entityReference'
 import { Modal } from './Modal'
 import { WorkStreamViewModal } from './WorkStreamViewModal'
 /** Warm only visible/hovered references; use the same cache as the destination UI. */
@@ -46,11 +46,8 @@ function AgentReference({ id, onClose, onResolved }: { id: string } & Resolution
   const onCloseRef = useStableRef(onClose)
   useEffect(() => {
     if (!data) return
-    const path = data.squadId
-      ? `/squads/${encodeURIComponent(data.squadId)}/agents?agent=${encodeURIComponent(data.id)}`
-      : `/chat/${encodeURIComponent(data.id)}`
     onCloseRef.current()
-    navigate(path)
+    navigate(agentChatPath(data))
   }, [data, navigate, onCloseRef])
   if (!isError) return null
   return (

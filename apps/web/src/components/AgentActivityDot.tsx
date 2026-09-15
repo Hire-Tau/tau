@@ -1,19 +1,10 @@
 import clsx from 'clsx'
 import { AGENT_STATUS_ROLE, type AgentStatus } from '@tau/shared'
+import { AGENT_STATUS_LABELS } from '../lib/agentDisplay'
 import { webStatus } from '../lib/statusPresentation'
 
-const STATUS_LABELS: Record<AgentStatus, string> = {
-  active: 'Working',
-  idle: 'Idle',
-  'waiting-input': 'Waiting for input',
-  compacting: 'Compacting',
-  resetting: 'Resetting',
-  dormant: 'Dormant',
-  terminated: 'Terminated',
-}
-
 export function AgentActivityDot({ status, className }: { status: AgentStatus; className?: string }) {
-  const description = `Agent activity: ${STATUS_LABELS[status]}`
+  const description = `Agent activity: ${AGENT_STATUS_LABELS[status]}`
   const treatment = webStatus(AGENT_STATUS_ROLE[status])
 
   return (
