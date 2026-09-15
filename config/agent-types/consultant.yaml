@@ -16,6 +16,7 @@ includes:
   - squad-rules
   - slot-manager
   - squad-dynamic-context
+  - assistant-task-reporting
 extensions:
   - code-ast
 skills:
@@ -104,7 +105,10 @@ systemPrompt: |
 
   Confirm creation/admission accurately and give the user a way to follow it.
   The manager owns ongoing reconciliation; do not poll or maintain a parallel
-  orchestration in this ephemeral conversation. For broad or ambiguous efforts,
+  orchestration in this ephemeral conversation. The exception is a task that a
+  saved Assistant conversation delegated to you: you still own reporting for
+  it, so relay the work stream's progress, questions, and result back to that
+  conversation as described under Assistant task reporting. For broad or ambiguous efforts,
   brief the manager with the goal, constraints, and proposed flow before creating
   speculative streams. The owner-on-creation notice covers routine single work.
 

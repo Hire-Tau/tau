@@ -328,6 +328,23 @@ export const inboxRouter = new Hono()
     const identity: Identity | undefined = c.get('identity')
     if (!identity) return c.json({ error: 'Unauthorized' }, 401)
 
+    // Task lifecycle facts are server-owned metadata; a client may report status only through the
+    // validated top-level field, and only for a local reply to a saved Assistant conversation.
+    if (body.metadata && ('assistantTaskStatus' in body.metadata || 'assistantTaskId' in body.metadata)) {
+      return c.json({ error: 'metadata.assistantTaskStatus and metadata.assistantTaskId are server-owned' }, 400)
+    }
+    if (
+      body.assistantTaskStatus !== undefined &&
+      (parseAmtpAddress(body.recipientId) !== null ||
+        body.recipientType !== 'voice_assistant' ||
+        !parseAssistantInboxConversationId(body.recipientId))
+    ) {
+      return c.json(
+        { error: 'assistantTaskStatus applies only to local replies sent to a saved Assistant conversation' },
+        400
+      )
+    }
+
     // FIX 3: reject a `amtp://`-prefixed recipient that is not a valid federation address early,
     // before falling through to the local path (which would surface a confusing Postgres uuid error).
     if (body.recipientId.startsWith('amtp://') && parseAmtpAddress(body.recipientId) === null) {
@@ -524,6 +541,7 @@ export const inboxRouter = new Hono()
         content: body.content,
         metadata: { ...body.metadata, ...(body.inReplyTo ? { inReplyTo: body.inReplyTo } : {}) },
         deliveryMode: body.deliveryMode,
+        assistantTaskStatus: body.assistantTaskStatus,
       })
       return c.json(message.toJson(), 201)
     } catch (error) {

@@ -1095,7 +1095,7 @@ export function formatInboxMessages(messages: InboxMessage[]): string {
       const msgId = m.id
       const assistantReply =
         m.senderType === 'voice_assistant' && parseAssistantInboxConversationId(m.senderId)
-          ? `\n\nReply to this Assistant through inbox, including progress updates, clarification questions, and final results. Ordinary chat output is not forwarded. Use: tau inbox send ${m.senderId} "<message>" --recipient-type voice_assistant --in-reply-to ${m.id}. If you need user input, send the question and stop dependent work; the reply arrives as another inbox message.\n`
+          ? `\n\nThis request came from a saved Assistant conversation. Ordinary chat output is not forwarded: report progress, questions, and results with tau inbox send ${m.senderId} "<message>" --recipient-type voice_assistant --in-reply-to ${m.id} --assistant-task-status <working|waiting|needs-input|completed|failed|cancelled>. You own this task until it is complete; see Assistant task reporting.\n`
           : ''
       return `### Message ${msgId}
 

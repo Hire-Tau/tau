@@ -107,6 +107,62 @@ describe('inbox CLI commands', () => {
     )
   })
 
+  it('sends an Assistant task status at the top level and never inside metadata', async () => {
+    const recipientId = 'assistant:57bd78ce-0344-45cf-8e1b-798d1b764b56'
+    const requestId = '395cd9c1-1f01-4fe8-a9fa-157e77516843'
+    await run([
+      'inbox',
+      'send',
+      recipientId,
+      'The comparison is finished.',
+      '--recipient-type',
+      'voice_assistant',
+      '--in-reply-to',
+      requestId,
+      '--assistant-task-status',
+      'completed',
+    ])
+    expect(apiPost).toHaveBeenCalledTimes(1)
+    const [path, body] = (apiPost as ReturnType<typeof mock>).mock.calls[0] as [string, Record<string, unknown>]
+    expect(path).toBe('/api/inbox')
+    expect(body).toEqual({
+      recipientType: 'voice_assistant',
+      recipientId,
+      subject: undefined,
+      content: 'The comparison is finished.',
+      metadata: undefined,
+      inReplyTo: requestId,
+      assistantTaskStatus: 'completed',
+      deliveryMode: 'steer',
+    })
+  })
+
+  it('rejects an unsupported Assistant task status before sending', async () => {
+    await expect(
+      run([
+        'inbox',
+        'send',
+        'assistant:57bd78ce-0344-45cf-8e1b-798d1b764b56',
+        'Done',
+        '--recipient-type',
+        'voice_assistant',
+        '--in-reply-to',
+        '395cd9c1-1f01-4fe8-a9fa-157e77516843',
+        '--assistant-task-status',
+        'done',
+      ])
+    ).rejects.toThrow()
+    expect(apiPost).not.toHaveBeenCalled()
+  })
+
+  it('rejects the Assistant task status for federated sends before signing or posting', async () => {
+    await run(['inbox', 'send', 'amtp://peerinst/bob', 'hello', '--assistant-task-status', 'working'])
+    expect(apiPost).not.toHaveBeenCalled()
+    expect(outputError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('--assistant-task-status') })
+    )
+  })
+
   it('preserves the full reply ID for a local Assistant inbox reply', async () => {
     const recipientId = 'assistant:57bd78ce-0344-45cf-8e1b-798d1b764b56'
     const requestId = '395cd9c1-1f01-4fe8-a9fa-157e77516843'

@@ -1,5 +1,5 @@
 import { createHash } from 'crypto'
-import { Command } from 'commander'
+import { Command, Option } from 'commander'
 import { apiGet, apiGetRaw, apiPost } from '../client'
 import { output, outputError, isJsonMode } from '../output'
 import {
@@ -121,10 +121,19 @@ export function registerInboxCommands(program: Command): void {
       '--in-reply-to <messageId>',
       'Reply to an inbox message by its full message ID; also threads remote envelopes'
     )
+    .addOption(
+      new Option(
+        '--assistant-task-status <status>',
+        'Report the lifecycle state of a task delegated by a saved Assistant conversation (local voice_assistant replies only)'
+      ).choices(['working', 'waiting', 'needs-input', 'completed', 'failed', 'cancelled'])
+    )
     .action(async (recipientId, content, options) => {
       try {
         // Federation branch: an amtp:// recipient is signed in-sandbox and delivered to a remote peer.
         if (parseAmtpAddress(recipientId) !== null) {
+          if (options.assistantTaskStatus) {
+            throw new Error('--assistant-task-status applies only to local replies to an Assistant conversation')
+          }
           await sendFederated(recipientId, content, options)
           return
         }
@@ -141,6 +150,7 @@ export function registerInboxCommands(program: Command): void {
           content,
           metadata,
           ...(options.inReplyTo ? { inReplyTo: options.inReplyTo } : {}),
+          ...(options.assistantTaskStatus ? { assistantTaskStatus: options.assistantTaskStatus } : {}),
           deliveryMode,
         })
 

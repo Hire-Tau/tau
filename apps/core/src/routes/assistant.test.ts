@@ -1029,3 +1029,103 @@ test('activity totals stay global under pagination and order deterministically',
   const all = await (await f.request('/activity')).json()
   expect(all.conversations.map((row: { id: string }) => row.id)).toEqual([third, f.id, second])
 })
+
+async function agentSend(agentId: string, squadId: string | null, body: Record<string, unknown>) {
+  const token = await createTestAgentToken({ agentId, squadId })
+  return app.request('/api/inbox', {
+    method: 'POST',
+    headers: { ...authHeaders(token.token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+for (const status of ['done', 'unknown', 'running', '']) {
+  test(`rejects unsupported reported status ${JSON.stringify(status)}`, async () => {
+    const f = await activityFixture()
+    const receipt = await f.start()
+    const response = await agentSend(f.agent.id, null, {
+      recipientType: 'voice_assistant',
+      recipientId: assistantInboxRecipientId(f.id),
+      inReplyTo: receipt.id,
+      content: 'Status update',
+      assistantTaskStatus: status,
+    })
+    expect(response.status).toBe(400)
+    expect((await f.task(receipt.taskId)).status).toBe('working')
+    expect(await db.select().from(assistantUpdates).where(eq(assistantUpdates.conversationId, f.id))).toEqual([])
+  })
+}
+
+test('reported status is accepted only from the contacted agent on its own request over HTTP', async () => {
+  const f = await activityFixture()
+  const receipt = await f.start()
+  const stranger = await Agent.create({ agentTypeId: 'system-manager', ownerUserId: f.owner.id, context: {} })
+  agentIds.push(stranger.id)
+  const mailbox = assistantInboxRecipientId(f.id)
+  // Another agent cannot report on this request.
+  expect(
+    (
+      await agentSend(stranger.id, null, {
+        recipientType: 'voice_assistant',
+        recipientId: mailbox,
+        inReplyTo: receipt.id,
+        content: 'Fake completion',
+        assistantTaskStatus: 'completed',
+      })
+    ).status
+  ).toBe(400)
+  // The contacted agent cannot report through another conversation's mailbox.
+  const otherId = randomUUID()
+  conversationIds.push(otherId)
+  expect((await f.request('/', { id: otherId }, f.other.token)).status).toBe(200)
+  expect(
+    (
+      await agentSend(f.agent.id, null, {
+        recipientType: 'voice_assistant',
+        recipientId: assistantInboxRecipientId(otherId),
+        inReplyTo: receipt.id,
+        content: 'Wrong mailbox',
+        assistantTaskStatus: 'completed',
+      })
+    ).status
+  ).toBe(400)
+  // The flag is rejected for unrelated recipients rather than silently ignored.
+  expect(
+    (
+      await agentSend(f.agent.id, null, {
+        recipientType: 'user',
+        recipientId: f.owner.id,
+        content: 'Not an Assistant reply',
+        assistantTaskStatus: 'completed',
+      })
+    ).status
+  ).toBe(400)
+  // Metadata smuggling is rejected at the HTTP boundary.
+  expect(
+    (
+      await agentSend(f.agent.id, null, {
+        recipientType: 'voice_assistant',
+        recipientId: mailbox,
+        inReplyTo: receipt.id,
+        content: 'Smuggled',
+        metadata: { assistantTaskStatus: 'completed' },
+      })
+    ).status
+  ).toBe(400)
+  expect((await f.task(receipt.taskId)).status).toBe('working')
+  // The real delegate's report lands and is persisted under server-controlled metadata.
+  const accepted = await agentSend(f.agent.id, null, {
+    recipientType: 'voice_assistant',
+    recipientId: mailbox,
+    inReplyTo: receipt.id,
+    content: 'Finished',
+    assistantTaskStatus: 'completed',
+  })
+  expect(accepted.status).toBe(201)
+  const reply = await accepted.json()
+  expect(reply.metadata.assistantTaskStatus).toBe('completed')
+  expect((await f.task(receipt.taskId)).status).toBe('completed')
+  const formatted = formatInboxMessages([await InboxMessage.mustFind(receipt.id)])
+  expect(formatted).toContain('--assistant-task-status')
+  expect(formatted).toContain(`--in-reply-to ${receipt.id}`)
+})

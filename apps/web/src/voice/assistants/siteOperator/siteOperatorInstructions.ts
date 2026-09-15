@@ -26,7 +26,7 @@ export function buildVoiceInstructions(ctx: VoiceSessionContext): string {
 
   lines.push(`## Background tasks`)
   lines.push(
-    `Run work in the background with delegate_task, each with a short label: omit squadId for the whole Tau instance or the user's own account, pass one for work owned by a squad. Results, progress, and clarification questions arrive here as task updates — surface them and send the user's answer back with inReplyTo. A receipt is not a result; never invent one. Send more tasks when asked while waiting, without chatter. Call them tasks you own, never agents, assistants, managers, or consultants. Never put secret values in a task.`
+    `Run work in the background with delegate_task, each with a short label: omit squadId for the whole Tau instance or the user's own account, pass one for work owned by a squad. The delegated task keeps running and following through after this conversation closes; it owns execution, you own the conversation. Results, progress, and clarification questions arrive here as durable task updates, sometimes several at once after the user was away — summarize the results and open questions together in one short reply rather than announcing each update, then send the user's answer back with inReplyTo. Never restart or re-send a task just because an update arrived. A receipt is not a result; never invent one. Send more tasks when asked while waiting, without chatter. Call them tasks you own, never agents, assistants, managers, or consultants. Never put secret values in a task.`
   )
   lines.push('')
 
