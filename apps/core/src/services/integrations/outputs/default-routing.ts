@@ -1,10 +1,8 @@
-import { resolveGitHubIssueReference } from '../github/issue-reference'
 import { createHash } from 'node:crypto'
 import { and, eq, inArray } from 'drizzle-orm'
 import {
   ADDRESSABLE_AGENT_STATUSES,
   integrationValueAt,
-  resolveCodeHostReference,
   type WorkflowEventTrigger,
   selectSquadEventRule,
   eventRuleWorkflow,
@@ -22,6 +20,7 @@ import {
 import { InboxMessage } from '../../../entities/InboxMessage'
 import { findOrCreateConsultant } from '../../chat/consultant'
 import { integrationOutputRegistry } from './registry'
+import { streamTracksEvent } from './tracked-match'
 import { consultantAgentId } from '../../chat/consultant-idempotency'
 export { matchesGitHubRouting } from '@tau/shared'
 import { ciNotificationSchema, settleCiNotification } from '../../work-streams/ci-notifications'
@@ -106,8 +105,6 @@ export async function routeDefaultNotifications(event: Event, authorize: (squadI
     .where(and(eq(workStreams.squadId, squadId), inArray(workStreams.status, ['active', 'queued'])))
   let matchedStream = false
   for (const { stream, runId } of candidates) {
-    const binding = resolveCodeHostReference(stream.metadata)
-    const issue = resolveGitHubIssueReference(stream.metadata)
     const origin = record(integrationValueAt(stream.metadata, 'integrationSource'))
     const matches =
       (origin.integration === event.integration &&
@@ -117,15 +114,7 @@ export async function routeDefaultNotifications(event: Event, authorize: (squadI
         !origin.integration &&
         typeof integrationValueAt(event.fact.data, 'issue.id') === 'string' &&
         integrationValueAt(stream.metadata, 'linear.issueId') === integrationValueAt(event.fact.data, 'issue.id')) ||
-      (event.integration === 'github' &&
-        (data.pullRequest
-          ? binding?.integration === 'github' &&
-            binding.repository.toLowerCase() === data.repository &&
-            binding.changeRequest?.number === data.pullRequest.number &&
-            (!binding.connectionId || binding.connectionId === event.authority.connectionId)
-          : issue?.repository === data.repository &&
-            issue?.number === data.issue?.number &&
-            (!issue?.connectionId || issue.connectionId === event.authority.connectionId)))
+      (event.integration === 'github' && streamTracksEvent(stream.metadata, event))
     if (!matches) continue
     matchedStream = true
     // An inactive/retained subscription still owns routing. Never bypass its wait or pause policy.

@@ -1,6 +1,5 @@
 import { waitsForAgent } from '../../work-streams/wait-scope'
 import { isDeliveryApprovalWait } from '../../workflows/wait-policy'
-import { resolveGitHubIssueReference } from '../github/issue-reference'
 import { codeHostingRegistry } from '../code-hosting'
 import { isIntegrationEnabled } from '../provider-state'
 import { and, eq, inArray, isNull, lte, desc, sql, or } from 'drizzle-orm'
@@ -8,7 +7,6 @@ import {
   integrationValueAt,
   activeWorkflowAttempts,
   integrationSubscriptionMatches,
-  resolveCodeHostReference,
   type IntegrationSubscription,
   type IntegrationOutputFact,
 } from '@tau/shared'
@@ -33,6 +31,7 @@ import { integrationOutputRegistry } from './registry'
 import type { IntegrationOutputAuthority } from './types'
 import type { VerifiedIngressEvent } from '../types'
 import { eventRuleTrigger, routeDefaultNotifications } from './default-routing'
+import { streamTracksEvent } from './tracked-match'
 import { createLogger } from '../../../lib/infra/logger'
 
 const log = createLogger('integration-outputs')
@@ -79,6 +78,14 @@ async function authorized(
       )
     )
   return !!row
+}
+/** Correlation is not access: a squad only sees an event its own live connection observed. */
+export async function isOutputEventAuthorizedForSquad(event: Event, squadId: string): Promise<boolean> {
+  return (
+    event.authority.kind === 'connection' &&
+    event.authority.squadId === squadId &&
+    (await authorized(db, event.integration, event.authority, squadId))
+  )
 }
 async function shouldNotifyEvent(store: Store, event: Event): Promise<boolean> {
   const adapter = integrationOutputRegistry.adapter(event.integration)
@@ -831,32 +838,10 @@ async function applyOutputTriggers(event: Event) {
               return true
             if (
               raw === ruleTrigger &&
-              event.integration === 'github' &&
-              integrationValueAt(event.fact.data, 'pullRequest.number') !== undefined &&
-              event.authority.kind === 'connection'
-            ) {
-              const reference = resolveCodeHostReference(stream.metadata)
-              return (
-                reference?.integration === 'github' &&
-                reference.repository.toLowerCase() === event.fact.data.repository &&
-                reference.changeRequest?.number === integrationValueAt(event.fact.data, 'pullRequest.number') &&
-                (!reference.connectionId || reference.connectionId === event.authority.connectionId)
-              )
-            }
-            if (
-              raw === ruleTrigger &&
-              event.integration === 'github' &&
-              integrationValueAt(event.fact.data, 'issue.number') !== undefined &&
-              event.authority.kind === 'connection'
-            ) {
-              const issue = resolveGitHubIssueReference(stream.metadata)
-              return (
-                !!issue &&
-                issue.repository === event.fact.data.repository &&
-                issue.number === integrationValueAt(event.fact.data, 'issue.number') &&
-                (!issue.connectionId || issue.connectionId === event.authority.connectionId)
-              )
-            }
+              event.authority.kind === 'connection' &&
+              streamTracksEvent(stream.metadata, event)
+            )
+              return true
             return (
               Object.keys(trigger.create.metadata).length > 0 &&
               Object.entries(trigger.create.metadata).every(

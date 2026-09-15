@@ -23,6 +23,21 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
         : { 'github.issue': { event: 'issue.number' } }),
     }
   },
+  trackedResource(fact) {
+    const repository = typeof fact.data.repository === 'string' ? fact.data.repository : ''
+    const pullRequest = record(fact.data.pullRequest)
+    const issue = record(fact.data.issue)
+    const number = pullRequest?.number ?? issue?.number
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repository) || !Number.isSafeInteger(number) || number <= 0) return null
+    const kind = pullRequest ? 'pull_request' : 'issue'
+    return {
+      integration: 'github',
+      repository,
+      kind,
+      number,
+      url: `https://github.com/${repository}/${kind === 'issue' ? 'issues' : 'pull'}/${number}`,
+    }
+  },
   shouldNotify(fact, configuration) {
     return !isGitHubSelfComment(fact, String(record(configuration)?.login ?? ''))
   },

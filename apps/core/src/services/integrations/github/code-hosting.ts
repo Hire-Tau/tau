@@ -1,6 +1,21 @@
+import { createHash } from 'node:crypto'
+import { trackedResourceKey } from '@tau/shared'
 import { resolveGitHubIssueReference } from './issue-reference'
+import { resolveGitHubRelayAssignment } from './resolve-connection'
 import type { CodeHostingAdapter } from '../code-hosting/registry'
 import { githubApiGet } from '../../github/api-client'
+
+const ISSUE_EVENTS = ['assigned', 'unassigned', 'updated', 'comment']
+const PULL_REQUEST_EVENTS = [
+  'updated',
+  'merged',
+  'closed',
+  'review_requested',
+  'reviewed',
+  'comment',
+  'review_comment',
+  'ci_completed',
+]
 
 export const githubCodeHostingAdapter: CodeHostingAdapter = {
   integration: 'github',
@@ -32,7 +47,7 @@ export const githubCodeHostingAdapter: CodeHostingAdapter = {
   issueSubscriptions(reference, metadata) {
     const issue = resolveGitHubIssueReference(metadata, reference)
     if (!issue) return []
-    return ['assigned', 'unassigned', 'updated', 'comment'].map((event) => ({
+    return ISSUE_EVENTS.map((event) => ({
       id: `code-host-issue-${event}`,
       source: {
         integration: 'github',
@@ -45,16 +60,7 @@ export const githubCodeHostingAdapter: CodeHostingAdapter = {
     }))
   },
   subscriptions(reference) {
-    return [
-      'updated',
-      'merged',
-      'closed',
-      'review_requested',
-      'reviewed',
-      'comment',
-      'review_comment',
-      'ci_completed',
-    ].map((event) => ({
+    return PULL_REQUEST_EVENTS.map((event) => ({
       id: `code-host-${event.replaceAll('_', '-')}`,
       source: {
         integration: 'github',
@@ -68,5 +74,28 @@ export const githubCodeHostingAdapter: CodeHostingAdapter = {
       },
       deliver: { to: 'delivery-owner' as const, whenInactive: 'retain' as const },
     }))
+  },
+  /** Ids hash the resource identity, so adding or removing a link never renumbers the others. */
+  trackedSubscriptions(resource) {
+    const hash = createHash('sha256').update(trackedResourceKey(resource)).digest('hex').slice(0, 12)
+    const repository = resource.repository.trim().toLowerCase()
+    const issue = resource.kind === 'issue'
+    return (issue ? ISSUE_EVENTS : PULL_REQUEST_EVENTS).map((event) => ({
+      id: `tracked-${hash}-${event.replaceAll('_', '-')}`,
+      source: {
+        integration: 'github',
+        output: `${issue ? 'issue' : 'pull_request'}.${event}`,
+        version: 1,
+        ...(resource.connectionId ? { connectionId: resource.connectionId } : {}),
+      },
+      match: {
+        repository: { value: repository },
+        [issue ? 'issue.number' : 'pullRequest.number']: { value: resource.number },
+      },
+      deliver: { to: 'delivery-owner' as const, whenInactive: 'retain' as const },
+    }))
+  },
+  async authorizeSquad(squadId, connectionId) {
+    return !!(await resolveGitHubRelayAssignment(squadId, connectionId))
   },
 }

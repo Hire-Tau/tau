@@ -1,7 +1,9 @@
 import {
   resolveCodeHostReference,
+  resolveTrackedResources,
   type CodeHostReference,
   type IntegrationSubscription,
+  type ResolvedTrackedResource,
   type WorkflowDefinition,
 } from '@tau/shared'
 
@@ -15,6 +17,9 @@ export interface CodeHostingAdapter {
   containsCommit(reference: CodeHostReference, squadId: string, base: string, commit: string): Promise<boolean>
   subscriptions(reference: CodeHostReference): IntegrationSubscription[]
   issueSubscriptions?(reference: CodeHostReference, metadata: unknown): IntegrationSubscription[]
+  /** Events for a resource tracked alongside the delivery binding. Identity only; never a grant. */
+  trackedSubscriptions?(resource: ResolvedTrackedResource): IntegrationSubscription[]
+  authorizeSquad?(squadId: string, connectionId?: string): Promise<boolean>
 }
 
 export class CodeHostingRegistry {
@@ -25,6 +30,9 @@ export class CodeHostingRegistry {
       this.adapters.set(adapter.integration, adapter)
     }
   }
+  adapterFor(integration: string): CodeHostingAdapter | undefined {
+    return this.adapters.get(integration)
+  }
   resolve(metadata: unknown) {
     const reference = resolveCodeHostReference(metadata)
     const adapter = reference && this.adapters.get(reference.integration)
@@ -34,11 +42,19 @@ export class CodeHostingRegistry {
     const explicit = definition.subscriptions ?? []
     if (!definition.completion.followChanges) return explicit
     const binding = this.resolve(metadata)
-    if (!binding) return explicit
-    const inferred = [
-      ...(binding.reference.changeRequest ? binding.adapter.subscriptions(binding.reference) : []),
-      ...(binding.adapter.issueSubscriptions?.(binding.reference, metadata) ?? []),
-    ]
+    const inferred = binding
+      ? [
+          ...(binding.reference.changeRequest ? binding.adapter.subscriptions(binding.reference) : []),
+          ...(binding.adapter.issueSubscriptions?.(binding.reference, metadata) ?? []),
+        ]
+      : []
+    // Delivery and legacy-issue links already own their reserved ids; only extra links fan out.
+    for (const resource of resolveTrackedResources(metadata)) {
+      if (resource.source !== 'tracked') continue
+      const adapter = this.adapters.get(resource.integration)
+      if (!adapter?.trackedSubscriptions || !adapter.validateRepository(resource.repository)) continue
+      inferred.push(...adapter.trackedSubscriptions(resource))
+    }
     // IDs are reserved by schema so explicit subscriptions cannot shadow delivery bindings.
     return [
       ...explicit,

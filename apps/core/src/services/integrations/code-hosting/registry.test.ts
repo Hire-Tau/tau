@@ -132,3 +132,50 @@ test('issue subscriptions reject malformed identities and do not cross repositor
       .every((sub) => sub.source.connectionId === connectionId)
   ).toBe(true)
 })
+
+test('tracked resources fan out with stable identity-hashed ids and never duplicate delivery/legacy bindings', () => {
+  const registry = new CodeHostingRegistry([githubCodeHostingAdapter])
+  const flow = createBlankWorkflow()
+  flow.completion = { mode: 'pr-merge', followChanges: true }
+  const metadata = {
+    codeHost: { integration: 'github', repository: 'acme/widgets', changeRequest: { number: 34 } },
+    github: { repo: 'acme/widgets', issue: 12 },
+    tracked: [
+      { integration: 'github', repository: 'acme/widgets', kind: 'pull_request', number: 34 },
+      { integration: 'github', repository: 'acme/widgets', kind: 'issue', number: 12 },
+      { integration: 'github', repository: 'acme/other', kind: 'issue', number: 7 },
+      {
+        integration: 'github',
+        repository: 'acme/other',
+        kind: 'pull_request',
+        number: 8,
+        connectionId: '11111111-1111-4111-8111-111111111111',
+      },
+    ],
+  }
+  const subs = registry.subscriptions(flow, metadata)
+  const ids = subs.map((s) => s.id)
+  expect(ids.filter((id) => id.startsWith('code-host-') && !id.startsWith('code-host-issue-'))).toHaveLength(8)
+  expect(ids.filter((id) => id.startsWith('code-host-issue-'))).toHaveLength(4)
+  expect(ids.filter((id) => id.startsWith('tracked-'))).toHaveLength(12)
+  expect(new Set(ids).size).toBe(ids.length)
+  for (const sub of subs) expect(integrationSubscriptionSchema.safeParse(sub).success).toBe(true)
+  const isIssueSeven = (s: (typeof subs)[number]) => {
+    const match = s.match['issue.number']
+    return !!match && 'value' in match && match.value === 7
+  }
+  const other = subs.find(isIssueSeven)!
+  expect(other.match.repository).toEqual({ value: 'acme/other' })
+  const pinned = subs.find((s) => {
+    const match = s.match['pullRequest.number']
+    return !!match && 'value' in match && match.value === 8
+  })!
+  expect(pinned.source.connectionId).toBe('11111111-1111-4111-8111-111111111111')
+  // Ids are independent of list position.
+  const reordered = registry.subscriptions(flow, { ...metadata, tracked: [...metadata.tracked].reverse() })
+  expect(new Set(reordered.map((s) => s.id))).toEqual(new Set(ids))
+  // Removing one link leaves the others untouched.
+  const without = registry.subscriptions(flow, { ...metadata, tracked: metadata.tracked.filter((t) => t.number !== 7) })
+  const removed = new Set(subs.filter(isIssueSeven).map((s) => s.id))
+  expect(without.map((s) => s.id).sort()).toEqual(ids.filter((id) => !removed.has(id)).sort())
+})
