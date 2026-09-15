@@ -38,7 +38,7 @@ test databases.
 [CLI Binaries](../../.github/workflows/cli-binaries.yml) builds archives for Linux
 and macOS on x64 and arm64, plus Windows x64. It publishes the archives, manifest,
 and installer scripts to GitHub Releases. Main builds update `nightly`; version
-tags identify versioned releases. Publication requires `TAU_RELEASES_ENABLED=true`.
+tags identify versioned releases.
 
 The workflow publishes release assets without requiring SSH access to a host.
 Each manifest records the source commit so installed binaries can be identified.
@@ -48,7 +48,7 @@ Each manifest records the source commit so installed binaries can be identified.
 [Publish Images](../../.github/workflows/publish-images.yml) publishes
 `ghcr.io/hire-tau/tau-machine` for exe.dev machine provisioning. Main builds are
 selected by image-source changes; version tags and manual dispatch build the
-image explicitly. Publication requires `TAU_RELEASES_ENABLED=true`.
+image explicitly.
 
 See [the machine image README](../../packages/machine-image/README.md) for local
 build commands and [machine upgrades](machines/upgrading.md) for running hosts.

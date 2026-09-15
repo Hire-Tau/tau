@@ -23,10 +23,9 @@ jobs:
           REF_TYPE: "${{ github.ref_type }}"
           EVENT_NAME: "${{ github.event_name }}"
         run: "# A release tag or a manual dispatch always builds — never path-gated.\nif [ \"${REF_TYPE}\" = \"tag\" ] || [ \"${EVENT_NAME}\" = \"workflow_dispatch\" ]; then\n  echo \"build=true\" >> \"$GITHUB_OUTPUT\"\n  exit 0\nfi\n# A branch push builds only when an image source changed. The paths\n# here MUST stay in lockstep with what the Dockerfile COPYs.\nif git diff --name-only HEAD^ HEAD \\\n  | grep -qE '^(packages/machine-image/|scripts/machine/|\\.github/workflows/publish-images\\.yml$)'; then\n  echo \"build=true\" >> \"$GITHUB_OUTPUT\"\nelse\n  echo \"build=false\" >> \"$GITHUB_OUTPUT\"\nfi\n"
-    if: "${{ vars.TAU_RELEASES_ENABLED == 'true' }}"
   build-machine-image: 
     needs: detect-changes
-    if: "${{ vars.TAU_RELEASES_ENABLED == 'true' && (needs.detect-changes.outputs.build == 'true') }}"
+    if: "${{ needs.detect-changes.outputs.build == 'true' }}"
     runs-on: ubuntu-latest
     steps: 
       - uses: actions/checkout@v4
