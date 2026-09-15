@@ -1,4 +1,4 @@
-## Work references
+# Work references
 
 Each Tau instance assigns an immutable, increasing number to every work stream, across all squads. Use `#42` in conversations and labels and `42` in CLI/API lookups and URLs (`/squads/<squad>/work?ws=42`). Moving work does not change its number. Numbers are never reused; gaps are normal. Existing work is numbered by creation time, with UUID order breaking ties.
 

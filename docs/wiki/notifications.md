@@ -87,7 +87,7 @@ For `agent-question.created`, recipients come from the question's persisted owne
 
 ### Push Notification Content
 
-Event builders construct the title, body, and destination. For example, `agent-question.created` includes the agent label and persisted question text; its link opens `/squads/<squadId>?agent=<agentId>` for a squad agent or `/chat/<agentId>` otherwise. Inbox notifications link to `/inbox`. Structured identifiers in the payload also let clients open the relevant question or work stream.
+Event builders construct the rich title, body, and destination. Device delivery applies the recipient’s `showPreviews` preference (default false). With previews off, Web Push and APNs alerts use a closed event vocabulary and an instance-wide work number, for example “Work #42 needs your answer”. Live Activity content is similarly redacted, including the authenticated snapshot used to start an activity. Widget work-list data remains authenticated and contains titles. With previews on, bounded title/body content is sent through the configured push path. For example, `agent-question.created` includes the agent label and persisted question text; its link opens `/squads/<squadId>?agent=<agentId>` for a squad agent or `/chat/<agentId>` otherwise. Inbox notifications link to `/inbox`. Structured identifiers in the payload also let clients open the relevant question or work stream.
 
 ### Native push (APNs)
 

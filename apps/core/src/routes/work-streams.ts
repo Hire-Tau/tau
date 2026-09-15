@@ -67,16 +67,28 @@ async function routeWorkStreamId(c: Context): Promise<string> {
     const input = c.req.param('id') ?? ''
     resolved = WorkStream.find(input)
       .then((work) => {
-        if (!work) throw new HTTPException(404, { message: 'Work stream not found' })
+        if (!work) throw new HTTPException(404, { res: c.json({ error: 'Work stream not found' }, 404) })
         return work.id
       })
       .catch((error) => {
-        if (error instanceof AmbiguousPrefixError) throw new HTTPException(400, { message: error.message })
+        if (error instanceof AmbiguousPrefixError)
+          throw new HTTPException(400, { res: c.json({ error: error.message }, 400) })
         throw error
       })
     resolvedRouteIds.set(c, resolved)
   }
   return resolved
+}
+
+// Preserve the existing system-scope authorization check for missing entities.
+// Authorized handlers then report the cached resolution error as JSON.
+async function routeWorkStreamSquadId(c: Context): Promise<string | null> {
+  try {
+    return await workStreamSquadId(await routeWorkStreamId(c))
+  } catch (error) {
+    if (error instanceof HTTPException && (error.status === 404 || error.status === 400)) return null
+    throw error
+  }
 }
 
 async function annotateWorkStreams(streams: WorkStream[]) {
@@ -386,7 +398,7 @@ const requireWorkStreamListPermission = createMiddleware(async (c, next) => {
 export const workStreamsRouter = new Hono()
   .post(
     '/:id/ci-notification',
-    requireEntityPermission('workstreams:update', async (c) => workStreamSquadId(await routeWorkStreamId(c))),
+    requireEntityPermission('workstreams:update', async (c) => routeWorkStreamSquadId(c)),
     requirePermission('inbox:system'),
     zValidator('json', ciNotificationSchema),
     async (c) => {
@@ -803,7 +815,7 @@ export const workStreamsRouter = new Hono()
   })
   .get(
     '/:id',
-    requireEntityPermission('workstreams:read', async (c) => workStreamSquadId(await routeWorkStreamId(c))),
+    requireEntityPermission('workstreams:read', async (c) => routeWorkStreamSquadId(c)),
     async (c) => {
       const id = await routeWorkStreamId(c)
       const includeMetrics = c.req.query('metrics') === 'true'
@@ -848,7 +860,7 @@ export const workStreamsRouter = new Hono()
   // --- Work-stream subscriptions ("watch" a stream; needs read access to the stream) ---
   .get(
     '/:id/subscription',
-    requireEntityPermission('workstreams:read', async (c) => workStreamSquadId(await routeWorkStreamId(c))),
+    requireEntityPermission('workstreams:read', async (c) => routeWorkStreamSquadId(c)),
     async (c) => {
       const id = await routeWorkStreamId(c)
       const identity = await resolveActingUser(c.get('identity'))
@@ -859,7 +871,7 @@ export const workStreamsRouter = new Hono()
   )
   .post(
     '/:id/subscribe',
-    requireEntityPermission('workstreams:read', async (c) => workStreamSquadId(await routeWorkStreamId(c))),
+    requireEntityPermission('workstreams:read', async (c) => routeWorkStreamSquadId(c)),
     async (c) => {
       const id = await routeWorkStreamId(c)
       const identity = await resolveActingUser(c.get('identity'))
@@ -871,7 +883,7 @@ export const workStreamsRouter = new Hono()
   )
   .delete(
     '/:id/subscribe',
-    requireEntityPermission('workstreams:read', async (c) => workStreamSquadId(await routeWorkStreamId(c))),
+    requireEntityPermission('workstreams:read', async (c) => routeWorkStreamSquadId(c)),
     async (c) => {
       const id = await routeWorkStreamId(c)
       const identity = await resolveActingUser(c.get('identity'))
@@ -1074,7 +1086,7 @@ export const workStreamsRouter = new Hono()
   })
   .post(
     '/:id/pause',
-    requireEntityPermission('workstreams:update', async (c) => workStreamSquadId(await routeWorkStreamId(c))),
+    requireEntityPermission('workstreams:update', async (c) => routeWorkStreamSquadId(c)),
     async (c) => {
       try {
         const text = await c.req.text()
@@ -1087,7 +1099,7 @@ export const workStreamsRouter = new Hono()
   )
   .post(
     '/:id/resume',
-    requireEntityPermission('workstreams:update', async (c) => workStreamSquadId(await routeWorkStreamId(c))),
+    requireEntityPermission('workstreams:update', async (c) => routeWorkStreamSquadId(c)),
     async (c) => {
       try {
         return c.json((await resumeWorkStream(await routeWorkStreamId(c))).toJson())
@@ -1098,7 +1110,7 @@ export const workStreamsRouter = new Hono()
   )
   .post(
     '/:id/park',
-    requireEntityPermission('workstreams:update', async (c) => workStreamSquadId(await routeWorkStreamId(c))),
+    requireEntityPermission('workstreams:update', async (c) => routeWorkStreamSquadId(c)),
     async (c) => {
       const existing = await WorkStream.find(await routeWorkStreamId(c))
       if (!existing) {
@@ -1142,7 +1154,7 @@ export const workStreamsRouter = new Hono()
   // class as cancel/park: workstreams:update on the squad.
   .post(
     '/:id/reopen',
-    requireEntityPermission('workstreams:update', async (c) => workStreamSquadId(await routeWorkStreamId(c))),
+    requireEntityPermission('workstreams:update', async (c) => routeWorkStreamSquadId(c)),
     async (c) => {
       const existing = await WorkStream.find(await routeWorkStreamId(c))
       if (!existing) {
@@ -1163,7 +1175,7 @@ export const workStreamsRouter = new Hono()
   )
   .post(
     '/:id/cancel',
-    requireEntityPermission('workstreams:update', async (c) => workStreamSquadId(await routeWorkStreamId(c))),
+    requireEntityPermission('workstreams:update', async (c) => routeWorkStreamSquadId(c)),
     async (c) => {
       const existing = await WorkStream.find(await routeWorkStreamId(c))
       if (!existing) {
@@ -1182,7 +1194,7 @@ export const workStreamsRouter = new Hono()
   )
   .delete(
     '/:id',
-    requireEntityPermission('workstreams:delete', async (c) => workStreamSquadId(await routeWorkStreamId(c))),
+    requireEntityPermission('workstreams:delete', async (c) => routeWorkStreamSquadId(c)),
     async (c) => {
       const id = await routeWorkStreamId(c)
 
@@ -1203,7 +1215,7 @@ export const workStreamsRouter = new Hono()
   )
   .get(
     '/:id/ready',
-    requireEntityPermission('workstreams:read', async (c) => workStreamSquadId(await routeWorkStreamId(c))),
+    requireEntityPermission('workstreams:read', async (c) => routeWorkStreamSquadId(c)),
     async (c) => {
       const id = await routeWorkStreamId(c)
 
@@ -1218,7 +1230,7 @@ export const workStreamsRouter = new Hono()
   )
   .post(
     '/:id/agents/:agentId',
-    requireEntityPermission('workstreams:manage-agents', async (c) => workStreamSquadId(await routeWorkStreamId(c))),
+    requireEntityPermission('workstreams:manage-agents', async (c) => routeWorkStreamSquadId(c)),
     async (c) => {
       const ws = await WorkStream.mustFind(await routeWorkStreamId(c))
       const agentId = c.req.param('agentId')
@@ -1237,7 +1249,7 @@ export const workStreamsRouter = new Hono()
   )
   .delete(
     '/:id/agents/:agentId',
-    requireEntityPermission('workstreams:manage-agents', async (c) => workStreamSquadId(await routeWorkStreamId(c))),
+    requireEntityPermission('workstreams:manage-agents', async (c) => routeWorkStreamSquadId(c)),
     async (c) => {
       const ws = await WorkStream.mustFind(await routeWorkStreamId(c))
       const agentId = c.req.param('agentId')
