@@ -339,10 +339,11 @@ describe('work-stream notifications', () => {
       watcherRows.find((row) => (row.metadata as Record<string, unknown>).event === event)?.metadata as
         | Record<string, unknown>
         | undefined
+    // No subtitle: the squad already groups the stack via threadKey, and a third text line
+    // makes the lock-screen card cramped.
     expect(metadataOf('review')?.push).toEqual({
       title: `Ready for review: ${workStreamTitle(workStream)}`,
       body: 'Please check the analytics export.',
-      subtitle: typeId,
       collapseKey: `ws:${workStream.id}`,
       threadKey: `squad:${squadId}`,
       interruptionLevel: 'active',
@@ -350,7 +351,6 @@ describe('work-stream notifications', () => {
     expect(metadataOf('done')?.push).toEqual({
       title: `Completed: ${workStreamTitle(workStream)}`,
       body: 'ship it',
-      subtitle: typeId,
       collapseKey: `ws:${workStream.id}`,
       threadKey: `squad:${squadId}`,
       interruptionLevel: 'passive',
@@ -363,13 +363,20 @@ describe('work-stream notifications', () => {
     expect((ownerDone?.metadata as Record<string, unknown>).push).toBeUndefined()
   })
 
-  it('falls back to next steps, then the squad name, for the completion push body', async () => {
+  it('push bodies fall back to next steps, then the description, then a state line; never the squad name', async () => {
     const withNextSteps = await storedLegacyWorkStream({
       squadId,
       title: 'Stream with next steps',
       ownerAgentId: agentId,
       agentIds: [agentId],
       metadata: { nextSteps: 'Monitor the rollout' },
+    })
+    const withDescription = await storedLegacyWorkStream({
+      squadId,
+      title: 'Stream with description',
+      description: 'Investigate named and custom UI color themes across the app.',
+      ownerAgentId: agentId,
+      agentIds: [agentId],
     })
     const bare = await storedLegacyWorkStream({
       squadId,
@@ -379,13 +386,28 @@ describe('work-stream notifications', () => {
     })
     await subscribeToSquad(squadId, squadWatcher.id)
     await notifyWorkStreamDone(withNextSteps)
+    await notifyWorkStreamDone(withDescription)
     await notifyWorkStreamDone(bare)
+    await notifyWorkStreamReview(bare)
 
     const rows = await db.select().from(inbox).where(eq(inbox.recipientId, squadWatcher.id))
-    const pushFor = (id: string) =>
-      (rows.find((row) => (row.metadata as Record<string, unknown>).workStreamId === id)?.metadata as any)?.push
-    expect(pushFor(withNextSteps.id)?.body).toBe('Monitor the rollout')
-    expect(pushFor(bare.id)?.body).toBe(typeId)
+    const pushFor = (id: string, event: string) =>
+      (
+        rows.find((row) => {
+          const metadata = row.metadata as Record<string, unknown>
+          return metadata.workStreamId === id && metadata.event === event
+        })?.metadata as any
+      )?.push
+    expect(pushFor(withNextSteps.id, 'done')?.body).toBe('Monitor the rollout')
+    expect(pushFor(withDescription.id, 'done')?.body).toBe(
+      'Investigate named and custom UI color themes across the app.'
+    )
+    expect(pushFor(bare.id, 'done')?.body).toBe('Completed without notes.')
+    expect(pushFor(bare.id, 'review')?.body).toBe('Awaiting your review.')
+    for (const push of rows.map((row) => (row.metadata as any).push)) {
+      expect(push.body).not.toBe(typeId)
+      expect(push.subtitle).toBeUndefined()
+    }
   })
 
   it('records one persistent idle notice for the owner without notifying subscribers', async () => {
