@@ -174,7 +174,7 @@ export const WORKSTREAM_RESPONSE_CONTROL_CLASS =
   'w-full px-2 py-1 text-xs border border-th-border bg-surface text-primary placeholder:text-placeholder caret-accent rounded  focus:ring-1 focus:ring-accent focus:border-accent'
 
 export function WorkStreamDetailModal({
-  workStream,
+  workStream: selectedWorkStream,
   squadMap,
   agentMap,
   workStreamMap = new Map(),
@@ -194,6 +194,12 @@ export function WorkStreamDetailModal({
   onClose: () => void
 }) {
   const queryClient = useQueryClient()
+  // Callers may hold a selection snapshot. Subscribe centrally so every entry
+  // point observes saved settings and authoritative lifecycle/cleanup updates.
+  const { data: workStream = selectedWorkStream } = useQuery({
+    ...queries.squads.workStreamDetail(selectedWorkStream.id),
+    placeholderData: selectedWorkStream,
+  })
   const { slugFor } = useSquadSlugs()
   const squad = squadMap.get(workStream.squadId)
   const metadata = workStream.metadata ?? {}
