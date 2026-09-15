@@ -253,7 +253,7 @@ export function SquadAgentThreads({
   const [agentSearch, setAgentSearch] = useState('')
   const [managingChats, setManagingChats] = useState(false)
   const [showAllConsultants, setShowAllConsultants] = useURLBooleanState('allConsultantChats')
-  const [activeAgentsOnly, setActiveAgentsOnly] = useURLBooleanState('activeAgentsOnly', true)
+  const [activeAgentsOnly, setActiveAgentsOnly] = useURLBooleanState('activeAgentsOnly')
 
   const visibleAgents = useMemo(() => {
     let list = agents
@@ -263,11 +263,9 @@ export function SquadAgentThreads({
       (a) =>
         a.status !== 'dormant' &&
         a.status !== 'terminated' &&
-        (a.agentTypeId === 'manager' ||
-          ((a.agentTypeId === 'consultant' || !activeAgentsOnly || a.status !== 'idle') &&
-            agentMatchesQuery(a, agentSearch)))
+        (a.agentTypeId === 'manager' || agentMatchesQuery(a, agentSearch))
     )
-  }, [agents, agentSearch, agentTypeFilter, lockedAgentId, activeAgentsOnly])
+  }, [agents, agentSearch, agentTypeFilter, lockedAgentId])
   const isSearching = agentSearch.trim().length > 0
   const filteredDormantAgents = useMemo(() => {
     let list = agents.filter((agent) => agent.status === 'dormant')
@@ -334,25 +332,6 @@ export function SquadAgentThreads({
     })
   }, [visibleAgents])
 
-  const agentTypeCounts = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const agent of sortedAgents) counts.set(agent.agentTypeId, (counts.get(agent.agentTypeId) ?? 0) + 1)
-    return counts
-  }, [sortedAgents])
-
-  const agentTypeGroups = useMemo(() => {
-    const groups: Array<{ agentTypeId: string; agents: Agent[] }> = []
-    for (const agent of sortedAgents) {
-      const current = groups.at(-1)
-      if (current?.agentTypeId === agent.agentTypeId) current.agents.push(agent)
-      else groups.push({ agentTypeId: agent.agentTypeId, agents: [agent] })
-    }
-    return groups
-  }, [sortedAgents])
-
-  // A lone worker category stays expanded; consultant chats have their own disclosure below.
-  const onlyOneCategory = agentTypeGroups.length === 1
-
   const [collapsedTypes, setCollapsedTypes] = useState<Set<string>>(() => new Set())
   const consultantsCollapsed = !isPage && !isSearching && collapsedTypes.has('consultant')
   const [terminatedCollapsed, setTerminatedCollapsed] = useState(true)
@@ -396,7 +375,14 @@ export function SquadAgentThreads({
   // consultant page defaults to compose, the manager page locks to one agent.
   const initialAgentRef = useRef<string | null>(null)
   if (!lockedAgentId && !defaultCompose && !initialAgentRef.current && sortedAgents.length > 0) {
-    initialAgentRef.current = sortedAgents[0].id
+    initialAgentRef.current =
+      sortedAgents.find(
+        (agent) =>
+          !activeAgentsOnly ||
+          agent.agentTypeId === 'manager' ||
+          agent.agentTypeId === 'consultant' ||
+          agent.status !== 'idle'
+      )?.id ?? null
   }
   const effectiveAgentId = lockedAgentId ?? (selectedAgentId || initialAgentRef.current)
 
@@ -452,17 +438,54 @@ export function SquadAgentThreads({
   const handoffPending = !!handoffConsultantAgentId && (!selectedAgent || !handoffMessagesReady)
   // A locked view never composes; the consultant page composes by default until an agent is picked.
   const composing = !lockedAgentId && (composingConsultant || handoffPending || (defaultCompose && !selectedAgentId))
+  // The agent highlighted in the list. While composing a new consultant chat, no
+  // row is selected so the last-viewed agent is visually deselected.
+  const listSelectedAgentId = composing ? null : (selectedAgent?.id ?? null)
+
+  // Apply activity filtering after resolving the open conversation, so its row
+  // and category survive status changes (including an unambiguous ID prefix).
+  const filteredAgents = useMemo(
+    () =>
+      sortedAgents.filter(
+        (agent) =>
+          !activeAgentsOnly ||
+          agent.id === listSelectedAgentId ||
+          agent.agentTypeId === 'manager' ||
+          agent.agentTypeId === 'consultant' ||
+          agent.status !== 'idle'
+      ),
+    [sortedAgents, activeAgentsOnly, listSelectedAgentId]
+  )
+  const visibleCompletedAgents = activeAgentsOnly
+    ? filteredCompletedAgents.filter((agent) => agent.id === listSelectedAgentId)
+    : filteredCompletedAgents
+
+  const agentTypeCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const agent of filteredAgents) counts.set(agent.agentTypeId, (counts.get(agent.agentTypeId) ?? 0) + 1)
+    return counts
+  }, [filteredAgents])
+
+  const agentTypeGroups = useMemo(() => {
+    const groups: Array<{ agentTypeId: string; agents: Agent[] }> = []
+    for (const agent of filteredAgents) {
+      const current = groups.at(-1)
+      if (current?.agentTypeId === agent.agentTypeId) current.agents.push(agent)
+      else groups.push({ agentTypeId: agent.agentTypeId, agents: [agent] })
+    }
+    return groups
+  }, [filteredAgents])
+
+  // A lone worker category stays expanded; consultant chats have their own disclosure below.
+  const onlyOneCategory = agentTypeGroups.length === 1
+
   const managerAgentTypeGroups = agentTypeGroups.filter((group) => group.agentTypeId === 'manager')
-  const consultantAgents = sortedAgents.filter((agent) => agent.agentTypeId === 'consultant')
+  const consultantAgents = filteredAgents.filter((agent) => agent.agentTypeId === 'consultant')
   const visibleConsultants =
     showAllConsultants || isSearching ? consultantAgents : consultantAgents.slice(0, recentConsultantLimit)
   const otherAgentTypeGroups = agentTypeGroups.filter(
     (group) => group.agentTypeId !== 'manager' && group.agentTypeId !== 'consultant'
   )
-
-  // The agent highlighted in the list. While composing a new consultant chat, no
-  // row is selected so the last-viewed agent is visually deselected.
-  const listSelectedAgentId = composing ? null : (selectedAgent?.id ?? null)
 
   useEffect(() => {
     if (handoffConsultantAgentId && selectedAgent?.id === handoffConsultantAgentId && handoffMessagesReady) {
@@ -762,11 +785,14 @@ export function SquadAgentThreads({
             </div>
           </section>
         )}
-        {consultantAgents.length === 0 && otherAgentTypeGroups.length === 0 && (activeAgentsOnly || isSearching) && (
-          <p role="status" className="px-3 py-6 text-center text-sm text-secondary">
-            {isSearching ? 'No conversations match your search' : 'No active agents'}
-          </p>
-        )}
+        {consultantAgents.length === 0 &&
+          otherAgentTypeGroups.length === 0 &&
+          visibleCompletedAgents.length === 0 &&
+          (activeAgentsOnly || isSearching) && (
+            <p role="status" className="px-3 py-6 text-center text-sm text-secondary">
+              {isSearching ? 'No conversations match your search' : 'No active agents'}
+            </p>
+          )}
         {renderAgentTypeGroups(otherAgentTypeGroups)}
 
         {/*
@@ -774,7 +800,7 @@ export function SquadAgentThreads({
         identically: the panel never advertises which one an agent is, because
         the difference is not something the reader acts on here.
       */}
-        {!activeAgentsOnly && filteredCompletedAgents.length > 0 && (
+        {visibleCompletedAgents.length > 0 && (
           <section data-agent-type-section="recently-completed" className="space-y-1">
             <button
               type="button"
@@ -782,7 +808,9 @@ export function SquadAgentThreads({
               onClick={() => setTerminatedCollapsed((collapsed) => !collapsed)}
               className="tau-button w-full rounded-md px-2 py-2 flex items-center justify-between text-left hover:bg-surface-hover"
             >
-              <span className="squad-chat-category">Recently Completed ({recentlyCompletedCount})</span>
+              <span className="squad-chat-category">
+                Recently Completed ({activeAgentsOnly ? visibleCompletedAgents.length : recentlyCompletedCount})
+              </span>
               {effectiveTerminatedCollapsed ? (
                 <ChevronRightIcon className="w-4 h-4 shrink-0 text-muted" aria-hidden />
               ) : (
@@ -790,8 +818,8 @@ export function SquadAgentThreads({
               )}
             </button>
             {(effectiveTerminatedCollapsed
-              ? filteredCompletedAgents.filter((agent) => agent.id === listSelectedAgentId)
-              : filteredCompletedAgents
+              ? visibleCompletedAgents.filter((agent) => agent.id === listSelectedAgentId)
+              : visibleCompletedAgents
             ).map((agent) => {
               const isSelected = listSelectedAgentId === agent.id
               const agentName = getAgentPrimaryLabel(agent)
@@ -822,7 +850,7 @@ export function SquadAgentThreads({
                 </button>
               )
             })}
-            {!effectiveTerminatedCollapsed && hasMoreRecentlyTerminatedAgents && (
+            {!activeAgentsOnly && !effectiveTerminatedCollapsed && hasMoreRecentlyTerminatedAgents && (
               <div ref={terminatedLoadMoreRef} className="border-t border-th-border p-2">
                 <button
                   type="button"
