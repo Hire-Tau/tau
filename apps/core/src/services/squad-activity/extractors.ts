@@ -1,3 +1,4 @@
+import { describeGitHubIssueFact, type GitHubIssueDispatchFact } from './github-issue-fact'
 import type { GitHubPrDispatchFact } from './github-pr-fact'
 import type { ExtractedSquadActivity } from './types'
 
@@ -434,6 +435,48 @@ export function extractGitHubPrDispatch(snapshot: GitHubPrSnapshot): ExtractedSq
       ),
       ref: { type: 'pr', url: snapshot.fact.url },
       sourceFamily: 'github-pr',
+      sourceGroupId: `${snapshot.sourceId}:${snapshot.squadId}`,
+      workStreamId: snapshot.workStreamId,
+      quietEligible: true,
+      accessScope: 'workstreams',
+      inboxRecipientId: null,
+      agentTypeRequiresAgentsRead: false,
+    },
+  ]
+}
+
+export interface GitHubIssueSnapshot {
+  /** Namespaced durable authority identity: hook:<uuid> or poll:<uuid>. */
+  sourceId: string
+  activityId: string
+  squadId: string
+  workStreamId: string
+  fact: GitHubIssueDispatchFact
+}
+
+export function extractGitHubIssueDispatch(snapshot: GitHubIssueSnapshot): ExtractedSquadActivity[] {
+  const rowId = snapshot.fact.logicalRowId
+  // A title-less issue (or an actor-less synthesized poll fact) must not leave a
+  // dangling separator or a doubled space behind the marker.
+  const detail = [snapshot.fact.issueTitle.trim(), snapshot.fact.actorLogin ? `by ${snapshot.fact.actorLogin}` : '']
+    .filter(Boolean)
+    .join(' · ')
+  return [
+    {
+      id: `71:${rowId}`,
+      lane: 71,
+      rowId,
+      squadId: snapshot.squadId,
+      at: at(snapshot.fact.occurredAt),
+      agentId: null,
+      agentTypeId: null,
+      kind: 'issue',
+      summary: structuralSummary(
+        `[Issue #${snapshot.fact.issueNumber} ${describeGitHubIssueFact(snapshot.fact)}]`,
+        detail
+      ),
+      ref: { type: 'issue', url: snapshot.fact.url, workStreamId: snapshot.workStreamId },
+      sourceFamily: 'github-issue',
       sourceGroupId: `${snapshot.sourceId}:${snapshot.squadId}`,
       workStreamId: snapshot.workStreamId,
       quietEligible: true,

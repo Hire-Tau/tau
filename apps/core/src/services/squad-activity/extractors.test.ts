@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { extractChatExecution, extractExecution, extractGitHubPrDispatch, extractInboxMessage } from './extractors'
+import {
+  extractChatExecution,
+  extractExecution,
+  extractGitHubIssueDispatch,
+  extractGitHubPrDispatch,
+  extractInboxMessage,
+} from './extractors'
 
 describe('execution row retirement (operator decision 2026-08-27)', () => {
   test('extractExecution produces no rows, even for a terminal execution', () => {
@@ -193,5 +199,66 @@ describe('GitHub PR row copy (operator report 2026-08-27)', () => {
     )
     expect(summary({ action: 'synchronize' })).toBe('[PR #1215 updated]')
     expect(summary({ action: 'merged' })).toBe('[PR #1215 merged]')
+  })
+})
+
+describe('GitHub issue row copy', () => {
+  const snapshot = (factOverrides: Record<string, unknown>) => ({
+    sourceId: 'hook:0f0e0d0c-0000-4000-8000-000000000002',
+    activityId: '0f0e0d0c-0000-4000-8000-000000000002',
+    squadId: '4ea8b934-a90a-42d1-b6fe-483a2ab9a18b',
+    workStreamId: 'b2cc0a94-0000-4000-8000-000000000002',
+    fact: {
+      eventType: 'issues',
+      action: 'closed',
+      occurredAt: '2026-08-27T12:00:00.000Z',
+      actorLogin: 'noahsaso',
+      repository: 'hire-tau/tau',
+      issueNumber: 12,
+      issueTitle: 'Track issues in Activity',
+      detail: null,
+      nativeId: '99',
+      providerDeliveryId: null,
+      logicalRowId: 'c1a2b3d4-0000-4000-8000-0000000000f2',
+      url: 'https://github.com/hire-tau/tau/issues/12',
+      ...factOverrides,
+    } as never,
+  })
+  const summary = (factOverrides: Record<string, unknown>) =>
+    extractGitHubIssueDispatch(snapshot(factOverrides) as never)[0].summary
+
+  test('joins the described transition, title and actor without doubling separators', () => {
+    expect(summary({})).toBe('[Issue #12 closed] Track issues in Activity · by noahsaso')
+    expect(summary({ issueTitle: '' })).toBe('[Issue #12 closed] by noahsaso')
+    expect(summary({ issueTitle: '', actorLogin: null })).toBe('[Issue #12 closed]')
+    expect(summary({ action: 'assigned', detail: 'noahsaso' })).toBe(
+      '[Issue #12 assigned to noahsaso] Track issues in Activity · by noahsaso'
+    )
+    expect(summary({ action: 'labeled', detail: 'bug' })).toBe(
+      '[Issue #12 labeled bug] Track issues in Activity · by noahsaso'
+    )
+    expect(summary({ eventType: 'issue_comment', action: 'edited' })).toBe(
+      '[Issue #12 comment edited] Track issues in Activity · by noahsaso'
+    )
+    expect([...summary({ issueTitle: 'x'.repeat(200), actorLogin: 'y'.repeat(400) })].length).toBeLessThanOrEqual(512)
+  })
+
+  test('carries the issue lane, kind, ref and append-only row identity', () => {
+    const [row] = extractGitHubIssueDispatch(snapshot({}) as never)
+    expect(row).toMatchObject({
+      lane: 71,
+      kind: 'issue',
+      rowId: 'c1a2b3d4-0000-4000-8000-0000000000f2',
+      sourceFamily: 'github-issue',
+      sourceGroupId: 'hook:0f0e0d0c-0000-4000-8000-000000000002:4ea8b934-a90a-42d1-b6fe-483a2ab9a18b',
+      workStreamId: 'b2cc0a94-0000-4000-8000-000000000002',
+      accessScope: 'workstreams',
+      quietEligible: true,
+    })
+    expect(row.ref).toEqual({
+      type: 'issue',
+      url: 'https://github.com/hire-tau/tau/issues/12',
+      workStreamId: 'b2cc0a94-0000-4000-8000-000000000002',
+    })
   })
 })

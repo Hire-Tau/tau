@@ -17,8 +17,14 @@ import {
 import { materializeGitHubDispatch, materializeGitHubWebhook } from './materialize'
 import { DbEventPollingDispatchStore } from '../integrations/db-event-polling-dispatch-store'
 import { githubPrLogicalRowId, type GitHubPrDispatchFact } from './github-pr-fact'
-import { listSourceGroupPage } from './families'
-import { listGitHubAssociationPage, loadChatSnapshot, loadInboxSnapshot } from './source-loaders'
+import { extractGitHubIssueDispatchFact } from './github-issue-fact'
+import { listSourceGroupPage, loadActivitySource } from './families'
+import {
+  listGitHubAssociationPage,
+  listGitHubIssueAssociationPage,
+  loadChatSnapshot,
+  loadInboxSnapshot,
+} from './source-loaders'
 
 const squadIds: string[] = []
 const webhookIds: string[] = []
@@ -510,5 +516,98 @@ describe('Activity source pagination', () => {
     expect((await db.select().from(squadActivity)).filter((row) => expectedGroups.includes(row.squadId))).toHaveLength(
       9
     )
+  })
+})
+
+describe('tracked GitHub issue source pagination', () => {
+  test('pages poll and hook issue receipts and gates them on receipt ownership', async () => {
+    const from = new Date('2026-09-10T00:00:00Z')
+    const to = new Date('2026-09-11T00:00:00Z')
+    const repository = `issue-pager-${crypto.randomUUID()}/widgets`
+    const created: Array<{ id: string }> = []
+    for (let index = 0; index < 2; index++) {
+      const [squad] = await db
+        .insert(squads)
+        .values({ name: `issue-pager-${index}-${crypto.randomUUID()}`, purpose: 'test' })
+        .returning()
+      squadIds.push(squad.id)
+      created.push(squad)
+      await db.insert(workStreams).values({
+        squadId: squad.id,
+        title: `issue pager ${index}`,
+        metadata: { tracked: [{ integration: 'github', repository, kind: 'issue', number: 12 }] },
+      })
+    }
+    const payload = {
+      action: 'closed',
+      repository: { full_name: repository },
+      sender: { login: 'noahsaso' },
+      issue: {
+        id: 9912,
+        number: 12,
+        title: 'Pager issue',
+        closed_at: '2026-09-10T06:00:00Z',
+        updated_at: '2026-09-10T06:00:00Z',
+        html_url: `https://github.com/${repository}/issues/12`,
+      },
+    }
+    const fact = extractGitHubIssueDispatchFact('github', { type: 'issues', payload, metadata: { synthetic: true } })!
+    const activityId = crypto.randomUUID()
+    const eventKey = crypto.randomUUID()
+    dispatchKeys.push(eventKey)
+    await db.insert(integrationEventPollingDispatches).values({
+      providerKey: 'github',
+      eventKey,
+      activityId,
+      activitySquadIds: [created[0].id],
+      eventFact: fact,
+      eventOccurredAt: new Date(fact.occurredAt),
+      completedAt: new Date(),
+    })
+    const [webhook] = await db
+      .insert(webhookEvents)
+      .values({
+        provider: 'github',
+        eventType: 'issue_comment',
+        payload: {
+          ...payload,
+          action: 'created',
+          comment: { id: 5502, created_at: '2026-09-10T07:00:00Z', user: { login: 'tauagent' } },
+        },
+        headers: {},
+        verified: true,
+        activitySquadIds: [created[1].id],
+        createdAt: new Date('2026-09-10T07:00:01Z'),
+      })
+      .returning()
+    webhookIds.push(webhook.id)
+
+    const collect = async (family: 'github-pr' | 'github-issue') => {
+      const groups: string[] = []
+      let cursor = null
+      let pages = 0
+      do {
+        const page = await listSourceGroupPage(family, from, to, cursor, 2, to)
+        groups.push(...page.groupIds)
+        cursor = page.next
+        expect(++pages).toBeLessThan(40)
+      } while (cursor)
+      return groups.filter((group) => created.some((squad) => group.endsWith(`:${squad.id}`)))
+    }
+    expect((await collect('github-issue')).sort()).toEqual(
+      [`poll:${activityId}:${created[0].id}`, `hook:${webhook.id}:${created[1].id}`].sort()
+    )
+    // Lane 70 never claims an issue receipt.
+    expect(await collect('github-pr')).toEqual([])
+
+    // Association is gated on the receipt's immutable owners, exactly like PRs.
+    expect((await listGitHubIssueAssociationPage(`poll:${activityId}`, fact, null, 10)).groupIds).toEqual([
+      `poll:${activityId}:${created[0].id}`,
+    ])
+    const snapshot = await loadActivitySource(db, {
+      family: 'github-issue',
+      groupId: `poll:${activityId}:${created[1].id}`,
+    })
+    expect(snapshot).toBeNull()
   })
 })

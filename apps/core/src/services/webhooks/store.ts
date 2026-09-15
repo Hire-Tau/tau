@@ -7,6 +7,7 @@
 import { db } from '../../db'
 import { squadSourceConfigs, webhookEvents, workStreams } from '../../db/schema'
 import { eq, sql } from 'drizzle-orm'
+import { extractGitHubIssueDispatchFact } from '../squad-activity/github-issue-fact'
 import { extractGitHubPrDispatchFact } from '../squad-activity/github-pr-fact'
 import type { StoreWebhookEventInput, WebhookEvent } from './types'
 
@@ -15,20 +16,25 @@ import type { StoreWebhookEventInput, WebhookEvent } from './types'
  * @returns The ID of the created event
  */
 export async function storeWebhookEvent(input: StoreWebhookEventInput): Promise<string> {
+  const ingress = {
+    type: input.eventType,
+    payload: input.payload,
+    metadata: { providerDeliveryId: input.headers['x-github-delivery'] },
+  }
+  // Ownership only needs the delivering repository, which both GitHub receipt
+  // families carry; the two extractors are mutually exclusive, so at most one
+  // fact exists per delivery.
   const fact =
     input.verified && input.provider === 'github'
-      ? extractGitHubPrDispatchFact('github', {
-          type: input.eventType,
-          payload: input.payload,
-          metadata: { providerDeliveryId: input.headers['x-github-delivery'] },
-        })
+      ? (extractGitHubPrDispatchFact('github', ingress) ?? extractGitHubIssueDispatchFact('github', ingress))
       : null
   return db.transaction(async (tx) => {
     await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`)
-    // A squad owns interest in a repo's PR events through EITHER claim:
+    // A squad owns interest in a repo's PR/issue events through EITHER claim:
     // an enabled github_issue source config scoped to the repo, OR any work
-    // stream whose github metadata references the repo. The second clause is
-    // what makes PR activity rows appear for ordinary PR-workflow squads —
+    // stream that names the repo — legacy `github.repo`, canonical
+    // `codeHost.repository`, or a `tracked` entry. The second clause is what
+    // makes GitHub activity rows appear for ordinary PR-workflow squads —
     // without it, only issue-intake squads ever saw GitHub activity (observed
     // live: 6.6k stored webhook events, zero with a squad association).
     const owners = fact
@@ -46,7 +52,14 @@ export async function storeWebhookEvent(input: StoreWebhookEventInput): Promise<
             tx
               .selectDistinct({ squadId: workStreams.squadId })
               .from(workStreams)
-              .where(sql`lower(btrim(${workStreams.metadata}->'github'->>'repo'))=lower(${fact.repository})`)
+              .where(
+                sql`lower(btrim(${workStreams.metadata}->'github'->>'repo'))=lower(${fact.repository})
+                  OR lower(btrim(${workStreams.metadata}->'codeHost'->>'repository'))=lower(${fact.repository})
+                  OR EXISTS (SELECT 1 FROM jsonb_array_elements(CASE
+                    WHEN jsonb_typeof(${workStreams.metadata}->'tracked')='array'
+                      THEN ${workStreams.metadata}->'tracked' ELSE '[]'::jsonb END) t
+                    WHERE lower(btrim(t->>'repository'))=lower(${fact.repository}))`
+              )
           )
       : []
     const [result] = await tx

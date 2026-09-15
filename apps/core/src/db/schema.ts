@@ -33,6 +33,7 @@ import type {
   IntegrationOutputFact,
   IntegrationSubscription,
 } from '@tau/shared'
+import type { GitHubIssueDispatchFact } from '../services/squad-activity/github-issue-fact'
 import type { GitHubPrDispatchFact } from '../services/squad-activity/github-pr-fact'
 import type { SandboxProvisionErrorCode } from '../services/sandbox/k8s/provision-errors'
 import type { ProvisionFailureCode } from '../services/sandbox/k8s/provision-failure'
@@ -657,7 +658,7 @@ export const integrationEventPollingDispatches = pgTable(
       .array()
       .notNull()
       .default(sql`ARRAY[]::uuid[]`),
-    eventFact: jsonb('event_fact').$type<GitHubPrDispatchFact>(),
+    eventFact: jsonb('event_fact').$type<GitHubPrDispatchFact | GitHubIssueDispatchFact>(),
     eventOccurredAt: timestamp('event_occurred_at', { withTimezone: true }),
     leaseToken: uuid('lease_token'),
     leaseUntil: timestamp('lease_until', { withTimezone: true }),

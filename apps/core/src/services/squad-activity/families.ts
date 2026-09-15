@@ -2,6 +2,7 @@ import type { ExtractedSquadActivity, SquadActivitySourceFamily } from './types'
 import {
   extractChatExecution,
   extractExecution,
+  extractGitHubIssueDispatch,
   extractGitHubPrDispatch,
   extractInboxMessage,
   extractWait,
@@ -10,12 +11,14 @@ import {
 import {
   listChatSourcePage,
   listExecutionSourcePage,
+  listGitHubIssueSourcePage,
   listGitHubPrSourcePage,
   listInboxSourcePage,
   listWaitSourcePage,
   listWorkStreamSourcePage,
   loadChatSnapshot,
   loadExecutionSnapshot,
+  loadGitHubIssueSnapshot,
   loadGitHubPrSnapshot,
   loadInboxSnapshot,
   loadWaitSnapshot,
@@ -62,7 +65,7 @@ export interface ActivityFamilyDefinition {
   /**
    * Page source groups whose facet timestamps fall in [from, to), on an
    * immutable keyset cursor. `scanTo` extends only the receipt-time scan of
-   * delayed-delivery sources (github-pr webhooks).
+   * delayed-delivery sources (the github-pr/github-issue webhook families).
    */
   listSourcePage(
     from: Date,
@@ -113,6 +116,12 @@ export const ACTIVITY_FAMILIES: Record<SquadActivitySourceFamily, ActivityFamily
     loadSnapshot: loadGitHubPrSnapshot,
     extract: extractGitHubPrDispatch as ActivityFamilyDefinition['extract'],
     listSourcePage: listGitHubPrSourcePage,
+    appendOnly: true,
+  },
+  'github-issue': {
+    loadSnapshot: loadGitHubIssueSnapshot,
+    extract: extractGitHubIssueDispatch as ActivityFamilyDefinition['extract'],
+    listSourcePage: listGitHubIssueSourcePage,
     appendOnly: true,
   },
 }

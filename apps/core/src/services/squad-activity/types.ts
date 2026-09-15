@@ -1,7 +1,14 @@
 import { createHash } from 'node:crypto'
 import type { SquadActivityItem, SquadActivityLane, SquadActivityRef } from '@tau/shared'
 
-export type SquadActivitySourceFamily = 'chat' | 'inbox' | 'execution' | 'workstream' | 'wait' | 'github-pr'
+export type SquadActivitySourceFamily =
+  | 'chat'
+  | 'inbox'
+  | 'execution'
+  | 'workstream'
+  | 'wait'
+  | 'github-pr'
+  | 'github-issue'
 export type SquadActivityAccessScope = 'agents' | 'workstreams' | 'inbox' | 'workstreams_inbox'
 
 export interface ExtractedSquadActivity extends SquadActivityItem {
