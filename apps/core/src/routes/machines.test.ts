@@ -542,6 +542,13 @@ describe('machines routes', () => {
       // First check moves registered → ready.
       await router.request(`/${created.id}/check`, req('POST'))
 
+      // Ensure a real liveness change without depending on successive checks
+      // landing in different milliseconds on a fast host.
+      await db
+        .update(machines)
+        .set({ lastSeenAt: new Date('2000-01-01T00:00:00Z') })
+        .where(eq(machines.id, created.id))
+
       const spy = spyOn(eventEmitter, 'emit')
       try {
         // Second check: ready → ready, no status flip → machine.updated, not machine.status.
