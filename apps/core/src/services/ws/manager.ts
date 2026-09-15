@@ -244,13 +244,18 @@ export class WebSocketManager {
       candidates.length > 0 && !parseInboxRecipient(topic)
         ? await this.resolveAgentBroadcastScope(topic, event, data)
         : null
+    // Saved Assistant mailboxes are private to their owner even on the collection topic: full
+    // squad access (administrators included) never widens delivery of another user's activity.
+    const privateRecipient = privateAssistantRecipient(event, data)
 
     // Keep Promise.all so the first send rejection still rejects broadcast, matching its existing contract.
     await Promise.all(
       candidates.map(async (client) => {
         if (!this.isActiveSubscriber(client, topic)) return
 
-        const authorized = await this.canReceive(client, topic, scope, currentTopicScope)
+        const authorized = privateRecipient
+          ? await this.canAccessInboxRecipient(privateRecipient, client)
+          : await this.canReceive(client, topic, scope, currentTopicScope)
         if (!authorized || !this.isActiveSubscriber(client, topic)) return
 
         client.ws.send(json)
@@ -469,6 +474,13 @@ export class WebSocketManager {
 
 function parseInboxRecipient(topic: string): string | null {
   return topic.startsWith('inbox:') ? topic.slice('inbox:'.length) : null
+}
+
+/** Recipient of an inbox-family event addressed to a saved Assistant conversation, else null. */
+function privateAssistantRecipient(event: string, data: unknown): string | null {
+  if (event !== 'assistant.activityChanged' && !event.startsWith('inbox.')) return null
+  const recipientId = (data as { recipientId?: unknown } | null)?.recipientId
+  return typeof recipientId === 'string' && parseAssistantInboxConversationId(recipientId) ? recipientId : null
 }
 
 function identityUserId(identity: Identity): string | null {

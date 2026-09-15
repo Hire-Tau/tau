@@ -1,3 +1,4 @@
+import { assistantConversationPath, parseAssistantInboxConversationId } from '@tau/shared'
 import { workStreamTitle } from '@tau/shared'
 import { eq } from 'drizzle-orm'
 import { agentQuestionWorkStreamOrigins } from '../../db/schema'
@@ -251,6 +252,21 @@ export const eventBuilders: Record<string, EventBuilder> = {
     const { InboxMessage } = await import('../../entities/InboxMessage')
     const message = await InboxMessage.find(messageId)
     if (!message) return null
+
+    // Saved Assistant task updates link to the conversation itself, never to the sender agent or
+    // the generic inbox, and carry no message content on the lock screen.
+    const assistantConversationId =
+      message.recipientType === 'voice_assistant' ? parseAssistantInboxConversationId(message.recipientId) : null
+    if (assistantConversationId) {
+      return {
+        type: 'inbox.messageReceived',
+        messageId: message.id,
+        title: 'Assistant update',
+        body: 'A task has an update. Open Assistant to view it.',
+        url: buildUrl(assistantConversationPath(assistantConversationId)),
+        timestamp: new Date(),
+      }
+    }
 
     // Resolve sender for deep-linking: an agent sender links to that agent's
     // chat in its squad; non-agent senders (system/user/voice) fall back to Feed.

@@ -245,6 +245,8 @@ export type EventMap = {
     senderAgentId: string | null
     source?: string
     squadId?: string
+    /** Server-derived: a saved Assistant update that is push-eligible (actionable, current, status-changing). */
+    assistantPush?: true
   }
   'inbox.messageRead': { messageId: string; recipientType: InboxRecipientType; recipientId: string }
   'inbox.allRead': { recipientType: InboxRecipientType; recipientId: string }

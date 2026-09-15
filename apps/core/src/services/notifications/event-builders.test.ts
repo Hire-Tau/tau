@@ -216,6 +216,37 @@ describe('notification event builders', () => {
     })
   })
 
+  test('links saved Assistant updates to the conversation without exposing content or the sender', async () => {
+    process.env.APP_URL = 'https://tau.example/app'
+    const conversationId = '507a9ac0-164e-4f49-9441-e57522bdc52b'
+    track(
+      spyOn(InboxMessage, 'find').mockResolvedValue({
+        id: 'm-assistant',
+        recipientType: 'voice_assistant',
+        recipientId: `assistant:${conversationId}`,
+        senderType: 'agent',
+        senderId: 'a1',
+        subject: 'Secret subject',
+        content: 'The API key is sk-not-really; deployment finished.',
+        metadata: { sender: { squadId: 's1' }, inReplyTo: 'r1', assistantTaskStatus: 'completed' },
+      } as any)
+    )
+
+    const event = await buildNotificationEvent('inbox.messageReceived', { messageId: 'm-assistant' })
+
+    expect(event).toEqual({
+      type: 'inbox.messageReceived',
+      messageId: 'm-assistant',
+      title: 'Assistant update',
+      body: 'A task has an update. Open Assistant to view it.',
+      url: `https://tau.example/app/?chat=open&assistantConversation=${conversationId}`,
+      timestamp: expect.any(Date),
+    })
+    expect(JSON.stringify(event)).not.toContain('sk-not-really')
+    expect(event?.agentId).toBeUndefined()
+    expect(event?.squadId).toBeUndefined()
+  })
+
   test('copies exact Action Center targets only from trusted system inbox metadata', async () => {
     track(
       spyOn(InboxMessage, 'find').mockImplementation(

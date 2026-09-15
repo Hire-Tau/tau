@@ -23,6 +23,7 @@ import {
   projectAssistantInboxMessage,
   type AssistantActivityInvalidation,
 } from '../services/assistant-activity/project'
+import { shouldPushAssistantUpdate } from '../services/assistant-activity/notification'
 import { BaseEntity } from './base'
 import type { InferSelectModel } from 'drizzle-orm'
 import { Agent, AgentTargetUnavailableError, AgentTerminatedError } from './Agent'
@@ -454,6 +455,9 @@ export class InboxMessage
       recipientId: input.recipientId,
       senderAgentId: input.senderId ?? null,
       ...(fleetAlert ? { source: 'fleet-alert' as const, ...(fleetSquadId ? { squadId: fleetSquadId } : {}) } : {}),
+      ...(assistantActivity?.update && shouldPushAssistantUpdate(assistantActivity.update)
+        ? { assistantPush: true as const }
+        : {}),
     })
     if (assistantActivity)
       eventEmitter.emit('assistant.activityChanged', {

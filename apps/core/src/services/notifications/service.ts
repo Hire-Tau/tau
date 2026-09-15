@@ -5,7 +5,8 @@ import { getVapidContactSubject } from '../push/vapid'
 import { getSettingsStore } from '../settings'
 import { pushRelayConfig, sendRelayAlert } from '../push/relay'
 import webpush from 'web-push'
-import { parseWorkspaceVoiceUserId } from '@tau/shared'
+import { parseAssistantInboxConversationId, parseWorkspaceVoiceUserId } from '@tau/shared'
+import { assistantInboxOwner } from '../assistant-inbox'
 import type { NotificationConfig, NotificationRule, EventContext, SquadNotificationConfig } from './types'
 import {
   getPushSubscriptionsByUserWithKeys,
@@ -207,7 +208,11 @@ export class NotificationService {
       if (d.recipientType === 'user') {
         userIds = [d.recipientId]
       } else if (d.recipientType === 'voice_assistant') {
-        const userId = parseWorkspaceVoiceUserId(d.recipientId)
+        // A saved Assistant mailbox belongs to its conversation owner; a deleted conversation has
+        // no recipient. Workspace voice falls back to its per-user address.
+        const userId = parseAssistantInboxConversationId(d.recipientId)
+          ? await assistantInboxOwner(d.recipientId)
+          : parseWorkspaceVoiceUserId(d.recipientId)
         userIds = userId ? [userId] : []
       } else if (d.recipientType === 'system') {
         userIds = await getUserIdsWithPermission('inbox:system')

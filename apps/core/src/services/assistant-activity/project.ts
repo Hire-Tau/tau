@@ -5,9 +5,9 @@ import {
   assistantTaskStatusSchema,
   parseAssistantInboxConversationId,
   type AssistantMessageTargetKind,
-  type AssistantTaskStatus,
 } from '@tau/shared'
 import type { db } from '../../db'
+import type { AssistantNotificationDecision } from './notification'
 import { assistantConversations, assistantTasks, assistantUpdates, inbox } from '../../db/schema'
 
 export type AssistantActivityTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -26,13 +26,6 @@ export const assistantDelegationSchema = z.object({
   label: z.string().trim().min(1).max(TASK_LABEL_MAX_LENGTH).optional(),
 })
 export type AssistantDelegation = z.infer<typeof assistantDelegationSchema>
-
-/** Facts frozen at projection time so a later status change cannot alter the push decision. */
-export interface AssistantNotificationDecision {
-  isCurrentRequest: boolean
-  changedStatus: boolean
-  reportedStatus: AssistantTaskStatus | null
-}
 
 export interface AssistantActivityInvalidation {
   conversationId: string
