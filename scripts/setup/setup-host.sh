@@ -857,7 +857,7 @@ phase_preflight() {
   # it so the two can never diverge. The literal below is a fallback for the
   # (pathological) no-checkout case AND the anchor the bun-version gate keeps in
   # lockstep with .bun-version — enforced by .github/bun-version-gate.test.ts.
-  TAU_BUN_VERSION="1.3.8"
+  TAU_BUN_VERSION="1.4.2"
   # Unquoted final assignment (`=${var}`, not `="…"`) on purpose: the gate
   # matches the single literal pin above via `^\s*TAU_BUN_VERSION="…"`, and a
   # second quoted assignment here would register as a divergent pin.

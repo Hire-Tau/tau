@@ -194,7 +194,7 @@ export function validateMacosWorkflow(workflow: Workflow): string[] {
   const classifierCheckout = classifier?.steps?.find((step) => step.uses?.startsWith('actions/checkout@'))
   if (classifierCheckout?.with?.['fetch-depth'] !== 0) errors.push('classifier checkout must fetch full history')
   if (
-    !classifier?.steps?.some((step) => step.uses === 'oven-sh/setup-bun@v2' && step.with?.['bun-version'] === '1.3.8')
+    !classifier?.steps?.some((step) => step.uses === 'oven-sh/setup-bun@v2' && step.with?.['bun-version'] === '1.4.2')
   )
     errors.push('classifier Bun must be pinned')
   const classifySteps = classifier?.steps?.filter((step) => step.run === 'bun .github/macos-ci-gate.ts classify') ?? []

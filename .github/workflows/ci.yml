@@ -47,7 +47,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.8
+          bun-version: 1.4.2
       - id: classify
         name: Classify Darwin-relevant changes
         run: bun .github/macos-ci-gate.ts classify
@@ -68,7 +68,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.8
+          bun-version: 1.4.2
       - name: Install dependencies
         run: bun install --frozen-lockfile
       - name: Run native local launchd lifecycle
@@ -108,7 +108,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.8
+          bun-version: 1.4.2
       - name: Require requested Darwin coverage
         env:
           CLASSIFIER_RESULT: ${{ needs.macos-paths.result }}
@@ -142,7 +142,7 @@ jobs:
           # — the AMTP node-conformance suite (apps/core/src/services/amtp/
           # node-conformance-readiness.test.ts) is the canary. Validate any bump
           # against that suite before moving the pin.
-          bun-version: 1.3.8
+          bun-version: 1.4.2
 
       - name: Cache Bun dependencies
         uses: actions/cache@v5
@@ -277,7 +277,7 @@ jobs:
       # and the runtime CI validates must move together. Runs from .github so
       # ITS bunfig.toml applies (root preloads need the ParadeDB container).
       - name: Validate bun version pin
-        run: bun test ./bun-version-gate.test.ts
+        run: bun test ./bun-version-gate.test.ts ./bun-extra-pipe-lifecycle.test.ts
         working-directory: .github
 
       # Pins core-artifact.yml's push-only channel-pointer guard, its
@@ -314,7 +314,7 @@ jobs:
           # — the AMTP node-conformance suite (apps/core/src/services/amtp/
           # node-conformance-readiness.test.ts) is the canary. Validate any bump
           # against that suite before moving the pin.
-          bun-version: 1.3.8
+          bun-version: 1.4.2
 
       - name: Cache Bun dependencies
         uses: actions/cache@v5
@@ -418,7 +418,7 @@ jobs:
           # — the AMTP node-conformance suite (apps/core/src/services/amtp/
           # node-conformance-readiness.test.ts) is the canary. Validate any bump
           # against that suite before moving the pin.
-          bun-version: 1.3.8
+          bun-version: 1.4.2
 
       - name: Cache Bun dependencies
         uses: actions/cache@v5
@@ -490,9 +490,6 @@ jobs:
       - name: Build CLI
         run: bun run build:cli
 
-      - name: Install descriptor tracer
-        run: sudo apt-get update && sudo apt-get install -y strace
-
       - name: Run tests
         # The tee + summary gate exists because a test (or app code a test
         # loads) that calls process.exit(0) mid-suite kills bun with a SUCCESS
@@ -511,7 +508,7 @@ jobs:
           # leaks then fail DIFFERENT tests on every runner (the order
           # lottery). A deterministic order makes green reproducible and any
           # pollution failure bisectable.
-          strace -f -tt -y -k --stack-trace-frame-limit=12 -e trace=close -e status=failed -o /tmp/tau-core-descriptors.trace bun run test 2>&1 | tee /tmp/bun-test-core.log
+          bun run test 2>&1 | tee /tmp/bun-test-core.log
           echo "--- summary gate"
           grep -E 'Ran [0-9]+ tests across [0-9]+ files' /tmp/bun-test-core.log || {
             echo '::error::bun test ended without its final summary line — the process exited early (see the log above for a mid-suite process.exit).'
@@ -521,16 +518,6 @@ jobs:
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5433/tau_test
           TAU_TEST_SKIP_SUBPROCESS: '1'
-
-      - name: Preserve descriptor trace
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: core-descriptor-trace
-          path: |
-            /tmp/tau-core-descriptors.trace
-            /tmp/bun-test-core.log
-          retention-days: 7
 
       - name: Create isolated sterile secret-boundary database
         run: |
@@ -572,7 +559,7 @@ jobs:
           # — the AMTP node-conformance suite (apps/core/src/services/amtp/
           # node-conformance-readiness.test.ts) is the canary. Validate any bump
           # against that suite before moving the pin.
-          bun-version: 1.3.8
+          bun-version: 1.4.2
 
       - name: Cache Bun dependencies
         uses: actions/cache@v5
@@ -621,7 +608,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.8
+          bun-version: 1.4.2
       - name: Require every test lane
         env:
           LANE_RESULTS: ${{ join(needs.*.result, ',') }}
@@ -648,7 +635,7 @@ jobs:
         with:
           # Keep in lockstep with .bun-version (enforced by
           # .github/bun-version-gate.test.ts) and the `test` job's pin.
-          bun-version: 1.3.8
+          bun-version: 1.4.2
 
       # Same Node the `test` job pins. The AMTP node-conformance suite is this
       # repo's canary for the Node version (see that job's step comment), and it
@@ -790,7 +777,7 @@ jobs:
         with:
           # Keep in lockstep with .bun-version (enforced by
           # .github/bun-version-gate.test.ts) and the `test`/`subprocess-tests` pin.
-          bun-version: 1.3.8
+          bun-version: 1.4.2
 
       # Cache downloaded packages only. Installed module trees are worktree/layout-specific.
       - name: Cache Bun dependencies
@@ -1177,7 +1164,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.8
+          bun-version: 1.4.2
       - name: Measure Core typecheck revisions
         shell: bash
         run: |
