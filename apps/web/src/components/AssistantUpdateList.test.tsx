@@ -66,6 +66,7 @@ async function fixture(visible: boolean) {
   let documentVisible = true
   const onSeen = mock(async (_ids: string[]) => {})
   const onSeenThrough = mock(async (_sequence: number) => {})
+  const onExpandedChange = mock((_expanded: boolean) => {})
   const { root, container } = dom.createRoot()
   const render = (props: Partial<Parameters<typeof AssistantUpdateList>[0]> = {}) =>
     root.render(
@@ -77,6 +78,7 @@ async function fixture(visible: boolean) {
         hasMore={false}
         onSeen={onSeen}
         onSeenThrough={onSeenThrough}
+        onExpandedChange={onExpandedChange}
         dependencies={{ createObserver, documentVisible: () => documentVisible }}
         {...props}
       />
@@ -88,6 +90,7 @@ async function fixture(visible: boolean) {
     render,
     onSeen,
     onSeenThrough,
+    onExpandedChange,
     observed,
     disconnect,
     intersect: (ids: string[], isIntersecting = true) =>
@@ -139,8 +142,10 @@ test('a hidden mounted list never acknowledges, and Mark updates read uses the d
     await f.dom.act(async () =>
       f.render({ latestSequence: 3, updates: [update(1), update(2), update(3, true), update(4)] })
     )
-    const button = f.container.querySelector<HTMLButtonElement>('button')!
-    expect(button.textContent).toBe('Mark updates read')
+    const button = [...f.container.querySelectorAll<HTMLButtonElement>('button')].find(
+      (candidate) => candidate.textContent === 'Mark updates read'
+    )!
+    expect(button).toBeTruthy()
     await f.dom.act(async () => button.click())
     expect(f.onSeenThrough).toHaveBeenCalledWith(3)
   } finally {
@@ -160,5 +165,70 @@ test('a failed acknowledgment keeps unread markers and surfaces a status', async
   } finally {
     await f.dom.cleanup()
     expect(f.disconnect).toHaveBeenCalled()
+  }
+})
+
+test('the section stays collapsed while everything is seen, opens for unread updates, and toggles by hand', async () => {
+  const f = await fixture(true)
+  try {
+    const region = () => f.container.querySelector<HTMLElement>('#assistant-task-updates')!
+    const toggle = () => f.container.querySelector<HTMLButtonElement>('button[aria-expanded]')!
+    // Two unread cards: open by default and observed; the host is told so it can yield the chat area.
+    expect(toggle().getAttribute('aria-expanded')).toBe('true')
+    expect(f.onExpandedChange).toHaveBeenLastCalledWith(true)
+    expect(region().hidden).toBe(false)
+    expect(toggle().textContent).toContain('2 unread')
+    // Everything seen: collapsed, count shows history size, nothing observed.
+    await f.dom.act(async () => f.render({ updates: [update(1, true), update(2, true), update(3, true)] }))
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+    expect(f.onExpandedChange).toHaveBeenLastCalledWith(false)
+    expect(region().hidden).toBe(true)
+    expect(toggle().textContent).toContain('3')
+    expect(toggle().textContent).not.toContain('unread')
+    // Manual toggle opens history without acknowledging anything.
+    await f.dom.act(async () => toggle().click())
+    expect(region().hidden).toBe(false)
+    expect(f.container.querySelectorAll('[data-update-id]')).toHaveLength(3)
+    expect(f.onSeen).not.toHaveBeenCalled()
+    await f.dom.act(async () => toggle().click())
+    expect(region().hidden).toBe(true)
+    // A new unread update reopens a section the user closed.
+    await f.dom.act(async () => f.render({ updates: [update(1, true), update(2, true), update(3, true), update(4)] }))
+    expect(region().hidden).toBe(false)
+    expect(toggle().textContent).toContain('1 unread')
+    // Open, the section grows to fill the chat area on phones and stays bounded on wider screens.
+    const section = f.container.querySelector<HTMLElement>('section[aria-label="Task updates"]')!
+    expect(section.className).toContain('flex-1 md:flex-none')
+    expect(region().className).toContain('flex-1 md:max-h-80 md:flex-none')
+    await f.dom.act(async () => toggle().click())
+    expect(section.className).not.toContain('flex-1')
+  } finally {
+    await f.dom.cleanup()
+  }
+})
+
+test('Hide marks one card read and keeps it out of view until the section is toggled', async () => {
+  const f = await fixture(true)
+  try {
+    const hideButtons = () => [...f.container.querySelectorAll<HTMLButtonElement>('button[aria-label="Hide update"]')]
+    expect(hideButtons()).toHaveLength(2)
+    await f.dom.act(async () => hideButtons()[0].click())
+    expect(f.onSeen).toHaveBeenCalledWith([update(1).messageId])
+    expect(f.container.querySelector(`[data-update-id="${update(1).messageId}"]`)).toBeNull()
+    expect(f.container.querySelectorAll('[data-update-id]')).toHaveLength(2)
+    // A failed acknowledgment puts the card back.
+    f.onSeen.mockImplementationOnce(async () => {
+      throw new Error('offline')
+    })
+    await f.dom.act(async () => hideButtons()[0].click())
+    expect(f.container.querySelector(`[data-update-id="${update(2).messageId}"]`)).not.toBeNull()
+    expect(f.container.textContent).toContain('Read state could not be saved')
+    // Toggling the section brings hidden history back.
+    const toggle = f.container.querySelector<HTMLButtonElement>('button[aria-expanded]')!
+    await f.dom.act(async () => toggle.click())
+    await f.dom.act(async () => toggle.click())
+    expect(f.container.querySelectorAll('[data-update-id]')).toHaveLength(3)
+  } finally {
+    await f.dom.cleanup()
   }
 })

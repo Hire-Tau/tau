@@ -282,6 +282,8 @@ function ConversationRuntime(
     enabled: Boolean(ownerId) && props.ready,
   })
   const [olderUpdates, setOlderUpdates] = useState<AssistantActivityUpdate[]>([])
+  // While the Updates section is open on a phone it covers the transcript; the composer stays.
+  const [updatesExpanded, setUpdatesExpanded] = useState(false)
   const [olderCursor, setOlderCursor] = useState<number | null>()
   const queryClientForActivity = useQueryClient()
   const refreshActivity = useCallback(
@@ -427,7 +429,11 @@ function ConversationRuntime(
               const container = event.currentTarget
               followTranscript.current = container.scrollHeight - container.scrollTop - container.clientHeight < 48
             }}
-            className={clsx('min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain', !props.pageEditor && 'px-2')}
+            className={clsx(
+              'min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain',
+              !props.pageEditor && 'px-2',
+              updatesExpanded && 'hidden md:block'
+            )}
             aria-label="Assistant conversation"
           >
             <VoiceTranscriptInspector
@@ -483,6 +489,7 @@ function ConversationRuntime(
               updates={shownUpdates}
               tasks={activity.data.tasks}
               visible={props.visible}
+              onExpandedChange={setUpdatesExpanded}
               latestSequence={activity.data.conversation.latestUpdateSequence}
               hasMore={olderCursor === undefined ? activity.data.hasMore : olderCursor !== null}
               onLoadMore={async () => {
