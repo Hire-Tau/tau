@@ -41,6 +41,11 @@ export const assistantQueryKeys = {
   all: ['assistant-conversations'] as const,
   list: (q = '', offset = 0) => ['assistant-conversations', 'list', q, offset] as const,
   history: (id: string) => ['assistant-conversations', 'history', id] as const,
+  /** Owner-keyed so a device shared between accounts never shows another owner's previews. */
+  activityPrefix: ['assistant-conversations', 'activity'] as const,
+  activity: (ownerId: string, offset = 0) => ['assistant-conversations', 'activity', ownerId, offset] as const,
+  conversationActivity: (ownerId: string, id: string) =>
+    ['assistant-conversations', 'activity', ownerId, 'conversation', id] as const,
 }
 
 export const feedQueryKeys = {

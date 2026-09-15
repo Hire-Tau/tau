@@ -951,6 +951,28 @@ export const assistantQueries = {
     queryOptions({ queryKey: assistantQueryKeys.list(q, offset), queryFn: () => assistantApi.list(q, offset) }),
   history: (id: string) =>
     queryOptions({ queryKey: assistantQueryKeys.history(id), queryFn: () => assistantApi.history(id) }),
+  /**
+   * Global activity discovery. WebSocket invalidation is the primary signal; the visible-page
+   * interval is a fallback only, never a background poll. Errors keep the last good counts.
+   */
+  activity: (ownerId: string, offset = 0) =>
+    queryOptions({
+      queryKey: assistantQueryKeys.activity(ownerId, offset),
+      queryFn: () => assistantApi.activity(30, offset),
+      staleTime: 15_000,
+      refetchInterval: 30_000,
+      refetchIntervalInBackground: false,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+    }),
+  conversationActivity: (ownerId: string, id: string) =>
+    queryOptions({
+      queryKey: assistantQueryKeys.conversationActivity(ownerId, id),
+      queryFn: () => assistantApi.conversationActivity(id),
+      staleTime: 15_000,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
+    }),
 }
 
 export const feedQueries = {

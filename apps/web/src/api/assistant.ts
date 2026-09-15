@@ -1,5 +1,12 @@
 import type { AssistantEditorState, AssistantEditorSync } from '@tau/shared'
-import type { AssistantConversation, AssistantEntry, AssistantMessageReceipt, AssistantMailbox } from '@tau/shared'
+import type {
+  AssistantActivityPage,
+  AssistantConversation,
+  AssistantConversationActivityDetail,
+  AssistantEntry,
+  AssistantMessageReceipt,
+  AssistantMailbox,
+} from '@tau/shared'
 import { webTransport as t } from './transport'
 export const assistantApi = {
   editor: (id: string) => t.request<import('@tau/shared').AssistantEditorReadState>(`/assistant/${id}/editor`),
@@ -40,6 +47,19 @@ export const assistantApi = {
       method: 'POST',
       body: { request, clientId, ...options },
     }),
+  /** Lightweight discovery across every owned conversation; never leases a mailbox or starts a model. */
+  activity: (limit = 30, offset = 0) =>
+    t.request<AssistantActivityPage>(
+      `/assistant/activity?${new URLSearchParams({ limit: String(limit), offset: String(offset) })}`
+    ),
+  conversationActivity: (id: string, beforeSequence?: number) =>
+    t.request<AssistantConversationActivityDetail>(
+      `/assistant/${id}/activity${beforeSequence ? `?beforeSequence=${beforeSequence}` : ''}`
+    ),
+  seen: (id: string, messageIds: string[]) =>
+    t.request<{ success: true }>(`/assistant/${id}/updates/seen`, { method: 'POST', body: { messageIds } }),
+  seenThrough: (id: string, sequence: number) =>
+    t.request<{ success: true }>(`/assistant/${id}/updates/seen-through`, { method: 'POST', body: { sequence } }),
   inbox: (id: string, consumerId: string) =>
     t.request<AssistantMailbox>(`/assistant/${id}/inbox`, {
       method: 'POST',

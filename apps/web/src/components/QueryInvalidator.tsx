@@ -1,4 +1,5 @@
-import { agentSlotWaitQueryKeys } from '../queryKeys'
+import { agentSlotWaitQueryKeys, assistantQueryKeys } from '../queryKeys'
+import { parseAssistantInboxConversationId } from '@tau/shared'
 import { hashKey } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
 import { useQueryClient } from '../reactQueryHooks'
@@ -400,9 +401,18 @@ function QueryInvalidatorEffects({ queryClient, subscribe, isConnected = false }
       }),
 
       // ── Inbox events ────────────────────────────────────────────
-      subscribe('inbox', ({ data }) => {
+      subscribe('inbox', ({ event, data }) => {
+        if (event === 'assistant.activityChanged') {
+          // Durable task/update state changed: refresh badges, the open conversation's activity,
+          // and saved-conversation lists so ordering and previews follow.
+          invalidate(assistantQueryKeys.activityPrefix)
+          invalidate(assistantQueryKeys.all)
+          return
+        }
         if (data.recipientType === 'user' || data.recipientType === 'voice_assistant') {
           invalidate(queryKeys.inbox.minePrefix())
+          // Compatibility fallback for Cores that deliver mailbox traffic without the activity event.
+          if (parseAssistantInboxConversationId(data.recipientId)) invalidate(assistantQueryKeys.activityPrefix)
         } else if (data.recipientType === 'system') {
           invalidate(queryKeys.inbox.systemPrefix())
         }
@@ -442,6 +452,9 @@ function QueryInvalidatorEffects({ queryClient, subscribe, isConnected = false }
     const coalescer = coalescerRef.current
     if (!coalescer) return
     slotCoalescerRef.current?.queue(agentSlotWaitQueryKeys.all)
+    // A reconnect may have missed activity events; badges must not stay stale until the fallback
+    // interval. This rides the independent repair coalescer so it never delays the Action Center.
+    slotCoalescerRef.current?.queue(assistantQueryKeys.activityPrefix)
     if (actionFrameBeforeOpenRef.current) {
       actionFrameBeforeOpenRef.current = false
       if (actionFrameExpiryRef.current !== null) {
