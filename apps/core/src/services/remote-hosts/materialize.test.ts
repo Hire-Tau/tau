@@ -83,7 +83,8 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  process.env.HOME_DIR = originalHomeDir
+  if (originalHomeDir === undefined) delete process.env.HOME_DIR
+  else process.env.HOME_DIR = originalHomeDir
   if (tempDir) rmSync(tempDir, { recursive: true, force: true })
   await cleanupHosts()
 })

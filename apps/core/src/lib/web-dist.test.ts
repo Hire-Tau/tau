@@ -23,7 +23,8 @@ describe('resolveWebDist', () => {
   })
 
   afterEach(() => {
-    process.env.TAU_WEB_DIST = origEnv
+    if (origEnv === undefined) delete process.env.TAU_WEB_DIST
+    else process.env.TAU_WEB_DIST = origEnv
     process.chdir(origCwd)
     rmSync(tmp, { recursive: true, force: true })
   })

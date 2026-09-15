@@ -336,6 +336,12 @@ export class WorkspaceWatcher {
     this.fsWatcher = chokidar.watch(this.workspacePath, {
       ignoreInitial: true,
       persistent: this.persistent,
+      // Bun 1.4's macOS FSEvents backend can miss edits after chokidar's ready
+      // event. Poll only the filtered workspace paths there; one-second polls
+      // avoid busy scanning and fit within the existing three-second debounce.
+      usePolling: process.platform === 'darwin',
+      interval: 1000,
+      binaryInterval: 1000,
       ignored: createWatchPathFilter(this.workspacePath, config.include, config.exclude),
       followSymlinks: false,
     })

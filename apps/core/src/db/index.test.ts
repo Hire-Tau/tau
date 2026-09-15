@@ -31,7 +31,8 @@ describe('validateDatabaseConnection', () => {
         /TEST SAFETY VIOLATION.*database is "tau"/
       )
     } finally {
-      process.env.TAU_TEST_MODE = originalTestMode
+      if (originalTestMode === undefined) delete process.env.TAU_TEST_MODE
+      else process.env.TAU_TEST_MODE = originalTestMode
     }
   })
 
@@ -43,7 +44,8 @@ describe('validateDatabaseConnection', () => {
         /TEST SAFETY VIOLATION.*port is 5432/
       )
     } finally {
-      process.env.TAU_TEST_MODE = originalTestMode
+      if (originalTestMode === undefined) delete process.env.TAU_TEST_MODE
+      else process.env.TAU_TEST_MODE = originalTestMode
     }
   })
 
@@ -55,7 +57,8 @@ describe('validateDatabaseConnection', () => {
         /TEST SAFETY VIOLATION.*port is 5432/
       )
     } finally {
-      process.env.TAU_TEST_MODE = originalTestMode
+      if (originalTestMode === undefined) delete process.env.TAU_TEST_MODE
+      else process.env.TAU_TEST_MODE = originalTestMode
     }
   })
 
@@ -65,7 +68,8 @@ describe('validateDatabaseConnection', () => {
     try {
       expect(() => validateDatabaseConnection('postgres://user:pass@localhost:5433/tau_test', 'test')).not.toThrow()
     } finally {
-      process.env.TAU_TEST_MODE = originalTestMode
+      if (originalTestMode === undefined) delete process.env.TAU_TEST_MODE
+      else process.env.TAU_TEST_MODE = originalTestMode
     }
   })
 
@@ -76,7 +80,8 @@ describe('validateDatabaseConnection', () => {
       // Should not throw even with production-like URL
       expect(() => validateDatabaseConnection('postgres://user:pass@localhost:5432/tau', 'test')).not.toThrow()
     } finally {
-      process.env.TAU_TEST_MODE = originalTestMode
+      if (originalTestMode === undefined) delete process.env.TAU_TEST_MODE
+      else process.env.TAU_TEST_MODE = originalTestMode
     }
   })
 })

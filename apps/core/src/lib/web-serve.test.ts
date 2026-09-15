@@ -35,8 +35,10 @@ describe('maybeMountWebUi', () => {
   })
 
   afterEach(() => {
-    process.env.TAU_SERVE_WEB = origEnv
-    process.env.TAU_WEB_DIST = origDist
+    if (origEnv === undefined) delete process.env.TAU_SERVE_WEB
+    else process.env.TAU_SERVE_WEB = origEnv
+    if (origDist === undefined) delete process.env.TAU_WEB_DIST
+    else process.env.TAU_WEB_DIST = origDist
     rmSync(dist, { recursive: true, force: true })
   })
 

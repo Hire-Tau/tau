@@ -87,7 +87,7 @@ RUN case "$TARGETARCH" in \
     && test "$(gh --version | sed -n 's/^gh version \([0-9.]*\).*/\1/p')" = "$GH_VERSION"
 
 # Install the repository-pinned Bun system-wide.
-ARG BUN_VERSION=1.3.8
+ARG BUN_VERSION=1.4.2
 RUN curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash -s "bun-v${BUN_VERSION}" \
     && test "$(bun --version)" = "$BUN_VERSION"
 

@@ -68,6 +68,8 @@ async function startServer(env: Record<string, string>): Promise<RunningServer> 
         TAU_SANDBOX_ROLE: 'agent',
         TAU_BOX_HOME: workspace,
         HOME: workspace,
+        // Runtime cache files must not populate this fixture's empty workspace.
+        BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0',
         WORKSPACE_PATH: workspace,
         ...env,
       },

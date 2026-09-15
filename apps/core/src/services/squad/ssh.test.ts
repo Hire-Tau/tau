@@ -15,7 +15,8 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  process.env.HOME_DIR = originalEnv
+  if (originalEnv === undefined) delete process.env.HOME_DIR
+  else process.env.HOME_DIR = originalEnv
   if (tempDir) {
     await rm(tempDir, { recursive: true, force: true })
   }

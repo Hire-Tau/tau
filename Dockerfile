@@ -17,7 +17,7 @@
 
 # Copy only workspace manifests while preserving their directory names. This works
 # in both the monorepo and the extracted Core tree without naming private apps.
-ARG BUN_VERSION=1.3.8
+ARG BUN_VERSION=1.4.2
 FROM oven/bun:${BUN_VERSION} AS workspace-manifests
 WORKDIR /manifests
 RUN --mount=type=bind,source=apps,target=/workspace/apps \

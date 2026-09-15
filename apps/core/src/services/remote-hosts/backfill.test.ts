@@ -84,7 +84,8 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  process.env.HOME_DIR = originalHomeDir
+  if (originalHomeDir === undefined) delete process.env.HOME_DIR
+  else process.env.HOME_DIR = originalHomeDir
   if (priorRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
   else process.env.TAU_SANDBOX_RUNTIME = priorRuntime
   if (tempDir) rmSync(tempDir, { recursive: true, force: true })

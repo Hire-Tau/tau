@@ -21,7 +21,8 @@ afterEach(async () => {
   } catch {
     // Some tests intentionally run before the module has all helpers available.
   }
-  process.env.HOME_DIR = originalEnv
+  if (originalEnv === undefined) delete process.env.HOME_DIR
+  else process.env.HOME_DIR = originalEnv
   if (tempDir) {
     await rm(tempDir, { recursive: true, force: true })
   }

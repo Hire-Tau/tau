@@ -8,7 +8,7 @@ testsrc="$root/packages/k8s-sandbox/src/services/atomic-write.test.ts"
 : "${DATABASE_URL:?DATABASE_URL must name the explicitly owned worktree test database}"
 : "${TEST_DB_PROJECT:?TEST_DB_PROJECT must name the explicitly owned tau-test-* project}"
 [[ $TEST_DB_PROJECT == tau-test-* ]] || { echo 'TEST_DB_PROJECT must start with tau-test-' >&2; exit 2; }
-[[ $(bun --version) == 1.3.8 ]]
+[[ $(bun --version) == "$(cat "$root/.bun-version")" ]]
 
 case "$mode" in
   conflict-generic-pre) boundary='classifier-conflict-code'; signature='Received: "pre-publication"' ;;

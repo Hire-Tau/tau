@@ -40,7 +40,8 @@ describe('EmbeddingService', () => {
       const service = new EmbeddingService({})
       expect(service.isEnabled()).toBe(false)
 
-      process.env.OPENAI_API_KEY = originalKey
+      if (originalKey === undefined) delete process.env.OPENAI_API_KEY
+      else process.env.OPENAI_API_KEY = originalKey
     })
 
     it('falls back to env var when no apiKey provided', () => {
@@ -50,7 +51,8 @@ describe('EmbeddingService', () => {
       const service = new EmbeddingService({})
       expect(service.isEnabled()).toBe(true)
 
-      process.env.OPENAI_API_KEY = originalKey
+      if (originalKey === undefined) delete process.env.OPENAI_API_KEY
+      else process.env.OPENAI_API_KEY = originalKey
     })
   })
 

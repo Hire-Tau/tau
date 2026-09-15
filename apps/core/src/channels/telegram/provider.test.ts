@@ -18,7 +18,8 @@ describe('telegramProvider.sendNotification', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch
-    process.env.TELEGRAM_BOT_TOKEN = originalEnv
+    if (originalEnv === undefined) delete process.env.TELEGRAM_BOT_TOKEN
+    else process.env.TELEGRAM_BOT_TOKEN = originalEnv
   })
 
   it('sends notification to chat via Telegram API', async () => {

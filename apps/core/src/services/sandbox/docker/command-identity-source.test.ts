@@ -12,8 +12,8 @@ const dockerfile = readFileSync(resolve(repoRoot, 'apps/core/docker-sandbox/Dock
 describe('Docker sandbox image source contract', () => {
   test('builds from repository root with pinned Bun and a baked executor', () => {
     expect(packageJson.scripts['sandbox:build:docker']).toEndWith('-f apps/core/docker-sandbox/Dockerfile .')
-    expect(readFileSync(resolve(repoRoot, '.bun-version'), 'utf8').trim()).toBe('1.3.8')
-    expect(dockerfile).toContain('ARG BUN_VERSION=1.3.8')
+    expect(readFileSync(resolve(repoRoot, '.bun-version'), 'utf8').trim()).toBe('1.4.2')
+    expect(dockerfile).toContain('ARG BUN_VERSION=1.4.2')
     expect(dockerfile).toContain('packages/k8s-sandbox/src')
     expect(dockerfile).toContain('apps/core/docker-sandbox/command-identity.json')
   })

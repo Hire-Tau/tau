@@ -8,12 +8,13 @@ describe('slackProvider.parseWebhook', () => {
   const originalFetch = globalThis.fetch
 
   beforeEach(() => {
-    process.env.SLACK_BOT_TOKEN = undefined
+    delete process.env.SLACK_BOT_TOKEN
     globalThis.fetch = originalFetch
   })
 
   afterEach(() => {
-    process.env.SLACK_BOT_TOKEN = originalEnv
+    if (originalEnv === undefined) delete process.env.SLACK_BOT_TOKEN
+    else process.env.SLACK_BOT_TOKEN = originalEnv
     globalThis.fetch = originalFetch
   })
 
@@ -278,7 +279,8 @@ describe('slackProvider.postMentionThinkingIndicator', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch
-    process.env.SLACK_BOT_TOKEN = originalEnv
+    if (originalEnv === undefined) delete process.env.SLACK_BOT_TOKEN
+    else process.env.SLACK_BOT_TOKEN = originalEnv
   })
 
   it('joins the channel before posting the mention thread reply', async () => {
@@ -335,7 +337,8 @@ describe('slackProvider.sendNotification', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch
-    process.env.SLACK_BOT_TOKEN = originalEnv
+    if (originalEnv === undefined) delete process.env.SLACK_BOT_TOKEN
+    else process.env.SLACK_BOT_TOKEN = originalEnv
   })
 
   it('sends notification to channel via Slack API', async () => {

@@ -52,7 +52,8 @@ describe('squad-workspace', () => {
         expect(existsSync(base)).toBe(false)
         expect(existsSync(leaf)).toBe(false)
       } finally {
-        process.env.HOME_DIR = previousHome
+        if (previousHome === undefined) delete process.env.HOME_DIR
+        else process.env.HOME_DIR = previousHome
         rmSync(parent, { recursive: true, force: true })
       }
     })
@@ -92,7 +93,8 @@ describe('squad-workspace', () => {
         // unwritable or otherwise inert.
         expect(existsSync(ensureSquadWorkspace(crypto.randomUUID()))).toBe(true)
       } finally {
-        process.env.HOME_DIR = previousHome
+        if (previousHome === undefined) delete process.env.HOME_DIR
+        else process.env.HOME_DIR = previousHome
         rmSync(parent, { recursive: true, force: true })
       }
     })

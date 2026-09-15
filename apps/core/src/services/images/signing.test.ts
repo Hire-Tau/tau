@@ -14,8 +14,10 @@ describe('image url signing', () => {
   })
 
   afterEach(() => {
-    process.env.TAU_ENCRYPTION_KEY = origEnc
-    process.env.TAU_PASSWORD = origPw
+    if (origEnc === undefined) delete process.env.TAU_ENCRYPTION_KEY
+    else process.env.TAU_ENCRYPTION_KEY = origEnc
+    if (origPw === undefined) delete process.env.TAU_PASSWORD
+    else process.env.TAU_PASSWORD = origPw
     __resetSigningKeyForTests()
   })
 
