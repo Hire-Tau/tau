@@ -403,6 +403,48 @@ describe('NotificationService', () => {
       }
     })
 
+    test('resolves a saved Assistant mailbox to its owner and nobody after deletion or muting', async () => {
+      const { assistantConversations } = await import('../../db')
+      const owner = await createTestUser({ prefix: 'notif-assistant' })
+      const conversationId = crypto.randomUUID()
+      await db.insert(assistantConversations).values({ id: conversationId, ownerUserId: owner.id })
+      const data = { recipientType: 'voice_assistant', recipientId: `assistant:${conversationId}`, messageId: 'm1' }
+      try {
+        expect(await callResolveEnabledPushUserIds(service, data, 'inbox.messageReceived')).toEqual([owner.id])
+        await UserNotificationPreferences.upsert(owner.id, { mutedEvents: ['inbox.messageReceived'] })
+        expect(await callResolveEnabledPushUserIds(service, data, 'inbox.messageReceived')).toEqual([])
+        await UserNotificationPreferences.upsert(owner.id, { mutedEvents: [] })
+        expect(await callResolveEnabledPushUserIds(service, data, 'inbox.messageReceived')).toEqual([owner.id])
+        await db.delete(assistantConversations).where(eq(assistantConversations.id, conversationId))
+        expect(await callResolveEnabledPushUserIds(service, data, 'inbox.messageReceived')).toEqual([])
+      } finally {
+        await db.delete(assistantConversations).where(eq(assistantConversations.id, conversationId))
+        await cleanupTestRbac('notif-assistant')
+      }
+    })
+
+    test('routes only push-eligible Assistant updates to push', async () => {
+      const { join } = await import('node:path')
+      const { MONOREPO_ROOT } = await import('../../lib/paths')
+      const bundled = Bun.YAML.parse(
+        await Bun.file(join(MONOREPO_ROOT, 'config/notifications/rules.yaml')).text()
+      ) as NotificationConfig
+      service.setConfig(bundled)
+      const context = service.buildContext('inbox.messageReceived', {})
+      const eligible = service.matchRule(context, {
+        recipientType: 'voice_assistant',
+        recipientId: 'assistant:507a9ac0-164e-4f49-9441-e57522bdc52b',
+        assistantPush: true,
+      })
+      expect(eligible?.id).toBe('assistant-task-update')
+      expect(eligible?.channels).toEqual(['push'])
+      const routine = service.matchRule(context, {
+        recipientType: 'voice_assistant',
+        recipientId: 'assistant:507a9ac0-164e-4f49-9441-e57522bdc52b',
+      })
+      expect(routine).toBeNull()
+    })
+
     test('fans out the same agent question notification through web push and APNs', async () => {
       const event: TestEvent = {
         title: 'Question',

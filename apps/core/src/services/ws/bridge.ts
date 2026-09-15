@@ -167,6 +167,11 @@ function resolve(entry: EventEntry): ResolvedRoute | null {
   if (event === 'inbox.messageReceived' || event === 'inbox.messageRead' || event === 'inbox.allRead') {
     return { topic: 'inbox', instanceTopic: `inbox:${data.recipientId}` }
   }
+  // Saved Assistant activity rides the inbox topic family; the manager restricts its delivery
+  // to the conversation owner on both the collection and the instance topic.
+  if (event === 'assistant.activityChanged') {
+    return { topic: 'inbox', instanceTopic: `inbox:${data.recipientId}` }
+  }
 
   if (event === 'monitor.created' || event === 'monitor.updated' || event === 'monitor.ended') {
     return { topic: 'monitors', instanceTopic: `agents:${data.agentId}` }

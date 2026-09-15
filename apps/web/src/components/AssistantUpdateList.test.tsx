@@ -1,0 +1,164 @@
+import { expect, mock, test } from 'bun:test'
+import type { AssistantActivityUpdate } from '@tau/shared'
+import { acquireDomHarness } from '../test/domHarness'
+import { shouldAcknowledgeAssistantUpdate, summarizeAssistantTasks } from '../lib/assistantActivityPresentation'
+import { AssistantUpdateList, type AssistantUpdateObserverFactory } from './AssistantUpdateList'
+
+test('acknowledgment requires a visible surface, a visible document, an intersecting card, and unseen state', () => {
+  const cases: Array<[boolean, boolean, boolean, boolean, boolean]> = [
+    [true, true, true, false, true],
+    [false, true, true, false, false],
+    [true, false, true, false, false],
+    [true, true, false, false, false],
+    [true, true, true, true, false],
+    [false, false, false, true, false],
+  ]
+  for (const [surfaceVisible, documentVisible, intersects, alreadySeen, expected] of cases)
+    expect(shouldAcknowledgeAssistantUpdate({ surfaceVisible, documentVisible, intersects, alreadySeen })).toBe(
+      expected
+    )
+})
+
+test('task summaries name what needs attention first', () => {
+  expect(summarizeAssistantTasks({ workingTasks: 2, waitingTasks: 1, needsInputTasks: 1, unavailableTasks: 0 })).toBe(
+    '1 task needs your input · 2 working · 1 waiting'
+  )
+  expect(summarizeAssistantTasks({ workingTasks: 0, waitingTasks: 0, needsInputTasks: 0, unavailableTasks: 0 })).toBe(
+    ''
+  )
+})
+
+const update = (index: number, seen = false): AssistantActivityUpdate => ({
+  messageId: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+  taskId: '10000000-0000-4000-8000-000000000001',
+  requestId: null,
+  sequence: index,
+  reportedStatus: index === 2 ? 'needs-input' : null,
+  content: `Update ${index}`,
+  subject: null,
+  senderName: 'Assistant task',
+  processedAt: null,
+  seenAt: seen ? '2026-09-15T00:00:00.000Z' : null,
+  createdAt: '2026-09-15T00:00:00.000Z',
+})
+const task = {
+  id: '10000000-0000-4000-8000-000000000001',
+  currentRequestId: '20000000-0000-4000-8000-000000000001',
+  agentId: null,
+  kind: 'background' as const,
+  squadId: null,
+  label: 'Compare options',
+  status: 'needs-input' as const,
+  unavailable: false,
+  createdAt: '2026-09-15T00:00:00.000Z',
+  updatedAt: '2026-09-15T00:00:00.000Z',
+}
+
+async function fixture(visible: boolean) {
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  let emit: ((entries: Array<{ target: Element; isIntersecting: boolean }>) => void) | undefined
+  const observed: Element[] = []
+  const disconnect = mock(() => {})
+  const createObserver: AssistantUpdateObserverFactory = (onChange) => {
+    emit = onChange
+    return { observe: (element) => observed.push(element), unobserve: () => {}, disconnect }
+  }
+  let documentVisible = true
+  const onSeen = mock(async (_ids: string[]) => {})
+  const onSeenThrough = mock(async (_sequence: number) => {})
+  const { root, container } = dom.createRoot()
+  const render = (props: Partial<Parameters<typeof AssistantUpdateList>[0]> = {}) =>
+    root.render(
+      <AssistantUpdateList
+        updates={[update(1), update(2), update(3, true)]}
+        tasks={[task]}
+        visible={visible}
+        latestSequence={3}
+        hasMore={false}
+        onSeen={onSeen}
+        onSeenThrough={onSeenThrough}
+        dependencies={{ createObserver, documentVisible: () => documentVisible }}
+        {...props}
+      />
+    )
+  await dom.act(async () => render())
+  return {
+    dom,
+    container,
+    render,
+    onSeen,
+    onSeenThrough,
+    observed,
+    disconnect,
+    intersect: (ids: string[], isIntersecting = true) =>
+      dom.act(async () => {
+        emit!(ids.map((id) => ({ target: container.querySelector(`[data-update-id="${id}"]`)!, isIntersecting })))
+      }),
+    setDocumentVisible: (value: boolean) => {
+      documentVisible = value
+    },
+  }
+}
+
+test('renders every update with its task label and status, and only visible intersecting cards are acknowledged', async () => {
+  const f = await fixture(true)
+  try {
+    expect(f.container.querySelectorAll('[data-update-id]')).toHaveLength(3)
+    expect(f.container.textContent).toContain('Compare options')
+    expect(f.container.textContent).toContain('Needs your input')
+    expect(f.container.textContent).toContain('2 unread')
+    expect(f.observed).toHaveLength(3)
+    // Rendering alone acknowledges nothing.
+    expect(f.onSeen).not.toHaveBeenCalled()
+    await f.intersect([update(1).messageId])
+    expect(f.onSeen).toHaveBeenCalledTimes(1)
+    expect(f.onSeen).toHaveBeenCalledWith([update(1).messageId])
+    // An already-seen card never round-trips again; a hidden document defers.
+    await f.intersect([update(3).messageId])
+    expect(f.onSeen).toHaveBeenCalledTimes(1)
+    f.setDocumentVisible(false)
+    await f.intersect([update(2).messageId])
+    expect(f.onSeen).toHaveBeenCalledTimes(1)
+    f.setDocumentVisible(true)
+    await f.dom.act(async () => document.dispatchEvent(new Event('visibilitychange')))
+    expect(f.onSeen).toHaveBeenCalledTimes(2)
+    // The first card was already acknowledged in this session and is not re-sent.
+    expect(f.onSeen).toHaveBeenLastCalledWith([update(2).messageId])
+  } finally {
+    await f.dom.cleanup()
+  }
+})
+
+test('a hidden mounted list never acknowledges, and Mark updates read uses the displayed snapshot', async () => {
+  const f = await fixture(false)
+  try {
+    await f.intersect([update(1).messageId, update(2).messageId])
+    expect(f.onSeen).not.toHaveBeenCalled()
+    // The explicit action still works and sends the sequence the list was rendered with, even if a
+    // newer update has since been fetched into the caller's cache.
+    await f.dom.act(async () =>
+      f.render({ latestSequence: 3, updates: [update(1), update(2), update(3, true), update(4)] })
+    )
+    const button = f.container.querySelector<HTMLButtonElement>('button')!
+    expect(button.textContent).toBe('Mark updates read')
+    await f.dom.act(async () => button.click())
+    expect(f.onSeenThrough).toHaveBeenCalledWith(3)
+  } finally {
+    await f.dom.cleanup()
+  }
+})
+
+test('a failed acknowledgment keeps unread markers and surfaces a status', async () => {
+  const f = await fixture(true)
+  try {
+    f.onSeen.mockImplementationOnce(async () => {
+      throw new Error('offline')
+    })
+    await f.intersect([update(1).messageId])
+    expect(f.container.querySelectorAll('[data-unread="true"]')).toHaveLength(2)
+    expect(f.container.textContent).toContain('Read state could not be saved')
+  } finally {
+    await f.dom.cleanup()
+    expect(f.disconnect).toHaveBeenCalled()
+  }
+})

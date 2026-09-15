@@ -7,6 +7,7 @@ import type { MigrationConfig, MigrationMeta } from 'drizzle-orm/migrator'
 import { readMigrationFiles } from 'drizzle-orm/migrator'
 import type postgres from 'postgres'
 import { backfillMessageEnqueueOrder } from './message-enqueue-order-backfill'
+import { backfillAssistantActivity } from './assistant-activity-backfill'
 
 const CREATE_CONCURRENT_INDEX =
   /^\s*CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\s+"([^"]+)"\s+ON\s+(?:ONLY\s+)?(?:(?:"([^"]+)"\.)?)"([^"]+)"/i
@@ -396,7 +397,11 @@ export async function applyMigrations(
                     ? migrateChannelConsultants
                     : /ALTER TABLE "assistant_conversations" DROP COLUMN "manager_agent_id"/.test(statement)
                       ? migrateAssistantAgentBindings
-                      : undefined
+                      : // Runs after both activity tables, their constraints, and the allocator
+                        // column exist; the first activity index follows them in the generated SQL.
+                        /CREATE INDEX "idx_assistant_tasks_conversation_updated"/.test(statement)
+                        ? backfillAssistantActivity
+                        : undefined
           if (backfill) {
             await flush()
             await backfill(connection)

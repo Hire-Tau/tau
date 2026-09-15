@@ -13,6 +13,7 @@ import { modelTiersRoutes } from './routes/model-tiers'
 import { skillsRoutes } from './routes/skills'
 import { sharedPromptsRoutes } from './routes/shared-prompts'
 import { assistantRouter } from './routes/assistant'
+import { assistantTasksRouter } from './routes/assistant-tasks'
 import { chatRouter } from './routes/chat'
 import { pushRouter } from './routes/push'
 
@@ -270,6 +271,7 @@ app.route('/api/agent-types', agentTypesRoutes)
 app.route('/api/model-tiers', modelTiersRoutes)
 app.route('/api/chat', chatRouter)
 app.route('/api/assistant', assistantRouter)
+app.route('/api/assistant-tasks', assistantTasksRouter)
 app.route('/api/actions', actionsRouter)
 app.route('/api/agent-questions', agentQuestionsRouter)
 app.route('/api/system-tokens', systemTokensRouter)

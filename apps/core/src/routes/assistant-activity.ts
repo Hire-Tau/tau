@@ -1,0 +1,48 @@
+import { Hono } from 'hono'
+import { z } from 'zod'
+import { zValidator } from '@hono/zod-validator'
+import { markAssistantUpdatesSeen } from '../services/assistant-activity/acknowledge'
+import { listAssistantActivity, readAssistantActivity } from '../services/assistant-activity/read'
+
+const uuid = z.string().uuid()
+const activityQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+  offset: z.coerce.number().int().min(0).max(1_000_000).default(0),
+})
+const detailQuerySchema = z.object({ beforeSequence: z.coerce.number().int().min(1).optional() })
+const seenSchema = z.object({ messageIds: z.array(uuid).min(1).max(50) })
+const seenThroughSchema = z.object({ sequence: z.number().int().min(0) })
+
+/**
+ * Read-only activity discovery plus human acknowledgment. Mounted inside the Assistant router
+ * before its `/:id` routes so `/activity` is never captured as a conversation ID. Owner scoping
+ * and `chat:send` come from the parent middleware. Nothing here leases a mailbox, seeds an agent,
+ * or runs a model.
+ */
+export const assistantActivityRouter = new Hono<{ Variables: { assistantOwner: string } }>()
+  .get('/activity', zValidator('query', activityQuerySchema), async (c) =>
+    c.json(await listAssistantActivity(c.get('assistantOwner'), c.req.valid('query')))
+  )
+  .get('/:id/activity', zValidator('query', detailQuerySchema), async (c) => {
+    const id = c.req.param('id')
+    if (!uuid.safeParse(id).success) return c.json({ error: 'Conversation not found' }, 404)
+    const detail = await readAssistantActivity(c.get('assistantOwner'), id, c.req.valid('query').beforeSequence)
+    return detail ? c.json(detail) : c.json({ error: 'Conversation not found' }, 404)
+  })
+  .post('/:id/updates/seen', zValidator('json', seenSchema), async (c) => {
+    const id = c.req.param('id')
+    if (!uuid.safeParse(id).success) return c.json({ error: 'Conversation not found' }, 404)
+    const result = await markAssistantUpdatesSeen(c.get('assistantOwner'), id, c.req.valid('json'))
+    if (result.ok) return c.json({ success: true })
+    return result.reason === 'not-found'
+      ? c.json({ error: 'Conversation not found' }, 404)
+      : c.json({ error: 'Every update must belong to this conversation' }, 400)
+  })
+  .post('/:id/updates/seen-through', zValidator('json', seenThroughSchema), async (c) => {
+    const id = c.req.param('id')
+    if (!uuid.safeParse(id).success) return c.json({ error: 'Conversation not found' }, 404)
+    const result = await markAssistantUpdatesSeen(c.get('assistantOwner'), id, {
+      throughSequence: c.req.valid('json').sequence,
+    })
+    return result.ok ? c.json({ success: true }) : c.json({ error: 'Conversation not found' }, 404)
+  })

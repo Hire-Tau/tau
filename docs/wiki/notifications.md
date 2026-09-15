@@ -83,11 +83,11 @@ Sends browser push notifications via the [Web Push protocol](https://web.dev/pus
 4. Sends to each subscription via `web-push`.
 5. Removes invalid subscriptions on 410/404 responses only if the stored subscription has not changed since the send began.
 
-For `agent-question.created`, recipients come from the question's persisted owner and authorized squad-watcher attention records. Other events require recipient fields: `user` targets that user, `voice_assistant` resolves the workspace voice user, and `system` targets users with `inbox:system`. Events without resolvable recipients do not broadcast to every browser, even when their rule includes `push`. Personal preferences apply after recipient resolution.
+For `agent-question.created`, recipients come from the question's persisted owner and authorized squad-watcher attention records. Other events require recipient fields: `user` targets that user, `voice_assistant` resolves either the owner of a saved Assistant conversation (`assistant:<conversation UUID>`, nobody once the conversation is deleted) or the workspace voice user, and `system` targets users with `inbox:system`. Events without resolvable recipients do not broadcast to every browser, even when their rule includes `push`. Personal preferences apply after recipient resolution.
 
 ### Push Notification Content
 
-Event builders construct the rich title, body, and destination. Device delivery applies the recipient’s `showPreviews` preference (default true; users can opt out). With previews off, Web Push and APNs alerts use a closed event vocabulary and an instance-wide work number, for example “Work #42 needs your answer”. Live Activity content is similarly redacted, including the authenticated snapshot used to start an activity. Widget work-list data remains authenticated and contains titles. With previews on, bounded title/body content is sent through the configured push path. For example, `agent-question.created` includes the agent label and persisted question text; its link opens `/squads/<squadId>?agent=<agentId>` for a squad agent or `/chat/<agentId>` otherwise. Inbox notifications link to `/inbox`. Structured identifiers in the payload also let clients open the relevant question or work stream.
+Event builders construct the rich title, body, and destination. Device delivery applies the recipient’s `showPreviews` preference (default true; users can opt out). With previews off, Web Push and APNs alerts use a closed event vocabulary and an instance-wide work number, for example “Work #42 needs your answer”. Live Activity content is similarly redacted, including the authenticated snapshot used to start an activity. Widget work-list data remains authenticated and contains titles. With previews on, bounded title/body content is sent through the configured push path. For example, `agent-question.created` includes the agent label and persisted question text; its link opens `/squads/<squadId>?agent=<agentId>` for a squad agent or `/chat/<agentId>` otherwise. Inbox notifications link to `/inbox`. Saved Assistant task updates are the exception: they use the fixed title “Assistant update”, the body “A task has an update. Open Assistant to view it.”, and link to the conversation itself (`/?chat=open&assistantConversation=<id>`), never to the sender agent or the inbox; only status-changing `needs-input`, `completed`, and `failed` reports on a task's current request are push-eligible (see [Assistant tasks](assistant-tasks.md)). Structured identifiers in the payload also let clients open the relevant question or work stream.
 
 ### Native push (APNs)
 
@@ -150,6 +150,13 @@ Rules are stored in the `notification_config` DB table, synced from the YAML tem
 ```yaml
 rules:
   - event: 'agent-question.created'
+    channels: [push]
+
+  - id: 'assistant-task-update'
+    event: 'inbox.messageReceived'
+    match:
+      recipientType: 'voice_assistant'
+      assistantPush: true
     channels: [push]
 
   - event: 'inbox.messageReceived'

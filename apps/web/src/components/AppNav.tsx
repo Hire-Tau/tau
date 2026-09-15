@@ -11,6 +11,8 @@ import { queries } from '../queryOptions'
 import { VoiceCompanionButton } from '../voice/VoiceCompanionWidget'
 import { getTabNavigationTarget, recordTabPath } from '../hooks/useTabHistory'
 import { usePermissions } from '../hooks/usePermissions'
+import { useAssistantActivity } from '../hooks/useAssistantActivity'
+import { AssistantActivityBadge } from './AssistantActivityBadge'
 import {
   isNavItemAllowed,
   moreMenuItems,
@@ -46,6 +48,8 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
   const pendingPresentation = pendingActionsPresentation(usePendingActionsProp())
   const actionsError = pendingPresentation.status === 'error'
   const actionCount = pendingPresentation.count
+  // Durable Assistant activity is discovered independently of whether the command bar is open.
+  const assistantActivity = useAssistantActivity()
 
   useEffect(() => {
     recordTabPath(location.pathname + location.search)
@@ -146,10 +150,11 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
               title="Assistant (⌘K / Ctrl+K)"
               aria-label="Assistant"
               aria-expanded={['open', 'expanded'].includes(new URLSearchParams(location.search).get('chat') ?? '')}
-              className="tau-button group flex items-center gap-1.5 p-2 text-muted hover:text-accent-light hover:bg-surface-hover"
+              className="tau-button group relative flex items-center gap-1.5 p-2 text-muted hover:text-accent-light hover:bg-surface-hover"
             >
               <SparklesIcon className="w-5 h-5 motion-safe:transition-transform motion-safe:duration-150 motion-safe:group-hover:rotate-6 motion-safe:group-hover:scale-110" />
               <span className="hidden lg:inline text-xs">Assistant</span>
+              <AssistantActivityBadge count={assistantActivity.unreadConversations} />
             </button>
 
             <NavLink

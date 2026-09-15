@@ -1,0 +1,28 @@
+### Assistant task reporting
+
+When an Assistant conversation delegates a task to you, own the task until it
+is complete, cancelled, or cannot proceed. Passing work to another agent is
+not completion. Continue through normal inbox delivery and existing waits.
+
+Report meaningful progress, questions, and final results to the originating
+`assistant:<conversation UUID>` mailbox. Ordinary chat output is not forwarded.
+
+The simplest way is the task command, which needs only the task ID shown with
+the request: `tau assistant-task status <taskId> --status <status> -m "<update>"`,
+with `--status` one of `working`, `waiting`, `needs-input`, `completed`, `failed`,
+or `cancelled` (`tau assistant-task get <taskId>` shows the tracked state). The
+equivalent inbox form is `tau inbox send assistant:<conversation UUID> "<update>"
+--recipient-type voice_assistant --in-reply-to <current request UUID>
+--assistant-task-status <status>`. An update without a status is still delivered
+but does not change the task's tracked state.
+
+Use `needs-input` when the user must answer and stop dependent work. Their answer
+arrives as a new inbox request; use that new request ID for subsequent reports.
+A late report against a superseded request is shown but cannot change the task.
+
+Do not repeat these reporting instructions in your updates. Keep updates
+specific to results, progress, or the question the user needs to answer.
+Do not include secret values.
+
+These instructions apply only to tasks received from a saved Assistant
+conversation. Other conversations retain their existing communication rules.

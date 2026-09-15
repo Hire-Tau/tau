@@ -11,15 +11,28 @@ import { z } from 'zod'
 import { HTTPException } from 'hono/http-exception'
 import { isDeepStrictEqual } from 'node:util'
 import { zValidator } from '@hono/zod-validator'
-import { and, asc, desc, eq, ilike, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, ilike, isNull, notInArray, sql } from 'drizzle-orm'
 import {
   assistantEntrySchema,
   assistantInboxRecipientId,
   chatPagePathSchema,
   type AssistantEntry,
+  type AssistantMailbox,
   type AssistantMessageReceipt,
 } from '@tau/shared'
-import { assistantConversationAgents, assistantConversations, assistantEntries, db, inbox, agents } from '../db'
+import {
+  assistantConversationAgents,
+  assistantConversations,
+  assistantEntries,
+  assistantTasks,
+  assistantUpdates,
+  db,
+  inbox,
+  agents,
+} from '../db'
+import { ASSISTANT_DELEGATION_KEY, ASSISTANT_TASK_ID_KEY } from '../services/assistant-activity/project'
+import { assistantActivityRouter } from './assistant-activity'
+import { markAssistantUpdatesProcessed } from '../services/assistant-activity/acknowledge'
 import { Agent } from '../entities/Agent'
 import { Squad } from '../entities/Squad'
 import { InboxMessage } from '../entities/InboxMessage'
@@ -97,6 +110,8 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
     if (!row) return c.json({ error: 'Conversation not found' }, 404)
     return c.json(row)
   })
+  // Activity discovery registers before `/:id` so `/activity` is never read as a conversation ID.
+  .route('/', assistantActivityRouter)
   .get('/:id', zValidator('query', z.object({ before: z.coerce.number().int().positive().optional() })), async (c) => {
     const conversation = await owned(c.req.param('id'), c.get('assistantOwner'))
     if (!conversation) return c.json({ error: 'Conversation not found' }, 404)
@@ -313,6 +328,7 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
         metadata: {
           source: 'assistant_inbox',
           inReplyTo: input.inReplyTo,
+          [ASSISTANT_DELEGATION_KEY]: { kind, squadId: targetSquadId, ...(input.label ? { label: input.label } : {}) },
           ...(input.pagePath && previous?.pagePath !== input.pagePath ? { pagePath: input.pagePath } : {}),
           assistantContext: history.reverse().map(({ entry }) => ({
             role: (entry as AssistantEntry).role,
@@ -330,8 +346,11 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
     )
       return c.json({ error: 'Message receipt conflicts with this request' }, 409)
     if (input.label && kind !== 'agent') await agent.update({ purpose: `Assistant task: ${input.label}` })
+    const taskId = message.metadata[ASSISTANT_TASK_ID_KEY]
+    if (typeof taskId !== 'string') return c.json({ error: 'Task receipt unavailable' }, 500)
     const receipt: AssistantMessageReceipt = {
       id: message.id,
+      taskId,
       agentId,
       delivered: Boolean(message.deliveredAt),
       kind,
@@ -362,76 +381,66 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
       )
       .returning({ id: assistantConversations.id })
     if (!lease) return c.json({ acquired: false, messages: [], pending: 0, unavailable: false })
-    const address = assistantInboxRecipientId(conversation.id)
+    // Unprocessed means Realtime has not presented it; it says nothing about whether the human saw it.
     const incoming = await db
-      .select()
-      .from(inbox)
-      .where(and(eq(inbox.recipientType, 'voice_assistant'), eq(inbox.recipientId, address), isNull(inbox.readAt)))
-      .orderBy(asc(inbox.createdAt), asc(inbox.id))
+      .select({ update: assistantUpdates, inbox })
+      .from(assistantUpdates)
+      .innerJoin(inbox, eq(inbox.id, assistantUpdates.messageId))
+      .where(and(eq(assistantUpdates.conversationId, conversation.id), isNull(assistantUpdates.processedAt)))
+      .orderBy(asc(assistantUpdates.sequence))
       .limit(50)
+    // A task stays pending until its delegate explicitly finishes it; progress replies do not end it.
     const pending = await db
-      .select({ id: inbox.id, status: agents.status })
-      .from(inbox)
-      .leftJoin(agents, eq(sql`${agents.id}::text`, inbox.recipientId))
+      .select({ id: assistantTasks.id, status: agents.status })
+      .from(assistantTasks)
+      .leftJoin(agents, eq(agents.id, assistantTasks.agentId))
       .where(
         and(
-          eq(inbox.senderType, 'voice_assistant'),
-          eq(inbox.senderId, address),
-          eq(inbox.recipientType, 'agent'),
-          sql`NOT EXISTS (SELECT 1 FROM inbox reply WHERE reply.recipient_type = 'voice_assistant'
-          AND reply.recipient_id = ${address} AND reply.metadata->>'inReplyTo' = ${inbox.id}::text)`
+          eq(assistantTasks.conversationId, conversation.id),
+          notInArray(assistantTasks.status, ['completed', 'failed', 'cancelled'])
         )
       )
-    return c.json({
+    const mailbox: AssistantMailbox = {
       acquired: true,
-      messages: incoming.map((message) => ({
-        id: message.id,
+      messages: incoming.map(({ update, inbox: message }) => ({
+        messageId: message.id,
+        taskId: update.taskId,
+        requestId: update.requestId,
+        sequence: update.sequence,
+        reportedStatus: update.reportedStatus,
+        content: message.content,
+        subject: message.subject,
         senderId: message.senderId,
         senderName:
           (message.metadata.sender as { name?: string; agentTypeName?: string })?.name ||
           (message.metadata.sender as { agentTypeName?: string })?.agentTypeName ||
           'Agent',
-        content: message.content,
-        subject: message.subject,
-        replyTo: typeof message.metadata.inReplyTo === 'string' ? message.metadata.inReplyTo : null,
+        processedAt: null,
+        seenAt: update.seenAt?.toISOString() ?? null,
         createdAt: message.createdAt.toISOString(),
       })),
       pending: pending.length,
       unavailable: pending.some((row) => !row.status || row.status === 'terminated'),
-    })
+    }
+    return c.json(mailbox)
   })
-  .post('/:id/inbox/ack', zValidator('json', z.object({ consumerId: uuid, messageId: uuid })), async (c) => {
-    const conversation = await owned(c.req.param('id'), c.get('assistantOwner'))
-    if (!conversation) return c.json({ error: 'Conversation not found' }, 404)
-    const input = c.req.valid('json')
-    const accepted = await db.transaction(async (tx) => {
-      const [lease] = await tx
-        .select()
-        .from(assistantConversations)
-        .where(
-          and(
-            eq(assistantConversations.id, conversation.id),
-            eq(assistantConversations.inboxConsumerId, input.consumerId),
-            sql`${assistantConversations.inboxConsumerExpiresAt} > now()`
-          )
-        )
-        .for('update')
-      if (!lease) return false
-      const [message] = await tx
-        .update(inbox)
-        .set({ readAt: sql`now()` })
-        .where(
-          and(
-            eq(inbox.id, input.messageId),
-            eq(inbox.recipientType, 'voice_assistant'),
-            eq(inbox.recipientId, assistantInboxRecipientId(conversation.id))
-          )
-        )
-        .returning({ id: inbox.id })
-      return Boolean(message)
-    })
-    return accepted ? c.json({ success: true }) : c.json({ error: 'Inbox receiver or message unavailable' }, 409)
-  })
+  .post(
+    '/:id/inbox/ack',
+    zValidator(
+      'json',
+      z.object({
+        consumerId: uuid,
+        messageIds: z.array(uuid).min(1).max(10),
+        responseEntryId: z.string().min(1).max(160),
+      })
+    ),
+    async (c) => {
+      const conversation = await owned(c.req.param('id'), c.get('assistantOwner'))
+      if (!conversation) return c.json({ error: 'Conversation not found' }, 404)
+      const result = await markAssistantUpdatesProcessed(conversation.id, c.req.valid('json'))
+      return result.ok ? c.json({ success: true }) : c.json({ error: result.message, reason: result.reason }, 409)
+    }
+  )
   .post('/:id/inbox/release', zValidator('json', z.object({ consumerId: uuid })), async (c) => {
     const conversation = await owned(c.req.param('id'), c.get('assistantOwner'))
     if (!conversation) return c.json({ error: 'Conversation not found' }, 404)

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { AssistantActivityUpdate } from './assistant-activity'
 
 export const assistantEntrySchema = z.object({
   id: z.string().min(1).max(160),
@@ -12,6 +13,8 @@ export const assistantEntrySchema = z.object({
   toolResult: z.string().max(100_000).optional(),
   toolError: z.boolean().optional(),
   interrupted: z.boolean().optional(),
+  /** Durable Assistant updates this entry presented; acknowledgment requires a final entry naming them. */
+  assistantUpdateIds: z.array(z.string().uuid()).max(10).optional(),
 })
 export type AssistantEntry = z.infer<typeof assistantEntrySchema>
 export interface AssistantConversation {
@@ -32,24 +35,27 @@ export function parseAssistantInboxConversationId(id: string | null | undefined)
 export type AssistantMessageTargetKind = 'background' | 'squad' | 'agent'
 export interface AssistantMessageReceipt {
   id: string
+  /** The tracked task this request belongs to: its first request's ID. */
+  taskId: string
   agentId: string
   delivered: boolean
   /** background = the conversation's general helper, squad = its owned consultant, agent = an explicit target. */
   kind: AssistantMessageTargetKind
   squadId?: string
 }
-export interface AssistantInboxUpdate {
-  id: string
-  senderId: string | null
-  senderName: string
-  content: string
-  subject: string | null
-  replyTo: string | null
-  createdAt: string
-}
+/** One unprocessed durable update handed to the Realtime consumer; the sender lets tools reply. */
+export type AssistantMailboxUpdate = AssistantActivityUpdate & { senderId: string | null }
 export interface AssistantMailbox {
   acquired: boolean
-  messages: AssistantInboxUpdate[]
+  /** Updates Realtime has not presented yet, oldest first. Unread state is tracked separately. */
+  messages: AssistantMailboxUpdate[]
+  /** Tracked tasks that have not reached a terminal state. */
   pending: number
   unavailable: boolean
+}
+/** Mailbox acknowledgment: a durable final entry must reference every processed update. */
+export interface AssistantMailboxAcknowledgment {
+  consumerId: string
+  messageIds: string[]
+  responseEntryId: string
 }

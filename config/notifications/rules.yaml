@@ -9,7 +9,7 @@
 #   - agent-question.created
 #   - workStream.blocked, workStream.review, workStream.done
 #   - workStream.created, workStream.updated
-#   - inbox.messageReceived
+#   - inbox.messageReceived (including saved Assistant task updates)
 #   - execution.completed, execution.failed
 
 rules:
@@ -34,6 +34,16 @@ rules:
     match:
       source: 'fleet-alert'
     channels: [push, discord, slack, telegram]
+
+  # Saved Assistant conversations: only actionable task updates (needs input, completed, failed on
+  # the current request) push. The flag is server-derived in InboxMessage; routine progress only
+  # refreshes the Assistant badge. Delivery is filtered to the conversation owner in the service.
+  - id: 'assistant-task-update'
+    event: 'inbox.messageReceived'
+    match:
+      recipientType: 'voice_assistant'
+      assistantPush: true
+    channels: [push]
 
   # Inbox messages to a user (personal inbox) or the shared system inbox - web and native push.
   # Push delivery is filtered per-recipient in the notification service (user → that user's devices;

@@ -6,11 +6,50 @@ import { acquireDomHarness } from '../test/domHarness'
 import { queries, integrationQueries } from '../queryOptions'
 import { PermissionsProvider } from '../hooks/usePermissions'
 import { AssistantCommandCenter } from './AssistantCommandCenter'
-import type { CommandDestination } from '../lib/commandCenterSearch'
+import type { AssistantConversationDestination, CommandDestination } from '../lib/commandCenterSearch'
+import { assistantQueryKeys } from '../queryKeys'
 
-async function fixture(pendingWork?: Promise<any>, initialStack: CommandDestination[] = [], delayedQuery = false) {
+const ownerUserId = '507a9ac0-164e-4f49-9441-e57522bdc52b'
+const activityConversationId = '6a1c0b4e-8c2d-4f3e-9a7b-1c2d3e4f5a6b'
+const activityPage = {
+  totals: {
+    unreadConversations: 1,
+    unreadUpdates: 2,
+    workingTasks: 1,
+    waitingTasks: 0,
+    needsInputTasks: 1,
+    unavailableTasks: 0,
+  },
+  conversations: [
+    {
+      id: activityConversationId,
+      title: 'Hosting comparison',
+      updatedAt: '2026-09-15T10:00:00.000Z',
+      latestUpdateSequence: 4,
+      unreadUpdates: 2,
+      workingTasks: 1,
+      waitingTasks: 0,
+      needsInputTasks: 1,
+      unavailableTasks: 0,
+      latestUpdate: {
+        messageId: '00000000-0000-4000-8000-000000000004',
+        preview: 'Which region should the deployment use?',
+        createdAt: '2026-09-15T10:00:00.000Z',
+      },
+    },
+  ],
+  hasMore: false,
+}
+
+async function fixture(
+  pendingWork?: Promise<any>,
+  initialStack: CommandDestination[] = [],
+  delayedQuery = false,
+  options: { activity?: boolean } = {}
+) {
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } })
+  if (options.activity) client.setQueryData(assistantQueryKeys.activity(ownerUserId, 0), activityPage)
   const squad = { id: 'tau', name: 'Tau', purpose: 'Build software', managerAgentId: 'manager' }
   const work = {
     id: 'work',
@@ -63,6 +102,7 @@ async function fixture(pendingWork?: Promise<any>, initialStack: CommandDestinat
   ))
   const ask = mock()
   const queryChanged = mock()
+  const opened: AssistantConversationDestination[] = []
   let commitQuery!: (query: string) => void
   function Harness() {
     const [query, setQuery] = useState('')
@@ -73,7 +113,10 @@ async function fixture(pendingWork?: Promise<any>, initialStack: CommandDestinat
         active
         {...(delayedQuery ? { query, onQueryChange: queryChanged } : {})}
         stack={stack}
-        onPush={(next) => setStack((current) => [...current, next])}
+        onPush={(next) => {
+          if (next.kind === 'assistant') opened.push(next)
+          else setStack((current) => [...current, next])
+        }}
         onBack={() => setStack((current) => current.slice(0, -1))}
         onAsk={ask}
         canAsk
@@ -90,6 +133,7 @@ async function fixture(pendingWork?: Promise<any>, initialStack: CommandDestinat
         <PermissionsProvider
           usePermissions={() => ({
             permissions: ['chat:send'],
+            identity: { type: 'user', userId: ownerUserId },
             can: (p) => p === 'chat:send',
             isLoading: false,
             isError: false,
@@ -123,6 +167,7 @@ async function fixture(pendingWork?: Promise<any>, initialStack: CommandDestinat
     container,
     chats,
     ask,
+    opened,
     commitQuery,
     queryChanged,
     type,
@@ -622,6 +667,53 @@ test('typing stays synchronous while URL updates are pending and external query 
     expect(input.value).toBe('Xalpha omega')
     await f.dom.act(async () => f.commitQuery('restored search'))
     expect(input.value).toBe('restored search')
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('root Updates rows lead the landing list, take arrow keys and Enter, and disappear while searching', async () => {
+  const f = await fixture(undefined, [], false, { activity: true })
+  try {
+    const rows = () => [...f.container.querySelectorAll<HTMLButtonElement>('[role="option"]')]
+    expect(f.container.textContent).toContain('Updates')
+    expect(rows()[0].textContent).toContain('Hosting comparison')
+    expect(rows()[0].textContent).toContain('Which region should the deployment use?')
+    expect(rows()[0].textContent).toContain('1 task needs your input')
+    expect(rows()[0].querySelector('[aria-label="Unread updates"]')).not.toBeNull()
+    expect(rows()[0].getAttribute('aria-selected')).toBe('true')
+    const input = f.container.querySelector<HTMLInputElement>('input[role="combobox"]')!
+    // Arrow keys move through update rows and ordinary results alike; Up returns to the update row.
+    await f.dom.act(async () => {
+      input.dispatchEvent(new f.dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    })
+    expect(rows()[1].getAttribute('aria-selected')).toBe('true')
+    expect(rows()[1].textContent).not.toContain('Hosting comparison')
+    await f.dom.act(async () => {
+      input.dispatchEvent(new f.dom.window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }))
+    })
+    expect(rows()[0].getAttribute('aria-selected')).toBe('true')
+    // Enter opens the existing saved conversation through the Assistant stack; no chat is created.
+    await f.dom.act(async () => {
+      input.form!.dispatchEvent(new f.dom.window.Event('submit', { bubbles: true, cancelable: true }))
+    })
+    expect(f.opened).toEqual([{ kind: 'assistant', id: activityConversationId, label: 'Assistant' }])
+    expect(f.chats).not.toHaveBeenCalled()
+    // Searching hides the Updates section; clearing the query restores it with the same selection model.
+    await f.type(input, 'Fix')
+    expect(f.container.textContent).not.toContain('Hosting comparison')
+    expect(f.container.textContent).not.toContain('Updates')
+    await f.type(input, '')
+    expect(rows()[0].textContent).toContain('Hosting comparison')
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('a squad preview never shows or queries Assistant updates', async () => {
+  const f = await fixture(undefined, [{ kind: 'squad', id: 'tau', label: 'Tau' }], false, { activity: true })
+  try {
+    expect(f.container.textContent).not.toContain('Hosting comparison')
   } finally {
     await f.cleanup()
   }

@@ -1261,6 +1261,13 @@
       "when": 1789446273657,
       "tag": "0179_chunky_sumo",
       "breakpoints": true
+    },
+    {
+      "idx": 180,
+      "version": "7",
+      "when": 1789502494968,
+      "tag": "0180_oval_captain_cross",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 
-import { getWorkStreamLink } from './lib/inboxWorkStreamLink'
+import { resolveNotificationTarget } from './lib/notificationTarget'
 
 // Tau Service Worker
 // Provides offline caching and push notification support.
@@ -158,8 +158,8 @@ self.addEventListener('push', (event) => {
     data = { title: 'Tau', body: event.data.text() }
   }
 
-  const exactActionPath = getWorkStreamLink(data)
-  const targetUrl = exactActionPath ? p(exactActionPath) : data.url || p('/')
+  // Same-origin only: a saved Assistant conversation link keeps its query string and base path.
+  const targetUrl = resolveNotificationTarget(data, self.location.origin, BASE_PATH)
 
   const options = {
     body: data.body || 'You have a notification',
