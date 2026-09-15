@@ -25,7 +25,8 @@ describe('discordProvider messaging', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch
-    process.env.DISCORD_BOT_TOKEN = originalEnv
+    if (originalEnv === undefined) delete process.env.DISCORD_BOT_TOKEN
+    else process.env.DISCORD_BOT_TOKEN = originalEnv
   })
 
   it('returns the thread channel as editChannelId when posting into a thread', async () => {
@@ -58,7 +59,8 @@ describe('discordProvider.sendNotification', () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch
-    process.env.DISCORD_BOT_TOKEN = originalEnv
+    if (originalEnv === undefined) delete process.env.DISCORD_BOT_TOKEN
+    else process.env.DISCORD_BOT_TOKEN = originalEnv
   })
 
   it('sends notification to channel via Discord API', async () => {
