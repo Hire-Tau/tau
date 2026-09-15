@@ -1055,6 +1055,14 @@ expect_eq 'do_is_capacity_error: 422 with a non-capacity message (invalid image)
 expect_eq 'do_is_capacity_error: 200 (success) never matches → false' \
   "$(do_is_capacity_error 200 '{"message":"ok"}' && echo yes || echo no)" 'no'
 
+expect_eq 'do_is_account_limit_error: 422 droplet-limit message → true' \
+  "$(do_is_account_limit_error 422 '{"id":"unprocessable_entity","message":"You have reached your droplet limit. Please contact support to request an increase."}' && echo yes || echo no)" 'yes'
+expect_eq 'do_is_account_limit_error: 422 with a size-stockout message → false (that is capacity, not the account)' \
+  "$(do_is_account_limit_error 422 '{"message":"The size s-1vcpu-2gb is not available in this region."}' && echo yes || echo no)" 'no'
+expect_eq 'do_is_account_limit_error: 503 never matches → false' \
+  "$(do_is_account_limit_error 503 '{"message":"droplet limit"}' && echo yes || echo no)" 'no'
+expect_eq 'PROVISION_EXIT_PERMANENT is the platform executor contract (66)' "${PROVISION_EXIT_PERMANENT}" '66'
+
 # --- cloudflare pure helpers (parsers / idempotent-upsert branch / body) -----
 expect_eq 'cf_zone_id_from_list finds the zone id' \
   "$(cf_zone_id_from_list '{"result":[{"id":"zone123","name":"hiretau.ai"}]}')" 'zone123'
