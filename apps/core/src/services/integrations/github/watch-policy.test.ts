@@ -200,6 +200,61 @@ test('canonical code hosting references honor the selected account and never pol
   expect(requested).toEqual([['squad', connectionId]])
 })
 
+test('polls tracked-resource PR and issue watches, respecting connection pins and terminal status', async () => {
+  const pinned = crypto.randomUUID()
+  const policy = new GitHubPrWatchPolicy({
+    resolveConnection: async (squadId, connectionId) =>
+      connectionId ? { id: connectionId } : { id: `account-${squadId}` },
+    listWorkStreams: async () => [
+      {
+        squadId: 's1',
+        status: 'active',
+        metadata: {
+          tracked: [
+            { integration: 'github', repository: 'acme/widgets', kind: 'pull_request', number: 42 },
+            { integration: 'github', repository: 'beta/tools', kind: 'pull_request', number: 7, connectionId: pinned },
+            { integration: 'github', repository: 'acme/widgets', kind: 'issue', number: 5 },
+          ],
+        },
+      },
+      {
+        squadId: 's1',
+        status: 'done',
+        metadata: {
+          tracked: [{ integration: 'github', repository: 'acme/widgets', kind: 'pull_request', number: 99 }],
+        },
+      },
+    ],
+    lastRealDeliveries: async () => new Map(),
+  })
+  const watches = await policy.listWatches()
+  expect(watches.map((watch) => watch.resourceKey).sort()).toEqual(
+    [`s1:${pinned}:beta/tools#7`, 's1:account-s1:acme/widgets#42', 's1:account-s1:acme/widgets:issue-events'].sort()
+  )
+  expect(watches.some((watch) => watch.resourceKey.endsWith('#99'))).toBe(false)
+})
+
+test('dedupes a PR present in both the delivery changeRequest and tracked resources into a single watch', async () => {
+  const policy = new GitHubPrWatchPolicy({
+    resolveConnection: async (squadId, connectionId) =>
+      connectionId ? { id: connectionId } : { id: `account-${squadId}` },
+    listWorkStreams: async () => [
+      {
+        squadId: 's1',
+        status: 'active',
+        metadata: {
+          codeHost: { integration: 'github', repository: 'acme/widgets', changeRequest: { number: 42 } },
+          tracked: [{ integration: 'github', repository: 'acme/widgets', kind: 'pull_request', number: 42 }],
+        },
+      },
+    ],
+    lastRealDeliveries: async () => new Map(),
+  })
+  const watches = await policy.listWatches()
+  expect(watches).toHaveLength(1)
+  expect(watches[0]).toMatchObject({ resourceKey: 's1:account-s1:acme/widgets#42' })
+})
+
 test('wildcard issue rules establish one watch per expanded repository and none without an expander', async () => {
   const { squadEventRuleSchema } = await import('@tau/shared')
   const rule = squadEventRuleSchema.parse({
