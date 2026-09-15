@@ -1231,9 +1231,18 @@ test('the delegated agent can report task status directly without tracking reque
   expect(final.requestId).toBe(answer.id)
   expect((await InboxMessage.mustFind(final.messageId)).content).toBe('Task status: completed')
   expect((await f.task(receipt.taskId)).status).toBe('completed')
-  // Terminal stays terminal through this path too.
-  expect((await call(`/${receipt.taskId}/status`, { status: 'working' })).status).toBe(200)
+  // A finished task refuses reports that would change it, without recording a no-op update.
+  const updatesBefore = (await db.select().from(assistantUpdates).where(eq(assistantUpdates.conversationId, f.id)))
+    .length
+  const reopen = await call(`/${receipt.taskId}/status`, { status: 'working' })
+  expect(reopen.status).toBe(409)
+  expect(await reopen.json()).toMatchObject({ task: { id: receipt.taskId, status: 'completed' } })
   expect((await f.task(receipt.taskId)).status).toBe('completed')
+  expect(await db.select().from(assistantUpdates).where(eq(assistantUpdates.conversationId, f.id))).toHaveLength(
+    updatesBefore
+  )
+  // Restating the same terminal status is an ordinary update and still accepted.
+  expect((await call(`/${receipt.taskId}/status`, { status: 'completed', message: 'Confirmed.' })).status).toBe(200)
   // Other agents, users, unknown tasks, and bad statuses are refused.
   const stranger = await Agent.create({ agentTypeId: 'system-manager', ownerUserId: f.owner.id, context: {} })
   agentIds.push(stranger.id)

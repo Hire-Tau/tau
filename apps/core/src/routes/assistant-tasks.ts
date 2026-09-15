@@ -2,7 +2,12 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { zValidator } from '@hono/zod-validator'
 import { and, eq } from 'drizzle-orm'
-import { assistantInboxRecipientId, reportableAssistantTaskStatusSchema, type AssistantTaskSummary } from '@tau/shared'
+import {
+  assistantInboxRecipientId,
+  isTerminalAssistantTaskStatus,
+  reportableAssistantTaskStatusSchema,
+  type AssistantTaskSummary,
+} from '@tau/shared'
 import { agents, assistantTasks, db } from '../db'
 import { InboxMessage } from '../entities/InboxMessage'
 import type { Identity } from '../services/rbac'
@@ -61,6 +66,16 @@ export const assistantTasksRouter = new Hono()
     if (!row || identity?.type !== 'agent') return c.json({ error: 'Task not found' }, 404)
     c.set('authzChecked', true)
     const input = c.req.valid('json')
+    // A finished task never reopens through a report; say so instead of recording a no-op update.
+    // Only a new user follow-up in the conversation reopens it.
+    if (isTerminalAssistantTaskStatus(row.task.status) && input.status !== row.task.status)
+      return c.json(
+        {
+          error: `Task is already ${row.task.status}; reports cannot change a finished task. A new user follow-up reopens it.`,
+          task: summarize(row),
+        },
+        409
+      )
     const message = await InboxMessage.send({
       recipientType: 'voice_assistant',
       recipientId: assistantInboxRecipientId(row.task.conversationId),

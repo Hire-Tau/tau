@@ -46,7 +46,9 @@ tau assistant-task get TASK_UUID
 
 `POST /api/assistant-tasks/:taskId/status` accepts only the agent currently bound to the task and is
 sugar over an inbox reply on the task's current request, so it shares the validation, projection,
-activity events, and push policy below. The equivalent inbox form carries a validated status flag:
+activity events, and push policy below. A report that would change a finished task is refused with
+HTTP 409 (and the current task state) rather than recorded as a no-op; only a new user follow-up
+reopens a task. The equivalent inbox form carries a validated status flag:
 
 ```bash
 tau inbox send assistant:CONVERSATION_UUID \
