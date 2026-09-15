@@ -55,7 +55,7 @@ Consultants are the main research, design, and brainstorming entry point. The ma
 
 Home presents a conversation entry point, active work, recent chats, and a labeled **Squad coordinator** row. The coordinator description explains its role. Keep Active and Recent chats headings on the same title gutter. Recent consultant rows retain idle dots so they read as clickable agents, even in the flat presentation.
 
-The chat picker keeps the manager, search, and New chat action accessible. The pulse toggle starts enabled and limits the worker list to live/non-idle agents, hiding empty categories. Consultant recents remain available. Show **No active agents** when the filtered worker region is empty.
+The chat picker keeps the manager, search, and New chat action accessible. The pulse toggle starts disabled. When enabled, it limits the worker list to live/non-idle agents plus the currently viewed agent, retaining that agent’s category even if it becomes idle or completed and hiding other empty categories. Consultant recents remain available. Show **No active agents** when the filtered worker region is empty.
 
 Squad Home and the Chats panel show up to five unarchived recent consultants, ordered by the last human message or creation time, without a fixed age cutoff. The Chats panel’s Recent chats section starts expanded and can collapse independently of workers and the open conversation; search reveals matching chats. Home has no recent-chat disclosure. Browsing/search gives access to older chats. Standalone chat page pickers retain ten recents.
 

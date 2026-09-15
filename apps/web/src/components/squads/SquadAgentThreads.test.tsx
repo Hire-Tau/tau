@@ -15,7 +15,7 @@ import type { Agent } from '@tau/shared'
 // Seeds the initial URL search params for the next mount — lets tests simulate a
 // page load / refresh at a given URL (e.g. ?newConsultant=1). Reset in afterEach.
 let initialSearchParams = ''
-// Existing roster tests exercise the all-agents view; filter regressions use the product default.
+// Most tests use the default all-agents view; filter regressions explicitly enable the toggle.
 let includeIdleAgents = true
 let deniedPermissions = new Set<string>()
 const apiFetchCalls: Array<[string, RequestInit | undefined]> = []
@@ -68,7 +68,7 @@ const { getAgentHeaderTitleParts } = await import('./AgentViewModal')
 
 function fixtureLocation() {
   const params = new URLSearchParams(initialSearchParams)
-  if (includeIdleAgents) params.set('activeAgentsOnly', '0')
+  if (!includeIdleAgents) params.set('activeAgentsOnly', '1')
   return `/squads/squad-1?${params}`
 }
 
@@ -1330,7 +1330,82 @@ describe('SquadAgentThreads new-consultant handoff', () => {
 })
 
 describe('SquadAgentThreads active filter', () => {
-  test('defaults to active workers only and keeps pinned controls above the empty state', () => {
+  test('defaults to showing idle workers without a filter URL parameter', () => {
+    const html = renderThreads([agent(), agent({ id: 'idle', agentTypeId: 'engineer' })])
+    expect(html).toContain('aria-label="Active workers only" aria-pressed="false"')
+    expect(html).toContain('data-agent-type-section="engineer"')
+  })
+
+  test('keeps a selected idle worker in a collapsed category and removes it after navigating away', async () => {
+    includeIdleAgents = false
+    initialSearchParams = 'agent=idle-worker'
+    const dom = await installDom()
+    try {
+      const { root } = dom.createRoot()
+      await dom.act(async () =>
+        renderThreadsDom(root, makeQueryClient(), [
+          agent(),
+          agent({ id: 'idle-worker', agentTypeId: 'engineer', metadata: { name: 'Selected worker' } }),
+          agent({ id: 'other-idle', agentTypeId: 'engineer', metadata: { name: 'Other worker' } }),
+        ])
+      )
+      const document = dom.window.document
+      await dom.act(async () =>
+        (document.querySelector('[aria-label="Collapse Engineer"]') as HTMLButtonElement).click()
+      )
+      expect(document.querySelector('[title="Selected worker · engineer · idle-worker"]')).not.toBeNull()
+      expect(document.querySelector('[title="Other worker · engineer · other-idle"]')).toBeNull()
+      await dom.act(async () =>
+        (document.querySelector('[data-agent-type-section="manager"] button') as HTMLButtonElement).click()
+      )
+      expect(document.querySelector('[data-agent-type-section="engineer"]')).toBeNull()
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  for (const status of ['idle', 'dormant', 'terminated'] as const) {
+    test(`retains a selected ${status} agent and its category in the mobile picker with the filter on`, async () => {
+      includeIdleAgents = false
+      initialSearchParams = 'agent=selected-'
+      const dom = await installDom()
+      try {
+        const { root } = dom.createRoot()
+        const worker = agent({
+          id: 'selected-worker',
+          agentTypeId: 'engineer',
+          status,
+          metadata: { name: 'Selected worker' },
+        })
+        const other = agent({ id: 'other-worker', agentTypeId: 'reviewer', status, metadata: { name: 'Other worker' } })
+        await dom.act(async () =>
+          renderThreadsDom(
+            root,
+            makeQueryClient(),
+            status === 'terminated' ? [agent()] : [agent(), worker, other],
+            status === 'terminated' ? [worker, other] : []
+          )
+        )
+        await dom.act(async () =>
+          (dom.window.document.querySelector('[data-testid="agent-picker-trigger"]') as HTMLButtonElement).click()
+        )
+        const dialog = dom.window.document.querySelector('[role="dialog"]')!
+        expect(dialog.querySelector('[aria-label="Active workers only"]')?.getAttribute('aria-pressed')).toBe('true')
+        const category = status === 'idle' ? 'engineer' : 'recently-completed'
+        expect(
+          dialog.querySelector(
+            `[data-agent-type-section="${category}"] [title="Selected worker · engineer · selected-worker"]`
+          )
+        ).not.toBeNull()
+        expect(dialog.querySelector('[title="Other worker · reviewer · other-worker"]')).toBeNull()
+        expect(dialog.textContent).not.toContain('No active agents')
+      } finally {
+        await dom.cleanup()
+      }
+    })
+  }
+
+  test('enabling active workers only keeps pinned controls above the empty state', () => {
     includeIdleAgents = false
     const html = renderThreads(
       [
@@ -1396,7 +1471,7 @@ describe('SquadAgentThreads active filter', () => {
       const search = window.document.querySelector('input[type="search"]') as HTMLInputElement
       const header = window.document.querySelector('[data-testid="agent-picker-static"]')!
       expect(header.textContent).toContain('Idle Engineer')
-      expect(window.document.querySelector('[title="Idle Engineer · engineer · e2"]')).toBeNull()
+      expect(window.document.querySelector('[title="Idle Engineer · engineer · e2"]')).not.toBeNull()
       expect(window.document.body.textContent).toContain('Agent chat body')
 
       await dom.act(async () => filter.click())
@@ -1406,6 +1481,8 @@ describe('SquadAgentThreads active filter', () => {
       await dom.act(async () => changeSearchInput(window, search, 'Idle'))
       expect(window.document.querySelector('[title="Working Engineer · engineer · e1"]')).toBeNull()
       await dom.act(async () => filter.click())
+      expect(window.document.querySelector('[title="Idle Engineer · engineer · e2"]')).not.toBeNull()
+      await dom.act(async () => changeSearchInput(window, search, 'does not match'))
       expect(window.document.body.textContent).toContain('No conversations match your search')
       expect(header.textContent).toContain('Idle Engineer')
       expect(window.document.querySelector('[data-agent-type-section="manager"]')).not.toBeNull()
@@ -1428,8 +1505,11 @@ describe('SquadAgentThreads active filter', () => {
       await dom.act(async () => renderThreadsDom(root, queryClient, [agent(), worker]))
       expect(window.document.querySelector('[data-agent-type-section="engineer"]')).not.toBeNull()
       await dom.act(async () => renderThreadsDom(root, queryClient, [agent(), { ...worker, status: 'idle' }]))
-      expect(window.document.querySelector('[data-agent-type-section="engineer"]')).toBeNull()
-      expect(window.document.body.textContent).toContain('No active agents')
+      expect(window.document.querySelector('[data-agent-type-section="engineer"]')).not.toBeNull()
+      expect(window.document.querySelector('[title="Worker · engineer · e1"]')?.getAttribute('aria-pressed')).toBe(
+        'true'
+      )
+      expect(window.document.body.textContent).not.toContain('No active agents')
       expect(window.document.body.textContent).toContain('Agent chat body')
       expect(window.document.querySelector('[data-testid="agent-picker-static"]')?.textContent).toContain('Worker')
       await dom.act(async () => renderThreadsDom(root, queryClient, [agent(), worker]))
@@ -1440,8 +1520,7 @@ describe('SquadAgentThreads active filter', () => {
     }
   })
 
-  test('offers the default-on toggle and empty state in the mobile picker', async () => {
-    includeIdleAgents = false
+  test('defaults to all agents and offers activity filtering in the mobile picker', async () => {
     const dom = await installDom()
     const { window } = dom
     try {
@@ -1456,14 +1535,16 @@ describe('SquadAgentThreads active filter', () => {
       await dom.act(async () => trigger.click())
       const dialog = window.document.querySelector('[role="dialog"]')!
       const filter = dialog.querySelector('[aria-label="Active workers only"]') as HTMLButtonElement
-      expect(filter.getAttribute('aria-pressed')).toBe('true')
-      expect(dialog.textContent).toContain('No active agents')
+      expect(filter.getAttribute('aria-pressed')).toBe('false')
+      expect(dialog.textContent).not.toContain('No active agents')
+      expect(dialog.querySelector('[data-agent-type-section="engineer"]')).not.toBeNull()
       expect(dialog.querySelector('[data-agent-type-section="manager"]')).not.toBeNull()
       expect(dialog.querySelector('input[type="search"]')).not.toBeNull()
       expect(dialog.querySelector('[aria-label="New consultant chat"]')).not.toBeNull()
       await dom.act(async () => filter.click())
-      expect(dialog.querySelector('[data-agent-type-section="engineer"]')).not.toBeNull()
-      expect(dialog.textContent).not.toContain('No active agents')
+      expect(filter.getAttribute('aria-pressed')).toBe('true')
+      expect(dialog.querySelector('[data-agent-type-section="engineer"]')).toBeNull()
+      expect(dialog.textContent).toContain('No active agents')
     } finally {
       await dom.cleanup()
     }
