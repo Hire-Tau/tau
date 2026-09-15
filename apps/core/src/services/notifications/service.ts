@@ -331,7 +331,13 @@ export class NotificationService {
           eventType: pushEventType(event.notificationKind ?? event.type),
           workStreamNumber,
           ...(prefs.showPreviews
-            ? { preview: { title: event.title.slice(0, 200), body: event.body.slice(0, 500) } }
+            ? {
+                preview: {
+                  title: event.title.slice(0, 200),
+                  body: event.body.slice(0, 500),
+                  ...(event.subtitle ? { subtitle: event.subtitle.slice(0, 80) } : {}),
+                },
+              }
             : {}),
         }
         const alert = pushAlertText(presentation)
@@ -339,6 +345,9 @@ export class NotificationService {
           if (device.platform !== 'ios' || !device.relayBindingToken) return
           const result = await sendRelayAlert(device.relayBindingToken, {
             ...presentation,
+            collapseKey: event.collapseKey,
+            threadKey: event.threadKey,
+            interruptionLevel: event.interruptionLevel,
             squadId: event.squadId,
             agentId: event.agentId,
             workStreamId: event.workStreamId,

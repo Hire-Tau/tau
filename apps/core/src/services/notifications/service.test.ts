@@ -717,6 +717,53 @@ describe('NotificationService', () => {
       }
     })
 
+    test('relay deliveries carry the subtitle inside the preview and the grouping keys beside it', async () => {
+      await registerApnsDevice({
+        userId: user.id,
+        apnsToken: 'relay-presentation-token',
+        platform: 'ios',
+        environment: 'production',
+      })
+      await db.update(apnsDevices).set({ relayBindingToken: 'tau_prd_test' }).where(eq(apnsDevices.userId, user.id))
+      const relay = spyOn(relayModule, 'sendRelayAlert').mockResolvedValue({ accepted: true, reason: undefined })
+      const config = spyOn(relayModule, 'pushRelayConfig').mockReturnValue({
+        token: 'fixture',
+        instanceId: 'fixture',
+        baseUrl: 'https://example.invalid',
+      })
+      const event: TestEvent = {
+        type: 'inbox.messageReceived',
+        workStreamNumber: 197,
+        title: 'Completed: #197 · Validate deletion',
+        body: 'ship it',
+        subtitle: 'Platform',
+        collapseKey: 'ws:abc',
+        threadKey: 'squad:def',
+        interruptionLevel: 'passive',
+        url: '/inbox',
+      }
+      try {
+        await callSendApnsPush(service, [user.id], event)
+        expect(relay.mock.calls[0][1]).toMatchObject({
+          eventType: 'message',
+          workStreamNumber: 197,
+          preview: { title: 'Completed: #197 · Validate deletion', body: 'ship it', subtitle: 'Platform' },
+          collapseKey: 'ws:abc',
+          threadKey: 'squad:def',
+          interruptionLevel: 'passive',
+        })
+        await UserNotificationPreferences.upsert(user.id, { showPreviews: false })
+        await callSendApnsPush(service, [user.id], event)
+        const routing = relay.mock.calls[1][1] as Record<string, unknown>
+        expect(routing.preview).toBeUndefined()
+        expect(routing).toMatchObject({ collapseKey: 'ws:abc', threadKey: 'squad:def', interruptionLevel: 'passive' })
+      } finally {
+        await UserNotificationPreferences.upsert(user.id, { showPreviews: true })
+        config.mockRestore()
+        relay.mockRestore()
+      }
+    })
+
     test('logs when recipients have no APNs devices', async () => {
       await callSendApnsPush(service, [user.id], { title: 'Hello', body: 'World', url: '/inbox' })
 

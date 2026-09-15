@@ -28,6 +28,36 @@ test('relay uses only a push credential and strips content and arbitrary URLs', 
   expect(captured!.redirect).toBe('error')
   expect(captured!.headers).toEqual({ Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' })
 })
+test('relay forwards the preview subtitle and grouping keys, and drops unknown presentation fields', async () => {
+  let captured: RequestInit | undefined
+  const fetcher = (async (_url, init) => {
+    captured = init
+    return Response.json({ accepted: true })
+  }) as (url: string, init: RequestInit) => Promise<Response>
+  await sendRelayAlert(
+    `tau_prd_${'b'.repeat(43)}`,
+    {
+      eventType: 'done',
+      workStreamNumber: 197,
+      preview: { title: 'Completed: #197 · Validate deletion', body: 'ship it', subtitle: 'Platform' },
+      collapseKey: 'ws:abc',
+      threadKey: 'squad:def',
+      interruptionLevel: 'passive',
+      sound: 'none',
+    },
+    { config, fetch: fetcher }
+  )
+  const payload = JSON.parse(String(captured!.body))
+  expect(payload.routing).toEqual({
+    eventType: 'done',
+    workStreamNumber: 197,
+    preview: { title: 'Completed: #197 · Validate deletion', body: 'ship it', subtitle: 'Platform' },
+    collapseKey: 'ws:abc',
+    threadKey: 'squad:def',
+    interruptionLevel: 'passive',
+  })
+})
+
 test('denial and network errors are redacted and never retry', async () => {
   let calls = 0
   const fetcher = (async () => {

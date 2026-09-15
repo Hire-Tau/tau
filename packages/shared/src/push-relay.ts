@@ -15,14 +15,19 @@ export const relayPairingSchema = z
   .strict()
 // No arbitrary aps keys or caller-chosen origin/URL. Content previews are opt-in;
 // otherwise only event type and a numeric work reference describe the update.
+// Grouping (threadKey), replacement (collapseKey), and urgency (interruptionLevel) are
+// structure rather than content, so they travel outside the preview.
 export const relayRoutingSchema = z
   .object({
     eventType: z.enum(['question', 'review', 'blocked', 'done', 'canceled', 'created', 'message', 'update']).optional(),
     workStreamNumber: z.number().int().positive().max(2147483647).optional(),
     preview: z
-      .object({ title: z.string().max(200), body: z.string().max(500) })
+      .object({ title: z.string().max(200), body: z.string().max(500), subtitle: z.string().max(80).optional() })
       .strict()
       .optional(),
+    collapseKey: z.string().min(1).max(64).optional(),
+    threadKey: z.string().min(1).max(64).optional(),
+    interruptionLevel: z.enum(['passive', 'active', 'time-sensitive']).optional(),
     squadId: z.string().uuid().optional(),
     agentId: z.string().uuid().optional(),
     workStreamId: z.string().uuid().optional(),
