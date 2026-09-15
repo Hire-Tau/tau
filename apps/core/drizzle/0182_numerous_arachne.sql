@@ -1,1 +1,0 @@
-ALTER TABLE "worktree_cleanup_jobs" ADD COLUMN "generation" uuid DEFAULT gen_random_uuid() NOT NULL;

@@ -1,1 +1,0 @@
-ALTER TABLE "worktree_cleanup_jobs" ADD COLUMN "removal_input" jsonb;
