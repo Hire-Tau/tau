@@ -40,6 +40,7 @@ export * from './local-instance'
 
 export type { ModelCatalogEntry } from './model-catalog'
 export * from './assistant'
+export * from './assistant-activity'
 export * from './search'
 export * from './workflows'
 export * from './squad-event-rules'

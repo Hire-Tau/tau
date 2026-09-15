@@ -12,6 +12,8 @@ export const assistantEntrySchema = z.object({
   toolResult: z.string().max(100_000).optional(),
   toolError: z.boolean().optional(),
   interrupted: z.boolean().optional(),
+  /** Durable Assistant updates this entry presented; acknowledgment requires a final entry naming them. */
+  assistantUpdateIds: z.array(z.string().uuid()).max(10).optional(),
 })
 export type AssistantEntry = z.infer<typeof assistantEntrySchema>
 export interface AssistantConversation {
@@ -32,6 +34,8 @@ export function parseAssistantInboxConversationId(id: string | null | undefined)
 export type AssistantMessageTargetKind = 'background' | 'squad' | 'agent'
 export interface AssistantMessageReceipt {
   id: string
+  /** The tracked task this request belongs to: its first request's ID. */
+  taskId: string
   agentId: string
   delivered: boolean
   /** background = the conversation's general helper, squad = its owned consultant, agent = an explicit target. */
