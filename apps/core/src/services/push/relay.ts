@@ -38,6 +38,9 @@ export async function sendRelayAlert(
     'eventType',
     'workStreamNumber',
     'preview',
+    'collapseKey',
+    'threadKey',
+    'interruptionLevel',
   ] as const) {
     if (routing[key] !== undefined) {
       const candidate = relayRoutingSchema.safeParse({ [key]: routing[key] })

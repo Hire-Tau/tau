@@ -1,4 +1,5 @@
 import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stream'
+import { workStreamTitle } from '@tau/shared'
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
@@ -316,6 +317,75 @@ describe('work-stream notifications', () => {
       )
     expect(completion.content).toContain('Approval note: ship it')
     expect((completion.metadata as Record<string, unknown>).nextSteps).toBe('Monitor the rollout')
+  })
+
+  it('gives human watcher notices phone-ready push copy while the agent copy stays as written', async () => {
+    const workStream = await storedLegacyWorkStream({
+      squadId,
+      title: 'Validate Cloud deletion and analytics end to end',
+      ownerAgentId: agentId,
+      assigneeAgentId: assigneeId,
+      agentIds: [agentId, assigneeId],
+      metadata: { nextSteps: 'Monitor the rollout' },
+    })
+    await workStream.update({ handoffMessage: 'Please check the analytics export.' })
+    await subscribeToWorkStream(workStream.id, streamWatcher.id)
+
+    await notifyWorkStreamReview(workStream)
+    await notifyWorkStreamDone(workStream, { approvalNote: 'ship it' })
+
+    const watcherRows = await db.select().from(inbox).where(eq(inbox.recipientId, streamWatcher.id))
+    const metadataOf = (event: string) =>
+      watcherRows.find((row) => (row.metadata as Record<string, unknown>).event === event)?.metadata as
+        | Record<string, unknown>
+        | undefined
+    expect(metadataOf('review')?.push).toEqual({
+      title: `Ready for review: ${workStreamTitle(workStream)}`,
+      body: 'Please check the analytics export.',
+      subtitle: typeId,
+      collapseKey: `ws:${workStream.id}`,
+      threadKey: `squad:${squadId}`,
+      interruptionLevel: 'active',
+    })
+    expect(metadataOf('done')?.push).toEqual({
+      title: `Completed: ${workStreamTitle(workStream)}`,
+      body: 'ship it',
+      subtitle: typeId,
+      collapseKey: `ws:${workStream.id}`,
+      threadKey: `squad:${squadId}`,
+      interruptionLevel: 'passive',
+    })
+
+    const ownerDone = (await db.select().from(inbox).where(eq(inbox.recipientId, agentId))).find(
+      (row) => (row.metadata as Record<string, unknown>).event === 'done'
+    )
+    expect(ownerDone?.subject).toBe(`Work Stream done: ${workStreamTitle(workStream)}`)
+    expect((ownerDone?.metadata as Record<string, unknown>).push).toBeUndefined()
+  })
+
+  it('falls back to next steps, then the squad name, for the completion push body', async () => {
+    const withNextSteps = await storedLegacyWorkStream({
+      squadId,
+      title: 'Stream with next steps',
+      ownerAgentId: agentId,
+      agentIds: [agentId],
+      metadata: { nextSteps: 'Monitor the rollout' },
+    })
+    const bare = await storedLegacyWorkStream({
+      squadId,
+      title: 'Bare stream',
+      ownerAgentId: agentId,
+      agentIds: [agentId],
+    })
+    await subscribeToSquad(squadId, squadWatcher.id)
+    await notifyWorkStreamDone(withNextSteps)
+    await notifyWorkStreamDone(bare)
+
+    const rows = await db.select().from(inbox).where(eq(inbox.recipientId, squadWatcher.id))
+    const pushFor = (id: string) =>
+      (rows.find((row) => (row.metadata as Record<string, unknown>).workStreamId === id)?.metadata as any)?.push
+    expect(pushFor(withNextSteps.id)?.body).toBe('Monitor the rollout')
+    expect(pushFor(bare.id)?.body).toBe(typeId)
   })
 
   it('records one persistent idle notice for the owner without notifying subscribers', async () => {

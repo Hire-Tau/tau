@@ -13,7 +13,13 @@ import {
   type ApnsSendResult,
   type LiveActivityPushInput,
 } from '@tau/shared/apns'
-export { normalizePemKey, buildApnsJwt, buildApnsPayload, buildLiveActivityPayload } from '@tau/shared/apns'
+export {
+  normalizePemKey,
+  buildApnsHeaders,
+  buildApnsJwt,
+  buildApnsPayload,
+  buildLiveActivityPayload,
+} from '@tau/shared/apns'
 export type {
   ApnsConfig,
   ApnsEnvironment,
@@ -100,6 +106,7 @@ export async function sendApnsNotification(
     body: JSON.stringify(buildApnsPayload(payload)),
     deviceEnvironment,
     pushType: 'alert',
+    collapseId: payload.collapseId,
   })
 }
 
