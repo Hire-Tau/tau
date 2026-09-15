@@ -1,17 +1,56 @@
 import { QueryClientContext } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { lazy, Suspense, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import type { EntityReference } from '../lib/entityReference'
 
 const loadReference = () => import('./EntityReferenceModal')
 const EntityReferenceModal = lazy(() => loadReference().then((module) => ({ default: module.EntityReferenceModal })))
+
+const EntityReferencePreview = lazy(() =>
+  import('./EntityReferencePreview').then((module) => ({ default: module.EntityReferencePreview }))
+)
 
 export function EntityReferenceLink({ reference, children }: { reference: EntityReference; children: ReactNode }) {
   const client = useContext(QueryClientContext)
   const button = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [preview, setPreview] = useState(false)
+  const previewId = useId()
+  const showTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const focused = useRef(false)
+  const hovered = useRef(false)
+  const clearTimers = useCallback(() => {
+    clearTimeout(showTimer.current)
+    clearTimeout(hideTimer.current)
+  }, [])
+  const dismiss = useCallback(() => {
+    if (document.getElementById(previewId)?.contains(document.activeElement))
+      button.current?.focus({ preventScroll: true })
+    clearTimers()
+    setPreview(false)
+  }, [clearTimers, previewId])
+  const leave = () => {
+    clearTimers()
+    if (!focused.current && !hovered.current) hideTimer.current = setTimeout(() => setPreview(false), 150)
+  }
   const { kind, id } = reference
+  useEffect(() => {
+    dismiss()
+    return clearTimers
+  }, [kind, id, dismiss, clearTimers])
+  useEffect(() => {
+    if (!preview) return
+    // A new reference replaces an existing hover/focus preview instead of stacking cards.
+    window.dispatchEvent(new Event('tau:reference-preview-open'))
+    const close = () => {
+      clearTimers()
+      setPreview(false)
+    }
+    window.addEventListener('tau:reference-preview-open', close)
+    return () => window.removeEventListener('tau:reference-preview-open', close)
+  }, [preview, clearTimers])
   const preload = useCallback(() => {
     void loadReference()
       .then((module) => client && module.preloadEntityReference(client, { kind, id }))
@@ -36,14 +75,44 @@ export function EntityReferenceLink({ reference, children }: { reference: Entity
         ref={button}
         type="button"
         aria-busy={loading}
+        aria-haspopup={client ? 'dialog' : undefined}
+        aria-expanded={client ? preview && !open : undefined}
+        aria-controls={preview && client ? previewId : undefined}
+        onKeyDown={(event) => {
+          if (event.key !== 'Tab' || event.shiftKey || !preview) return
+          const link = document.getElementById(previewId)?.querySelector<HTMLAnchorElement>('a[href]')
+          if (link) {
+            event.preventDefault()
+            link.focus()
+          }
+        }}
         className={clsx(
           'tau-button inline text-accent-light underline underline-offset-2',
           loading && 'motion-safe:animate-pulse motion-reduce:opacity-60'
         )}
-        onMouseEnter={preload}
-        onFocus={preload}
+        onMouseEnter={() => {
+          preload()
+          hovered.current = true
+          clearTimers()
+          if (!open) showTimer.current = setTimeout(() => setPreview(true), 250)
+        }}
+        onMouseLeave={() => {
+          hovered.current = false
+          leave()
+        }}
+        onFocus={() => {
+          preload()
+          focused.current = true
+          clearTimers()
+          if (!open && button.current?.matches(':focus-visible')) setPreview(true)
+        }}
+        onBlur={() => {
+          focused.current = false
+          leave()
+        }}
         onTouchStart={preload}
         onClick={() => {
+          dismiss()
           if (open) return
           setLoading(true)
           setOpen(true)
@@ -51,6 +120,32 @@ export function EntityReferenceLink({ reference, children }: { reference: Entity
       >
         {children}
       </button>
+      {preview && client && !open && (
+        <Suspense fallback={null}>
+          <EntityReferencePreview
+            reference={reference}
+            anchor={button}
+            id={previewId}
+            onEnter={() => {
+              hovered.current = true
+              clearTimers()
+            }}
+            onLeave={() => {
+              hovered.current = false
+              leave()
+            }}
+            onFocus={() => {
+              focused.current = true
+              clearTimers()
+            }}
+            onBlur={() => {
+              focused.current = false
+              leave()
+            }}
+            onDismiss={dismiss}
+          />
+        </Suspense>
+      )}
       {open && (
         <Suspense fallback={null}>
           <EntityReferenceModal

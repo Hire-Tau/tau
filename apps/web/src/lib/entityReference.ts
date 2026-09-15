@@ -1,3 +1,5 @@
+import type { Agent } from '@tau/shared'
+
 export type EntityReference = { kind: 'ws' | 'agent'; id: string }
 
 /** Only canonical UUIDs and their prefixes; resolution must reject ambiguous IDs. */
@@ -9,4 +11,10 @@ export function parseEntityReference(value: string | undefined): EntityReference
   const template = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
   if ([...id].some((char, index) => (template[index] === '-' ? char !== '-' : !/[0-9a-f]/.test(char)))) return null
   return { kind: match[1]!.toLowerCase() as EntityReference['kind'], id }
+}
+
+export function agentChatPath(agent: Pick<Agent, 'id' | 'squadId'>): string {
+  return agent.squadId
+    ? `/squads/${encodeURIComponent(agent.squadId)}/agents?agent=${encodeURIComponent(agent.id)}`
+    : `/chat/${encodeURIComponent(agent.id)}`
 }
