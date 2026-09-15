@@ -57,8 +57,11 @@ function focusVisibleSquadAgentPanel() {
 const WS_WAITING_DERIVED_STATES: WorkStreamDerivedState[] = ['waiting_on_answer', 'waiting_on_dependency', 'blocked']
 
 // Keep metadata links above the feed row's stretched work-stream button.
+// inline-flex + items-center keep the link text on the row's centerline: the mobile touch-target
+// rule (`a { min-height: 1.5rem }` under 768px) makes each link box taller than the 16px text row,
+// and a plain block would pin its text to the top of that box, above the separators.
 const FEED_METADATA_LINK_CLASS =
-  'relative z-10 rounded-sm text-muted hover:text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
+  'relative z-10 inline-flex items-center rounded-sm text-muted hover:text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
 
 const WS_STATUS_ICONS: Record<WorkStreamPresentationState, string> = {
   active: '●',
@@ -554,7 +557,7 @@ function WorkStreamRow({
                 href={github.prUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={clsx(FEED_METADATA_LINK_CLASS, 'inline-flex items-center gap-1')}
+                className={clsx(FEED_METADATA_LINK_CLASS, 'gap-1')}
                 aria-label={`Open PR #${github.prNumber}`}
               >
                 <PullRequestIcon className="h-3.5 w-3.5" /> #{github.prNumber}

@@ -85,6 +85,8 @@ At narrow widths, use a section chooser for settings and More for secondary squa
 
 Workspace panes share the available height; a default terminal size must not consume the entire file browser. Dense tables can scroll inside their region rather than causing page overflow.
 
+Below 768px a base rule gives every `a` and `button` a 24px minimum height for touch targets. A link inside a text-sized metadata row (feed work cards, inbox rows) therefore gets a taller box than its neighbors; make such links `inline-flex items-center` so their text stays on the row's centerline next to separators and timestamps instead of pinning to the top of the box.
+
 ## Motion and accessibility
 
 Hover/color transitions take approximately 120–160ms. Overlay entrances use a 160ms fade with at most 4px translation and 1% scale. Exit transitions take approximately 120ms. Avoid springs, bounce, repeated decorative movement, and layout shifts.
