@@ -511,7 +511,7 @@ jobs:
           # leaks then fail DIFFERENT tests on every runner (the order
           # lottery). A deterministic order makes green reproducible and any
           # pollution failure bisectable.
-          strace -f -tt -y -e trace=close,openat,dup2,dup3 -o /tmp/tau-core-descriptors.trace bun run test 2>&1 | tee /tmp/bun-test-core.log
+          strace -f -tt -y -k --stack-trace-frame-limit=12 -e trace=close -e status=failed -o /tmp/tau-core-descriptors.trace bun run test 2>&1 | tee /tmp/bun-test-core.log
           echo "--- summary gate"
           grep -E 'Ran [0-9]+ tests across [0-9]+ files' /tmp/bun-test-core.log || {
             echo '::error::bun test ended without its final summary line — the process exited early (see the log above for a mid-suite process.exit).'
