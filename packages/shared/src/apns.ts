@@ -48,9 +48,19 @@ export function buildApnsJwt(config: { keyP8: string; keyId: string; teamId: str
   return `${signingInput}.${base64url(signature)}`
 }
 
+export type ApnsInterruptionLevel = 'passive' | 'active' | 'time-sensitive'
+
 export interface ApnsAlertPayload {
   title: string
   body: string
+  /** Rendered between title and body on iOS. */
+  subtitle?: string
+  /** Notifications sharing a thread id are grouped on the device. */
+  threadId?: string
+  /** Passive pushes are delivered silently; the default is a normal, audible alert. */
+  interruptionLevel?: ApnsInterruptionLevel
+  /** Sent as the apns-collapse-id header: a newer push with the same id replaces this one. */
+  collapseId?: string
   data?: Record<string, unknown>
   badge?: number
 }
@@ -59,11 +69,29 @@ export interface ApnsAlertPayload {
 export function buildApnsPayload(p: ApnsAlertPayload): Record<string, unknown> {
   return {
     aps: {
-      alert: { title: p.title, body: p.body },
-      sound: 'default',
+      alert: { title: p.title, ...(p.subtitle ? { subtitle: p.subtitle } : {}), body: p.body },
+      ...(p.interruptionLevel === 'passive' ? {} : { sound: 'default' }),
       ...(p.badge !== undefined ? { badge: p.badge } : {}),
+      ...(p.threadId ? { 'thread-id': p.threadId } : {}),
+      ...(p.interruptionLevel ? { 'interruption-level': p.interruptionLevel } : {}),
     },
     ...(p.data ?? {}),
+  }
+}
+
+/** Request headers for one APNs push; the collapse id is optional and omitted rather than sent empty. */
+export function buildApnsHeaders(input: {
+  jwt: string
+  topic: string
+  pushType: 'alert' | 'liveactivity'
+  collapseId?: string
+}): Record<string, string> {
+  return {
+    authorization: `bearer ${input.jwt}`,
+    'apns-topic': input.topic,
+    'apns-push-type': input.pushType,
+    ...(input.collapseId ? { 'apns-collapse-id': input.collapseId } : {}),
+    'content-type': 'application/json',
   }
 }
 
@@ -218,6 +246,7 @@ export async function dispatchApns(input: {
   body: string
   deviceEnvironment?: ApnsEnvironment
   pushType: 'alert' | 'liveactivity'
+  collapseId?: string
 }): Promise<ApnsSendResult> {
   const { config, deviceToken, body, pushType } = input
   const jwt = getProviderJwt(config)
@@ -229,12 +258,7 @@ export async function dispatchApns(input: {
     const res = await apnsHttp2Request({
       host,
       path: `/3/device/${deviceToken}`,
-      headers: {
-        authorization: `bearer ${jwt}`,
-        'apns-topic': topic,
-        'apns-push-type': pushType,
-        'content-type': 'application/json',
-      },
+      headers: buildApnsHeaders({ jwt, topic, pushType, collapseId: input.collapseId }),
       body,
     })
 

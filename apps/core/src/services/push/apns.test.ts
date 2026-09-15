@@ -6,6 +6,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { generateKeyPairSync, verify } from 'crypto'
 import {
+  buildApnsHeaders,
   buildApnsJwt,
   buildApnsPayload,
   buildLiveActivityPayload,
@@ -170,6 +171,40 @@ describe('APNs', () => {
       aps: { alert: { title: 'T', body: 'B' }, sound: 'default', badge: 3 },
       url: '/squads/x',
     })
+  })
+
+  it('buildApnsPayload carries subtitle, thread grouping, and interruption level; passive pushes are silent', () => {
+    expect(
+      buildApnsPayload({
+        title: 'Completed: #197 · Validate deletion',
+        body: 'Next steps: ship it',
+        subtitle: 'Platform',
+        threadId: 'squad:def',
+        interruptionLevel: 'passive',
+      })
+    ).toEqual({
+      aps: {
+        alert: { title: 'Completed: #197 · Validate deletion', subtitle: 'Platform', body: 'Next steps: ship it' },
+        'thread-id': 'squad:def',
+        'interruption-level': 'passive',
+      },
+    })
+    expect(buildApnsPayload({ title: 'T', body: 'B', interruptionLevel: 'time-sensitive' })).toEqual({
+      aps: { alert: { title: 'T', body: 'B' }, sound: 'default', 'interruption-level': 'time-sensitive' },
+    })
+  })
+
+  it('buildApnsHeaders sets the collapse id only when given', () => {
+    expect(buildApnsHeaders({ jwt: 'j', topic: 'com.tau.app', pushType: 'alert', collapseId: 'ws:abc' })).toEqual({
+      authorization: 'bearer j',
+      'apns-topic': 'com.tau.app',
+      'apns-push-type': 'alert',
+      'apns-collapse-id': 'ws:abc',
+      'content-type': 'application/json',
+    })
+    expect(buildApnsHeaders({ jwt: 'j', topic: 'com.tau.app', pushType: 'alert' })).not.toHaveProperty(
+      'apns-collapse-id'
+    )
   })
 
   it('is unconfigured (and a no-op send) when APNs secrets are absent', async () => {

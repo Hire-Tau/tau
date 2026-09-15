@@ -281,7 +281,13 @@ export class NotificationService {
             workStreamNumber: event.workStreamNumber ?? work?.number,
             ...(prefs.showPreviews ? { preview: { title: event.title, body: event.body } } : {}),
           })
-          const payload = JSON.stringify({ ...routing, ...text })
+          // The service worker maps `tag` to Notification.tag, so a later push for the same
+          // work replaces the earlier one instead of stacking.
+          const payload = JSON.stringify({
+            ...routing,
+            ...text,
+            ...(event.collapseKey ? { tag: event.collapseKey, renotify: true } : {}),
+          })
           const result = await webpush.sendNotification(
             { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
             payload
@@ -350,6 +356,12 @@ export class NotificationService {
           {
             title: alert.title,
             body: alert.body,
+            // Grouping, replacement, and urgency are structure, not content: they apply even when
+            // previews are off. The subtitle is content (the squad name), so it follows the preview rule.
+            ...(prefs.showPreviews && event.subtitle ? { subtitle: event.subtitle } : {}),
+            ...(event.threadKey ? { threadId: event.threadKey } : {}),
+            ...(event.collapseKey ? { collapseId: event.collapseKey } : {}),
+            ...(event.interruptionLevel ? { interruptionLevel: event.interruptionLevel } : {}),
             data: {
               type: 'open',
               url: event.url,

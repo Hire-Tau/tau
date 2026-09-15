@@ -40,6 +40,10 @@ type TestEvent = {
   questionId?: string
   messageId?: string
   actionId?: string
+  subtitle?: string
+  collapseKey?: string
+  threadKey?: string
+  interruptionLevel?: 'passive' | 'active' | 'time-sensitive'
 }
 
 async function callResolveEnabledPushUserIds(service: NotificationService, data: unknown, eventType: string) {
@@ -778,6 +782,77 @@ describe('NotificationService', () => {
           messageId: 'm1',
           actionId: 'agent-question:q1',
         })
+      } finally {
+        sendSpy.mockRestore()
+      }
+    })
+
+    test('forwards push presentation hints to APNs; previews off keeps grouping but drops the subtitle', async () => {
+      await registerApnsDevice({
+        userId: user.id,
+        apnsToken: 'presentation-token',
+        platform: 'ios',
+        environment: 'production',
+      })
+      const sendSpy = spyOn(apnsModule, 'sendApnsNotification').mockResolvedValue({ ok: true, status: 200 })
+      const event: TestEvent = {
+        type: 'inbox.messageReceived',
+        workStreamNumber: 197,
+        title: 'Completed: #197 · Validate deletion',
+        body: 'Next steps: ship it',
+        subtitle: 'Platform',
+        collapseKey: 'ws:abc',
+        threadKey: 'squad:def',
+        interruptionLevel: 'passive',
+        url: '/squads/s1/work?ws=197',
+      }
+
+      try {
+        await callSendApnsPush(service, [user.id], event)
+        expect(sendSpy.mock.calls[0][1]).toMatchObject({
+          title: 'Completed: #197 · Validate deletion',
+          body: 'Next steps: ship it',
+          subtitle: 'Platform',
+          collapseId: 'ws:abc',
+          threadId: 'squad:def',
+          interruptionLevel: 'passive',
+        })
+
+        await UserNotificationPreferences.upsert(user.id, { showPreviews: false })
+        await callSendApnsPush(service, [user.id], event)
+        const withoutPreview = sendSpy.mock.calls[1][1]
+        expect(withoutPreview).toMatchObject({
+          title: 'Work #197 has a new message',
+          body: 'Open Tau to see details.',
+          collapseId: 'ws:abc',
+          threadId: 'squad:def',
+          interruptionLevel: 'passive',
+        })
+        expect(withoutPreview.subtitle).toBeUndefined()
+      } finally {
+        await UserNotificationPreferences.upsert(user.id, { showPreviews: true })
+        sendSpy.mockRestore()
+      }
+    })
+
+    test('web push carries the collapse key as the notification tag', async () => {
+      await registerPushSubscription({
+        endpoint: 'https://push.example.com/tag',
+        p256dh: 'k',
+        auth: 'a',
+        userId: user.id,
+      })
+      const sendSpy = spyOn(webpush, 'sendNotification').mockResolvedValue({ statusCode: 201 } as any)
+      try {
+        await callSendWebPush(service, [user.id], {
+          title: 'Completed: #197 · Validate deletion',
+          body: 'Next steps: ship it',
+          collapseKey: 'ws:abc',
+          url: '/inbox',
+        })
+        expect(JSON.parse(sendSpy.mock.calls[0][1] as string)).toMatchObject({ tag: 'ws:abc', renotify: true })
+        await callSendWebPush(service, [user.id], { title: 'Plain', body: 'No key', url: '/inbox' })
+        expect(JSON.parse(sendSpy.mock.calls[1][1] as string)).not.toHaveProperty('tag')
       } finally {
         sendSpy.mockRestore()
       }
