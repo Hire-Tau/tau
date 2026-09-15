@@ -1099,7 +1099,7 @@ export function formatInboxMessages(messages: InboxMessage[]): string {
       const msgId = m.id
       const assistantReply =
         m.senderType === 'voice_assistant' && parseAssistantInboxConversationId(m.senderId)
-          ? `\n\nThis request came from a saved Assistant conversation. Ordinary chat output is not forwarded: report progress, questions, and results with tau inbox send ${m.senderId} "<message>" --recipient-type voice_assistant --in-reply-to ${m.id} --assistant-task-status <working|waiting|needs-input|completed|failed|cancelled>. You own this task until it is complete; see Assistant task reporting.\n`
+          ? `\n\nThis request came from a saved Assistant conversation. Ordinary chat output is not forwarded: report progress, questions, and results with tau assistant-task status ${typeof m.metadata?.assistantTaskId === 'string' ? m.metadata.assistantTaskId : '<taskId>'} --status <working|waiting|needs-input|completed|failed|cancelled> -m "<update>" (or tau inbox send ${m.senderId} "<update>" --recipient-type voice_assistant --in-reply-to ${m.id} --assistant-task-status <status>). You own this task until it is complete; see Assistant task reporting.\n`
           : ''
       return `### Message ${msgId}
 

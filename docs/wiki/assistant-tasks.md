@@ -37,7 +37,16 @@ helpers never imply completion; a missing or terminated helper on an unfinished 
 
 ## Reporting protocol
 
-Delegates report through the inbox with a validated status flag:
+The delegate reports directly on the task it owns; the request it received names the task ID:
+
+```bash
+tau assistant-task status TASK_UUID --status completed -m "The comparison is finished."
+tau assistant-task get TASK_UUID
+```
+
+`POST /api/assistant-tasks/:taskId/status` accepts only the agent currently bound to the task and is
+sugar over an inbox reply on the task's current request, so it shares the validation, projection,
+activity events, and push policy below. The equivalent inbox form carries a validated status flag:
 
 ```bash
 tau inbox send assistant:CONVERSATION_UUID \

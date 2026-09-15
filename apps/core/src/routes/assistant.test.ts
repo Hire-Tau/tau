@@ -19,6 +19,7 @@ import { Squad } from '../entities/Squad'
 import { InboxMessage, formatInboxMessages, setBeforeRecipientLifecycleLockHookForTest } from '../entities/InboxMessage'
 import { assistantInboxRecipientId } from '@tau/shared'
 import { inboxRouter } from './inbox'
+import { assistantTasksRouter } from './assistant-tasks'
 import { identityMiddleware } from '../middleware/identity'
 import {
   assignRole,
@@ -36,6 +37,7 @@ const conversationIds: string[] = [],
 const app = new Hono()
   .use('*', identityMiddleware)
   .route('/api/assistant', assistantRouter)
+  .route('/api/assistant-tasks', assistantTasksRouter)
   .route('/api/inbox', inboxRouter)
 const entry = (id: string, text: string, final = true) => ({ id, text, final, role: 'user' as const })
 async function fixture() {
@@ -1188,4 +1190,60 @@ test('mailbox acknowledgment requires a saved final response covering every upda
   expect((await ack({})).status).toBe(409)
   for (const bad of [{ messageIds: [] }, { responseEntryId: '' }, { messageIds: ['nope'] }])
     expect((await ack(bad)).status).toBe(400)
+})
+
+test('the delegated agent can report task status directly without tracking request IDs', async () => {
+  const f = await activityFixture()
+  const receipt = await f.start()
+  const token = await createTestAgentToken({ agentId: f.agent.id, squadId: null })
+  const call = (path: string, body?: unknown, auth = token.token) =>
+    app.request(`/api/assistant-tasks${path}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { ...authHeaders(auth), 'Content-Type': 'application/json' },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    })
+  const shown = await call(`/${receipt.taskId}`)
+  expect(shown.status).toBe(200)
+  expect(await shown.json()).toMatchObject({ id: receipt.taskId, status: 'working', currentRequestId: receipt.id })
+  const progress = await call(`/${receipt.taskId}/status`, { status: 'waiting', message: 'Waiting on CI.' })
+  expect(progress.status).toBe(200)
+  const body = await progress.json()
+  expect(body.task).toMatchObject({ id: receipt.taskId, status: 'waiting' })
+  const [update] = await db.select().from(assistantUpdates).where(eq(assistantUpdates.messageId, body.messageId))
+  expect(update).toMatchObject({ taskId: receipt.taskId, requestId: receipt.id, reportedStatus: 'waiting' })
+  expect((await InboxMessage.mustFind(body.messageId)).content).toBe('Waiting on CI.')
+  // The default message is a short status line; the report follows the task's current request.
+  const question = await f.update(receipt.id, 'Which region?', 'needs-input')
+  const answer = await (
+    await f.request(`/${f.id}/messages`, {
+      clientId: randomUUID(),
+      request: 'us-east',
+      agentId: f.agent.id,
+      inReplyTo: question.id,
+    })
+  ).json()
+  const done = await call(`/${receipt.taskId}/status`, { status: 'completed' })
+  expect(done.status).toBe(200)
+  const [final] = await db
+    .select()
+    .from(assistantUpdates)
+    .where(eq(assistantUpdates.messageId, (await done.json()).messageId))
+  expect(final.requestId).toBe(answer.id)
+  expect((await InboxMessage.mustFind(final.messageId)).content).toBe('Task status: completed')
+  expect((await f.task(receipt.taskId)).status).toBe('completed')
+  // Terminal stays terminal through this path too.
+  expect((await call(`/${receipt.taskId}/status`, { status: 'working' })).status).toBe(200)
+  expect((await f.task(receipt.taskId)).status).toBe('completed')
+  // Other agents, users, unknown tasks, and bad statuses are refused.
+  const stranger = await Agent.create({ agentTypeId: 'system-manager', ownerUserId: f.owner.id, context: {} })
+  agentIds.push(stranger.id)
+  const strangerToken = await createTestAgentToken({ agentId: stranger.id, squadId: null })
+  expect((await call(`/${receipt.taskId}`, undefined, strangerToken.token)).status).toBe(404)
+  expect((await call(`/${receipt.taskId}/status`, { status: 'failed' }, strangerToken.token)).status).toBe(404)
+  expect((await call(`/${receipt.taskId}/status`, { status: 'failed' }, f.owner.token)).status).toBe(404)
+  expect((await call(`/${randomUUID()}/status`, { status: 'failed' })).status).toBe(404)
+  expect((await call(`/${receipt.taskId}/status`, { status: 'done' })).status).toBe(400)
+  expect(formatInboxMessages([await InboxMessage.mustFind(receipt.id)])).toContain(
+    `tau assistant-task status ${receipt.taskId}`
+  )
 })
