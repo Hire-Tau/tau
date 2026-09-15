@@ -2092,6 +2092,49 @@ test('a tracked link alone silences the squad fallback, with no delivery row to 
   })
 })
 
+test('squad-fallback notifications carry an actionable event reference; stream-scoped notices do not', async () => {
+  await withNativeRouting(async (connectionId, managerId) => {
+    await db
+      .update(integrationConnections)
+      .set({ configuration: { login: 'noah' } })
+      .where(eq(integrationConnections.id, connectionId))
+    const authority = { kind: 'connection' as const, connectionId, squadId }
+    const assigned = fact(41, {
+      output: 'issue.assigned',
+      data: { repository: `${prefix}/repo`, issue: { number: 41 }, assignee: 'noah', labels: ['bug'] },
+    })
+    const ids = await Promise.all([
+      publishIntegrationOutput('github', assigned, authority),
+      publishIntegrationOutput('github', assigned, authority),
+    ])
+    eventIds.push(...ids)
+    const messages = await db.select().from(inbox).where(eq(inbox.recipientId, managerId))
+    expect(messages).toHaveLength(1)
+    const message = messages[0]!
+    expect(message.metadata).toMatchObject({ source: 'integration-notification', integrationEventId: ids[0] })
+    expect(message.content).toContain(`Event reference: ${ids[0]}`)
+    expect(message.content).toContain(`Tracked resource: issue ${prefix}/repo#41`)
+    expect(message.content).toContain(`tau workstream create '<title>' --squad ${squadId} --from-event ${ids[0]}`)
+    expect(message.content).toContain(`tau workstream track <work-stream> --event ${ids[0]}`)
+    expect(message.content).toContain('Do not hand-write github or codeHost metadata to track it')
+
+    // A stream-scoped compatibility notice (workStreamId set) never carries the reference block.
+    await db.insert(workStreams).values({
+      squadId,
+      title: prefix,
+      assigneeAgentId: managerId,
+      metadata: { github: { repo: `${prefix}/repo`, pr: { number: 42 } } },
+    })
+    const compatId = await publishIntegrationOutput('github', fact(42, { output: 'pull_request.merged' }), authority)
+    eventIds.push(compatId!)
+    const streamMessages = (await db.select().from(inbox).where(eq(inbox.recipientId, managerId))).filter(
+      (row) => row.metadata?.integrationEventId === compatId
+    )
+    expect(streamMessages).toHaveLength(1)
+    expect(streamMessages[0]!.content).not.toContain('Event reference:')
+  })
+})
+
 test('tracked issue events on a parked stream notify the independent owner and retain worker delivery', async () => {
   const owner = await Agent.create({ squadId, agentTypeId: prefix })
   const id = await parkedCodeWork(2040, owner.id)
