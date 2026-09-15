@@ -1,3 +1,4 @@
+import { workStreamTitle } from '@tau/shared'
 import { eq } from 'drizzle-orm'
 import { agentQuestionWorkStreamOrigins } from '../../db/schema'
 import type { NotificationEvent } from '../../channels/provider'
@@ -119,7 +120,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
       workStreamId: ws.id,
       workStreamNumber: ws.number,
       ...(target ? { waitId: target.waitId, actionId: target.actionId } : {}),
-      title: `🚫 Blocked: ${ws.title}`,
+      title: `🚫 Blocked: ${workStreamTitle(ws)}`,
       body: (target ? target.message : await manualWaitMessage(ws.id)) || 'Agent needs input to continue',
       url: buildUrl(`/squads/${squad.id}/work?ws=${ws.number}`),
       timestamp: new Date(),
@@ -144,7 +145,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
       workStreamId: ws.id,
       workStreamNumber: ws.number,
       ...(target ? { waitId: target.waitId, actionId: target.actionId } : {}),
-      title: `👀 Ready for review: ${ws.title}`,
+      title: `👀 Ready for review: ${workStreamTitle(ws)}`,
       body: target?.message || ws.handoffMessage || ws.description?.slice(0, 200) || 'No description',
       url: buildUrl(`/squads/${squad.id}/work?ws=${ws.number}`),
       timestamp: new Date(),
@@ -167,7 +168,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
       squadName: squad.name,
       workStreamId: ws.id,
       workStreamNumber: ws.number,
-      title: `✅ Completed: ${ws.title}`,
+      title: `✅ Completed: ${workStreamTitle(ws)}`,
       body: ws.description?.slice(0, 200) || 'No description',
       url: buildUrl(`/squads/${squad.id}/work?ws=${ws.number}`),
       timestamp: new Date(),
@@ -190,7 +191,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
       squadName: squad.name,
       workStreamId: ws.id,
       workStreamNumber: ws.number,
-      title: `⏹️ Canceled: ${ws.title}`,
+      title: `⏹️ Canceled: ${workStreamTitle(ws)}`,
       body: 'Work stream was canceled; active assigned executions were asked to stop where possible.',
       url: buildUrl(`/squads/${squad.id}/work?ws=${ws.number}`),
       timestamp: new Date(),
@@ -213,7 +214,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
       squadName: squad.name,
       workStreamId: ws.id,
       workStreamNumber: ws.number,
-      title: `📋 New work stream: ${ws.title}`,
+      title: `📋 New work stream: ${workStreamTitle(ws)}`,
       body: ws.description?.slice(0, 200) || 'No description',
       url: buildUrl(`/squads/${squad.id}/work?ws=${ws.number}`),
       timestamp: new Date(),
@@ -236,7 +237,7 @@ export const eventBuilders: Record<string, EventBuilder> = {
       squadName: squad.name,
       workStreamId: ws.id,
       workStreamNumber: ws.number,
-      title: `📝 Updated: ${ws.title}`,
+      title: `📝 Updated: ${workStreamTitle(ws)}`,
       body: ws.description?.slice(0, 200) || 'No description',
       url: buildUrl(`/squads/${squad.id}/work?ws=${ws.number}`),
       timestamp: new Date(),

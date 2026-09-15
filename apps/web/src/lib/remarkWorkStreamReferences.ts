@@ -1,9 +1,11 @@
-import { visit } from 'unist-util-visit'
+import { visit, SKIP } from 'unist-util-visit'
 
 /** Link work numbers in prose, leaving explicit links, code and PR/issue references alone. */
 export function remarkWorkStreamReferences() {
   return (tree: any) => {
-    visit(tree, 'text', (node: any, index: number | undefined, parent: any) => {
+    visit(tree, (node: any, index: number | undefined, parent: any) => {
+      if (['link', 'linkReference'].includes(node.type)) return SKIP
+      if (node.type !== 'text') return
       if (index == null || !parent || ['link', 'linkReference'].includes(parent.type)) return
       const matches = [...node.value.matchAll(/(?<![\w/#])#([1-9]\d*)\b/g)] as RegExpMatchArray[]
       const children: any[] = []

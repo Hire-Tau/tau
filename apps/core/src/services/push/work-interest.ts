@@ -1,3 +1,4 @@
+import { UserNotificationPreferences } from '../../entities/UserNotificationPreferences'
 import { and, eq, inArray, isNull, or } from 'drizzle-orm'
 import {
   buildWorkInterestSnapshot,
@@ -109,7 +110,7 @@ async function loadCandidates(squadIds: string[], streamIds: string[]): Promise<
     .where(and(inArray(workStreams.status, ['queued', 'active']), interest))
 }
 
-export const loadWorkInterestSnapshot = createWorkInterestLoader({
+const loadSnapshot = createWorkInterestLoader({
   isActiveUser: async (userId) => {
     const [user] = await db
       .select({ id: users.id })
@@ -125,3 +126,17 @@ export const loadWorkInterestSnapshot = createWorkInterestLoader({
   derive: computeDerivedStates,
   now: () => new Date(),
 })
+
+/** Live Activity content is lock-screen data, even when seeded by the signed-in app. */
+export async function loadWorkInterestSnapshot(userId: string): Promise<WorkInterestSnapshot> {
+  const [snapshot, preferences] = await Promise.all([loadSnapshot(userId), UserNotificationPreferences.get(userId)])
+  if (!preferences.showPreviews)
+    snapshot.liveActivity = {
+      ...snapshot.liveActivity,
+      top: snapshot.liveActivity.top.map((work) => ({
+        ...work,
+        title: work.number ? `Work #${work.number}` : 'Work stream',
+      })),
+    }
+  return snapshot
+}

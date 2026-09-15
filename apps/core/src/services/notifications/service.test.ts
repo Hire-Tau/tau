@@ -616,8 +616,8 @@ describe('NotificationService', () => {
 
         expect(sendSpy).toHaveBeenCalledTimes(1)
         expect(JSON.parse(sendSpy.mock.calls[0][1] as string)).toMatchObject({
-          title: 'Blocked',
-          body: 'needs input',
+          title: 'Tau update',
+          body: 'Open Tau to see details.',
           url: '/squads/s1/work?ws=ws1',
           squadId: 's1',
           agentId: 'a1',

@@ -18,6 +18,7 @@ import type {
 } from '@tau/shared'
 
 export interface WorkStream {
+  number?: number
   id: string
   squadId: string
   taskId: string | null
@@ -505,7 +506,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
             `Reviewers:   ${ws.assignedReviewerIds?.length ? ws.assignedReviewerIds.join(', ') : 'Anyone with review permission'}`
           )
           console.log(
-            `Depends On:  ${ws.dependsOn.length > 0 ? ws.dependsOn.map((d) => d.slice(0, 8)).join(', ') : '(none)'}`
+            `Depends On:  ${ws.dependsOn.length > 0 ? (await Promise.all(ws.dependsOn.map(async (id) => workStreamLabel(await apiGet<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}`))))).join(', ') : '(none)'}`
           )
           if (ws.description) {
             console.log(`Description: ${ws.description}`)

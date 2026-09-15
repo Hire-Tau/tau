@@ -1,3 +1,4 @@
+import { addWorkReferences } from './work-references'
 import { sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { coerceSquadActivityRef } from '@tau/shared'
@@ -133,7 +134,7 @@ export async function projectGlobalActivity(input: ProjectGlobalActivityInput): 
   }))
   const last = selected.at(-1)
   return {
-    items,
+    items: await addWorkReferences(items),
     hasMore,
     nextCursor:
       hasMore && last

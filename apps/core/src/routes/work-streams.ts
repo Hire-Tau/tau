@@ -1,4 +1,6 @@
 import { WorktreeCleanupConflictError } from '../services/work-streams/worktree-cleanup-store'
+import { HTTPException } from 'hono/http-exception'
+import { AmbiguousPrefixError } from '../db/prefix-match'
 import { RepositorySetupError } from '../services/work-streams/repository-setup'
 import { resolveCreationWorkflow } from '../services/workflows/creation-source'
 import { z } from 'zod'
@@ -63,7 +65,15 @@ async function routeWorkStreamId(c: Context): Promise<string> {
   let resolved = resolvedRouteIds.get(c)
   if (!resolved) {
     const input = c.req.param('id') ?? ''
-    resolved = WorkStream.find(input).then((work) => work?.id ?? input)
+    resolved = WorkStream.find(input)
+      .then((work) => {
+        if (!work) throw new HTTPException(404, { message: 'Work stream not found' })
+        return work.id
+      })
+      .catch((error) => {
+        if (error instanceof AmbiguousPrefixError) throw new HTTPException(400, { message: error.message })
+        throw error
+      })
     resolvedRouteIds.set(c, resolved)
   }
   return resolved

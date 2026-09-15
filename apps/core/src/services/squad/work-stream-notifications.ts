@@ -120,7 +120,10 @@ export async function resolveWorkStreamRecipient(workStream: WorkStream): Promis
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
-type PersistentIdleStream = Pick<WorkStream, 'id' | 'title' | 'squadId' | 'assigneeAgentId' | 'ownerAgentId'>
+type PersistentIdleStream = { number?: number } & Pick<
+  WorkStream,
+  'id' | 'title' | 'squadId' | 'assigneeAgentId' | 'ownerAgentId'
+>
 
 export async function persistWorkStreamPersistentIdleInTransaction(
   tx: DbTransaction,
@@ -153,6 +156,7 @@ export async function persistWorkStreamPersistentIdleInTransaction(
       subject: `Work stream still idle: ${workStreamTitle(workStream)}`,
       content: `Work stream "${workStreamTitle(workStream)}" remains active and idle 60 seconds after its one automatic continuation. No wait was opened; no action is required if the agent is intentionally waiting for an event.`,
       metadata: {
+        workStreamNumber: workStream.number,
         workStreamId: workStream.id,
         squadId: workStream.squadId,
         event: 'idle',
@@ -283,6 +287,7 @@ async function notifyWorkStreamSubscribers(
         subject: `Work Stream ${event}: ${workStreamTitle(workStream)}`,
         content: message,
         metadata: {
+          workStreamNumber: workStream.number,
           workStreamId: workStream.id,
           squadId: workStream.squadId,
           event,
@@ -327,6 +332,7 @@ async function notifyWorkStreamOwner(
       subject,
       content: agentMessage,
       metadata: {
+        workStreamNumber: workStream.number,
         workStreamId: workStream.id,
         squadId: workStream.squadId,
         event,
@@ -379,6 +385,7 @@ export async function notifyWorkStreamAssigned(
       subject: `Work stream handed off to you: ${workStreamTitle(workStream)}`,
       content: parts.join('\n\n'),
       metadata: {
+        workStreamNumber: workStream.number,
         workStreamId: workStream.id,
         squadId: workStream.squadId,
         event: 'assigned',
@@ -466,6 +473,7 @@ export async function notifyWorkStreamCanceled(
             subject: `Work stream canceled: ${workStreamTitle(workStream)}`,
             content: crewMessage,
             metadata: {
+              workStreamNumber: workStream.number,
               workStreamId: workStream.id,
               squadId: workStream.squadId,
               event: 'canceled',
@@ -511,6 +519,7 @@ export async function notifyWorkStreamReopened(
         subject: `Work stream reopened: ${workStreamTitle(workStream)}`,
         content: `${message} You are still its assignee; resume work once it is admitted.`,
         metadata: {
+          workStreamNumber: workStream.number,
           workStreamId: workStream.id,
           squadId: workStream.squadId,
           event: 'reopened',
@@ -603,6 +612,7 @@ export async function notifyWorkStreamOwnerOfNewStream(
       subject: `New work stream you own: ${workStreamTitle(workStream)}`,
       content,
       metadata: {
+        workStreamNumber: workStream.number,
         workStreamId: workStream.id,
         squadId: workStream.squadId,
         event: 'created',
@@ -665,6 +675,7 @@ export async function notifyWorkStreamResponded(
         subject,
         content,
         metadata: {
+          workStreamNumber: workStream.number,
           workStreamId: workStream.id,
           squadId: workStream.squadId,
           event,

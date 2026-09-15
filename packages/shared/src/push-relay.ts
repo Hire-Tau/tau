@@ -107,7 +107,7 @@ export type ActivationAction = z.infer<typeof activationActionSchema>
 
 /** Closed vocabulary: an instance cannot supply arbitrary text unless previews were requested. */
 export function pushEventType(
-  type: string
+  type: string = ''
 ): 'question' | 'review' | 'blocked' | 'done' | 'canceled' | 'created' | 'message' | 'update' {
   if (type === 'agent-question.created') return 'question'
   if (type === 'inbox.messageReceived') return 'message'

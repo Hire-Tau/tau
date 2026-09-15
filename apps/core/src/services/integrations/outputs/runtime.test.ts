@@ -782,8 +782,10 @@ test('native review requests create one bound flow and keep code-host delivery i
     expect(notices).toHaveLength(1)
     expect(notices[0]!.content).toContain('an integration event (github)')
     expect(notices[0]!.content).toContain('paused before any workers start')
-    expect(notices[0]!.content).toContain(`tau workstream update ${id} --repository`)
-    expect(notices[0]!.content).toContain(`tau workstream resume ${id}`)
+    expect(notices[0]!.content).toContain(
+      `tau workstream update ${(await WorkStream.mustFind(id)).number} --repository`
+    )
+    expect(notices[0]!.content).toContain(`tau workstream resume ${(await WorkStream.mustFind(id)).number}`)
     const repositorySetup = await import('../../work-streams/repository-setup')
     const setup = spyOn(repositorySetup, 'setupWorkStreamRepository').mockImplementation(
       async (_squad, _input, _id, metadata) => ({

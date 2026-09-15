@@ -559,7 +559,7 @@ function SquadPreview({
             key={w.id}
             title={workStreamTitle(w)}
             detail={<CommandWorkStatus work={w} />}
-            onClick={() => onPush({ kind: 'work', id: workStreamRef(w), squadId: id, label: w.title })}
+            onClick={() => onPush({ kind: 'work', id: workStreamRef(w), squadId: id, label: workStreamTitle(w) })}
           />
         ))}
         {!work.length &&
@@ -643,7 +643,9 @@ function SquadPreview({
                     })}
                   </span>
                 }
-                onClick={() => onPush({ kind: 'work', id: workStreamRef(work), squadId: id, label: work.title })}
+                onClick={() =>
+                  onPush({ kind: 'work', id: workStreamRef(work), squadId: id, label: workStreamTitle(work) })
+                }
               />
             ))}
             {workLoading ? (

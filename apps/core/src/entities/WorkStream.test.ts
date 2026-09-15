@@ -1257,7 +1257,7 @@ describe('WorkStream entity', () => {
 
       const rows = await db.select().from(inbox).where(eq(inbox.recipientId, agent.id))
       expect(rows).toHaveLength(1)
-      expect(rows[0].subject).toBe(`Work stream handed off to you: ${ws.title}`)
+      expect(rows[0].subject).toBe(`Work stream handed off to you: #${ws.number} · ${ws.title}`)
       expect(rows[0].content).toContain('Please continue implementation.')
       expect(rows[0].deliveredAt).not.toBeNull()
 
@@ -2581,7 +2581,7 @@ describe('WorkStream entity', () => {
       expect(content).toContain(
         `A new work stream you now own was started by the consultant agent Neon (${creator.id}).`
       )
-      expect(content).toContain(`Query it with \`tau workstream get ${ws.id}\` to see the full details.`)
+      expect(content).toContain(`Query it with \`tau workstream get ${ws.number}\` to see the full details.`)
     })
 
     it('identifies human creators by display name and email', async () => {
@@ -2596,7 +2596,7 @@ describe('WorkStream entity', () => {
 
       const content = await getWorkStreamInboxContent(ws.id, 'created', manager!.id)
       expect(content).toContain(`A new work stream you now own was started by the user Noah (${user.email}).`)
-      expect(content).toContain(`Query it with \`tau workstream get ${ws.id}\` to see the full details.`)
+      expect(content).toContain(`Query it with \`tau workstream get ${ws.number}\` to see the full details.`)
     })
 
     it('does not notify when creator equals owner', async () => {

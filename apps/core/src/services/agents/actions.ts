@@ -1,3 +1,4 @@
+import { workStreamTitle } from '@tau/shared'
 import { resolveActingUser } from '../rbac'
 import { eq, desc, isNull, and, sql, inArray } from 'drizzle-orm'
 import { db, agents, squads, workStreams, workStreamWaits, workStreamFlowRuns } from '../../db'
@@ -173,12 +174,12 @@ export async function listPendingActions(): Promise<PendingAction[]> {
     const prompt: WorkStreamPrompt = isReview
       ? {
           type: 'select',
-          message: wait.message ?? ws.handoffMessage ?? `Work stream "${ws.title}" is ready for review.`,
+          message: wait.message ?? ws.handoffMessage ?? `Work stream "${workStreamTitle(ws)}" is ready for review.`,
           options: ['Approve', 'Request changes'],
         }
       : {
           type: 'text',
-          message: wait.message ?? `Work stream "${ws.title}" is blocked and needs attention.`,
+          message: wait.message ?? `Work stream "${workStreamTitle(ws)}" is blocked and needs attention.`,
         }
 
     // A sibling may be the stream's current assignee while this attempt waits.
@@ -200,7 +201,8 @@ export async function listPendingActions(): Promise<PendingAction[]> {
 
     const data: WorkStreamActionData = {
       workStreamId: ws.id,
-      workStreamTitle: ws.title,
+      workStreamNumber: ws.number,
+      workStreamTitle: workStreamTitle(ws),
       squadId: squad.id,
       squadName: squad.name,
       waitId: wait.id,

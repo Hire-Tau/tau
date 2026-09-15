@@ -28,6 +28,20 @@ If the browser reports that permission is denied, change its notification
 permission for this Tau site in browser settings, then return to Tau. If it says
 push is unsupported, use a supported browser or another notification channel.
 
+## Choose how much an alert reveals
+
+By default, device alerts describe the event and work number, such as **Work #42
+needs your answer**. Open Tau to read the title, question, or message. Live Activity
+rows also use the work number instead of the title.
+
+Enable **Show work titles and message previews** in your personal notification
+settings to include those details. In the mobile app, this switch is in Settings.
+The preference applies to your account on that Tau instance across devices. When
+enabled, preview text is sent through the configured delivery service (including
+the Tau relay, when used) and Apple or your browser's push service, and may appear
+on your lock screen. Squad updates to connected chat channels follow their own
+notification settings.
+
 ## Check instance delivery
 
 An enabled device subscription also needs instance-level delivery configuration.

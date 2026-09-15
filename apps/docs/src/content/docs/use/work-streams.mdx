@@ -21,6 +21,21 @@ Search by title in the Assistant, use **Active work** in the Feed, or open a squ
 
 Recently completed work is a short Feed summary, not the entire archive. Use **See all** for more. In a squad's Assistant preview, expand **Recently completed** and choose **7 days** or **30 days**.
 
+## Refer to a work stream
+
+Each work stream gets a permanent number, such as **#42**, shared across all squads
+in your Tau instance. Numbers are never reused; gaps are normal. Search for `#42`,
+click its reference in an agent chat, or share its URL to return to it.
+
+New links use the number, for example `/squads/my-squad/work?ws=42`. Access still
+requires permission to read that squad. Numbers identify work only within the
+current instance, so share the full URL when using several instances.
+
+The CLI and API accept `42`, `#42`, a full UUID, or an unambiguous UUID prefix.
+Quote `'#42'` in shell commands and URL-encode the hash as `%23` in API paths.
+Digits-only input prefers a work number; ambiguous UUID prefixes are rejected.
+Existing UUID links continue working.
+
 ## Read the status
 
 A stream's lifecycle is **Queued**, **Active**, **Done**, or **Canceled**. Its displayed status can be more specific: active work may be idle, running, blocked, or waiting for review. A wait can hold one step or the whole stream; another branch may still be working. Open the wait details to see what it applies to.

@@ -110,7 +110,14 @@ export function WorkStreamList({
   const surface = compact ? 'home' : 'work'
   const modes = compact ? HOME_VIEW_MODES : WORK_VIEW_MODES
   const [viewMode] = useWorkStreamViewMode(squadId, surface, modes)
-  const [selectedWs, setSelectedWs] = useURLStringState<string>('ws', '')
+  const [selectedWs, setSelectedWsParam] = useURLStringState<string>('ws', '')
+  const setSelectedWs = useCallback(
+    (ref: string) => {
+      const work = [...workStreams, ...doneStreams].find((item) => item.id === ref || workStreamRef(item) === ref)
+      setSelectedWsParam(work ? workStreamRef(work) : ref)
+    },
+    [workStreams, doneStreams, setSelectedWsParam]
+  )
   const fullscreenContentRef = useRef<HTMLDivElement>(null)
   const hadSelectedWsRef = useRef(false)
   const shouldExitFullscreenOnEscape = useCallback(() => {

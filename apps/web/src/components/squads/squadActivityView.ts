@@ -46,7 +46,8 @@ export function activityAgentLabel(agentTypeId: string | null, kind?: SquadActiv
 
 /** Per-squad row href: the tab's own squad slug for every row. */
 export function squadActivityItemHref(item: SquadActivityItem, slug: string): string {
-  if (item.ref.type === 'workstream') return `/squads/${slug}/work?ws=${item.ref.workStreamId}`
+  if (item.ref.type === 'workstream')
+    return `/squads/${slug}/work?ws=${item.ref.workStreamNumber ?? item.ref.workStreamId}`
   if (item.ref.type === 'agent') {
     const params = new URLSearchParams({ agent: item.ref.agentId })
     if (item.ref.view === 'inbox') params.set('view', 'inbox')

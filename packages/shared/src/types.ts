@@ -760,6 +760,7 @@ export interface SquadQuestionActionData {
 }
 
 export interface WorkStreamActionData {
+  workStreamNumber?: number
   workStreamId: string
   workStreamTitle: string
   squadId: string
