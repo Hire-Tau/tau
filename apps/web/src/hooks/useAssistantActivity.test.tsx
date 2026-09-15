@@ -68,6 +68,9 @@ test('reports unread conversations from cached activity without any network or r
     await dom.act(async () => {
       seed(queryClient, other, ['chat:send'])
     })
+    // The permissions observer notifies asynchronously; wait for the re-render it triggers.
+    for (let attempt = 0; attempt < 20 && latest?.ownerId !== other; attempt++)
+      await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 10)))
     expect(latest?.ownerId).toBe(other)
     expect(latest?.activity).toBeUndefined()
     expect(container.textContent).toBe('0')
