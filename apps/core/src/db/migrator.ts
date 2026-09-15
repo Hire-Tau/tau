@@ -1,3 +1,4 @@
+import { backfillWorkStreamNumbers } from './work-stream-number-backfill'
 import { migrateChannelConsultants, migrateAssistantAgentBindings } from './channel-consultant-backfill'
 import { migrateWorkStyleParticipants } from './work-style-participant-backfill'
 import { detachSquadPresets } from './squad-preset-backfill'
@@ -381,19 +382,21 @@ export async function applyMigrations(
           statements = []
         }
         for (const statement of migration.sql) {
-          const backfill = /ALTER TABLE "agent_types" DROP COLUMN "flow_prompt"/.test(statement)
-            ? preserveAgentExpertise
-            : /ALTER TABLE "squad_types" RENAME TO "squad_presets"/.test(statement)
-              ? detachSquadPresets
-              : /ALTER TABLE "work_stream_flow_runs" RENAME COLUMN "profiles" TO "participant_snapshots"/.test(
-                    statement
-                  )
-                ? migrateWorkStyleParticipants
-                : /ALTER TABLE "channel_instances" DROP COLUMN "concierge_agent_id"/.test(statement)
-                  ? migrateChannelConsultants
-                  : /ALTER TABLE "assistant_conversations" DROP COLUMN "manager_agent_id"/.test(statement)
-                    ? migrateAssistantAgentBindings
-                    : undefined
+          const backfill = /ALTER TABLE "work_streams" ALTER COLUMN "number" SET DEFAULT/.test(statement)
+            ? backfillWorkStreamNumbers
+            : /ALTER TABLE "agent_types" DROP COLUMN "flow_prompt"/.test(statement)
+              ? preserveAgentExpertise
+              : /ALTER TABLE "squad_types" RENAME TO "squad_presets"/.test(statement)
+                ? detachSquadPresets
+                : /ALTER TABLE "work_stream_flow_runs" RENAME COLUMN "profiles" TO "participant_snapshots"/.test(
+                      statement
+                    )
+                  ? migrateWorkStyleParticipants
+                  : /ALTER TABLE "channel_instances" DROP COLUMN "concierge_agent_id"/.test(statement)
+                    ? migrateChannelConsultants
+                    : /ALTER TABLE "assistant_conversations" DROP COLUMN "manager_agent_id"/.test(statement)
+                      ? migrateAssistantAgentBindings
+                      : undefined
           if (backfill) {
             await flush()
             await backfill(connection)

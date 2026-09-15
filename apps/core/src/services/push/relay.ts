@@ -27,8 +27,19 @@ export async function sendRelayAlert(
   const config = deps.config === undefined ? pushRelayConfig() : deps.config
   if (!config) return { accepted: false, reason: 'not_configured' }
   const allowed: RelayRouting = {}
-  for (const key of ['squadId', 'agentId', 'workStreamId', 'waitId', 'questionId', 'messageId', 'actionId'] as const) {
-    if (typeof routing[key] === 'string') {
+  for (const key of [
+    'squadId',
+    'agentId',
+    'workStreamId',
+    'waitId',
+    'questionId',
+    'messageId',
+    'actionId',
+    'eventType',
+    'workStreamNumber',
+    'preview',
+  ] as const) {
+    if (routing[key] !== undefined) {
       const candidate = relayRoutingSchema.safeParse({ [key]: routing[key] })
       if (candidate.success) Object.assign(allowed, candidate.data)
     }

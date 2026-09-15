@@ -111,13 +111,13 @@ export function squadsResource(t: Transport) {
       const path = statuses && statuses.length > 0 ? `/workstreams?statuses=${statuses.join(',')}` : '/workstreams'
       return t.request(path)
     },
-    getWorkStream: (id: string): Promise<WorkStream> => t.request(`/workstreams/${id}`),
+    getWorkStream: (id: string): Promise<WorkStream> => t.request(`/workstreams/${encodeURIComponent(id)}`),
     resolveWorkStreamWait: (
       workStreamId: string,
       waitId: string,
       input: ResolveWorkStreamWaitInput
     ): Promise<ResolveWorkStreamWaitResult> =>
-      t.request(`/workstreams/${workStreamId}/waits/${waitId}/resolve`, {
+      t.request(`/workstreams/${encodeURIComponent(workStreamId)}/waits/${waitId}/resolve`, {
         method: 'POST',
         body: input,
       }),

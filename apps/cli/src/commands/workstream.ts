@@ -1,3 +1,4 @@
+import { workStreamLabel, workStreamRef } from '@tau/shared'
 import { addStructuredInputOptions, readWorkflowSource } from '../structured-input'
 import { registerWorkstreamFlowCommands, type WorkstreamFlowDependencies } from './workstream-flow'
 import { Command } from 'commander'
@@ -367,7 +368,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           }
           outputTable(
             streams.map((ws) => ({
-              ID: ws.id.slice(0, 8),
+              ID: workStreamLabel(ws),
               Title:
                 options.truncate === false ? ws.title : ws.title.slice(0, 30) + (ws.title.length > 30 ? '...' : ''),
               Status: formatState(ws),
@@ -456,7 +457,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           ...(options.baseBranch !== undefined ? { baseBranch: options.baseBranch } : {}),
         })
 
-        output(ws, `Created work stream ${ws.id.slice(0, 8)}: ${ws.title}`)
+        output(ws, `Created work stream ${workStreamLabel(ws)}: ${ws.title}`)
       } catch (error) {
         outputError(error as Error)
       }
@@ -470,13 +471,13 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .action(async (id, options) => {
       try {
         const params = options.metrics ? '?metrics=true' : ''
-        const ws = await apiGet<WorkStream>(`/api/workstreams/${id}${params}`)
+        const ws = await apiGet<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}${params}`)
         const agentSummaries = await getWorkStreamAgentSummaries(ws.agentIds)
 
         if (isJsonMode()) {
           output({ ...ws, agentTypes: getWorkStreamAgentTypes(ws.agentIds, agentSummaries) })
         } else {
-          console.log(`ID:          ${ws.id}`)
+          console.log(`Work:        ${workStreamLabel(ws)}`)
           console.log(`Title:       ${ws.title}`)
           console.log(`Status:      ${formatState(ws)}`)
           console.log(
@@ -660,8 +661,8 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
         if (options.worktree !== undefined) updates.worktree = options.worktree
         if (options.baseBranch !== undefined) updates.baseBranch = options.baseBranch
 
-        const ws = await apiPatch<WorkStream>(`/api/workstreams/${id}`, updates)
-        output(ws, `Updated work stream ${ws.id.slice(0, 8)}`)
+        const ws = await apiPatch<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}`, updates)
+        output(ws, `Updated work stream ${workStreamLabel(ws)}`)
       } catch (error) {
         outputError(error as Error)
       }
@@ -677,7 +678,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     typeLabel: string,
     explicitWaitId: string | undefined
   ): Promise<{ ws: WorkStream; wait: { id: string } }> => {
-    const ws = await apiGet<WorkStream>(`/api/workstreams/${id}`)
+    const ws = await apiGet<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}`)
     const wait = selectOpenWait(ws.openWaits, type, {
       explicitWaitId,
       typeLabel,
@@ -696,14 +697,14 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .action(async (id, options) => {
       try {
         if (options.file.length > 0) {
-          await apiPatch<WorkStream>(`/api/workstreams/${id}`, { files: options.file })
+          await apiPatch<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}`, { files: options.file })
         }
-        const ws = await apiPost<WorkStream>(`/api/workstreams/${id}/request-input`, {
+        const ws = await apiPost<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}/request-input`, {
           message: options.message,
           scope: options.scope,
           flowAttemptId: options.attempt,
         })
-        output(ws, `Work stream ${ws.id.slice(0, 8)} is requesting input (manual wait opened): ${options.message}`)
+        output(ws, `Work stream ${workStreamLabel(ws)} is requesting input (manual wait opened): ${options.message}`)
       } catch (error) {
         outputError(error as Error)
       }
@@ -721,7 +722,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           resolution: 'cleared',
           ...(options.message ? { note: options.message } : {}),
         })
-        output(ws, `Work stream ${ws.id.slice(0, 8)} unblocked (wait ${wait.id.slice(0, 8)} cleared)`)
+        output(ws, `Work stream ${workStreamLabel(ws)} unblocked (wait ${wait.id.slice(0, 8)} cleared)`)
       } catch (error) {
         outputError(error as Error)
       }
@@ -746,8 +747,8 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
         output(
           ws,
           ws.status === 'done'
-            ? `Approved work stream ${ws.id.slice(0, 8)} — done`
-            : `Approved checkpoint review on work stream ${ws.id.slice(0, 8)} — stream continues (status: ${ws.status})`
+            ? `Approved work stream ${workStreamLabel(ws)} — done`
+            : `Approved checkpoint review on work stream ${workStreamLabel(ws)} — stream continues (status: ${ws.status})`
         )
       } catch (error) {
         outputError(error as Error)
@@ -774,7 +775,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           resolution: 'sent_back',
           note,
         })
-        output(ws, `Sent work stream ${ws.id.slice(0, 8)} back with feedback (review round recorded)`)
+        output(ws, `Sent work stream ${workStreamLabel(ws)} back with feedback (review round recorded)`)
       } catch (error) {
         outputError(error as Error)
       }
@@ -792,11 +793,11 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .action(async (id, options) => {
       try {
         if (options.file.length > 0) {
-          await apiPatch<WorkStream>(`/api/workstreams/${id}`, { files: options.file })
+          await apiPatch<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}`, { files: options.file })
         }
         const ws = await apiPost<
           WorkStream & { alreadyOpen?: boolean; wait?: { id: string; completesOnApproval?: boolean } }
-        >(`/api/workstreams/${id}/request-review`, {
+        >(`/api/workstreams/${encodeURIComponent(id)}/request-review`, {
           message: options.message,
           ...(options.complete === false ? { completesOnApproval: false } : {}),
         })
@@ -812,8 +813,8 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
         output(
           ws,
           ws.alreadyOpen
-            ? `Work stream ${ws.id.slice(0, 8)} already has an open review wait (no-op)${flagMismatch}`
-            : `Work stream ${ws.id.slice(0, 8)} ready for review (review wait open${options.complete === false ? '; checkpoint — approval will not complete the stream' : ''})`
+            ? `Work stream ${workStreamLabel(ws)} already has an open review wait (no-op)${flagMismatch}`
+            : `Work stream ${workStreamLabel(ws)} ready for review (review wait open${options.complete === false ? '; checkpoint — approval will not complete the stream' : ''})`
         )
       } catch (error) {
         outputError(error as Error)
@@ -838,7 +839,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           )
           return
         }
-        const ws = await apiPatch<WorkStream>(`/api/workstreams/${id}`, {
+        const ws = await apiPatch<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}`, {
           assigneeAgentId: options.to,
           handoffMessage: options.message,
           ...(options.file.length > 0 ? { files: options.file } : {}),
@@ -846,8 +847,8 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
         output(
           ws,
           ws.status === 'queued'
-            ? `Work stream ${ws.id.slice(0, 8)} handed off to ${options.to}; pending admission; recipient will be notified on promotion`
-            : `Work stream ${ws.id.slice(0, 8)} handed off to ${options.to}`
+            ? `Work stream ${workStreamLabel(ws)} handed off to ${options.to}; pending admission; recipient will be notified on promotion`
+            : `Work stream ${workStreamLabel(ws)} handed off to ${options.to}`
         )
       } catch (error) {
         outputError(error as Error)
@@ -863,12 +864,12 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     )
     .action(async (id, options) => {
       try {
-        const ws = await apiPatch<WorkStream>(`/api/workstreams/${id}`, {
+        const ws = await apiPatch<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}`, {
           status: 'done',
           ...(options.nextSteps ? { nextSteps: options.nextSteps } : {}),
         })
 
-        output(ws, `Work stream ${ws.id.slice(0, 8)} marked done`)
+        output(ws, `Work stream ${workStreamLabel(ws)} marked done`)
       } catch (error) {
         outputError(error as Error)
       }
@@ -885,11 +886,11 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
         const minutes = options.parkAfter === undefined ? undefined : Number(options.parkAfter)
         if (minutes !== undefined && (!Number.isInteger(minutes) || minutes < 1 || minutes > 10080))
           throw new Error('--park-after must be an integer from 1 to 10080')
-        const stream = await apiPost<WorkStream>(`/api/workstreams/${id}/pause`, {
+        const stream = await apiPost<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}/pause`, {
           ...(options.reason ? { reason: options.reason } : {}),
           ...(minutes !== undefined ? { parkAfterMinutes: minutes } : {}),
         })
-        output(stream, `Paused work stream ${stream.id.slice(0, 8)} until explicit resume`)
+        output(stream, `Paused work stream ${workStreamLabel(stream)} until explicit resume`)
       } catch (error) {
         outputError(error as Error)
       }
@@ -898,8 +899,8 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .description('Resume paused work; if parked, wait for an admission slot before dispatch')
     .action(async (id) => {
       try {
-        const stream = await apiPost<WorkStream>(`/api/workstreams/${id}/resume`)
-        output(stream, `Resumed work stream ${stream.id.slice(0, 8)}`)
+        const stream = await apiPost<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}/resume`)
+        output(stream, `Resumed work stream ${workStreamLabel(stream)}`)
       } catch (error) {
         outputError(error as Error)
       }
@@ -919,18 +920,18 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .action(async (id, options: { preemptRunning?: boolean }) => {
       try {
         const ws = options.preemptRunning
-          ? await apiPost<WorkStream>(`/api/workstreams/${id}/park`, { preemptRunning: true })
-          : await apiPost<WorkStream>(`/api/workstreams/${id}/park`)
+          ? await apiPost<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}/park`, { preemptRunning: true })
+          : await apiPost<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}/park`)
         if (ws.reAdmitted) {
           output(
             ws,
-            `Parked work stream ${ws.id.slice(0, 8)} was immediately re-admitted — it is the highest-priority ` +
+            `Parked work stream ${workStreamLabel(ws)} was immediately re-admitted — it is the highest-priority ` +
               `eligible stream in the queue, so this park freed nothing. Park a lower-priority stream instead, ` +
               `or lower this stream's priority first.`
           )
         } else {
           const pos = ws.queuePosition !== undefined ? ` (queue position ${ws.queuePosition})` : ''
-          output(ws, `Parked work stream ${ws.id.slice(0, 8)}${pos}`)
+          output(ws, `Parked work stream ${workStreamLabel(ws)}${pos}`)
         }
       } catch (error) {
         outputError(error as Error)
@@ -944,12 +945,12 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     )
     .action(async (id) => {
       try {
-        const ws = await apiPost<WorkStream>(`/api/workstreams/${id}/reopen`)
+        const ws = await apiPost<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}/reopen`)
         output(
           ws,
           ws.status === 'active'
-            ? `Reopened work stream ${ws.id.slice(0, 8)} — admitted (active)`
-            : `Reopened work stream ${ws.id.slice(0, 8)} — queued for admission`
+            ? `Reopened work stream ${workStreamLabel(ws)} — admitted (active)`
+            : `Reopened work stream ${workStreamLabel(ws)} — queued for admission`
         )
       } catch (error) {
         outputError(error as Error)
@@ -961,8 +962,8 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .description('Cancel a work stream and stop assigned active executions where possible')
     .action(async (id) => {
       try {
-        const ws = await apiPost<WorkStream>(`/api/workstreams/${id}/cancel`)
-        output(ws, `Canceled work stream ${ws.id.slice(0, 8)}`)
+        const ws = await apiPost<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}/cancel`)
+        output(ws, `Canceled work stream ${workStreamLabel(ws)}`)
       } catch (error) {
         outputError(error as Error)
       }
@@ -1004,7 +1005,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
         }
 
         if (options.idOnly) {
-          for (const ws of streams) console.log(ws.id)
+          for (const ws of streams) console.log(workStreamRef(ws))
         } else if (options.squadIdOnly) {
           const uniqueSquadIds = [...new Set(streams.map((ws) => ws.squadId))]
           for (const sid of uniqueSquadIds) console.log(sid)
@@ -1028,7 +1029,10 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .requiredOption('--content <content>', 'Notification content')
     .action(async (id, recipientId, options) => {
       try {
-        const result = await apiPost(`/api/workstreams/${id}/ci-notification`, { recipientId, ...options })
+        const result = await apiPost(`/api/workstreams/${encodeURIComponent(id)}/ci-notification`, {
+          recipientId,
+          ...options,
+        })
         output(result)
       } catch (error) {
         outputError(error as Error)
@@ -1043,7 +1047,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .addHelpText('after', arrayHelp)
     .action(async (id, key, value) => {
       try {
-        const updated = await apiPatch<WorkStream>(`/api/workstreams/${id}`, {
+        const updated = await apiPatch<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}`, {
           metadata: buildMetadataDelta(key, parseMetadataValue(value)),
         })
         output(updated, `Set ${key}=${value} on work stream ${id.slice(0, 8)}`)
@@ -1057,7 +1061,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .addHelpText('after', arrayHelp)
     .action(async (id, key) => {
       try {
-        const updated = await apiPatch<WorkStream>(`/api/workstreams/${id}`, {
+        const updated = await apiPatch<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}`, {
           metadata: buildMetadataDelta(key, null),
         })
         output(updated, `Unset ${key} on work stream ${id.slice(0, 8)}`)
@@ -1072,7 +1076,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .action(async (id, key) => {
       try {
         parseMetadataPath(key)
-        const stream = await apiGet<WorkStream>(`/api/workstreams/${id}`)
+        const stream = await apiGet<WorkStream>(`/api/workstreams/${encodeURIComponent(id)}`)
         const value = getMetadataValue(stream.metadata ?? {}, key)
         output(isJsonMode() ? value : JSON.stringify(value, null, 2))
       } catch (error) {
@@ -1130,7 +1134,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .description('Delete a work stream')
     .action(async (id) => {
       try {
-        await apiDelete(`/api/workstreams/${id}`)
+        await apiDelete(`/api/workstreams/${encodeURIComponent(id)}`)
         console.log(`Deleted work stream ${id}`)
       } catch (error) {
         outputError(error as Error)
@@ -1144,7 +1148,9 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .description('Show whether you watch this work stream, and the watcher count')
     .action(async (id) => {
       try {
-        const sub = await apiGet<{ subscribed: boolean; count: number }>(`/api/workstreams/${id}/subscription`)
+        const sub = await apiGet<{ subscribed: boolean; count: number }>(
+          `/api/workstreams/${encodeURIComponent(id)}/subscription`
+        )
         output(sub, `Watching: ${sub.subscribed ? 'yes' : 'no'} (${sub.count} watcher(s))`)
       } catch (error) {
         outputError(error as Error)
@@ -1157,7 +1163,9 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .description('Watch a work stream (get its lifecycle updates)')
     .action(async (id) => {
       try {
-        const sub = await apiPost<{ subscribed: boolean; count: number }>(`/api/workstreams/${id}/subscribe`)
+        const sub = await apiPost<{ subscribed: boolean; count: number }>(
+          `/api/workstreams/${encodeURIComponent(id)}/subscribe`
+        )
         output(sub, `Watching work stream ${id.slice(0, 8)} (${sub.count} watcher(s))`)
       } catch (error) {
         outputError(error as Error)
@@ -1170,7 +1178,9 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .description('Stop watching a work stream')
     .action(async (id) => {
       try {
-        const sub = await apiDelete<{ subscribed: boolean; count: number }>(`/api/workstreams/${id}/subscribe`)
+        const sub = await apiDelete<{ subscribed: boolean; count: number }>(
+          `/api/workstreams/${encodeURIComponent(id)}/subscribe`
+        )
         output(sub, `Unwatched work stream ${id.slice(0, 8)} (${sub.count} watcher(s))`)
       } catch (error) {
         outputError(error as Error)

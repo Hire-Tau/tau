@@ -1,3 +1,4 @@
+import { UserNotificationPreferences } from '../../entities/UserNotificationPreferences'
 import {
   buildLiveActivityState,
   shouldShowLiveActivity,
@@ -383,7 +384,21 @@ export function registerLiveActivityFanout(emitter: {
       ])
       return [...new Set([...streamWatchers, ...squadWatchers])]
     },
-    loadSnapshot: loadWorkInterestSnapshot,
+    loadSnapshot: async (userId) => {
+      const [snapshot, preferences] = await Promise.all([
+        loadWorkInterestSnapshot(userId),
+        UserNotificationPreferences.get(userId),
+      ])
+      if (!preferences.showPreviews)
+        snapshot.liveActivity = {
+          ...snapshot.liveActivity,
+          top: snapshot.liveActivity.top.map((work) => ({
+            ...work,
+            title: work.number ? `Work #${work.number}` : 'Work stream',
+          })),
+        }
+      return snapshot
+    },
     origin: () => process.env.PUBLIC_URL ?? '',
   })
 

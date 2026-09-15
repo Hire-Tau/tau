@@ -21,7 +21,8 @@ export function NotificationPreferences() {
   const { data, isLoading } = useQuery(queries.notificationConfig.mine())
 
   const mutation = useMutation({
-    mutationFn: (input: { pushEnabled?: boolean; mutedEvents?: string[] }) => updateMyNotificationPrefs(input),
+    mutationFn: (input: { showPreviews?: boolean; pushEnabled?: boolean; mutedEvents?: string[] }) =>
+      updateMyNotificationPrefs(input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.notificationConfig.mine() }),
   })
 
@@ -63,6 +64,21 @@ export function NotificationPreferences() {
           {pushEnabled ? 'Disable' : 'Enable'}
         </button>
       </div>
+
+      <label className="flex items-center justify-between gap-3 mt-5 text-sm">
+        <span>
+          Show work titles and message previews
+          <span className="block text-muted">
+            Off by default. Previews may contain private work details and appear on your lock screen.
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          checked={data.showPreviews ?? false}
+          disabled={mutation.isPending}
+          onChange={(event) => mutation.mutate({ showPreviews: event.target.checked })}
+        />
+      </label>
 
       {pushEnabled && data.pushEvents.length > 0 && (
         <div className="mt-5">

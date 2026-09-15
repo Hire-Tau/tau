@@ -1,8 +1,15 @@
-import { activeWorkflowAttempts, type WorkflowAttempt, type WorkflowRun } from '@tau/shared'
+import {
+  workStreamLabel,
+  workStreamRef,
+  activeWorkflowAttempts,
+  type WorkflowAttempt,
+  type WorkflowRun,
+} from '@tau/shared'
 import { flowCapabilityInstructions } from './capability-instructions'
 
 type HandoffStream = {
   id: string
+  number?: number
   title: string
   description: string
   handoffMessage?: string | null
@@ -42,7 +49,7 @@ export function flowMessage(
     evidence: 'Describe the result, checks performed, and relevant paths or links.',
   }
   return [
-    `Work stream ${stream.id}: ${stream.title}\nStep: ${step.id} (attempt ${attempt.id}, version ${run.version})`,
+    `Work stream ${workStreamLabel(stream)}: ${stream.title}\nStep: ${step.id} (attempt ${attempt.id}, version ${run.version})`,
     `${step.instructions}\nExpected output: ${step.output}`,
     workspace.length ? workspace.map(([label, value]) => `${label}: ${value}`).join('\n') : '',
     attempt.feedback ? `Rework request:\n${attempt.feedback}` : '',

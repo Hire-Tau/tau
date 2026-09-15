@@ -1,3 +1,4 @@
+import { workStreamTitle } from '@tau/shared'
 import { WorkStreamStatusBadges } from '../WorkStreamStatusBadges'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -112,7 +113,7 @@ export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
                       </span>
                     )}
                   </div>
-                  <h4 className="text-sm font-medium text-primary mt-1 truncate">{ws.title}</h4>
+                  <h4 className="text-sm font-medium text-primary mt-1 truncate">{workStreamTitle(ws)}</h4>
                   {ws.description && <p className="text-xs text-muted mt-0.5 line-clamp-2">{ws.description}</p>}
                 </div>
                 {github?.prNumber && (

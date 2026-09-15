@@ -20,7 +20,7 @@ afterAll(async () => {
 describe('UserNotificationPreferences', () => {
   it('defaults to push-on / nothing muted when no row exists', async () => {
     const prefs = await UserNotificationPreferences.get(user.id)
-    expect(prefs).toEqual({ pushEnabled: true, mutedEvents: [] })
+    expect(prefs).toEqual({ pushEnabled: true, showPreviews: false, mutedEvents: [] })
     expect(await UserNotificationPreferences.shouldPush(user.id, 'inbox.messageReceived')).toBe(true)
   })
 

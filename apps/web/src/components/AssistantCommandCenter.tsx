@@ -1,3 +1,5 @@
+import { workStreamRef } from '@tau/shared'
+import { workStreamTitle } from '@tau/shared'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -137,7 +139,7 @@ export function AssistantCommandCenter({
     entry?.kind === 'squad'
       ? data.squads.find((s) => s.id === entry.id)?.name
       : entry?.kind === 'work'
-        ? data.streams.find((w) => w.id === entry.id)?.title
+        ? data.streams.find((w) => w.id === entry.id || workStreamRef(w) === entry.id)?.title
         : entry?.kind === 'chat' && currentAgent
           ? currentAgent.agentTypeId === 'manager'
             ? 'Manager'
@@ -555,9 +557,9 @@ function SquadPreview({
         {work.map((w) => (
           <PreviewRow
             key={w.id}
-            title={w.title}
+            title={workStreamTitle(w)}
             detail={<CommandWorkStatus work={w} />}
-            onClick={() => onPush({ kind: 'work', id: w.id, squadId: id, label: w.title })}
+            onClick={() => onPush({ kind: 'work', id: workStreamRef(w), squadId: id, label: w.title })}
           />
         ))}
         {!work.length &&
@@ -631,7 +633,7 @@ function SquadPreview({
             {completedWork.map((work) => (
               <PreviewRow
                 key={work.id}
-                title={work.title}
+                title={workStreamTitle(work)}
                 detail={
                   <span className="inline-flex items-center gap-2">
                     <CommandWorkStatus work={work} />
@@ -641,7 +643,7 @@ function SquadPreview({
                     })}
                   </span>
                 }
-                onClick={() => onPush({ kind: 'work', id: work.id, squadId: id, label: work.title })}
+                onClick={() => onPush({ kind: 'work', id: workStreamRef(work), squadId: id, label: work.title })}
               />
             ))}
             {workLoading ? (

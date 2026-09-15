@@ -1,3 +1,5 @@
+import { workStreamRef } from '@tau/shared'
+import { workStreamTitle } from '@tau/shared'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useInfiniteQuery } from '../reactQueryHooks'
 import type { PendingAction } from '@tau/shared'
@@ -102,7 +104,7 @@ export function AccountFeedVisit({
           <ul className="space-y-1">
             {streams.map((stream) => {
               const params = new URLSearchParams(location.search)
-              params.set('ws', stream.id)
+              params.set('ws', workStreamRef(stream))
               return (
                 <li key={stream.id}>
                   <Link
@@ -111,7 +113,9 @@ export function AccountFeedVisit({
                   >
                     <span aria-hidden="true" className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-green-500" />
                     <span className="min-w-0 flex-1">
-                      <span className="block text-sm font-medium text-primary break-words">{stream.title}</span>
+                      <span className="block text-sm font-medium text-primary break-words">
+                        {workStreamTitle(stream)}
+                      </span>
                       <span className="mt-1 block text-xs text-muted">
                         Completed
                         {stream.completedAt && (

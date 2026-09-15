@@ -97,6 +97,7 @@ async function loadCandidates(squadIds: string[], streamIds: string[]): Promise<
   return db
     .select({
       id: workStreams.id,
+      number: workStreams.number,
       squadId: workStreams.squadId,
       title: workStreams.title,
       status: workStreams.status,

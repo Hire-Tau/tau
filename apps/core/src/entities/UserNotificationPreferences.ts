@@ -3,12 +3,13 @@ import { db } from '../db'
 import { userNotificationPreferences } from '../db/schema'
 
 export interface NotificationPreferences {
+  showPreviews: boolean
   pushEnabled: boolean
   /** Event types the user has muted (no push), e.g. ['inbox.messageReceived']. */
   mutedEvents: string[]
 }
 
-const DEFAULTS: NotificationPreferences = { pushEnabled: true, mutedEvents: [] }
+const DEFAULTS: NotificationPreferences = { showPreviews: false, pushEnabled: true, mutedEvents: [] }
 
 /**
  * Per-user notification preferences. Notification *delivery* (push) is per-user; the shared
@@ -22,7 +23,11 @@ export class UserNotificationPreferences {
       .from(userNotificationPreferences)
       .where(eq(userNotificationPreferences.userId, userId))
     if (!row) return { ...DEFAULTS }
-    return { pushEnabled: row.pushEnabled, mutedEvents: (row.mutedEvents as string[]) ?? [] }
+    return {
+      showPreviews: row.showPreviews,
+      pushEnabled: row.pushEnabled,
+      mutedEvents: (row.mutedEvents as string[]) ?? [],
+    }
   }
 
   /** Whether a push for the given event type should be delivered to this user. */
@@ -34,15 +39,27 @@ export class UserNotificationPreferences {
   static async upsert(userId: string, input: Partial<NotificationPreferences>): Promise<NotificationPreferences> {
     const current = await UserNotificationPreferences.get(userId)
     const next: NotificationPreferences = {
+      showPreviews: input.showPreviews ?? current.showPreviews,
       pushEnabled: input.pushEnabled ?? current.pushEnabled,
       mutedEvents: input.mutedEvents ?? current.mutedEvents,
     }
     await db
       .insert(userNotificationPreferences)
-      .values({ userId, pushEnabled: next.pushEnabled, mutedEvents: next.mutedEvents, updatedAt: new Date() })
+      .values({
+        userId,
+        showPreviews: next.showPreviews,
+        pushEnabled: next.pushEnabled,
+        mutedEvents: next.mutedEvents,
+        updatedAt: new Date(),
+      })
       .onConflictDoUpdate({
         target: userNotificationPreferences.userId,
-        set: { pushEnabled: next.pushEnabled, mutedEvents: next.mutedEvents, updatedAt: new Date() },
+        set: {
+          showPreviews: next.showPreviews,
+          pushEnabled: next.pushEnabled,
+          mutedEvents: next.mutedEvents,
+          updatedAt: new Date(),
+        },
       })
     return next
   }

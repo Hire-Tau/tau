@@ -63,3 +63,4 @@ export * from './event-predicate-catalog'
 export * from './event-predicates'
 
 export * from './event-rule-sample'
+export { workStreamRef, workStreamLabel, workStreamTitle } from './work-stream-reference'

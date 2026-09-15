@@ -1,3 +1,5 @@
+import { pushAlertText, pushEventType } from '@tau/shared/push-relay'
+import { WorkStream } from '../../entities/WorkStream'
 import { requireAllowedChannel } from '../channel-policy'
 import { getVapidContactSubject } from '../push/vapid'
 import { getSettingsStore } from '../settings'
@@ -258,22 +260,28 @@ export class NotificationService {
     }
     log.info(`Sending web push to ${subscriptions.length} subscription(s)`)
 
-    const payload = JSON.stringify({
-      title: event.title,
-      body: event.body,
+    const work = event.workStreamId ? await WorkStream.find(event.workStreamId) : null
+    const routing = {
       url: event.url,
       squadId: event.squadId,
       agentId: event.agentId,
-      workStreamId: event.workStreamId,
+      workStreamId: String(event.workStreamNumber ?? work?.number ?? event.workStreamId ?? '') || undefined,
       waitId: event.waitId,
       questionId: event.questionId,
       messageId: event.messageId,
       actionId: event.actionId,
-    })
+    }
 
     await Promise.all(
       subscriptions.map(async (sub) => {
         try {
+          const prefs = await UserNotificationPreferences.get(sub.userId)
+          const text = pushAlertText({
+            eventType: pushEventType(event.notificationKind ?? event.type),
+            workStreamNumber: event.workStreamNumber ?? work?.number,
+            ...(prefs.showPreviews ? { preview: { title: event.title, body: event.body } } : {}),
+          })
+          const payload = JSON.stringify({ ...routing, ...text })
           const result = await webpush.sendNotification(
             { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
             payload
@@ -308,11 +316,23 @@ export class NotificationService {
     // the right one before deep-linking. Omitted when APP_URL isn't configured.
     const origin = getAppOrigin()
 
+    const work = event.workStreamId ? await WorkStream.find(event.workStreamId) : null
+    const workStreamNumber = event.workStreamNumber ?? work?.number
     await Promise.all(
       devices.map(async (device) => {
+        const prefs = await UserNotificationPreferences.get(device.userId)
+        const presentation = {
+          eventType: pushEventType(event.notificationKind ?? event.type),
+          workStreamNumber,
+          ...(prefs.showPreviews
+            ? { preview: { title: event.title.slice(0, 200), body: event.body.slice(0, 500) } }
+            : {}),
+        }
+        const alert = pushAlertText(presentation)
         if (pushRelayConfig()) {
           if (device.platform !== 'ios' || !device.relayBindingToken) return
           const result = await sendRelayAlert(device.relayBindingToken, {
+            ...presentation,
             squadId: event.squadId,
             agentId: event.agentId,
             workStreamId: event.workStreamId,
@@ -328,14 +348,14 @@ export class NotificationService {
         const result = await sendApnsNotification(
           device.apnsToken,
           {
-            title: event.title,
-            body: event.body,
+            title: alert.title,
+            body: alert.body,
             data: {
               type: 'open',
               url: event.url,
               squadId: event.squadId,
               agentId: event.agentId,
-              workStreamId: event.workStreamId,
+              workStreamId: workStreamNumber ? String(workStreamNumber) : event.workStreamId,
               waitId: event.waitId,
               questionId: event.questionId,
               messageId: event.messageId,

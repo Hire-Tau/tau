@@ -1,6 +1,6 @@
 {
-  "id": "3a71bdac-cb0a-414a-bdd0-e4e4f33b0fdf",
-  "prevId": "f727eae7-10ff-40f8-8d97-c69491a230c8",
+  "id": "d954d74d-4f1b-4702-b5df-366bd8695d81",
+  "prevId": "a52f1ee7-d21b-4daa-a1ff-2039dfb9235e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -15529,6 +15529,13 @@
           "notNull": true,
           "default": true
         },
+        "show_previews": {
+          "name": "show_previews",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
         "muted_events": {
           "name": "muted_events",
           "type": "jsonb",
@@ -16829,7 +16836,8 @@
           "name": "number",
           "type": "integer",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true,
+          "default": "nextval('work_stream_number_seq')"
         },
         "squad_id": {
           "name": "squad_id",
@@ -17780,6 +17788,16 @@
       "startWith": "1",
       "minValue": "1",
       "maxValue": "9223372036854775807",
+      "cache": "1",
+      "cycle": false
+    },
+    "public.work_stream_number_seq": {
+      "name": "work_stream_number_seq",
+      "schema": "public",
+      "increment": "1",
+      "startWith": "1",
+      "minValue": "1",
+      "maxValue": "2147483647",
       "cache": "1",
       "cycle": false
     }

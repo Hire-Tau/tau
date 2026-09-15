@@ -134,6 +134,8 @@ export interface ResponseContext {
  * Notification event for outbound notifications.
  */
 export interface NotificationEvent {
+  notificationKind?: string
+  workStreamNumber?: number
   type: string
   squadId?: string
   squadName?: string

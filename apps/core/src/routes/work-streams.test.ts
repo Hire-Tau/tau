@@ -76,6 +76,25 @@ describe('work-streams routes', () => {
     )
   }
 
+  it('uses numeric references for detail, mutation and subscriptions without changing UUID identity', async () => {
+    const [row] = await db.insert(workStreams).values({ squadId: testSquadId, title: 'Number lookup' }).returning()
+    for (const ref of [row!.id, row!.id.slice(0, 8), String(row!.number), `%23${row!.number}`]) {
+      const response = await apiFetch(`/api/workstreams/${ref}`)
+      expect(response.status).toBe(200)
+      expect((await response.json()).id).toBe(row!.id)
+    }
+    const update = await apiFetch(`/api/workstreams/${row!.number}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Updated' }),
+    })
+    expect(update.status).toBe(200)
+    expect((await WorkStream.mustFind(row!.id)).title).toBe('Updated')
+    const subscription = await apiFetch(`/api/workstreams/${row!.number}/subscribe`, { method: 'POST' })
+    expect(subscription.status).toBe(200)
+    expect(await isSubscribedToWorkStream(row!.id, admin.id)).toBe(true)
+  })
+
   /** Helper: POST JSON to a URL */
   function postJson(url: string, body: unknown): Promise<Response> {
     return apiFetch(url, {

@@ -1,3 +1,4 @@
+import { workStreamRef, workStreamTitle } from '@tau/shared'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { agents, inbox, squads } from '../../db/schema'
@@ -149,8 +150,8 @@ export async function persistWorkStreamPersistentIdleInTransaction(
     tx,
     {
       recipientId: recipient.id,
-      subject: `Work stream still idle: ${workStream.title}`,
-      content: `Work stream "${workStream.title}" remains active and idle 60 seconds after its one automatic continuation. No wait was opened; no action is required if the agent is intentionally waiting for an event.`,
+      subject: `Work stream still idle: ${workStreamTitle(workStream)}`,
+      content: `Work stream "${workStreamTitle(workStream)}" remains active and idle 60 seconds after its one automatic continuation. No wait was opened; no action is required if the agent is intentionally waiting for an event.`,
       metadata: {
         workStreamId: workStream.id,
         squadId: workStream.squadId,
@@ -279,7 +280,7 @@ async function notifyWorkStreamSubscribers(
         recipientId: userId,
         senderType: 'system',
         wakeEligible: false,
-        subject: `Work Stream ${event}: ${workStream.title}`,
+        subject: `Work Stream ${event}: ${workStreamTitle(workStream)}`,
         content: message,
         metadata: {
           workStreamId: workStream.id,
@@ -313,7 +314,7 @@ async function notifyWorkStreamOwner(
     const recipient = await resolveWorkStreamRecipient(workStream)
     if (!recipient) return
     if (isSelfNotification(recipient.id, actorAgentId)) return
-    const subject = `Work Stream ${event}: ${workStream.title}`
+    const subject = `Work Stream ${event}: ${workStreamTitle(workStream)}`
     const requesterContext = TERMINAL_REQUESTER_CONTEXT_EVENTS.has(event)
       ? await formatRequestingUser(workStream)
       : null
@@ -368,14 +369,14 @@ export async function notifyWorkStreamAssigned(
       ...(ownerContext ? [ownerContext] : []),
       ...(workStream.handoffMessage ? [`Handoff message: ${workStream.handoffMessage}`] : []),
       ...(otherAgentsContext ? [otherAgentsContext] : []),
-      `Query the work stream with \`tau workstream get ${workStream.id}\` to see the full details.`,
+      `Query the work stream with \`tau workstream get ${workStreamRef(workStream)}\` to see the full details.`,
     ]
     await sendDeduped({
       recipientType: 'agent',
       recipientId: assignee.id,
       senderType: 'system',
       wakeEligible: true,
-      subject: `Work stream handed off to you: ${workStream.title}`,
+      subject: `Work stream handed off to you: ${workStreamTitle(workStream)}`,
       content: parts.join('\n\n'),
       metadata: {
         workStreamId: workStream.id,
@@ -398,7 +399,7 @@ export async function notifyWorkStreamBlocked(
   await notifyWorkStreamOwner(
     workStream,
     'blocked',
-    `Work stream "${workStream.title}" is blocked and needs attention.`,
+    `Work stream "${workStreamTitle(workStream)}" is blocked and needs attention.`,
     target,
     actorAgentId
   )
@@ -410,8 +411,8 @@ export async function notifyWorkStreamReview(
   actorAgentId?: WorkStreamActorAgentId
 ): Promise<void> {
   const msg = workStream.handoffMessage
-    ? `Work stream "${workStream.title}" is ready for review.\n\nHandoff message: ${workStream.handoffMessage}`
-    : `Work stream "${workStream.title}" is ready for review.`
+    ? `Work stream "${workStreamTitle(workStream)}" is ready for review.\n\nHandoff message: ${workStream.handoffMessage}`
+    : `Work stream "${workStreamTitle(workStream)}" is ready for review.`
   await notifyWorkStreamOwner(workStream, 'review', msg, target, actorAgentId)
 }
 
@@ -424,7 +425,7 @@ export async function notifyWorkStreamDone(
   } = {}
 ): Promise<void> {
   const nextSteps = getWorkStreamNextSteps(workStream)
-  const parts = [`Work stream "${workStream.title}" has been completed.`]
+  const parts = [`Work stream "${workStreamTitle(workStream)}" has been completed.`]
   if (opts.approvalNote) parts.push(`Approval note: ${opts.approvalNote}`)
   if (nextSteps) parts.push(`Next steps: ${nextSteps}`)
   await notifyWorkStreamOwner(workStream, 'done', parts.join('\n\n'), undefined, opts.actorAgentId)
@@ -438,13 +439,13 @@ export async function notifyWorkStreamCanceled(
   await notifyWorkStreamOwner(
     workStream,
     'canceled',
-    `Work stream "${workStream.title}" has been canceled. Active assigned agent executions were asked to stop where possible.`,
+    `Work stream "${workStreamTitle(workStream)}" has been canceled. Active assigned agent executions were asked to stop where possible.`,
     undefined,
     actorAgentId
   )
   const requesterContext = await formatRequestingUser(workStream)
   const crewMessage = [
-    `Work stream "${workStream.title}" has been canceled. Stop working on it. Do not hand it off, continue implementation, or open additional follow-up work unless a manager creates a new work stream.`,
+    `Work stream "${workStreamTitle(workStream)}" has been canceled. Stop working on it. Do not hand it off, continue implementation, or open additional follow-up work unless a manager creates a new work stream.`,
     requesterContext,
   ]
     .filter((part): part is string => Boolean(part))
@@ -462,7 +463,7 @@ export async function notifyWorkStreamCanceled(
             recipientId: agentId,
             senderType: 'system',
             wakeEligible: false,
-            subject: `Work stream canceled: ${workStream.title}`,
+            subject: `Work stream canceled: ${workStreamTitle(workStream)}`,
             content: crewMessage,
             metadata: {
               workStreamId: workStream.id,
@@ -493,7 +494,7 @@ export async function notifyWorkStreamReopened(
   workStream: WorkStream,
   actorAgentId?: WorkStreamActorAgentId
 ): Promise<void> {
-  const message = `Work stream "${workStream.title}" has been reopened and re-entered admission (status: queued; it activates when a slot is free).`
+  const message = `Work stream "${workStreamTitle(workStream)}" has been reopened and re-entered admission (status: queued; it activates when a slot is free).`
   await notifyWorkStreamOwner(workStream, 'reopened', message, undefined, actorAgentId)
   try {
     const recipient = await resolveWorkStreamRecipient(workStream)
@@ -507,7 +508,7 @@ export async function notifyWorkStreamReopened(
         recipientId: workStream.assigneeAgentId,
         senderType: 'system',
         wakeEligible: true,
-        subject: `Work stream reopened: ${workStream.title}`,
+        subject: `Work stream reopened: ${workStreamTitle(workStream)}`,
         content: `${message} You are still its assignee; resume work once it is admitted.`,
         metadata: {
           workStreamId: workStream.id,
@@ -529,7 +530,7 @@ export async function notifyWorkStreamDependencyCanceled(
   await notifyWorkStreamOwner(
     workStream,
     'dependency_canceled',
-    `Queued work stream "${workStream.title}" depends on a work stream that was canceled, so it will never become eligible for admission. Re-point its dependencies (ws update --depends-on) or cancel it.`,
+    `Queued work stream "${workStreamTitle(workStream)}" depends on a work stream that was canceled, so it will never become eligible for admission. Re-point its dependencies (ws update --depends-on) or cancel it.`,
     undefined,
     actorAgentId
   )
@@ -586,9 +587,9 @@ export async function notifyWorkStreamOwnerOfNewStream(
     const content = [
       `A new work stream you now own was ${workStream.metadata?.integrationSource ? 'created' : 'started'} by ${creatorDescription}.`,
       requesterContext,
-      `Query it with \`tau workstream get ${workStream.id}\` to see the full details.`,
+      `Query it with \`tau workstream get ${workStreamRef(workStream)}\` to see the full details.`,
       workStream.pause && workStream.metadata?.integrationSource && !workStream.agentIds?.length
-        ? `The workflow is paused before any workers start. Review the event and workflow, prepare its workspace if needed with \`tau workstream update ${workStream.id} --repository <checkout-path>\`, then start it with \`tau workstream resume ${workStream.id}\`. If no Git workspace is needed, resume after reviewing the task. Do not manually bypass repository setup guards.`
+        ? `The workflow is paused before any workers start. Review the event and workflow, prepare its workspace if needed with \`tau workstream update ${workStreamRef(workStream)} --repository <checkout-path>\`, then start it with \`tau workstream resume ${workStreamRef(workStream)}\`. If no Git workspace is needed, resume after reviewing the task. Do not manually bypass repository setup guards.`
         : null,
     ]
       .filter((part): part is string => Boolean(part))
@@ -599,7 +600,7 @@ export async function notifyWorkStreamOwnerOfNewStream(
       recipientId: owner.id,
       senderType: 'system',
       wakeEligible: true,
-      subject: `New work stream you own: ${workStream.title}`,
+      subject: `New work stream you own: ${workStreamTitle(workStream)}`,
       content,
       metadata: {
         workStreamId: workStream.id,
@@ -640,15 +641,15 @@ export async function notifyWorkStreamResponded(
     const event: WorkStreamInboxEvent = isUnblocked ? 'unblocked' : 'reviewed'
     const isApprovedCheckpoint = !isUnblocked && reviewResolution === 'approved'
     const subject = isUnblocked
-      ? `Work stream unblocked: ${workStream.title}`
+      ? `Work stream unblocked: ${workStreamTitle(workStream)}`
       : isApprovedCheckpoint
-        ? `Checkpoint approved: ${workStream.title}`
-        : `Review feedback: ${workStream.title}`
+        ? `Checkpoint approved: ${workStreamTitle(workStream)}`
+        : `Review feedback: ${workStreamTitle(workStream)}`
     const content = isUnblocked
-      ? `Your work stream "${workStream.title}" has been unblocked.\n\nResponse: ${responseText}`
+      ? `Your work stream "${workStreamTitle(workStream)}" has been unblocked.\n\nResponse: ${responseText}`
       : isApprovedCheckpoint
-        ? `Your checkpoint review on "${workStream.title}" was APPROVED — continue the work.\n\nApproval note: ${responseText}`
-        : `Your work stream "${workStream.title}" received review feedback and needs further work.\n\nFeedback: ${responseText}`
+        ? `Your checkpoint review on "${workStreamTitle(workStream)}" was APPROVED — continue the work.\n\nApproval note: ${responseText}`
+        : `Your work stream "${workStreamTitle(workStream)}" received review feedback and needs further work.\n\nFeedback: ${responseText}`
 
     // An assignee that resolved its OWN wait (an agent unblocking itself, or
     // approving its own checkpoint) does not need the resolution steered back
@@ -676,8 +677,8 @@ export async function notifyWorkStreamResponded(
         workStream,
         event,
         isUnblocked
-          ? `Work stream "${workStream.title}" was unblocked with this response:\n\n${responseText}`
-          : `Work stream "${workStream.title}" received review feedback:\n\n${responseText}`,
+          ? `Work stream "${workStreamTitle(workStream)}" was unblocked with this response:\n\n${responseText}`
+          : `Work stream "${workStreamTitle(workStream)}" received review feedback:\n\n${responseText}`,
         undefined,
         actorAgentId
       )
