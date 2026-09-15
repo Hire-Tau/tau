@@ -91,13 +91,8 @@ import { DbEventPollingDispatchStore } from './db-event-polling-dispatch-store'
 import { GitHubPrWatchPolicy } from './github/watch-policy'
 import { listGitHubPrWorkStreamCandidates, listGitHubTriggerSquads } from './github/database-watch-source'
 import { expandGitHubRepositories } from './github/repository-enumeration-runtime'
+import { extractGitHubDispatchFact, validateGitHubDispatchFact } from './github/dispatch-facts'
 import { createLogger } from '../../lib/infra/logger'
-import { extractGitHubIssueDispatchFact, isGitHubIssueDispatchFact } from '../squad-activity/github-issue-fact'
-import {
-  extractGitHubPrDispatchFact,
-  isGitHubPrDispatchFact,
-  type GitHubPrDispatchFact,
-} from '../squad-activity/github-pr-fact'
 import { materializeGitHubDispatch } from '../squad-activity/materialize'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { regenerateEnvFileForSquad } from '../squad/env'
@@ -157,40 +152,6 @@ export function isCurrentExportConsentAgent(
 
 const log = createLogger('integration-event-polling')
 const oauthLog = createLogger('integration-oauth')
-
-type GitHubWatch = { providerKey: string; connection: { configuration: unknown } }
-
-const githubWatchConfiguration = (watch: GitHubWatch): Record<string, unknown> | null =>
-  watch.providerKey === 'github' && watch.connection.configuration && typeof watch.connection.configuration === 'object'
-    ? (watch.connection.configuration as Record<string, unknown>)
-    : null
-
-const githubWatchRepository = (configuration: Record<string, unknown>) => {
-  const owner = typeof configuration.owner === 'string' ? configuration.owner.trim().toLowerCase() : ''
-  const repo = typeof configuration.repo === 'string' ? configuration.repo.trim().toLowerCase() : ''
-  return owner && repo ? `${owner}/${repo}` : null
-}
-
-/**
- * An issue-events watch is scoped to a whole repository, not to one resource:
- * it discovers issues that have no Tau stream yet, so the repository is the
- * only identity the watch can assert. A PR watch, by contrast, names its exact
- * change request, so its facts are matched on repository AND number.
- */
-const githubIssueWatchRepository = (watch: GitHubWatch) => {
-  const configuration = githubWatchConfiguration(watch)
-  return configuration?.kind === 'issue-events' ? githubWatchRepository(configuration) : null
-}
-
-function githubFactMatchesWatch(fact: GitHubPrDispatchFact, watch: GitHubWatch) {
-  const configuration = githubWatchConfiguration(watch)
-  if (!configuration) return false
-  const repository = githubWatchRepository(configuration)
-  const number = configuration.number
-  return Boolean(
-    repository && Number.isSafeInteger(number) && fact.repository === repository && fact.prNumber === number
-  )
-}
 
 export const integrationConnectionRepository = new DbIntegrationConnectionRepository()
 export const integrationCredentialCleanupWorker = new IntegrationCredentialCleanupWorker(
@@ -456,21 +417,8 @@ export const integrationEventPollingRuntime = new EventPollingRunner({
       skipOutputs: true,
       handledSquadIds: observedPollingSquads.get(event),
     }),
-  extractDispatchFact: (providerKey, event, watch) => {
-    const issueRepository = githubIssueWatchRepository(watch)
-    if (issueRepository) {
-      const issue = extractGitHubIssueDispatchFact(providerKey, event)
-      return issue && issue.repository === issueRepository ? issue : null
-    }
-    const fact = extractGitHubPrDispatchFact(providerKey, event)
-    return fact && githubFactMatchesWatch(fact, watch) ? fact : null
-  },
-  validateCompletedDispatch: (dispatch, watch) => {
-    const issueRepository = githubIssueWatchRepository(watch)
-    if (issueRepository)
-      return isGitHubIssueDispatchFact(dispatch.eventFact) && dispatch.eventFact.repository === issueRepository
-    return isGitHubPrDispatchFact(dispatch.eventFact) && githubFactMatchesWatch(dispatch.eventFact, watch)
-  },
+  extractDispatchFact: extractGitHubDispatchFact,
+  validateCompletedDispatch: validateGitHubDispatchFact,
   onCompletedDispatch: async (dispatch, watch) => {
     await materializeGitHubDispatch(dispatch.activityId, watch.connection.squadId)
   },
