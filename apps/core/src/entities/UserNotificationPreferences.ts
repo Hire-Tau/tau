@@ -9,7 +9,7 @@ export interface NotificationPreferences {
   mutedEvents: string[]
 }
 
-const DEFAULTS: NotificationPreferences = { showPreviews: false, pushEnabled: true, mutedEvents: [] }
+const DEFAULTS: NotificationPreferences = { showPreviews: true, pushEnabled: true, mutedEvents: [] }
 
 /**
  * Per-user notification preferences. Notification *delivery* (push) is per-user; the shared

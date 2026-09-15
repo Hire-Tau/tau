@@ -69,12 +69,12 @@ export function NotificationPreferences() {
         <span>
           Show work titles and message previews
           <span className="block text-muted">
-            Off by default. Previews may contain private work details and appear on your lock screen.
+            On by default. Turn off to hide titles and message text in device alerts.
           </span>
         </span>
         <input
           type="checkbox"
-          checked={data.showPreviews ?? false}
+          checked={data.showPreviews ?? true}
           disabled={mutation.isPending}
           onChange={(event) => mutation.mutate({ showPreviews: event.target.checked })}
         />

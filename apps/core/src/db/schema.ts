@@ -1751,7 +1751,7 @@ export const userNotificationPreferences = pgTable('user_notification_preference
     .primaryKey()
     .references(() => users.id, { onDelete: 'cascade' }),
   pushEnabled: boolean('push_enabled').notNull().default(true),
-  showPreviews: boolean('show_previews').notNull().default(false),
+  showPreviews: boolean('show_previews').notNull().default(true),
   // Event types the user has muted (no push), e.g. ['inbox.messageReceived'].
   mutedEvents: jsonb('muted_events').notNull().default([]),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),

@@ -1,5 +1,5 @@
 {
-  "id": "d954d74d-4f1b-4702-b5df-366bd8695d81",
+  "id": "3a357ae7-d25c-40c7-bba6-79c6db6b0428",
   "prevId": "a52f1ee7-d21b-4daa-a1ff-2039dfb9235e",
   "version": "7",
   "dialect": "postgresql",
@@ -15534,7 +15534,7 @@
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
-          "default": false
+          "default": true
         },
         "muted_events": {
           "name": "muted_events",
