@@ -16,7 +16,7 @@ export async function verifyWorktreeCleanupDelivery(
   exec: RepositoryExec,
   registry: CodeHostingRegistry
 ): Promise<string> {
-  const refuse = (reason: string): never => {
+  function refuse(reason: string): never {
     throw new WorktreeDeliveryUnprovenError(reason)
   }
   const head = input.deliveredHead

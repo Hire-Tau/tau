@@ -84,9 +84,18 @@ try {
     fail('Submodule worktrees require manual retention');
   // Removing a linked worktree also destroys its private refs, reflogs and
   // in-progress state. A clean delivered HEAD alone is not recovery proof.
-  const ordinaryState = new Set(['HEAD', 'index', 'commondir', 'gitdir', 'logs', 'ORIG_HEAD', 'COMMIT_EDITMSG', 'FETCH_HEAD']);
+  const ordinaryState = new Set(['HEAD', 'index', 'commondir', 'gitdir', 'logs', 'ORIG_HEAD', 'COMMIT_EDITMSG', 'FETCH_HEAD', 'refs']);
   if (fs.readdirSync(o.gitDirectory).some((name) => !ordinaryState.has(name)))
     fail('Worktree-local Git recovery state must be retained');
+  // Git 2.52's files_ref_store_create_on_disk creates this compatibility
+  // directory even for linked worktrees. Only an actually empty directory is
+  // disposable; private refs, nested directories and unknown evidence retain it.
+  const privateRefs = path.join(o.gitDirectory, 'refs');
+  if (exists(privateRefs)) {
+    physical(privateRefs);
+    if (!fs.lstatSync(privateRefs).isDirectory() || fs.readdirSync(privateRefs).length)
+      fail('Worktree-local refs or evidence must be retained');
+  }
   const roots = new Set();
   const originalHead = path.join(o.gitDirectory, 'ORIG_HEAD');
   if (exists(originalHead)) {

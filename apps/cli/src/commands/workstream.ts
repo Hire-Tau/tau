@@ -8,6 +8,7 @@ import { buildMetadataDelta, getMetadataValue, parseMetadataPath, parseMetadataV
 import { selectOpenWait } from './workstream-wait-selection'
 import type {
   Agent as AgentJson,
+  WorktreeCleanupSummary,
   WorkStreamCompletionMode,
   WorkStreamMetrics,
   WorkStreamPriority,
@@ -47,6 +48,8 @@ export interface WorkStream {
   metadata: Record<string, unknown>
   completionMode?: WorkStreamCompletionMode
   branch?: string
+  autoCleanupWorktree?: boolean
+  worktreeCleanup?: WorktreeCleanupSummary | null
   worktree?: string
   baseBranch?: string
   spawnedAgents?: WorkStreamSpawnedAgentSummary[]

@@ -8,8 +8,13 @@ export interface ResolvedWorktreeAttachment {
   canonical: AttachmentPaths
 }
 
-export function worktreeAttachmentPaths(metadata: Record<string, unknown>): AttachmentPaths {
-  const git = metadata.git as Record<string, unknown> | undefined
+export function worktreeAttachmentPaths(metadata: unknown): AttachmentPaths {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata))
+    throw Error('Unrecognized registered attachment metadata')
+  const candidate = (metadata as Record<string, unknown>).git
+  if (candidate != null && (typeof candidate !== 'object' || Array.isArray(candidate)))
+    throw Error('Unrecognized registered Git attachment metadata')
+  const git = candidate as Record<string, unknown> | null | undefined
   return Object.fromEntries(
     ['worktree', 'repository'].filter((key) => typeof git?.[key] === 'string').map((key) => [key, git![key]])
   )
@@ -39,7 +44,7 @@ console.log(JSON.stringify(paths.map((entry) => Object.fromEntries(Object.entrie
 export async function resolveWorktreeAttachments(
   exec: RepositoryExec,
   workspace: string,
-  streams: Array<{ id: string; metadata: Record<string, unknown> }>
+  streams: Array<{ id: string; metadata: unknown }>
 ): Promise<ResolvedWorktreeAttachment[]> {
   const result = streams.map(({ id, metadata }) => ({
     id,

@@ -55,3 +55,11 @@ test('no-path streams need no runtime access', async () => {
     )
   ).toEqual([{ id: 'other', raw: {}, canonical: {} }])
 })
+
+for (const metadata of [null, [], 'invalid', { git: [] }, { git: 'invalid' }]) {
+  test(`rejects malformed registered attachment JSON: ${JSON.stringify(metadata)}`, async () => {
+    await expect(resolveWorktreeAttachments(exec, root, [{ id: 'other', metadata }])).rejects.toThrow(
+      'Unrecognized registered'
+    )
+  })
+}

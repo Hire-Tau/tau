@@ -311,3 +311,9 @@ test('retains valid fetch records after their tracking proof disappears', async 
     reason: expect.stringContaining('exact surviving tracking reference'),
   })
 })
+
+test('accepts the empty private refs directory created by newer Git without discarding private refs', async () => {
+  const refs = join(ownership.gitDirectory, 'refs')
+  await mkdir(refs, { recursive: true })
+  expect(await remove()).toMatchObject({ status: 'succeeded' })
+})
