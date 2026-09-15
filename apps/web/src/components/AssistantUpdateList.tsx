@@ -8,6 +8,7 @@ import {
   shouldAcknowledgeAssistantUpdate,
 } from '../lib/assistantActivityPresentation'
 import { MarkdownContent } from './MarkdownContent'
+import { ChevronRightIcon } from './icons'
 
 export interface AssistantUpdateObserver {
   observe(element: Element): void
@@ -56,6 +57,11 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
   const acknowledged = useRef(new Set<string>())
   const [marking, setMarking] = useState(false)
   const [ackError, setAckError] = useState(false)
+  // Collapsed by default so history does not repeat the transcript; unread updates open it, and an
+  // explicit toggle wins until the next batch of unread updates arrives.
+  const [expandedOverride, setExpandedOverride] = useState<boolean | null>(null)
+  // Cards hidden with the per-card action stay out of view until the section is toggled again.
+  const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set())
   const propsRef = useStableRef(props)
   const documentVisible = props.dependencies?.documentVisible ?? (() => document.visibilityState === 'visible')
   const documentVisibleRef = useStableRef(documentVisible)
@@ -88,11 +94,39 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
       }
     }
   })
+  const unread = props.updates.filter((update) => !update.seenAt).length
+  const previousUnread = useRef(unread)
+  useEffect(() => {
+    // New unread updates reopen a section the user had collapsed.
+    if (unread > previousUnread.current) setExpandedOverride(null)
+    previousUnread.current = unread
+  }, [unread])
+  const expanded = expandedOverride ?? unread > 0
+  const hideCard = useStableRef(async (messageId: string) => {
+    setHidden((current) => new Set([...current, messageId]))
+    if (acknowledged.current.has(messageId) || pendingSeen.current.has(messageId)) return
+    pendingSeen.current.add(messageId)
+    try {
+      await propsRef.current.onSeen([messageId])
+      acknowledged.current.add(messageId)
+      setAckError(false)
+    } catch {
+      setAckError(true)
+      setHidden((current) => {
+        const next = new Set(current)
+        next.delete(messageId)
+        return next
+      })
+    } finally {
+      pendingSeen.current.delete(messageId)
+    }
+  })
   const createObserver = props.dependencies?.createObserver ?? defaultObserverFactory
-  const updateIds = props.updates.map((update) => update.messageId).join(',')
+  const shown = props.updates.filter((update) => !hidden.has(update.messageId))
+  const updateIds = shown.map((update) => update.messageId).join(',')
   useEffect(() => {
     const root = region.current
-    if (!root) return
+    if (!root || !expanded) return
     const observer = createObserver((entries) => {
       for (const entry of entries) {
         const id = (entry.target as HTMLElement).dataset.updateId
@@ -108,8 +142,8 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
       observer.disconnect()
       intersecting.current.clear()
     }
-    // Re-observe when the set of rendered cards changes.
-  }, [createObserver, flush, updateIds])
+    // Re-observe when the set of rendered cards changes or the section opens.
+  }, [createObserver, flush, updateIds, expanded])
   useEffect(() => {
     // Becoming visible (panel shown, tab focused) reconsiders cards already in view.
     const onVisibility = () => void flush.current()
@@ -117,15 +151,31 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
     if (props.visible) void flush.current()
     return () => document.removeEventListener('visibilitychange', onVisibility)
   }, [props.visible, flush])
-  const unread = props.updates.filter((update) => !update.seenAt).length
   const taskById = new Map(props.tasks.map((task) => [task.id, task]))
   return (
     <section aria-label="Task updates" className="flex min-h-0 flex-col border-t border-th-border">
-      <div className="flex shrink-0 items-center gap-2 px-4 py-2 text-xs">
-        <h3 className="font-medium text-muted">Updates</h3>
-        {unread > 0 && (
-          <span className="rounded-full bg-accent px-1.5 text-[10px] font-medium text-white">{unread} unread</span>
-        )}
+      <div className="flex shrink-0 items-center gap-2 px-3 py-1.5 text-xs">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls="assistant-task-updates"
+          className="tau-button flex min-w-0 items-center gap-1.5 rounded-md py-1 pl-1 pr-2 text-muted hover:text-primary"
+          onClick={() => {
+            setExpandedOverride(!expanded)
+            setHidden(new Set())
+          }}
+        >
+          <ChevronRightIcon
+            className={clsx(
+              'h-3.5 w-3.5 shrink-0 transition-transform motion-reduce:transition-none',
+              expanded && 'rotate-90'
+            )}
+          />
+          <h3 className="font-medium">Updates</h3>
+          <span className="text-muted">
+            {unread > 0 ? `${unread} unread` : `${props.updates.length}${props.hasMore ? '+' : ''}`}
+          </span>
+        </button>
         {ackError && (
           <span role="status" className="text-muted">
             Read state could not be saved. Retrying…
@@ -152,7 +202,12 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
           </button>
         )}
       </div>
-      <div ref={region} className="min-h-0 max-h-64 overflow-y-auto overscroll-contain px-2 pb-2">
+      <div
+        id="assistant-task-updates"
+        ref={region}
+        hidden={!expanded}
+        className="min-h-0 max-h-64 overflow-y-auto overscroll-contain px-2 pb-2"
+      >
         {props.hasMore && props.onLoadMore && (
           <button
             type="button"
@@ -162,11 +217,13 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
             Load earlier updates
           </button>
         )}
-        {props.updates.length === 0 && (
-          <p className="px-2 py-3 text-xs text-muted">No task updates yet. Delegated tasks report here.</p>
+        {shown.length === 0 && (
+          <p className="px-2 py-3 text-xs text-muted">
+            {props.updates.length === 0 ? 'No task updates yet. Delegated tasks report here.' : 'All caught up.'}
+          </p>
         )}
         <ul className="space-y-1">
-          {props.updates.map((update) => {
+          {shown.map((update) => {
             const task = update.taskId ? taskById.get(update.taskId) : undefined
             const status = update.reportedStatus ? ASSISTANT_TASK_STATUS_LABELS[update.reportedStatus] : undefined
             return (
@@ -185,6 +242,17 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
                   <span className="ml-auto shrink-0">
                     {update.senderName} · {formatAssistantUpdateTime(update.createdAt)}
                   </span>
+                  {!update.seenAt && (
+                    <button
+                      type="button"
+                      aria-label="Hide update"
+                      title="Mark read and hide until the section is reopened"
+                      className="tau-button -my-1 shrink-0 rounded-md px-1.5 py-1 text-accent-light hover:bg-selection"
+                      onClick={() => void hideCard.current(update.messageId)}
+                    >
+                      Hide
+                    </button>
+                  )}
                 </div>
                 {update.subject && <p className="mt-1 font-medium">{update.subject}</p>}
                 <MarkdownContent className="mt-1 text-sm">{update.content}</MarkdownContent>
