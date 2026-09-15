@@ -3668,6 +3668,8 @@ export const assistantConversations = pgTable(
     editor: jsonb('editor').$type<import('@tau/shared').AssistantEditorState>(),
     inboxConsumerId: uuid('inbox_consumer_id'),
     inboxConsumerExpiresAt: timestamp('inbox_consumer_expires_at', { withTimezone: true }),
+    /** Last allocated assistant_updates.sequence; incremented under the conversation row lock. */
+    nextUpdateSequence: integer('next_update_sequence').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -3714,5 +3716,60 @@ export const assistantEntries = pgTable(
   (table) => [
     unique('assistant_entries_client_key').on(table.conversationId, table.clientId),
     unique('assistant_entries_position').on(table.conversationId, table.position),
+  ]
+)
+
+/**
+ * One delegated Assistant request chain. The ID is the first outgoing inbox request; the current
+ * request advances when the user answers. Conversation deletion owns this lifecycle; agents and
+ * individual inbox rows never cascade into it.
+ */
+export const assistantTasks = pgTable(
+  'assistant_tasks',
+  {
+    id: uuid('id').primaryKey(),
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => assistantConversations.id, { onDelete: 'cascade' }),
+    currentRequestId: uuid('current_request_id').notNull(),
+    agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
+    kind: varchar('kind', { length: 20 }).$type<import('@tau/shared').AssistantMessageTargetKind>().notNull(),
+    squadId: uuid('squad_id').references(() => squads.id, { onDelete: 'set null' }),
+    label: text('label').notNull(),
+    status: varchar('status', { length: 20 }).$type<import('@tau/shared').AssistantTaskStatus>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('idx_assistant_tasks_conversation_updated').on(table.conversationId, table.updatedAt, table.id)]
+)
+
+/** Durable tracking state for one inbox update delivered to a saved Assistant mailbox. The inbox row owns the body. */
+export const assistantUpdates = pgTable(
+  'assistant_updates',
+  {
+    messageId: uuid('message_id')
+      .primaryKey()
+      .references(() => inbox.id, { onDelete: 'cascade' }),
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => assistantConversations.id, { onDelete: 'cascade' }),
+    taskId: uuid('task_id').references(() => assistantTasks.id, { onDelete: 'set null' }),
+    requestId: uuid('request_id'),
+    sequence: integer('sequence').notNull(),
+    reportedStatus: varchar('reported_status', { length: 20 }).$type<import('@tau/shared').AssistantTaskStatus>(),
+    /** Realtime presented or deliberately interrupted this update. Never implies the human saw it. */
+    processedAt: timestamp('processed_at', { withTimezone: true }),
+    /** The human acknowledged this update (visible render or explicit mark-read). */
+    seenAt: timestamp('seen_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique('assistant_updates_sequence').on(table.conversationId, table.sequence),
+    index('idx_assistant_updates_unseen')
+      .on(table.conversationId, table.sequence)
+      .where(sql`${table.seenAt} IS NULL`),
+    index('idx_assistant_updates_unprocessed')
+      .on(table.conversationId, table.sequence)
+      .where(sql`${table.processedAt} IS NULL`),
   ]
 )

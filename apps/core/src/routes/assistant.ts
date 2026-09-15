@@ -11,7 +11,7 @@ import { z } from 'zod'
 import { HTTPException } from 'hono/http-exception'
 import { isDeepStrictEqual } from 'node:util'
 import { zValidator } from '@hono/zod-validator'
-import { and, asc, desc, eq, ilike, isNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, ilike, isNull, notInArray, sql } from 'drizzle-orm'
 import {
   assistantEntrySchema,
   assistantInboxRecipientId,
@@ -19,7 +19,17 @@ import {
   type AssistantEntry,
   type AssistantMessageReceipt,
 } from '@tau/shared'
-import { assistantConversationAgents, assistantConversations, assistantEntries, db, inbox, agents } from '../db'
+import {
+  assistantConversationAgents,
+  assistantConversations,
+  assistantEntries,
+  assistantTasks,
+  assistantUpdates,
+  db,
+  inbox,
+  agents,
+} from '../db'
+import { ASSISTANT_DELEGATION_KEY, ASSISTANT_TASK_ID_KEY } from '../services/assistant-activity/project'
 import { Agent } from '../entities/Agent'
 import { Squad } from '../entities/Squad'
 import { InboxMessage } from '../entities/InboxMessage'
@@ -313,6 +323,7 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
         metadata: {
           source: 'assistant_inbox',
           inReplyTo: input.inReplyTo,
+          [ASSISTANT_DELEGATION_KEY]: { kind, squadId: targetSquadId, ...(input.label ? { label: input.label } : {}) },
           ...(input.pagePath && previous?.pagePath !== input.pagePath ? { pagePath: input.pagePath } : {}),
           assistantContext: history.reverse().map(({ entry }) => ({
             role: (entry as AssistantEntry).role,
@@ -330,8 +341,11 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
     )
       return c.json({ error: 'Message receipt conflicts with this request' }, 409)
     if (input.label && kind !== 'agent') await agent.update({ purpose: `Assistant task: ${input.label}` })
+    const taskId = message.metadata[ASSISTANT_TASK_ID_KEY]
+    if (typeof taskId !== 'string') return c.json({ error: 'Task receipt unavailable' }, 500)
     const receipt: AssistantMessageReceipt = {
       id: message.id,
+      taskId,
       agentId,
       delivered: Boolean(message.deliveredAt),
       kind,
@@ -362,29 +376,28 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
       )
       .returning({ id: assistantConversations.id })
     if (!lease) return c.json({ acquired: false, messages: [], pending: 0, unavailable: false })
-    const address = assistantInboxRecipientId(conversation.id)
+    // Unprocessed means Realtime has not presented it; it says nothing about whether the human saw it.
     const incoming = await db
-      .select()
-      .from(inbox)
-      .where(and(eq(inbox.recipientType, 'voice_assistant'), eq(inbox.recipientId, address), isNull(inbox.readAt)))
-      .orderBy(asc(inbox.createdAt), asc(inbox.id))
+      .select({ inbox })
+      .from(assistantUpdates)
+      .innerJoin(inbox, eq(inbox.id, assistantUpdates.messageId))
+      .where(and(eq(assistantUpdates.conversationId, conversation.id), isNull(assistantUpdates.processedAt)))
+      .orderBy(asc(assistantUpdates.sequence))
       .limit(50)
+    // A task stays pending until its delegate explicitly finishes it; progress replies do not end it.
     const pending = await db
-      .select({ id: inbox.id, status: agents.status })
-      .from(inbox)
-      .leftJoin(agents, eq(sql`${agents.id}::text`, inbox.recipientId))
+      .select({ id: assistantTasks.id, status: agents.status })
+      .from(assistantTasks)
+      .leftJoin(agents, eq(agents.id, assistantTasks.agentId))
       .where(
         and(
-          eq(inbox.senderType, 'voice_assistant'),
-          eq(inbox.senderId, address),
-          eq(inbox.recipientType, 'agent'),
-          sql`NOT EXISTS (SELECT 1 FROM inbox reply WHERE reply.recipient_type = 'voice_assistant'
-          AND reply.recipient_id = ${address} AND reply.metadata->>'inReplyTo' = ${inbox.id}::text)`
+          eq(assistantTasks.conversationId, conversation.id),
+          notInArray(assistantTasks.status, ['completed', 'failed', 'cancelled'])
         )
       )
     return c.json({
       acquired: true,
-      messages: incoming.map((message) => ({
+      messages: incoming.map(({ inbox: message }) => ({
         id: message.id,
         senderId: message.senderId,
         senderName:
@@ -428,7 +441,12 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
           )
         )
         .returning({ id: inbox.id })
-      return Boolean(message)
+      if (!message) return false
+      await tx
+        .update(assistantUpdates)
+        .set({ processedAt: sql`coalesce(${assistantUpdates.processedAt}, now())` })
+        .where(and(eq(assistantUpdates.messageId, message.id), eq(assistantUpdates.conversationId, conversation.id)))
+      return true
     })
     return accepted ? c.json({ success: true }) : c.json({ error: 'Inbox receiver or message unavailable' }, 409)
   })

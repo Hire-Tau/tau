@@ -10,8 +10,19 @@ import type {
   InboxRecipientType,
   DeliveryMode,
 } from '@tau/shared'
-import { isWorkspaceVoiceRecipient, parseAssistantInboxConversationId, SYSTEM_RECIPIENT_ID } from '@tau/shared'
+import {
+  isWorkspaceVoiceRecipient,
+  parseAssistantInboxConversationId,
+  SYSTEM_RECIPIENT_ID,
+  type ReportableAssistantTaskStatus,
+} from '@tau/shared'
 import { validateAssistantInboxReply } from '../services/assistant-inbox'
+import {
+  ASSISTANT_TASK_ID_KEY,
+  ASSISTANT_TASK_STATUS_KEY,
+  projectAssistantInboxMessage,
+  type AssistantActivityInvalidation,
+} from '../services/assistant-activity/project'
 import { BaseEntity } from './base'
 import type { InferSelectModel } from 'drizzle-orm'
 import { Agent, AgentTargetUnavailableError, AgentTerminatedError } from './Agent'
@@ -49,6 +60,11 @@ export interface SendInboxMessageInput {
   deliveryMode?: DeliveryMode
   /** Explicit opt-in for system-authored work that should wake a dormant agent. */
   wakeEligible?: boolean
+  /**
+   * Structured lifecycle report for a reply to a saved Assistant mailbox. Validated against the
+   * request chain and persisted under server-controlled metadata; generic metadata cannot set it.
+   */
+  assistantTaskStatus?: ReportableAssistantTaskStatus
   /**
    * When true, insert the row and derive metadata as normal but SKIP the
    * deliverInboxMessagesToAgent wake call. The caller is responsible for
@@ -298,8 +314,21 @@ export class InboxMessage
       }
     }
 
-    if (recipientType === 'voice_assistant' && input.recipientId.startsWith('assistant:')) {
-      await validateAssistantInboxReply(input.recipientId, input.senderType, input.senderId, input.metadata?.inReplyTo)
+    if (input.metadata && (ASSISTANT_TASK_STATUS_KEY in input.metadata || ASSISTANT_TASK_ID_KEY in input.metadata))
+      throw new Error(`metadata.${ASSISTANT_TASK_STATUS_KEY} and metadata.${ASSISTANT_TASK_ID_KEY} are server-owned`)
+    const assistantMailbox = recipientType === 'voice_assistant' && input.recipientId.startsWith('assistant:')
+    if (assistantMailbox) {
+      await validateAssistantInboxReply(
+        input.recipientId,
+        input.senderType,
+        input.senderId,
+        input.metadata?.inReplyTo,
+        {
+          assistantTaskStatus: input.assistantTaskStatus,
+        }
+      )
+    } else if (input.assistantTaskStatus !== undefined) {
+      throw new Error('assistantTaskStatus applies only to replies sent to a saved Assistant conversation')
     }
 
     if (fromAgent?.parentAgentId && toAgent?.id !== fromAgent.parentAgentId) {
@@ -320,6 +349,7 @@ export class InboxMessage
     const metadata: Record<string, unknown> = {
       ...input.metadata,
       wakeEligible: input.wakeEligible ?? input.senderType !== 'system',
+      ...(input.assistantTaskStatus !== undefined ? { [ASSISTANT_TASK_STATUS_KEY]: input.assistantTaskStatus } : {}),
     }
 
     if (fromAgent) {
@@ -380,7 +410,7 @@ export class InboxMessage
       idempotencyKey: idempotencyKey ?? null,
     }
     await beforeRecipientLifecycleLockHook?.()
-    const { inserted, row } = await db.transaction(async (tx) => {
+    const { inserted, row, assistantActivity } = await db.transaction(async (tx) => {
       if (toAgent) {
         await acquireAgentQueueLock(tx, toAgent.id)
         const [recipient] = await tx
@@ -398,7 +428,14 @@ export class InboxMessage
       const [winner] = created
         ? [created]
         : await tx.select().from(inbox).where(eq(inbox.idempotencyKey, idempotencyKey!)).limit(1)
-      return { inserted: created, row: winner }
+      // Task/update state is projected in the same transaction as the row it describes, and only
+      // for the durable winner: an idempotent retry must not allocate a second task or sequence.
+      const projected = created ? await projectAssistantInboxMessage(tx, created) : null
+      return {
+        inserted: created,
+        row: projected?.row ?? winner,
+        assistantActivity: (projected?.invalidation ?? null) as AssistantActivityInvalidation | null,
+      }
     })
     if (!row) throw new Error(`Idempotent inbox message ${idempotencyKey} has no durable winner`)
 
@@ -418,6 +455,11 @@ export class InboxMessage
       senderAgentId: input.senderId ?? null,
       ...(fleetAlert ? { source: 'fleet-alert' as const, ...(fleetSquadId ? { squadId: fleetSquadId } : {}) } : {}),
     })
+    if (assistantActivity)
+      eventEmitter.emit('assistant.activityChanged', {
+        conversationId: assistantActivity.conversationId,
+        recipientId: assistantActivity.recipientId,
+      })
 
     // Best-effort delivery for agent recipients. Delivery failures are recorded
     // on the inbox messages and must not fail inbox persistence.

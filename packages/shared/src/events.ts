@@ -248,4 +248,9 @@ export type EventMap = {
   }
   'inbox.messageRead': { messageId: string; recipientType: InboxRecipientType; recipientId: string }
   'inbox.allRead': { recipientType: InboxRecipientType; recipientId: string }
+
+  // Durable Assistant task/update state changed for one saved conversation. Carries identifiers
+  // only; the owner refetches activity. Routed through the inbox topic family as
+  // `inbox:assistant:<conversationId>` and delivered to the conversation owner alone.
+  'assistant.activityChanged': { conversationId: string; recipientId: string }
 }

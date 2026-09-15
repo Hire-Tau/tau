@@ -6,6 +6,8 @@ import {
   assistantConversations,
   assistantConversationAgents,
   assistantEntries,
+  assistantTasks,
+  assistantUpdates,
   agents,
   db,
   executions,
@@ -14,7 +16,7 @@ import {
 } from '../db'
 import { Agent } from '../entities/Agent'
 import { Squad } from '../entities/Squad'
-import { InboxMessage, formatInboxMessages } from '../entities/InboxMessage'
+import { InboxMessage, formatInboxMessages, setBeforeRecipientLifecycleLockHookForTest } from '../entities/InboxMessage'
 import { assistantInboxRecipientId } from '@tau/shared'
 import { inboxRouter } from './inbox'
 import { identityMiddleware } from '../middleware/identity'
@@ -180,7 +182,8 @@ test('offline replies persist, one device receives, and lease expiry allows reco
   expect((await request(`/${id}/inbox`, { consumerId }, other.token)).status).toBe(404)
   const first = await (await request(`/${id}/inbox`, { consumerId })).json()
   expect(first.acquired).toBe(true)
-  expect(first.pending).toBe(0)
+  // A question is progress, not completion: the delegated task stays pending.
+  expect(first.pending).toBe(1)
   expect(first.messages.map((message: { id: string }) => message.id)).toEqual([reply.id])
   expect((await (await request(`/${id}/inbox`, { consumerId: second })).json()).acquired).toBe(false)
   expect((await request(`/${id}/inbox/ack`, { consumerId: second, messageId: reply.id })).status).toBe(409)
@@ -671,4 +674,206 @@ test('invalid replies do not allocate a helper', async () => {
   expect(
     await db.select().from(assistantConversationAgents).where(eq(assistantConversationAgents.conversationId, id))
   ).toEqual([])
+})
+
+type ReportedStatus = 'working' | 'waiting' | 'needs-input' | 'completed' | 'failed' | 'cancelled'
+async function activityFixture() {
+  const f = await fixture()
+  const agent = await Agent.create({ agentTypeId: 'system-manager', ownerUserId: f.owner.id, context: {} })
+  agentIds.push(agent.id)
+  const start = async (text = 'Compare the options', extra: Record<string, unknown> = {}) => {
+    const response = await f.request(`/${f.id}/messages`, {
+      clientId: randomUUID(),
+      request: text,
+      agentId: agent.id,
+      label: 'Compare options',
+      ...extra,
+    })
+    expect(response.status).toBe(200)
+    return response.json() as Promise<{ id: string; taskId: string; agentId: string }>
+  }
+  const update = (requestId: string, content: string, status?: ReportedStatus) =>
+    InboxMessage.send({
+      recipientType: 'voice_assistant',
+      recipientId: assistantInboxRecipientId(f.id),
+      senderType: 'agent',
+      senderId: agent.id,
+      content,
+      metadata: { inReplyTo: requestId },
+      assistantTaskStatus: status,
+    })
+  const task = async (taskId: string) => {
+    const [row] = await db.select().from(assistantTasks).where(eq(assistantTasks.id, taskId))
+    return row
+  }
+  return { ...f, agent, start, update, task }
+}
+
+test('first progress reply preserves working task state', async () => {
+  const f = await activityFixture()
+  const receipt = await f.start()
+  expect(receipt.taskId).toBe(receipt.id)
+  await f.update(receipt.id, 'Research has started.')
+  const task = await f.task(receipt.taskId)
+  expect(task.status).toBe('working')
+  expect(task.label).toBe('Compare options')
+  expect(task.kind).toBe('agent')
+  expect(task.agentId).toBe(f.agent.id)
+})
+
+test('multiple tasks can share one helper without sharing lifecycle', async () => {
+  const f = await activityFixture()
+  const a = await f.start('Compare options')
+  const b = await f.start('Check deployment settings')
+  expect(a.taskId).not.toBe(b.taskId)
+  await f.update(a.id, 'Comparison complete.', 'completed')
+  expect((await f.task(a.taskId)).status).toBe('completed')
+  expect((await f.task(b.taskId)).status).toBe('working')
+})
+
+test('updates exist durably without any browser consumer', async () => {
+  const f = await activityFixture()
+  const receipt = await f.start()
+  const message = await f.update(receipt.id, 'Ready for your decision.', 'needs-input')
+  const [update] = await db.select().from(assistantUpdates).where(eq(assistantUpdates.messageId, message.id))
+  expect(update.taskId).toBe(receipt.taskId)
+  expect(update.requestId).toBe(receipt.id)
+  expect(update.reportedStatus).toBe('needs-input')
+  expect(update.processedAt).toBeNull()
+  expect(update.seenAt).toBeNull()
+  expect(update.sequence).toBe(1)
+  expect((await f.task(receipt.taskId)).status).toBe('needs-input')
+  const [conversation] = await db.select().from(assistantConversations).where(eq(assistantConversations.id, f.id))
+  expect(conversation.nextUpdateSequence).toBe(1)
+  expect(conversation.inboxConsumerId).toBeNull()
+})
+
+test('idempotent request retries and update retries never duplicate task state', async () => {
+  const f = await activityFixture()
+  const body = { clientId: randomUUID(), request: 'Compare the options', agentId: f.agent.id, label: 'Compare' }
+  const first = await (await f.request(`/${f.id}/messages`, body)).json()
+  const second = await (await f.request(`/${f.id}/messages`, body)).json()
+  expect(second).toMatchObject({ id: first.id, taskId: first.taskId })
+  expect(await db.select().from(assistantTasks).where(eq(assistantTasks.conversationId, f.id))).toHaveLength(1)
+  const input = {
+    recipientType: 'voice_assistant' as const,
+    recipientId: assistantInboxRecipientId(f.id),
+    senderType: 'agent' as const,
+    senderId: f.agent.id,
+    content: 'Done.',
+    metadata: { inReplyTo: first.id },
+    assistantTaskStatus: 'completed' as const,
+  }
+  const key = `${assistantInboxRecipientId(f.id)}:${randomUUID()}`
+  const one = await InboxMessage.sendOnce(input, key)
+  const two = await InboxMessage.sendOnce(input, key)
+  expect(one.created).toBe(true)
+  expect(two.created).toBe(false)
+  expect(two.message.id).toBe(one.message.id)
+  expect(await db.select().from(assistantUpdates).where(eq(assistantUpdates.conversationId, f.id))).toHaveLength(1)
+  const [conversation] = await db.select().from(assistantConversations).where(eq(assistantConversations.id, f.id))
+  expect(conversation.nextUpdateSequence).toBe(1)
+})
+
+test('a user answer stays on its task and stale reports cannot finish the new request', async () => {
+  const f = await activityFixture()
+  const receipt = await f.start()
+  const question = await f.update(receipt.id, 'Which region?', 'needs-input')
+  expect((await f.task(receipt.taskId)).status).toBe('needs-input')
+  const answer = await (
+    await f.request(`/${f.id}/messages`, {
+      clientId: randomUUID(),
+      request: 'us-east',
+      agentId: f.agent.id,
+      inReplyTo: question.id,
+    })
+  ).json()
+  expect(answer.taskId).toBe(receipt.taskId)
+  expect(answer.id).not.toBe(receipt.id)
+  let task = await f.task(receipt.taskId)
+  expect(task.currentRequestId).toBe(answer.id)
+  expect(task.status).toBe('working')
+  // A late report against the superseded request stays visible but changes nothing.
+  const stale = await f.update(receipt.id, 'Old request complete.', 'completed')
+  task = await f.task(receipt.taskId)
+  expect(task.status).toBe('working')
+  const [staleUpdate] = await db.select().from(assistantUpdates).where(eq(assistantUpdates.messageId, stale.id))
+  expect(staleUpdate.taskId).toBe(receipt.taskId)
+  expect(staleUpdate.sequence).toBe(2)
+  await f.update(answer.id, 'Deployed to us-east.', 'completed')
+  expect((await f.task(receipt.taskId)).status).toBe('completed')
+  // Terminal requests do not reopen on late progress; a new follow-up does.
+  await f.update(answer.id, 'Still working actually.', 'working')
+  expect((await f.task(receipt.taskId)).status).toBe('completed')
+  const reopened = await (
+    await f.request(`/${f.id}/messages`, {
+      clientId: randomUUID(),
+      request: 'Also deploy to eu-west',
+      agentId: f.agent.id,
+      inReplyTo: stale.id,
+    })
+  ).json()
+  expect(reopened.taskId).toBe(receipt.taskId)
+  task = await f.task(receipt.taskId)
+  expect(task).toMatchObject({ currentRequestId: reopened.id, status: 'working' })
+})
+
+test('an independent request creates another task even for the same helper', async () => {
+  const f = await activityFixture()
+  const first = await f.start('Compare options')
+  await f.update(first.id, 'Comparison complete.', 'completed')
+  const second = await f.start('Check deployment settings')
+  expect(second.taskId).toBe(second.id)
+  expect(second.taskId).not.toBe(first.taskId)
+  const rows = await db.select().from(assistantTasks).where(eq(assistantTasks.conversationId, f.id))
+  expect(rows.map((row) => row.status).sort()).toEqual(['completed', 'working'])
+})
+
+test('a failed projection rolls back the inbox insertion', async () => {
+  const f = await activityFixture()
+  const receipt = await f.start()
+  setBeforeRecipientLifecycleLockHookForTest(async () => {
+    // Validation already passed; removing the conversation makes the in-transaction projection fail.
+    await db.delete(assistantConversations).where(eq(assistantConversations.id, f.id))
+  })
+  try {
+    await expect(f.update(receipt.id, 'Orphaned update', 'completed')).rejects.toThrow(
+      'Assistant conversation not found'
+    )
+  } finally {
+    setBeforeRecipientLifecycleLockHookForTest(undefined)
+  }
+  expect(await db.select().from(inbox).where(eq(inbox.content, 'Orphaned update'))).toEqual([])
+})
+
+test('a terminated helper leaves persisted task status alone but marks it unavailable', async () => {
+  const f = await activityFixture()
+  const receipt = await f.start()
+  await db.delete(executions).where(eq(executions.agentId, f.agent.id))
+  await db.update(agents).set({ status: 'terminated', terminatedAt: new Date() }).where(eq(agents.id, f.agent.id))
+  expect((await f.task(receipt.taskId)).status).toBe('working')
+  const mailbox = await (await f.request(`/${f.id}/inbox`, { consumerId: randomUUID() })).json()
+  expect(mailbox).toMatchObject({ acquired: true, pending: 1, unavailable: true })
+})
+
+test('generic metadata cannot smuggle task status or task identity', async () => {
+  const f = await activityFixture()
+  const receipt = await f.start()
+  for (const smuggled of [{ assistantTaskStatus: 'completed' }, { assistantTaskId: randomUUID() }])
+    await expect(
+      InboxMessage.send({
+        recipientType: 'voice_assistant',
+        recipientId: assistantInboxRecipientId(f.id),
+        senderType: 'agent',
+        senderId: f.agent.id,
+        content: 'Sneaky',
+        metadata: { inReplyTo: receipt.id, ...smuggled },
+      })
+    ).rejects.toThrow('server-owned')
+  expect((await f.task(receipt.taskId)).status).toBe('working')
+  // Ordinary replies without the field stay supported and leave lifecycle state unchanged.
+  const plain = await f.update(receipt.id, 'Just an update')
+  const [update] = await db.select().from(assistantUpdates).where(eq(assistantUpdates.messageId, plain.id))
+  expect(update.reportedStatus).toBeNull()
+  expect((await f.task(receipt.taskId)).status).toBe('working')
 })
