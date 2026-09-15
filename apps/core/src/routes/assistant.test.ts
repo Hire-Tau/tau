@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import { eq, inArray, or } from 'drizzle-orm'
+import { eq, inArray, or, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import {
   assistantConversations,
@@ -184,17 +184,38 @@ test('offline replies persist, one device receives, and lease expiry allows reco
   expect(first.acquired).toBe(true)
   // A question is progress, not completion: the delegated task stays pending.
   expect(first.pending).toBe(1)
-  expect(first.messages.map((message: { id: string }) => message.id)).toEqual([reply.id])
+  expect(first.messages.map((message: { messageId: string }) => message.messageId)).toEqual([reply.id])
+  expect(first.messages[0]).toMatchObject({ taskId: receipt.taskId, requestId: receipt.id, sequence: 1 })
   expect((await (await request(`/${id}/inbox`, { consumerId: second })).json()).acquired).toBe(false)
-  expect((await request(`/${id}/inbox/ack`, { consumerId: second, messageId: reply.id })).status).toBe(409)
+  const response = { id: `inbox:${reply.id}`, role: 'tool', text: 'Task update', final: true }
+  const ack = (consumer: string, extra: Record<string, unknown> = {}) =>
+    request(`/${id}/inbox/ack`, {
+      consumerId: consumer,
+      messageIds: [reply.id],
+      responseEntryId: response.id,
+      ...extra,
+    })
+  expect((await ack(second)).status).toBe(409)
   await db
     .update(assistantConversations)
     .set({ inboxConsumerExpiresAt: new Date(0) })
     .where(eq(assistantConversations.id, id))
   expect((await (await request(`/${id}/inbox`, { consumerId: second })).json()).messages[0].content).toBe(reply.content)
-  expect((await request(`/${id}/inbox/ack`, { consumerId, messageId: reply.id })).status).toBe(409)
-  expect((await request(`/${id}/inbox/ack`, { consumerId: second, messageId: reply.id })).status).toBe(200)
+  // The expired consumer cannot acknowledge, and neither can the current one without a saved final response.
+  expect((await ack(consumerId)).status).toBe(409)
+  expect((await ack(second)).status).toBe(409)
+  expect((await request(`/${id}/entries`, { entries: [{ ...response, final: false }] })).status).toBe(200)
+  expect((await ack(second)).status).toBe(409)
+  expect((await request(`/${id}/entries`, { entries: [{ ...response, assistantUpdateIds: [reply.id] }] })).status).toBe(
+    200
+  )
+  expect((await ack(second)).status).toBe(200)
+  expect((await ack(second)).status).toBe(200)
   expect((await (await request(`/${id}/inbox`, { consumerId: second })).json()).messages).toEqual([])
+  const [processed] = await db.select().from(assistantUpdates).where(eq(assistantUpdates.messageId, reply.id))
+  expect(processed.processedAt).not.toBeNull()
+  expect(processed.seenAt).toBeNull()
+  expect((await (await request('/activity')).json()).totals.unreadUpdates).toBe(1)
   expect((await request(`/${id}/inbox/release`, { consumerId: second })).status).toBe(200)
   expect((await (await request(`/${id}/inbox`, { consumerId })).json()).acquired).toBe(true)
 })
@@ -1128,4 +1149,43 @@ test('reported status is accepted only from the contacted agent on its own reque
   const formatted = formatInboxMessages([await InboxMessage.mustFind(receipt.id)])
   expect(formatted).toContain('--assistant-task-status')
   expect(formatted).toContain(`--in-reply-to ${receipt.id}`)
+})
+
+test('mailbox acknowledgment requires a saved final response covering every update in this conversation', async () => {
+  const f = await activityFixture()
+  const receipt = await f.start()
+  const first = await f.update(receipt.id, 'First result')
+  const consumerId = randomUUID()
+  expect((await (await f.request(`/${f.id}/inbox`, { consumerId })).json()).acquired).toBe(true)
+  const ack = (body: Record<string, unknown>) =>
+    f.request(`/${f.id}/inbox/ack`, { consumerId, messageIds: [first.id], responseEntryId: 'inbox:batch', ...body })
+  // Missing saved response.
+  expect((await ack({})).status).toBe(409)
+  // A response saved in another conversation does not count.
+  const otherId = randomUUID()
+  conversationIds.push(otherId)
+  expect((await f.request('/', { id: otherId })).status).toBe(200)
+  const entry = { id: 'inbox:batch', role: 'tool', text: 'Task update', final: true, assistantUpdateIds: [first.id] }
+  expect((await f.request(`/${otherId}/entries`, { entries: [entry] })).status).toBe(200)
+  expect((await ack({})).status).toBe(409)
+  // An update that arrived during response generation is not covered by the saved response.
+  const late = await f.update(receipt.id, 'Late result')
+  expect((await f.request(`/${f.id}/entries`, { entries: [entry] })).status).toBe(200)
+  expect((await ack({ messageIds: [first.id, late.id] })).status).toBe(409)
+  // Another conversation's update cannot be acknowledged here even alongside a valid one.
+  expect((await ack({ messageIds: [first.id, randomUUID()] })).status).toBe(409)
+  expect((await ack({})).status).toBe(200)
+  const rows = await db.select().from(assistantUpdates).where(eq(assistantUpdates.conversationId, f.id))
+  expect(rows.find((row) => row.messageId === first.id)?.processedAt).not.toBeNull()
+  expect(rows.find((row) => row.messageId === late.id)?.processedAt).toBeNull()
+  expect(rows.every((row) => row.seenAt === null)).toBe(true)
+  // Replaying a valid acknowledgment is harmless; an expired lease refuses.
+  expect((await ack({})).status).toBe(200)
+  await db
+    .update(assistantConversations)
+    .set({ inboxConsumerExpiresAt: sql`now() - interval '1 second'` })
+    .where(eq(assistantConversations.id, f.id))
+  expect((await ack({})).status).toBe(409)
+  for (const bad of [{ messageIds: [] }, { responseEntryId: '' }, { messageIds: ['nope'] }])
+    expect((await ack(bad)).status).toBe(400)
 })

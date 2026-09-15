@@ -17,6 +17,7 @@ import {
   assistantInboxRecipientId,
   chatPagePathSchema,
   type AssistantEntry,
+  type AssistantMailbox,
   type AssistantMessageReceipt,
 } from '@tau/shared'
 import {
@@ -31,6 +32,7 @@ import {
 } from '../db'
 import { ASSISTANT_DELEGATION_KEY, ASSISTANT_TASK_ID_KEY } from '../services/assistant-activity/project'
 import { assistantActivityRouter } from './assistant-activity'
+import { markAssistantUpdatesProcessed } from '../services/assistant-activity/acknowledge'
 import { Agent } from '../entities/Agent'
 import { Squad } from '../entities/Squad'
 import { InboxMessage } from '../entities/InboxMessage'
@@ -381,7 +383,7 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
     if (!lease) return c.json({ acquired: false, messages: [], pending: 0, unavailable: false })
     // Unprocessed means Realtime has not presented it; it says nothing about whether the human saw it.
     const incoming = await db
-      .select({ inbox })
+      .select({ update: assistantUpdates, inbox })
       .from(assistantUpdates)
       .innerJoin(inbox, eq(inbox.id, assistantUpdates.messageId))
       .where(and(eq(assistantUpdates.conversationId, conversation.id), isNull(assistantUpdates.processedAt)))
@@ -398,61 +400,47 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
           notInArray(assistantTasks.status, ['completed', 'failed', 'cancelled'])
         )
       )
-    return c.json({
+    const mailbox: AssistantMailbox = {
       acquired: true,
-      messages: incoming.map(({ inbox: message }) => ({
-        id: message.id,
+      messages: incoming.map(({ update, inbox: message }) => ({
+        messageId: message.id,
+        taskId: update.taskId,
+        requestId: update.requestId,
+        sequence: update.sequence,
+        reportedStatus: update.reportedStatus,
+        content: message.content,
+        subject: message.subject,
         senderId: message.senderId,
         senderName:
           (message.metadata.sender as { name?: string; agentTypeName?: string })?.name ||
           (message.metadata.sender as { agentTypeName?: string })?.agentTypeName ||
           'Agent',
-        content: message.content,
-        subject: message.subject,
-        replyTo: typeof message.metadata.inReplyTo === 'string' ? message.metadata.inReplyTo : null,
+        processedAt: null,
+        seenAt: update.seenAt?.toISOString() ?? null,
         createdAt: message.createdAt.toISOString(),
       })),
       pending: pending.length,
       unavailable: pending.some((row) => !row.status || row.status === 'terminated'),
-    })
+    }
+    return c.json(mailbox)
   })
-  .post('/:id/inbox/ack', zValidator('json', z.object({ consumerId: uuid, messageId: uuid })), async (c) => {
-    const conversation = await owned(c.req.param('id'), c.get('assistantOwner'))
-    if (!conversation) return c.json({ error: 'Conversation not found' }, 404)
-    const input = c.req.valid('json')
-    const accepted = await db.transaction(async (tx) => {
-      const [lease] = await tx
-        .select()
-        .from(assistantConversations)
-        .where(
-          and(
-            eq(assistantConversations.id, conversation.id),
-            eq(assistantConversations.inboxConsumerId, input.consumerId),
-            sql`${assistantConversations.inboxConsumerExpiresAt} > now()`
-          )
-        )
-        .for('update')
-      if (!lease) return false
-      const [message] = await tx
-        .update(inbox)
-        .set({ readAt: sql`now()` })
-        .where(
-          and(
-            eq(inbox.id, input.messageId),
-            eq(inbox.recipientType, 'voice_assistant'),
-            eq(inbox.recipientId, assistantInboxRecipientId(conversation.id))
-          )
-        )
-        .returning({ id: inbox.id })
-      if (!message) return false
-      await tx
-        .update(assistantUpdates)
-        .set({ processedAt: sql`coalesce(${assistantUpdates.processedAt}, now())` })
-        .where(and(eq(assistantUpdates.messageId, message.id), eq(assistantUpdates.conversationId, conversation.id)))
-      return true
-    })
-    return accepted ? c.json({ success: true }) : c.json({ error: 'Inbox receiver or message unavailable' }, 409)
-  })
+  .post(
+    '/:id/inbox/ack',
+    zValidator(
+      'json',
+      z.object({
+        consumerId: uuid,
+        messageIds: z.array(uuid).min(1).max(10),
+        responseEntryId: z.string().min(1).max(160),
+      })
+    ),
+    async (c) => {
+      const conversation = await owned(c.req.param('id'), c.get('assistantOwner'))
+      if (!conversation) return c.json({ error: 'Conversation not found' }, 404)
+      const result = await markAssistantUpdatesProcessed(conversation.id, c.req.valid('json'))
+      return result.ok ? c.json({ success: true }) : c.json({ error: result.message, reason: result.reason }, 409)
+    }
+  )
   .post('/:id/inbox/release', zValidator('json', z.object({ consumerId: uuid })), async (c) => {
     const conversation = await owned(c.req.param('id'), c.get('assistantOwner'))
     if (!conversation) return c.json({ error: 'Conversation not found' }, 404)

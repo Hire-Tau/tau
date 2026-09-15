@@ -65,10 +65,11 @@ export const assistantApi = {
       method: 'POST',
       body: { consumerId },
     }),
-  acknowledge: (id: string, consumerId: string, messageId: string) =>
+  /** Marks updates processed only after a final entry naming them is saved; never marks them seen. */
+  acknowledge: (id: string, consumerId: string, messageIds: string[], responseEntryId: string) =>
     t.request(`/assistant/${id}/inbox/ack`, {
       method: 'POST',
-      body: { consumerId, messageId },
+      body: { consumerId, messageIds, responseEntryId },
     }),
   release: (id: string, consumerId: string) =>
     t.request(`/assistant/${id}/inbox/release`, {

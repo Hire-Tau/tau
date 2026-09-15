@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { AssistantActivityUpdate } from './assistant-activity'
 
 export const assistantEntrySchema = z.object({
   id: z.string().min(1).max(160),
@@ -42,18 +43,19 @@ export interface AssistantMessageReceipt {
   kind: AssistantMessageTargetKind
   squadId?: string
 }
-export interface AssistantInboxUpdate {
-  id: string
-  senderId: string | null
-  senderName: string
-  content: string
-  subject: string | null
-  replyTo: string | null
-  createdAt: string
-}
+/** One unprocessed durable update handed to the Realtime consumer; the sender lets tools reply. */
+export type AssistantMailboxUpdate = AssistantActivityUpdate & { senderId: string | null }
 export interface AssistantMailbox {
   acquired: boolean
-  messages: AssistantInboxUpdate[]
+  /** Updates Realtime has not presented yet, oldest first. Unread state is tracked separately. */
+  messages: AssistantMailboxUpdate[]
+  /** Tracked tasks that have not reached a terminal state. */
   pending: number
   unavailable: boolean
+}
+/** Mailbox acknowledgment: a durable final entry must reference every processed update. */
+export interface AssistantMailboxAcknowledgment {
+  consumerId: string
+  messageIds: string[]
+  responseEntryId: string
 }

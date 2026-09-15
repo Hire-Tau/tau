@@ -991,9 +991,17 @@ export function useRealtimeVoiceAssistant<TState, TEnv>(
         ]
         setHistory(recovered)
         const unsentIds = new Set(queuedText.current.map((entry) => entry.id))
+        // Queued model input (including task updates awaiting catch-up) is sent by the queue itself;
+        // restoring its history entry as context too would inject the same content twice.
+        const queuedEntryIds = new Set(
+          [...pendingMessagesRef.current, ...(activeMessageRef.current ? [activeMessageRef.current] : [])]
+            .map((message) => message.historyEntry?.id)
+            .filter((id): id is string => Boolean(id))
+        )
         restoreVoiceConversation(
           transport,
-          recovered.filter((entry) => !unsentIds.has(entry.id))
+          recovered.filter((entry) => !unsentIds.has(entry.id)),
+          queuedEntryIds
         )
         applyMicEnabled()
         setIsMicMuted(!micState.getUserMicEnabled())
