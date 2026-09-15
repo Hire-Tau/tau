@@ -1946,6 +1946,11 @@ function issueFact(repository: string, number: number, output = 'issue.updated')
     },
   })
 }
+async function managerMessages(managerId: string, eventId: string) {
+  return (await db.select().from(inbox).where(eq(inbox.recipientId, managerId))).filter(
+    (row) => row.metadata?.integrationEventId === eventId
+  )
+}
 async function attachTracked(id: string, tracked: TrackedResource[]) {
   const stream = await WorkStream.mustFind(id)
   await db
@@ -2058,15 +2063,32 @@ test('a matched tracked link routes into the stream instead of the squad manager
     expect((await deliveries(id)).filter((row) => row.eventId === matchedId).map((row) => row.subscriptionId)).toEqual([
       trackedSubscriptionId(tracked, 'comment'),
     ])
-    const managerMessages = async (eventId: string) =>
-      (await db.select().from(inbox).where(eq(inbox.recipientId, managerId))).filter(
-        (row) => row.metadata?.integrationEventId === eventId
-      )
-    expect(await managerMessages(matchedId)).toEqual([])
+    expect(await managerMessages(managerId, matchedId)).toEqual([])
     const unmatchedId = (await publishIntegrationOutput('github', issueComment(2039), authority))!
     eventIds.push(unmatchedId)
     expect((await deliveries(id)).filter((row) => row.eventId === unmatchedId)).toEqual([])
-    expect(await managerMessages(unmatchedId)).toHaveLength(1)
+    expect(await managerMessages(managerId, unmatchedId)).toHaveLength(1)
+  })
+})
+
+test('a tracked link alone silences the squad fallback, with no delivery row to mask the match', async () => {
+  await withNativeRouting(async (connectionId, managerId) => {
+    const id = await create(2034, { codeHost: true, tracked: [trackedIssue(2035, `${prefix}/repo`)] })
+    // Stop the fan-out so nothing but `metadata.tracked` can claim this resource: with no
+    // delivery row for the squad, only the stream match can suppress the manager fallback.
+    const { workStreamFlowRuns } = await import('../../../db')
+    const stored = (await getFlow(id))!
+    stored.state.definition.completion.followChanges = false
+    await db.update(workStreamFlowRuns).set({ state: stored.state }).where(eq(workStreamFlowRuns.workStreamId, id))
+    const authority = { kind: 'connection' as const, connectionId, squadId }
+    const matchedId = (await publishIntegrationOutput('github', issueComment(2035), authority))!
+    eventIds.push(matchedId)
+    expect(await deliveries(id)).toEqual([])
+    expect(await managerMessages(managerId, matchedId)).toEqual([])
+    const unmatchedId = (await publishIntegrationOutput('github', issueComment(2036), authority))!
+    eventIds.push(unmatchedId)
+    expect(await deliveries(id)).toEqual([])
+    expect(await managerMessages(managerId, unmatchedId)).toHaveLength(1)
   })
 })
 
