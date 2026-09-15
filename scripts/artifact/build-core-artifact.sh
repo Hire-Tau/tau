@@ -85,9 +85,29 @@ fi
 BUN_V="$(tr -d '[:space:]' < .bun-version)"
 BUN_ACTUAL="$(bun --version)"
 if [[ "$BUN_ACTUAL" != "$BUN_V" ]]; then
-  echo "error: bun $BUN_ACTUAL is on PATH but .bun-version pins $BUN_V." >&2
-  echo "       The manifest records the pin, and the box refuses a mismatch — install $BUN_V." >&2
-  exit 1
+  # Repair rather than refuse: the pin is this checkout's own .bun-version,
+  # and the control plane's fallback build is the ONLY artifact path for a
+  # tenant upgrade — a refusal here used to strand every upgrade after a Core
+  # bun bump until someone hand-installed the new bun on the host. The
+  # install is per-user (${BUN_INSTALL:-$HOME/.bun}) and only reaches PATH
+  # for this build; it never touches the system bun.
+  if [[ ! "$BUN_V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "error: .bun-version pins '$BUN_V', which is not an x.y.z version." >&2
+    exit 1
+  fi
+  echo "==> bun $BUN_ACTUAL is on PATH but .bun-version pins $BUN_V — installing $BUN_V for this build" >&2
+  export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
+  if ! curl -fsSL https://bun.sh/install | bash -s "bun-v$BUN_V" >/dev/null 2>&1; then
+    echo "error: installing bun $BUN_V failed (network to bun.sh / GitHub?). Install $BUN_V on this host and retry." >&2
+    exit 1
+  fi
+  export PATH="$BUN_INSTALL/bin:$PATH"
+  hash -r
+  BUN_ACTUAL="$(bun --version)"
+  if [[ "$BUN_ACTUAL" != "$BUN_V" ]]; then
+    echo "error: bun $BUN_ACTUAL is on PATH after installing $BUN_V — the manifest records the pin, and the box refuses a mismatch." >&2
+    exit 1
+  fi
 fi
 
 if [[ "$(uname -s)" != "Linux" ]]; then
