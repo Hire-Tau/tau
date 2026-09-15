@@ -17,6 +17,9 @@ import {
   machineBoxes,
   messages,
   squads,
+  workStreams,
+  workStreamWorktrees,
+  worktreeCleanupJobs,
 } from '../../db/schema'
 import { Agent } from '../../entities/Agent'
 import { AgentType } from '../../entities/AgentType'
@@ -605,6 +608,69 @@ describeSubprocess('attemptPickup result matrix', () => {
       recoveryOwnerIncarnation: null,
     })
     return row
+  }
+
+  for (const concurrent of [false, true]) {
+    test(`cleanup claim and actual queued pickup serialize (${concurrent ? 'concurrent' : 'cleanup first'})`, async () => {
+      const { claimWorktreeCleanup } = await import('../work-streams/worktree-cleanup-store')
+      const agent = await createSquadAgent('zai:glm-5.2')
+      const ownership = {
+        workspace: '/fixture',
+        repository: '/fixture/repo',
+        commonDirectory: '/fixture/repo/.git',
+        gitDirectory: '/fixture/repo/.git/worktrees/feature',
+        worktree: '/fixture/feature',
+        directoryIdentity: '1:2',
+        branch: 'feature',
+      }
+      const metadata = {
+        git: { repository: ownership.repository, worktree: ownership.worktree, branch: ownership.branch },
+      }
+      const head = 'a'.repeat(40)
+      const [stream] = await db
+        .insert(workStreams)
+        .values({
+          squadId: agent.squadId!,
+          title: 'cleanup pickup race',
+          status: 'done',
+          autoCleanupWorktree: true,
+          agentIds: [agent.id],
+          metadata,
+        })
+        .returning()
+      try {
+        await db.insert(workStreamWorktrees).values({ workStreamId: stream.id, squadId: agent.squadId!, ownership })
+        await db
+          .insert(worktreeCleanupJobs)
+          .values({ workStreamId: stream.id, deliveredHead: head, deliveryMetadata: metadata })
+        const claim = async () =>
+          claimWorktreeCleanup(stream.id, {
+            generation: (
+              await db.select().from(worktreeCleanupJobs).where(eq(worktreeCleanupJobs.workStreamId, stream.id))
+            )[0]!.generation,
+            ownership,
+            metadata,
+            head,
+          })
+        const queue = () => agent.queueExecution({ message: 'late associated inbox work' })
+        const [removal, execution] = concurrent ? await Promise.all([claim(), queue()]) : [await claim(), await queue()]
+        createdExecutionIds.push(execution.id)
+        if (!concurrent) expect(removal).not.toBeNull()
+        if (removal) {
+          expect(await attemptPickup(await Execution.mustFind(execution.id))).toBe('lost-race')
+          expect(createdSessions).toHaveLength(0)
+        } else {
+          const [job] = await db
+            .select()
+            .from(worktreeCleanupJobs)
+            .where(eq(worktreeCleanupJobs.workStreamId, stream.id))
+          expect(job.status).toBe('deferred')
+        }
+        expect((await Execution.mustFind(execution.id)).status).toBe('queued')
+      } finally {
+        await db.delete(workStreams).where(eq(workStreams.id, stream.id))
+      }
+    })
   }
 
   test('an execution whose agent was terminated is settled, not deferred forever', async () => {

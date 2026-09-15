@@ -1073,6 +1073,15 @@ async function startup(): Promise<void> {
       },
     }).start()
   }
+  {
+    const { reconcileWorktreeCleanup } = await import('./services/work-streams/worktree-cleanup-reconciler')
+    createPeriodicRunner({
+      name: 'worktree-cleanup',
+      intervalMs: 15_000,
+      runImmediately: true,
+      task: reconcileWorktreeCleanup,
+    }).start()
+  }
   registerSandboxWarmupHandlers()
   setPrecompactionLifecycleSink(precompactionLifecycleSink)
   registerPrecompactionEviction()

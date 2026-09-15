@@ -9,6 +9,19 @@ export type RepositorySetupInput = Pick<
 >
 export type RepositoryExec = (args: string[]) => Promise<string>
 
+/** Server-observed creation receipt; accepting an existing checkout confers no ownership. */
+export interface WorktreeOwnership {
+  workspace: string
+  repository: string
+  commonDirectory: string
+  gitDirectory: string
+  worktree: string
+  directoryIdentity: string
+  branch: string
+}
+
+type RecordOwnership = (ownership: WorktreeOwnership) => unknown
+
 /** Recognize resource identity, never credentials or an account selection. */
 export function codeHostFromRemote(remote: string): { integration: string; repository: string } | undefined {
   const match =
@@ -24,7 +37,9 @@ export async function prepareRepository(
   workspace: string,
   input: RepositorySetupInput,
   key: string,
-  metadata: Record<string, unknown>
+  metadata: Record<string, unknown>,
+  recordOwnership?: RecordOwnership,
+  validateTarget?: (target: string, repository: string) => unknown
 ): Promise<Record<string, unknown>> {
   const physical = (dir: string) => exec(['sh', '-c', 'cd -- "$1" && pwd -P', 'tau-worktree', dir])
   const root = (await physical(workspace)).trim()
@@ -91,8 +106,8 @@ export async function prepareRepository(
   const physicalAncestor = (await physical(ancestor)).trim()
   if (!inside(physicalAncestor)) throw new Error('Worktree parent resolves outside the squad workspace')
   const parent = path.join(physicalAncestor, ...missing)
-  if (missing.length) await exec(['mkdir', '-p', parent])
   const target = path.join(parent, path.basename(requestedTarget))
+  await validateTarget?.(target, repo)
   if (target === repo || target === common || target.startsWith(`${common}/`))
     throw new Error('Worktree must be separate from the source checkout and its Git storage')
   if (target.startsWith(`${repo}/`)) {
@@ -104,6 +119,7 @@ export async function prepareRepository(
       )
     }
   }
+  if (missing.length) await exec(['mkdir', '-p', parent])
   // Test existence without treating an invalid checkout as permission to replace it.
   const exists = await pathExists(target)
   if (exists) {
@@ -126,6 +142,31 @@ export async function prepareRepository(
       /* New branch. */
     }
     await git('worktree', 'add', ...(branchExists ? [] : ['-b', branch]), '--', target, branchExists ? branch : baseRef)
+    if (recordOwnership) {
+      const gitDirectory = (
+        await physical((await exec(['git', '-C', target, 'rev-parse', '--path-format=absolute', '--git-dir'])).trim())
+      ).trim()
+      if (gitDirectory === common || !gitDirectory.startsWith(`${common}/worktrees/`))
+        throw new Error('Created worktree has unexpected Git storage; ownership not recorded')
+      const directoryIdentity = (
+        await exec([
+          'bun',
+          '-e',
+          'const s = require("node:fs").lstatSync(process.argv[1], {bigint:true}); if (!s.isDirectory() || s.isSymbolicLink()) process.exit(1); console.log(`${s.dev}:${s.ino}`)',
+          target,
+        ])
+      ).trim()
+      if (!/^\d+:\d+$/.test(directoryIdentity)) throw new Error('Could not identify created worktree')
+      await recordOwnership({
+        workspace: root,
+        repository: repo,
+        commonDirectory: common,
+        gitDirectory,
+        worktree: target,
+        directoryIdentity,
+        branch,
+      })
+    }
   }
   return {
     ...metadata,
@@ -138,7 +179,8 @@ export async function setupWorkStreamRepository(
   squadId: string,
   input: RepositorySetupInput,
   key: string,
-  metadata: Record<string, unknown>
+  metadata: Record<string, unknown>,
+  recordOwnership?: RecordOwnership
 ) {
   const { ensureSquadSandbox } = await import('../sandbox/ensure')
   const { getSandboxManager } = await import('../sandbox/factory')
@@ -151,7 +193,12 @@ export async function setupWorkStreamRepository(
       workspace,
       input,
       key,
-      metadata
+      metadata,
+      recordOwnership,
+      async (target, repository) => {
+        const { assertRepositoryTargetAvailable } = await import('./worktree-cleanup-store')
+        await assertRepositoryTargetAvailable(squadId, key, target, repository)
+      }
     )
   } catch (error) {
     throw new RepositorySetupError(`Repository setup failed: ${error instanceof Error ? error.message : String(error)}`)

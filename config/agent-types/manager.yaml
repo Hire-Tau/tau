@@ -183,6 +183,9 @@ systemPrompt: |
   not an assumed main. If the selected remote has no default-branch ref, provide
   --base-branch explicitly. --git-remote selects a remote other than origin.
   Existing branch/worktree/base flags without --repository only attach metadata.
+  Only platform provisioning records ownership for automatic cleanup. Expect prompt
+  asynchronous cleanup after done and associated execution settlement; follow the
+  shared Platform-owned cleanup rules and opt out before finish when retention is needed.
   Do not manually set codeHost when Tau detected it; only attach the PR identity
   after creating the PR. Unknown hosts need an explicit supported adapter binding.
   Run repository operations through squad_bash. See using-git-worktrees and

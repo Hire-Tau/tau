@@ -49,6 +49,28 @@ describe('workstream CLI commands', () => {
     await program.parseAsync(['--quiet', ...args], { from: 'user' })
   }
 
+  it('preserves cleanup opt-out and opt-in in create and update requests', async () => {
+    for (const value of ['false', 'true']) {
+      await run(['workstream', 'create', 'Cleanup test', '--squad', 'squad-1', '--auto-cleanup-worktree', value])
+      expect(apiPost).toHaveBeenLastCalledWith(
+        '/api/workstreams',
+        expect.objectContaining({ autoCleanupWorktree: value === 'true' })
+      )
+      await run(['workstream', 'update', 'stream-1', '--auto-cleanup-worktree', value])
+      expect(apiPatch).toHaveBeenLastCalledWith('/api/workstreams/stream-1', { autoCleanupWorktree: value === 'true' })
+    }
+  })
+
+  it('rejects invalid cleanup booleans without sending a request', async () => {
+    for (const value of ['0', '1', 'yes', 'FALSE']) {
+      await run(['workstream', 'update', 'stream-1', '--auto-cleanup-worktree', value])
+      await run(['workstream', 'create', 'Cleanup test', '--squad', 'squad-1', '--auto-cleanup-worktree', value])
+    }
+    expect(apiPost).not.toHaveBeenCalled()
+    expect(apiPatch).not.toHaveBeenCalled()
+    expect(outputError).toHaveBeenCalled()
+  })
+
   it('pauses with a reason and optional parking deadline, then resumes explicitly', async () => {
     await run(['workstream', 'pause', 'stream-1', '--reason', 'Review direction', '--park-after', '5'])
     expect(apiPost).toHaveBeenCalledWith('/api/workstreams/stream-1/pause', {
@@ -274,6 +296,29 @@ describe('workstream CLI commands', () => {
   })
 
   describe('get wait history', () => {
+    it('shows the effective cleanup opt-out and durable blocker', async () => {
+      const logSpy = spyOn(console, 'log').mockImplementation(() => {})
+      ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(false)
+      ;(apiGet as ReturnType<typeof mock>).mockResolvedValue({
+        id: '11111111-1111-1111-1111-111111111111',
+        title: 'Retain evidence',
+        status: 'done',
+        squadId: 'sq-1',
+        dependsOn: [],
+        agentIds: [],
+        autoCleanupWorktree: false,
+        worktreeCleanup: { status: 'deferred', reason: 'Ignored evidence retained' },
+      })
+      try {
+        await run(['workstream', 'get', '11111111-1111-1111-1111-111111111111'])
+        const printed = logSpy.mock.calls.map((call) => String(call[0])).join('\n')
+        expect(printed).toContain('Auto cleanup: disabled (retain worktree)')
+        expect(printed).toContain('Cleanup:     deferred — Ignored evidence retained')
+      } finally {
+        logSpy.mockRestore()
+      }
+    })
+
     it('renders resolved waits with their resolution note (the audit trail)', async () => {
       const logSpy = spyOn(console, 'log').mockImplementation(() => {})
       ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(false)

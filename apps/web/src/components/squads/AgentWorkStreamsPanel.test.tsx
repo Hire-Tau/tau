@@ -136,3 +136,91 @@ describe('AgentWorkStreamsPanel', () => {
     expect(countOccurrences(html, 'Creator')).toBe(1)
   })
 })
+
+test('open agent-panel details stay live across off/on saves and cleanup state changes', async () => {
+  const { spyOn } = await import('bun:test')
+  const { MemoryRouter } = await import('react-router-dom')
+  const { acquireDomHarness } = await import('../../test/domHarness')
+  const { client } = await import('../../api/clientInstance')
+  const dom = await acquireDomHarness({ url: 'http://localhost/agents/agent-1' })
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  let server = workStream({ agentIds: [agent.id], autoCleanupWorktree: true, worktree: '/workspace/feature' })
+  cache.setQueryData(queryKeys.squads.workStreams(squad.id), [server])
+  cache.setQueryData(queryKeys.squads.workStreamDetail(server.id), server)
+  cache.setQueryData(queryKeys.squads.list(), [squad])
+  cache.setQueryData(queryKeys.squads.agents(squad.id), [agent])
+  cache.setQueryData(queryKeys.auth.permissions(squad.id), { permissions: ['workstreams:update'] })
+  const fetch = spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const url = new URL(
+      typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+      'http://localhost'
+    )
+    if (url.pathname.endsWith('/subscription')) return Response.json({ subscribed: false, count: 0 })
+    if (url.pathname.endsWith(`/workstreams/${server.id}`)) return Response.json({ ...server, metrics: null })
+    if (url.pathname.endsWith('/workstreams')) return Response.json([server])
+    if (url.pathname.endsWith('/agents')) return Response.json({ agents: [agent] })
+    if (url.pathname.endsWith('/squads')) return Response.json([squad])
+    if (url.pathname.includes('/workflows/runs/')) return Response.json(null)
+    return Response.json({})
+  })
+  const save = spyOn(client.workStreams, 'setAutoCleanupWorktree').mockImplementation(async (_id, enabled) => {
+    server = { ...server, autoCleanupWorktree: enabled }
+    return server
+  })
+  const root = dom.createRoot()
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 20))
+  const checkbox = () =>
+    dom.window.document.querySelector('section[aria-label="Worktree cleanup"] input') as HTMLInputElement
+  try {
+    await dom.act(async () =>
+      root.root.render(
+        <MemoryRouter>
+          <QueryClientProvider client={cache}>
+            <AgentWorkStreamsPanel agent={agent} squadId={squad.id} />
+          </QueryClientProvider>
+        </MemoryRouter>
+      )
+    )
+    await dom.act(async () => {
+      const open = [...dom.window.document.querySelectorAll('button')].find((button) =>
+        button.textContent?.includes(server.title)
+      )!
+      open.click()
+      await settle()
+    })
+    expect(checkbox().checked).toBe(true)
+    for (const enabled of [false, true]) {
+      await dom.act(async () => {
+        checkbox().click()
+        await settle()
+      })
+      expect(save).toHaveBeenLastCalledWith(server.id, enabled)
+      expect(cache.getQueryData<WorkStream>(queryKeys.squads.workStreamDetail(server.id))!.autoCleanupWorktree).toBe(
+        enabled
+      )
+      expect(checkbox().checked).toBe(enabled)
+    }
+    for (const status of ['removing', 'succeeded'] as const) {
+      server = {
+        ...server,
+        worktreeCleanup: {
+          status,
+          reason: `Live ${status}`,
+          operationId: 'operation',
+        } as WorkStream['worktreeCleanup'],
+      }
+      await dom.act(async () => {
+        await cache.invalidateQueries({ queryKey: queryKeys.squads.workStreamDetail(server.id) })
+        await settle()
+      })
+      expect(checkbox().disabled).toBe(true)
+      expect(dom.window.document.body.textContent).toContain(`Live ${status}`)
+    }
+  } finally {
+    await cache.cancelQueries()
+    await dom.cleanup()
+    cache.clear()
+    save.mockRestore()
+    fetch.mockRestore()
+  }
+})

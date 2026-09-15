@@ -496,3 +496,11 @@ describe('worker requires an explicit TAU_SANDBOX_RUNTIME at boot', () => {
     expect(exitCode).toBe(1)
   }, 20_000)
 })
+
+describe('worktree cleanup reconciliation ownership', () => {
+  it('runs a separate startup and periodic outbox reconciler', () => {
+    const source = readFileSync(join(import.meta.dir, 'worker.ts'), 'utf8')
+    expect(source.includes("name: 'worktree-cleanup'")).toBe(true)
+    expect(source.includes('task: reconcileWorktreeCleanup')).toBe(true)
+  })
+})

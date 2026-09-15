@@ -1,3 +1,4 @@
+import * as schema from '../db/schema'
 import * as repositorySetup from '../services/work-streams/repository-setup'
 import { storedLegacyWorkStream } from '../test-utils/stored-legacy-work-stream'
 import { createBlankWorkflow } from '@tau/shared'
@@ -75,6 +76,25 @@ describe('WorkStream entity', () => {
     await db.delete(agentTypes).where(like(agentTypes.id, `${testPrefix}%`))
   })
 
+  it('defaults cleanup on for new streams, preserves opt-out and exposes later updates', async () => {
+    const enabled = await WorkStream.create({ squadId: testSquad.id, title: 'new cleanup default' })
+    expect(enabled.toJson()).toHaveProperty('autoCleanupWorktree', true)
+    const retained = await WorkStream.create({ squadId: testSquad.id, title: 'retained', autoCleanupWorktree: false })
+    expect((await WorkStream.mustFind(retained.id)).toJson()).toHaveProperty('autoCleanupWorktree', false)
+    await enabled.update({ autoCleanupWorktree: false })
+    expect((await WorkStream.mustFind(enabled.id)).toJson()).toHaveProperty('autoCleanupWorktree', false)
+    await retained.update({ autoCleanupWorktree: true })
+    expect((await WorkStream.mustFind(retained.id)).toJson()).toHaveProperty('autoCleanupWorktree', true)
+  })
+
+  it('retains historical rows without an explicit cleanup selection', async () => {
+    const [historical] = await db
+      .insert(workStreams)
+      .values({ squadId: testSquad.id, title: 'historical cleanup default' })
+      .returning()
+    expect((await WorkStream.mustFind(historical.id)).toJson()).toHaveProperty('autoCleanupWorktree', false)
+  })
+
   // Helper to create an agent and track its ID for cleanup
   async function createTestAgent(): Promise<Agent> {
     const agent = await Agent.create({ agentTypeId: testAgentTypeId })
@@ -131,6 +151,123 @@ describe('WorkStream entity', () => {
     })
   })
 
+  it('rolls back both delivered status and cleanup intent when the transaction aborts', async () => {
+    const stream = await storedLegacyWorkStream({
+      squadId: testSquad.id,
+      title: 'atomic cleanup',
+      completionMode: 'deliverable',
+    })
+    const previousStatus = stream.status
+    const original = db.transaction.bind(db)
+    const transaction = spyOn(db, 'transaction').mockImplementation((fn: any) =>
+      original(async (tx) => {
+        await fn(tx)
+        throw new Error('injected abort before commit')
+      })
+    )
+    try {
+      await expect(stream.update({ status: 'done' })).rejects.toThrow('injected abort')
+    } finally {
+      transaction.mockRestore()
+    }
+    expect((await WorkStream.mustFind(stream.id)).status).toBe(previousStatus)
+    expect(
+      await db.select().from(schema.worktreeCleanupJobs).where(eq(schema.worktreeCleanupJobs.workStreamId, stream.id))
+    ).toHaveLength(0)
+  })
+
+  it('records cleanup intent exactly once on a committed done transition, never on cancel', async () => {
+    expect(schema.worktreeCleanupJobs).toBeDefined()
+    const stream = await storedLegacyWorkStream({
+      squadId: testSquad.id,
+      title: 'cleanup outbox',
+      completionMode: 'deliverable',
+    })
+    await stream.update({ autoCleanupWorktree: true })
+    expect(
+      await db.select().from(schema.worktreeCleanupJobs).where(eq(schema.worktreeCleanupJobs.workStreamId, stream.id))
+    ).toHaveLength(0)
+    await stream.update({ status: 'done' })
+    const [intent] = await db
+      .select()
+      .from(schema.worktreeCleanupJobs)
+      .where(eq(schema.worktreeCleanupJobs.workStreamId, stream.id))
+    expect(intent).toMatchObject({ workStreamId: stream.id, status: 'pending', attempts: 0 })
+    await stream.update({ status: 'done' })
+    expect(
+      await db.select().from(schema.worktreeCleanupJobs).where(eq(schema.worktreeCleanupJobs.workStreamId, stream.id))
+    ).toEqual([intent])
+    const canceled = await storedLegacyWorkStream({ squadId: testSquad.id, title: 'never clean cancellation' })
+    await canceled.update({ autoCleanupWorktree: true })
+    await canceled.cancel()
+    expect(
+      await db.select().from(schema.worktreeCleanupJobs).where(eq(schema.worktreeCleanupJobs.workStreamId, canceled.id))
+    ).toHaveLength(0)
+  })
+
+  it('persists only server-observed ownership, not an editable metadata claim', async () => {
+    expect(schema.workStreamWorktrees).toBeDefined()
+    const ownership = {
+      workspace: '/workspace',
+      repository: '/workspace/repo',
+      commonDirectory: '/workspace/repo/.git',
+      gitDirectory: '/workspace/repo/.git/worktrees/owned',
+      worktree: '/workspace/owned',
+      directoryIdentity: '1:2',
+      branch: 'feature',
+    }
+    const setup = spyOn(repositorySetup, 'setupWorkStreamRepository').mockImplementation(
+      async (_squad, _input, _key, metadata, record) => {
+        record?.(ownership)
+        return {
+          ...metadata,
+          git: { repository: ownership.repository, worktree: ownership.worktree, branch: ownership.branch },
+        }
+      }
+    )
+    try {
+      const stream = await WorkStream.create({ squadId: testSquad.id, title: 'owned', repository: 'repo' })
+      const [registered] = await db
+        .select()
+        .from(schema.workStreamWorktrees)
+        .where(eq(schema.workStreamWorktrees.workStreamId, stream.id))
+      expect(registered).toMatchObject({ workStreamId: stream.id, squadId: testSquad.id, ownership })
+      const forged = await WorkStream.create({
+        squadId: testSquad.id,
+        title: 'forged',
+        metadata: { ownership, git: { worktree: ownership.worktree } },
+      })
+      expect(
+        await db.select().from(schema.workStreamWorktrees).where(eq(schema.workStreamWorktrees.workStreamId, forged.id))
+      ).toHaveLength(0)
+    } finally {
+      setup.mockRestore()
+    }
+  })
+
+  it('new creation cannot attach to an in-flight cleanup-owned path', async () => {
+    const old = await storedLegacyWorkStream({ squadId: testSquad.id, title: 'removing' })
+    await db.insert(schema.workStreamWorktrees).values({
+      workStreamId: old.id,
+      squadId: testSquad.id,
+      ownership: {
+        workspace: '/workspace',
+        repository: '/workspace/repo',
+        commonDirectory: '/workspace/repo/.git',
+        gitDirectory: '/workspace/repo/.git/worktrees/owned',
+        worktree: '/workspace/owned',
+        directoryIdentity: '1:2',
+        branch: 'feature',
+      },
+    })
+    await db
+      .insert(schema.worktreeCleanupJobs)
+      .values({ workStreamId: old.id, status: 'removing', operationId: crypto.randomUUID() })
+    await expect(
+      WorkStream.create({ squadId: testSquad.id, title: 'conflicting', worktree: '/workspace/owned' })
+    ).rejects.toThrow(/cleanup|removal/i)
+  })
+
   describe('repository setup', () => {
     it('attaches prepared metadata before the first workflow dispatch', async () => {
       const metadata = {
@@ -144,7 +281,13 @@ describe('WorkStream entity', () => {
           title: `${testPrefix} setup`,
           repository: 'repo',
         })
-        expect(setup).toHaveBeenCalledWith(testSquad.id, expect.objectContaining({ repository: 'repo' }), stream.id, {})
+        expect(setup).toHaveBeenCalledWith(
+          testSquad.id,
+          expect.objectContaining({ repository: 'repo' }),
+          stream.id,
+          {},
+          expect.any(Function)
+        )
         expect(stream.metadata).toMatchObject(metadata)
         const stored = await WorkStream.mustFind(stream.id)
         expect(stored.metadata).toMatchObject(metadata)
@@ -174,10 +317,24 @@ describe('WorkStream entity', () => {
       })
       await db.update(workStreams).set({ status: 'queued' }).where(eq(workStreams.id, stream.id))
       const queued = await WorkStream.mustFind(stream.id)
-      const setup = spyOn(repositorySetup, 'setupWorkStreamRepository').mockResolvedValue({
-        git: { worktree: '/workspace/queued', branch: 'feature', baseBranch: 'main' },
-        codeHost: { integration: 'github', repository: 'example/repo' },
-      })
+      const owned = {
+        workspace: '/workspace',
+        repository: '/workspace/repo',
+        commonDirectory: '/workspace/repo/.git',
+        gitDirectory: '/workspace/repo/.git/worktrees/queued',
+        worktree: '/workspace/queued',
+        directoryIdentity: '1:2',
+        branch: 'feature',
+      }
+      const setup = spyOn(repositorySetup, 'setupWorkStreamRepository').mockImplementation(
+        async (_squad, _input, _key, _metadata, record) => {
+          record?.(owned)
+          return {
+            git: { worktree: '/workspace/queued', branch: 'feature', baseBranch: 'main' },
+            codeHost: { integration: 'github', repository: 'example/repo' },
+          }
+        }
+      )
       try {
         await queued.update({ repository: 'repo' })
         expect(queued.metadata).toMatchObject({
@@ -186,6 +343,11 @@ describe('WorkStream entity', () => {
           codeHost: { repository: 'example/repo' },
         })
         expect(queued.status).toBe('queued')
+        const [registration] = await db
+          .select()
+          .from(schema.workStreamWorktrees)
+          .where(eq(schema.workStreamWorktrees.workStreamId, queued.id))
+        expect(registration?.ownership).toEqual(owned)
       } finally {
         setup.mockRestore()
       }
@@ -1251,6 +1413,9 @@ describe('WorkStream entity', () => {
       expect(wait.completesOnApproval).toBe(true)
       await ws.resolveWait(wait.id, { resolution: 'approved' })
       expect(ws.status).toBe('done')
+      expect(
+        await db.select().from(schema.worktreeCleanupJobs).where(eq(schema.worktreeCleanupJobs.workStreamId, ws.id))
+      ).toHaveLength(1)
     })
 
     it('false: approval resolves the wait only — the stream continues, continuation resets, note delivered', async () => {

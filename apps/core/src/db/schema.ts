@@ -1155,6 +1155,8 @@ export const workStreams = pgTable(
     title: varchar('title', { length: 500 }).notNull(),
     description: text('description').notNull().default(''),
     status: workStreamStatusEnum('status').notNull().default('active'),
+    // Existing rows retain their worktree. New creation opts in explicitly.
+    autoCleanupWorktree: boolean('auto_cleanup_worktree').notNull().default(false),
     pause: jsonb('pause').$type<import('@tau/shared').WorkStreamPause>(),
     priority: workStreamPriorityEnum('priority').notNull().default('normal'),
     assigneeAgentId: uuid('assignee_agent_id').references(() => agents.id, { onDelete: 'set null' }),
@@ -1177,6 +1179,51 @@ export const workStreams = pgTable(
     index('idx_work_streams_squad_created_at').on(table.squadId, table.createdAt),
     index('idx_work_streams_status_updated_at').on(table.status, table.updatedAt),
   ]
+)
+
+/** Server-owned creation provenance. Never derived from editable work-stream metadata. */
+export const workStreamWorktrees = pgTable(
+  'work_stream_worktrees',
+  {
+    workStreamId: uuid('work_stream_id')
+      .primaryKey()
+      .references(() => workStreams.id, { onDelete: 'cascade' }),
+    squadId: uuid('squad_id')
+      .notNull()
+      .references(() => squads.id, { onDelete: 'cascade' }),
+    ownership: jsonb('ownership')
+      .$type<import('../services/work-streams/repository-setup').WorktreeOwnership>()
+      .notNull(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex('idx_owned_worktree_path').on(table.squadId, sql`(${table.ownership}->>'worktree')`)]
+)
+
+/** Durable done-transition outbox; a removing operation is never released merely by lease expiry. */
+export const worktreeCleanupJobs = pgTable(
+  'worktree_cleanup_jobs',
+  {
+    workStreamId: uuid('work_stream_id')
+      .primaryKey()
+      .references(() => workStreams.id, { onDelete: 'cascade' }),
+    status: text('status')
+      .$type<'pending' | 'deferred' | 'skipped' | 'removing' | 'succeeded' | 'error'>()
+      .notNull()
+      .default('pending'),
+    // Invalidates snapshots from an earlier delivery or retention decision.
+    generation: uuid('generation').notNull().defaultRandom(),
+    reason: text('reason'),
+    attempts: integer('attempts').notNull().default(0),
+    nextAttemptAt: timestamp('next_attempt_at').notNull().defaultNow(),
+    deliveredHead: text('delivered_head'),
+    deliveryMetadata: jsonb('delivery_metadata').$type<Record<string, unknown>>(),
+    operationId: uuid('operation_id'),
+    removalInput:
+      jsonb('removal_input').$type<import('../services/work-streams/worktree-cleanup-runtime').WorktreeRemovalInput>(),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [index('idx_worktree_cleanup_due').on(table.status, table.nextAttemptAt)]
 )
 
 // Prepared flows are not dispatched until execution integration activates them.

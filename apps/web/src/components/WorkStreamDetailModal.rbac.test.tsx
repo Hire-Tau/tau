@@ -164,7 +164,9 @@ describe('WorkStreamDetailModal exact action authority', () => {
       await renderModal({ workStream: stream, focusWaitId: 'manual-2', actionCanRespond: true }, async (dom) => {
         globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
           calls.push({ url: String(input), body: init?.body as string | undefined })
-          return new dom.window.Response('{}', { status: 200 }) as unknown as Response
+          return new dom.window.Response(String(input).endsWith('/workstreams/ws-1') ? JSON.stringify(stream) : '{}', {
+            status: 200,
+          }) as unknown as Response
         }) as unknown as typeof fetch
         expect(dom.window.document.body.textContent).toContain('Use option B')
         expect(dom.window.document.body.textContent).toContain('Use option A')

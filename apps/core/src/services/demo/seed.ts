@@ -431,6 +431,7 @@ async function ensureStream(
         title: spec.title,
         description: spec.description,
         status: 'done',
+        autoCleanupWorktree: true,
         priority: spec.priority,
         ownerAgentId: manager.id,
         requestingUserId,

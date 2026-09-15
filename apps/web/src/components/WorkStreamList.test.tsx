@@ -997,6 +997,12 @@ describe('squad WorkStreamList dependency navigation', () => {
       globalThis.fetch = mock(async (input: RequestInfo | URL) => {
         const url = String(input)
         fetchCalls.push(url)
+        if (url.endsWith(`/api/workstreams/${parent.id}`)) {
+          return new dom.window.Response(JSON.stringify(parent), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          }) as unknown as Response
+        }
         if (url.endsWith(`/api/workstreams/${terminalDependency.id}`)) {
           return new dom.window.Response(JSON.stringify(terminalDependency), {
             status: 200,
@@ -1351,16 +1357,20 @@ describe('WorkStreamDetailModal respond flows', () => {
 
   async function withMockedFetch<T>(
     dom: Awaited<ReturnType<typeof acquireDomHarness>>,
+    stream: WorkStream,
     run: (fetchCalls: Array<{ url: string; method?: string; body?: string }>) => Promise<T>
   ): Promise<T> {
     const fetchCalls: Array<{ url: string; method?: string; body?: string }> = []
     const originalFetch = globalThis.fetch
     globalThis.fetch = mock(async (input: RequestInfo | URL, init?: RequestInit) => {
       fetchCalls.push({ url: String(input), method: init?.method, body: init?.body as string | undefined })
-      return new dom.window.Response(JSON.stringify({}), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }) as unknown as Response
+      return new dom.window.Response(
+        JSON.stringify(String(input).endsWith(`/api/workstreams/${stream.id}`) ? stream : {}),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }
+      ) as unknown as Response
     }) as unknown as typeof fetch
     try {
       return await run(fetchCalls)
@@ -1386,7 +1396,7 @@ describe('WorkStreamDetailModal respond flows', () => {
     const dom = await acquireDomHarness({ url: 'http://localhost/work-streams/ws-1' })
     const rendered = dom.createRoot()
     try {
-      await withMockedFetch(dom, async (fetchCalls) => {
+      await withMockedFetch(dom, ws, async (fetchCalls) => {
         await dom.act(async () =>
           rendered.root.render(
             <MemoryRouter>
@@ -1467,7 +1477,7 @@ describe('WorkStreamDetailModal respond flows', () => {
           SyntaxError,
           fetch: mock(async (input: RequestInfo | URL, init?: RequestInit) => {
             fetchCalls.push({ url: String(input), body: init?.body as string | undefined })
-            return new window.Response(JSON.stringify({}), {
+            return new window.Response(JSON.stringify(String(input).endsWith(`/api/workstreams/${ws.id}`) ? ws : {}), {
               status: 200,
               headers: { 'content-type': 'application/json' },
             })

@@ -18,6 +18,7 @@ import {
   modelTiers,
   squads,
   workStreams,
+  worktreeCleanupJobs,
   workflowBindings,
   inbox,
   executions,
@@ -603,9 +604,11 @@ test('PR and direct-merge delivery require independently fetched merge evidence'
         api.mockResolvedValue(
           mode === 'direct-merge'
             ? { status: 'behind' }
-            : { merged: true, base: { ref: 'main' }, head: { ref: 'feature' } }
+            : { merged: true, base: { ref: 'main' }, head: { ref: 'feature', sha: 'a'.repeat(40) } }
         )
         expect((await finishFlow(id, 2, actor)).status).toBe('done')
+        const [cleanup] = await db.select().from(worktreeCleanupJobs).where(eq(worktreeCleanupJobs.workStreamId, id))
+        expect(cleanup).toHaveProperty('deliveredHead', 'a'.repeat(40))
       }
     }
     expect(api.mock.calls.map((call) => call[0])).toContain('/repos/example/repo/pulls/42')

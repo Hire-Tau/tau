@@ -146,3 +146,48 @@ test('creates missing parent directories and preserves an existing feature branc
   )
   expect(metadata.git).toMatchObject({ worktree: join(root, 'nested/trees/feature'), branch: 'existing-feature' })
 })
+
+test('only newly platform-created worktrees produce an ownership receipt', async () => {
+  const receipts: unknown[] = []
+  const input = { repository: 'repo', branch: 'feature/owned', baseBranch: 'main' }
+  const metadata = await prepareRepository(exec, root, input, 'owned', {}, (receipt) => receipts.push(receipt))
+  expect(receipts).toHaveLength(1)
+  expect(receipts[0]).toEqual(
+    expect.objectContaining({
+      workspace: root,
+      repository: repo,
+      commonDirectory: join(repo, '.git'),
+      worktree: join(root, 'worktrees/owned'),
+      branch: 'feature/owned',
+    })
+  )
+  expect(receipts[0]).toHaveProperty('directoryIdentity', expect.stringMatching(/^\d+:\d+$/))
+  expect(receipts[0]).toHaveProperty('gitDirectory', expect.stringContaining('/.git/worktrees/'))
+  expect(metadata).not.toHaveProperty('ownership')
+  await prepareRepository(exec, root, input, 'owned', { ...metadata, ownership: receipts[0] }, (receipt) =>
+    receipts.push(receipt)
+  )
+  expect(receipts).toHaveLength(1)
+})
+
+test('canonical target admission runs before creating directories or worktrees', async () => {
+  const targets: string[] = []
+  await expect(
+    prepareRepository(
+      exec,
+      root,
+      { repository: repo, baseBranch: 'main', worktree: 'new-parent/owned' },
+      'blocked',
+      {},
+      undefined,
+      (target) => {
+        targets.push(target)
+        throw new Error('target reserved by another work stream')
+      }
+    )
+  ).rejects.toThrow('target reserved')
+  expect(targets).toEqual([join(root, 'new-parent/owned')])
+  expect(await exec(['sh', '-c', 'if [ -e "$1" ]; then printf exists; fi', 'fixture', join(root, 'new-parent')])).toBe(
+    ''
+  )
+})

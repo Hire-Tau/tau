@@ -1,14 +1,26 @@
+import { worktreeAttachmentPaths } from '../services/work-streams/worktree-cleanup-attachments'
+import {
+  assertWorktreeCleanupMutable,
+  assertWorktreeAttachmentsAvailable,
+  prepareWorktreeAttachmentCheck,
+  enqueueWorktreeCleanup,
+} from '../services/work-streams/worktree-cleanup-store'
 import { isDeepStrictEqual } from 'node:util'
-import { RepositorySetupError, setupWorkStreamRepository } from '../services/work-streams/repository-setup'
+import {
+  RepositorySetupError,
+  setupWorkStreamRepository,
+  type WorktreeOwnership,
+} from '../services/work-streams/repository-setup'
 import { validateAssignedReviewers } from '../services/workflows/reviewers'
 import { resolveCreationWorkflow } from '../services/workflows/creation-source'
 import { notifyFlowWaitResolution } from '../services/work-streams/wait-scope'
 import { eq, desc, and, sql, inArray, type SQL } from 'drizzle-orm'
 import { db, squads, workStreams, uuidPrefixCondition, AmbiguousPrefixError } from '../db'
-import { executions, workStreamWaits, workStreamFlowRuns } from '../db/schema'
+import { executions, workStreamWaits, workStreamFlowRuns, workStreamWorktrees, worktreeCleanupJobs } from '../db/schema'
 import { WORK_STREAM_ADMITTED_STATUSES, workStreamSourceLinkKindSchema } from '@tau/shared'
 import type {
   WorkStream as WorkStreamJson,
+  WorktreeCleanupSummary,
   WorkStreamStatus,
   WorkStreamPriority,
   WorkStreamCompletionMode,
@@ -358,6 +370,8 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
   declare assigneeAgentId: string | null
   declare ownerAgentId: string | null
   declare creatorAgentId: string | null
+  worktreeCleanup: WorktreeCleanupSummary | null = null
+  declare autoCleanupWorktree: boolean
   declare assignedReviewerIds: string[]
   declare requestingUserId: string | null
   declare agentIds: string[] | null
@@ -405,6 +419,24 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       }
     }
     for (const stream of streams) stream.dependedOnBy = inverse.get(stream.id) ?? []
+    const cleanupRows = await db
+      .select()
+      .from(worktreeCleanupJobs)
+      .where(inArray(worktreeCleanupJobs.workStreamId, [...requestedIds]))
+    const cleanups = new Map(cleanupRows.map((row) => [row.workStreamId, row]))
+    for (const stream of streams) {
+      const cleanup = cleanups.get(stream.id)
+      stream.worktreeCleanup = cleanup
+        ? {
+            status: cleanup.status,
+            reason: cleanup.reason,
+            attempts: cleanup.attempts,
+            operationId: cleanup.operationId,
+            nextAttemptAt: cleanup.nextAttemptAt.toISOString(),
+            updatedAt: cleanup.updatedAt.toISOString(),
+          }
+        : null
+    }
     return streams
   }
 
@@ -465,6 +497,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
   static get selectColumns() {
     return {
       id: workStreams.id,
+      autoCleanupWorktree: workStreams.autoCleanupWorktree,
       squadId: workStreams.squadId,
       title: workStreams.title,
       description: workStreams.description,
@@ -576,8 +609,13 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     await validateMetadataSources(mergedMetadata)
     if (input.gitRemote && !input.repository) throw new RepositorySetupError('gitRemote requires repository')
     const streamId = crypto.randomUUID()
+    let ownership: WorktreeOwnership | undefined
     if (input.repository)
-      mergedMetadata = await setupWorkStreamRepository(input.squadId, input, streamId, mergedMetadata)
+      mergedMetadata = await setupWorkStreamRepository(input.squadId, input, streamId, mergedMetadata, (receipt) => {
+        ownership = receipt
+      })
+
+    const attachmentCheck = await prepareWorktreeAttachmentCheck(input.squadId, streamId, mergedMetadata)
 
     // An ownerless stream notifies NOBODY at creation (the owner notice below
     // requires an owner), so it sits idle until someone happens to look — the
@@ -597,10 +635,19 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     }
 
     const row = await db.transaction(async (tx) => {
+      await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, input.squadId)).for('update')
+      await assertWorktreeAttachmentsAvailable(tx, {
+        id: streamId,
+        squadId: input.squadId,
+        metadata: mergedMetadata,
+        resolved: attachmentCheck,
+        dependsOn: input.dependsOn ?? [],
+      })
       const [created] = await tx
         .insert(workStreams)
         .values({
           id: streamId,
+          autoCleanupWorktree: input.autoCleanupWorktree ?? true,
           squadId: input.squadId,
           title: input.title,
           description: input.description ?? '',
@@ -616,6 +663,8 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
           metadata: mergedMetadata,
         })
         .returning()
+      if (ownership)
+        await tx.insert(workStreamWorktrees).values({ workStreamId: created.id, squadId: created.squadId, ownership })
       // System-maintained dependency waits: one open record per unsatisfied
       // dependency, in the same transaction as the edge write.
       if (created.dependsOn?.length) {
@@ -867,7 +916,10 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
    */
   override async update(
     input: UpdateWorkStreamInput,
-    opts: { actorAgentId?: string | null; flowCompletion?: { version: number; metadataHash: string } } = {}
+    opts: {
+      actorAgentId?: string | null
+      flowCompletion?: { version: number; metadataHash: string; deliveredHead?: string }
+    } = {}
   ): Promise<this> {
     const safe = {
       title: input.title,
@@ -919,13 +971,17 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     }
     const repositoryMetadataBeforeSetup = { git: this.metadata?.git, codeHost: this.metadata?.codeHost }
     let prepared: Record<string, unknown> | undefined
+    let preparedOwnership: WorktreeOwnership | undefined
     if (input.repository) {
       assertSetupAllowed(this)
       prepared = await setupWorkStreamRepository(
         this.squadId,
         input,
         this.id,
-        deepMergeMetadata(this.metadata ?? {}, input.metadata ?? {})
+        deepMergeMetadata(this.metadata ?? {}, input.metadata ?? {}),
+        (receipt) => {
+          preparedOwnership = receipt
+        }
       )
     }
 
@@ -948,6 +1004,16 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       ...dbInput
     } = input
 
+    const prospectiveMetadata =
+      prepared ??
+      WorkStream.mergeTypedFieldsIntoMetadata(input, deepMergeMetadata(this.metadata ?? {}, input.metadata ?? {}))
+    const attachmentCheck = isDeepStrictEqual(
+      worktreeAttachmentPaths(this.metadata ?? {}),
+      worktreeAttachmentPaths(prospectiveMetadata)
+    )
+      ? undefined
+      : await prepareWorktreeAttachmentCheck(this.squadId, this.id, prospectiveMetadata)
+
     const previousStatus = this.status
     const now = new Date()
     // Assigned inside the transaction, read after commit so the fast path
@@ -961,6 +1027,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
 
       const [locked] = await tx.select().from(workStreams).where(eq(workStreams.id, this.id)).for('update')
       if (!locked) throw new Error(`Work stream ${this.id} not found`)
+      await assertWorktreeCleanupMutable(tx, this.id)
       if (locked.pause && input.status === 'done') throw new Error('Resume the work stream before completing it')
 
       const { guardFlowMutation } = await import('../services/workflows/execution')
@@ -1010,6 +1077,10 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
             .where(eq(workStreamFlowRuns.workStreamId, this.id))
           if (flow && Object.keys(flow.bindings).length)
             throw new Error('Repository setup cannot replace a workspace after workflow agents have started')
+          if (preparedOwnership)
+            await tx
+              .insert(workStreamWorktrees)
+              .values({ workStreamId: this.id, squadId: this.squadId, ownership: preparedOwnership })
           mergedMetadata = {
             ...mergedMetadata,
             git: prepared.git,
@@ -1021,6 +1092,17 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
           await validateMetadataSources(mergedMetadata, tx)
         }
       }
+      await assertWorktreeAttachmentsAvailable(tx, {
+        id: this.id,
+        squadId: this.squadId,
+        metadata: mergedMetadata ?? currentMetadata,
+        checkPaths: !isDeepStrictEqual(
+          worktreeAttachmentPaths(currentMetadata),
+          worktreeAttachmentPaths(mergedMetadata ?? currentMetadata)
+        ),
+        resolved: attachmentCheck,
+        dependsOn: input.dependsOn ?? locked.dependsOn ?? [],
+      })
       const nextStatus = input.status ?? locked.status
 
       // `done` requires a settled conversation ledger (spec §5): any open wait
@@ -1080,7 +1162,32 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       //   waits are already settled (the open-waits guard above).
       // - canceled force-clears the stream's remaining open waits (abandonment
       //   discards conversations by design — spec §5).
-      if (updated.status === 'done' && previousStatus !== 'done') {
+      if (updated.status === 'done' && input.autoCleanupWorktree !== undefined && locked.status === 'done') {
+        await tx.insert(worktreeCleanupJobs).values({ workStreamId: this.id }).onConflictDoNothing()
+        await tx
+          .update(worktreeCleanupJobs)
+          .set({
+            generation: crypto.randomUUID(),
+            status: input.autoCleanupWorktree ? 'pending' : 'skipped',
+            reason: input.autoCleanupWorktree ? null : 'Automatic cleanup is disabled; worktree retained.',
+            nextAttemptAt: now,
+            updatedAt: now,
+          })
+          .where(
+            and(
+              eq(worktreeCleanupJobs.workStreamId, this.id),
+              inArray(worktreeCleanupJobs.status, ['pending', 'skipped', 'deferred', 'error']),
+              sql`${worktreeCleanupJobs.operationId} IS NULL`
+            )
+          )
+      }
+      if (updated.status === 'done' && locked.status !== 'done') {
+        await enqueueWorktreeCleanup(
+          tx,
+          this.id,
+          updated.metadata as Record<string, unknown>,
+          opts.flowCompletion?.deliveredHead
+        )
         await closeDependencyWaitsForCompletedStream(tx, this.id)
       }
       if (updated.status === 'canceled' && previousStatus !== 'canceled') {
@@ -1236,6 +1343,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, this.squadId)).for('update')
       const [locked] = await tx.select().from(workStreams).where(eq(workStreams.id, this.id)).for('update')
       if (!locked) throw new Error(`Work stream ${this.id} not found`)
+      await assertWorktreeCleanupMutable(tx, this.id, true)
       if (!isTerminalStatus(locked.status)) {
         throw new WorkStreamNotReopenableError(locked.status)
       }
@@ -1258,6 +1366,22 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         .set({ status: 'queued', pause: null, metadata, updatedAt: now })
         .where(eq(workStreams.id, this.id))
         .returning()
+      // Invalidate in-flight non-destructive decisions from the prior delivery.
+      await tx
+        .update(worktreeCleanupJobs)
+        .set({
+          generation: crypto.randomUUID(),
+          status: 'skipped',
+          reason: 'Work stream reopened; awaiting a new delivery.',
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(worktreeCleanupJobs.workStreamId, this.id),
+            sql`${worktreeCleanupJobs.operationId} IS NULL`,
+            sql`${worktreeCleanupJobs.status} <> 'succeeded'`
+          )
+        )
       // Dependencies may have changed while this stream was terminal (or been
       // reopened themselves): re-open one dependency wait per not-done dep.
       await syncDependencyWaits(tx, this.id, updated.dependsOn ?? [])
@@ -1458,6 +1582,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         }
         throw new Error('Work stream status changed concurrently; approval aborted')
       }
+      await enqueueWorktreeCleanup(tx, this.id, updated.metadata as Record<string, unknown>)
       if (locked.status === 'active') {
         await invalidateContinuationCycle(tx, this.id, now)
       }
@@ -1819,7 +1944,12 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
   async delete(): Promise<void> {
     // Capture direct interest before FK cascade removes subscription rows.
     const directSubscriberIds = await listWorkStreamSubscriberIds(this.id)
-    await db.delete(workStreams).where(eq(workStreams.id, this.id))
+    await db.transaction(async (tx) => {
+      await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, this.squadId)).for('update')
+      await tx.select({ id: workStreams.id }).from(workStreams).where(eq(workStreams.id, this.id)).for('update')
+      await assertWorktreeCleanupMutable(tx, this.id)
+      await tx.delete(workStreams).where(eq(workStreams.id, this.id))
+    })
     eventEmitter.emit('workStream.deleted', { workStreamId: this.id, squadId: this.squadId })
     for (const userId of directSubscriberIds) {
       eventEmitter.emit('liveActivity.interestChanged', { userId })
@@ -1843,13 +1973,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
 
     const newIds = [...currentIds, agentId]
 
-    const [row] = await db
-      .update(workStreams)
-      .set({ agentIds: newIds, updatedAt: new Date() })
-      .where(eq(workStreams.id, this.id))
-      .returning()
-
-    await this.assignMutationRow(row)
+    await this.update({ agentIds: newIds })
     eventEmitter.emit('workStream.agentAdded', {
       workStreamId: this.id,
       squadId: this.squadId,
@@ -1877,17 +2001,12 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     }
 
     // Clear assignee if it was this agent
-    const updates: Record<string, unknown> = {
-      agentIds: newIds,
-      updatedAt: new Date(),
-    }
+    const updates: UpdateWorkStreamInput = { agentIds: newIds }
     if (this.assigneeAgentId === agentId) {
       updates.assigneeAgentId = null
     }
 
-    const [row] = await db.update(workStreams).set(updates).where(eq(workStreams.id, this.id)).returning()
-
-    await this.assignMutationRow(row)
+    await this.update(updates)
     await cleanupRemovedAgent(agentId)
     eventEmitter.emit('workStream.agentRemoved', {
       workStreamId: this.id,
@@ -2155,6 +2274,8 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
   toJson(): WorkStreamJson {
     return {
       id: this.id,
+      autoCleanupWorktree: this.autoCleanupWorktree,
+      worktreeCleanup: this.worktreeCleanup,
       squadId: this.squadId,
       title: this.title,
       description: this.description,

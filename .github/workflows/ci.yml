@@ -586,7 +586,6 @@ jobs:
       - name: Run web DOM order gate
         run: bun run --cwd apps/web test:dom-order:ci
 
-
   test:
     # The required check. It runs no tests itself: it fails unless every lane
     # succeeded, so splitting the suites did not quietly narrow what blocks a
@@ -714,6 +713,10 @@ jobs:
         run: >-
           bun ../../scripts/run-core-tests.ts --subprocess
           src/services/work-streams/repository-setup.test.ts
+          src/services/work-streams/worktree-cleanup-runtime.test.ts
+          src/services/work-streams/worktree-cleanup-attachments.test.ts
+          src/services/work-streams/worktree-cleanup-reconciler.test.ts
+          src/services/integrations/outputs/runtime.test.ts
           src/services/execution/pickup.test.ts
           src/services/machines/cli-bundle.test.ts
           src/db/model-tiers-migration.test.ts

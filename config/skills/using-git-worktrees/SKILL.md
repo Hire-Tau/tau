@@ -147,3 +147,15 @@ Ready to implement auth feature
 - Verify directory is ignored for project-local
 - Auto-detect and run project setup
 - Verify clean test baseline
+
+## Post-delivery lifetime
+
+Platform-provisioned trees default to automatic asynchronous cleanup after delivery
+and associated execution settlement. This is not a manual cleanup assignment.
+Set `tau workstream update <id> --auto-cleanup-worktree false` before finishing
+when retention is required. Register other-stream use before accessing a shared
+tree; undeclared shell access is outside the cooperative isolation guarantee.
+Do not recreate or reuse a path with pending/uncertain cleanup, or delete its
+operation marker. A cleaned stream requires a newly provisioned stream for more
+work. Branches and delivery provenance are retained. Manually created or
+historical trees without platform ownership are not automatically swept.
