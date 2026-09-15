@@ -21,17 +21,29 @@ import {
   unblockWorkStreamSchema,
   parkWorkStreamSchema,
   mapLegacyWorkStreamStatus,
+  parseTrackedResourceUrl,
   sortCanonicalWorkStreams,
 } from '@tau/shared'
 import type { WorkStreamStatus, WorkStreamWaitCreatedBy, WorkStreamPriority } from '@tau/shared'
 import {
   WorkStream,
+  WorkStreamEventAlreadyHandledError,
   WorkStreamNotReopenableError,
   WorkStreamOpenWaitsError,
   WorkStreamTerminalTransitionError,
   WorkStreamWaitResolveError,
   type TerminalWorkStreamCursorKey,
 } from '../entities/WorkStream'
+import {
+  TrackedResourceError,
+  addTrackedResources,
+  listTrackedResources,
+  mergeTracked,
+  removeTrackedResource,
+  resolveEventTrackedResource,
+  resolveTrackedResourceRequest,
+  trackedResourceRequestSchema,
+} from '../services/work-streams/tracked-resources'
 import { Squad } from '../entities/Squad'
 import { Agent } from '../entities/Agent'
 import { User } from '../entities/User'
@@ -394,6 +406,15 @@ const requireWorkStreamListPermission = createMiddleware(async (c, next) => {
   if (accessible !== 'all' && accessible.length === 0) return c.json({ error: 'Forbidden' }, 403)
   return next()
 })
+
+/** Tracked-link failures carry their own status; the delivery conflict is code-tagged for clients. */
+function trackedResourceFailure(c: Context, error: unknown) {
+  if (!(error instanceof TrackedResourceError)) throw error
+  return c.json(
+    error.status === 409 ? { error: error.message, code: 'delivery_change_request' } : { error: error.message },
+    error.status
+  )
+}
 
 export const workStreamsRouter = new Hono()
   .post(
@@ -797,11 +818,24 @@ export const workStreamsRouter = new Hono()
             : null
       }
       const creatorAgentId = identity.type === 'agent' ? identity.agentId : null
+      // Identity comes from the event; access still comes from the squad's own connection.
+      if (input.integrationEventId) {
+        const tracked = await resolveEventTrackedResource(input.integrationEventId, input.squadId)
+        input.metadata = {
+          ...input.metadata,
+          tracked: mergeTracked(input.metadata?.tracked, [tracked]),
+        }
+      }
       const stream = await WorkStream.create({ ...input, requestingUserId, creatorAgentId })
       // Auto-subscribe the requester to the stream's lifecycle updates (like watching a GitHub PR).
       if (requestingUserId) await subscribeToWorkStream(stream.id, requestingUserId)
       return c.json(stream.toJson(), 201)
     } catch (error) {
+      if (error instanceof WorkStreamEventAlreadyHandledError) {
+        const existing = await WorkStream.mustFind(error.workStreamId)
+        return c.json({ ...existing.toJson(), reusedFromEvent: true }, 200)
+      }
+      if (error instanceof TrackedResourceError) return c.json({ error: error.message }, error.status)
       if (error instanceof WorktreeCleanupConflictError)
         return c.json({ error: error.message, code: 'worktree_cleanup_conflict' }, 409)
       const message = error instanceof Error ? error.message : String(error)
@@ -892,6 +926,54 @@ export const workStreamsRouter = new Hono()
       return c.json({ subscribed: false, count: await countWorkStreamSubscribers(id) })
     }
   )
+  // --- Tracked links (issues and pull requests this stream follows alongside its delivery) ---
+  .get(
+    '/:id/tracked',
+    requireEntityPermission('workstreams:read', async (c) => routeWorkStreamSquadId(c)),
+    async (c) => {
+      try {
+        return c.json(await listTrackedResources(await routeWorkStreamId(c)))
+      } catch (error) {
+        return trackedResourceFailure(c, error)
+      }
+    }
+  )
+  .post(
+    '/:id/tracked',
+    requireWorkStreamUpdatePermission,
+    zValidator('json', trackedResourceRequestSchema),
+    async (c) => {
+      const stream = await WorkStream.find(await routeWorkStreamId(c))
+      if (!stream) return c.json({ error: 'Work stream not found' }, 404)
+      try {
+        const resource = await resolveTrackedResourceRequest(stream.squadId, c.req.valid('json'))
+        const { added, view } = await addTrackedResources(stream.id, [resource])
+        return c.json({ added, ...view })
+      } catch (error) {
+        return trackedResourceFailure(c, error)
+      }
+    }
+  )
+  .delete(
+    '/:id/tracked',
+    requireWorkStreamUpdatePermission,
+    zValidator('json', trackedResourceRequestSchema),
+    async (c) => {
+      const stream = await WorkStream.find(await routeWorkStreamId(c))
+      if (!stream) return c.json({ error: 'Work stream not found' }, 404)
+      const request = c.req.valid('json')
+      // Untracking is identity-only: a squad can always unlink, even after losing the connection.
+      if ('event' in request) return c.json({ error: 'Untrack a link by url or resource' }, 400)
+      const target = 'url' in request ? parseTrackedResourceUrl(request.url) : request.resource
+      if (!target) return c.json({ error: 'Link is not a supported issue or pull request URL' }, 400)
+      try {
+        const { removed, view } = await removeTrackedResource(stream.id, target)
+        return c.json({ removed, ...view })
+      } catch (error) {
+        return trackedResourceFailure(c, error)
+      }
+    }
+  )
   .patch('/:id', requireWorkStreamUpdatePermission, zValidator('json', updateWorkStreamSchema), async (c) => {
     const id = await routeWorkStreamId(c)
     const input = c.req.valid('json')
@@ -948,6 +1030,7 @@ export const workStreamsRouter = new Hono()
       if (error instanceof WorkStreamTerminalTransitionError) {
         return c.json({ error: error.message, code: 'terminal_status' }, 409)
       }
+      if (error instanceof TrackedResourceError) return c.json({ error: error.message }, error.status)
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 400)
     }
   })

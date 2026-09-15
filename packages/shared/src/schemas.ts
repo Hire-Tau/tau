@@ -309,6 +309,8 @@ export const createWorkStreamSchema = z
     dependsOn: z.array(z.string()).optional().default([]),
     priority: workStreamPrioritySchema.optional(),
     metadata: z.record(z.unknown()).optional().default({}),
+    /** Create from an observed integration event: tracks its resource and reuses the stream that already handles it. */
+    integrationEventId: z.string().uuid().optional(),
     completionMode: workStreamCompletionModeSchema.optional(),
     repository: z.string().min(1).optional(),
     gitRemote: z.string().min(1).optional(),
