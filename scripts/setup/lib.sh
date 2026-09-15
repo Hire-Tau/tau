@@ -56,6 +56,19 @@ die() {
   exit 1
 }
 
+# Exit code for a failure NO retry can fix. The platform's provision executor
+# (tau-platform apps/platform/src/services/jobs/executors/provision.ts,
+# TOOLKIT_EXIT_PERMANENT) maps exactly this code to a PermanentJobError so the
+# job fails now instead of after five backoff attempts. Every other non-zero
+# exit is retried. Today's only permanent case is the DigitalOcean account
+# droplet limit.
+PROVISION_EXIT_PERMANENT=66
+
+die_permanent() {
+  log_error "$*"
+  exit "${PROVISION_EXIT_PERMANENT}"
+}
+
 # ------------------------------------------------------------------ basics
 
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -1649,6 +1662,19 @@ do_droplet_status_id_ip() { # DROPLET_RESPONSE_JSON
 # provision_vm_digitalocean()'s ordered-fallback loop to decide "try the
 # next size/region" vs. "die now, don't burn through fallbacks on an auth
 # problem".
+# True iff DO refused the create because the ACCOUNT's droplet limit is
+# reached (HTTP 422, "You have reached your droplet limit…"). Not a size
+# stockout: no fallback and no retry fixes it, only a limit increase from the
+# console, so provision.sh exits PROVISION_EXIT_PERMANENT on it. Mirrors the
+# platform's do-resources.ts isAccountDropletLimitError for the machine-host
+# path.
+do_is_account_limit_error() { # HTTP_STATUS HTTP_BODY
+  local status=$1 body=$2 msg
+  [[ ${status} == 422 ]] || return 1
+  msg=$(jq -r '.message // empty' <<<"${body}" 2>/dev/null | tr '[:upper:]' '[:lower:]')
+  [[ ${msg} == *'droplet limit'* ]]
+}
+
 do_is_capacity_error() { # HTTP_STATUS HTTP_BODY
   local status=$1 body=$2 msg
   case "${status}" in
