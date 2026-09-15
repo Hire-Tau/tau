@@ -286,7 +286,13 @@ export class NotificationService {
             workStreamNumber: event.workStreamNumber ?? work?.number,
             ...(prefs.showPreviews ? { preview: { title: event.title, body: event.body } } : {}),
           })
-          const payload = JSON.stringify({ ...routing, ...text })
+          // The service worker maps `tag` to Notification.tag, so a later push for the same
+          // work replaces the earlier one instead of stacking.
+          const payload = JSON.stringify({
+            ...routing,
+            ...text,
+            ...(event.collapseKey ? { tag: event.collapseKey, renotify: true } : {}),
+          })
           const result = await webpush.sendNotification(
             { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
             payload
@@ -330,7 +336,13 @@ export class NotificationService {
           eventType: pushEventType(event.notificationKind ?? event.type),
           workStreamNumber,
           ...(prefs.showPreviews
-            ? { preview: { title: event.title.slice(0, 200), body: event.body.slice(0, 500) } }
+            ? {
+                preview: {
+                  title: event.title.slice(0, 200),
+                  body: event.body.slice(0, 500),
+                  ...(event.subtitle ? { subtitle: event.subtitle.slice(0, 80) } : {}),
+                },
+              }
             : {}),
         }
         const alert = pushAlertText(presentation)
@@ -338,6 +350,9 @@ export class NotificationService {
           if (device.platform !== 'ios' || !device.relayBindingToken) return
           const result = await sendRelayAlert(device.relayBindingToken, {
             ...presentation,
+            collapseKey: event.collapseKey,
+            threadKey: event.threadKey,
+            interruptionLevel: event.interruptionLevel,
             squadId: event.squadId,
             agentId: event.agentId,
             workStreamId: event.workStreamId,
@@ -355,6 +370,12 @@ export class NotificationService {
           {
             title: alert.title,
             body: alert.body,
+            // Grouping, replacement, and urgency are structure, not content: they apply even when
+            // previews are off. The subtitle is content (the squad name), so it follows the preview rule.
+            ...(prefs.showPreviews && event.subtitle ? { subtitle: event.subtitle } : {}),
+            ...(event.threadKey ? { threadId: event.threadKey } : {}),
+            ...(event.collapseKey ? { collapseId: event.collapseKey } : {}),
+            ...(event.interruptionLevel ? { interruptionLevel: event.interruptionLevel } : {}),
             data: {
               type: 'open',
               url: event.url,

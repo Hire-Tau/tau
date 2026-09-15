@@ -95,6 +95,30 @@ describe('work-streams routes', () => {
     expect(await isSubscribedToWorkStream(row!.id, admin.id)).toBe(true)
   })
 
+  it('rejects a malformed codeHost binding at write time and explains the allowed shape', async () => {
+    const [row] = await db.insert(workStreams).values({ squadId: testSquadId, title: 'Binding' }).returning()
+    const binding = { integration: 'github', repository: 'example/repo', changeRequest: { number: 7 } }
+    const valid = await patchJson(`/api/workstreams/${row!.id}`, { metadata: { codeHost: binding } })
+    expect(valid.status).toBe(200)
+    // The dot-path CLI shape merges into the existing binding; extra evidence keys are refused here.
+    const annotated = await patchJson(`/api/workstreams/${row!.id}`, {
+      metadata: {
+        codeHost: { changeRequest: { number: 7, url: 'https://github.com/example/repo/pull/7', state: 'MERGED' } },
+      },
+    })
+    expect(annotated.status).toBe(400)
+    expect((await annotated.json()).error).toContain(
+      'codeHost metadata is invalid: codeHost.changeRequest: unknown keys `state` (allowed: number, url)'
+    )
+    expect((await WorkStream.mustFind(row!.id)).metadata?.codeHost).toEqual(binding)
+    // Unrelated metadata edits do not re-validate a binding they do not touch.
+    const unrelated = await patchJson(`/api/workstreams/${row!.id}`, { metadata: { delivery: { note: 'ok' } } })
+    expect(unrelated.status).toBe(200)
+    // Removing the binding through the same path is still allowed.
+    expect((await patchJson(`/api/workstreams/${row!.id}`, { metadata: { codeHost: null } })).status).toBe(200)
+    expect((await WorkStream.mustFind(row!.id)).metadata?.codeHost).toBeUndefined()
+  })
+
   /** Helper: POST JSON to a URL */
   function postJson(url: string, body: unknown): Promise<Response> {
     return apiFetch(url, {

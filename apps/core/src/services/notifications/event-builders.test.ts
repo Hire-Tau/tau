@@ -280,6 +280,44 @@ describe('notification event builders', () => {
     expect(spoofed?.actionId).toBeUndefined()
   })
 
+  test('uses the stored push presentation for system inbox messages and ignores it from other senders', async () => {
+    const push = {
+      title: 'Completed: #197 · Validate deletion',
+      body: 'Next steps: ship it',
+      subtitle: 'Platform',
+      collapseKey: 'ws:abc',
+      threadKey: 'squad:def',
+      interruptionLevel: 'passive',
+    }
+    track(
+      spyOn(InboxMessage, 'find').mockImplementation(
+        async (id: string) =>
+          ({
+            id,
+            senderType: id === 'system' ? 'system' : 'agent',
+            senderId: id === 'system' ? null : 'a1',
+            metadata: { push, ...(id === 'system' ? {} : { sender: { squadId: 's1' } }) },
+            subject: 'Work Stream done: #197 · Validate deletion',
+            content: 'Work stream "#197 · Validate deletion" has been completed.',
+          }) as any
+      )
+    )
+
+    expect(await buildNotificationEvent('inbox.messageReceived', { messageId: 'system' })).toMatchObject({
+      title: push.title,
+      body: push.body,
+      subtitle: 'Platform',
+      collapseKey: 'ws:abc',
+      threadKey: 'squad:def',
+      interruptionLevel: 'passive',
+    })
+    const agent = await buildNotificationEvent('inbox.messageReceived', { messageId: 'agent' })
+    expect(agent).toMatchObject({ title: 'Work Stream done: #197 · Validate deletion' })
+    expect(agent?.body).toBe('Work stream "#197 · Validate deletion" has been completed.')
+    expect(agent?.subtitle).toBeUndefined()
+    expect(agent?.collapseKey).toBeUndefined()
+  })
+
   test('adds fleet alert squad routing while provider-global alerts remain squadless', async () => {
     track(
       spyOn(InboxMessage, 'find').mockImplementation(async (id: string) => {

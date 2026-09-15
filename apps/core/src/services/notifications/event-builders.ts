@@ -1,5 +1,9 @@
-import { assistantConversationPath, parseAssistantInboxConversationId } from '@tau/shared'
-import { workStreamTitle } from '@tau/shared'
+import {
+  assistantConversationPath,
+  parseAssistantInboxConversationId,
+  parseInboxPushPresentation,
+  workStreamTitle,
+} from '@tau/shared'
 import { eq } from 'drizzle-orm'
 import { agentQuestionWorkStreamOrigins } from '../../db/schema'
 import type { NotificationEvent } from '../../channels/provider'
@@ -286,6 +290,9 @@ export const eventBuilders: Record<string, EventBuilder> = {
       const value = trustedMetadata?.[key]
       return typeof value === 'string' && value ? value : undefined
     }
+    // A system-authored message may carry copy written for the phone; the row's subject and
+    // content were written for its recipient. Agents and users cannot restyle their own alerts.
+    const push = parseInboxPushPresentation(trustedMetadata?.push)
 
     return {
       type: 'inbox.messageReceived',
@@ -302,8 +309,12 @@ export const eventBuilders: Record<string, EventBuilder> = {
       agentId: isAgentSender ? message.senderId! : undefined,
       squadId: isAgentSender ? senderMeta?.squadId : fleetSquad?.id,
       squadName: fleetSquad?.name,
-      title: message.subject || 'New message',
-      body: message.content.slice(0, 300),
+      title: push?.title ?? (message.subject || 'New message'),
+      body: push?.body ?? message.content.slice(0, 300),
+      ...(push?.subtitle ? { subtitle: push.subtitle } : {}),
+      ...(push?.collapseKey ? { collapseKey: push.collapseKey } : {}),
+      ...(push?.threadKey ? { threadKey: push.threadKey } : {}),
+      ...(push?.interruptionLevel ? { interruptionLevel: push.interruptionLevel } : {}),
       url: buildUrl('/inbox'),
       timestamp: new Date(),
     }

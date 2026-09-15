@@ -1,4 +1,4 @@
-import { workStreamRef, workStreamTitle } from '@tau/shared'
+import { parseInboxPushPresentation, workStreamRef, workStreamTitle, type InboxPushPresentation } from '@tau/shared'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { agents, inbox, squads } from '../../db/schema'
@@ -262,11 +262,49 @@ function isSelfNotification(recipientAgentId: string, actorAgentId: WorkStreamAc
   return Boolean(actorAgentId) && actorAgentId === recipientAgentId
 }
 
+const PUSH_COPY: Record<
+  'review' | 'done',
+  { label: string; interruptionLevel: InboxPushPresentation['interruptionLevel'] }
+> = {
+  review: { label: 'Ready for review', interruptionLevel: 'active' },
+  done: { label: 'Completed', interruptionLevel: 'passive' },
+}
+
+function clip(text: string, max: number): string {
+  const trimmed = text.trim()
+  return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max - 1).trimEnd()}…`
+}
+
+/**
+ * The phone-facing form of a watcher notice. The inbox subject/content are written for the
+ * owning agent and read as "Work stream "#N · title" has been completed." twice over on a
+ * lock screen; this carries the state once, the detail a human acts on, and the metadata iOS
+ * uses to group per squad and replace an earlier "ready for review" with "completed".
+ */
+function buildWatcherPush(
+  workStream: WorkStream,
+  event: 'review' | 'done',
+  squadName: string | undefined,
+  detail: string | undefined
+): InboxPushPresentation | undefined {
+  const copy = PUSH_COPY[event]
+  const body = detail?.trim() || squadName?.trim() || 'Open Tau to see details.'
+  return parseInboxPushPresentation({
+    title: clip(`${copy.label}: ${workStreamTitle(workStream)}`, 120),
+    body: clip(body, 300),
+    ...(squadName?.trim() ? { subtitle: clip(squadName, 80) } : {}),
+    collapseKey: `ws:${workStream.id}`,
+    threadKey: `squad:${workStream.squadId}`,
+    interruptionLevel: copy.interruptionLevel,
+  })
+}
+
 async function notifyWorkStreamSubscribers(
   workStream: WorkStream,
   event: WorkStreamInboxEvent,
   message: string,
-  target?: ExactActionTarget
+  target?: ExactActionTarget,
+  pushDetail?: string
 ): Promise<void> {
   if (!HUMAN_SUBSCRIBER_EVENTS.has(event)) return
 
@@ -278,6 +316,11 @@ async function notifyWorkStreamSubscribers(
       listSquadSubscriberIds(workStream.squadId),
     ])
     const subscriberIds = [...new Set([...streamWatchers, ...squadWatchers])]
+    if (subscriberIds.length === 0) return
+    const squad = await Squad.find(workStream.squadId)
+    const detail =
+      event === 'done' ? pushDetail || nextSteps : workStream.handoffMessage || workStream.description?.slice(0, 200)
+    const push = buildWatcherPush(workStream, event as 'review' | 'done', squad?.name, detail ?? undefined)
     for (const userId of subscriberIds) {
       await sendDeduped({
         recipientType: 'user',
@@ -294,6 +337,7 @@ async function notifyWorkStreamSubscribers(
           transitionAt: transitionAt(workStream),
           ...(target ?? {}),
           ...(nextSteps ? { nextSteps } : {}),
+          ...(push ? { push } : {}),
         },
       })
     }
@@ -307,13 +351,15 @@ async function notifyWorkStreamOwner(
   event: WorkStreamInboxEvent,
   message: string,
   target?: ExactActionTarget,
-  actorAgentId?: WorkStreamActorAgentId
+  actorAgentId?: WorkStreamActorAgentId,
+  /** Human-facing detail for the push body (for example a reviewer's approval note). */
+  pushDetail?: string
 ): Promise<void> {
   // Eligible human watchers are notified regardless of whether an agent owner
   // exists — and regardless of the actor. A human watching a stream still wants
   // to see that the manager cancelled it; only the ACTING AGENT's own copy is
   // redundant, so the self-notification guard below sits after this call.
-  await notifyWorkStreamSubscribers(workStream, event, message, target)
+  await notifyWorkStreamSubscribers(workStream, event, message, target, pushDetail)
   try {
     const nextSteps = event === 'done' ? getWorkStreamNextSteps(workStream) : undefined
     const recipient = await resolveWorkStreamRecipient(workStream)
@@ -435,7 +481,7 @@ export async function notifyWorkStreamDone(
   const parts = [`Work stream "${workStreamTitle(workStream)}" has been completed.`]
   if (opts.approvalNote) parts.push(`Approval note: ${opts.approvalNote}`)
   if (nextSteps) parts.push(`Next steps: ${nextSteps}`)
-  await notifyWorkStreamOwner(workStream, 'done', parts.join('\n\n'), undefined, opts.actorAgentId)
+  await notifyWorkStreamOwner(workStream, 'done', parts.join('\n\n'), undefined, opts.actorAgentId, opts.approvalNote)
 }
 
 export async function notifyWorkStreamCanceled(

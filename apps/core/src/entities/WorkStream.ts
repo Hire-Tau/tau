@@ -17,7 +17,7 @@ import { notifyFlowWaitResolution } from '../services/work-streams/wait-scope'
 import { eq, desc, and, sql, inArray, type SQL } from 'drizzle-orm'
 import { db, squads, workStreams, uuidPrefixCondition, AmbiguousPrefixError } from '../db'
 import { executions, workStreamWaits, workStreamFlowRuns, workStreamWorktrees, worktreeCleanupJobs } from '../db/schema'
-import { WORK_STREAM_ADMITTED_STATUSES, workStreamSourceLinkKindSchema } from '@tau/shared'
+import { describeCodeHostReference, WORK_STREAM_ADMITTED_STATUSES, workStreamSourceLinkKindSchema } from '@tau/shared'
 import type {
   WorkStream as WorkStreamJson,
   WorktreeCleanupSummary,
@@ -1033,6 +1033,15 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     const prospectiveMetadata =
       prepared ??
       WorkStream.mergeTypedFieldsIntoMetadata(input, deepMergeMetadata(this.metadata ?? {}, input.metadata ?? {}))
+    // Reject a malformed code host binding where it is written, not at flow finish. Only writes that
+    // touch codeHost are checked, so unrelated metadata edits never trip over pre-existing shapes.
+    if (input.metadata && Object.prototype.hasOwnProperty.call(input.metadata, 'codeHost')) {
+      const described = describeCodeHostReference({ codeHost: prospectiveMetadata.codeHost })
+      if (described.status === 'invalid')
+        throw new Error(
+          `codeHost metadata is invalid: ${described.issues.join('; ')}. Keep verification evidence outside codeHost (for example metadata.delivery).`
+        )
+    }
     const attachmentCheck = isDeepStrictEqual(
       worktreeAttachmentPaths(this.metadata ?? {}),
       worktreeAttachmentPaths(prospectiveMetadata)

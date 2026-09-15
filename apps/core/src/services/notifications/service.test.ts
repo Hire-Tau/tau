@@ -40,6 +40,10 @@ type TestEvent = {
   questionId?: string
   messageId?: string
   actionId?: string
+  subtitle?: string
+  collapseKey?: string
+  threadKey?: string
+  interruptionLevel?: 'passive' | 'active' | 'time-sensitive'
 }
 
 async function callResolveEnabledPushUserIds(service: NotificationService, data: unknown, eventType: string) {
@@ -593,6 +597,29 @@ describe('NotificationService', () => {
       }
     })
 
+    test('web push carries the collapse key as the notification tag', async () => {
+      await registerPushSubscription({
+        endpoint: 'https://push.example.com/tag',
+        p256dh: 'k',
+        auth: 'a',
+        userId: user.id,
+      })
+      const sendSpy = spyOn(webpush, 'sendNotification').mockResolvedValue({ statusCode: 201 } as any)
+      try {
+        await callSendWebPush(service, [user.id], {
+          title: 'Completed: #197 · Validate deletion',
+          body: 'Next steps: ship it',
+          collapseKey: 'ws:abc',
+          url: '/inbox',
+        })
+        expect(JSON.parse(sendSpy.mock.calls[0][1] as string)).toMatchObject({ tag: 'ws:abc', renotify: true })
+        await callSendWebPush(service, [user.id], { title: 'Plain', body: 'No key', url: '/inbox' })
+        expect(JSON.parse(sendSpy.mock.calls[1][1] as string)).not.toHaveProperty('tag')
+      } finally {
+        sendSpy.mockRestore()
+      }
+    })
+
     test('does not remove a transferred subscription after a stale 410 response', async () => {
       const endpoint = 'https://push.example.com/stale-410'
       const former = await registerPushSubscription({
@@ -755,6 +782,53 @@ describe('NotificationService', () => {
       }
     })
 
+    test('relay deliveries carry the subtitle inside the preview and the grouping keys beside it', async () => {
+      await registerApnsDevice({
+        userId: user.id,
+        apnsToken: 'relay-presentation-token',
+        platform: 'ios',
+        environment: 'production',
+      })
+      await db.update(apnsDevices).set({ relayBindingToken: 'tau_prd_test' }).where(eq(apnsDevices.userId, user.id))
+      const relay = spyOn(relayModule, 'sendRelayAlert').mockResolvedValue({ accepted: true, reason: undefined })
+      const config = spyOn(relayModule, 'pushRelayConfig').mockReturnValue({
+        token: 'fixture',
+        instanceId: 'fixture',
+        baseUrl: 'https://example.invalid',
+      })
+      const event: TestEvent = {
+        type: 'inbox.messageReceived',
+        workStreamNumber: 197,
+        title: 'Completed: #197 · Validate deletion',
+        body: 'ship it',
+        subtitle: 'Platform',
+        collapseKey: 'ws:abc',
+        threadKey: 'squad:def',
+        interruptionLevel: 'passive',
+        url: '/inbox',
+      }
+      try {
+        await callSendApnsPush(service, [user.id], event)
+        expect(relay.mock.calls[0][1]).toMatchObject({
+          eventType: 'message',
+          workStreamNumber: 197,
+          preview: { title: 'Completed: #197 · Validate deletion', body: 'ship it', subtitle: 'Platform' },
+          collapseKey: 'ws:abc',
+          threadKey: 'squad:def',
+          interruptionLevel: 'passive',
+        })
+        await UserNotificationPreferences.upsert(user.id, { showPreviews: false })
+        await callSendApnsPush(service, [user.id], event)
+        const routing = relay.mock.calls[1][1] as Record<string, unknown>
+        expect(routing.preview).toBeUndefined()
+        expect(routing).toMatchObject({ collapseKey: 'ws:abc', threadKey: 'squad:def', interruptionLevel: 'passive' })
+      } finally {
+        await UserNotificationPreferences.upsert(user.id, { showPreviews: true })
+        config.mockRestore()
+        relay.mockRestore()
+      }
+    })
+
     test('logs when recipients have no APNs devices', async () => {
       await callSendApnsPush(service, [user.id], { title: 'Hello', body: 'World', url: '/inbox' })
 
@@ -821,6 +895,54 @@ describe('NotificationService', () => {
           actionId: 'agent-question:q1',
         })
       } finally {
+        sendSpy.mockRestore()
+      }
+    })
+
+    test('forwards push presentation hints to APNs; previews off keeps grouping but drops the subtitle', async () => {
+      await registerApnsDevice({
+        userId: user.id,
+        apnsToken: 'presentation-token',
+        platform: 'ios',
+        environment: 'production',
+      })
+      const sendSpy = spyOn(apnsModule, 'sendApnsNotification').mockResolvedValue({ ok: true, status: 200 })
+      const event: TestEvent = {
+        type: 'inbox.messageReceived',
+        workStreamNumber: 197,
+        title: 'Completed: #197 · Validate deletion',
+        body: 'Next steps: ship it',
+        subtitle: 'Platform',
+        collapseKey: 'ws:abc',
+        threadKey: 'squad:def',
+        interruptionLevel: 'passive',
+        url: '/squads/s1/work?ws=197',
+      }
+
+      try {
+        await callSendApnsPush(service, [user.id], event)
+        expect(sendSpy.mock.calls[0][1]).toMatchObject({
+          title: 'Completed: #197 · Validate deletion',
+          body: 'Next steps: ship it',
+          subtitle: 'Platform',
+          collapseId: 'ws:abc',
+          threadId: 'squad:def',
+          interruptionLevel: 'passive',
+        })
+
+        await UserNotificationPreferences.upsert(user.id, { showPreviews: false })
+        await callSendApnsPush(service, [user.id], event)
+        const withoutPreview = sendSpy.mock.calls[1][1]
+        expect(withoutPreview).toMatchObject({
+          title: 'Work #197 has a new message',
+          body: 'Open Tau to see details.',
+          collapseId: 'ws:abc',
+          threadId: 'squad:def',
+          interruptionLevel: 'passive',
+        })
+        expect(withoutPreview.subtitle).toBeUndefined()
+      } finally {
+        await UserNotificationPreferences.upsert(user.id, { showPreviews: true })
         sendSpy.mockRestore()
       }
     })
