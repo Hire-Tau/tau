@@ -3,6 +3,7 @@ import type { Transport } from '../transport'
 /** The caller's own notification preferences (self-service). */
 export interface MyNotificationPreferences {
   pushEnabled: boolean
+  showPreviews?: boolean
   mutedEvents: string[]
 }
 

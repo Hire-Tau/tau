@@ -1,3 +1,4 @@
+import { workStreamRef } from '@tau/shared'
 import { resolveVoiceSquadId } from '../squadReferences'
 import { getActiveExecution, getAgent } from '../../api/agents'
 import { getWorkStream, listAllWorkStreams, listSquadAgents, listSquads, listWorkStreams } from '../../api/squads'
@@ -12,7 +13,8 @@ const FINISHED = new Set(['done', 'canceled'])
 
 function summarize(workStream: WorkStream) {
   return {
-    id: workStream.id,
+    id: workStreamRef(workStream),
+    number: workStream.number,
     title: workStream.title,
     status: voiceWorkStreamStatus(workStream),
     squadId: workStream.squadId,
@@ -38,7 +40,10 @@ export function createStatusTools(deps: {
         type: 'object',
         properties: {
           squadId: { type: 'string', description: 'Full squad ID or URL slug. Not with workStreamId.' },
-          workStreamId: { type: 'string', description: 'Work stream ID. Not with squadId.' },
+          workStreamId: {
+            type: 'string',
+            description: 'Work number (42 or #42), UUID, or unique UUID prefix. Not with squadId.',
+          },
           includeFinished: {
             type: 'boolean',
             description: 'Include done and canceled work in list results. Default false.',

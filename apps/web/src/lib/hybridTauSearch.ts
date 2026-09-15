@@ -11,7 +11,11 @@ function entityDestination(row: EntitySearchResult) {
     case 'squad':
       return { kind: 'Squad', path: `/squads/${id}` }
     case 'work_stream':
-      return { kind: 'Work stream', workStreamId: row.id, path: `/squads/${squad}/work?ws=${id}` }
+      return {
+        kind: 'Work stream',
+        workStreamId: String(row.number ?? row.id),
+        path: `/squads/${squad}/work?ws=${row.number ?? id}`,
+      }
     case 'consultant_conversation':
       return { kind: 'Conversation', agentId: row.id, path: `/squads/${squad}/agents?agent=${id}` }
     case 'assistant_conversation':
@@ -32,7 +36,12 @@ export async function hybridTauSearch(
   try {
     const entities = await search(query, limit)
     const results = [
-      ...entities.results.map((row) => ({ ...row, entityKind: row.kind, ...entityDestination(row) })),
+      ...entities.results.map((row) => ({
+        ...row,
+        label: row.kind === 'work_stream' && row.number ? `#${row.number} · ${row.label}` : row.label,
+        entityKind: row.kind,
+        ...entityDestination(row),
+      })),
       ...navigation,
     ]
     return { results: results.sort((a, b) => b.score - a.score).slice(0, limit), partial: false }

@@ -1,8 +1,15 @@
-import { activeWorkflowAttempts, type WorkflowAttempt, type WorkflowRun } from '@tau/shared'
+import {
+  workStreamLabel,
+  workStreamRef,
+  activeWorkflowAttempts,
+  type WorkflowAttempt,
+  type WorkflowRun,
+} from '@tau/shared'
 import { flowCapabilityInstructions } from './capability-instructions'
 
 type HandoffStream = {
   id: string
+  number?: number
   title: string
   description: string
   handoffMessage?: string | null
@@ -42,7 +49,7 @@ export function flowMessage(
     evidence: 'Describe the result, checks performed, and relevant paths or links.',
   }
   return [
-    `Work stream ${stream.id}: ${stream.title}\nStep: ${step.id} (attempt ${attempt.id}, version ${run.version})`,
+    `Work stream ${workStreamLabel(stream)}: ${stream.title}\nStep: ${step.id} (attempt ${attempt.id}, version ${run.version})`,
     `${step.instructions}\nExpected output: ${step.output}`,
     workspace.length ? workspace.map(([label, value]) => `${label}: ${value}`).join('\n') : '',
     attempt.feedback ? `Rework request:\n${attempt.feedback}` : '',
@@ -61,7 +68,7 @@ export function flowMessage(
     attempt.branch || activeWorkflowAttempts(run.state).length > 1
       ? 'Parallel work is active in this shared workspace.'
       : '',
-    `Prefer --content with single-quoted JSON for short commands, or --stdin with a quoted heredoc for longer evidence; no temporary file is needed. Choose the appropriate outcome above and replace the evidence string:\n\`\`\`bash\ntau workstream advance ${stream.id} --stdin <<'TAU_COMMAND'\n${JSON.stringify(example, null, 2)}\nTAU_COMMAND\n\`\`\``,
+    `Prefer --content with single-quoted JSON for short commands, or --stdin with a quoted heredoc for longer evidence; no temporary file is needed. Choose the appropriate outcome above and replace the evidence string:\n\`\`\`bash\ntau workstream advance ${workStreamRef(stream)} --stdin <<'TAU_COMMAND'\n${JSON.stringify(example, null, 2)}\nTAU_COMMAND\n\`\`\``,
   ]
     .filter(Boolean)
     .join('\n\n')

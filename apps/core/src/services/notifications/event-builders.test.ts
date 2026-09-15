@@ -27,7 +27,7 @@ describe('notification event builders', () => {
     process.env.APP_URL = 'https://tau.example'
     track(
       spyOn(questionsModule, 'getAgentQuestion').mockResolvedValue({
-        id: 'q1',
+        id: '00000000-0000-4000-8000-000000000001',
         agentId: 'a1',
         squadId: 's1',
         ownerUserId: null,
@@ -54,10 +54,13 @@ describe('notification event builders', () => {
     track(spyOn(Squad, 'find').mockResolvedValue({ id: 's1', name: 'Tau' } as any))
 
     expect(
-      await buildNotificationEvent('agent-question.created', { questionId: 'q1', agentId: 'forged' })
+      await buildNotificationEvent('agent-question.created', {
+        questionId: '00000000-0000-4000-8000-000000000001',
+        agentId: 'forged',
+      })
     ).toMatchObject({
       type: 'agent-question.created',
-      actionId: 'agent-question:q1',
+      actionId: 'agent-question:00000000-0000-4000-8000-000000000001',
       agentId: 'a1',
       squadId: 's1',
       squadName: 'Tau',
@@ -70,7 +73,7 @@ describe('notification event builders', () => {
   test('builds personal agent question routing and rejects missing questions', async () => {
     process.env.APP_URL = 'https://tau.example'
     const persisted = {
-      id: 'q-personal',
+      id: '00000000-0000-4000-8000-000000000002',
       agentId: 'a-personal',
       squadId: null,
       ownerUserId: 'u1',
@@ -224,7 +227,7 @@ describe('notification event builders', () => {
             metadata: {
               workStreamId: 'ws1',
               waitId: 'wait1',
-              questionId: 'q1',
+              questionId: '00000000-0000-4000-8000-000000000001',
               actionId: 'workstream-blocked:ws1:wait1',
             },
             subject: 'Needs attention',
@@ -236,7 +239,7 @@ describe('notification event builders', () => {
     expect(await buildNotificationEvent('inbox.messageReceived', { messageId: 'trusted' })).toMatchObject({
       workStreamId: 'ws1',
       waitId: 'wait1',
-      questionId: 'q1',
+      questionId: '00000000-0000-4000-8000-000000000001',
       actionId: 'workstream-blocked:ws1:wait1',
     })
     const spoofed = await buildNotificationEvent('inbox.messageReceived', { messageId: 'spoofed' })

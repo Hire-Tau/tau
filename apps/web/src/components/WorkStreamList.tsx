@@ -1,3 +1,5 @@
+import { workStreamRef } from '@tau/shared'
+import { workStreamTitle } from '@tau/shared'
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
 import clsx from 'clsx'
 import { createPortal } from 'react-dom'
@@ -513,7 +515,7 @@ function WorkStreamRow({
         >
           <span className={clsx('mt-1.5 h-2 w-2 shrink-0 rounded-full', statusDotClass)} aria-hidden="true" />
           <span className="min-w-0 flex-1 text-sm font-medium text-primary line-clamp-2 break-words">
-            {workStream.title}
+            {workStreamTitle(workStream)}
           </span>
           <WorkStreamStatusBadges workStream={workStream} />
         </button>
@@ -576,7 +578,7 @@ function WorkStreamRow({
         >
           {WS_STATUS_ICONS[state] ?? '○'}
         </span>
-        <span className="font-medium text-sm text-primary truncate flex-1 min-w-0">{workStream.title}</span>
+        <span className="font-medium text-sm text-primary truncate flex-1 min-w-0">{workStreamTitle(workStream)}</span>
         {elapsed > 1000 && (
           <span className="text-xs text-placeholder tabular-nums shrink-0" title="Total agent execution runtime">
             {formatDuration(elapsed)}
@@ -652,7 +654,7 @@ function WorkStreamRow({
             {WS_STATUS_ICONS[state] ?? '○'}
           </span>
           <span className="line-clamp-2 break-words text-sm font-medium text-primary flex-1 min-w-0">
-            {workStream.title}
+            {workStreamTitle(workStream)}
           </span>
           {github?.prUrl && (
             <a
@@ -881,7 +883,7 @@ export function WorkStreamList({
       ? filteredWorkStreams
       : workStreams
   const loadedSelectedWorkStream = selectedWsId
-    ? (selectableWorkStreams.find((ws) => ws.id === selectedWsId) ?? null)
+    ? (selectableWorkStreams.find((ws) => ws.id === selectedWsId || workStreamRef(ws) === selectedWsId) ?? null)
     : null
   const { data: fetchedSelectedWorkStream } = useQuery({
     ...queries.squads.workStreamDetail(selectedWsId),
@@ -960,7 +962,7 @@ export function WorkStreamList({
                     agentMap={agentMap}
                     agentTypeNameMap={agentTypeNameMap}
                     showSquadBadge={showSquadFilter}
-                    onClick={() => setSelectedWsId(ws.id)}
+                    onClick={() => setSelectedWsId(workStreamRef(ws))}
                   />
                 ))}
               </ul>
@@ -999,7 +1001,7 @@ export function WorkStreamList({
                         agentMap={agentMap}
                         agentTypeNameMap={agentTypeNameMap}
                         showSquadBadge={showSquadFilter}
-                        onClick={() => setSelectedWsId(ws.id)}
+                        onClick={() => setSelectedWsId(workStreamRef(ws))}
                       />
                     ))}
                   </ul>
@@ -1048,7 +1050,7 @@ export function WorkStreamList({
                         agentMap={agentMap}
                         agentTypeNameMap={agentTypeNameMap}
                         showSquadBadge={showSquadFilter}
-                        onClick={() => setSelectedWsId(ws.id)}
+                        onClick={() => setSelectedWsId(workStreamRef(ws))}
                       />
                     ))}
                     {pagedDone && hasMoreDone && (

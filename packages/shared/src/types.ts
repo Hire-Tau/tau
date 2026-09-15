@@ -760,6 +760,7 @@ export interface SquadQuestionActionData {
 }
 
 export interface WorkStreamActionData {
+  workStreamNumber?: number
   workStreamId: string
   workStreamTitle: string
   squadId: string
@@ -1251,6 +1252,8 @@ export interface WorkStream {
   worktreeCleanup?: WorktreeCleanupSummary | null
   /** Effective retention setting. Older servers omit this field (retain). */
   autoCleanupWorktree?: boolean
+  /** Immutable instance-wide reference. Optional only for older server compatibility. */
+  number?: number
   pause?: WorkStreamPause | null
   id: string
   squadId: string

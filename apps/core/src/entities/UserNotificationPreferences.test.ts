@@ -18,10 +18,20 @@ afterAll(async () => {
 })
 
 describe('UserNotificationPreferences', () => {
-  it('defaults to push-on / nothing muted when no row exists', async () => {
+  it('defaults to push-on with detailed previews / nothing muted when no row exists', async () => {
     const prefs = await UserNotificationPreferences.get(user.id)
-    expect(prefs).toEqual({ pushEnabled: true, mutedEvents: [] })
+    expect(prefs).toEqual({ pushEnabled: true, showPreviews: true, mutedEvents: [] })
     expect(await UserNotificationPreferences.shouldPush(user.id, 'inbox.messageReceived')).toBe(true)
+  })
+
+  it('persists detailed defaults and preserves an explicit opt-out through unrelated updates', async () => {
+    const [row] = await db.insert(userNotificationPreferences).values({ userId: user.id }).returning()
+    expect(row!.showPreviews).toBe(true)
+    await UserNotificationPreferences.upsert(user.id, { showPreviews: false })
+    await UserNotificationPreferences.upsert(user.id, { pushEnabled: false })
+    expect((await UserNotificationPreferences.get(user.id)).showPreviews).toBe(false)
+    await UserNotificationPreferences.upsert(user.id, { showPreviews: true, pushEnabled: true })
+    expect((await UserNotificationPreferences.get(user.id)).showPreviews).toBe(true)
   })
 
   it('disabling push suppresses all events', async () => {

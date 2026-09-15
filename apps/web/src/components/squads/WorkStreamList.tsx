@@ -1,3 +1,5 @@
+import { workStreamRef } from '@tau/shared'
+import { workStreamTitle } from '@tau/shared'
 import { WorkStreamStatusBadges } from '../WorkStreamStatusBadges'
 import { WS_STATUS_LABELS } from '../../lib/workStreamStatusPresentation'
 import { CreateFlowWorkStream } from './CreateFlowWorkStream'
@@ -108,7 +110,14 @@ export function WorkStreamList({
   const surface = compact ? 'home' : 'work'
   const modes = compact ? HOME_VIEW_MODES : WORK_VIEW_MODES
   const [viewMode] = useWorkStreamViewMode(squadId, surface, modes)
-  const [selectedWs, setSelectedWs] = useURLStringState<string>('ws', '')
+  const [selectedWs, setSelectedWsParam] = useURLStringState<string>('ws', '')
+  const setSelectedWs = useCallback(
+    (ref: string) => {
+      const work = [...workStreams, ...doneStreams].find((item) => item.id === ref || workStreamRef(item) === ref)
+      setSelectedWsParam(work ? workStreamRef(work) : ref)
+    },
+    [workStreams, doneStreams, setSelectedWsParam]
+  )
   const fullscreenContentRef = useRef<HTMLDivElement>(null)
   const hadSelectedWsRef = useRef(false)
   const shouldExitFullscreenOnEscape = useCallback(() => {
@@ -167,7 +176,9 @@ export function WorkStreamList({
     {} as Record<WorkStreamDerivedState, WorkStream[]>
   )
 
-  const loadedSelectedWorkStream = selectedWs ? loadedWorkStreams.find((ws) => ws.id === selectedWs) : null
+  const loadedSelectedWorkStream = selectedWs
+    ? loadedWorkStreams.find((ws) => ws.id === selectedWs || workStreamRef(ws) === selectedWs)
+    : null
   const { data: fetchedSelectedWorkStream } = useQuery({
     ...queries.squads.workStreamDetail(selectedWs),
     enabled: !!selectedWs && !loadedSelectedWorkStream,
@@ -414,8 +425,10 @@ function StatusColumn({
               key={ws.id}
               workStream={ws}
               agentMap={agentMap}
-              isSelected={ws.id === selectedId}
-              onSelect={() => onSelect(ws.id === selectedId ? '' : ws.id)}
+              isSelected={ws.id === selectedId || workStreamRef(ws) === selectedId}
+              onSelect={() =>
+                onSelect(ws.id === selectedId || workStreamRef(ws) === selectedId ? '' : workStreamRef(ws))
+              }
             />
           ))}
           {hasMore && onLoadMore && (
@@ -454,7 +467,7 @@ function WorkStreamCard({
     <div
       role="button"
       tabIndex={0}
-      aria-label={`Open work stream ${workStream.title}`}
+      aria-label={`Open work stream ${workStreamTitle(workStream)}`}
       aria-pressed={isSelected}
       onClick={onSelect}
       onKeyDown={(event) => {
@@ -467,7 +480,7 @@ function WorkStreamCard({
         isSelected ? 'border-accent ring-1 ring-accent/50' : 'border-th-border hover:border-accent/50'
       )}
     >
-      <h4 className="font-medium text-sm text-primary">{workStream.title}</h4>
+      <h4 className="font-medium text-sm text-primary">{workStreamTitle(workStream)}</h4>
       {workStream.description && (
         <div className="mt-1 line-clamp-2 text-xs text-muted">
           <MarkdownContent className="prose-xs">{workStream.description}</MarkdownContent>

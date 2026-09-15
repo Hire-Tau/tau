@@ -274,6 +274,7 @@ export async function getNotificationConfig(): Promise<NotificationConfigData> {
 
 // Per-user notification preferences (self-service).
 export interface MyNotificationPrefs {
+  showPreviews?: boolean
   pushEnabled: boolean
   mutedEvents: string[]
   /** Event types that currently route to push (so the UI can offer per-event mute toggles). */
@@ -285,6 +286,7 @@ export async function getMyNotificationPrefs(): Promise<MyNotificationPrefs> {
 }
 
 export async function updateMyNotificationPrefs(input: {
+  showPreviews?: boolean
   pushEnabled?: boolean
   mutedEvents?: string[]
 }): Promise<MyNotificationPrefs> {

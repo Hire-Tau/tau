@@ -6,7 +6,7 @@ export type SquadActivityLane = (typeof SQUAD_ACTIVITY_LANES)[number]
 
 export type SquadActivityRef =
   | { type: 'agent'; agentId: string; view: 'chat' | 'inbox'; messageId?: string; executionId?: string }
-  | { type: 'workstream'; workStreamId: string }
+  | { type: 'workstream'; workStreamId: string; workStreamNumber?: number }
   | { type: 'pr'; url: string }
 
 /**

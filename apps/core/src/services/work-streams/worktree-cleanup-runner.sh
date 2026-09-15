@@ -2,11 +2,11 @@
 # Inlined at build time. The caller must durably fence this owned worktree before
 # dispatch. An interrupted operation without a receipt is NOT permission to retry
 # removal or reuse the path. This script never expires an operation identity.
-exec bun -e "$(cat <<'BUN_SCRIPT'
+exec bun - "$1" "$2" <<'BUN_SCRIPT'
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
-const input = JSON.parse(process.argv[1]);
+const input = JSON.parse(process.argv[2]);
 const { ownership: o, head, operationId } = input;
 const digest = crypto.createHash('sha256').update(JSON.stringify(input)).digest('hex');
 const fail = (reason) => { throw new Error(reason); };
@@ -46,7 +46,7 @@ const replay = () => {
   console.log(JSON.stringify(result));
 };
 if (exists(active)) { replay(); process.exit(0); }
-if (process.argv[2] === 'probe') fail('No terminal cleanup receipt; keep the reuse fence');
+if (process.argv[3] === 'probe') fail('No terminal cleanup receipt; keep the reuse fence');
 try { fs.mkdirSync(active, { mode: 0o700 }); }
 catch (e) { if (e.code !== 'EEXIST') throw e; replay(); process.exit(0); }
 // Persist the exclusive claim before any destructive action. A duplicate may
@@ -185,4 +185,3 @@ const directoryFd = fs.openSync(active, 'r');
 try { fs.fsyncSync(directoryFd); } finally { fs.closeSync(directoryFd); }
 console.log(JSON.stringify(result));
 BUN_SCRIPT
-)" "$1" "$2"

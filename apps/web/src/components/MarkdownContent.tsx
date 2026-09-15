@@ -1,3 +1,4 @@
+import { remarkWorkStreamReferences } from '../lib/remarkWorkStreamReferences'
 import clsx from 'clsx'
 import ReactMarkdown, { Components, defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -12,6 +13,7 @@ import { EntityReferenceLink } from './EntityReferenceLink'
 
 const plugins = [
   remarkGfm,
+  remarkWorkStreamReferences,
   // parse and hide frontmatter
   remarkFrontmatter,
 ]

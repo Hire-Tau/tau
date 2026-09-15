@@ -1,3 +1,4 @@
+import { workStreamRef, workStreamTitle } from '@tau/shared'
 import type { Squad, WorkStream } from '@tau/shared'
 import { visibleNavItems } from '../components/navModel'
 import { ALL_SECTIONS } from '../components/settings/settingsSections'
@@ -47,8 +48,8 @@ export function assistantSearch(
       .filter((stream) => stream.status === 'active' || stream.status === 'queued')
       .map((stream) => ({
         id: `work:${stream.id}`,
-        label: stream.title,
-        path: `/squads/${encodeURIComponent(stream.squadId)}/work?ws=${encodeURIComponent(stream.id)}`,
+        label: workStreamTitle(stream),
+        path: `/squads/${encodeURIComponent(stream.squadId)}/work?ws=${encodeURIComponent(workStreamRef(stream))}`,
         detail: `${squads.find((squad) => squad.id === stream.squadId)?.name ?? 'Work stream'} · ${stream.status === 'queued' ? 'Queued' : 'Active'}`,
         kind: 'Work stream' as const,
         keywords: stream.id,

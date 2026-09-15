@@ -577,7 +577,7 @@ test('PR and direct-merge delivery require independently fetched merge evidence'
         const id = await create('active', definition)
         const [assignment] = await messages(id)
         expect(assignment!.content).not.toContain('Delivery policy:')
-        expect(assignment!.content).toContain(`tau workstream advance ${id}`)
+        expect(assignment!.content).toContain(`tau workstream advance ${(await WorkStream.mustFind(id)).number}`)
         await advance(id, 'completed')
         await advance(id, 'approved')
         await db

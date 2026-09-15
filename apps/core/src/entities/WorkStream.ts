@@ -360,6 +360,7 @@ function withTerminalCompletion(
 
 export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput> implements WorkStreamRow {
   // Row fields
+  declare number: number
   declare id: string
   declare squadId: string
   declare title: string
@@ -498,6 +499,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     return {
       id: workStreams.id,
       autoCleanupWorktree: workStreams.autoCleanupWorktree,
+      number: workStreams.number,
       squadId: workStreams.squadId,
       title: workStreams.title,
       description: workStreams.description,
@@ -564,6 +566,20 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
    * Find a work stream by ID (supports prefix matching).
    */
   static async find(id: string): Promise<WorkStream | null> {
+    id = String(id).trim().toLowerCase()
+    const numeric = id.replace(/^#/, '')
+    if (/^[1-9]\d*$/.test(numeric) && Number(numeric) <= 2147483647) {
+      const [row] = await db
+        .select(WorkStream.selectColumns)
+        .from(workStreams)
+        .where(eq(workStreams.number, Number(numeric)))
+        .limit(1)
+      if (row) return (await WorkStream.hydrateDependedOnBy([new WorkStream(row)]))[0]
+      if (id.startsWith('#')) return null
+    }
+    const template = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+    if (!id || id.length > 36 || [...id].some((c, i) => (template[i] === '-' ? c !== '-' : !/[0-9a-f]/.test(c))))
+      return null
     const rows = await db
       .select(WorkStream.selectColumns)
       .from(workStreams)
@@ -589,6 +605,11 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
    * Create a new work stream.
    */
   static async create(input: CreateWorkStreamInput): Promise<WorkStream> {
+    if (input.dependsOn)
+      input = {
+        ...input,
+        dependsOn: await Promise.all(input.dependsOn.map(async (id) => (await WorkStream.mustFind(id)).id)),
+      }
     // Creation has one path. Stored legacy streams retain their existing lifecycle.
     if (
       input.agents !== undefined ||
@@ -933,6 +954,11 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       throw new Error('Cannot continue or assign a canceled work stream')
     }
 
+    if (input.dependsOn)
+      input = {
+        ...input,
+        dependsOn: await Promise.all(input.dependsOn.map(async (id) => (await WorkStream.mustFind(id)).id)),
+      }
     // dependsOn writes must keep the squad's dependency graph a DAG (cycles
     // would break effective-priority computation and admission eligibility).
     if (input.dependsOn !== undefined && input.dependsOn.length > 0) {
@@ -2276,6 +2302,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       id: this.id,
       autoCleanupWorktree: this.autoCleanupWorktree,
       worktreeCleanup: this.worktreeCleanup,
+      number: this.number,
       squadId: this.squadId,
       title: this.title,
       description: this.description,

@@ -1144,11 +1144,17 @@ export const memoryAccessAudit = pgTable(
   ]
 )
 
+export const workStreamNumberSequence = pgSequence('work_stream_number_seq', { maxValue: 2147483647 })
+
 // Work Streams table
 export const workStreams = pgTable(
   'work_streams',
   {
     id: uuid('id').primaryKey().defaultRandom(),
+    number: integer('number')
+      .notNull()
+      .default(sql`nextval('work_stream_number_seq')`)
+      .unique(),
     squadId: uuid('squad_id')
       .notNull()
       .references(() => squads.id, { onDelete: 'cascade' }),
@@ -1745,6 +1751,7 @@ export const userNotificationPreferences = pgTable('user_notification_preference
     .primaryKey()
     .references(() => users.id, { onDelete: 'cascade' }),
   pushEnabled: boolean('push_enabled').notNull().default(true),
+  showPreviews: boolean('show_previews').notNull().default(true),
   // Event types the user has muted (no push), e.g. ['inbox.messageReceived'].
   mutedEvents: jsonb('muted_events').notNull().default([]),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),

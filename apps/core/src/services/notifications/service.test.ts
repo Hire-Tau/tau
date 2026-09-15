@@ -28,6 +28,8 @@ function installApnsEnv(environment: 'production' | 'sandbox' = 'production') {
 }
 
 type TestEvent = {
+  type?: string
+  workStreamNumber?: number
   title: string
   body: string
   url?: string
@@ -627,7 +629,21 @@ describe('NotificationService', () => {
           messageId: 'm1',
           actionId: 'agent-question:q1',
         })
+        await UserNotificationPreferences.upsert(user.id, { showPreviews: false })
+        await callSendWebPush(service, [user.id], {
+          type: 'agent-question.created',
+          workStreamNumber: 42,
+          title: 'Private work title',
+          body: 'Private question text',
+          url: '/squads/s1/work?ws=42',
+        })
+        expect(JSON.parse(sendSpy.mock.calls[1][1] as string)).toMatchObject({
+          title: 'Work #42 needs your answer',
+          body: 'Open Tau to see details.',
+          workStreamId: '42',
+        })
       } finally {
+        await UserNotificationPreferences.upsert(user.id, { showPreviews: true })
         sendSpy.mockRestore()
       }
     })

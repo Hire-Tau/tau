@@ -14,6 +14,7 @@ export const entitySearchQuerySchema = z.object({
 })
 export type EntitySearchQuery = z.infer<typeof entitySearchQuerySchema>
 export interface EntitySearchResult {
+  number?: number | null
   kind: z.infer<typeof searchEntityKindSchema>
   id: string
   label: string

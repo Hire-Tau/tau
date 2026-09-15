@@ -403,7 +403,7 @@ describe('work-stream notifications', () => {
     const rows = await db
       .select()
       .from(inbox)
-      .where(eq(inbox.subject, `Work stream unblocked: ${workStream.title}`))
+      .where(eq(inbox.subject, `Work stream unblocked: #${workStream.number} · ${workStream.title}`))
     expect(rows).toHaveLength(1)
   })
   // ── Self-notification suppression ──────────────────────────────────────

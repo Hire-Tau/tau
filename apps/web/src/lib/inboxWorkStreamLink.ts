@@ -9,11 +9,12 @@ export function getWorkStreamLink(metadata: Record<string, unknown>): string | n
   const actionId = metadata.actionId
   if (typeof actionId === 'string' && actionId.trim()) return `/actions/${encodeURIComponent(actionId)}`
 
-  const workStreamId = metadata.workStreamId
+  const workStreamId =
+    typeof metadata.workStreamNumber === 'number' ? String(metadata.workStreamNumber) : metadata.workStreamId
   const squadId = metadata.squadId
 
   if (typeof workStreamId !== 'string' || !workStreamId) return null
   if (typeof squadId !== 'string' || !squadId) return null
 
-  return `/squads/${squadId}/work?ws=${workStreamId}`
+  return `/squads/${squadId}/work?ws=${encodeURIComponent(workStreamId)}`
 }

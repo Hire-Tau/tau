@@ -34,8 +34,12 @@ notificationConfigRouter.put('/me', async (c) => {
   const identity = await resolveActingUser(c.get('identity'))
   if (!identity) return c.json({ error: 'Unauthorized' }, 401)
   c.set('authzChecked', true)
-  const body = await parseOptionalJsonObjectBody(c, {} as { pushEnabled?: unknown; mutedEvents?: unknown })
+  const body = await parseOptionalJsonObjectBody(
+    c,
+    {} as { showPreviews?: unknown; pushEnabled?: unknown; mutedEvents?: unknown }
+  )
   const prefs = await UserNotificationPreferences.upsert(identity.userId, {
+    showPreviews: typeof body.showPreviews === 'boolean' ? body.showPreviews : undefined,
     pushEnabled: typeof body.pushEnabled === 'boolean' ? body.pushEnabled : undefined,
     mutedEvents: Array.isArray(body.mutedEvents) ? (body.mutedEvents as string[]) : undefined,
   })

@@ -21,7 +21,8 @@ export function NotificationPreferences() {
   const { data, isLoading } = useQuery(queries.notificationConfig.mine())
 
   const mutation = useMutation({
-    mutationFn: (input: { pushEnabled?: boolean; mutedEvents?: string[] }) => updateMyNotificationPrefs(input),
+    mutationFn: (input: { showPreviews?: boolean; pushEnabled?: boolean; mutedEvents?: string[] }) =>
+      updateMyNotificationPrefs(input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.notificationConfig.mine() }),
   })
 
@@ -63,6 +64,21 @@ export function NotificationPreferences() {
           {pushEnabled ? 'Disable' : 'Enable'}
         </button>
       </div>
+
+      <label className="flex items-center justify-between gap-3 mt-5 text-sm">
+        <span>
+          Show work titles and message previews
+          <span className="block text-muted">
+            On by default. Turn off to hide titles and message text in device alerts.
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          checked={data.showPreviews ?? true}
+          disabled={mutation.isPending}
+          onChange={(event) => mutation.mutate({ showPreviews: event.target.checked })}
+        />
+      </label>
 
       {pushEnabled && data.pushEvents.length > 0 && (
         <div className="mt-5">

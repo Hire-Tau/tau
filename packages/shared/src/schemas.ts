@@ -21,7 +21,7 @@ export const executionStatusSchema = z.enum([
 
 export const spawnSquadAgentSchema = z.object({
   agentTypeId: z.string().min(1),
-  workStreamId: z.string().uuid().optional(),
+  workStreamId: z.string().min(1).max(36).optional(),
   model: z.string().trim().min(1).optional(),
 })
 

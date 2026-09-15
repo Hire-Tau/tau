@@ -1,4 +1,5 @@
 import { WorktreeCleanupSettings } from './WorktreeCleanupSettings'
+import { workStreamTitle } from '@tau/shared'
 import { WORK_STREAM_STATUS_ROLE } from '@tau/shared'
 import { webStatus } from '../lib/statusPresentation'
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
@@ -337,7 +338,7 @@ export function WorkStreamDetailModal({
     <Modal
       isOpen
       onClose={onClose}
-      title={workStream.title}
+      title={workStreamTitle(workStream)}
       headerExtra={headerExtra}
       headerActions={
         <button

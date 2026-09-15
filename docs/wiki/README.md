@@ -10,22 +10,22 @@ For setup, see [`docs/wiki/setup.md`](setup.md). For project conventions (Bun, m
 
 ## Monorepo Map
 
-| Path                    | Purpose                                                                                                           |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `apps/core/`            | API server + background worker (Hono + Bun). DB schema, entities, services, tools, routes.                        |
-| `apps/web/`             | Frontend (Vite + React + Tailwind + React Query).                                                                 |
-| `apps/cli/`             | `tau` CLI (Commander.js). Mirrors the REST API and is installed in sandboxes.                                     |
-| `packages/shared/`      | Shared TypeScript types between core, web, cli.                                                                   |
-| `packages/client-core/` | Transport-agnostic API client (resources, SSE/WS, query keys) shared by web + mobile.                             |
-| `packages/k8s-sandbox/` | The sandbox server, used by both the `k8s` runtime (in pods) and the `vm` runtime (in boxes).                     |
+| Path                    | Purpose                                                                                                             |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `apps/core/`            | API server + background worker (Hono + Bun). DB schema, entities, services, tools, routes.                          |
+| `apps/web/`             | Frontend (Vite + React + Tailwind + React Query).                                                                   |
+| `apps/cli/`             | `tau` CLI (Commander.js). Mirrors the REST API and is installed in sandboxes.                                       |
+| `packages/shared/`      | Shared TypeScript types between core, web, cli.                                                                     |
+| `packages/client-core/` | Transport-agnostic API client (resources, SSE/WS, query keys) shared by web + mobile.                               |
+| `packages/k8s-sandbox/` | The sandbox server, used by both the `k8s` runtime (in pods) and the `vm` runtime (in boxes).                       |
 | `config/`               | YAML configs synced into the DB on startup (agent types, squad presets, skills, channels, notifications, webhooks). |
-| `apps/docs/`            | Curated user documentation site (Astro Starlight), separate from repository reference material.                   |
-| `docs/wiki/`            | Maintained developer explanations and operating guidance (this directory).                                        |
-| `docs/backlog/`         | Deferred work, proposals and unresolved acceptance questions.                                                     |
-| `docs/history/`         | One-off plans, designs, specifications and delivery records.                                                      |
-| `scripts/`              | Build, test, and operational scripts.                                                                             |
-| `external/`             | External vendor code and references.                                                                              |
-| `docker/`, `k8s/`       | Deployment manifests.                                                                                             |
+| `apps/docs/`            | Curated user documentation site (Astro Starlight), separate from repository reference material.                     |
+| `docs/wiki/`            | Maintained developer explanations and operating guidance (this directory).                                          |
+| `docs/backlog/`         | Deferred work, proposals and unresolved acceptance questions.                                                       |
+| `docs/history/`         | One-off plans, designs, specifications and delivery records.                                                        |
+| `scripts/`              | Build, test, and operational scripts.                                                                               |
+| `external/`             | External vendor code and references.                                                                                |
+| `docker/`, `k8s/`       | Deployment manifests.                                                                                               |
 
 ## Core Primitives
 
@@ -68,6 +68,8 @@ A **work stream** is one deliverable. Its selected workflow controls the flow st
 
 Stored status is `queued | active | done | canceled`. An `active` stream holds a squad concurrency slot; `queued` and terminal streams do not. Dependency, question, review and manual waits are separate typed records. Display states such as blocked or in review are derived from those waits, not additional stored lifecycle statuses. Legacy status spellings are compatibility inputs, not the current data model.
 
+Work streams have instance-wide [numeric references](work-streams.md) for public labels, links, and lookups.
+
 Work streams carry bound agents (`agentIds`), dependencies (`dependsOn`), files, typed waits, flow state and metadata such as PR information, GitHub issue IDs and branch/worktree paths. See [shared work-stream types](../../packages/shared/src/types.ts) and [status presentation](../../packages/shared/src/status-presentation.ts) when changing lifecycle or UI state.
 
 → CLI reference: [`cli/workstream-commands.md`](cli/workstream-commands.md)
@@ -100,13 +102,13 @@ See [Workflows, flows, and squads](workflows.md) and the shipped definitions in 
 
 Six concrete runners under `apps/core/src/entities/agent-runners/` extend the base `AgentRunner` lifecycle (session creation, event subscription, prompt dispatch, turn hooks):
 
-| Runner             | Used by                                                      |
-| ------------------ | ------------------------------------------------------------ |
-| `system-manager`   | User Assistant (user-scoped cross-squad operations)          |
-| `squad-manager`    | Per-squad manager and consultant                             |
-| `squad-worker`     | Per-squad workers (architect, engineer, reviewer, etc.)      |
-| `artifact-builder` | Artifact generation runs                                     |
-| `subagent`         | Ephemeral delegated child work                               |
+| Runner             | Used by                                                 |
+| ------------------ | ------------------------------------------------------- |
+| `system-manager`   | User Assistant (user-scoped cross-squad operations)     |
+| `squad-manager`    | Per-squad manager and consultant                        |
+| `squad-worker`     | Per-squad workers (architect, engineer, reviewer, etc.) |
+| `artifact-builder` | Artifact generation runs                                |
+| `subagent`         | Ephemeral delegated child work                          |
 
 Each subclass handles its context-specific setup, prompt building, and completion. Shared infrastructure (streaming buffer, session state, turn hooks, skill materialization) lives in `apps/core/src/services/`.
 
@@ -116,15 +118,15 @@ Each subclass handles its context-specific setup, prompt building, and completio
 
 YAML files in `config/` define the available building blocks and are synced into the DB by `services/config-sync/` on startup.
 
-| Directory                      | What it defines                                                                              |
-| ------------------------------ | -------------------------------------------------------------------------------------------- |
-| `config/agent-types/`          | Agent type templates: system prompt, tools, model, skills, extensions                        |
-| `config/agent-types/shared/` | Shared prompt fragments (e.g. `rules`) included by `includes:` in agent types                |
-| `config/squad-presets/`          | Squad preset templates: manager context, workflow recommendations, initial members and schedules |
-| `config/skills/`               | Reusable skill bundles (`SKILL.md` + support files) materialized into sandboxes              |
-| `config/channels/`             | Channel provider templates (Discord, Slack, Telegram)                                        |
-| `config/notifications/`        | Notification routing templates                                                               |
-| `config/webhooks/`             | Inbound webhook handlers (GitHub, Linear)                                                    |
+| Directory                    | What it defines                                                                                  |
+| ---------------------------- | ------------------------------------------------------------------------------------------------ |
+| `config/agent-types/`        | Agent type templates: system prompt, tools, model, skills, extensions                            |
+| `config/agent-types/shared/` | Shared prompt fragments (e.g. `rules`) included by `includes:` in agent types                    |
+| `config/squad-presets/`      | Squad preset templates: manager context, workflow recommendations, initial members and schedules |
+| `config/skills/`             | Reusable skill bundles (`SKILL.md` + support files) materialized into sandboxes                  |
+| `config/channels/`           | Channel provider templates (Discord, Slack, Telegram)                                            |
+| `config/notifications/`      | Notification routing templates                                                                   |
+| `config/webhooks/`           | Inbound webhook handlers (GitHub, Linear)                                                        |
 
 Template-based entries can be customized in the UI but not deleted — only disabled.
 
@@ -138,7 +140,7 @@ Template-based entries can be customized in the UI but not deleted — only disa
 | Developing tau itself (scripts, tests, k3d, signing)      | [`development.md`](development.md)                                                                                                                                    |
 | `.env`, environment variables, API auth                   | [`configuration.md`](configuration.md)                                                                                                                                |
 | Agent execution, the worker loop                          | [`agents-and-executions.md`](agents-and-executions.md)                                                                                                                |
-| Squad/work stream concepts and CLI                        | [`cli/squad-system-overview.md`](cli/squad-system-overview.md), [CLI index](cli/README.md), [workflows](workflows.md)                                             |
+| Squad/work stream concepts and CLI                        | [`cli/squad-system-overview.md`](cli/squad-system-overview.md), [CLI index](cli/README.md), [workflows](workflows.md)                                                 |
 | Database schema or migrations                             | [`database.md`](database.md)                                                                                                                                          |
 | Cross-process events, WebSocket bridge                    | [`event-emitter.md`](event-emitter.md)                                                                                                                                |
 | External chat integrations (Discord etc.)                 | [`channels.md`](channels.md)                                                                                                                                          |

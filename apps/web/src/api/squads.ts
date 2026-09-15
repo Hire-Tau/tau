@@ -254,11 +254,13 @@ export async function listDoneWorkStreams(
 }
 
 export async function getWorkStream(id: string): Promise<WorkStream> {
-  return apiFetch<WorkStream>(`/workstreams/${id}`)
+  return apiFetch<WorkStream>(`/workstreams/${encodeURIComponent(id)}`)
 }
 
 export async function getWorkStreamMetrics(id: string): Promise<WorkStreamMetrics | null> {
-  const result = await apiFetch<WorkStream & { metrics: WorkStreamMetrics | null }>(`/workstreams/${id}?metrics=true`)
+  const result = await apiFetch<WorkStream & { metrics: WorkStreamMetrics | null }>(
+    `/workstreams/${encodeURIComponent(id)}?metrics=true`
+  )
   return result.metrics
 }
 
@@ -268,7 +270,7 @@ export interface WorkStreamSubscription {
 }
 
 export async function getWorkStreamSubscription(id: string): Promise<WorkStreamSubscription> {
-  return apiFetch<WorkStreamSubscription>(`/workstreams/${id}/subscription`)
+  return apiFetch<WorkStreamSubscription>(`/workstreams/${encodeURIComponent(id)}/subscription`)
 }
 
 export async function getSquadSubscription(id: string): Promise<WorkStreamSubscription> {
@@ -284,11 +286,11 @@ export async function unsubscribeSquad(id: string): Promise<WorkStreamSubscripti
 }
 
 export async function subscribeWorkStream(id: string): Promise<WorkStreamSubscription> {
-  return apiFetch<WorkStreamSubscription>(`/workstreams/${id}/subscribe`, { method: 'POST' })
+  return apiFetch<WorkStreamSubscription>(`/workstreams/${encodeURIComponent(id)}/subscribe`, { method: 'POST' })
 }
 
 export async function unsubscribeWorkStream(id: string): Promise<WorkStreamSubscription> {
-  return apiFetch<WorkStreamSubscription>(`/workstreams/${id}/subscribe`, { method: 'DELETE' })
+  return apiFetch<WorkStreamSubscription>(`/workstreams/${encodeURIComponent(id)}/subscribe`, { method: 'DELETE' })
 }
 
 export const resolveWorkStreamWait = client.squads.resolveWorkStreamWait

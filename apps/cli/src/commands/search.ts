@@ -22,7 +22,10 @@ export function registerSearchCommands(program: Command): void {
         if (input.kind) params.set('kind', input.kind)
         if (input.squadId) params.set('squadId', input.squadId)
         const { results } = await apiGet<EntitySearchResponse>(`/api/search?${params}`)
-        outputTable(results, ['kind', 'id', 'label', 'squadName', 'status'])
+        outputTable(
+          results.map((row) => ({ ...row, id: row.kind === 'work_stream' && row.number ? `#${row.number}` : row.id })),
+          ['kind', 'id', 'label', 'squadName', 'status']
+        )
       } catch (error) {
         outputError(error as Error)
       }

@@ -13,10 +13,16 @@ export const relayPairingSchema = z
     environment: z.enum(['production', 'sandbox']),
   })
   .strict()
-// No title/body, arbitrary aps keys or caller-chosen origin/URL. Generic alerts
-// open an existing app pairing; data is fetched from that Core after opening.
+// No arbitrary aps keys or caller-chosen origin/URL. Content previews are opt-in;
+// otherwise only event type and a numeric work reference describe the update.
 export const relayRoutingSchema = z
   .object({
+    eventType: z.enum(['question', 'review', 'blocked', 'done', 'canceled', 'created', 'message', 'update']).optional(),
+    workStreamNumber: z.number().int().positive().max(2147483647).optional(),
+    preview: z
+      .object({ title: z.string().max(200), body: z.string().max(500) })
+      .strict()
+      .optional(),
     squadId: z.string().uuid().optional(),
     agentId: z.string().uuid().optional(),
     workStreamId: z.string().uuid().optional(),
@@ -98,3 +104,46 @@ export function activationProofMessage(challenge: ActivationChallenge): string {
   ])
 }
 export type ActivationAction = z.infer<typeof activationActionSchema>
+
+/** Closed vocabulary: an instance cannot supply arbitrary text unless previews were requested. */
+export function pushEventType(
+  type: string = ''
+): 'question' | 'review' | 'blocked' | 'done' | 'canceled' | 'created' | 'message' | 'update' {
+  if (type === 'agent-question.created') return 'question'
+  if (type === 'inbox.messageReceived') return 'message'
+  if (type.startsWith('workStream.')) {
+    const event = type.slice('workStream.'.length)
+    if (event === 'review' || event === 'blocked' || event === 'done' || event === 'canceled' || event === 'created')
+      return event
+  }
+  return 'update'
+}
+export function pushAlertText(input: Pick<RelayRouting, 'eventType' | 'workStreamNumber' | 'preview'>) {
+  if (input.preview) return input.preview
+  const work = input.workStreamNumber ? `Work #${input.workStreamNumber}` : 'Tau'
+  const text: Record<NonNullable<RelayRouting['eventType']>, string> = {
+    question: 'needs your answer',
+    review: 'is ready for review',
+    blocked: 'is blocked',
+    done: 'completed',
+    canceled: 'was canceled',
+    created: 'was created',
+    message: 'has a new message',
+    update: 'has an update',
+  }
+  return {
+    title: input.workStreamNumber
+      ? `${work} ${text[input.eventType ?? 'update']}`
+      : {
+          question: 'Question needs your answer',
+          review: 'Work is ready for review',
+          blocked: 'Work is blocked',
+          done: 'Work completed',
+          canceled: 'Work canceled',
+          created: 'Work created',
+          message: 'New inbox message',
+          update: 'Tau update',
+        }[input.eventType ?? 'update'],
+    body: 'Open Tau to see details.',
+  }
+}

@@ -150,3 +150,16 @@ tau auth logout work
 Normal logout revokes its paired device and removes the local credential. If the server is unreachable, `tau auth logout work --local-only` removes the local entry without revoking the remote device; revoke it later in **Settings → Paired Devices**.
 
 For a guided first run, follow [Your first task](/start/first-task/).
+
+## Work references
+
+Use the short number shown in Tau for work-stream commands:
+
+```sh
+tau workstream get 42
+tau workstream get '#42'
+```
+
+Full UUIDs and unique UUID prefixes remain accepted. `--json` responses retain the
+UUID `id` and include `number`; `--id-only` prints the public number. In API paths,
+use `/api/workstreams/42` or encode the hash: `/api/workstreams/%2342`.

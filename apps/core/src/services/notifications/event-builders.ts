@@ -1,3 +1,6 @@
+import { workStreamTitle } from '@tau/shared'
+import { eq } from 'drizzle-orm'
+import { agentQuestionWorkStreamOrigins } from '../../db/schema'
 import type { NotificationEvent } from '../../channels/provider'
 import { WorkStream } from '../../entities/WorkStream'
 import { Squad } from '../../entities/Squad'
@@ -70,6 +73,12 @@ export const eventBuilders: Record<string, EventBuilder> = {
     const agent = await Agent.find(question.agentId)
     if (!agent) return null
     const squad = question.squadId ? await Squad.find(question.squadId) : null
+    const origins = await db
+      .select({ id: agentQuestionWorkStreamOrigins.workStreamId })
+      .from(agentQuestionWorkStreamOrigins)
+      .where(eq(agentQuestionWorkStreamOrigins.questionId, questionId))
+      .limit(2)
+    const work = origins.length === 1 ? await WorkStream.find(origins[0]!.id) : null
     const agentLabel = (agent.metadata?.name as string | undefined) || agent.agentTypeId
     const questionText = question.questionData.questions
       .map((item) => item.question.trim())
@@ -79,6 +88,8 @@ export const eventBuilders: Record<string, EventBuilder> = {
 
     return {
       type: 'agent-question.created',
+      workStreamId: work?.id,
+      workStreamNumber: work?.number,
       actionId: `agent-question:${question.id}`,
       questionId: question.id,
       agentId: agent.id,
@@ -107,10 +118,11 @@ export const eventBuilders: Record<string, EventBuilder> = {
       squadId: squad.id,
       squadName: squad.name,
       workStreamId: ws.id,
+      workStreamNumber: ws.number,
       ...(target ? { waitId: target.waitId, actionId: target.actionId } : {}),
-      title: `🚫 Blocked: ${ws.title}`,
+      title: `🚫 Blocked: ${workStreamTitle(ws)}`,
       body: (target ? target.message : await manualWaitMessage(ws.id)) || 'Agent needs input to continue',
-      url: buildUrl(`/squads/${squad.id}/work?ws=${ws.id}`),
+      url: buildUrl(`/squads/${squad.id}/work?ws=${ws.number}`),
       timestamp: new Date(),
     }
   },
@@ -131,10 +143,11 @@ export const eventBuilders: Record<string, EventBuilder> = {
       squadId: squad.id,
       squadName: squad.name,
       workStreamId: ws.id,
+      workStreamNumber: ws.number,
       ...(target ? { waitId: target.waitId, actionId: target.actionId } : {}),
-      title: `👀 Ready for review: ${ws.title}`,
+      title: `👀 Ready for review: ${workStreamTitle(ws)}`,
       body: target?.message || ws.handoffMessage || ws.description?.slice(0, 200) || 'No description',
-      url: buildUrl(`/squads/${squad.id}/work?ws=${ws.id}`),
+      url: buildUrl(`/squads/${squad.id}/work?ws=${ws.number}`),
       timestamp: new Date(),
     }
   },
@@ -154,9 +167,10 @@ export const eventBuilders: Record<string, EventBuilder> = {
       squadId: squad.id,
       squadName: squad.name,
       workStreamId: ws.id,
-      title: `✅ Completed: ${ws.title}`,
+      workStreamNumber: ws.number,
+      title: `✅ Completed: ${workStreamTitle(ws)}`,
       body: ws.description?.slice(0, 200) || 'No description',
-      url: buildUrl(`/squads/${squad.id}/work?ws=${ws.id}`),
+      url: buildUrl(`/squads/${squad.id}/work?ws=${ws.number}`),
       timestamp: new Date(),
     }
   },
@@ -176,9 +190,10 @@ export const eventBuilders: Record<string, EventBuilder> = {
       squadId: squad.id,
       squadName: squad.name,
       workStreamId: ws.id,
-      title: `⏹️ Canceled: ${ws.title}`,
+      workStreamNumber: ws.number,
+      title: `⏹️ Canceled: ${workStreamTitle(ws)}`,
       body: 'Work stream was canceled; active assigned executions were asked to stop where possible.',
-      url: buildUrl(`/squads/${squad.id}/work?ws=${ws.id}`),
+      url: buildUrl(`/squads/${squad.id}/work?ws=${ws.number}`),
       timestamp: new Date(),
     }
   },
@@ -198,9 +213,10 @@ export const eventBuilders: Record<string, EventBuilder> = {
       squadId: squad.id,
       squadName: squad.name,
       workStreamId: ws.id,
-      title: `📋 New work stream: ${ws.title}`,
+      workStreamNumber: ws.number,
+      title: `📋 New work stream: ${workStreamTitle(ws)}`,
       body: ws.description?.slice(0, 200) || 'No description',
-      url: buildUrl(`/squads/${squad.id}/work?ws=${ws.id}`),
+      url: buildUrl(`/squads/${squad.id}/work?ws=${ws.number}`),
       timestamp: new Date(),
     }
   },
@@ -220,9 +236,10 @@ export const eventBuilders: Record<string, EventBuilder> = {
       squadId: squad.id,
       squadName: squad.name,
       workStreamId: ws.id,
-      title: `📝 Updated: ${ws.title}`,
+      workStreamNumber: ws.number,
+      title: `📝 Updated: ${workStreamTitle(ws)}`,
       body: ws.description?.slice(0, 200) || 'No description',
-      url: buildUrl(`/squads/${squad.id}/work?ws=${ws.id}`),
+      url: buildUrl(`/squads/${squad.id}/work?ws=${ws.number}`),
       timestamp: new Date(),
     }
   },
@@ -256,6 +273,10 @@ export const eventBuilders: Record<string, EventBuilder> = {
 
     return {
       type: 'inbox.messageReceived',
+      notificationKind:
+        trustedString('workStreamId') && typeof trustedMetadata?.event === 'string'
+          ? `workStream.${trustedMetadata.event}`
+          : undefined,
       source: isFleetAlert ? 'fleet-alert' : undefined,
       messageId: message.id,
       workStreamId: trustedString('workStreamId'),

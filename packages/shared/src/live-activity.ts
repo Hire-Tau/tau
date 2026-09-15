@@ -1,3 +1,4 @@
+import { workStreamTitle } from './work-stream-reference'
 import { selectWorkStreamPresentationState } from './status-presentation'
 import type { WorkStream, WorkStreamDerivedState, WorkStreamStatus, WorkStreamWaitType } from './types'
 
@@ -22,6 +23,7 @@ export function workBucket(stream: WorkBucketFacts): WorkBucket {
 
 /** One row in the activity's short list. Mirrors `StreamLite` in TauWorkAttributes.swift. */
 export interface StreamLite {
+  number?: number
   id: string
   title: string
   bucket: WorkBucket
@@ -40,6 +42,7 @@ export const WIDGET_TOP_LIMIT = 8
 
 /** Safe server-owned row consumed by the native widget. */
 export interface WidgetWorkStreamSummary {
+  number?: number
   id: string
   squadId: string
   title: string
@@ -61,7 +64,7 @@ export interface WorkInterestSnapshot {
 
 type SnapshotSource = Pick<
   WorkStream,
-  'id' | 'squadId' | 'title' | 'status' | 'derivedState' | 'assigneeAgentId' | 'openWaits' | 'updatedAt'
+  'number' | 'id' | 'squadId' | 'title' | 'status' | 'derivedState' | 'assigneeAgentId' | 'openWaits' | 'updatedAt'
 >
 
 function updatedAtMs(stream: Pick<SnapshotSource, 'updatedAt'>): number {
@@ -80,7 +83,8 @@ export function compareWorkInterest(left: SnapshotSource, right: SnapshotSource)
 function toStreamLite(stream: SnapshotSource): StreamLite {
   const row: StreamLite = {
     id: stream.id,
-    title: stream.title,
+    title: workStreamTitle(stream),
+    ...(stream.number ? { number: stream.number } : {}),
     bucket: workBucket(stream),
     squadId: stream.squadId,
   }
@@ -92,7 +96,8 @@ function toWidgetSummary(stream: SnapshotSource): WidgetWorkStreamSummary {
   const row: WidgetWorkStreamSummary = {
     id: stream.id,
     squadId: stream.squadId,
-    title: stream.title,
+    title: workStreamTitle(stream),
+    ...(stream.number ? { number: stream.number } : {}),
     status: stream.status,
     openWaitTypes: stream.openWaits?.map(({ type }) => type) ?? [],
     updatedAt: new Date(stream.updatedAt).toISOString(),
