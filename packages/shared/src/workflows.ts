@@ -227,6 +227,8 @@ export const workflowDefinitionSchema = definitionShape
       const path = ['subscriptions', index]
       if (definition.completion.followChanges && subscription.id.startsWith('code-host-'))
         issue([...path, 'id'], 'The code-host- prefix is reserved for automatic change subscriptions')
+      if (definition.completion.followChanges && subscription.id.startsWith('tracked-'))
+        issue([...path, 'id'], 'The tracked- prefix is reserved for automatic tracked-resource subscriptions')
       if (subscriptionIds.has(subscription.id)) issue([...path, 'id'], 'Duplicate subscription ID')
       subscriptionIds.add(subscription.id)
       const target = subscription.deliver.to
@@ -537,7 +539,7 @@ export const workflowEventTriggerSchema = z
             (value) =>
               Object.keys(value).length <= 16 &&
               Object.keys(value).every(
-                (path) => !['completion', 'sources', 'sourceWarnings'].includes(path.split('.')[0]!)
+                (path) => !['completion', 'sources', 'sourceWarnings', 'tracked'].includes(path.split('.')[0]!)
               ),
             'Use at most 16 non-reserved metadata bindings'
           ),
