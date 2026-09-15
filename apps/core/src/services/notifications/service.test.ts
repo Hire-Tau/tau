@@ -555,6 +555,29 @@ describe('NotificationService', () => {
       }
     })
 
+    test('web push carries the collapse key as the notification tag', async () => {
+      await registerPushSubscription({
+        endpoint: 'https://push.example.com/tag',
+        p256dh: 'k',
+        auth: 'a',
+        userId: user.id,
+      })
+      const sendSpy = spyOn(webpush, 'sendNotification').mockResolvedValue({ statusCode: 201 } as any)
+      try {
+        await callSendWebPush(service, [user.id], {
+          title: 'Completed: #197 · Validate deletion',
+          body: 'Next steps: ship it',
+          collapseKey: 'ws:abc',
+          url: '/inbox',
+        })
+        expect(JSON.parse(sendSpy.mock.calls[0][1] as string)).toMatchObject({ tag: 'ws:abc', renotify: true })
+        await callSendWebPush(service, [user.id], { title: 'Plain', body: 'No key', url: '/inbox' })
+        expect(JSON.parse(sendSpy.mock.calls[1][1] as string)).not.toHaveProperty('tag')
+      } finally {
+        sendSpy.mockRestore()
+      }
+    })
+
     test('does not remove a transferred subscription after a stale 410 response', async () => {
       const endpoint = 'https://push.example.com/stale-410'
       const former = await registerPushSubscription({
@@ -878,29 +901,6 @@ describe('NotificationService', () => {
         expect(withoutPreview.subtitle).toBeUndefined()
       } finally {
         await UserNotificationPreferences.upsert(user.id, { showPreviews: true })
-        sendSpy.mockRestore()
-      }
-    })
-
-    test('web push carries the collapse key as the notification tag', async () => {
-      await registerPushSubscription({
-        endpoint: 'https://push.example.com/tag',
-        p256dh: 'k',
-        auth: 'a',
-        userId: user.id,
-      })
-      const sendSpy = spyOn(webpush, 'sendNotification').mockResolvedValue({ statusCode: 201 } as any)
-      try {
-        await callSendWebPush(service, [user.id], {
-          title: 'Completed: #197 · Validate deletion',
-          body: 'Next steps: ship it',
-          collapseKey: 'ws:abc',
-          url: '/inbox',
-        })
-        expect(JSON.parse(sendSpy.mock.calls[0][1] as string)).toMatchObject({ tag: 'ws:abc', renotify: true })
-        await callSendWebPush(service, [user.id], { title: 'Plain', body: 'No key', url: '/inbox' })
-        expect(JSON.parse(sendSpy.mock.calls[1][1] as string)).not.toHaveProperty('tag')
-      } finally {
         sendSpy.mockRestore()
       }
     })
