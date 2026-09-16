@@ -308,15 +308,15 @@ async function matchOutputEvent(event: Event) {
         )
       )
     )
-  for (const { id } of runs)
-    await db.transaction(async (tx) => {
+  for (const { id } of runs) {
+    const result = await db.transaction(async (tx) => {
       const [stream] = await tx.select().from(workStreams).where(eq(workStreams.id, id)).for('update')
       if (
         !stream ||
         !['active', 'queued'].includes(stream.status) ||
         !(await authorized(tx, event.integration, event.authority, stream.squadId))
       )
-        return
+        return false
       const [run] = await tx.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, id))
       for (const subscription of run ? codeHostingRegistry.subscriptions(run.state.definition, stream.metadata) : []) {
         const descriptor = integrationOutputRegistry.descriptor(subscription.source)
@@ -332,8 +332,19 @@ async function matchOutputEvent(event: Event) {
           .onConflictDoNothing()
       }
       // Same locked row, same pass: what the event says about a designated delivery pull request.
-      await recordDeliveryObservation(tx, stream, event)
+      return (await recordDeliveryObservation(tx, stream, event))
+        ? { workStreamId: stream.id, squadId: stream.squadId }
+        : false
     })
+    // Outside the transaction, and immediately: the watcher-facing event fires only once the
+    // state it describes has committed, and a later stream's transaction throwing must not
+    // swallow a notification for a stream whose write already committed. `recordDeliveryObservation`
+    // is idempotent on timestamp, so a lost notification here could never be recovered by a retry.
+    if (result) {
+      const { eventEmitter } = await import('../../../lib/infra/event-emitter')
+      eventEmitter.emit('workStream.updated', result)
+    }
+  }
 }
 
 async function finalizeOutputRouting(event: Event) {

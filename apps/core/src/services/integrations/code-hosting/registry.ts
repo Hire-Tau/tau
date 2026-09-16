@@ -6,6 +6,7 @@ import {
   type CodeHostReference,
   type IntegrationSubscription,
   type ResolvedTrackedResource,
+  type TrackedResourceKind,
   type WorkflowDefinition,
 } from '@tau/shared'
 
@@ -29,6 +30,28 @@ function matchValue(subscription: IntegrationSubscription, path: string) {
 }
 
 /**
+ * Whether `subscription`'s literal `match` values identify `resource`: same integration,
+ * repository compared trimmed and case-insensitively, and the resource's number compared on the
+ * kind-appropriate match path (`issue.number` or `pullRequest.number`).
+ *
+ * `matchValue` only reads a literal `value`, so a `streamMetadata`-bound match — which carries no
+ * fixed value of its own — never matches here, no matter what the stream currently binds it to.
+ */
+export function subscriptionTargetsResource(
+  subscription: IntegrationSubscription,
+  resource: { integration: string; repository: string; kind: TrackedResourceKind; number: number }
+): boolean {
+  const numberPath = resource.kind === 'issue' ? 'issue.number' : 'pullRequest.number'
+  return (
+    subscription.source.integration === resource.integration &&
+    String(matchValue(subscription, 'repository') ?? '')
+      .trim()
+      .toLowerCase() === resource.repository.trim().toLowerCase() &&
+    matchValue(subscription, numberPath) === resource.number
+  )
+}
+
+/**
  * Feedback on a delivery change request: the reserved code-host ids, plus the tracked
  * subscriptions whose identity is a pull request designated as delivery in `metadata`.
  *
@@ -40,14 +63,7 @@ function matchValue(subscription: IntegrationSubscription, path: string) {
 export function isDeliveryFeedbackSubscription(subscription: IntegrationSubscription, metadata: unknown): boolean {
   if (subscription.id.startsWith('code-host-')) return true
   if (!subscription.id.startsWith('tracked-')) return false
-  return deliveryPullRequests(metadata).some(
-    (resource) =>
-      resource.integration === subscription.source.integration &&
-      String(matchValue(subscription, 'repository') ?? '')
-        .trim()
-        .toLowerCase() === resource.repository.trim().toLowerCase() &&
-      matchValue(subscription, 'pullRequest.number') === resource.number
-  )
+  return deliveryPullRequests(metadata).some((resource) => subscriptionTargetsResource(subscription, resource))
 }
 
 export class CodeHostingRegistry {
