@@ -5,6 +5,11 @@
 # The builder constructs the notification title, body, and URL from the event data.
 # Push fans the shared notification out through browser web-push and native APNs.
 #
+# Only two events can reach the push channel: agent-question.created (recipients come from the
+# question's persisted attention audience) and inbox.messageReceived (the message's recipient).
+# Other events carry no recipient, so a `push` channel on them delivers nothing. Work-stream
+# lifecycle pushes reach people as the inbox notices sent to watchers.
+#
 # Supported events with builders:
 #   - agent-question.created
 #   - workStream.blocked, workStream.review, workStream.done
@@ -20,7 +25,7 @@ rules:
   # Work stream events - notify external channels. Blocked remains available to explicit
   # custom rules but is intentionally absent from bundled human-attention routes.
   - event: 'workStream.review'
-    channels: [push, discord, slack, telegram]
+    channels: [discord, slack, telegram]
 
   - event: 'workStream.done'
     channels: [discord, slack, telegram]
@@ -53,9 +58,9 @@ rules:
       recipientType: ['user', 'system']
     channels: [push]
 
-  # Failures - push and console
+  # Failures - console and external channels (no recipient, so no push)
   - event: 'execution.failed'
-    channels: [push, console, discord, slack, telegram]
+    channels: [console, discord, slack, telegram]
 
   # Normal lifecycle events - console only
   - event: 'execution.completed'

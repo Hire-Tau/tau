@@ -29,6 +29,8 @@ function installApnsEnv(environment: 'production' | 'sandbox' = 'production') {
 
 type TestEvent = {
   type?: string
+  notificationKind?: string
+  source?: string
   workStreamNumber?: number
   title: string
   body: string
@@ -403,6 +405,36 @@ describe('NotificationService', () => {
       }
     })
 
+    test('gates each push on the category derived from the built event, not only the raw event type', async () => {
+      const calls: Array<[string, string, string | undefined]> = []
+      const preferenceSpy = spyOn(UserNotificationPreferences, 'shouldPush').mockImplementation(
+        async (userId, eventType, category) => {
+          calls.push([userId, eventType, category])
+          return false
+        }
+      )
+      try {
+        await callSendPushNotifications(
+          service,
+          { type: 'inbox.messageReceived', notificationKind: 'workStream.done', title: 'Completed', body: 'x' },
+          { recipientType: 'user', recipientId: 'category-user', messageId: 'm1' },
+          'inbox.messageReceived'
+        )
+        await callSendPushNotifications(
+          service,
+          { type: 'inbox.messageReceived', source: 'fleet-alert', title: 'Alert', body: 'x' },
+          { recipientType: 'user', recipientId: 'category-user', messageId: 'm2' },
+          'inbox.messageReceived'
+        )
+        expect(calls).toEqual([
+          ['category-user', 'inbox.messageReceived', 'done'],
+          ['category-user', 'inbox.messageReceived', 'fleet'],
+        ])
+      } finally {
+        preferenceSpy.mockRestore()
+      }
+    })
+
     test('resolves a saved Assistant mailbox to its owner and nobody after deletion or muting', async () => {
       const { assistantConversations } = await import('../../db')
       const owner = await createTestUser({ prefix: 'notif-assistant' })
@@ -421,6 +453,16 @@ describe('NotificationService', () => {
         await db.delete(assistantConversations).where(eq(assistantConversations.id, conversationId))
         await cleanupTestRbac('notif-assistant')
       }
+    })
+
+    test('bundled rules only put the push channel on events that can resolve recipients', async () => {
+      const { join } = await import('node:path')
+      const { MONOREPO_ROOT } = await import('../../lib/paths')
+      const bundled = Bun.YAML.parse(
+        await Bun.file(join(MONOREPO_ROOT, 'config/notifications/rules.yaml')).text()
+      ) as NotificationConfig
+      const pushEvents = bundled.rules.filter((rule) => rule.channels.includes('push')).map((rule) => rule.event)
+      expect(new Set(pushEvents)).toEqual(new Set(['agent-question.created', 'inbox.messageReceived']))
     })
 
     test('routes only push-eligible Assistant updates to push', async () => {
@@ -487,7 +529,7 @@ describe('NotificationService', () => {
           'agent-question.created'
         )
 
-        expect(preferenceSpy).toHaveBeenCalledWith('muted-user', 'agent-question.created')
+        expect(preferenceSpy).toHaveBeenCalledWith('muted-user', 'agent-question.created', 'question')
         expect(webSpy).not.toHaveBeenCalled()
         expect(apnsSpy).not.toHaveBeenCalled()
       } finally {
