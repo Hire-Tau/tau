@@ -59,9 +59,10 @@ What the one-liner does, in order:
    compiled CLI never runs installer logic of its own — setup always comes from
    the source it just installed.
 
-`curl` and `git` must already be present, and `unzip` too unless bun is
-already installed (bun's installer unpacks a zip; stock Ubuntu/Debian images
-ship without it — `sudo apt install unzip`). Under `curl … | bash` the installer
+`curl` and `git` must already be present. Bun's installer also needs `unzip`,
+which stock Ubuntu/Debian images ship without: on an apt host where you are
+root or `sudo` works without a prompt, the installer adds it itself; anywhere
+else, `sudo apt install unzip` first. Under `curl … | bash` the installer
 reattaches stdin from `/dev/tty` so the runtime prompt still works; with no
 terminal at all it exits with the "no terminal and no runtime chosen" error.
 

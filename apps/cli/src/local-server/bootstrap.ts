@@ -13,6 +13,45 @@ export interface BootstrapDeps {
   env: Record<string, string | undefined>
   home: string
   log(line: string): void
+  /** Effective uid; root skips sudo when installing prerequisites. Defaults to the process's. */
+  uid?: number
+}
+
+const UNZIP_HINT = 'install it (Debian/Ubuntu: sudo apt install unzip) and re-run.'
+
+/**
+ * Bun's installer needs unzip, which stock Ubuntu and Debian images ship
+ * without. On an apt host where we can act as root — we ARE root, or sudo
+ * works without a prompt — install it rather than telling the operator to
+ * do the one command we could run ourselves. Anything else returns false and
+ * the caller keeps its "install it and re-run" message.
+ */
+async function tryInstallUnzip(deps: BootstrapDeps, env: Record<string, string | undefined>): Promise<boolean> {
+  if (!deps.which('apt-get')) return false
+  const uid = deps.uid ?? process.getuid?.() ?? -1
+  let prefix: string[] = []
+  if (uid !== 0) {
+    if (!deps.which('sudo')) return false
+    const probe = await deps.runner(['sudo', '-n', 'true'], { env })
+    if (probe.code !== 0) return false
+    prefix = ['sudo', '-n']
+  }
+  deps.log("unzip is missing (Bun's installer needs it) — installing it with apt-get")
+  const aptEnv = { ...env, DEBIAN_FRONTEND: 'noninteractive' }
+  const install = await deps.runner([...prefix, 'apt-get', 'install', '-y', '-q', 'unzip'], {
+    inherit: true,
+    env: aptEnv,
+  })
+  if (install.code !== 0) {
+    // A stale package index is the usual reason on a fresh image; refresh once.
+    await deps.runner([...prefix, 'apt-get', 'update', '-q'], { inherit: true, env: aptEnv })
+    const retry = await deps.runner([...prefix, 'apt-get', 'install', '-y', '-q', 'unzip'], {
+      inherit: true,
+      env: aptEnv,
+    })
+    if (retry.code !== 0) return false
+  }
+  return deps.which('unzip') !== null
 }
 
 export interface BootstrapOptions {
@@ -59,10 +98,8 @@ export async function bootstrap(options: BootstrapOptions, deps: BootstrapDeps):
   let bun = 'bun'
   const current = deps.which('bun') ? await deps.runner([bun, '--version'], { env }) : null
   if (current?.code !== 0 || current.stdout.trim() !== version) {
-    if (!deps.which('unzip')) {
-      throw new Error(
-        `Bun ${version} must be installed and its installer needs unzip — install it (Debian/Ubuntu: sudo apt install unzip) and re-run.`
-      )
+    if (!deps.which('unzip') && !(await tryInstallUnzip(deps, env))) {
+      throw new Error(`Bun ${version} must be installed and its installer needs unzip — ${UNZIP_HINT}`)
     }
     for (const command of ['curl', 'bash']) {
       if (!deps.which(command))

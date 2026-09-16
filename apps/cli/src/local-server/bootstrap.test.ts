@@ -192,7 +192,10 @@ describe('bootstrap', () => {
 
   it('requires unzip only when the required Bun version must be installed', async () => {
     const root = checkout('1.3.8')
-    const missingBoth = deps({ which: (cmd) => (cmd === 'bun' || cmd === 'unzip' ? null : `/usr/bin/${cmd}`) })
+    // No apt-get on this host: nothing to try, so the operator gets the hint.
+    const missingBoth = deps({
+      which: (cmd) => (cmd === 'bun' || cmd === 'unzip' || cmd === 'apt-get' ? null : `/usr/bin/${cmd}`),
+    })
     await expect(bootstrap({ root, repo: 'x', ref: 'main', setupArgs: [] }, missingBoth.d)).rejects.toThrow(
       /unzip.*apt install unzip/
     )
@@ -200,6 +203,73 @@ describe('bootstrap', () => {
     const bunPresent = deps({ which: (cmd) => (cmd === 'unzip' ? null : `/usr/bin/${cmd}`) })
     await bootstrap({ root, repo: 'x', ref: 'main', setupArgs: [] }, bunPresent.d)
     expect(joined(bunPresent.calls)[0]).toBe('bun --version')
+  })
+  it('installs unzip itself on an apt host where sudo works without a prompt', async () => {
+    const root = checkout('1.3.8')
+    let unzipInstalled = false
+    const rec = recordingRunner({ [`${join(tmp, '.bun', 'bin', 'bun')} --version`]: { stdout: '1.3.8\n' } })
+    const lines: string[] = []
+    const d: BootstrapDeps = {
+      runner: async (command, options) => {
+        const r = await rec.runner(command, options)
+        if (command.join(' ') === 'sudo -n apt-get install -y -q unzip') unzipInstalled = true
+        return r
+      },
+      which: (cmd) => {
+        if (cmd === 'bun') return null
+        if (cmd === 'unzip') return unzipInstalled ? '/usr/bin/unzip' : null
+        return ['git', 'curl', 'bash', 'apt-get', 'sudo'].includes(cmd) ? `/usr/bin/${cmd}` : null
+      },
+      env: {},
+      home: tmp,
+      log: (l) => lines.push(l),
+      uid: 1000,
+    }
+    await bootstrap({ root, repo: 'x', ref: 'main', setupArgs: [] }, d)
+    expect(joined(rec.calls).slice(0, 2)).toEqual(['sudo -n true', 'sudo -n apt-get install -y -q unzip'])
+    expect(rec.calls[1].options.env?.DEBIAN_FRONTEND).toBe('noninteractive')
+    expect(lines.some((l) => l.includes('installing it with apt-get'))).toBe(true)
+    // …and then carries on to the Bun install.
+    expect(joined(rec.calls).some((c) => c.includes('bun.sh/install'))).toBe(true)
+  })
+  it('skips sudo for the unzip install when already root', async () => {
+    const root = checkout('1.3.8')
+    let unzipInstalled = false
+    const rec = recordingRunner({ [`${join(tmp, '.bun', 'bin', 'bun')} --version`]: { stdout: '1.3.8\n' } })
+    const d: BootstrapDeps = {
+      runner: async (command, options) => {
+        const r = await rec.runner(command, options)
+        if (command.join(' ') === 'apt-get install -y -q unzip') unzipInstalled = true
+        return r
+      },
+      which: (cmd) =>
+        cmd === 'bun' ? null : cmd === 'unzip' ? (unzipInstalled ? '/usr/bin/unzip' : null) : `/usr/bin/${cmd}`,
+      env: {},
+      home: tmp,
+      log: () => {},
+      uid: 0,
+    }
+    await bootstrap({ root, repo: 'x', ref: 'main', setupArgs: [] }, d)
+    expect(joined(rec.calls)[0]).toBe('apt-get install -y -q unzip')
+  })
+  it('keeps the hint when sudo would prompt or apt cannot install unzip', async () => {
+    const root = checkout('1.3.8')
+    const prompting = deps({
+      which: (cmd) => (cmd === 'bun' || cmd === 'unzip' ? null : `/usr/bin/${cmd}`),
+      uid: 1000,
+      runner: async (command) => ({ code: command.join(' ') === 'sudo -n true' ? 1 : 0, stdout: '', stderr: '' }),
+    })
+    await expect(bootstrap({ root, repo: 'x', ref: 'main', setupArgs: [] }, prompting.d)).rejects.toThrow(
+      /apt install unzip/
+    )
+    const failing = deps({
+      which: (cmd) => (cmd === 'bun' || cmd === 'unzip' ? null : `/usr/bin/${cmd}`),
+      uid: 1000,
+      runner: async (command) => ({ code: command.includes('install') ? 100 : 0, stdout: '', stderr: '' }),
+    })
+    await expect(bootstrap({ root, repo: 'x', ref: 'main', setupArgs: [] }, failing.d)).rejects.toThrow(
+      /apt install unzip/
+    )
   })
   it('requires git', async () => {
     const { d } = deps({ which: (cmd) => (cmd === 'git' ? null : `/usr/bin/${cmd}`) })
