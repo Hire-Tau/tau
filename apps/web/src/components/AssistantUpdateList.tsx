@@ -191,9 +191,7 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
             )}
           />
           <h3 className="font-medium">Updates</h3>
-          <span className="text-muted">
-            {unread > 0 ? `${unread} unread` : `${props.updates.length}${props.hasMore ? '+' : ''}`}
-          </span>
+          <span className="text-muted">{`${unread} unread`}</span>
         </button>
         {ackError && (
           <span role="status" className="text-muted">
