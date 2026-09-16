@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from 'node:util'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import {
@@ -130,6 +131,20 @@ export function parseTrackedMetadata(metadata: Record<string, unknown>): Tracked
   return parsed
 }
 
+/** The `tracked` entries already stored, by identity. First entry wins, like `mergeTracked`. */
+function storedTrackedEntries(previous: unknown): Map<string, TrackedResource> {
+  const stored = new Map<string, TrackedResource>()
+  const raw = previous && typeof previous === 'object' ? (previous as Record<string, unknown>).tracked : undefined
+  if (!Array.isArray(raw)) return stored
+  for (const entry of raw) {
+    const parsed = trackedResourceSchema.safeParse(entry)
+    if (!parsed.success) continue
+    const key = trackedResourceKey(parsed.data)
+    if (!stored.has(key)) stored.set(key, parsed.data)
+  }
+  return stored
+}
+
 /**
  * Validate every `metadata.tracked` entry and authorize the ones this write introduces.
  * Entries already present in `previous` keep their access: they were authorized when added.
@@ -144,35 +159,43 @@ export async function validateTrackedMetadata(
 ): Promise<void> {
   const parsed = parseTrackedMetadata(metadata)
   if (!parsed) return
+  // Access carries over from anything already resolvable, including the delivery PR and legacy issue.
   const previousKeys = new Set(resolveTrackedResources(previous).map((resource) => resource.key))
+  // `origin` carries over only from a stored `tracked` entry: the delivery PR and legacy issue
+  // resolve without one, so re-submitting them counts as introducing an origin.
+  const stored = storedTrackedEntries(previous)
   for (const [index, resource] of parsed.entries()) {
-    if (previousKeys.has(trackedResourceKey(resource))) continue
-    // `origin` is the server's record of the event it observed; a client cannot claim one.
-    if (resource.origin && resource.origin.eventId !== options?.allowOriginEventId)
-      throw new TrackedResourceError(`metadata.tracked[${index}].origin is server-managed`, 400)
+    const key = trackedResourceKey(resource)
+    // `origin` is the server's record of the event it observed. A client may keep one exactly as
+    // stored; it can never add, rewrite, or drop one, whether or not the identity already exists.
+    const storedEntry = stored.get(key)
+    const forged = storedEntry
+      ? !isDeepStrictEqual(resource.origin, storedEntry.origin)
+      : !!resource.origin && resource.origin.eventId !== options?.allowOriginEventId
+    if (forged) throw new TrackedResourceError(`metadata.tracked[${index}].origin is server-managed`, 400)
+    if (previousKeys.has(key)) continue
     await authorizeTrackedResource(squadId, resource)
   }
 }
 
-/** Pure: dedupe by identity, keep order, stamp `addedAt` only on entries that lack it. */
-export function mergeTracked(existing: unknown, additions: TrackedResource[]): TrackedResource[] {
+/**
+ * Pure: dedupe by identity, keep order, stamp `addedAt` only on entries that lack it.
+ * The FIRST list wins a collision, so callers put the entry they trust first.
+ */
+export function mergeTracked(existing: unknown, additions: unknown): TrackedResource[] {
   const addedAt = new Date().toISOString()
   const merged: TrackedResource[] = []
   const seen = new Set<string>()
-  const push = (entry: TrackedResource) => {
-    const key = trackedResourceKey(entry)
-    if (seen.has(key)) return
-    seen.add(key)
-    merged.push(entry.addedAt ? entry : { ...entry, addedAt })
-  }
-  if (Array.isArray(existing))
-    for (const entry of existing) {
+  for (const list of [existing, additions]) {
+    if (!Array.isArray(list)) continue
+    for (const entry of list) {
       const parsed = trackedResourceSchema.safeParse(entry)
-      if (parsed.success) push(parsed.data)
+      if (!parsed.success) continue
+      const key = trackedResourceKey(parsed.data)
+      if (seen.has(key)) continue
+      seen.add(key)
+      merged.push(parsed.data.addedAt ? parsed.data : { ...parsed.data, addedAt })
     }
-  for (const entry of additions) {
-    const parsed = trackedResourceSchema.safeParse(entry)
-    if (parsed.success) push(parsed.data)
   }
   return merged
 }

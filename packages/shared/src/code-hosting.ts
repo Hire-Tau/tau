@@ -65,7 +65,13 @@ export const trackedResourceSchema = z
     kind: z.enum(TRACKED_RESOURCE_KINDS),
     number: z.number().int().positive().safe(),
     connectionId: z.string().uuid().optional(),
-    url: z.string().url().max(2000).optional(),
+    // Only web links: a `javascript:`/`data:` value would otherwise render as a clickable link.
+    url: z
+      .string()
+      .url()
+      .regex(/^https?:\/\//i)
+      .max(2000)
+      .optional(),
     addedAt: z.string().max(64).optional(),
     origin: trackedResourceOriginSchema.optional(),
   })

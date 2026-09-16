@@ -821,9 +821,11 @@ export const workStreamsRouter = new Hono()
       // Identity comes from the event; access still comes from the squad's own connection.
       if (input.integrationEventId) {
         const tracked = await resolveEventTrackedResource(input.integrationEventId, input.squadId)
+        // The server-resolved entry goes FIRST: a client echoing the same identity without the
+        // origin must not shadow it, or a replay of this event would create a second stream.
         input.metadata = {
           ...input.metadata,
-          tracked: mergeTracked(input.metadata?.tracked, [tracked]),
+          tracked: mergeTracked([tracked], input.metadata?.tracked),
         }
       }
       const stream = await WorkStream.create({ ...input, requestingUserId, creatorAgentId })

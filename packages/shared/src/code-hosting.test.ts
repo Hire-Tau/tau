@@ -88,6 +88,16 @@ describe('tracked resources', () => {
     expect(trackedResourceMatches({ ...r, connectionId: 'c1' }, t)).toBe(true) // event without connection (instance authority)
   })
 
+  test('schema rejects resource urls that are not http(s)', () => {
+    const base = { integration: 'github', repository: 'a/b', kind: 'issue' as const, number: 1 }
+    expect(trackedResourceSchema.safeParse({ ...base, url: 'javascript:alert(1)' }).success).toBe(false)
+    expect(trackedResourceSchema.safeParse({ ...base, url: 'data:text/html,<script>alert(1)</script>' }).success).toBe(
+      false
+    )
+    expect(trackedResourceSchema.safeParse({ ...base, url: 'https://github.com/a/b/issues/1' }).success).toBe(true)
+    expect(trackedResourceSchema.safeParse({ ...base, url: 'http://ghe.internal/a/b/issues/1' }).success).toBe(true)
+  })
+
   test('schema rejects unknown keys and bad numbers', () => {
     expect(
       trackedResourceSchema.safeParse({ integration: 'github', repository: 'a/b', kind: 'issue', number: 1, extra: 1 })

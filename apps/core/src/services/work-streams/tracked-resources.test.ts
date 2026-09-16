@@ -362,6 +362,41 @@ test('origin is server-managed: a caller cannot claim an event it did not create
   await validateTrackedMetadata(otherSquadId, { tracked: [claimed] }, { tracked: [claimed] })
 })
 
+test('a stored origin may only be kept exactly as stored, never added or rewritten', async () => {
+  const origin = { eventId: randomUUID(), resourceKey: `${repo}#2610`, output: 'issue.assigned' }
+  const stored = { ...trackedIssue(2610), addedAt: '2024-01-01T00:00:00.000Z', origin }
+  const previous = { tracked: [stored] }
+  // Resubmitting the stored entry unchanged is accepted without re-authorizing it.
+  await validateTrackedMetadata(otherSquadId, { tracked: [{ ...stored }] }, previous)
+  // The same identity with a different origin is a forgery, even though the key already exists.
+  await expect(
+    validateTrackedMetadata(
+      otherSquadId,
+      { tracked: [{ ...stored, origin: { ...origin, eventId: randomUUID() } }] },
+      previous
+    )
+  ).rejects.toMatchObject({ status: 400, message: expect.stringContaining('origin is server-managed') })
+
+  // An entry stored without an origin cannot acquire one on a later write.
+  const plain = { ...trackedIssue(2611), addedAt: '2024-01-01T00:00:00.000Z' }
+  await expect(
+    validateTrackedMetadata(otherSquadId, { tracked: [{ ...plain, origin }] }, { tracked: [plain] })
+  ).rejects.toMatchObject({ status: 400, message: expect.stringContaining('origin is server-managed') })
+
+  // The delivery pull request resolves without a `tracked` entry, so an origin on it is new and refused,
+  // while the same identity without one still skips authorization.
+  const deliveryPr = { integration: 'github' as const, repository: repo, kind: 'pull_request' as const, number: 2612 }
+  const delivery = { codeHost: { integration: 'github', repository: repo, changeRequest: { number: 2612 } } }
+  await expect(
+    validateTrackedMetadata(
+      otherSquadId,
+      { tracked: [{ ...deliveryPr, origin: { ...origin, resourceKey: `${repo}#2612` } }] },
+      delivery
+    )
+  ).rejects.toMatchObject({ status: 400, message: expect.stringContaining('origin is server-managed') })
+  await validateTrackedMetadata(otherSquadId, { tracked: [{ ...deliveryPr }] }, delivery)
+})
+
 test('parseTrackedMetadata validates shape without reading the database', () => {
   const metadata: Record<string, unknown> = { tracked: [{ ...trackedIssue(2701), url: undefined }] }
   expect(parseTrackedMetadata(metadata)).toEqual([trackedIssue(2701)])

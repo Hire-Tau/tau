@@ -1,14 +1,23 @@
 import { useEnabledIntegrationFixtures } from '../test-utils/enabled-integrations'
 useEnabledIntegrationFixtures('github')
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, spyOn } from 'bun:test'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { eq, inArray, like } from 'drizzle-orm'
 import { Hono } from 'hono'
-import { createBlankWorkflow, type IntegrationOutputFact } from '@tau/shared'
+import { createBlankWorkflow, squadEventRuleSchema, trackedResourceKey, type IntegrationOutputFact } from '@tau/shared'
 import { workStreamsRouter } from './work-streams'
 import { identityMiddleware } from '../middleware/identity'
 import { db } from '../db'
-import { workStreams, squads, agents, agentTypes, integrationOutputEvents, settings } from '../db/schema'
+import {
+  workStreams,
+  squads,
+  agents,
+  agentTypes,
+  inbox,
+  integrationOutputDeliveries,
+  integrationOutputEvents,
+  settings,
+} from '../db/schema'
 import { AgentType } from '../entities/AgentType'
 
 import { Squad } from '../entities/Squad'
@@ -16,6 +25,7 @@ import { WorkStream } from '../entities/WorkStream'
 import { createTestGitHubConnection } from '../test-utils/github-connection'
 import * as repositorySetup from '../services/work-streams/repository-setup'
 import { INTEGRATION_DEFAULT_PREFIX } from '../services/integrations/scope-settings'
+import { publishIntegrationOutput } from '../services/integrations/outputs/runtime'
 import type { IntegrationOutputAuthority } from '../services/integrations/outputs/types'
 import {
   createTestAdmin,
@@ -106,6 +116,15 @@ describe('work-stream tracked-resource routes', () => {
   })
 
   afterEach(async () => {
+    const owned = await db.select({ id: agents.id }).from(agents).where(eq(agents.squadId, testSquadId))
+    if (owned.length)
+      await db.delete(inbox).where(
+        inArray(
+          inbox.recipientId,
+          owned.map((row) => row.id)
+        )
+      )
+    await db.update(squads).set({ managerAgentId: null }).where(eq(squads.id, testSquadId))
     await db.delete(workStreams).where(eq(workStreams.squadId, testSquadId))
     await connection.dispose()
     await db.delete(squads).where(like(squads.name, `${testPrefix}%`))
@@ -303,6 +322,196 @@ describe('work-stream tracked-resource routes', () => {
     } finally {
       await db.delete(settings).where(eq(settings.key, `${INTEGRATION_DEFAULT_PREFIX}github`))
     }
+  })
+
+  it('keeps a stored origin exactly as the server recorded it across a PATCH', async () => {
+    const event = await insertEvent(issueFact(4901), {
+      kind: 'connection',
+      connectionId: connection.id,
+      squadId: testSquadId,
+    })
+    const created = await apiFetch('/api/workstreams', {
+      method: 'POST',
+      body: { squadId: testSquadId, title: `${testPrefix} stored origin`, integrationEventId: event.id },
+    })
+    expect(created.status).toBe(201)
+    const stream = (await created.json()) as { id: string; metadata: Record<string, any> }
+    const stored = stream.metadata.tracked[0]
+    expect(stored.origin.eventId).toBe(event.id)
+
+    // Resubmitting the entry exactly as stored keeps it.
+    const unchanged = await apiFetch(`/api/workstreams/${stream.id}`, {
+      method: 'PATCH',
+      body: { metadata: { tracked: [stored] } },
+    })
+    expect(unchanged.status).toBe(200)
+    expect((await WorkStream.mustFind(stream.id)).metadata).toMatchObject({
+      tracked: [{ number: 4901, origin: { eventId: event.id } }],
+    })
+
+    // Repointing the origin of that same identity is a forgery, not an update.
+    const repointed = await apiFetch(`/api/workstreams/${stream.id}`, {
+      method: 'PATCH',
+      body: { metadata: { tracked: [{ ...stored, origin: { ...stored.origin, eventId: randomUUID() } }] } },
+    })
+    expect(repointed.status).toBe(400)
+    expect((await repointed.json()).error).toContain('origin is server-managed')
+    expect((await WorkStream.mustFind(stream.id)).metadata).toMatchObject({
+      tracked: [{ origin: { eventId: event.id } }],
+    })
+  })
+
+  it('refuses a PATCH that stamps an origin onto an existing link or the delivery pull request', async () => {
+    const existing = { integration: 'github', repository: repo, kind: 'issue', number: 4903 }
+    const [row] = await db
+      .insert(workStreams)
+      .values({
+        squadId: testSquadId,
+        title: `${testPrefix} forged origin`,
+        metadata: {
+          codeHost: { integration: 'github', repository: repo, changeRequest: { number: 4902 } },
+          tracked: [existing],
+        },
+      })
+      .returning()
+    const origin = { eventId: randomUUID(), resourceKey: `${repo}#4903`, output: 'issue.assigned' }
+
+    const onExisting = await apiFetch(`/api/workstreams/${row!.id}`, {
+      method: 'PATCH',
+      body: { metadata: { tracked: [{ ...existing, origin }] } },
+    })
+    expect(onExisting.status).toBe(400)
+    expect((await onExisting.json()).error).toContain('origin is server-managed')
+
+    // The delivery PR identity only lives in `codeHost`, so it has no stored origin to keep.
+    const onDelivery = await apiFetch(`/api/workstreams/${row!.id}`, {
+      method: 'PATCH',
+      body: {
+        metadata: {
+          tracked: [
+            {
+              integration: 'github',
+              repository: repo,
+              kind: 'pull_request',
+              number: 4902,
+              origin: { ...origin, resourceKey: `${repo}#4902` },
+            },
+          ],
+        },
+      },
+    })
+    expect(onDelivery.status).toBe(400)
+    expect((await onDelivery.json()).error).toContain('origin is server-managed')
+    expect((await WorkStream.mustFind(row!.id)).metadata).toMatchObject({ tracked: [existing] })
+  })
+
+  it('stays idempotent when the create body echoes the event identity without its origin', async () => {
+    const event = await insertEvent(issueFact(4910), {
+      kind: 'connection',
+      connectionId: connection.id,
+      squadId: testSquadId,
+    })
+    const body = {
+      squadId: testSquadId,
+      title: `${testPrefix} echoed identity`,
+      integrationEventId: event.id,
+      metadata: { tracked: [{ integration: 'github', repository: repo, kind: 'issue', number: 4910 }] },
+    }
+    const created = await apiFetch('/api/workstreams', { method: 'POST', body })
+    expect(created.status).toBe(201)
+    const stream = (await created.json()) as { id: string; metadata: Record<string, any> }
+    // The server-resolved entry wins over the client's origin-less copy of the same identity.
+    expect(stream.metadata.tracked).toHaveLength(1)
+    expect(stream.metadata.tracked[0]).toMatchObject({ number: 4910, origin: { eventId: event.id } })
+
+    const again = await apiFetch('/api/workstreams', { method: 'POST', body })
+    expect(again.status).toBe(200)
+    expect(await again.json()).toMatchObject({ id: stream.id, reusedFromEvent: true })
+    expect(await db.select().from(workStreams).where(eq(workStreams.squadId, testSquadId))).toHaveLength(1)
+  })
+
+  it('creates exactly one stream when the same event is submitted concurrently', async () => {
+    const event = await insertEvent(issueFact(4920), {
+      kind: 'connection',
+      connectionId: connection.id,
+      squadId: testSquadId,
+    })
+    const body = { squadId: testSquadId, title: `${testPrefix} concurrent`, integrationEventId: event.id }
+    const responses = await Promise.all([
+      apiFetch('/api/workstreams', { method: 'POST', body }),
+      apiFetch('/api/workstreams', { method: 'POST', body }),
+    ])
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 201])
+    expect(await db.select().from(workStreams).where(eq(workStreams.squadId, testSquadId))).toHaveLength(1)
+  })
+
+  it('delivers a later issue closure to the stream created from the event, not to the manager', async () => {
+    const [manager] = await db.insert(agents).values({ squadId: testSquadId, agentTypeId: testAgentTypeId }).returning()
+    const definition = createBlankWorkflow()
+    definition.participants.worker!.agentTypeId = testAgentTypeId
+    definition.completion.followChanges = true
+    // A squad rule that would otherwise page the manager for every issue update.
+    const rule = squadEventRuleSchema.parse({
+      id: 'issue-updates',
+      source: { integration: 'github', output: 'issue.updated', version: 1 },
+      filters: { audience: 'any' },
+      action: { type: 'notify-manager' },
+    })
+    await db
+      .update(squads)
+      .set({
+        managerAgentId: manager!.id,
+        metadata: {
+          workflow: { kind: 'inline', definition },
+          integrationRules: { github: [rule] },
+        },
+      })
+      .where(eq(squads.id, testSquadId))
+
+    const assigned = await insertEvent(issueFact(4930), {
+      kind: 'connection',
+      connectionId: connection.id,
+      squadId: testSquadId,
+    })
+    const created = await apiFetch('/api/workstreams', {
+      method: 'POST',
+      body: {
+        squadId: testSquadId,
+        title: `${testPrefix} follow issue`,
+        integrationEventId: assigned.id,
+        workflow: { kind: 'inline', definition },
+      },
+    })
+    expect(created.status).toBe(201)
+    const stream = (await created.json()) as { id: string; metadata: Record<string, any> }
+    // The stored entry is pinned to the observing connection, so the later event must carry it too.
+    expect(stream.metadata.tracked[0]).toMatchObject({ number: 4930, connectionId: connection.id })
+
+    const managerBefore = await db.select().from(inbox).where(eq(inbox.recipientId, manager!.id))
+    const closed = await publishIntegrationOutput(
+      'github',
+      {
+        ...issueFact(4930),
+        output: 'issue.updated',
+        subject: `Issue ${repo}#4930 closed`,
+        data: { repository: repo, issue: { number: 4930 }, action: 'closed', state: 'closed' },
+      },
+      { kind: 'connection', connectionId: connection.id, squadId: testSquadId }
+    )
+    eventIds.push(closed)
+
+    const hash = createHash('sha256')
+      .update(trackedResourceKey({ integration: 'github', repository: repo, kind: 'issue', number: 4930 }))
+      .digest('hex')
+      .slice(0, 12)
+    const rows = await db
+      .select()
+      .from(integrationOutputDeliveries)
+      .where(eq(integrationOutputDeliveries.workStreamId, stream.id))
+    expect(rows.map((row) => row.subscriptionId)).toContain(`tracked-${hash}-updated`)
+    expect(rows.find((row) => row.subscriptionId === `tracked-${hash}-updated`)!.eventId).toBe(closed)
+    // The tracked stream owns the closure, so the notify-manager rule stays silent.
+    expect(await db.select().from(inbox).where(eq(inbox.recipientId, manager!.id))).toHaveLength(managerBefore.length)
   })
 
   it('settles an event replay before provisioning a repository', async () => {
