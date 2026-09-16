@@ -564,8 +564,9 @@ describe('getUserIdsWithPermission', () => {
     for (const userId of permitted) expect(scoped).toContain(userId)
     for (const userId of denied) expect(scoped).not.toContain(userId)
     expect(new Set(scoped).size).toBe(scoped.length)
-    // Order is stable across calls, so callers may compare two audiences directly.
-    expect(await getUserIdsWithPermission('actions:read', squad.id)).toEqual(scoped)
+    // The audience is a SET: the underlying SELECT is unordered, so two calls may legitimately
+    // return the same ids in a different order. Compare sorted — callers must not depend on order.
+    expect([...(await getUserIdsWithPermission('actions:read', squad.id))].sort()).toEqual([...scoped].sort())
 
     // A squad-scoped grant reaches neither another squad nor the system-only form.
     const systemWide = await getUserIdsWithPermission('actions:read')

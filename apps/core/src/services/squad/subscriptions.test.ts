@@ -11,7 +11,7 @@ import {
   listSquadSubscriberIds,
   listUserSquadAttention,
 } from './subscriptions'
-import { cleanupTestRbac, createTestUser, type TestUser } from '../../test-utils'
+import { assignRole, cleanupTestRbac, createTestRole, createTestUser, type TestUser } from '../../test-utils'
 
 const prefix = `squadsub-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
@@ -21,6 +21,9 @@ let user: TestUser
 beforeAll(async () => {
   user = await createTestUser({ prefix })
   squad = await Squad.create({ name: `${prefix} Squad`, purpose: 'squad subscription test' })
+  // Notices are permission-gated before attention: without a reader role the subscriber hears nothing.
+  const role = await createTestRole({ prefix, permissions: ['workstreams:read'] })
+  await assignRole({ userId: user.id, roleId: role.id, scope: 'squad', squadId: squad.id })
 })
 
 afterAll(async () => {

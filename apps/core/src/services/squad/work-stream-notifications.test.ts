@@ -7,7 +7,7 @@ import { agents, agentTypes, inbox, squads, workStreams } from '../../db/schema'
 import { Agent } from '../../entities/Agent'
 import { AgentType } from '../../entities/AgentType'
 import { Squad } from '../../entities/Squad'
-import { cleanupTestRbac, createTestUser, type TestUser } from '../../test-utils'
+import { assignRole, cleanupTestRbac, createTestRole, createTestUser, type TestUser } from '../../test-utils'
 import { subscribeToWorkStream } from '../work-streams/subscriptions'
 import { subscribeToSquad } from './subscriptions'
 import {
@@ -50,6 +50,11 @@ describe('work-stream notifications', () => {
     streamWatcher = await createTestUser({ prefix: typeId })
     squadWatcher = await createTestUser({ prefix: typeId })
     dualWatcher = await createTestUser({ prefix: typeId })
+    // Human notices are permission-gated: a watcher only hears about a stream it may read.
+    const readerRole = await createTestRole({ prefix: typeId, permissions: ['workstreams:read'] })
+    for (const watcher of [streamWatcher, squadWatcher, dualWatcher]) {
+      await assignRole({ userId: watcher.id, roleId: readerRole.id, scope: 'squad', squadId })
+    }
   })
 
   afterEach(async () => {
@@ -656,6 +661,23 @@ describe('work-stream notifications', () => {
     expect(await countLifecycleInbox(workStream.id, 'review', 'user', squadWatcher.id)).toBe(0)
     expect(await countLifecycleInbox(workStream.id, 'blocked', 'user', squadWatcher.id)).toBe(0)
     expect(await countLifecycleInbox(workStream.id, 'done', 'user', squadWatcher.id)).toBe(1)
+  })
+
+  it("never notifies a notify-level user who cannot read the squad's work streams", async () => {
+    const loudButBlind = await createTestUser({ prefix: typeId })
+    const workStream = await storedLegacyWorkStream({ squadId, title: `${typeId} permission gate` })
+    // Same notify row on the same squad; only the role on the squad differs.
+    await subscribeToSquad(squadId, loudButBlind.id)
+    await subscribeToSquad(squadId, squadWatcher.id)
+
+    await notifyWorkStreamBlocked(workStream)
+    await notifyWorkStreamReview(workStream)
+    await notifyWorkStreamDone(workStream)
+
+    for (const event of ['blocked', 'review', 'done']) {
+      expect(await countLifecycleInbox(workStream.id, event, 'user', loudButBlind.id)).toBe(0)
+      expect(await countLifecycleInbox(workStream.id, event, 'user', squadWatcher.id)).toBe(1)
+    }
   })
 
   it('lets a stream row mute a squad the user otherwise gets notified about', async () => {

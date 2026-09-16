@@ -14,6 +14,7 @@ import { Squad } from '../../entities/Squad'
 import { User } from '../../entities/User'
 import type { WorkStream } from '../../entities/WorkStream'
 import { listWorkStreamNotifyUserIds } from '../attention/resolver'
+import { hasPermission } from '../rbac/permissions'
 import { createLogger } from '../../lib/infra/logger'
 import { createHash } from 'node:crypto'
 
@@ -329,7 +330,17 @@ async function notifyWorkStreamSubscribers(
     const kind = EVENT_ATTENTION_KIND[event as 'review' | 'blocked' | 'done']
     // One bounded query per event: the stream's rows ∪ its squad's rows, precedence resolved per
     // candidate. Users with no row anywhere default to `show`, which never notifies.
-    const subscriberIds = await listWorkStreamNotifyUserIds(workStream.id, workStream.squadId, kind)
+    const candidateIds = await listWorkStreamNotifyUserIds(workStream.id, workStream.squadId, kind)
+    if (candidateIds.length === 0) return
+    // Permission first, attention second: a notify row is a preference, never an entitlement. A
+    // subscription that outlived the user's role on the squad must not deliver stream content.
+    // The candidate list is bounded by subscription rows, so this is a small fan of cached checks.
+    const authorized = await Promise.all(
+      candidateIds.map(async (userId) =>
+        (await hasPermission({ type: 'user', userId }, 'workstreams:read', workStream.squadId)) ? userId : null
+      )
+    )
+    const subscriberIds = authorized.filter((userId): userId is string => userId !== null)
     if (subscriberIds.length === 0) return
     const description = workStream.description?.trim() ? workStream.description.slice(0, 200) : undefined
     const detail = event === 'done' ? pushDetail || nextSteps || description : workStream.handoffMessage || description
