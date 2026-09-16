@@ -16,7 +16,10 @@ function fakeLog() {
 
 function buildFixture(): string {
   const dir = mkdtempSync(join(tmpdir(), 'tau-web-fixture-'))
-  writeFileSync(join(dir, 'index.html'), '<!doctype html><html><body>app</body></html>')
+  writeFileSync(
+    join(dir, 'index.html'),
+    '<!doctype html><html><head><meta property="og:image" content="__TAU_ORIGIN__/social-preview.png" /></head><body>app</body></html>'
+  )
   writeFileSync(join(dir, 'sw.js'), 'self.addEventListener("fetch", () => {})')
   writeFileSync(join(dir, 'manifest.webmanifest'), '{"name":"Tau"}')
   mkdirSync(join(dir, 'assets'), { recursive: true })
@@ -96,6 +99,54 @@ describe('maybeMountWebUi', () => {
     })
     expect(res.status).toBe(200)
     expect(res.headers.get('Content-Type')).toContain('text/html')
+  })
+
+  describe('origin placeholder', () => {
+    const origOrigin = process.env.TAU_WEB_ORIGIN
+    afterEach(() => {
+      if (origOrigin === undefined) delete process.env.TAU_WEB_ORIGIN
+      else process.env.TAU_WEB_ORIGIN = origOrigin
+    })
+
+    it('renders index.html with the request origin at / and /index.html', async () => {
+      process.env.TAU_SERVE_WEB = '1'
+      delete process.env.TAU_WEB_ORIGIN
+      const { app } = setupApp()
+      for (const path of ['/', '/index.html']) {
+        const res = await app.request(`http://tau.local:8080${path}`)
+        expect(res.status).toBe(200)
+        const body = await res.text()
+        expect(body).toContain('content="http://tau.local:8080/social-preview.png"')
+        expect(body).not.toContain('__TAU_ORIGIN__')
+        expect(res.headers.get('Cache-Control')).toContain('no-cache')
+      }
+    })
+
+    it('prefers the proxy forwarded headers, then the configured web origin', async () => {
+      process.env.TAU_SERVE_WEB = '1'
+      delete process.env.TAU_WEB_ORIGIN
+      const { app } = setupApp()
+      const forwarded = await app.request('http://127.0.0.1:3000/', {
+        headers: { 'x-forwarded-host': 'team.example.com', 'x-forwarded-proto': 'https' },
+      })
+      expect(await forwarded.text()).toContain('content="https://team.example.com/social-preview.png"')
+
+      process.env.TAU_WEB_ORIGIN = 'https://tau.example.org/'
+      const configured = await app.request('http://127.0.0.1:3000/', {
+        headers: { 'x-forwarded-host': 'ignored.example.com' },
+      })
+      expect(await configured.text()).toContain('content="https://tau.example.org/social-preview.png"')
+    })
+
+    it('renders the placeholder on the SPA fallback too', async () => {
+      process.env.TAU_SERVE_WEB = '1'
+      delete process.env.TAU_WEB_ORIGIN
+      const { app } = setupApp()
+      const res = await app.request('http://tau.local/squads/123', {
+        headers: { Accept: 'text/html,application/xhtml+xml' },
+      })
+      expect(await res.text()).toContain('content="http://tau.local/social-preview.png"')
+    })
   })
 
   it('does not fall back for JSON clients', async () => {

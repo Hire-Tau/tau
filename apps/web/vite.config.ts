@@ -450,6 +450,18 @@ export default defineConfig(({ mode, command }) => {
       ...(devAccessToken ? [devAccessPlugin(devAccessToken)] : []),
       ...(isViteDev ? [devBackendControlPlugin(devBackendState)] : []),
       react(),
+      // The built index.html keeps __TAU_ORIGIN__ for the server to fill in
+      // (apps/core/src/lib/web-serve.ts). The dev server serves the file itself,
+      // so blank it there: relative og:* values are harmless in development.
+      {
+        name: 'tau-origin-placeholder',
+        transformIndexHtml: {
+          order: 'pre' as const,
+          handler(html: string, ctx: { server?: unknown }) {
+            return ctx.server ? html.replaceAll('__TAU_ORIGIN__', '') : html
+          },
+        },
+      },
       VitePWA({
         // 'prompt' gives the app explicit control over WHEN an update is applied, so we
         // can refresh aggressively on open/resume without reloading mid-interaction.
@@ -460,14 +472,15 @@ export default defineConfig(({ mode, command }) => {
         strategies: 'injectManifest',
         injectManifest: {
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
-          globIgnores: ['**/voice/dtln/dtln.js'],
+          // The link-preview image is for crawlers, not the offline shell.
+          globIgnores: ['**/voice/dtln/dtln.js', '**/social-preview.png'],
         },
         srcDir: 'src',
         filename: 'sw.ts',
         manifest: {
           name: 'Tau - AI Task Management',
           short_name: 'Tau',
-          description: 'AI-powered task management and automation',
+          description: 'A workspace for teams of AI agents.',
           start_url: base,
           scope: base,
           display: 'standalone',
