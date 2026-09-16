@@ -22,11 +22,12 @@ import {
 } from '../../db/schema'
 import { createLogger } from '../../lib/infra/logger'
 import { eventEmitter } from '../../lib/infra/event-emitter'
-import { listSquadSubscriberIds, listUserWatchedSquadIds } from '../squad/subscriptions'
+import { listSquadSubscriberIds } from '../squad/subscriptions'
 import { closeOpenWaits, openWait } from '../work-streams/waits'
 import { resetContinuationCycle } from '../work-streams/continuation-state'
 import { isUuid, listTrustedWorkStreamOriginsForExecution } from '../work-streams/execution-provenance'
-import { listUserWatchedWorkStreamIds, listWorkStreamSubscriberIds } from '../work-streams/subscriptions'
+import { listWorkStreamSubscriberIds } from '../work-streams/subscriptions'
+import { loadUserAttention } from '../attention/resolver'
 import { canReceiveAgentQuestionAttention } from './pending-action-policy'
 import { drainQuestionAnswerDeliverySoon } from './question-answer-delivery'
 import { ensureQuestionDeliveryFailureAlert } from './question-delivery-failure-alert'
@@ -618,19 +619,15 @@ export async function listAgentQuestionAttentionUserIds(questionId: string): Pro
     .where(and(inArray(users.id, candidateIds), isNull(users.disabledAt)))
   const enabled = new Set(enabledRows.map(({ id }) => id))
 
+  // This question's origins are already loaded above; hand them to the policy so it resolves
+  // origin precedence in memory instead of re-querying them for every candidate.
+  const questionOrigins = new Map([[question.id, persistedOrigins.map(({ workStreamId }) => workStreamId)]])
   const authorized = await Promise.all(
     [...enabled].map(async (userId) => {
-      const [watchedSquadIds, watchedWorkStreamIds] = await Promise.all([
-        listUserWatchedSquadIds(userId),
-        listUserWatchedWorkStreamIds(userId),
-      ])
       const visible = await canReceiveAgentQuestionAttention(
         { type: 'user', userId },
         { id: question.id, ownerUserId: question.ownerUserId, squadId: question.squadId },
-        {
-          watchedSquadIds: new Set(watchedSquadIds),
-          watchedWorkStreamIds: new Set(watchedWorkStreamIds),
-        }
+        { attention: await loadUserAttention(userId), questionOrigins }
       )
       return visible ? userId : null
     })

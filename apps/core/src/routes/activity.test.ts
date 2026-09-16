@@ -4,6 +4,7 @@ import { Hono } from 'hono'
 import { activityRouter } from './activity'
 import { materializeActivityFixtures } from '../test-utils/activity-fixtures'
 import { identityMiddleware } from '../middleware/identity'
+import { subscribeToSquad } from '../services/squad/subscriptions'
 import { db } from '../db'
 import { agents, inbox, squads, workStreams, workStreamWaits } from '../db/schema'
 import {
@@ -361,5 +362,30 @@ describe('GET /api/activity/presence', () => {
     expect(body.workingAgentIds).not.toContain(fullIdle.id)
     expect(body.workingAgentIds).not.toContain(streamOnlyWorking.id)
     expect(body.workingAgentIds).not.toContain(hiddenWorking.id)
+  })
+
+  test('muting a squad drops its work from this caller counts only', async () => {
+    const muteSquad = await seedSquad('presence-muted')
+    const [stream] = await db
+      .insert(workStreams)
+      .values([{ squadId: muteSquad.id, title: 'Muted review', status: 'active' }])
+      .returning()
+    await db.insert(workStreamWaits).values([{ workStreamId: stream.id, type: 'review' }])
+    const muter = await scopedUser(muteSquad.id, ['squads:read', 'agents:read', 'workstreams:read'])
+    const other = await scopedUser(muteSquad.id, ['squads:read', 'agents:read', 'workstreams:read'])
+
+    const readPresence = async (token: string) => {
+      const response = await activityRequest('/api/activity/presence', { headers: authHeaders(token) })
+      expect(response.status).toBe(200)
+      return (await response.json()) as { needsYouCount: number; streamCount: number }
+    }
+
+    // With no subscription row at all the default is `show`: the work is already counted.
+    expect(await readPresence(muter.token)).toMatchObject({ needsYouCount: 1, streamCount: 1 })
+
+    await subscribeToSquad(muteSquad.id, muter.id, { decisions: 'mute', progress: 'mute' })
+
+    expect(await readPresence(muter.token)).toMatchObject({ needsYouCount: 0, streamCount: 0 })
+    expect(await readPresence(other.token)).toMatchObject({ needsYouCount: 1, streamCount: 1 })
   })
 })

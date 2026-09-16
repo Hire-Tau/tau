@@ -45,12 +45,15 @@ async function post(body?: unknown): Promise<Response> {
 beforeAll(async () => {
   await AgentType.create({ id: `${prefix}-type`, name: 'Continue halted', model: 'test:model', systemPrompt: 'test' })
   visibleSquad = await Squad.create({ name: `${prefix}-visible`, purpose: 'watched squad' })
-  hiddenSquad = await Squad.create({ name: `${prefix}-hidden`, purpose: 'unwatched squad' })
+  hiddenSquad = await Squad.create({ name: `${prefix}-hidden`, purpose: 'muted squad' })
   user = await createTestUser({ prefix: `${prefix}-user` })
   const role = await createTestRole({ prefix: `${prefix}-role`, permissions: ['actions:read', 'agents:run'] })
   await assignRole({ userId: user.id, roleId: role.id, scope: 'squad', squadId: visibleSquad.id })
   await assignRole({ userId: user.id, roleId: role.id, scope: 'squad', squadId: hiddenSquad.id })
   await subscribeToSquad(visibleSquad.id, user.id)
+  // Needs you is permission-scoped now, so the hidden squad is hidden because the user MUTED its
+  // decisions — not because they never watched it.
+  await subscribeToSquad(hiddenSquad.id, user.id, { decisions: 'mute', progress: 'mute' })
   submitted = await Agent.create({ agentTypeId: `${prefix}-type`, squadId: visibleSquad.id })
   unsubmitted = await Agent.create({ agentTypeId: `${prefix}-type`, squadId: visibleSquad.id })
   hidden = await Agent.create({ agentTypeId: `${prefix}-type`, squadId: hiddenSquad.id })

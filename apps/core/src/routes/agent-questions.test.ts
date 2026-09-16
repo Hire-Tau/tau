@@ -25,6 +25,7 @@ import {
   type TestUser,
 } from '../test-utils'
 import { invalidatePermissionCache } from '../services/rbac/permissions'
+import { subscribeToSquad } from '../services/squad/subscriptions'
 import * as rbacModule from '../services/rbac'
 import * as questionAuthorizationModule from '../services/agents/question-authorization'
 import { actionsRouter } from './actions'
@@ -134,12 +135,21 @@ describe('agent question chat visibility, attention, and response authority', ()
       })
     )
 
-    const readerResponse = await app.request('/api/actions/pending', { headers: authHeaders(agentReader.token) })
-    expect(readerResponse.status).toBe(200)
-    const readerActions = (await readerResponse.json()) as Array<{ id: string }>
-    expect(readerActions.some((action) => action.id === `agent-question:${questionId}`)).toBe(false)
+    const readerIsRouted = async () => {
+      const response = await app.request('/api/actions/pending', { headers: authHeaders(agentReader.token) })
+      expect(response.status).toBe(200)
+      const actions = (await response.json()) as Array<{ id: string }>
+      return actions.some((action) => action.id === `agent-question:${questionId}`)
+    }
 
-    // The reader still sees the same question through the by-agent chat route (Task 1): chat
+    // `actions:read` alone routes the reader: with no attention row the default is `show`.
+    expect(await readerIsRouted()).toBe(true)
+
+    // Muting the squad's decisions takes the question out of their Action Center...
+    await subscribeToSquad(squad.id, agentReader.id, { decisions: 'mute', progress: 'mute' })
+    expect(await readerIsRouted()).toBe(false)
+
+    // ...while they still see that same question through the by-agent chat route (Task 1): chat
     // visibility and attention routing are genuinely independent in both directions.
     const readerChat = await app.request(`/api/agent-questions/by-agent/${agent.id}?status=open`, {
       headers: authHeaders(agentReader.token),
