@@ -4,8 +4,23 @@ import {
   classifySandboxTransportError,
   type SandboxClient,
 } from '../k8s/http-client'
+import { createLogger } from '../../../lib/infra/logger'
 import { runIdempotentSandboxOperation } from './retry'
 import type { VmSetupReasonCode, VmSetupState } from './setup-state'
+
+const defaultLog = createLogger('vm-setup')
+
+/**
+ * One bounded, secret-free line per failed setup component. The durable row
+ * only keeps the reason CODE (`devbox_unavailable`, …) — without this the
+ * actual cause of a box sitting in `ready_degraded` for days is visible nowhere.
+ */
+function describeSetupFailure(error: unknown): string {
+  const name = error instanceof Error ? error.constructor.name : typeof error
+  const message = error instanceof Error ? error.message : String(error)
+  const oneLine = message.replace(/\s+/g, ' ').trim()
+  return `${name}: ${oneLine.length > 240 ? `${oneLine.slice(0, 240)}…` : oneLine}`
+}
 
 export interface VmSetupReconcilerDeps {
   withLease<T>(sandboxId: string, fn: () => Promise<T>): Promise<T>
@@ -36,6 +51,8 @@ export interface VmSetupReconcilerDeps {
   configureGit(client: SandboxClient, invocationId: string): Promise<void>
   sleep(ms: number): Promise<void>
   now(): Date
+  /** Failure log sink; defaults to the `vm-setup` logger. */
+  log?: { warn(message: string): void }
 }
 
 export interface ReconcileVmSetupInput {
@@ -111,6 +128,7 @@ export async function reconcileVmSetup(
       throw new Error(`VM setup fingerprint changed before reconciling ${input.sandboxId}`)
     }
     const reasons: VmSetupReasonCode[] = [...(input.initialReasons ?? [])]
+    const log = deps.log ?? defaultLog
     let client = deps.getClient()
     if (initial.pendingInvocationId) {
       try {
@@ -165,6 +183,7 @@ export async function reconcileVmSetup(
       })
     } catch (error) {
       reasons.push('devbox_unavailable')
+      log.warn(`VM setup devbox step failed for ${input.sandboxId}: ${describeSetupFailure(error)}`)
       if (!(error instanceof BashOutcomeUnknownError)) {
         await deps.clearPendingInvocation(input.sandboxId, input.fingerprint, input.devboxInvocationId)
       }
@@ -202,6 +221,7 @@ export async function reconcileVmSetup(
       })
     } catch (error) {
       reasons.push('bashrc_unavailable')
+      log.warn(`VM setup bashrc step failed for ${input.sandboxId}: ${describeSetupFailure(error)}`)
       lastFailureClass ??= transportFailure(error)?.kind
     }
 
@@ -228,6 +248,7 @@ export async function reconcileVmSetup(
           }
         } catch (error) {
           reasons.push('git_credentials_unavailable')
+          log.warn(`VM setup git step failed for ${input.sandboxId}: ${describeSetupFailure(error)}`)
           if (error instanceof BashOutcomeUnknownError) {
             try {
               const refreshed = await refreshAfterFailure(client, error, deps)

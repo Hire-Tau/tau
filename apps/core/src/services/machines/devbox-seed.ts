@@ -178,7 +178,10 @@ export function computeDevboxInstallInvocationId(sandboxId: string, role: SeedBo
   return createHash('sha256').update(`${sandboxId}\0${hash}\0devbox-install\0${commandDigest}`).digest('hex')
 }
 
-type DevboxDocument = Record<string, unknown> & { packages: string[] }
+type DevboxPackageList = string[]
+/** devbox's map form: `name → version | { version?, outputs?, … }`. */
+type DevboxPackageMap = Record<string, string | Record<string, unknown>>
+type DevboxDocument = Record<string, unknown> & { packages: DevboxPackageList | DevboxPackageMap }
 
 type DevboxMergeResult = {
   content: string
@@ -189,7 +192,35 @@ function packageBaseName(pkg: string): string {
   return pkg.split('@')[0]
 }
 
-/** Merge missing role comfort packages without taking ownership of user configuration. */
+/** `nodejs_24@latest` → `["nodejs_24", "latest"]`; a bare flake ref (`github:…#gh`) has no version (`""`). */
+function splitPackageSpec(spec: string): [name: string, version: string] {
+  const at = spec.lastIndexOf('@')
+  return at > 0 ? [spec.slice(0, at), spec.slice(at + 1)] : [spec, '']
+}
+
+function isPackageList(value: unknown): value is DevboxPackageList {
+  return Array.isArray(value) && value.every((pkg): pkg is string => typeof pkg === 'string')
+}
+
+/**
+ * devbox rewrites `packages` into a map as soon as any entry carries options
+ * (`devbox add zlib --outputs dev`). Every value is a version string or an
+ * options object; anything else means the file is not a devbox.json we can
+ * reason about.
+ */
+function isPackageMap(value: unknown): value is DevboxPackageMap {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  return Object.values(value as Record<string, unknown>).every(
+    (entry) => typeof entry === 'string' || (entry !== null && typeof entry === 'object' && !Array.isArray(entry))
+  )
+}
+
+/**
+ * Merge missing role comfort packages without taking ownership of user
+ * configuration. Both devbox shapes are preserved as-is: a list stays a list
+ * (specs appended), a map stays a map (`name: version` pairs appended) — never
+ * flatten a map back to a list, that would drop the options the user added.
+ */
 export function mergeDevboxJson(role: SeedBoxRole, existing: string | null): DevboxMergeResult {
   const pristine = renderDevboxJson(role)
   if (existing === null) return { content: pristine, shouldWrite: true }
@@ -206,17 +237,21 @@ export function mergeDevboxJson(role: SeedBoxRole, existing: string | null): Dev
   }
 
   const packages = (parsed as Record<string, unknown>).packages
-  if (!Array.isArray(packages) || !packages.every((pkg): pkg is string => typeof pkg === 'string')) {
+  if (!isPackageList(packages) && !isPackageMap(packages)) {
     return { content: pristine, shouldWrite: true }
   }
 
   const document = parsed as DevboxDocument
-  const existingBases = new Set(document.packages.map(packageBaseName))
+  const existingBases = new Set((Array.isArray(packages) ? packages : Object.keys(packages)).map(packageBaseName))
   const missing = packagesForRole(role).filter((pkg) => !existingBases.has(packageBaseName(pkg)))
   if (missing.length === 0) return { content: existing, shouldWrite: false }
 
+  const mergedPackages: DevboxPackageList | DevboxPackageMap = Array.isArray(packages)
+    ? [...packages, ...missing]
+    : { ...packages, ...Object.fromEntries(missing.map(splitPackageSpec)) }
+
   return {
-    content: `${JSON.stringify({ ...document, packages: [...document.packages, ...missing] }, null, 2)}\n`,
+    content: `${JSON.stringify({ ...document, packages: mergedPackages }, null, 2)}\n`,
     shouldWrite: true,
   }
 }
