@@ -8,7 +8,7 @@ import { sesSendMock } from './test-utils/ses-mock'
 import { withTestDbLockSync } from '@tau/shared/testDbLock'
 import { canExecuteQuery, isComposePostgresReady } from '@tau/shared/testDbReady'
 import { findFreeTestDbPort, testDbPortFile, testDbProjectName } from '@tau/shared/testDbPort'
-import { expectedTableColumns, findSchemaDrift, parseColumnRows } from './db/expected-schema'
+import { expectedCheckConstraints, expectedTableColumns, findSchemaDrift, parseColumnRows } from './db/expected-schema'
 import { runnerTestSchemaCache } from './test-utils/schema-cache'
 
 // Give the whole run its own Tau home so no test can write into the developer's
@@ -264,6 +264,104 @@ function dropIntrospectionHostileIndexes(url: string): void {
   }
 }
 
+const quoteIdentifier = (name: string) => '"' + name.replaceAll('"', '""') + '"'
+const sqlLiteral = (value: string) => "'" + value.replaceAll("'", "''") + "'"
+
+/**
+ * Run `statements` as one psql invocation, or halt the run.
+ *
+ * Fatal for the same reason resetTestData and dropIntrospectionHostileIndexes
+ * are: a half-applied constraint set is exactly the silent divergence these
+ * exist to remove, and it would resurface later as an unrelated-looking
+ * constraint violation a long way from its cause.
+ */
+function runDdlOrExit(url: string, statements: string[], what: string): void {
+  const fail = (detail: string) => {
+    console.error(`Failed to ${what}:\n${detail}\nRecover with: bun run test:db:down && bun run test:db:up`)
+    process.exit(1)
+  }
+  try {
+    const result = Bun.spawnSync(['psql', url, '-v', 'ON_ERROR_STOP=1', '-c', statements.join('; ')], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 10000,
+    })
+    if (result.exitCode !== 0) fail(result.stderr.toString())
+  } catch (err) {
+    fail(String(err))
+  }
+}
+
+/**
+ * CHECK constraints a warm test database would otherwise keep forever.
+ *
+ * `drizzle-kit push` emits a table's CHECK constraints inline when it CREATEs
+ * the table and then never touches them again — it does not add, drop or ALTER
+ * a constraint on a table that already exists (verified: with all of them
+ * dropped, a push reports success and recreates none). So widening
+ * `squad_activity_lane_check` to admit a newly added lane changed nothing on
+ * any database built before that lane: every insert using the new lane failed
+ * with a constraint violation until the developer happened to run
+ * `bun run test:db:down`, and the symptom — a value schema.ts plainly allows
+ * being rejected — points nowhere near the cause.
+ *
+ * Dropping and re-adding from schema.ts is simpler and more correct than
+ * diffing definitions: Postgres normalizes what it stores (`IN (...)` comes
+ * back as `= ANY (ARRAY[...])`), so schema.ts is the only comparable source of
+ * truth, and re-applying it unconditionally cannot leave a stale definition
+ * behind.
+ *
+ * Restricted to the tables `schema.ts` declares, which is exactly the set this
+ * preload owns and can rebuild. `public` also holds tables we did not create:
+ * the paradedb image installs PostGIS, whose `spatial_ref_sys` carries a CHECK
+ * of its own that nothing here could ever put back. Auditing the CONSTRAINT's
+ * extension membership does not catch that — the TABLE is the extension member,
+ * not the constraint — so the table list, not `pg_depend`, is the safe filter.
+ */
+function dropCheckConstraints(url: string): void {
+  const owned = [...expectedTableColumns().keys()].map(sqlLiteral).join(', ')
+  runDdlOrExit(
+    url,
+    [
+      `DO $tau$ DECLARE r RECORD; BEGIN ` +
+        `FOR r IN (SELECT c.conname, c.conrelid::regclass AS relation FROM pg_constraint c ` +
+        `JOIN pg_class t ON t.oid = c.conrelid AND t.relnamespace = 'public'::regnamespace ` +
+        `WHERE c.contype = 'c' AND c.connamespace = 'public'::regnamespace ` +
+        `AND t.relname IN (${owned})) LOOP ` +
+        `EXECUTE 'ALTER TABLE ' || r.relation || ' DROP CONSTRAINT IF EXISTS ' || quote_ident(r.conname); ` +
+        `END LOOP; END $tau$`,
+    ],
+    'drop stale CHECK constraints before the schema push'
+  )
+}
+
+/**
+ * Re-add what dropCheckConstraints removed, from schema.ts.
+ *
+ * After the push, not before it, so a CHECK introduced together with the column
+ * it constrains can be applied on a warm database in the same run.
+ *
+ * The NOT EXISTS guard covers the table the push just CREATEd with its CHECKs
+ * already inline; the `to_regclass` guard keeps a table the push failed to
+ * create from turning into a raw psql error here, so verifySchemaApplied gets
+ * to name the real problem instead.
+ */
+function applyCheckConstraints(url: string): void {
+  runDdlOrExit(
+    url,
+    [...expectedCheckConstraints()].map(([name, { table, expression }]) => {
+      const relation = `public.${quoteIdentifier(table)}`
+      return (
+        `DO $tau$ BEGIN IF to_regclass(${sqlLiteral(relation)}) IS NOT NULL AND NOT EXISTS ` +
+        `(SELECT 1 FROM pg_constraint WHERE conname = ${sqlLiteral(name)} ` +
+        `AND conrelid = ${sqlLiteral(relation)}::regclass) ` +
+        `THEN ALTER TABLE ${relation} ADD CONSTRAINT ${quoteIdentifier(name)} CHECK (${expression}); END IF; END $tau$`
+      )
+    }),
+    'reapply the CHECK constraints schema.ts declares'
+  )
+}
+
 /**
  * Fail the run unless the live database actually contains every table and
  * column `schema.ts` declares.
@@ -288,18 +386,49 @@ function verifySchemaApplied(url: string): void {
     process.exit(1)
   }
 
+  // CHECK constraints too, because dropCheckConstraints above removes every one
+  // of them first: if applyCheckConstraints (or, for a table the push created,
+  // the push itself) failed, the database would be LESS correct than before, so
+  // this positive check is what makes that drop safe.
+  const constraintQuery = `SELECT conname FROM pg_constraint WHERE contype = 'c' AND connamespace = 'public'::regnamespace AND conrelid <> 0`
+  const constraints = Bun.spawnSync(['psql', url, '-tAc', constraintQuery], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+    timeout: 10000,
+  })
+  if (constraints.exitCode !== 0) {
+    console.error('Could not verify the test DB CHECK constraints after the push:', constraints.stderr.toString())
+    process.exit(1)
+  }
+  const liveConstraints = new Set(
+    constraints.stdout
+      .toString()
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+  )
+  const missingConstraints = [...expectedCheckConstraints().keys()].filter((name) => !liveConstraints.has(name)).sort()
+
   const drift = findSchemaDrift(expectedTableColumns(), parseColumnRows(result.stdout.toString()))
-  if (drift.missingTables.length === 0 && drift.missingColumns.length === 0) return
+  if (drift.missingTables.length === 0 && drift.missingColumns.length === 0 && missingConstraints.length === 0) return
 
   const detail = [
     drift.missingTables.length > 0 ? `missing tables: ${drift.missingTables.join(', ')}` : '',
     drift.missingColumns.length > 0 ? `missing columns: ${drift.missingColumns.join(', ')}` : '',
+    missingConstraints.length > 0 ? `missing CHECK constraints: ${missingConstraints.join(', ')}` : '',
   ]
     .filter(Boolean)
     .join('\n  ')
+  // A missing table or column means the push silently did nothing; a missing
+  // CHECK means the drop/reapply pair around it did not finish. Naming only the
+  // cause that actually applies keeps the hint from pointing at the wrong step.
+  const cause =
+    drift.missingTables.length > 0 || drift.missingColumns.length > 0
+      ? 'The push applied nothing (drizzle-kit exits 0 on failures it prints but does not raise).\n'
+      : 'The push succeeded; the CHECK constraints dropped before it were not all put back.\n'
   console.error(
     `The schema push reported success but the test DB does not match src/db/schema.ts:\n  ${detail}\n` +
-      'The push applied nothing (drizzle-kit exits 0 on failures it prints but does not raise).\n' +
+      cause +
       'Recover with: bun run test:db:down && bun run test:db:up'
   )
   process.exit(1)
@@ -470,6 +599,7 @@ if (schemaCache?.matches()) {
   console.log('Reused verified test schema (identical source and live DDL)')
 } else {
   dropIntrospectionHostileIndexes(TEST_DATABASE_URL)
+  dropCheckConstraints(TEST_DATABASE_URL)
 
   // Push schema to test DB before any tests run (timeout prevents hang on stale DB)
   let result: { exitCode: number; stderr: Buffer; stdout: Buffer }
@@ -525,6 +655,10 @@ if (schemaCache?.matches()) {
       process.exit(1)
     }
   }
+
+  // Push never maintains CHECK constraints on a table it did not just create,
+  // so the set dropped above has to be put back from schema.ts by hand.
+  applyCheckConstraints(TEST_DATABASE_URL)
 
   // The push claimed success. Prove it, before a single test runs.
   verifySchemaApplied(TEST_DATABASE_URL)

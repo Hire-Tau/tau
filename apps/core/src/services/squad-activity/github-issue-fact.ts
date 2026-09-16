@@ -75,7 +75,7 @@ export function isGitHubIssueDispatchFact(value: unknown): value is GitHubIssueD
   return Boolean(
     fact &&
     eventType &&
-    eventType in ACTIONS &&
+    Object.hasOwn(ACTIONS, eventType) &&
     typeof action === 'string' &&
     ACTIONS[eventType].has(action) &&
     timestamp(fact.occurredAt) === fact.occurredAt &&
@@ -117,7 +117,7 @@ export function extractGitHubIssueDispatchFact(
   providerKey: string,
   event: VerifiedIngressEvent
 ): GitHubIssueDispatchFact | null {
-  if (providerKey !== 'github' || !(event.type in ACTIONS)) return null
+  if (providerKey !== 'github' || !Object.hasOwn(ACTIONS, event.type)) return null
   const eventType = event.type as GitHubIssueDispatchFact['eventType']
   const payload = object(event.payload)
   const rawAction = string(payload?.action)
