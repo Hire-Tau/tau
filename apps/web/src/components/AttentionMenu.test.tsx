@@ -30,7 +30,19 @@ function renderStream(attention: Attention, inherited: boolean): string {
   )
 }
 
+function renderLoadingStream(): string {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  return renderToStaticMarkup(
+    <QueryClientProvider client={client}>
+      <AttentionMenu target={{ kind: 'workStream', id: 'ws-1' }} />
+    </QueryClientProvider>
+  )
+}
+
 const radio = (html: string, label: string) => html.match(new RegExp(`<input[^>]*aria-label="${label}"[^>]*>`))?.[0]
+
+const levelLabel = (html: string, text: string) =>
+  html.match(new RegExp(`<label[^>]*>[^<]*<input[^>]*aria-label="${text}"[^>]*>`))?.[0]
 
 describe('AttentionMenu', () => {
   test('summarizes equal levels in one word and a mix as Custom', () => {
@@ -67,5 +79,18 @@ describe('AttentionMenu', () => {
     const html = renderSquad({ decisions: 'show', progress: 'show' }, false)
     expect(html).not.toContain('Inherits from squad')
     expect(html).not.toContain('Reset to squad')
+  })
+
+  test('a work stream claims neither inheritance nor an override until its subscription loads', () => {
+    const html = renderLoadingStream()
+    expect(html).not.toContain('Inherits from squad')
+    expect(html).not.toContain('Reset to squad')
+  })
+
+  test('the clipped radio lends its keyboard focus ring to the visible label', () => {
+    const html = renderSquad({ decisions: 'show', progress: 'show' })
+    expect(levelLabel(html, 'Decisions: Show')).toContain('has-[:focus-visible]:outline')
+    // The radio keeps focus through a level change: nothing disables it mid-request.
+    expect(radio(html, 'Decisions: Show')).not.toContain('disabled')
   })
 })

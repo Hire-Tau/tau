@@ -17,6 +17,10 @@ import type {
   TrackedResource,
   TrackedResourcesView,
 } from '@tau/shared'
+// The payload shapes live with the transport in @tau/client-core; web re-exports them so
+// components keep importing their api-layer types from one place, with one definition behind it.
+import type { SquadSubscription, WorkStreamSubscription } from '@tau/client-core'
+export type { SquadSubscription, WorkStreamSubscription }
 import { apiFetch } from './client'
 import { client } from './clientInstance'
 
@@ -305,17 +309,6 @@ export async function getWorkStreamMetrics(id: string): Promise<WorkStreamMetric
     `/workstreams/${encodeURIComponent(id)}?metrics=true`
   )
   return result.metrics
-}
-
-export interface SquadSubscription {
-  subscribed: boolean
-  count: number
-  attention: Attention
-}
-
-export interface WorkStreamSubscription extends SquadSubscription {
-  /** True when no row exists for this stream and the levels came from the squad (or the default). */
-  inherited: boolean
 }
 
 export async function getWorkStreamSubscription(id: string): Promise<WorkStreamSubscription> {

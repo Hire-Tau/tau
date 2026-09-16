@@ -29,6 +29,11 @@ const KIND_COPY: Record<AttentionKind, { label: string; helper: string }> = {
 
 const LEVEL_LABEL: Record<AttentionLevel, string> = { mute: 'Mute', show: 'Show', notify: 'Notify' }
 
+// The radio itself is `sr-only`, and `clip: rect(0,0,0,0)` would clip its focus outline away, so
+// the visible label wears the ring while the hidden input holds the keyboard focus.
+const LABEL_FOCUS_RING =
+  'has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus'
+
 const SUMMARY_LABEL: Record<AttentionLevel | 'custom', string> = {
   notify: 'Notify',
   show: 'Show',
@@ -56,7 +61,9 @@ export function AttentionMenu({ target, className }: { target: AttentionTarget; 
   const streamQuery = useQuery({ ...queries.workStreamSubscription.detail(target.id), enabled: !isSquad })
   const data: SquadSubscription | WorkStreamSubscription | undefined = isSquad ? squadQuery.data : streamQuery.data
   const attention: Attention = data?.attention ?? DEFAULT_ATTENTION
-  const inherited = !isSquad && (streamQuery.data?.inherited ?? true)
+  // Until the stream's own row loads, claim neither inheritance nor an override: guessing one
+  // flashes "Inherits from squad" on a stream that in fact has its own levels.
+  const inheritance = isSquad || !streamQuery.data ? null : streamQuery.data.inherited ? 'squad' : 'own'
   const summary = summarizeAttention(attention)
 
   const invalidate = () => {
@@ -93,12 +100,18 @@ export function AttentionMenu({ target, className }: { target: AttentionTarget; 
           <div key={kind} className="mb-3 last:mb-0">
             <p className="text-xs font-medium text-primary">{KIND_COPY[kind].label}</p>
             <p className="mb-1 text-xs text-muted">{KIND_COPY[kind].helper}</p>
-            <div role="radiogroup" aria-label={KIND_COPY[kind].label} className="flex gap-1">
+            <div
+              role="radiogroup"
+              aria-label={KIND_COPY[kind].label}
+              aria-busy={mutation.isPending}
+              className={clsx('flex gap-1', mutation.isPending && 'opacity-60')}
+            >
               {ATTENTION_LEVELS.map((level) => (
                 <label
                   key={level}
                   className={clsx(
                     'flex-1 cursor-pointer rounded border border-th-border px-2 py-1 text-center text-xs',
+                    LABEL_FOCUS_RING,
                     attention[kind] === level ? 'bg-accent text-white' : 'text-secondary hover:bg-surface-hover'
                   )}
                 >
@@ -108,7 +121,6 @@ export function AttentionMenu({ target, className }: { target: AttentionTarget; 
                     name={`${target.kind}-${target.id}-${kind}`}
                     aria-label={`${KIND_COPY[kind].label}: ${LEVEL_LABEL[level]}`}
                     checked={attention[kind] === level}
-                    disabled={mutation.isPending}
                     onChange={() => setLevel(kind, level)}
                   />
                   {LEVEL_LABEL[level]}
@@ -117,8 +129,8 @@ export function AttentionMenu({ target, className }: { target: AttentionTarget; 
             </div>
           </div>
         ))}
-        {!isSquad && inherited && <p className="text-xs text-muted">Inherits from squad</p>}
-        {!isSquad && !inherited && (
+        {inheritance === 'squad' && <p className="text-xs text-muted">Inherits from squad</p>}
+        {inheritance === 'own' && (
           <button
             type="button"
             onClick={() => mutation.mutate(null)}

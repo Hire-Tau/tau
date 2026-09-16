@@ -262,7 +262,7 @@ export function WorkStreamDetailModal({
       queryClient.invalidateQueries({ queryKey: queryKeys.actions.pending() })
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.allWorkStreams() })
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.workStreams(workStream.squadId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.squads.activeWorkStreams() })
+      queryClient.invalidateQueries({ queryKey: queryKeys.squads.activeWorkStreamsPrefix() })
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.activeWorkStreams(workStream.squadId) })
       queryClient.invalidateQueries({ queryKey: [...queryKeys.squads.all, 'doneWorkStreams'] })
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.workStreamDetail(workStream.id) })
