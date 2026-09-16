@@ -1808,16 +1808,26 @@ git_env_setup() {
       ;;
     git-https)
       local token=${GH_TOKEN:-}
-      if [[ -z ${token} ]]; then
-        prompt_value "GitHub token for git-https clone (\$GH_TOKEN unset)" token silent
+      # A token is optional: Core is a public repository (2026-09-16), so an
+      # unattended run with no $GH_TOKEN clones anonymously instead of dying.
+      # Interactive runs still get one chance to supply a token for a private
+      # fork; leaving it blank means anonymous too.
+      if [[ -z ${token} ]] && is_tty; then
+        prompt_value "GitHub token for git-https clone (blank = anonymous, public repository)" token silent
       fi
-      [[ -n ${token} ]] || die "git-https mode needs a token in \$GH_TOKEN"
       local bare=${SRC_REPO}
       bare=${bare#https://}
       # Accept ssh-style URLs in https mode: git@github.com:org/repo.git
       if [[ ${bare} == git@* ]]; then
         bare=${bare#git@}
         bare=${bare/:/\/}
+      fi
+      if [[ -z ${token} ]]; then
+        log_info "git-https: no \$GH_TOKEN — cloning https://${bare} anonymously (public repository)"
+        GIT_AUTH_URL="https://${bare}"
+        GIT_CLEAN_URL="https://${bare}"
+        export GIT_TERMINAL_PROMPT=0
+        return 0
       fi
       # The token must never appear in git's argv (ps-visible) or in the URL.
       # Only the non-secret username rides in the URL; git obtains the

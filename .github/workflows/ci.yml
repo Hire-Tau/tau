@@ -356,8 +356,9 @@ jobs:
       # shipped a TS2677 error in apps/core that no test could catch. Each
       # package's typecheck is `tsc --noEmit`, so this builds nothing and the
       # step it replaced ("Build shared package") never built anything either.
-      # Blacksmith reported 16,169,252 kB (15.42 GiB) of host memory and an
-      # effective 6,492,782,592-byte V8 ceiling, leaving 9.37 GiB outside it.
+      # The 16 GiB runners this measured on reported 16,169,252 kB of host
+      # memory and an effective 6,492,782,592-byte V8 ceiling, leaving 9.37 GiB
+      # outside it.
       # Bun runs dependency-independent workspace scripts concurrently, so the
       # Core-only variable avoids multiplying that ceiling across every tsc.
       - name: Typecheck all packages
