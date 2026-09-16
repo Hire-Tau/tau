@@ -5,7 +5,7 @@ import { apiGet, apiPost, apiPatch, apiPut, apiDelete, apiGetRaw } from '../clie
 import { output, outputTable, outputError, isJsonMode } from '../output'
 import { WorkStream } from './workstream'
 import { registerSquadGrantCommands } from './squad-grant'
-import { describeAttention, resolveAttentionUpdate, type SubscriptionResponse } from './attention'
+import { describeAttention, performAttentionSubscribe, type SubscriptionResponse } from './attention'
 import { buildMetadataDelta, getMetadataValue, parseMetadataPath, parseMetadataValue } from '../metadata'
 
 interface Squad {
@@ -1169,18 +1169,18 @@ export function registerSquadCommands(program: Command) {
     .option('--progress <level>', 'Active work and completions: mute, show, or notify')
     .action(async (id, options) => {
       try {
-        // Read the current row only when one level was given and the other must be preserved.
-        const current =
-          options.decisions !== undefined && options.progress !== undefined
-            ? undefined
-            : await apiGet<SubscriptionResponse>(`/api/squads/${id}/subscription`)
-        const attention = resolveAttentionUpdate(current?.attention, current?.subscribed ?? false, options)
-        const sub = attention
-          ? await apiPost<SubscriptionResponse>(`/api/squads/${id}/subscribe`, { attention })
-          : await apiPost<SubscriptionResponse>(`/api/squads/${id}/subscribe`)
+        const sub = await performAttentionSubscribe({
+          apiGet,
+          apiPost,
+          subscriptionPath: `/api/squads/${id}/subscription`,
+          subscribePath: `/api/squads/${id}/subscribe`,
+          flags: options,
+        })
         output(sub, `Watching squad ${id.slice(0, 8)} (${sub.count} watcher(s)) — ${describeAttention(sub.attention)}`)
       } catch (error) {
         outputError(error as Error)
+        // outputError is a no-op under the test mock (see test-setup.ts) and calls
+        // process.exit in production; rethrow so tests can observe the rejection.
         throw error
       }
     })

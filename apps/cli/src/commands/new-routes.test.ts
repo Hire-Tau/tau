@@ -74,6 +74,7 @@ describe('CLI commands for new routes', () => {
       attention: { decisions: 'notify', progress: 'notify' },
     })
     await makeRunner(registerSquadCommands)(['squad', 'subscribe', 'squad-1'])
+    expect(apiGet).not.toHaveBeenCalled()
     expect(apiPost).toHaveBeenCalledWith('/api/squads/squad-1/subscribe')
   })
 
@@ -89,6 +90,7 @@ describe('CLI commands for new routes', () => {
       attention: { decisions: 'notify', progress: 'mute' },
     })
     await makeRunner(registerSquadCommands)(['squad', 'watch', 'squad-1', '--progress', 'mute'])
+    expect(apiGet).toHaveBeenCalledTimes(1)
     expect(apiGet).toHaveBeenCalledWith('/api/squads/squad-1/subscription')
     expect(apiPost).toHaveBeenCalledWith('/api/squads/squad-1/subscribe', {
       attention: { decisions: 'notify', progress: 'mute' },
@@ -107,6 +109,7 @@ describe('CLI commands for new routes', () => {
       attention: { decisions: 'mute', progress: 'notify' },
     })
     await makeRunner(registerSquadCommands)(['squad', 'watch', 'squad-1', '--decisions', 'mute'])
+    expect(apiGet).toHaveBeenCalledTimes(1)
     expect(apiPost).toHaveBeenCalledWith('/api/squads/squad-1/subscribe', {
       attention: { decisions: 'mute', progress: 'notify' },
     })
@@ -120,6 +123,18 @@ describe('CLI commands for new routes', () => {
     })
     await makeRunner(registerSquadCommands)(['squad', 'unsubscribe', 'squad-1'])
     expect(apiDelete).toHaveBeenCalledWith('/api/squads/squad-1/subscribe')
+  })
+
+  it('workstream subscribe with no flags posts no body', async () => {
+    ;(apiPost as AnyMock).mockResolvedValue({
+      subscribed: true,
+      count: 1,
+      attention: { decisions: 'notify', progress: 'notify' },
+      inherited: false,
+    })
+    await makeRunner(registerWorkstreamCommands)(['workstream', 'subscribe', 'ws-1'])
+    expect(apiGet).not.toHaveBeenCalled()
+    expect(apiPost).toHaveBeenCalledWith('/api/workstreams/ws-1/subscribe')
   })
 
   it('workstream subscribe forwards both levels when both flags are given', async () => {
@@ -160,6 +175,7 @@ describe('CLI commands for new routes', () => {
     await expect(
       makeRunner(registerSquadCommands)(['squad', 'watch', 'squad-1', '--decisions', 'loud'])
     ).rejects.toThrow('--decisions must be one of mute, show, notify')
+    expect(apiGet).not.toHaveBeenCalled()
     expect(apiPost).not.toHaveBeenCalled()
   })
 

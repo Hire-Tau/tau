@@ -44,3 +44,33 @@ export function describeAttention(attention: Attention, opts: { inherited?: bool
   const inherited = opts.inherited ? ' (inherited from the squad)' : ''
   return `decisions: ${attention.decisions}, progress: ${attention.progress}${inherited}`
 }
+
+export interface PerformAttentionSubscribeArgs {
+  apiGet: <T>(path: string) => Promise<T>
+  apiPost: <T>(path: string, body?: unknown) => Promise<T>
+  subscriptionPath: string
+  subscribePath: string
+  flags: AttentionFlags
+}
+
+/**
+ * Shared subscribe orchestration for `squad subscribe`/`watch` and `workstream subscribe`/`watch`.
+ * Validates the flags before any network call. Reads the current row only when exactly one flag was
+ * given (the other level must be preserved); zero flags posts no body, and two flags post the full
+ * object directly without a read.
+ */
+export async function performAttentionSubscribe({
+  apiGet,
+  apiPost,
+  subscriptionPath,
+  subscribePath,
+  flags,
+}: PerformAttentionSubscribeArgs): Promise<SubscriptionResponse> {
+  const requested = parseAttentionFlags(flags) // throws before any network call
+  const exactlyOneFlag = (requested.decisions === undefined) !== (requested.progress === undefined)
+  const current = exactlyOneFlag ? await apiGet<SubscriptionResponse>(subscriptionPath) : undefined
+  const attention = resolveAttentionUpdate(current?.attention, current?.subscribed ?? false, flags)
+  return attention
+    ? apiPost<SubscriptionResponse>(subscribePath, { attention })
+    : apiPost<SubscriptionResponse>(subscribePath)
+}

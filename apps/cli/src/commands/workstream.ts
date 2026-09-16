@@ -15,7 +15,7 @@ import { output, outputTable, outputError, isJsonMode, setOutputOptions } from '
 import { WORK_STREAM_COMPLETION_MODES, WORK_STREAM_PRIORITIES } from '@tau/shared'
 import { buildMetadataDelta, getMetadataValue, parseMetadataPath, parseMetadataValue } from '../metadata'
 import { selectOpenWait } from './workstream-wait-selection'
-import { describeAttention, resolveAttentionUpdate, type SubscriptionResponse } from './attention'
+import { describeAttention, performAttentionSubscribe, type SubscriptionResponse } from './attention'
 import type {
   Agent as AgentJson,
   ResolvedTrackedResource,
@@ -1271,22 +1271,21 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .option('--progress <level>', 'Active work and completions: mute, show, or notify')
     .action(async (id, options) => {
       try {
-        const current =
-          options.decisions !== undefined && options.progress !== undefined
-            ? undefined
-            : await apiGet<SubscriptionResponse>(`/api/workstreams/${encodeURIComponent(id)}/subscription`)
-        const attention = resolveAttentionUpdate(current?.attention, current?.subscribed ?? false, options)
-        const sub = attention
-          ? await apiPost<SubscriptionResponse>(`/api/workstreams/${encodeURIComponent(id)}/subscribe`, {
-              attention,
-            })
-          : await apiPost<SubscriptionResponse>(`/api/workstreams/${encodeURIComponent(id)}/subscribe`)
+        const sub = await performAttentionSubscribe({
+          apiGet,
+          apiPost,
+          subscriptionPath: `/api/workstreams/${encodeURIComponent(id)}/subscription`,
+          subscribePath: `/api/workstreams/${encodeURIComponent(id)}/subscribe`,
+          flags: options,
+        })
         output(
           sub,
           `Watching work stream ${id.slice(0, 8)} (${sub.count} watcher(s)) — ${describeAttention(sub.attention)}`
         )
       } catch (error) {
         outputError(error as Error)
+        // outputError is a no-op under the test mock (see test-setup.ts) and calls
+        // process.exit in production; rethrow so tests can observe the rejection.
         throw error
       }
     })
