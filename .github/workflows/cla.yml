@@ -16,7 +16,7 @@ jobs:
   cla:
     name: CLA automation
     if: github.event_name == 'pull_request_target' || github.event.issue.pull_request
-    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
+    runs-on: ubuntu-24.04
     env:
       CLA_REGISTRY_OWNER: ${{ github.repository_owner }}
       CLA_REGISTRY_REPOSITORY: ${{ secrets.CLA_REGISTRY_REPOSITORY }}

@@ -2,6 +2,13 @@ node_modules/
 dist/
 .env
 .env.local
+.env.*
+!.env.example
+# private keys and certificates never belong in the tree
+*.pem
+*.key
+*.p12
+*.pfx
 *.log
 .DS_Store
 *.tsbuildinfo

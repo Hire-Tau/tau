@@ -151,8 +151,8 @@ describe('tracked resources', () => {
 describe('code host reference', () => {
   const binding = {
     integration: 'github',
-    repository: 'Hire-Tau/tau-platform',
-    changeRequest: { number: 1482, url: 'https://github.com/Hire-Tau/tau-platform/pull/1482' },
+    repository: 'example-org/example-repo',
+    changeRequest: { number: 1482, url: 'https://github.com/example-org/example-repo/pull/1482' },
   }
 
   test('a well-formed binding resolves', () => {
