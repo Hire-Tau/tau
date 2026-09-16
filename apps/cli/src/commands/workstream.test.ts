@@ -648,6 +648,32 @@ describe('workstream CLI commands', () => {
       expect(outputError).toHaveBeenCalledWith(new Error('Expected owner/repo#number'))
     })
 
+    it('refuses --connection combined with --url or --event', async () => {
+      await run([
+        'workstream',
+        'track',
+        'stream-1',
+        '--url',
+        'https://github.com/acme/widgets/pull/7',
+        '--connection',
+        'conn-1',
+      ])
+      expect(outputError).toHaveBeenLastCalledWith(new Error('--connection applies to --issue and --pr only'))
+      ;(outputError as ReturnType<typeof mock>).mockClear()
+
+      await run([
+        'workstream',
+        'track',
+        'stream-1',
+        '--event',
+        'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee',
+        '--connection',
+        'conn-1',
+      ])
+      expect(outputError).toHaveBeenLastCalledWith(new Error('--connection applies to --issue and --pr only'))
+      expect(apiPost).not.toHaveBeenCalled()
+    })
+
     it('rejects zero or multiple selectors', async () => {
       await run(['workstream', 'track', 'stream-1'])
       expect(outputError).toHaveBeenLastCalledWith(new Error('Choose exactly one of --event, --url, --issue, --pr'))
@@ -695,6 +721,20 @@ describe('workstream CLI commands', () => {
 
       await run(['workstream', 'untrack', 'stream-1', '--issue', 'acme/widgets#1', '--pr', 'acme/widgets#2'])
       expect(outputError).toHaveBeenLastCalledWith(new Error('Choose exactly one of --url, --issue, --pr'))
+      expect(apiDelete).not.toHaveBeenCalled()
+    })
+
+    it('refuses --connection combined with --url', async () => {
+      await run([
+        'workstream',
+        'untrack',
+        'stream-1',
+        '--url',
+        'https://github.com/acme/widgets/pull/7',
+        '--connection',
+        'conn-1',
+      ])
+      expect(outputError).toHaveBeenLastCalledWith(new Error('--connection applies to --issue and --pr only'))
       expect(apiDelete).not.toHaveBeenCalled()
     })
   })

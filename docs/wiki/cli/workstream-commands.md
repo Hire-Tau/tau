@@ -584,7 +584,7 @@ tau workstream track <id> [options]
 | `--url <url>` | Track by code-host resource URL |
 | `--issue <ref>` | Track a GitHub issue, e.g. `owner/repo#12` |
 | `--pr <ref>` | Track a GitHub pull request, e.g. `owner/repo#12` |
-| `--connection <connectionId>` | Integration connection ID (only with `--issue`/`--pr`) |
+| `--connection <connectionId>` | Integration connection ID (`--issue`/`--pr` only) |
 | `--delivery` | Count this pull request toward the work stream's delivery (only with `--url`/`--pr`) |
 
 **Examples:**
@@ -612,7 +612,11 @@ affecting `pr-merge`/`pr-auto-merge` completion, unless `--delivery` flags it,
 in which case `tau workstream finish` additionally requires it to be merged.
 `--delivery` combined with `--issue` or `--event` is rejected — an issue is
 never a delivery change request, and an event's resource kind isn't known
-until the server resolves it.
+until the server resolves it. Likewise, `--connection` combined with `--url`
+or `--event` is rejected with `--connection applies to --issue and --pr
+only` — it only ever applied to a resolved `--issue`/`--pr` reference, so
+silently dropping it there would let a mistyped combination look like it
+took effect.
 
 ---
 
@@ -635,7 +639,7 @@ tau workstream untrack <id> [options]
 | `--url <url>` | Untrack by code-host resource URL |
 | `--issue <ref>` | Untrack a GitHub issue, e.g. `owner/repo#12` |
 | `--pr <ref>` | Untrack a GitHub pull request, e.g. `owner/repo#12` |
-| `--connection <connectionId>` | Integration connection ID (only with `--issue`/`--pr`) |
+| `--connection <connectionId>` | Integration connection ID (`--issue`/`--pr` only) |
 
 **Examples:**
 
