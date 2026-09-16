@@ -44,12 +44,19 @@ const radio = (html: string, label: string) => html.match(new RegExp(`<input[^>]
 const levelLabel = (html: string, text: string) =>
   html.match(new RegExp(`<label[^>]*>[^<]*<input[^>]*aria-label="${text}"[^>]*>`))?.[0]
 
+/**
+ * The trigger's one-word summary. Asserting on the whole document would be vacuous: every render
+ * contains "Notify", "Show" and "Mute" as radio labels, so only the <summary> span proves the
+ * collapse rule.
+ */
+const summaryLabel = (html: string) => html.match(/<summary[^>]*>.*?<span>([^<]*)<\/span>/s)?.[1]
+
 describe('AttentionMenu', () => {
   test('summarizes equal levels in one word and a mix as Custom', () => {
-    expect(renderSquad({ decisions: 'notify', progress: 'notify' })).toContain('Notify')
-    expect(renderSquad({ decisions: 'show', progress: 'show' }, false)).toContain('Show')
-    expect(renderSquad({ decisions: 'mute', progress: 'mute' })).toContain('Muted')
-    expect(renderSquad({ decisions: 'notify', progress: 'mute' })).toContain('Custom')
+    expect(summaryLabel(renderSquad({ decisions: 'notify', progress: 'notify' }))).toBe('Notify')
+    expect(summaryLabel(renderSquad({ decisions: 'show', progress: 'show' }, false))).toBe('Show')
+    expect(summaryLabel(renderSquad({ decisions: 'mute', progress: 'mute' }))).toBe('Muted')
+    expect(summaryLabel(renderSquad({ decisions: 'notify', progress: 'mute' }))).toBe('Custom')
   })
 
   test('offers both kinds with their helper text and checks the current level of each', () => {

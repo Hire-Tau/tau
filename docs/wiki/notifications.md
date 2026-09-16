@@ -218,7 +218,7 @@ Human recipients of a work stream's notices come from attention rows, not from a
 
 For each notice the server loads that stream's rows and its squad's rows — a bounded candidate set — and keeps the users whose effective level for the deciding kind is `notify` (stream row first, then squad row; no row means `show`, which never notifies). Every other lifecycle event (`assigned`, `canceled`, `reopened`, `dependency_canceled`, `idle`, `unblocked`, `reviewed`, `updated`) stays agent-facing.
 
-Live Activity and the work-list widget use the same rows the other direction: a squad or work stream appears there once either kind's effective level is `notify` — the same bar push uses.
+Live Activity and the work-list widget use the same rows the other direction: a squad or work stream appears there once either kind's effective level is `notify` — the same threshold push uses.
 
 ## Debugging
 

@@ -97,7 +97,9 @@ describe('CLI commands for new routes', () => {
     })
   })
 
-  it('squad watch with one flag defaults the other level to notify on a new row', async () => {
+  it('squad watch with one flag keeps the effective other level even with no row yet', async () => {
+    // Unsubscribed: the GET still reports the level the user experiences today (the default).
+    // Muting decisions must not silently turn progress up to notify.
     ;(apiGet as AnyMock).mockResolvedValue({
       subscribed: false,
       count: 0,
@@ -106,10 +108,43 @@ describe('CLI commands for new routes', () => {
     ;(apiPost as AnyMock).mockResolvedValue({
       subscribed: true,
       count: 1,
-      attention: { decisions: 'mute', progress: 'notify' },
+      attention: { decisions: 'mute', progress: 'show' },
     })
     await makeRunner(registerSquadCommands)(['squad', 'watch', 'squad-1', '--decisions', 'mute'])
     expect(apiGet).toHaveBeenCalledTimes(1)
+    expect(apiPost).toHaveBeenCalledWith('/api/squads/squad-1/subscribe', {
+      attention: { decisions: 'mute', progress: 'show' },
+    })
+  })
+
+  it('workstream watch with one flag merges with the inherited squad level, not with notify', async () => {
+    ;(apiGet as AnyMock).mockResolvedValue({
+      subscribed: false,
+      count: 1,
+      attention: { decisions: 'notify', progress: 'mute' },
+      inherited: true,
+    })
+    ;(apiPost as AnyMock).mockResolvedValue({
+      subscribed: true,
+      count: 1,
+      attention: { decisions: 'show', progress: 'mute' },
+      inherited: false,
+    })
+    await makeRunner(registerWorkstreamCommands)(['workstream', 'watch', 'ws-1', '--decisions', 'show'])
+    expect(apiGet).toHaveBeenCalledWith('/api/workstreams/ws-1/subscription')
+    expect(apiPost).toHaveBeenCalledWith('/api/workstreams/ws-1/subscribe', {
+      attention: { decisions: 'show', progress: 'mute' },
+    })
+  })
+
+  it('falls back to notify for the untouched kind only when the read carries no attention', async () => {
+    ;(apiGet as AnyMock).mockResolvedValue({ subscribed: false, count: 0 })
+    ;(apiPost as AnyMock).mockResolvedValue({
+      subscribed: true,
+      count: 1,
+      attention: { decisions: 'mute', progress: 'notify' },
+    })
+    await makeRunner(registerSquadCommands)(['squad', 'watch', 'squad-1', '--decisions', 'mute'])
     expect(apiPost).toHaveBeenCalledWith('/api/squads/squad-1/subscribe', {
       attention: { decisions: 'mute', progress: 'notify' },
     })

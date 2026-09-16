@@ -674,7 +674,7 @@ tau workstream watch STREAM_ID --progress mute   # reviews still reach you, comp
 tau workstream unwatch STREAM_ID                 # drop the row; inherit the squad again
 ```
 
-An omitted flag keeps the level already stored on this stream, or defaults to `notify` when the stream has no row yet.
+An omitted flag keeps the kind at its current EFFECTIVE level — the level stored on this stream's own row, otherwise the level inherited from the squad, otherwise the default `show`. Changing one kind never turns the other one up, so setting one flag on an inheriting stream writes a row that preserves what the other kind already did.
 
 ## Work Stream Statuses
 

@@ -26,18 +26,19 @@ export function parseAttentionFlags(flags: AttentionFlags): Partial<Attention> {
 
 /**
  * The levels to send. No flag at all means "send nothing": the server inserts WATCH_ATTENTION on a
- * new row and leaves an existing row's levels alone. One flag keeps the other kind at its current
- * value (or notify, on a row that does not exist yet).
+ * new row and leaves an existing row's levels alone.
+ *
+ * MERGE BASE. One flag changes exactly that kind and leaves the other at the level the user
+ * currently EXPERIENCES — which is what the GET returns in `attention` whether or not a row exists:
+ * the row's own levels, else the inherited squad levels (work streams), else DEFAULT_ATTENTION.
+ * `subscribed` is deliberately not consulted; turning one kind up must not silently turn the other
+ * one up too. WATCH_ATTENTION remains the fallback only when the response carries no attention at
+ * all (an old server, or a failed read).
  */
-export function resolveAttentionUpdate(
-  current: Attention | undefined,
-  subscribed: boolean,
-  flags: AttentionFlags
-): Attention | undefined {
+export function resolveAttentionUpdate(current: Attention | undefined, flags: AttentionFlags): Attention | undefined {
   const requested = parseAttentionFlags(flags)
   if (requested.decisions === undefined && requested.progress === undefined) return undefined
-  const base = subscribed && current ? current : WATCH_ATTENTION
-  return { ...base, ...requested }
+  return { ...(current ?? WATCH_ATTENTION), ...requested }
 }
 
 export function describeAttention(attention: Attention, opts: { inherited?: boolean } = {}): string {
@@ -55,9 +56,10 @@ export interface PerformAttentionSubscribeArgs {
 
 /**
  * Shared subscribe orchestration for `squad subscribe`/`watch` and `workstream subscribe`/`watch`.
- * Validates the flags before any network call. Reads the current row only when exactly one flag was
- * given (the other level must be preserved); zero flags posts no body, and two flags post the full
- * object directly without a read.
+ * Validates the flags before any network call. Reads the subscription only when exactly one flag was
+ * given — the other kind has to be preserved at its EFFECTIVE level, which the GET reports whether
+ * the target has its own row, inherits a squad row, or has neither. Zero flags posts no body, and
+ * two flags post the full object directly without a read.
  */
 export async function performAttentionSubscribe({
   apiGet,
@@ -69,7 +71,7 @@ export async function performAttentionSubscribe({
   const requested = parseAttentionFlags(flags) // throws before any network call
   const exactlyOneFlag = (requested.decisions === undefined) !== (requested.progress === undefined)
   const current = exactlyOneFlag ? await apiGet<SubscriptionResponse>(subscriptionPath) : undefined
-  const attention = resolveAttentionUpdate(current?.attention, current?.subscribed ?? false, flags)
+  const attention = resolveAttentionUpdate(current?.attention, flags)
   return attention
     ? apiPost<SubscriptionResponse>(subscribePath, { attention })
     : apiPost<SubscriptionResponse>(subscribePath)

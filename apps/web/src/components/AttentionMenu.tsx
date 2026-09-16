@@ -66,14 +66,20 @@ export function AttentionMenu({ target, className }: { target: AttentionTarget; 
   const inheritance = isSquad || !streamQuery.data ? null : streamQuery.data.inherited ? 'squad' : 'own'
   const summary = summarizeAttention(attention)
 
+  const detailKey = isSquad
+    ? queryKeys.squadSubscription.detail(target.id)
+    : queryKeys.workStreamSubscription.detail(target.id)
+
   const invalidate = () => {
-    queryClient.invalidateQueries({
-      queryKey: isSquad
-        ? queryKeys.squadSubscription.detail(target.id)
-        : queryKeys.workStreamSubscription.detail(target.id),
-    })
+    queryClient.invalidateQueries({ queryKey: detailKey })
     queryClient.invalidateQueries({ queryKey: queryKeys.actions.pending() })
     queryClient.invalidateQueries({ queryKey: queryKeys.squads.activeWorkStreamsPrefix() })
+    // Attention decides what the feed's presence/active-work surface carries, so it goes stale
+    // with every level change.
+    queryClient.invalidateQueries({ queryKey: queryKeys.activity.presence() })
+    // A squad-level change moves every stream that inherits from it. Those menus are open in
+    // other rows with their own cached rows, so refresh the whole family rather than one id.
+    if (isSquad) queryClient.invalidateQueries({ queryKey: queryKeys.workStreamSubscription.all })
   }
 
   const mutation = useMutation({
@@ -81,7 +87,13 @@ export function AttentionMenu({ target, className }: { target: AttentionTarget; 
       if (next === null) return isSquad ? unsubscribeSquad(target.id) : unsubscribeWorkStream(target.id)
       return isSquad ? subscribeSquad(target.id, next) : subscribeWorkStream(target.id, next)
     },
-    onSuccess: invalidate,
+    // Seed this target's row from the response BEFORE invalidating: the refetch it triggers leaves
+    // the query pending for a beat, and without the seed the radios snap back to the pre-change
+    // levels until it lands.
+    onSuccess: (updated) => {
+      queryClient.setQueryData(detailKey, updated)
+      invalidate()
+    },
   })
 
   const setLevel = (kind: AttentionKind, level: AttentionLevel) => mutation.mutate({ ...attention, [kind]: level })

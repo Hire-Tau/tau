@@ -426,7 +426,7 @@ tau squad watch SQUAD_ID --decisions mute --progress mute
 tau squad unwatch SQUAD_ID               # remove the row; back to show/show
 ```
 
-An omitted flag keeps the level already stored, or defaults to `notify` when no row exists yet. A per-work-stream row overrides these levels for that one stream.
+An omitted flag keeps the kind at its current EFFECTIVE level — the level stored on your row if you have one, otherwise the default `show`. Changing one kind never turns the other one up. A per-work-stream row overrides these levels for that one stream.
 
 ## Workflow configuration
 

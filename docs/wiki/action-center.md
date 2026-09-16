@@ -13,10 +13,14 @@ agent conversation/context
   -> all requested-lifecycle questions for that agent
 
 agent-question lifecycle event
-  -> durable direct attention recipients + compatible owner + authorized attention
-  -> Action Center / push / targeted actions.invalidated WebSocket frame with data: {}
-  -> actions + exact-question cache invalidation
-  -> authoritative REST refetch
+  -> durable direct attention recipients + compatible owner + authorized readers
+  |
+  +-> attention applied (kind not mute -> Action Center; kind = notify -> push)
+  |
+  +-> permission-shaped audience only, attention NOT applied
+        -> targeted actions.invalidated WebSocket frame with data: {}
+        -> actions + exact-question cache invalidation
+        -> authoritative REST refetch
 ```
 
 `PendingAction` and its action-data types live in `packages/shared/src/types.ts`. Each action has a full `id`, numeric `priority`, ISO-string `createdAt`, type-specific `data`, and `canRespond`. A visible action with `canRespond: false` remains visible and is explicitly read-only.
