@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { serveStatic } from 'hono/bun'
 import type { Hono } from 'hono'
 import { resolveWebDist } from './web-dist'
+import { primaryWebOrigin } from '../services/auth/web-origins'
 
 type Log = { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void }
 
@@ -17,6 +18,32 @@ function envFlag(value: string | undefined): 'on' | 'off' | 'auto' {
 }
 
 const HASHED_ASSET = /\/assets\/[^/]+\.[0-9a-f]{8,}\./i
+
+/**
+ * The placeholder apps/web/index.html uses for absolute, self-referencing
+ * URLs (og:url, og:image): link crawlers ignore relative ones, and a built
+ * index.html cannot know which origin it will be served from.
+ */
+export const ORIGIN_PLACEHOLDER = '__TAU_ORIGIN__'
+
+export function renderIndexHtml(html: string, origin: string): string {
+  return html.replaceAll(ORIGIN_PLACEHOLDER, origin.replace(/\/+$/, ''))
+}
+
+/**
+ * This instance's public origin, for the placeholder above. The configured web
+ * origin (TAU_WEB_ORIGIN, the same source WebAuthn trusts) wins; otherwise the
+ * reverse proxy's forwarded headers; otherwise the request URL itself.
+ */
+export function publicOrigin(c: { req: { url: string; header: (name: string) => string | undefined } }): string {
+  if (process.env.TAU_WEB_ORIGIN ?? process.env.WEBAUTHN_ORIGIN ?? process.env.APP_URL) return primaryWebOrigin()
+  const host = c.req.header('x-forwarded-host')?.split(',')[0].trim()
+  if (host) {
+    const proto = c.req.header('x-forwarded-proto')?.split(',')[0].trim() || 'https'
+    return `${proto}://${host}`
+  }
+  return new URL(c.req.url).origin
+}
 
 /**
  * Mounts static-file serving and SPA fallback for the built web UI.
@@ -66,6 +93,19 @@ export function maybeMountWebUi(app: Hono, log: Log): boolean {
     },
   })
 
+  const indexFile = Bun.file(join(distPath, 'index.html'))
+  const serveIndex = async (c: Parameters<typeof staticHandler>[0]) => {
+    c.header('Cache-Control', 'no-cache')
+    c.header('Content-Type', 'text/html; charset=utf-8')
+    return c.body(renderIndexHtml(await indexFile.text(), publicOrigin(c)))
+  }
+
+  // index.html is rendered, not streamed from disk, so the origin placeholder
+  // never reaches a browser or a crawler. Registered ahead of serveStatic,
+  // which would otherwise serve the raw file for '/' and '/index.html'.
+  app.get('/', (c) => serveIndex(c))
+  app.get('/index.html', (c) => serveIndex(c))
+
   app.use('*', async (c, next) => {
     if (isReservedApiPath(c.req.path)) return next()
     return staticHandler(c, next)
@@ -76,12 +116,8 @@ export function maybeMountWebUi(app: Hono, log: Log): boolean {
     const accept = c.req.header('accept') ?? ''
     if (!accept.includes('text/html')) return next()
 
-    const file = Bun.file(join(distPath, 'index.html'))
-    if (!(await file.exists())) return next()
-
-    c.header('Cache-Control', 'no-cache')
-    c.header('Content-Type', 'text/html; charset=utf-8')
-    return c.body(await file.bytes())
+    if (!(await indexFile.exists())) return next()
+    return serveIndex(c)
   })
 
   log.info(`Serving web UI from ${distPath}`)

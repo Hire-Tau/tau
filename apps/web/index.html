@@ -43,8 +43,32 @@
     <meta name="msapplication-TileColor" content="#7c3aed" />
     <meta name="msapplication-TileImage" content="/icons/icon-144x144.png" />
 
-    <!-- Description for SEO and sharing -->
-    <meta name="description" content="AI-powered task management and automation" />
+    <!-- Description for SEO and sharing. __TAU_ORIGIN__ is replaced by the
+         server (apps/core/src/lib/web-serve.ts) with this instance's public
+         origin: link crawlers ignore relative og:image / og:url values. -->
+    <meta name="description" content="A workspace for teams of AI agents. Self-hosted, with an optional cloud." />
+    <meta property="og:title" content="Tau" />
+    <meta
+      property="og:description"
+      content="A workspace for teams of AI agents. Self-hosted, with an optional cloud."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Tau" />
+    <meta property="og:url" content="__TAU_ORIGIN__/" />
+    <meta property="og:image" content="__TAU_ORIGIN__/social-preview.png" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="640" />
+    <meta
+      property="og:image:alt"
+      content="Tau: a workspace for teams of AI agents. Self-hosted, with an optional cloud."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Tau" />
+    <meta
+      name="twitter:description"
+      content="A workspace for teams of AI agents. Self-hosted, with an optional cloud."
+    />
+    <meta name="twitter:image" content="__TAU_ORIGIN__/social-preview.png" />
 
     <!-- Prevent telephone number detection on iOS -->
     <meta name="format-detection" content="telephone=no" />
