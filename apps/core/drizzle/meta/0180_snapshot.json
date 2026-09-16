@@ -1,5 +1,5 @@
 {
-  "id": "8b3c1ea2-1449-4851-9527-50ff18776fb4",
+  "id": "f70d40dd-65f6-4f09-b2bf-c6e2be461463",
   "prevId": "a7248150-58e9-470d-b961-cfa76b12ec9f",
   "version": "7",
   "dialect": "postgresql",
@@ -2007,6 +2007,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "next_update_sequence": {
+          "name": "next_update_sequence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -2141,6 +2148,311 @@
           "columns": [
             "conversation_id",
             "position"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.assistant_tasks": {
+      "name": "assistant_tasks",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "conversation_id": {
+          "name": "conversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "current_request_id": {
+          "name": "current_request_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "squad_id": {
+          "name": "squad_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_assistant_tasks_conversation_updated": {
+          "name": "idx_assistant_tasks_conversation_updated",
+          "columns": [
+            {
+              "expression": "conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "assistant_tasks_conversation_id_assistant_conversations_id_fk": {
+          "name": "assistant_tasks_conversation_id_assistant_conversations_id_fk",
+          "tableFrom": "assistant_tasks",
+          "tableTo": "assistant_conversations",
+          "columnsFrom": [
+            "conversation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "assistant_tasks_agent_id_agents_id_fk": {
+          "name": "assistant_tasks_agent_id_agents_id_fk",
+          "tableFrom": "assistant_tasks",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "assistant_tasks_squad_id_squads_id_fk": {
+          "name": "assistant_tasks_squad_id_squads_id_fk",
+          "tableFrom": "assistant_tasks",
+          "tableTo": "squads",
+          "columnsFrom": [
+            "squad_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.assistant_updates": {
+      "name": "assistant_updates",
+      "schema": "",
+      "columns": {
+        "message_id": {
+          "name": "message_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "conversation_id": {
+          "name": "conversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "request_id": {
+          "name": "request_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sequence": {
+          "name": "sequence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reported_status": {
+          "name": "reported_status",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "processed_at": {
+          "name": "processed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "seen_at": {
+          "name": "seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_assistant_updates_unseen": {
+          "name": "idx_assistant_updates_unseen",
+          "columns": [
+            {
+              "expression": "conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"assistant_updates\".\"seen_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_assistant_updates_unprocessed": {
+          "name": "idx_assistant_updates_unprocessed",
+          "columns": [
+            {
+              "expression": "conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"assistant_updates\".\"processed_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "assistant_updates_message_id_inbox_id_fk": {
+          "name": "assistant_updates_message_id_inbox_id_fk",
+          "tableFrom": "assistant_updates",
+          "tableTo": "inbox",
+          "columnsFrom": [
+            "message_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "assistant_updates_conversation_id_assistant_conversations_id_fk": {
+          "name": "assistant_updates_conversation_id_assistant_conversations_id_fk",
+          "tableFrom": "assistant_updates",
+          "tableTo": "assistant_conversations",
+          "columnsFrom": [
+            "conversation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "assistant_updates_task_id_assistant_tasks_id_fk": {
+          "name": "assistant_updates_task_id_assistant_tasks_id_fk",
+          "tableFrom": "assistant_updates",
+          "tableTo": "assistant_tasks",
+          "columnsFrom": [
+            "task_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "assistant_updates_sequence": {
+          "name": "assistant_updates_sequence",
+          "nullsNotDistinct": false,
+          "columns": [
+            "conversation_id",
+            "sequence"
           ]
         }
       },
@@ -14375,15 +14687,15 @@
       "checkConstraints": {
         "squad_activity_lane_check": {
           "name": "squad_activity_lane_check",
-          "value": "\"squad_activity\".\"lane\" IN (10,20,21,22,30,31,40,41,50,60,61,70,71)"
+          "value": "\"squad_activity\".\"lane\" IN (10,20,21,22,30,31,40,41,50,60,61,70)"
         },
         "squad_activity_lane_kind_check": {
           "name": "squad_activity_lane_kind_check",
-          "value": "(\"squad_activity\".\"lane\"=10 AND \"squad_activity\".\"kind\"='message') OR (\"squad_activity\".\"lane\"=20 AND \"squad_activity\".\"kind\"='message') OR (\"squad_activity\".\"lane\"=21 AND \"squad_activity\".\"kind\"='message') OR (\"squad_activity\".\"lane\"=22 AND \"squad_activity\".\"kind\"='subagent') OR (\"squad_activity\".\"lane\"=30 AND \"squad_activity\".\"kind\"='workstream') OR (\"squad_activity\".\"lane\"=31 AND \"squad_activity\".\"kind\"='workstream') OR (\"squad_activity\".\"lane\"=40 AND \"squad_activity\".\"kind\"='wait') OR (\"squad_activity\".\"lane\"=41 AND \"squad_activity\".\"kind\"='wait') OR (\"squad_activity\".\"lane\"=50 AND \"squad_activity\".\"kind\"='handoff') OR (\"squad_activity\".\"lane\"=60 AND \"squad_activity\".\"kind\"='execution') OR (\"squad_activity\".\"lane\"=61 AND \"squad_activity\".\"kind\"='execution') OR (\"squad_activity\".\"lane\"=70 AND \"squad_activity\".\"kind\"='pr') OR (\"squad_activity\".\"lane\"=71 AND \"squad_activity\".\"kind\"='issue')"
+          "value": "(\"squad_activity\".\"lane\"=10 AND \"squad_activity\".\"kind\"='message') OR (\"squad_activity\".\"lane\"=20 AND \"squad_activity\".\"kind\"='message') OR (\"squad_activity\".\"lane\"=21 AND \"squad_activity\".\"kind\"='message') OR (\"squad_activity\".\"lane\"=22 AND \"squad_activity\".\"kind\"='subagent') OR (\"squad_activity\".\"lane\"=30 AND \"squad_activity\".\"kind\"='workstream') OR (\"squad_activity\".\"lane\"=31 AND \"squad_activity\".\"kind\"='workstream') OR (\"squad_activity\".\"lane\"=40 AND \"squad_activity\".\"kind\"='wait') OR (\"squad_activity\".\"lane\"=41 AND \"squad_activity\".\"kind\"='wait') OR (\"squad_activity\".\"lane\"=50 AND \"squad_activity\".\"kind\"='handoff') OR (\"squad_activity\".\"lane\"=60 AND \"squad_activity\".\"kind\"='execution') OR (\"squad_activity\".\"lane\"=61 AND \"squad_activity\".\"kind\"='execution') OR (\"squad_activity\".\"lane\"=70 AND \"squad_activity\".\"kind\"='pr')"
         },
         "squad_activity_lane_scope_check": {
           "name": "squad_activity_lane_scope_check",
-          "value": "(\"squad_activity\".\"lane\"=10 AND \"squad_activity\".\"access_scope\"='agents') OR (\"squad_activity\".\"lane\"=20 AND \"squad_activity\".\"access_scope\"='inbox') OR (\"squad_activity\".\"lane\"=21 AND \"squad_activity\".\"access_scope\"='inbox') OR (\"squad_activity\".\"lane\"=22 AND \"squad_activity\".\"access_scope\"='inbox') OR (\"squad_activity\".\"lane\"=30 AND \"squad_activity\".\"access_scope\"='workstreams') OR (\"squad_activity\".\"lane\"=31 AND \"squad_activity\".\"access_scope\"='workstreams_inbox') OR (\"squad_activity\".\"lane\"=40 AND \"squad_activity\".\"access_scope\"='workstreams') OR (\"squad_activity\".\"lane\"=41 AND \"squad_activity\".\"access_scope\"='workstreams') OR (\"squad_activity\".\"lane\"=50 AND \"squad_activity\".\"access_scope\"='workstreams_inbox') OR (\"squad_activity\".\"lane\"=60 AND \"squad_activity\".\"access_scope\"='agents') OR (\"squad_activity\".\"lane\"=61 AND \"squad_activity\".\"access_scope\"='agents') OR (\"squad_activity\".\"lane\"=70 AND \"squad_activity\".\"access_scope\"='workstreams') OR (\"squad_activity\".\"lane\"=71 AND \"squad_activity\".\"access_scope\"='workstreams')"
+          "value": "(\"squad_activity\".\"lane\"=10 AND \"squad_activity\".\"access_scope\"='agents') OR (\"squad_activity\".\"lane\"=20 AND \"squad_activity\".\"access_scope\"='inbox') OR (\"squad_activity\".\"lane\"=21 AND \"squad_activity\".\"access_scope\"='inbox') OR (\"squad_activity\".\"lane\"=22 AND \"squad_activity\".\"access_scope\"='inbox') OR (\"squad_activity\".\"lane\"=30 AND \"squad_activity\".\"access_scope\"='workstreams') OR (\"squad_activity\".\"lane\"=31 AND \"squad_activity\".\"access_scope\"='workstreams_inbox') OR (\"squad_activity\".\"lane\"=40 AND \"squad_activity\".\"access_scope\"='workstreams') OR (\"squad_activity\".\"lane\"=41 AND \"squad_activity\".\"access_scope\"='workstreams') OR (\"squad_activity\".\"lane\"=50 AND \"squad_activity\".\"access_scope\"='workstreams_inbox') OR (\"squad_activity\".\"lane\"=60 AND \"squad_activity\".\"access_scope\"='agents') OR (\"squad_activity\".\"lane\"=61 AND \"squad_activity\".\"access_scope\"='agents') OR (\"squad_activity\".\"lane\"=70 AND \"squad_activity\".\"access_scope\"='workstreams')"
         },
         "squad_activity_recipient_check": {
           "name": "squad_activity_recipient_check",

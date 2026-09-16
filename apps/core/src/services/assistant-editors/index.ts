@@ -12,7 +12,14 @@ import {
   type AssistantEditorState,
   type AssistantEditorSync,
 } from '@tau/shared'
-import { assistantConversations, assistantConversationAgents, agentTypes, db } from '../../db'
+import {
+  assistantConversations,
+  assistantConversationAgents,
+  assistantEntries,
+  assistantTasks,
+  agentTypes,
+  db,
+} from '../../db'
 import { canAccessWorkflow, authorizeWorkflow } from '../workflows/access'
 import { hasPermission, type Identity } from '../rbac'
 
@@ -75,6 +82,7 @@ async function lockedEditor(
       )
       .for('update')
     if (!row) throw new HTTPException(404, { message: 'Editor not found' })
+    if (row.kind !== 'page-editor') throw new HTTPException(409, { message: 'This conversation is not a page editor' })
     if ('agentId' in actor && row.editor?.expiresAt && Date.parse(row.editor.expiresAt) <= Date.now())
       throw new HTTPException(409, { message: 'The page editor is offline. Ask the user to reopen it.' })
     const identity: Identity = 'agentId' in actor ? { type: 'user', userId: row.ownerUserId } : actor.identity
@@ -201,6 +209,31 @@ export async function proposeAssistantEditor(id: string, actor: Actor, value: un
     }
   })
 }
+/**
+ * Close the page editor capability. A conversation that only ever carried the draft, with no saved
+ * turns and no delegated tasks, is deleted outright so opening a builder does not leave a "Design a
+ * workflow" row behind in the saved conversation list.
+ */
 export async function closeAssistantEditor(id: string, actor: Extract<Actor, { userId: string }>) {
-  return lockedEditor(id, actor, async (state) => (state ? { ...state, closed: true } : null))
+  const state = await lockedEditor(id, actor, async (state) => (state ? { ...state, closed: true } : null))
+  await db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ id: assistantConversations.id })
+      .from(assistantConversations)
+      .where(and(eq(assistantConversations.id, id), eq(assistantConversations.ownerUserId, actor.userId)))
+      .for('update')
+    if (!row) return
+    const [entry] = await tx
+      .select({ id: assistantEntries.id })
+      .from(assistantEntries)
+      .where(eq(assistantEntries.conversationId, id))
+      .limit(1)
+    const [task] = await tx
+      .select({ id: assistantTasks.id })
+      .from(assistantTasks)
+      .where(eq(assistantTasks.conversationId, id))
+      .limit(1)
+    if (!entry && !task) await tx.delete(assistantConversations).where(eq(assistantConversations.id, id))
+  })
+  return state
 }

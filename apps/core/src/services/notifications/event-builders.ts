@@ -1,4 +1,9 @@
-import { workStreamTitle } from '@tau/shared'
+import {
+  assistantConversationPath,
+  parseAssistantInboxConversationId,
+  parseInboxPushPresentation,
+  workStreamTitle,
+} from '@tau/shared'
 import { eq } from 'drizzle-orm'
 import { agentQuestionWorkStreamOrigins } from '../../db/schema'
 import type { NotificationEvent } from '../../channels/provider'
@@ -252,6 +257,21 @@ export const eventBuilders: Record<string, EventBuilder> = {
     const message = await InboxMessage.find(messageId)
     if (!message) return null
 
+    // Saved Assistant task updates link to the conversation itself, never to the sender agent or
+    // the generic inbox, and carry no message content on the lock screen.
+    const assistantConversationId =
+      message.recipientType === 'voice_assistant' ? parseAssistantInboxConversationId(message.recipientId) : null
+    if (assistantConversationId) {
+      return {
+        type: 'inbox.messageReceived',
+        messageId: message.id,
+        title: 'Assistant update',
+        body: 'A task has an update. Open Assistant to view it.',
+        url: buildUrl(assistantConversationPath(assistantConversationId)),
+        timestamp: new Date(),
+      }
+    }
+
     // Resolve sender for deep-linking: an agent sender links to that agent's
     // chat in its squad; non-agent senders (system/user/voice) fall back to Feed.
     const senderMeta = message.metadata?.sender as { squadId?: string } | undefined
@@ -270,6 +290,9 @@ export const eventBuilders: Record<string, EventBuilder> = {
       const value = trustedMetadata?.[key]
       return typeof value === 'string' && value ? value : undefined
     }
+    // A system-authored message may carry copy written for the phone; the row's subject and
+    // content were written for its recipient. Agents and users cannot restyle their own alerts.
+    const push = parseInboxPushPresentation(trustedMetadata?.push)
 
     return {
       type: 'inbox.messageReceived',
@@ -286,8 +309,12 @@ export const eventBuilders: Record<string, EventBuilder> = {
       agentId: isAgentSender ? message.senderId! : undefined,
       squadId: isAgentSender ? senderMeta?.squadId : fleetSquad?.id,
       squadName: fleetSquad?.name,
-      title: message.subject || 'New message',
-      body: message.content.slice(0, 300),
+      title: push?.title ?? (message.subject || 'New message'),
+      body: push?.body ?? message.content.slice(0, 300),
+      ...(push?.subtitle ? { subtitle: push.subtitle } : {}),
+      ...(push?.collapseKey ? { collapseKey: push.collapseKey } : {}),
+      ...(push?.threadKey ? { threadKey: push.threadKey } : {}),
+      ...(push?.interruptionLevel ? { interruptionLevel: push.interruptionLevel } : {}),
       url: buildUrl('/inbox'),
       timestamp: new Date(),
     }

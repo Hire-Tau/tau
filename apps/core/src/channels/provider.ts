@@ -135,6 +135,8 @@ export interface ResponseContext {
  */
 export interface NotificationEvent {
   notificationKind?: string
+  /** Origin marker for inbox-derived events, e.g. 'fleet-alert'. */
+  source?: string
   workStreamNumber?: number
   type: string
   squadId?: string
@@ -153,6 +155,11 @@ export interface NotificationEvent {
   messageId?: string
   title: string
   body: string
+  /** Push-only presentation hints (see InboxPushPresentation); external channels ignore them. */
+  subtitle?: string
+  collapseKey?: string
+  threadKey?: string
+  interruptionLevel?: 'passive' | 'active' | 'time-sensitive'
   url?: string
   timestamp: Date
 }

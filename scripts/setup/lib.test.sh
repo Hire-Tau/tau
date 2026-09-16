@@ -1055,6 +1055,14 @@ expect_eq 'do_is_capacity_error: 422 with a non-capacity message (invalid image)
 expect_eq 'do_is_capacity_error: 200 (success) never matches → false' \
   "$(do_is_capacity_error 200 '{"message":"ok"}' && echo yes || echo no)" 'no'
 
+expect_eq 'do_is_account_limit_error: 422 droplet-limit message → true' \
+  "$(do_is_account_limit_error 422 '{"id":"unprocessable_entity","message":"You have reached your droplet limit. Please contact support to request an increase."}' && echo yes || echo no)" 'yes'
+expect_eq 'do_is_account_limit_error: 422 with a size-stockout message → false (that is capacity, not the account)' \
+  "$(do_is_account_limit_error 422 '{"message":"The size s-1vcpu-2gb is not available in this region."}' && echo yes || echo no)" 'no'
+expect_eq 'do_is_account_limit_error: 503 never matches → false' \
+  "$(do_is_account_limit_error 503 '{"message":"droplet limit"}' && echo yes || echo no)" 'no'
+expect_eq 'PROVISION_EXIT_PERMANENT is the platform executor contract (66)' "${PROVISION_EXIT_PERMANENT}" '66'
+
 # --- cloudflare pure helpers (parsers / idempotent-upsert branch / body) -----
 expect_eq 'cf_zone_id_from_list finds the zone id' \
   "$(cf_zone_id_from_list '{"result":[{"id":"zone123","name":"hiretau.ai"}]}')" 'zone123'
@@ -3484,6 +3492,57 @@ PYREPACK
     "${ART_TMP}/pub.pem" 2>/dev/null) || ART_RC=$?
   expect_eq 'artifact_acquire: a bun the host does not run is fatal' "$([[ ${ART_RC} -ne 0 ]] && echo failed || echo ok)" 'failed'
   expect_eq 'artifact_acquire: a bun mismatch reports bun_mismatch' "${ART_ERR}" 'TAU_ARTIFACT_ERROR=bun_mismatch'
+
+  # --- the bun pin: a mismatch against a VALID pin is repaired, not refused ---
+  expect_eq 'bun_pin_is_valid: x.y.z' "$(bun_pin_is_valid 1.4.2 && echo yes || echo no)" 'yes'
+  expect_eq 'bun_pin_is_valid: a suffix is refused' "$(bun_pin_is_valid 0.0.0-not-the-hosts-bun && echo yes || echo no)" 'no'
+  expect_eq 'bun_pin_is_valid: two parts are refused' "$(bun_pin_is_valid 1.4 && echo yes || echo no)" 'no'
+  expect_eq 'bun_pin_is_valid: empty is refused' "$(bun_pin_is_valid '' && echo yes || echo no)" 'no'
+
+  ART_WORK_BUN2="${ART_TMP}/work-bun-install"
+  art_publish "${ART_WORK_BUN2}" "${ART_SHA_A}" '9.9.9'
+  ART_BUN_HOME="${ART_TMP}/bun-home"
+  ART_RC=0
+  ART_OUT_BUN=$(
+    (
+      HOME="${ART_BUN_HOME}"
+      RUN_USER=''
+      # The stub stands in for the official installer: it records the pin it
+      # was asked for and plants a bun that reports it.
+      bun_official_install() {
+        printf '%s\n' "$1" >>"${ART_TMP}/bun-installs"
+        mkdir -p "${HOME}/.bun/bin"
+        printf '#!/bin/sh\necho 9.9.9\n' >"${HOME}/.bun/bin/bun"
+        chmod 755 "${HOME}/.bun/bin/bun"
+      }
+      artifact_acquire "${ART_DEST}" \
+        "file://${ART_WORK_BUN2}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+        "file://${ART_WORK_BUN2}/dist/artifact.json" \
+        "file://${ART_WORK_BUN2}/dist/artifact.sig" \
+        "${ART_TMP}/pub.pem"
+    ) 2>/dev/null
+  ) || ART_RC=$?
+  expect_eq 'artifact_acquire: a mismatched but valid pin installs that bun and verifies (exit 0)' "${ART_RC}" '0'
+  expect_eq 'artifact_acquire: the installer was asked for exactly the manifest pin' \
+    "$(cat "${ART_TMP}/bun-installs" 2>/dev/null)" '9.9.9'
+  expect_eq 'artifact_acquire: line 1 after a bun install is still "<sha> <digest12>"' \
+    "$(printf '%s\n' "${ART_OUT_BUN}" | sed -n 1p | awk '{print $1}')" "${ART_SHA_A}"
+
+  # --- the bun pin: an installer failure is still bun_mismatch ---------------
+  ART_RC=0
+  ART_ERR=$(
+    (
+      HOME="${ART_BUN_HOME}-fail"
+      RUN_USER=''
+      bun_official_install() { return 1; }
+      artifact_acquire "${ART_DEST}" \
+        "file://${ART_WORK_BUN2}/dist/tau-core-${ART_SHA_A}-linux-x64.tar.gz" \
+        "file://${ART_WORK_BUN2}/dist/artifact.json" \
+        "file://${ART_WORK_BUN2}/dist/artifact.sig" \
+        "${ART_TMP}/pub.pem"
+    ) 2>/dev/null
+  ) || ART_RC=$?
+  expect_eq 'artifact_acquire: a failed bun install reports bun_mismatch' "${ART_ERR}" 'TAU_ARTIFACT_ERROR=bun_mismatch'
 
   # --- a URL that does not resolve ---
   ART_RC=0

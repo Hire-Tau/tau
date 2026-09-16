@@ -1,8 +1,20 @@
 import { workStreamTitle } from '@tau/shared'
 import { resolveActingUser } from '../rbac'
 import { eq, desc, isNull, and, sql, inArray } from 'drizzle-orm'
-import { db, agents, squads, workStreams, workStreamWaits, workStreamFlowRuns } from '../../db'
+import {
+  db,
+  agents,
+  squads,
+  workStreams,
+  workStreamWaits,
+  workStreamFlowRuns,
+  assistantConversations,
+  assistantTasks,
+  assistantUpdates,
+  inbox,
+} from '../../db'
 import type {
+  AssistantTaskActionData,
   PendingAction,
   PendingActionType,
   SquadQuestionActionData,
@@ -26,6 +38,7 @@ const PRIORITY: Record<PendingActionType, number> = {
   'agent-error': 0,
   'squad-question': 1,
   'agent-question': 1,
+  'assistant-needs-input': 1,
   'workstream-review': 2,
   'workstream-blocked': 3,
 }
@@ -233,6 +246,59 @@ export async function listPendingActions(): Promise<PendingAction[]> {
     }
     return Date.parse(b.createdAt) - Date.parse(a.createdAt)
   })
+
+  // 4. Assistant tasks whose delegate reported needs-input: blocked on the conversation owner's
+  //    answer, which is given inside that saved conversation. Scoped to the owner in the policy.
+  const waitingTasks = await db
+    .select({
+      task: assistantTasks,
+      conversationTitle: assistantConversations.title,
+      ownerUserId: assistantConversations.ownerUserId,
+      squadName: squads.name,
+      updateMessageId: sql<string | null>`latest.message_id`,
+      updateContent: sql<string | null>`latest.content`,
+      updateCreatedAt: sql<Date | null>`latest.created_at`,
+    })
+    .from(assistantTasks)
+    .innerJoin(
+      assistantConversations,
+      and(eq(assistantConversations.id, assistantTasks.conversationId), eq(assistantConversations.kind, 'assistant'))
+    )
+    .leftJoin(squads, eq(squads.id, assistantTasks.squadId))
+    .leftJoin(
+      sql`LATERAL (
+        SELECT au.message_id, i.content, au.created_at FROM ${assistantUpdates} au
+        JOIN ${inbox} i ON i.id = au.message_id
+        WHERE au.task_id = ${assistantTasks.id} ORDER BY au.sequence DESC LIMIT 1
+      ) latest`,
+      sql`true`
+    )
+    .where(eq(assistantTasks.status, 'needs-input'))
+    .orderBy(desc(assistantTasks.updatedAt))
+  for (const row of waitingTasks) {
+    const data: AssistantTaskActionData = {
+      conversationId: row.task.conversationId,
+      conversationTitle: row.conversationTitle,
+      taskId: row.task.id,
+      taskLabel: row.task.label,
+      ownerUserId: row.ownerUserId,
+      agentId: row.task.agentId,
+      squadId: row.task.squadId,
+      squadName: row.squadName ?? null,
+      question: row.updateContent ?? 'The task is waiting for your answer.',
+      updateMessageId: row.updateMessageId,
+      updateCreatedAt: row.updateCreatedAt ? new Date(row.updateCreatedAt).toISOString() : null,
+    }
+    pendingActions.push({
+      id: `assistant-needs-input:${row.task.id}`,
+      type: 'assistant-needs-input',
+      priority: PRIORITY['assistant-needs-input'],
+      createdAt: row.task.updatedAt.toISOString(),
+      canRespond: false,
+      ...(row.task.squadId && row.squadName ? { squadId: row.task.squadId, squadName: row.squadName } : {}),
+      data,
+    })
+  }
 
   return pendingActions
 }

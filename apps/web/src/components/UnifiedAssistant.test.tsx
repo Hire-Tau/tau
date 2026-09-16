@@ -7,6 +7,8 @@ import { acquireDomHarness } from '../test/domHarness'
 import { integrationQueries, queries } from '../queryOptions'
 import { UnifiedAssistant } from './UnifiedAssistant'
 import { AppHeader } from './AppNav'
+import { assistantQueries } from '../queryOptions'
+import { assistantQueryKeys } from '../queryKeys'
 
 test('the assistant nav button toggles the panel like its keyboard shortcut while explicit open stays idempotent', async () => {
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
@@ -200,6 +202,111 @@ test('assistant links keep parent and recipient drafts through Back, Escape, ref
     expect(document.body.textContent).toContain('Talking to Assistant')
     await dom.act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Back to Assistant"]')!.click())
     expect(parentProps.visible).toBe(true)
+  } finally {
+    await dom.cleanup()
+    cache.clear()
+  }
+})
+
+test('saved conversation rows show unread state, the latest update preview, and a task summary', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  const ownerUserId = '507a9ac0-164e-4f49-9441-e57522bdc52b'
+  const active = '6a1c0b4e-8c2d-4f3e-9a7b-1c2d3e4f5a6b'
+  const quiet = '7b2d1c5f-9d3e-4a4f-8b8c-2d3e4f5a6b7c'
+  for (const [key, value] of [
+    [queries.voice.status().queryKey, { enabled: false }],
+    [queries.inbox.mineCount().queryKey, { count: 0 }],
+    [queries.squads.list().queryKey, []],
+    [queries.squads.allWorkStreams().queryKey, []],
+    [queries.agents.list({ agentTypeId: 'consultant' }).queryKey, []],
+    [queries.actions.pending().queryKey, []],
+    [integrationQueries.catalog().queryKey, { integrations: [] }],
+    [
+      assistantQueries.list('', 0).queryKey,
+      {
+        conversations: [
+          {
+            id: active,
+            title: 'Hosting comparison',
+            createdAt: '2026-09-15T09:00:00.000Z',
+            updatedAt: '2026-09-15T10:00:00.000Z',
+          },
+          {
+            id: quiet,
+            title: 'Quiet chat',
+            createdAt: '2026-09-14T09:00:00.000Z',
+            updatedAt: '2026-09-14T10:00:00.000Z',
+          },
+        ],
+        hasMore: false,
+      },
+    ],
+    [
+      assistantQueryKeys.activity(ownerUserId, 0),
+      {
+        totals: {
+          unreadConversations: 1,
+          unreadUpdates: 2,
+          workingTasks: 1,
+          waitingTasks: 0,
+          needsInputTasks: 0,
+          unavailableTasks: 0,
+        },
+        conversations: [
+          {
+            id: active,
+            title: 'Hosting comparison',
+            updatedAt: '2026-09-15T10:00:00.000Z',
+            latestUpdateSequence: 2,
+            unreadUpdates: 2,
+            workingTasks: 1,
+            waitingTasks: 0,
+            needsInputTasks: 0,
+            unavailableTasks: 0,
+            latestUpdate: {
+              messageId: 'm2',
+              preview: 'Comparison table attached.',
+              createdAt: '2026-09-15T10:00:00.000Z',
+            },
+          },
+        ],
+        hasMore: false,
+      },
+    ],
+  ] as const)
+    cache.setQueryData(key as readonly unknown[], value)
+  const { root } = dom.createRoot()
+  try {
+    await dom.act(async () =>
+      root.render(
+        <QueryClientProvider client={cache}>
+          <MemoryRouter initialEntries={['/?chat=open&commandStack=%5B%5B%22recent%22%2C%22recent%22%5D%5D']}>
+            <PermissionsProvider
+              usePermissions={() => ({
+                can: (p) => p === 'chat:send',
+                permissions: ['chat:send'],
+                identity: { type: 'user', userId: ownerUserId },
+                isLoading: false,
+                isError: false,
+              })}
+            >
+              <UnifiedAssistant dependencies={{ ConversationComponent: () => <div data-conversation /> }} />
+            </PermissionsProvider>
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+    )
+    const rows = [...document.querySelectorAll('a')].filter(
+      (row) => row.textContent?.includes('Hosting comparison') || row.textContent?.includes('Quiet chat')
+    )
+    expect(rows).toHaveLength(2)
+    const [activeRow, quietRow] = rows
+    expect(activeRow.querySelector('[aria-label="2 unread updates"]')).not.toBeNull()
+    expect(activeRow.textContent).toContain('Comparison table attached.')
+    expect(activeRow.textContent).toContain('1 working')
+    expect(quietRow.querySelector('[aria-label]')).toBeNull()
+    expect(quietRow.textContent).not.toContain('working')
   } finally {
     await dom.cleanup()
     cache.clear()

@@ -122,3 +122,25 @@ test('default disconnect timers preserve the browser global receiver during disc
     globalThis.clearTimeout = originalClear
   }
 })
+
+test('history restoration skips entries whose IDs are still queued as pending model input', () => {
+  const sendEvent = mock(() => {})
+  restoreVoiceConversation(
+    { sendEvent },
+    [
+      { id: 'user-1', role: 'user', text: 'Compare hosting options', final: true },
+      {
+        id: 'inbox:update-1',
+        role: 'tool',
+        text: 'Task update',
+        final: true,
+        toolName: 'assistant_inbox',
+        toolResult: '{"updates":[{"content":"Comparison ready"}]}',
+      },
+      { id: 'assistant-1', role: 'assistant', text: 'Working on it.', final: true },
+    ],
+    new Set(['inbox:update-1'])
+  )
+  const texts = sendEvent.mock.calls.map(([event]: any[]) => event.item.content[0].text)
+  expect(texts).toEqual(['Compare hosting options', 'Working on it.'])
+})

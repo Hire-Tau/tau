@@ -40,6 +40,16 @@ describe('notification-config RBAC guards', () => {
     await cleanupTestRbac(prefix)
   })
 
+  test('own preferences expose the fixed push categories rather than raw routing events', async () => {
+    const { PUSH_CATEGORY_IDS } = await import('@tau/shared')
+    const response = await app.request('/notification-config/me', withAuth({}, unprivileged.token))
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body.pushEvents).toEqual(PUSH_CATEGORY_IDS)
+    expect(body.pushEvents).not.toContain('workStream.review')
+    expect(body.pushEvents).not.toContain('execution.failed')
+  })
+
   test('own preferences accept an absent body and reject malformed JSON', async () => {
     const absent = await app.request('/notification-config/me', withAuth({ method: 'PUT' }))
     expect(absent.status).toBe(200)

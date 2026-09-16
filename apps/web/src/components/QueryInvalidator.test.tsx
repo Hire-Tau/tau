@@ -36,6 +36,7 @@ function createFakeQueryClient() {
 let fakeQueryClient = createFakeQueryClient()
 
 import { QueryInvalidator } from './QueryInvalidator'
+import { assistantQueryKeys } from '../queryKeys'
 
 const subscribe = (topic: string, callback: Callback) => {
   captured.set(topic, callback)
@@ -74,6 +75,49 @@ describe('QueryInvalidator', () => {
       { queryKey: onboardingQueryKeys.all },
       { cancelRefetch: false }
     )
+  })
+
+  test('refreshes Assistant activity, conversation lists, and reconnect state for activity events', async () => {
+    await dom.act(async () => {
+      root.render(<QueryInvalidator dependencies={{ queryClient: fakeQueryClient, subscribe, isConnected: false }} />)
+    })
+    expect(captured.has('inbox')).toBe(true)
+    const recipientId = 'assistant:507a9ac0-164e-4f49-9441-e57522bdc52b'
+    await dom.act(async () => {
+      captured.get('inbox')!({
+        event: 'assistant.activityChanged',
+        data: { conversationId: '507a9ac0-164e-4f49-9441-e57522bdc52b', recipientId },
+      })
+    })
+    const invalidated = () =>
+      (
+        fakeQueryClient.invalidateQueries as unknown as { mock: { calls: Array<[{ queryKey: unknown }]> } }
+      ).mock.calls.map(([options]) => JSON.stringify(options.queryKey))
+    // The saved-conversation prefix covers activity, so the coalescer collapses both into one refresh.
+    expect(invalidated()).toContain(JSON.stringify(assistantQueryKeys.all))
+    // The activity event carries identifiers only and never touches the personal inbox queries.
+    expect(invalidated()).not.toContain(JSON.stringify(queryKeys.inbox.minePrefix()))
+
+    // Legacy mailbox traffic without the activity event still refreshes activity as a fallback.
+    // The coalescer's trailing window is 150 ms; wait for it like the other event tests do.
+    await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 200)))
+    ;(fakeQueryClient.invalidateQueries as unknown as { mockClear: () => void }).mockClear()
+    await dom.act(async () => {
+      captured.get('inbox')!({
+        event: 'inbox.messageReceived',
+        data: { messageId: 'm1', recipientType: 'voice_assistant', recipientId, senderAgentId: null },
+      })
+    })
+    await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 200)))
+    expect(invalidated()).toContain(JSON.stringify(assistantQueryKeys.activityPrefix))
+    expect(invalidated()).toContain(JSON.stringify(queryKeys.inbox.minePrefix()))
+
+    // Reconnecting repairs activity that events could not deliver while offline.
+    ;(fakeQueryClient.invalidateQueries as unknown as { mockClear: () => void }).mockClear()
+    await dom.act(async () => {
+      root.render(<QueryInvalidator dependencies={{ queryClient: fakeQueryClient, subscribe, isConnected: true }} />)
+    })
+    expect(invalidated()).toContain(JSON.stringify(assistantQueryKeys.activityPrefix))
   })
 
   test('StrictMode effect replay keeps the subscribed Action Center queue live', async () => {
@@ -124,22 +168,24 @@ describe('QueryInvalidator', () => {
     await dom.act(async () => render(false))
     expect(fakeQueryClient.invalidateQueries).not.toHaveBeenCalled()
 
+    // Each open repairs slot waits, Assistant activity, actions, and questions exactly once.
     await dom.act(async () => render(true))
     await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 200)))
-    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(3)
+    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(4)
 
     await dom.act(async () => render(true))
-    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(3)
+    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(4)
 
     await dom.act(async () => render(false))
     await dom.act(async () => render(true))
     await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 200)))
-    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(6)
-    expect(
-      fakeQueryClient.invalidateQueries.mock.calls.filter(
-        ([options]) => JSON.stringify(options.queryKey) === JSON.stringify(agentSlotWaitQueryKeys.all)
-      )
-    ).toHaveLength(2)
+    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(8)
+    for (const key of [agentSlotWaitQueryKeys.all, assistantQueryKeys.activityPrefix])
+      expect(
+        fakeQueryClient.invalidateQueries.mock.calls.filter(
+          ([options]) => JSON.stringify(options.queryKey) === JSON.stringify(key)
+        )
+      ).toHaveLength(2)
   })
 
   test.each([

@@ -13,7 +13,10 @@ export type TopicScope =
   | { kind: 'unresolved' }
 
 export async function topicScope(topic: string): Promise<TopicScope> {
-  const [collection, id] = topic.split(':', 2)
+  // Split on the first separator only: saved Assistant mailboxes are `inbox:assistant:<uuid>`.
+  const separator = topic.indexOf(':')
+  const collection = separator === -1 ? topic : topic.slice(0, separator)
+  const id = separator === -1 ? '' : topic.slice(separator + 1)
   if (!id) return { kind: 'collection' }
 
   switch (collection) {

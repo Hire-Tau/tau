@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { isNavItemAllowed, navFooterHints, navItems, resolveNavShortcut, shouldShowVoiceButton } from './navModel'
-import { queryKeys } from '../queryKeys'
+import { assistantQueryKeys, queryKeys } from '../queryKeys'
 import { getTabNavigationTarget, getTabPath, recordTabPath, resetTabHistory } from '../hooks/useTabHistory'
 
 let permissions = new Set<string>()
@@ -17,10 +17,30 @@ import { AppHeader, DesktopFooter, MobileBottomNav } from './AppNav'
 const useFixturePendingActions = () => ({ data: [] })
 const FixtureVoiceButton = () => <button>Fixture voice trigger</button>
 
+const ownerUserId = '507a9ac0-164e-4f49-9441-e57522bdc52b'
+let unreadAssistantConversations = 0
+
 function renderWithProviders(children: ReactNode, path = '/squads') {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   if (!permissionsLoading) {
-    queryClient.setQueryData(queryKeys.auth.permissions(undefined), { permissions: [...permissions] })
+    queryClient.setQueryData(queryKeys.auth.permissions(undefined), {
+      permissions: [...permissions],
+      identity: { type: 'user', userId: ownerUserId },
+    })
+  }
+  if (unreadAssistantConversations > 0) {
+    queryClient.setQueryData(assistantQueryKeys.activity(ownerUserId, 0), {
+      totals: {
+        unreadConversations: unreadAssistantConversations,
+        unreadUpdates: unreadAssistantConversations,
+        workingTasks: 7,
+        waitingTasks: 0,
+        needsInputTasks: 0,
+        unavailableTasks: 0,
+      },
+      conversations: [],
+      hasMore: false,
+    })
   }
   if (voiceStatus) {
     queryClient.setQueryData(queryKeys.voice.status(), voiceStatus)
@@ -142,6 +162,31 @@ describe('MobileBottomNav rendering', () => {
     )
     expect(allowedHtml).not.toContain('Fixture voice trigger')
     expect(allowedHtml).toContain('Assistant')
+  })
+
+  test('shows unread Assistant conversations on the closed command bar button, never executing tasks', () => {
+    permissions.add('chat:send')
+    unreadAssistantConversations = 0
+    try {
+      expect(renderWithProviders(<AppHeader usePendingActions={useFixturePendingActions} />)).not.toContain(
+        'with unread updates'
+      )
+      unreadAssistantConversations = 2
+      const html = renderWithProviders(<AppHeader usePendingActions={useFixturePendingActions} />)
+      expect(html).toContain('aria-label="2 Assistant conversations with unread updates"')
+      expect(html).not.toContain('aria-label="7 ')
+      unreadAssistantConversations = 250
+      const capped = renderWithProviders(<AppHeader usePendingActions={useFixturePendingActions} />)
+      expect(capped).toContain('aria-label="250 Assistant conversations with unread updates"')
+      expect(capped).toContain('>99+<')
+      // Without chat:send the badge never queries or renders, even with cached data present.
+      permissions.delete('chat:send')
+      expect(renderWithProviders(<AppHeader usePendingActions={useFixturePendingActions} />)).not.toContain(
+        'with unread updates'
+      )
+    } finally {
+      unreadAssistantConversations = 0
+    }
   })
 })
 

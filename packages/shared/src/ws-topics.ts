@@ -104,7 +104,10 @@ export type TopicEventMap = {
     'squadSchedule.created' | 'squadSchedule.updated' | 'squadSchedule.triggered' | 'squadSchedule.deleted'
   >
   worker: Extract<keyof EventMap, 'worker.status'>
-  inbox: Extract<keyof EventMap, 'inbox.messageReceived' | 'inbox.messageRead' | 'inbox.allRead'>
+  inbox: Extract<
+    keyof EventMap,
+    'inbox.messageReceived' | 'inbox.messageRead' | 'inbox.allRead' | 'assistant.activityChanged'
+  >
   machines: Extract<
     keyof EventMap,
     'machine.created' | 'machine.updated' | 'machine.status' | 'machine.deleted' | 'box.status'

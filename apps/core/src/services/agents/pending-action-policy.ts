@@ -85,6 +85,13 @@ export async function evaluatePendingAction(
     }
   }
 
+  if (action.type === 'assistant-needs-input') {
+    // Private to the conversation owner; squad access or administration never widens it.
+    const data = action.data as { ownerUserId: string }
+    const owner = Boolean(userId && data.ownerUserId === userId)
+    return { visible: owner, canRespond: owner }
+  }
+
   if (action.type === 'agent-error') {
     const data = action.data as { ownerUserId: string | null; squadId: string | null }
     const owner = Boolean(userId && data.ownerUserId === userId)

@@ -819,6 +819,44 @@ describe('parallel dispatch and pause', () => {
       await completeStep(id, 'deliver')
     }
   })
+
+  test('finish names an invalid code host binding instead of claiming the fields are missing', async () => {
+    const definition = structuredClone(flow)
+    definition.completion.mode = 'pr-merge'
+    const id = await create('active', definition)
+    await advance(id, 'completed')
+    await advance(id, 'approved')
+    await db
+      .update(workStreams)
+      .set({
+        metadata: {
+          completion: { mode: 'pr-merge' },
+          codeHost: {
+            integration: 'github',
+            repository: 'example/repo',
+            changeRequest: { number: 1482, url: 'https://github.com/example/repo/pull/1482', state: 'MERGED' },
+          },
+        },
+      })
+      .where(eq(workStreams.id, id))
+    await expect(finishFlow(id, 2, actor)).rejects.toThrow(
+      'codeHost metadata is present but invalid: codeHost.changeRequest: unknown keys `state` (allowed: number, url)'
+    )
+    await db
+      .update(workStreams)
+      .set({
+        metadata: { completion: { mode: 'pr-merge' }, codeHost: { integration: 'bitbucket', repository: 'x/y' } },
+      })
+      .where(eq(workStreams.id, id))
+    await expect(finishFlow(id, 2, actor)).rejects.toThrow("codeHost.integration 'bitbucket' is not a supported")
+    await db
+      .update(workStreams)
+      .set({ metadata: { completion: { mode: 'pr-merge' } } })
+      .where(eq(workStreams.id, id))
+    await expect(finishFlow(id, 2, actor)).rejects.toThrow(
+      'Set codeHost.integration and codeHost.repository to a supported code hosting integration before completion'
+    )
+  })
   test('usage is captured at acceptance even when it settles after a handoff', async () => {
     const { getFlowUsage } = await import('./usage')
     const id = await create()

@@ -9,6 +9,8 @@ import { usePermissions } from '../hooks/usePermissions'
 import { useStableRef } from '../hooks/useStableRef'
 import { useAssistantPosition } from '../hooks/useAssistantPosition'
 import { assistantQueries } from '../queryOptions'
+import { useAssistantActivity } from '../hooks/useAssistantActivity'
+import { formatAssistantUpdateTime, summarizeAssistantTasks } from '../lib/assistantActivityPresentation'
 import { AgentChat } from './AgentChat'
 import { AssistantCommandCenter } from './AssistantCommandCenter'
 import type { AssistantConversationLink } from '../lib/assistantConversationLinks'
@@ -71,6 +73,9 @@ export function UnifiedAssistant({
   )
   const positionControl = <AssistantPositionControl corner={corner} onChange={setCorner} />
   const recent = useQuery({ ...assistantQueries.list(search, offset), enabled: open && can('chat:send') })
+  // Activity decorates saved rows with unread state and task summaries; the badge query already runs app-wide.
+  const activity = useAssistantActivity({ enabled: open })
+  const activityById = new Map((activity.activity?.conversations ?? []).map((row) => [row.id, row]))
   const controlsRef = useStableRef(controls)
   const openRef = useStableRef(open)
   const idRef = useStableRef(id)
@@ -353,10 +358,33 @@ export function UnifiedAssistant({
                   if (!event.metaKey && !event.ctrlKey) select(chat.id)
                 }}
               >
-                <span className="text-sm text-primary block truncate">{chat.title}</span>
-                <time dateTime={chat.updatedAt} className="text-xs text-muted">
-                  {new Date(chat.updatedAt).toLocaleString()}
-                </time>
+                {(() => {
+                  const row = activityById.get(chat.id)
+                  const summary = row ? summarizeAssistantTasks(row) : ''
+                  return (
+                    <>
+                      <span className="flex items-center gap-2">
+                        {row && row.unreadUpdates > 0 && (
+                          <span
+                            aria-label={`${row.unreadUpdates} unread update${row.unreadUpdates === 1 ? '' : 's'}`}
+                            className="inline-block h-2 w-2 shrink-0 rounded-full bg-accent"
+                          />
+                        )}
+                        <span className="text-sm text-primary block min-w-0 flex-1 truncate">{chat.title}</span>
+                        <time
+                          dateTime={row?.latestUpdate?.createdAt ?? chat.updatedAt}
+                          className="shrink-0 text-xs text-muted"
+                        >
+                          {formatAssistantUpdateTime(row?.latestUpdate?.createdAt ?? chat.updatedAt)}
+                        </time>
+                      </span>
+                      {row?.latestUpdate && (
+                        <span className="block truncate text-xs text-muted">{row.latestUpdate.preview}</span>
+                      )}
+                      {summary && <span className="block truncate text-xs text-muted">{summary}</span>}
+                    </>
+                  )
+                })()}
               </Link>
             ))}
             {!browse && ((recent.data?.conversations.length ?? 0) > 5 || recent.data?.hasMore) && (

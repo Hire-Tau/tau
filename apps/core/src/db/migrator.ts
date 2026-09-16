@@ -8,6 +8,8 @@ import { readMigrationFiles } from 'drizzle-orm/migrator'
 import type postgres from 'postgres'
 import { backfillMessageEnqueueOrder } from './message-enqueue-order-backfill'
 import { backfillTrackedIssues } from './tracked-issue-backfill'
+import { backfillAssistantActivity } from './assistant-activity-backfill'
+import { backfillAssistantConversationKinds } from './assistant-conversation-kind-backfill'
 
 const CREATE_CONCURRENT_INDEX =
   /^\s*CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\s+"([^"]+)"\s+ON\s+(?:ONLY\s+)?(?:(?:"([^"]+)"\.)?)"([^"]+)"/i
@@ -397,12 +399,21 @@ export async function applyMigrations(
                     ? migrateChannelConsultants
                     : /ALTER TABLE "assistant_conversations" DROP COLUMN "manager_agent_id"/.test(statement)
                       ? migrateAssistantAgentBindings
-                      : undefined
+                      : // Runs after both activity tables, their constraints, and the allocator
+                        // column exist; the first activity index follows them in the generated SQL.
+                        /CREATE INDEX "idx_assistant_tasks_conversation_updated"/.test(statement)
+                        ? backfillAssistantActivity
+                        : undefined
           if (backfill) {
             await flush()
             await backfill(connection)
           }
           statements.push(statement)
+          // Some transforms need the column they populate; they run right after their DDL.
+          if (/ALTER TABLE "assistant_conversations" ADD COLUMN "kind"/.test(statement)) {
+            await flush()
+            await backfillAssistantConversationKinds(connection)
+          }
         }
         await flush()
         await insertLedger(connection, qualifiedLedger, migration)

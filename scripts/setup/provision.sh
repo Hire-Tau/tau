@@ -665,6 +665,9 @@ provision_vm_digitalocean() {
         log_warn "digitalocean: ${attempt_size}/${attempt_region} unavailable (HTTP ${HTTP_STATUS}: ${HTTP_BODY}) — trying the next fallback"
         continue
       fi
+      if do_is_account_limit_error "${HTTP_STATUS}" "${HTTP_BODY}"; then
+        die_permanent "digitalocean: the account droplet limit is reached — create droplet '${VM_NAME}' refused: HTTP ${HTTP_STATUS}: ${HTTP_BODY}. Raise the limit in the DigitalOcean console; retrying cannot succeed"
+      fi
       die "digitalocean: create droplet '${VM_NAME}' failed: HTTP ${HTTP_STATUS}: ${HTTP_BODY}"
     done
     [[ ${succeeded} -eq 1 ]] ||

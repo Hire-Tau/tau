@@ -1,13 +1,15 @@
 import { workStreamRef } from '@tau/shared'
 import { workStreamTitle } from '@tau/shared'
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { integrationQueries, queries } from '../queryOptions'
 import { queryKeys } from '../queryKeys'
 import { usePermissions } from '../hooks/usePermissions'
+import { useAssistantActivity } from '../hooks/useAssistantActivity'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
+import { formatAssistantUpdateTime, summarizeAssistantTasks } from '../lib/assistantActivityPresentation'
 import { AgentActivityDot } from './AgentActivityDot'
 import { Badge } from './Badge'
 import { LoadingSurface, SkeletonBlock, SkeletonLine } from './loading/Skeleton'
@@ -16,6 +18,7 @@ import {
   commandCenterSearch,
   consultantConversations,
   recentlyCompletedWork,
+  type AssistantConversationDestination,
   type CommandDestination,
   type CommandResult,
 } from '../lib/commandCenterSearch'
@@ -53,7 +56,7 @@ export function AssistantCommandCenter({
   onChatCreated?: (draftId: string, agentId: string) => void
   onQueryChange?: (query: string) => void
   stack: CommandDestination[]
-  onPush: (destination: CommandDestination) => void
+  onPush: (destination: CommandDestination | AssistantConversationDestination) => void
   backLabel?: string
   onBack: () => void
   onAsk: (text: string) => void
@@ -122,9 +125,31 @@ export function AssistantCommandCenter({
     actions: actions.data ?? [],
     allowedSettings,
   }
-  const results = commandCenterSearch(query, { ...data, squadId: squadScope }).filter(
-    (result) => !squadScope || result.kind === 'Conversation' || result.kind === 'Work stream'
-  )
+  // Durable Assistant activity leads the root landing list; it never queries while a squad is scoped.
+  const activity = useAssistantActivity({ enabled: enabled && !squadScope })
+  const updateRows: CommandResult[] =
+    !entry && !query.trim()
+      ? (activity.activity?.conversations ?? [])
+          // Only conversations with something unread; unfinished-but-quiet tasks stay off the landing list.
+          .filter((conversation) => conversation.unreadUpdates > 0)
+          .slice(0, 5)
+          .map((conversation) => ({
+            id: `update:${conversation.id}`,
+            kind: 'Update' as const,
+            label: conversation.title,
+            detail: conversation.latestUpdate?.preview ?? summarizeAssistantTasks(conversation),
+            summary: conversation.latestUpdate ? summarizeAssistantTasks(conversation) : undefined,
+            unread: conversation.unreadUpdates > 0,
+            timestamp: conversation.latestUpdate?.createdAt ?? conversation.updatedAt,
+            destination: { kind: 'assistant' as const, id: conversation.id, label: 'Assistant' },
+          }))
+      : []
+  const results = [
+    ...updateRows,
+    ...commandCenterSearch(query, { ...data, squadId: squadScope }).filter(
+      (result) => !squadScope || result.kind === 'Conversation' || result.kind === 'Work stream'
+    ),
+  ]
   const visible = results.slice(0, 40)
   const index = visible.length ? Math.min(selected, visible.length - 1) : -1
   const askSelected = index < 0 && Boolean(query.trim()) && canAsk
@@ -146,7 +171,7 @@ export function AssistantCommandCenter({
             : getAgentPrimaryLabel(currentAgent)
           : undefined
   const destination = entry && label ? { ...entry, label } : entry
-  const push = (next: CommandDestination) => {
+  const push = (next: CommandDestination | AssistantConversationDestination) => {
     if (next.kind === 'chat')
       setOpenedChats((current) => (current.some((chat) => chat.id === next.id) ? current : [...current, next]))
     onPush(next)
@@ -341,32 +366,59 @@ export function AssistantCommandCenter({
         <div ref={resultsRef} className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
           <div id="command-center-results" role="listbox" aria-label="Search results">
             {visible.map((result, i) => (
-              <button
-                key={result.id}
-                id={`command-result-${i}`}
-                data-result-index={i}
-                role="option"
-                aria-selected={i === index}
-                onClick={() => choose(result)}
-                className={clsx(
-                  'tau-button flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-selection',
-                  i === index && 'bg-selection'
+              <Fragment key={result.id}>
+                {i === 0 && result.kind === 'Update' && (
+                  <div role="presentation" className="px-3 pt-2 pb-1 text-[11px] font-medium text-muted">
+                    Updates
+                  </div>
                 )}
-              >
-                {result.status && result.status !== 'idle' && (
-                  <AgentActivityDot status={result.status} className="shrink-0" />
+                {i > 0 && visible[i - 1].kind === 'Update' && result.kind !== 'Update' && (
+                  <div role="presentation" className="px-3 pt-3 pb-1 text-[11px] font-medium text-muted">
+                    Recent
+                  </div>
                 )}
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{result.label}</span>
-                  <span className="flex items-center gap-2 text-xs text-muted mt-0.5">
-                    <span className="truncate">{result.detail}</span>
-                    {result.work && <CommandWorkStatus work={result.work} />}
-                    {result.agentTypeId && <CommandAgentType typeId={result.agentTypeId} />}
+                <button
+                  id={`command-result-${i}`}
+                  data-result-index={i}
+                  role="option"
+                  aria-selected={i === index}
+                  onClick={() => choose(result)}
+                  className={clsx(
+                    'tau-button flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-selection',
+                    i === index && 'bg-selection'
+                  )}
+                >
+                  {result.status && result.status !== 'idle' && (
+                    <AgentActivityDot status={result.status} className="shrink-0" />
+                  )}
+                  {result.kind === 'Update' && (
+                    <span
+                      aria-label={result.unread ? 'Unread updates' : undefined}
+                      className={clsx(
+                        'inline-block h-2 w-2 shrink-0 rounded-full',
+                        result.unread ? 'bg-accent' : 'bg-th-border'
+                      )}
+                    />
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium">{result.label}</span>
+                    <span className="flex items-center gap-2 text-xs text-muted mt-0.5">
+                      <span className="truncate">{result.detail}</span>
+                      {result.work && <CommandWorkStatus work={result.work} />}
+                      {result.agentTypeId && <CommandAgentType typeId={result.agentTypeId} />}
+                      {result.summary && <span className="shrink-0 truncate max-w-[40%]">{result.summary}</span>}
+                    </span>
                   </span>
-                </span>
-                <span className="shrink-0 text-[11px] text-muted">{result.kind}</span>
-                <ChevronRightIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
-              </button>
+                  {result.timestamp ? (
+                    <time dateTime={result.timestamp} className="shrink-0 text-[11px] text-muted">
+                      {formatAssistantUpdateTime(result.timestamp)}
+                    </time>
+                  ) : (
+                    <span className="shrink-0 text-[11px] text-muted">{result.kind}</span>
+                  )}
+                  <ChevronRightIcon className="h-3.5 w-3.5 shrink-0 text-muted" />
+                </button>
+              </Fragment>
             ))}
           </div>
           {loading && <CommandRowsSkeleton label="Finding your work and conversations" />}

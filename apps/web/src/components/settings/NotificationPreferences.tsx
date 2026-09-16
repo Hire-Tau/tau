@@ -3,13 +3,16 @@ import clsx from 'clsx'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import { updateMyNotificationPrefs } from '../../api/config'
+import { PUSH_CATEGORIES } from '@tau/shared'
+
+const categoryById = new Map(PUSH_CATEGORIES.map((category) => [category.id as string, category]))
 
 function humanizeEvent(event: string): string {
-  const labels: Record<string, string> = {
-    'agent-question.created': 'Agent questions',
-    'inbox.messageReceived': 'Inbox messages (including work streams you watch)',
-  }
-  return labels[event] ?? event
+  return categoryById.get(event)?.label ?? event
+}
+
+function describeEvent(event: string): string | undefined {
+  return categoryById.get(event)?.description
 }
 
 /**
@@ -86,7 +89,10 @@ export function NotificationPreferences() {
           <ul className="space-y-2">
             {data.pushEvents.map((event) => (
               <li key={event} className="flex items-center justify-between gap-3">
-                <span className="text-sm text-primary">{humanizeEvent(event)}</span>
+                <span className="text-sm text-primary">
+                  {humanizeEvent(event)}
+                  {describeEvent(event) && <span className="block text-muted">{describeEvent(event)}</span>}
+                </span>
                 <input
                   type="checkbox"
                   checked={!muted.has(event)}

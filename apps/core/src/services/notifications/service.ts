@@ -1,3 +1,5 @@
+import { pushCategoryFor } from './push-category'
+import type { PushCategory } from '@tau/shared'
 import { pushAlertText, pushEventType } from '@tau/shared/push-relay'
 import { WorkStream } from '../../entities/WorkStream'
 import { requireAllowedChannel } from '../channel-policy'
@@ -5,7 +7,8 @@ import { getVapidContactSubject } from '../push/vapid'
 import { getSettingsStore } from '../settings'
 import { pushRelayConfig, sendRelayAlert } from '../push/relay'
 import webpush from 'web-push'
-import { parseWorkspaceVoiceUserId } from '@tau/shared'
+import { parseAssistantInboxConversationId, parseWorkspaceVoiceUserId } from '@tau/shared'
+import { assistantInboxOwner } from '../assistant-inbox'
 import type { NotificationConfig, NotificationRule, EventContext, SquadNotificationConfig } from './types'
 import {
   getPushSubscriptionsByUserWithKeys,
@@ -194,7 +197,11 @@ export class NotificationService {
   // Resolve which users' devices should receive a push for this event, then their subscriptions.
   // Inbox events use their concrete recipient; agent questions use their persisted attention recipients.
   /** Recipient user IDs that should receive a push for this event (after per-user preferences). */
-  private async resolveEnabledPushUserIds(data: unknown, eventType: string): Promise<string[]> {
+  private async resolveEnabledPushUserIds(
+    data: unknown,
+    eventType: string,
+    category?: PushCategory
+  ): Promise<string[]> {
     let userIds: string[] = []
 
     if (eventType === 'agent-question.created') {
@@ -207,7 +214,11 @@ export class NotificationService {
       if (d.recipientType === 'user') {
         userIds = [d.recipientId]
       } else if (d.recipientType === 'voice_assistant') {
-        const userId = parseWorkspaceVoiceUserId(d.recipientId)
+        // A saved Assistant mailbox belongs to its conversation owner; a deleted conversation has
+        // no recipient. Workspace voice falls back to its per-user address.
+        const userId = parseAssistantInboxConversationId(d.recipientId)
+          ? await assistantInboxOwner(d.recipientId)
+          : parseWorkspaceVoiceUserId(d.recipientId)
         userIds = userId ? [userId] : []
       } else if (d.recipientType === 'system') {
         userIds = await getUserIdsWithPermission('inbox:system')
@@ -219,7 +230,7 @@ export class NotificationService {
 
     // Respect each user's notification preferences (master push toggle + muted events).
     const allowed = await Promise.all(
-      userIds.map(async (id) => ((await UserNotificationPreferences.shouldPush(id, eventType)) ? id : null))
+      userIds.map(async (id) => ((await UserNotificationPreferences.shouldPush(id, eventType, category)) ? id : null))
     )
     return allowed.filter((id): id is string => id !== null)
   }
@@ -236,7 +247,8 @@ export class NotificationService {
 
     await this.configureVapid()
 
-    const userIds = await this.resolveEnabledPushUserIds(data, eventType)
+    const category = pushCategoryFor(eventType, event, data)
+    const userIds = await this.resolveEnabledPushUserIds(data, eventType, category)
     log.info(`Resolved push recipients for ${eventType}: ${userIds.length > 0 ? userIds.join(', ') : 'none'}`)
     if (userIds.length === 0) {
       log.info(`No push recipients for ${eventType}; skipping push`)
@@ -281,7 +293,13 @@ export class NotificationService {
             workStreamNumber: event.workStreamNumber ?? work?.number,
             ...(prefs.showPreviews ? { preview: { title: event.title, body: event.body } } : {}),
           })
-          const payload = JSON.stringify({ ...routing, ...text })
+          // The service worker maps `tag` to Notification.tag, so a later push for the same
+          // work replaces the earlier one instead of stacking.
+          const payload = JSON.stringify({
+            ...routing,
+            ...text,
+            ...(event.collapseKey ? { tag: event.collapseKey, renotify: true } : {}),
+          })
           const result = await webpush.sendNotification(
             { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } },
             payload
@@ -325,7 +343,13 @@ export class NotificationService {
           eventType: pushEventType(event.notificationKind ?? event.type),
           workStreamNumber,
           ...(prefs.showPreviews
-            ? { preview: { title: event.title.slice(0, 200), body: event.body.slice(0, 500) } }
+            ? {
+                preview: {
+                  title: event.title.slice(0, 200),
+                  body: event.body.slice(0, 500),
+                  ...(event.subtitle ? { subtitle: event.subtitle.slice(0, 80) } : {}),
+                },
+              }
             : {}),
         }
         const alert = pushAlertText(presentation)
@@ -333,6 +357,9 @@ export class NotificationService {
           if (device.platform !== 'ios' || !device.relayBindingToken) return
           const result = await sendRelayAlert(device.relayBindingToken, {
             ...presentation,
+            collapseKey: event.collapseKey,
+            threadKey: event.threadKey,
+            interruptionLevel: event.interruptionLevel,
             squadId: event.squadId,
             agentId: event.agentId,
             workStreamId: event.workStreamId,
@@ -350,6 +377,12 @@ export class NotificationService {
           {
             title: alert.title,
             body: alert.body,
+            // Grouping, replacement, and urgency are structure, not content: they apply even when
+            // previews are off. The subtitle is content (the squad name), so it follows the preview rule.
+            ...(prefs.showPreviews && event.subtitle ? { subtitle: event.subtitle } : {}),
+            ...(event.threadKey ? { threadId: event.threadKey } : {}),
+            ...(event.collapseKey ? { collapseId: event.collapseKey } : {}),
+            ...(event.interruptionLevel ? { interruptionLevel: event.interruptionLevel } : {}),
             data: {
               type: 'open',
               url: event.url,

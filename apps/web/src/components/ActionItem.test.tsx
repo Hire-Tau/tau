@@ -695,3 +695,57 @@ test('a flow-owned wait opens its decision controls instead of exposing generic 
     cache.clear()
   }
 })
+
+describe('assistant task questions', () => {
+  const conversationId = '507a9ac0-164e-4f49-9441-e57522bdc52b'
+  const assistantAction = {
+    id: 'assistant-needs-input:10000000-0000-4000-8000-000000000001',
+    type: 'assistant-needs-input',
+    priority: 1,
+    createdAt: '2026-09-15T10:00:00.000Z',
+    canRespond: true,
+    data: {
+      conversationId,
+      conversationTitle: 'Hosting comparison',
+      taskId: '10000000-0000-4000-8000-000000000001',
+      taskLabel: 'Compare options',
+      ownerUserId: 'owner',
+      agentId: 'agent-1',
+      squadId: null,
+      squadName: null,
+      question: 'Which region should the deployment use?',
+      updateMessageId: 'm1',
+      updateCreatedAt: '2026-09-15T10:00:00.000Z',
+    },
+  } as unknown as PendingAction
+
+  test('renders with the other questions and answers inside the Assistant conversation', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/squads?tab=work' })
+    const rendered = dom.createRoot()
+    try {
+      await dom.act(async () =>
+        rendered.root.render(
+          <MemoryRouter initialEntries={['/squads?tab=work']}>
+            <QueryClientProvider client={new QueryClient()}>
+              <ActionCenterContent actions={[assistantAction]} isLoading={false} />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+      expect(document.body.textContent).toContain('Compare options')
+      expect(document.body.textContent).toContain('needs your answer')
+      expect(document.body.textContent).toContain('Which region should the deployment use?')
+      // No inline answer form: the answer belongs in the conversation so it stays on the task.
+      expect(document.querySelector('textarea, input[type="text"]')).toBeNull()
+      const open = [...document.querySelectorAll('a')].find((link) => link.textContent === 'Answer in Assistant')!
+      expect(open).toBeTruthy()
+      const href = new URL(open.getAttribute('href')!, 'http://localhost')
+      expect(href.pathname).toBe('/squads')
+      expect(href.searchParams.get('tab')).toBe('work')
+      expect(href.searchParams.get('chat')).toBe('open')
+      expect(href.searchParams.get('assistantConversation')).toBe(conversationId)
+    } finally {
+      await dom.cleanup()
+    }
+  })
+})

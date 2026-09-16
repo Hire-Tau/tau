@@ -29,6 +29,8 @@ function installApnsEnv(environment: 'production' | 'sandbox' = 'production') {
 
 type TestEvent = {
   type?: string
+  notificationKind?: string
+  source?: string
   workStreamNumber?: number
   title: string
   body: string
@@ -40,6 +42,10 @@ type TestEvent = {
   questionId?: string
   messageId?: string
   actionId?: string
+  subtitle?: string
+  collapseKey?: string
+  threadKey?: string
+  interruptionLevel?: 'passive' | 'active' | 'time-sensitive'
 }
 
 async function callResolveEnabledPushUserIds(service: NotificationService, data: unknown, eventType: string) {
@@ -399,6 +405,88 @@ describe('NotificationService', () => {
       }
     })
 
+    test('gates each push on the category derived from the built event, not only the raw event type', async () => {
+      const calls: Array<[string, string, string | undefined]> = []
+      const preferenceSpy = spyOn(UserNotificationPreferences, 'shouldPush').mockImplementation(
+        async (userId, eventType, category) => {
+          calls.push([userId, eventType, category])
+          return false
+        }
+      )
+      try {
+        await callSendPushNotifications(
+          service,
+          { type: 'inbox.messageReceived', notificationKind: 'workStream.done', title: 'Completed', body: 'x' },
+          { recipientType: 'user', recipientId: 'category-user', messageId: 'm1' },
+          'inbox.messageReceived'
+        )
+        await callSendPushNotifications(
+          service,
+          { type: 'inbox.messageReceived', source: 'fleet-alert', title: 'Alert', body: 'x' },
+          { recipientType: 'user', recipientId: 'category-user', messageId: 'm2' },
+          'inbox.messageReceived'
+        )
+        expect(calls).toEqual([
+          ['category-user', 'inbox.messageReceived', 'done'],
+          ['category-user', 'inbox.messageReceived', 'fleet'],
+        ])
+      } finally {
+        preferenceSpy.mockRestore()
+      }
+    })
+
+    test('resolves a saved Assistant mailbox to its owner and nobody after deletion or muting', async () => {
+      const { assistantConversations } = await import('../../db')
+      const owner = await createTestUser({ prefix: 'notif-assistant' })
+      const conversationId = crypto.randomUUID()
+      await db.insert(assistantConversations).values({ id: conversationId, ownerUserId: owner.id })
+      const data = { recipientType: 'voice_assistant', recipientId: `assistant:${conversationId}`, messageId: 'm1' }
+      try {
+        expect(await callResolveEnabledPushUserIds(service, data, 'inbox.messageReceived')).toEqual([owner.id])
+        await UserNotificationPreferences.upsert(owner.id, { mutedEvents: ['inbox.messageReceived'] })
+        expect(await callResolveEnabledPushUserIds(service, data, 'inbox.messageReceived')).toEqual([])
+        await UserNotificationPreferences.upsert(owner.id, { mutedEvents: [] })
+        expect(await callResolveEnabledPushUserIds(service, data, 'inbox.messageReceived')).toEqual([owner.id])
+        await db.delete(assistantConversations).where(eq(assistantConversations.id, conversationId))
+        expect(await callResolveEnabledPushUserIds(service, data, 'inbox.messageReceived')).toEqual([])
+      } finally {
+        await db.delete(assistantConversations).where(eq(assistantConversations.id, conversationId))
+        await cleanupTestRbac('notif-assistant')
+      }
+    })
+
+    test('bundled rules only put the push channel on events that can resolve recipients', async () => {
+      const { join } = await import('node:path')
+      const { MONOREPO_ROOT } = await import('../../lib/paths')
+      const bundled = Bun.YAML.parse(
+        await Bun.file(join(MONOREPO_ROOT, 'config/notifications/rules.yaml')).text()
+      ) as NotificationConfig
+      const pushEvents = bundled.rules.filter((rule) => rule.channels.includes('push')).map((rule) => rule.event)
+      expect(new Set(pushEvents)).toEqual(new Set(['agent-question.created', 'inbox.messageReceived']))
+    })
+
+    test('routes only push-eligible Assistant updates to push', async () => {
+      const { join } = await import('node:path')
+      const { MONOREPO_ROOT } = await import('../../lib/paths')
+      const bundled = Bun.YAML.parse(
+        await Bun.file(join(MONOREPO_ROOT, 'config/notifications/rules.yaml')).text()
+      ) as NotificationConfig
+      service.setConfig(bundled)
+      const context = service.buildContext('inbox.messageReceived', {})
+      const eligible = service.matchRule(context, {
+        recipientType: 'voice_assistant',
+        recipientId: 'assistant:507a9ac0-164e-4f49-9441-e57522bdc52b',
+        assistantPush: true,
+      })
+      expect(eligible?.id).toBe('assistant-task-update')
+      expect(eligible?.channels).toEqual(['push'])
+      const routine = service.matchRule(context, {
+        recipientType: 'voice_assistant',
+        recipientId: 'assistant:507a9ac0-164e-4f49-9441-e57522bdc52b',
+      })
+      expect(routine).toBeNull()
+    })
+
     test('fans out the same agent question notification through web push and APNs', async () => {
       const event: TestEvent = {
         title: 'Question',
@@ -441,7 +529,7 @@ describe('NotificationService', () => {
           'agent-question.created'
         )
 
-        expect(preferenceSpy).toHaveBeenCalledWith('muted-user', 'agent-question.created')
+        expect(preferenceSpy).toHaveBeenCalledWith('muted-user', 'agent-question.created', 'question')
         expect(webSpy).not.toHaveBeenCalled()
         expect(apnsSpy).not.toHaveBeenCalled()
       } finally {
@@ -546,6 +634,29 @@ describe('NotificationService', () => {
 
         await callSendWebPush(service, [user.id], event)
         expect(sendSpy).toHaveBeenCalledTimes(1)
+      } finally {
+        sendSpy.mockRestore()
+      }
+    })
+
+    test('web push carries the collapse key as the notification tag', async () => {
+      await registerPushSubscription({
+        endpoint: 'https://push.example.com/tag',
+        p256dh: 'k',
+        auth: 'a',
+        userId: user.id,
+      })
+      const sendSpy = spyOn(webpush, 'sendNotification').mockResolvedValue({ statusCode: 201 } as any)
+      try {
+        await callSendWebPush(service, [user.id], {
+          title: 'Completed: #197 · Validate deletion',
+          body: 'Next steps: ship it',
+          collapseKey: 'ws:abc',
+          url: '/inbox',
+        })
+        expect(JSON.parse(sendSpy.mock.calls[0][1] as string)).toMatchObject({ tag: 'ws:abc', renotify: true })
+        await callSendWebPush(service, [user.id], { title: 'Plain', body: 'No key', url: '/inbox' })
+        expect(JSON.parse(sendSpy.mock.calls[1][1] as string)).not.toHaveProperty('tag')
       } finally {
         sendSpy.mockRestore()
       }
@@ -713,6 +824,53 @@ describe('NotificationService', () => {
       }
     })
 
+    test('relay deliveries carry the subtitle inside the preview and the grouping keys beside it', async () => {
+      await registerApnsDevice({
+        userId: user.id,
+        apnsToken: 'relay-presentation-token',
+        platform: 'ios',
+        environment: 'production',
+      })
+      await db.update(apnsDevices).set({ relayBindingToken: 'tau_prd_test' }).where(eq(apnsDevices.userId, user.id))
+      const relay = spyOn(relayModule, 'sendRelayAlert').mockResolvedValue({ accepted: true, reason: undefined })
+      const config = spyOn(relayModule, 'pushRelayConfig').mockReturnValue({
+        token: 'fixture',
+        instanceId: 'fixture',
+        baseUrl: 'https://example.invalid',
+      })
+      const event: TestEvent = {
+        type: 'inbox.messageReceived',
+        workStreamNumber: 197,
+        title: 'Completed: #197 · Validate deletion',
+        body: 'ship it',
+        subtitle: 'Platform',
+        collapseKey: 'ws:abc',
+        threadKey: 'squad:def',
+        interruptionLevel: 'passive',
+        url: '/inbox',
+      }
+      try {
+        await callSendApnsPush(service, [user.id], event)
+        expect(relay.mock.calls[0][1]).toMatchObject({
+          eventType: 'message',
+          workStreamNumber: 197,
+          preview: { title: 'Completed: #197 · Validate deletion', body: 'ship it', subtitle: 'Platform' },
+          collapseKey: 'ws:abc',
+          threadKey: 'squad:def',
+          interruptionLevel: 'passive',
+        })
+        await UserNotificationPreferences.upsert(user.id, { showPreviews: false })
+        await callSendApnsPush(service, [user.id], event)
+        const routing = relay.mock.calls[1][1] as Record<string, unknown>
+        expect(routing.preview).toBeUndefined()
+        expect(routing).toMatchObject({ collapseKey: 'ws:abc', threadKey: 'squad:def', interruptionLevel: 'passive' })
+      } finally {
+        await UserNotificationPreferences.upsert(user.id, { showPreviews: true })
+        config.mockRestore()
+        relay.mockRestore()
+      }
+    })
+
     test('logs when recipients have no APNs devices', async () => {
       await callSendApnsPush(service, [user.id], { title: 'Hello', body: 'World', url: '/inbox' })
 
@@ -779,6 +937,54 @@ describe('NotificationService', () => {
           actionId: 'agent-question:q1',
         })
       } finally {
+        sendSpy.mockRestore()
+      }
+    })
+
+    test('forwards push presentation hints to APNs; previews off keeps grouping but drops the subtitle', async () => {
+      await registerApnsDevice({
+        userId: user.id,
+        apnsToken: 'presentation-token',
+        platform: 'ios',
+        environment: 'production',
+      })
+      const sendSpy = spyOn(apnsModule, 'sendApnsNotification').mockResolvedValue({ ok: true, status: 200 })
+      const event: TestEvent = {
+        type: 'inbox.messageReceived',
+        workStreamNumber: 197,
+        title: 'Completed: #197 · Validate deletion',
+        body: 'Next steps: ship it',
+        subtitle: 'Platform',
+        collapseKey: 'ws:abc',
+        threadKey: 'squad:def',
+        interruptionLevel: 'passive',
+        url: '/squads/s1/work?ws=197',
+      }
+
+      try {
+        await callSendApnsPush(service, [user.id], event)
+        expect(sendSpy.mock.calls[0][1]).toMatchObject({
+          title: 'Completed: #197 · Validate deletion',
+          body: 'Next steps: ship it',
+          subtitle: 'Platform',
+          collapseId: 'ws:abc',
+          threadId: 'squad:def',
+          interruptionLevel: 'passive',
+        })
+
+        await UserNotificationPreferences.upsert(user.id, { showPreviews: false })
+        await callSendApnsPush(service, [user.id], event)
+        const withoutPreview = sendSpy.mock.calls[1][1]
+        expect(withoutPreview).toMatchObject({
+          title: 'Work #197 has a new message',
+          body: 'Open Tau to see details.',
+          collapseId: 'ws:abc',
+          threadId: 'squad:def',
+          interruptionLevel: 'passive',
+        })
+        expect(withoutPreview.subtitle).toBeUndefined()
+      } finally {
+        await UserNotificationPreferences.upsert(user.id, { showPreviews: true })
         sendSpy.mockRestore()
       }
     })

@@ -13,16 +13,22 @@ export async function assistantInboxOwner(recipientId: string): Promise<string |
   return conversation?.owner ?? null
 }
 
-/** Agents may reply only to an Assistant conversation that actually contacted them. */
+/**
+ * Agents may reply only to an Assistant conversation that actually contacted them. A structured
+ * task status additionally requires an agent reply to one of that agent's own requests.
+ */
 export async function validateAssistantInboxReply(
   recipientId: string,
   senderType: string,
   senderId: string | null | undefined,
-  replyTo: unknown
+  replyTo: unknown,
+  options: { assistantTaskStatus?: string } = {}
 ): Promise<void> {
   if (senderType !== 'system' && !z.string().uuid().safeParse(replyTo).success)
     throw new Error('inReplyTo must be a full inbox message UUID')
   if (!(await assistantInboxOwner(recipientId))) throw new Error('Assistant conversation not found')
+  if (options.assistantTaskStatus !== undefined && senderType !== 'agent')
+    throw new Error('assistantTaskStatus can only be reported by the agent that received the request')
   if (senderType === 'system') return
   if (senderType !== 'agent' || !senderId)
     throw new Error('Assistant inbox replies can only be sent by a contacted agent')

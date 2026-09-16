@@ -1,5 +1,5 @@
 import { and, eq, isNull } from 'drizzle-orm'
-import type { AssistantEditorState } from '@tau/shared'
+import type { AssistantConversationKind, AssistantEditorState } from '@tau/shared'
 import { assistantConversationAgents, assistantConversations, agents, db } from '../db'
 import { Agent } from '../entities/Agent'
 import { generateAgentName } from '../lib/utils/agent-names'
@@ -64,9 +64,13 @@ export async function resolveOwnedAgent(
 /** The conversation whose general helper this agent is. Consultants never own a page editor. */
 export async function findOwningConversation(
   agentId: string
-): Promise<{ id: string; editor: AssistantEditorState | null } | undefined> {
+): Promise<{ id: string; kind: AssistantConversationKind; editor: AssistantEditorState | null } | undefined> {
   const [row] = await db
-    .select({ id: assistantConversations.id, editor: assistantConversations.editor })
+    .select({
+      id: assistantConversations.id,
+      kind: assistantConversations.kind,
+      editor: assistantConversations.editor,
+    })
     .from(assistantConversationAgents)
     .innerJoin(assistantConversations, eq(assistantConversations.id, assistantConversationAgents.conversationId))
     .where(and(eq(assistantConversationAgents.agentId, agentId), isNull(assistantConversationAgents.squadId)))

@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test'
 import { eq } from 'drizzle-orm'
 import { db } from '../../db'
-import { agents, agentTypes, squads, systemTokens, users } from '../../db/schema'
+import { agents, agentTypes, assistantConversations, squads, systemTokens, users } from '../../db/schema'
 import { WebSocketManager } from './manager'
 import type { Identity } from '../rbac'
 
@@ -461,6 +461,54 @@ describe('WebSocketManager', () => {
         message: 'Forbidden topic',
       })
     )
+  })
+
+  test('delivers saved Assistant activity only to the conversation owner, even on the collection topic', async () => {
+    await db.insert(users).values([
+      { id: ownerUserId, email: 'ws-owner@example.com' },
+      { id: foreignUserId, email: 'ws-foreign@example.com' },
+    ])
+    const conversationId = crypto.randomUUID()
+    await db.insert(assistantConversations).values({ id: conversationId, ownerUserId })
+    const recipientId = `assistant:${conversationId}`
+    const ownerWs = openSocket(),
+      foreignWs = openSocket(),
+      adminWs = openSocket(),
+      ownerInstanceWs = openSocket()
+    try {
+      const owner = manager.addClient(ownerWs, { type: 'user', userId: ownerUserId })
+      const foreign = manager.addClient(foreignWs, { type: 'user', userId: foreignUserId })
+      const admin = manager.addClient(adminWs, adminIdentity)
+      const ownerInstance = manager.addClient(ownerInstanceWs, { type: 'user', userId: ownerUserId })
+      await manager.subscribe(owner, 'inbox')
+      await manager.subscribe(foreign, 'inbox')
+      await manager.subscribe(admin, 'inbox')
+      await manager.subscribe(ownerInstance, `inbox:${recipientId}`)
+      // The foreign user cannot even subscribe to the owner's instance topic.
+      await manager.subscribe(foreign, `inbox:${recipientId}`)
+      expect(foreignWs.send.mock.calls.map(([frame]: [string]) => JSON.parse(frame).type)).toContain('error')
+      const data = { conversationId, recipientId }
+      await manager.broadcast('inbox', 'assistant.activityChanged', data)
+      await manager.broadcast(`inbox:${recipientId}`, 'assistant.activityChanged', data)
+      await manager.broadcast('inbox', 'inbox.messageReceived', {
+        messageId: 'm1',
+        recipientType: 'voice_assistant',
+        recipientId,
+        senderAgentId: null,
+      })
+      const events = (ws: { send: { mock: { calls: unknown[][] } } }) =>
+        ws.send.mock.calls
+          .map(([frame]) => JSON.parse(frame as string))
+          .filter((frame) => frame.type === 'event')
+          .map((frame) => `${frame.topic}:${frame.event}`)
+      expect(events(ownerWs)).toEqual(['inbox:assistant.activityChanged', 'inbox:inbox.messageReceived'])
+      expect(events(ownerInstanceWs)).toEqual([`inbox:${recipientId}:assistant.activityChanged`])
+      expect(events(foreignWs)).toEqual([])
+      // Full squad access does not widen a private conversation's activity.
+      expect(events(adminWs)).toEqual([])
+    } finally {
+      await db.delete(assistantConversations).where(eq(assistantConversations.id, conversationId))
+    }
   })
 
   test('preserves merge-base legacy access to foreign inbox topics', async () => {

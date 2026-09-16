@@ -930,6 +930,21 @@ const taskUpdateRenderer: ToolRenderer = {
   ArgsView: () => null,
   ResultView: ({ result }) => {
     const parsed = parseObject(result)
+    // Catch-up batches carry several updates; single updates keep the legacy `content` shape.
+    const updates = Array.isArray(parsed?.updates)
+      ? (parsed.updates as Array<Record<string, unknown>>).filter((update) => typeof update.content === 'string')
+      : null
+    if (updates && updates.length)
+      return (
+        <div className="space-y-2 text-[12px]">
+          {updates.map((update, index) => (
+            <div key={typeof update.messageId === 'string' ? update.messageId : index} className="whitespace-pre-wrap">
+              {typeof update.senderName === 'string' && <span className="text-muted">{update.senderName}: </span>}
+              {update.content as string}
+            </div>
+          ))}
+        </div>
+      )
     const content = typeof parsed?.content === 'string' ? parsed.content : extractResultText(result)
     return <div className="whitespace-pre-wrap text-[12px]">{content}</div>
   },

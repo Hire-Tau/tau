@@ -17,17 +17,24 @@ export type CommandDestination =
       readOnly?: boolean
     }
 
+/** A saved Assistant conversation reached from an activity row; opened through the Assistant stack. */
+export type AssistantConversationDestination = { kind: 'assistant'; id: string; label: string }
+
 export interface CommandResult {
   id: string
   label: string
   detail: string
-  kind: 'Squad' | 'Work stream' | 'Conversation' | 'Needs you' | 'Page' | 'Setting'
-  destination?: CommandDestination
+  kind: 'Squad' | 'Work stream' | 'Conversation' | 'Needs you' | 'Page' | 'Setting' | 'Update'
+  destination?: CommandDestination | AssistantConversationDestination
   path?: string
   keywords?: string
   agentTypeId?: string
   status?: Agent['status']
   work?: WorkStream
+  /** Update rows only: unread marker, task summary, and the latest update time. */
+  unread?: boolean
+  summary?: string
+  timestamp?: string
 }
 
 export function consultantConversations(agents: readonly Agent[]) {
@@ -43,6 +50,7 @@ export function consultantConversations(agents: readonly Agent[]) {
 export function actionTitle(action: PendingAction): string {
   const data = action.data
   if ('workStreamTitle' in data) return data.workStreamTitle
+  if ('taskLabel' in data) return data.taskLabel
   if ('reason' in data) return data.reason || 'Work needs attention'
   if ('questionData' in data) {
     const question = data.questionData as { question?: string; questions?: { question?: string }[] }

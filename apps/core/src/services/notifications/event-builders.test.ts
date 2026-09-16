@@ -216,6 +216,37 @@ describe('notification event builders', () => {
     })
   })
 
+  test('links saved Assistant updates to the conversation without exposing content or the sender', async () => {
+    process.env.APP_URL = 'https://tau.example/app'
+    const conversationId = '507a9ac0-164e-4f49-9441-e57522bdc52b'
+    track(
+      spyOn(InboxMessage, 'find').mockResolvedValue({
+        id: 'm-assistant',
+        recipientType: 'voice_assistant',
+        recipientId: `assistant:${conversationId}`,
+        senderType: 'agent',
+        senderId: 'a1',
+        subject: 'Secret subject',
+        content: 'The API key is sk-not-really; deployment finished.',
+        metadata: { sender: { squadId: 's1' }, inReplyTo: 'r1', assistantTaskStatus: 'completed' },
+      } as any)
+    )
+
+    const event = await buildNotificationEvent('inbox.messageReceived', { messageId: 'm-assistant' })
+
+    expect(event).toEqual({
+      type: 'inbox.messageReceived',
+      messageId: 'm-assistant',
+      title: 'Assistant update',
+      body: 'A task has an update. Open Assistant to view it.',
+      url: `https://tau.example/app/?chat=open&assistantConversation=${conversationId}`,
+      timestamp: expect.any(Date),
+    })
+    expect(JSON.stringify(event)).not.toContain('sk-not-really')
+    expect(event?.agentId).toBeUndefined()
+    expect(event?.squadId).toBeUndefined()
+  })
+
   test('copies exact Action Center targets only from trusted system inbox metadata', async () => {
     track(
       spyOn(InboxMessage, 'find').mockImplementation(
@@ -247,6 +278,44 @@ describe('notification event builders', () => {
     expect(spoofed?.waitId).toBeUndefined()
     expect(spoofed?.questionId).toBeUndefined()
     expect(spoofed?.actionId).toBeUndefined()
+  })
+
+  test('uses the stored push presentation for system inbox messages and ignores it from other senders', async () => {
+    const push = {
+      title: 'Completed: #197 · Validate deletion',
+      body: 'Next steps: ship it',
+      subtitle: 'Platform',
+      collapseKey: 'ws:abc',
+      threadKey: 'squad:def',
+      interruptionLevel: 'passive',
+    }
+    track(
+      spyOn(InboxMessage, 'find').mockImplementation(
+        async (id: string) =>
+          ({
+            id,
+            senderType: id === 'system' ? 'system' : 'agent',
+            senderId: id === 'system' ? null : 'a1',
+            metadata: { push, ...(id === 'system' ? {} : { sender: { squadId: 's1' } }) },
+            subject: 'Work Stream done: #197 · Validate deletion',
+            content: 'Work stream "#197 · Validate deletion" has been completed.',
+          }) as any
+      )
+    )
+
+    expect(await buildNotificationEvent('inbox.messageReceived', { messageId: 'system' })).toMatchObject({
+      title: push.title,
+      body: push.body,
+      subtitle: 'Platform',
+      collapseKey: 'ws:abc',
+      threadKey: 'squad:def',
+      interruptionLevel: 'passive',
+    })
+    const agent = await buildNotificationEvent('inbox.messageReceived', { messageId: 'agent' })
+    expect(agent).toMatchObject({ title: 'Work Stream done: #197 · Validate deletion' })
+    expect(agent?.body).toBe('Work stream "#197 · Validate deletion" has been completed.')
+    expect(agent?.subtitle).toBeUndefined()
+    expect(agent?.collapseKey).toBeUndefined()
   })
 
   test('adds fleet alert squad routing while provider-global alerts remain squadless', async () => {

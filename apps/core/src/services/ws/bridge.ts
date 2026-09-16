@@ -2,6 +2,7 @@ import { eventEmitter } from '../../lib/infra/event-emitter'
 import type { EventMap, CollectionTopic, InstanceTopic } from '@tau/shared'
 import type { WebSocketManager } from './manager'
 import { listAgentQuestionAttentionUserIds } from '../agents/questions'
+import { assistantInboxOwner } from '../assistant-inbox'
 
 /** Discriminated union of all event entries — lets TS narrow `data` from `event`. */
 type EventEntry = { [K in keyof EventMap]: { event: K; data: EventMap[K] } }[keyof EventMap]
@@ -167,6 +168,11 @@ function resolve(entry: EventEntry): ResolvedRoute | null {
   if (event === 'inbox.messageReceived' || event === 'inbox.messageRead' || event === 'inbox.allRead') {
     return { topic: 'inbox', instanceTopic: `inbox:${data.recipientId}` }
   }
+  // Saved Assistant activity rides the inbox topic family; the manager restricts its delivery
+  // to the conversation owner on both the collection and the instance topic.
+  if (event === 'assistant.activityChanged') {
+    return { topic: 'inbox', instanceTopic: `inbox:${data.recipientId}` }
+  }
 
   if (event === 'monitor.created' || event === 'monitor.updated' || event === 'monitor.ended') {
     return { topic: 'monitors', instanceTopic: `agents:${data.agentId}` }
@@ -227,14 +233,16 @@ function isQuestionLifecycleEntry(entry: EventEntry): entry is QuestionLifecycle
 
 interface EventBridgeDependencies {
   listAgentQuestionAttentionUserIds: typeof listAgentQuestionAttentionUserIds
+  assistantInboxOwner: typeof assistantInboxOwner
 }
 
-const defaultDependencies: EventBridgeDependencies = { listAgentQuestionAttentionUserIds }
+const defaultDependencies: EventBridgeDependencies = { listAgentQuestionAttentionUserIds, assistantInboxOwner }
 
 export function setupEventBridge(
   manager: WebSocketManager,
-  dependencies: EventBridgeDependencies = defaultDependencies
+  overrides: Partial<EventBridgeDependencies> = {}
 ): () => void {
+  const dependencies: EventBridgeDependencies = { ...defaultDependencies, ...overrides }
   const activityDelivery = new Map<string, { pending: PendingActivityDelivery[]; running: boolean }>()
   const enqueueActivity = (projected: EventMap['squadActivity.projected']) => {
     const queue = activityDelivery.get(projected.squadId) ?? { pending: [], running: false }
@@ -273,6 +281,13 @@ export function setupEventBridge(
         .listAgentQuestionAttentionUserIds(entry.data.questionId)
         .then((userIds) => manager.broadcastActionCenterInvalidation(userIds))
         .catch((err) => console.error('[ws] Action Center attention resolution failed:', err))
+    }
+    // A task entering or leaving needs-input changes the owner's Needs-you list; the owner alone hears it.
+    if (entry.event === 'assistant.activityChanged') {
+      void dependencies
+        .assistantInboxOwner(entry.data.recipientId)
+        .then((owner) => manager.broadcastActionCenterInvalidation(owner ? [owner] : []))
+        .catch((err) => console.error('[ws] Assistant activity owner resolution failed:', err))
     }
 
     const route = resolve(entry)

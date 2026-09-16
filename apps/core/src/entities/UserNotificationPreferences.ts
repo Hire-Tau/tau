@@ -1,4 +1,5 @@
 import { eq } from 'drizzle-orm'
+import type { PushCategory } from '@tau/shared'
 import { db } from '../db'
 import { userNotificationPreferences } from '../db/schema'
 
@@ -30,10 +31,16 @@ export class UserNotificationPreferences {
     }
   }
 
-  /** Whether a push for the given event type should be delivered to this user. */
-  static async shouldPush(userId: string, eventType: string): Promise<boolean> {
+  /**
+   * Whether a push should be delivered to this user. `mutedEvents` may hold push category ids
+   * (see PUSH_CATEGORIES) or, from before categories existed, raw routing event names; either
+   * kind of match mutes.
+   */
+  static async shouldPush(userId: string, eventType: string, category?: PushCategory): Promise<boolean> {
     const prefs = await UserNotificationPreferences.get(userId)
-    return prefs.pushEnabled && !prefs.mutedEvents.includes(eventType)
+    if (!prefs.pushEnabled) return false
+    if (prefs.mutedEvents.includes(eventType)) return false
+    return !(category && prefs.mutedEvents.includes(category))
   }
 
   static async upsert(userId: string, input: Partial<NotificationPreferences>): Promise<NotificationPreferences> {

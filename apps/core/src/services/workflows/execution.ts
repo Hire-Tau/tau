@@ -595,10 +595,7 @@ export async function finishFlow(id: string, version: number, identity: Identity
     throw new WorkflowError('A human must approve delivery', 403)
   if (['pr-merge', 'pr-auto-merge', 'direct-merge'].includes(mode)) {
     const binding = codeHostingRegistry.resolve(metadata)
-    if (!binding)
-      throw new WorkflowError(
-        'Set codeHost.integration and codeHost.repository to a supported code hosting integration before completion'
-      )
+    if (!binding) throw new WorkflowError(codeHostingRegistry.explainMissingBinding(metadata))
     const { reference, adapter } = binding
     if (mode === 'direct-merge') {
       const head = metadata.git?.commit,

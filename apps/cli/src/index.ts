@@ -8,6 +8,7 @@ import { registerAdminCommands } from './commands/admin'
 import { registerAgentCommands } from './commands/agent'
 import { registerAgentQuestionCommands } from './commands/agent-question'
 import { registerAgentTypeCommands } from './commands/agent-type'
+import { registerAssistantTaskCommands } from './commands/assistant-task'
 import { registerAuthCommands } from './commands/auth'
 import { registerChannelInstanceCommands } from './commands/channel-instance'
 import { registerChatCommands } from './commands/chat'
@@ -65,6 +66,7 @@ registerAdminCommands(program)
 registerAgentCommands(program)
 registerAgentQuestionCommands(program)
 registerAgentTypeCommands(program)
+registerAssistantTaskCommands(program)
 registerAuthCommands(program)
 registerChannelInstanceCommands(program)
 registerChatCommands(program)

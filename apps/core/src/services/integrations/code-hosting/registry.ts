@@ -1,5 +1,6 @@
 import {
   deliveryPullRequests,
+  describeCodeHostReference,
   resolveCodeHostReference,
   resolveTrackedResources,
   type CodeHostReference,
@@ -64,6 +65,23 @@ export class CodeHostingRegistry {
     const reference = resolveCodeHostReference(metadata)
     const adapter = reference && this.adapters.get(reference.integration)
     return reference && adapter?.validateRepository(reference.repository) ? { reference, adapter } : null
+  }
+  /**
+   * Why `resolve` returned null, for people. Distinguishes metadata that is present but invalid
+   * (for example extra keys on `changeRequest`) from a missing binding, so a delivery failure
+   * points at the actual defect instead of claiming required fields are missing.
+   */
+  explainMissingBinding(metadata: unknown): string {
+    const described = describeCodeHostReference(metadata)
+    if (described.status === 'invalid')
+      return `codeHost metadata is present but invalid: ${described.issues.join('; ')}. Keep verification evidence outside codeHost (for example metadata.delivery).`
+    if (described.status === 'valid') {
+      const { integration, repository } = described.reference
+      if (!this.adapters.has(integration))
+        return `codeHost.integration '${integration}' is not a supported code hosting integration (supported: ${[...this.adapters.keys()].join(', ')})`
+      return `codeHost.repository '${repository}' is not a valid repository for the ${integration} integration`
+    }
+    return 'Set codeHost.integration and codeHost.repository to a supported code hosting integration before completion'
   }
   subscriptions(definition: WorkflowDefinition, metadata: unknown): IntegrationSubscription[] {
     const explicit = definition.subscriptions ?? []

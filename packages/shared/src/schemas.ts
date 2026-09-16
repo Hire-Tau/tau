@@ -3,6 +3,7 @@ import { workflowSourceSchema, workflowEventTriggerSchema } from './workflows'
 import { squadEventRulesSchema } from './squad-event-rules'
 import { AGENT_STATUSES, WORK_STREAM_COMPLETION_MODES, WORK_STREAM_PRIORITIES } from './types'
 import { IMAGE_ATTACHMENT_MIME_TYPES, MAX_IMAGE_ATTACHMENTS_PER_MESSAGE } from './image-attachments'
+import { reportableAssistantTaskStatusSchema } from './assistant-activity'
 
 export const chatScopeTypeSchema = z.enum(['system-manager', 'heartbeat', 'consultant'])
 
@@ -552,6 +553,9 @@ export const sendInboxMessageSchema = z.object({
   // (metadata.remote present), the outbound send defaults its destination to that row's
   // fromAddress and threads the original envelope id.
   inReplyTo: z.string().optional(),
+  // Structured lifecycle report for a reply to a saved Assistant mailbox (`assistant:<uuid>`).
+  // Only the agent that received the request may report, and only on local sends.
+  assistantTaskStatus: reportableAssistantTaskStatusSchema.optional(),
   attachmentIds: z.array(z.string().min(1)).optional(),
   // Federation signed-send (Slice 5). agentKey/agentSig authorize authorship; the client
   // envelope id becomes the idempotency/dedup key; inReplyToEnvelopeId is the WIRE reply
