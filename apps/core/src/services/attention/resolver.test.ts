@@ -19,21 +19,25 @@ const prefix = `attention-resolver-${crypto.randomUUID().slice(0, 8)}`
 let squad: Squad
 let streamA: { id: string }
 let streamB: { id: string }
+let streamC: { id: string }
 let watcher: TestUser
 let muter: TestUser
 let stranger: TestUser
+let follower: TestUser
 
 beforeAll(async () => {
   squad = await Squad.create({ name: `${prefix} squad`, purpose: 'attention resolver test' })
   streamA = await storedLegacyWorkStream({ squadId: squad.id, title: `${prefix} stream A` })
   streamB = await storedLegacyWorkStream({ squadId: squad.id, title: `${prefix} stream B` })
+  streamC = await storedLegacyWorkStream({ squadId: squad.id, title: `${prefix} stream C` })
   watcher = await createTestUser({ prefix })
   muter = await createTestUser({ prefix })
   stranger = await createTestUser({ prefix })
+  follower = await createTestUser({ prefix })
 })
 
 afterAll(async () => {
-  await db.delete(workStreams).where(inArray(workStreams.id, [streamA.id, streamB.id]))
+  await db.delete(workStreams).where(inArray(workStreams.id, [streamA.id, streamB.id, streamC.id]))
   await db.delete(squads).where(eq(squads.id, squad.id))
   await cleanupTestRbac(prefix)
 })
@@ -100,12 +104,32 @@ describe('notify recipient queries', () => {
     expect(await listWorkStreamNotifyUserIds(streamB.id, squad.id, 'progress')).not.toContain(stranger.id)
   })
 
-  test('squad-scope notify unions the squad itself with the given origin streams', async () => {
+  test('squad-scope notify resolves per origin stream, and without origins the squad row decides', async () => {
+    // No origins — the item is the squad's own, so the squad row decides.
     expect((await listSquadScopeNotifyUserIds(squad.id, [], 'decisions')).sort()).toEqual([watcher.id, muter.id].sort())
-    // Stream A mutes the muter's decisions, but the squad row still notifies for squad-level items.
-    expect((await listSquadScopeNotifyUserIds(squad.id, [streamA.id], 'decisions')).sort()).toEqual(
+
+    // With origins, each origin resolves stream row -> squad row -> default. Stream A holds the
+    // watcher at `show` and the muter at `mute`, and the notifying squad row cannot add them back.
+    expect(await listSquadScopeNotifyUserIds(squad.id, [streamA.id], 'decisions')).toEqual([])
+
+    // Stream B has no rows, so both inherit the notifying squad row.
+    expect((await listSquadScopeNotifyUserIds(squad.id, [streamB.id], 'decisions')).sort()).toEqual(
       [watcher.id, muter.id].sort()
     )
+    // Any one origin at notify is enough, even when another origin mutes.
+    expect((await listSquadScopeNotifyUserIds(squad.id, [streamA.id, streamB.id], 'decisions')).sort()).toEqual(
+      [watcher.id, muter.id].sort()
+    )
+
+    // A stream row notifies a user who has no squad row at all (their squad level is the default).
+    await subscribeToWorkStream(streamC.id, follower.id, { decisions: 'notify', progress: 'mute' })
+    expect((await listSquadScopeNotifyUserIds(squad.id, [streamC.id], 'decisions')).sort()).toEqual(
+      [watcher.id, muter.id, follower.id].sort()
+    )
+    // Kinds resolve independently: the follower's stream C row mutes progress, the muter inherits
+    // the squad row's progress notify, and the watcher's squad row mutes it.
+    expect(await listSquadScopeNotifyUserIds(squad.id, [streamC.id], 'progress')).toEqual([muter.id])
+
     expect(await listSquadScopeNotifyUserIds(null, [], 'decisions')).toEqual([])
   })
 })

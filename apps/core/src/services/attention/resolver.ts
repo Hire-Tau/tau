@@ -92,10 +92,14 @@ export async function listWorkStreamNotifyUserIds(
 }
 
 /**
- * Users whose effective `kind` level is `notify` for the squad ITSELF or for any of the given
- * streams — the audience for an item that belongs to a squad and may also originate in streams
- * (an agent question with work-stream origins). A stream row overrides the squad row only for that
- * stream, never for the squad-level item.
+ * Users whose effective `kind` level is `notify` for an item that belongs to a squad and may also
+ * originate in work streams (an agent question with work-stream origins).
+ *
+ * ORIGIN PRECEDENCE. With origins, the item IS its origins: each one resolves the normal way
+ * (stream row, else squad row, else the default) and any origin at `notify` notifies. Muting a
+ * stream therefore silences the questions that come out of it even inside a notified squad — the
+ * squad row alone can never add a user back. With no origins the item is the squad's own, so the
+ * squad row (else the default) decides.
  */
 export async function listSquadScopeNotifyUserIds(
   squadId: string | null,
@@ -109,11 +113,13 @@ export async function listSquadScopeNotifyUserIds(
   const notify: string[] = []
   for (const userId of candidates) {
     const squadLevel = squadRows.get(userId) ?? DEFAULT_ATTENTION
-    const notifiedBySquad = Boolean(squadId) && squadLevel[kind] === 'notify'
-    const notifiedByStream = workStreamIds.some(
-      (workStreamId) => (streamRows.get(workStreamId)?.get(userId) ?? squadLevel)[kind] === 'notify'
-    )
-    if (notifiedBySquad || notifiedByStream) notify.push(userId)
+    const notified =
+      workStreamIds.length === 0
+        ? squadLevel[kind] === 'notify'
+        : workStreamIds.some(
+            (workStreamId) => (streamRows.get(workStreamId)?.get(userId) ?? squadLevel)[kind] === 'notify'
+          )
+    if (notified) notify.push(userId)
   }
   return notify
 }
