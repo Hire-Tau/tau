@@ -103,6 +103,7 @@ import {
   listActiveWorkStreams,
   getWorkStream,
   getWorkStreamMetrics,
+  getWorkStreamTracked,
   getWorkStreamSubscription,
   getSquadSubscription,
   getInboxMessages,
@@ -443,6 +444,11 @@ export const queries = {
       queryOptions({
         queryKey: queryKeys.squads.workStreamDetail(id),
         queryFn: () => getWorkStream(id),
+      }),
+    workStreamTracked: (id: string) =>
+      queryOptions({
+        queryKey: queryKeys.squads.workStreamTracked(id),
+        queryFn: () => getWorkStreamTracked(id),
       }),
     workStreamMetrics: (id: string) =>
       queryOptions({

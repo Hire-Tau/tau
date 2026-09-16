@@ -1,6 +1,7 @@
 import {
   effectiveSquadEventRules,
   resolveCodeHostReference,
+  resolveTrackedResources,
   integrationValueAt,
   type WorkflowEventTrigger,
 } from '@tau/shared'
@@ -74,6 +75,9 @@ export async function discoverGitHubRelayInterests(source: GitHubInterestSource)
     await add(stream.squadId, github?.repository, github?.connectionId)
     const pr = findGitHubPrUrl(stream.metadata)
     if (pr) await add(stream.squadId, `${pr.owner}/${pr.repo}`, github?.connectionId)
+    for (const resource of resolveTrackedResources(stream.metadata)) {
+      if (resource.integration === 'github') await add(stream.squadId, resource.repository, resource.connectionId)
+    }
     for (const subscription of stream.subscriptions ?? []) {
       if (subscription.source.integration !== 'github') continue
       const match = subscription.match.repository

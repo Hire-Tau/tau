@@ -1,6 +1,6 @@
 ---
 name: setup-github-webhooks
-description: "Set up GitHub webhook integration for a Tau instance — create the webhook on a repo, configure secrets, and set squad metadata for event routing."
+description: 'Set up GitHub webhook integration for a Tau instance — create the webhook on a repo, configure secrets, and set squad metadata for event routing.'
 ---
 
 # Setting Up GitHub Webhooks
@@ -48,14 +48,14 @@ use a custom App or a repository webhook for that instance.
 
 **Events explained:**
 
-| Event                          | What it triggers                                        |
-| ------------------------------ | ------------------------------------------------------- |
-| `issues`                       | Issue assigned/unassigned → routed to matching squad    |
-| `issue_comment`                | Comments on issues/PRs → routed to assigned agent       |
-| `pull_request`                 | PR review requests and merge/conflict detection → notifies work stream agent |
-| `pull_request_review`          | PR review submitted → batched with line comments        |
-| `pull_request_review_comment`  | PR line comments → batched with review                  |
-| `workflow_run`                 | Terminal CI conclusion → notifies work stream agent     |
+| Event                         | What it triggers                                                             |
+| ----------------------------- | ---------------------------------------------------------------------------- |
+| `issues`                      | Issue assigned/unassigned → routed to matching squad                         |
+| `issue_comment`               | Comments on issues/PRs → routed to assigned agent                            |
+| `pull_request`                | PR review requests and merge/conflict detection → notifies work stream agent |
+| `pull_request_review`         | PR review submitted → batched with line comments                             |
+| `pull_request_review_comment` | PR line comments → batched with review                                       |
+| `workflow_run`                | Terminal CI conclusion → notifies work stream agent                          |
 
 Workflow-run attempt high-water suppression is sequential-delivery only. Concurrent delivery, crash-safe settlement, partial metadata recovery, and per-workflow state require the database-backed work tracked in `25da8cd9-55c3-40b2-a74c-42bf358cecb2`.
 
@@ -108,25 +108,50 @@ When GitHub requests review from the connected GitHub account, or requests revie
 
 ## Step 5: Configure PR Tracking on Work Streams
 
-When a squad creates a PR for a work stream, store the PR metadata so webhook
-events (reviews, CI, merges) are routed to the right agent:
+The work stream's own delivery PR (`codeHost.changeRequest`) is normally recorded
+automatically when a reviewer agent creates the PR through the git/worktree flow —
+do not hand-write it. To follow an _additional_ PR (a related PR, or one observed
+from an integration event) so its webhook events route to the right agent, track
+it instead of writing metadata directly:
 
 ```bash
-tau workstream set-meta <ws-id> github.pr.number <pr-number>
-tau workstream set-meta <ws-id> github.pr.url <pr-url>
-tau workstream set-meta <ws-id> github.repo owner/repo-name
+# From an integration event (e.g. a review request or comment notification)
+tau workstream track <ws-id> --event <event-id>
+
+# By explicit reference
+tau workstream track <ws-id> --pr owner/repo-name#<pr-number>
+
+# Flag an additional PR as a delivery change request — it must also be merged
+# before the stream can finish, alongside the primary codeHost PR
+tau workstream track <ws-id> --pr owner/repo-name#<pr-number> --delivery
 ```
 
-This is typically done automatically by reviewer agents when they create PRs.
+Tau resolves and records the tracked PR atomically, and validates the squad has
+an authorized connection for it. Legacy `github.pr.number`/`github.pr.url`/`github.repo`
+metadata set with `set-meta` is still recognized (for the primary delivery PR only).
 
 ## Step 6: Configure Issue Tracking on Work Streams
 
-When a squad picks up a GitHub issue, store the issue metadata:
+To start or attach work from a GitHub issue, use the event reference from the
+routed notification rather than hand-writing issue metadata:
 
 ```bash
-tau workstream set-meta <ws-id> github.issue <issue-number>
-tau workstream set-meta <ws-id> github.repo owner/repo-name
+# Create a new work stream idempotently from the issue-assignment event
+tau workstream create "<title>" --squad <squad-id> --from-event <event-id>
+
+# Or attach the issue to a work stream you already chose
+tau workstream track <ws-id> --event <event-id>
+
+# By explicit reference, when there is no event to replay
+tau workstream track <ws-id> --issue owner/repo-name#<issue-number>
 ```
+
+`tau workstream tracked <ws-id>` (alias `links`) lists everything a stream
+tracks, whether each PR counts toward delivery, its observed merge state, and
+whether its subscriptions are active. A stale `github.repo`/`github.issue`
+pair from before tracked resources existed is converted automatically at
+startup into a `tracked` issue entry; `github.issue` itself is never read, so
+always use `track`/`set-meta tracked` for new work.
 
 ## Setting Up for Multiple Repos
 
@@ -135,10 +160,10 @@ use the same webhook secret and endpoint — routing is handled by squad metadat
 
 ## Troubleshooting
 
-| Problem                     | Solution                                                        |
-| --------------------------- | --------------------------------------------------------------- |
-| Webhook returns 401         | Secret mismatch — verify the integration webhook secret matches GitHub        |
-| Events not reaching squad   | Check squad metadata: `tau squad get <id>` → verify `github` array |
-| PR events not reaching agent| Verify work stream has `github.pr.number` and `github.repo` set |
+| Problem                               | Solution                                                                                                                                                                          |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Webhook returns 401                   | Secret mismatch — verify the integration webhook secret matches GitHub                                                                                                            |
+| Events not reaching squad             | Check squad metadata: `tau squad get <id>` → verify `github` array                                                                                                                |
+| PR events not reaching agent          | Verify work stream has `github.pr.number` and `github.repo` set                                                                                                                   |
 | Review request creates no work stream | Verify webhook includes Pull request events, a connected GitHub account matches the requested user for user review requests, and squad `metadata.github` repo matches the PR repo |
-| Webhook shows as failing    | Check the API is reachable at the configured URL                |
+| Webhook shows as failing              | Check the API is reachable at the configured URL                                                                                                                                  |

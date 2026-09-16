@@ -16,11 +16,25 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
   integration: 'github',
   catalog: githubOutputCatalog,
   workStreamBindings(fact) {
+    // Issues are linked through `metadata.tracked`, so only pull requests bind an identity here.
     return {
       'github.repo': { event: 'repository' },
-      ...(fact.data.pullRequest
-        ? { 'github.pr.number': { event: 'pullRequest.number' } }
-        : { 'github.issue': { event: 'issue.number' } }),
+      ...(fact.data.pullRequest ? { 'github.pr.number': { event: 'pullRequest.number' } } : {}),
+    }
+  },
+  trackedResource(fact) {
+    const repository = typeof fact.data.repository === 'string' ? fact.data.repository : ''
+    const pullRequest = record(fact.data.pullRequest)
+    const issue = record(fact.data.issue)
+    const number = pullRequest?.number ?? issue?.number
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repository) || !Number.isSafeInteger(number) || number <= 0) return null
+    const kind = pullRequest ? 'pull_request' : 'issue'
+    return {
+      integration: 'github',
+      repository,
+      kind,
+      number,
+      url: `https://github.com/${repository}/${kind === 'issue' ? 'issues' : 'pull'}/${number}`,
     }
   },
   shouldNotify(fact, configuration) {

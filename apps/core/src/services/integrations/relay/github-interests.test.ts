@@ -105,6 +105,36 @@ test('editable rules discover selected account repositories and drop disabled or
   ])
 })
 
+test('tracked resources declare relay interest for their repositories, deduplicated with codeHost metadata', async () => {
+  const pinned = 'bcbe4f3a-d2d1-4b91-b1ea-4c6c14485893'
+  const source: GitHubInterestSource = {
+    listWorkStreams: async () => [
+      {
+        squadId: 's1',
+        status: 'active',
+        metadata: {
+          codeHost: { integration: 'github', repository: 'acme/widgets', changeRequest: { number: 42 } },
+          tracked: [
+            { integration: 'github', repository: 'acme/widgets', kind: 'pull_request', number: 42 },
+            { integration: 'github', repository: 'beta/tools', kind: 'pull_request', number: 7, connectionId: pinned },
+          ],
+        },
+      },
+      {
+        squadId: 's1',
+        status: 'done',
+        metadata: { tracked: [{ integration: 'github', repository: 'org/skipped', kind: 'issue', number: 1 }] },
+      },
+    ],
+    listSquads: async () => [],
+    resolveConnection: async (squadId, connectionId) => ({ id: connectionId ?? `default-${squadId}` }),
+  }
+  expect(await discoverGitHubRelayInterests(source)).toEqual([
+    { squadId: 's1', connectionId: 'default-s1', repository: 'acme/widgets' },
+    { squadId: 's1', connectionId: pinned, repository: 'beta/tools' },
+  ])
+})
+
 test('wildcard rule repositories expand through the injected expander into exact interests', async () => {
   const { squadEventRuleSchema } = await import('@tau/shared')
   const account = 'bcbe4f3a-d2d1-4b91-b1ea-4c6c14485893'

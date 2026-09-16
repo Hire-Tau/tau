@@ -1,13 +1,23 @@
-export const SQUAD_ACTIVITY_KINDS = ['message', 'workstream', 'wait', 'handoff', 'execution', 'subagent', 'pr'] as const
+export const SQUAD_ACTIVITY_KINDS = [
+  'message',
+  'workstream',
+  'wait',
+  'handoff',
+  'execution',
+  'subagent',
+  'pr',
+  'issue',
+] as const
 export type SquadActivityKind = (typeof SQUAD_ACTIVITY_KINDS)[number]
 
-export const SQUAD_ACTIVITY_LANES = [10, 20, 21, 22, 30, 31, 40, 41, 50, 60, 61, 70] as const
+export const SQUAD_ACTIVITY_LANES = [10, 20, 21, 22, 30, 31, 40, 41, 50, 60, 61, 70, 71] as const
 export type SquadActivityLane = (typeof SQUAD_ACTIVITY_LANES)[number]
 
 export type SquadActivityRef =
   | { type: 'agent'; agentId: string; view: 'chat' | 'inbox'; messageId?: string; executionId?: string }
   | { type: 'workstream'; workStreamId: string; workStreamNumber?: number }
   | { type: 'pr'; url: string }
+  | { type: 'issue'; url: string; workStreamId?: string; workStreamNumber?: number }
 
 /**
  * Normalize a stored `ref` back into an object.

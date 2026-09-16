@@ -5,7 +5,7 @@ import { eventEmitter } from '../../lib/infra/event-emitter'
 import { ActivityMaintenanceLeaseLostError, type ActivityMaintenanceLeaseFence } from './lease'
 import { materializedItem } from './types'
 import { activityFamily, loadActivitySource } from './families'
-import { listGitHubAssociationPage, loadGitHubActivityBaseSource, type ActivitySourceKey } from './source-loaders'
+import { listGitHubFamilyAssociationPage, loadGitHubActivityBaseSource, type ActivitySourceKey } from './source-loaders'
 import { activityPayloadHash, activityPersistencePayload, type ExtractedSquadActivity } from './types'
 import { coerceSquadActivityRef } from '@tau/shared'
 
@@ -140,8 +140,15 @@ export async function materializeSourceGroup(
   return result
 }
 
+const EMPTY_MATERIALIZATION: MaterializeResult = { upserted: [], inserted: [], updated: [], deleted: [] }
+
 export async function materializeGitHubDispatch(activityId: string, squadId: string): Promise<MaterializeResult> {
-  return materializeSourceGroup({ family: 'github-pr', groupId: `poll:${activityId}:${squadId}` })
+  const sourceId = `poll:${activityId}`
+  // The dispatch's own stored fact decides the family; an append-only family
+  // never deletes, so a dispatch that yields no fact has nothing to settle.
+  const base = await loadGitHubActivityBaseSource(sourceId)
+  if (!base) return EMPTY_MATERIALIZATION
+  return materializeSourceGroup({ family: base.family, groupId: `${sourceId}:${squadId}` })
 }
 
 export async function materializeGitHubWebhook(
@@ -172,10 +179,10 @@ export async function materializeGitHubWebhook(
   let failureCount = 0
   let firstFailure: unknown
   do {
-    const page = await listGitHubAssociationPage(sourceId, base.fact, after, pageSize)
+    const page = await listGitHubFamilyAssociationPage(base, after, pageSize)
     for (let offset = 0; offset < page.groupIds.length; offset += concurrency) {
       const groupIds = page.groupIds.slice(offset, offset + concurrency)
-      const results = await Promise.allSettled(groupIds.map((groupId) => materialize({ family: 'github-pr', groupId })))
+      const results = await Promise.allSettled(groupIds.map((groupId) => materialize({ family: base.family, groupId })))
       for (const result of results) {
         if (result.status === 'fulfilled') materialized++
         else {

@@ -8,6 +8,7 @@ import { createLogger } from '../../lib/infra/logger'
 import { and, eq } from 'drizzle-orm'
 import {
   activeWorkflowAttempts,
+  deliveryPullRequests,
   type WorkflowAttempt,
   advanceWorkflowRun,
   reopenWorkflowRun,
@@ -40,6 +41,7 @@ import { openWait, closeOpenWaits, listOpenWaits } from '../work-streams/waits'
 import { resetContinuationCycle } from '../work-streams/continuation-state'
 import { resolveStoredWorkflow, validateWorkflowParticipants, WorkflowError, workflowFingerprint } from './catalog'
 import { codeHostingRegistry } from '../integrations/code-hosting'
+import { recordDeliveryVerification } from '../work-streams/delivery-pull-requests'
 
 const log = createLogger('workflows')
 
@@ -575,7 +577,7 @@ export async function guardFlowMutation(
 }
 
 export async function finishFlow(id: string, version: number, identity: Identity) {
-  const stream = await WorkStream.mustFind(id)
+  let stream = await WorkStream.mustFind(id)
   if (
     !(await hasPermission(identity, 'workstreams:update', stream.squadId)) &&
     !(await hasPermission(identity, 'workstreams:respond', stream.squadId))
@@ -613,6 +615,38 @@ export async function finishFlow(id: string, version: number, identity: Identity
         (metadata.git?.baseBranch && change.baseBranch !== metadata.git.baseBranch)
       )
         throw new WorkflowError('Change request does not match this work stream branch', 409)
+      // Additional designated delivery pull requests only add a merge requirement: branch identity
+      // and the delivered head stay the primary change request's alone.
+      const verified: Array<{ key: string; state: 'merged'; headSha?: string }> = []
+      for (const resource of deliveryPullRequests(metadata)) {
+        if (resource.source === 'delivery') {
+          verified.push({ key: resource.key, state: 'merged', ...(change.headSha ? { headSha: change.headSha } : {}) })
+          continue
+        }
+        // No adapter means no evidence, and no evidence means not merged.
+        const additional = await codeHostingRegistry.adapterFor(resource.integration)?.changeRequest(
+          {
+            integration: resource.integration,
+            repository: resource.repository,
+            changeRequest: { number: resource.number },
+            ...(resource.connectionId ? { connectionId: resource.connectionId } : {}),
+          },
+          stream.squadId
+        )
+        if (!additional?.merged)
+          throw new WorkflowError(
+            `Delivery pull request ${resource.repository}#${resource.number} must be merged before completion`,
+            409
+          )
+        verified.push({
+          key: resource.key,
+          state: 'merged',
+          ...(additional.headSha ? { headSha: additional.headSha } : {}),
+        })
+      }
+      // Record before the finish permit is computed, then re-read so the permit hashes stored metadata.
+      await recordDeliveryVerification(id, verified)
+      stream = await WorkStream.mustFind(id)
     }
   }
   try {

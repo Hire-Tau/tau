@@ -29,6 +29,7 @@ import { useTick } from '../hooks/useTick'
 import { usePermissions } from '../hooks/usePermissions'
 import { WorkStreamApprovalConfirmation } from './WorkStreamApprovalConfirmation'
 import { WorkStreamQuestionWait } from './WorkStreamQuestionWait'
+import { WorkStreamTrackedResources } from './WorkStreamTrackedResources'
 import { actionErrorMessage } from '../lib/actionError'
 import { LoadingSurface, SkeletonBlock, SkeletonRows } from './loading/Skeleton'
 
@@ -568,6 +569,14 @@ export function WorkStreamDetailModal({
               </div>
             </div>
           )}
+          {/* A full-width row inside the details grid: pending questions stay
+              immediately after these details. */}
+          <div className="col-span-2 min-w-0 sm:col-span-3">
+            <WorkStreamTrackedResources
+              workStreamId={workStream.id}
+              canUpdate={!permissionsLoading && can('workstreams:update')}
+            />
+          </div>
         </div>
 
         {/* Question waits take priority over usage statistics, even while metrics load. */}

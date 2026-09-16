@@ -1,4 +1,4 @@
-import { workStreamLabel, workStreamRef } from '@tau/shared'
+import { workStreamLabel, workStreamRef, readDeliveryState, resolveTrackedResources } from '@tau/shared'
 import { addStructuredInputOptions, readWorkflowSource } from '../structured-input'
 import { registerWorkstreamFlowCommands, type WorkstreamFlowDependencies } from './workstream-flow'
 import { Command } from 'commander'
@@ -9,6 +9,9 @@ import { buildMetadataDelta, getMetadataValue, parseMetadataPath, parseMetadataV
 import { selectOpenWait } from './workstream-wait-selection'
 import type {
   Agent as AgentJson,
+  ResolvedTrackedResource,
+  TrackedResourceKind,
+  TrackedResourcesView,
   WorktreeCleanupSummary,
   WorkStreamCompletionMode,
   WorkStreamMetrics,
@@ -57,6 +60,8 @@ export interface WorkStream {
   spawnedAgents?: WorkStreamSpawnedAgentSummary[]
   createdAt: string
   metrics?: WorkStreamMetrics | null
+  /** create returns 200 with this set when an idempotent replay from --from-event matched an existing stream. */
+  reusedFromEvent?: boolean
 }
 
 interface WorkStreamWaitSummary {
@@ -422,6 +427,10 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .option('--from-memory <squadId:path>', 'Shortcut: attach a memory_document source link')
     .option('--from-url <url>', 'Shortcut: attach a url source link (repeatable)', collect, [])
     .option('--from-slack <permalink>', 'Shortcut: attach a slack_thread source link (repeatable)', collect, [])
+    .option(
+      '--from-event <eventId>',
+      'Create idempotently from an integration event; replays return the existing work stream'
+    )
     .option('-m, --message <msg>', 'Handoff message (included in assignment notifications)')
     .option(
       '--requesting-user <userId>',
@@ -456,9 +465,15 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           ...(options.gitRemote !== undefined ? { gitRemote: options.gitRemote } : {}),
           ...(options.worktree !== undefined ? { worktree: options.worktree } : {}),
           ...(options.baseBranch !== undefined ? { baseBranch: options.baseBranch } : {}),
+          ...(options.fromEvent !== undefined ? { integrationEventId: options.fromEvent } : {}),
         })
 
-        output(ws, `Created work stream ${workStreamLabel(ws)}: ${ws.title}`)
+        output(
+          ws,
+          ws.reusedFromEvent
+            ? `Reused existing work stream ${workStreamLabel(ws)} for this event`
+            : `Created work stream ${workStreamLabel(ws)}: ${ws.title}`
+        )
       } catch (error) {
         outputError(error as Error)
       }
@@ -510,6 +525,14 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           )
           if (ws.description) {
             console.log(`Description: ${ws.description}`)
+          }
+          const tracked = resolveTrackedResources(ws.metadata)
+          if (tracked.length > 0) {
+            const observed = readDeliveryState(ws.metadata).pullRequests
+            console.log(`\n\x1b[36mTracked:\x1b[0m`)
+            for (const resource of tracked) {
+              console.log(`  ${formatTrackedResourceLine(resource, observed[resource.key]?.state)}`)
+            }
           }
           if (ws.openWaits && ws.openWaits.length > 0) {
             console.log(`\n\x1b[33mOpen waits:\x1b[0m`)
@@ -1144,6 +1167,78 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
 
   // --- Work-stream watch (subscribe to a stream's lifecycle updates, like watching a GitHub PR) ---
 
+  // --- Tracked links (issues and pull requests this stream follows alongside its delivery) ---
+
+  // tau workstream tracked <id>
+  ws.command('tracked <id>')
+    .alias('links')
+    .description('List issues and pull requests tracked by a work stream')
+    .action(async (id) => {
+      try {
+        const view = await apiGet<TrackedResourcesView>(`/api/workstreams/${encodeURIComponent(id)}/tracked`)
+        if (isJsonMode()) {
+          output(view)
+        } else {
+          outputTable(
+            view.resources.map((r) => ({
+              Kind: r.kind,
+              Resource: `${r.repository}#${r.number}`,
+              Source: r.source,
+              Delivery: r.source === 'delivery' ? 'primary' : r.delivery ? 'yes' : '-',
+              Merge: r.mergeState ?? '-',
+              Subscribed: r.subscribed ? 'yes' : 'no',
+              URL: r.url ?? '',
+            })),
+            ['Kind', 'Resource', 'Source', 'Delivery', 'Merge', 'Subscribed', 'URL']
+          )
+          console.log(`Subscriptions: ${formatTrackedSubscriptionsFooter(view.subscriptions)}`)
+          const footer = formatTrackedDeliveryFooter(view.delivery)
+          if (footer) console.log(footer)
+        }
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+
+  // tau workstream track <id> [--event | --url | --issue | --pr] [--connection]
+  ws.command('track <id>')
+    .description('Track an issue or pull request alongside this work stream')
+    .option('--event <eventId>', 'Track the resource observed by an integration event')
+    .option('--url <url>', 'Track by code-host resource URL')
+    .option('--issue <ref>', 'Track a GitHub issue, e.g. owner/repo#12')
+    .option('--pr <ref>', 'Track a GitHub pull request, e.g. owner/repo#12')
+    .option('--connection <connectionId>', 'Integration connection ID (only with --issue/--pr)')
+    .option('--delivery', 'Count this pull request toward the work stream delivery')
+    .action(async (id, options) => {
+      try {
+        const body = buildTrackRequestBody(options)
+        const result = await apiPost<{ added: unknown[] }>(`/api/workstreams/${encodeURIComponent(id)}/tracked`, body)
+        output(result, `Tracked ${result.added.length} resource(s) on work stream ${id.slice(0, 8)}`)
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+
+  // tau workstream untrack <id> [--url | --issue | --pr] [--connection]
+  ws.command('untrack <id>')
+    .description('Stop tracking an issue or pull request on this work stream')
+    .option('--url <url>', 'Untrack by code-host resource URL')
+    .option('--issue <ref>', 'Untrack a GitHub issue, e.g. owner/repo#12')
+    .option('--pr <ref>', 'Untrack a GitHub pull request, e.g. owner/repo#12')
+    .option('--connection <connectionId>', 'Integration connection ID (only with --issue/--pr)')
+    .action(async (id, options) => {
+      try {
+        const body = buildUntrackRequestBody(options)
+        const result = await apiDelete<{ removed: boolean }>(`/api/workstreams/${encodeURIComponent(id)}/tracked`, body)
+        output(
+          result,
+          result.removed ? `Untracked resource on work stream ${id.slice(0, 8)}` : 'No matching tracked link'
+        )
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+
   // tau workstream subscription <id>
   ws.command('subscription <id>')
     .description('Show whether you watch this work stream, and the watcher count')
@@ -1194,4 +1289,80 @@ function parseCleanupSetting(value: string | undefined): boolean | undefined {
   if (value === 'true') return true
   if (value === 'false') return false
   throw new Error('--auto-cleanup-worktree must be true or false')
+}
+
+const OWNER_REPO_NUMBER_REF = /^([\w.-]+\/[\w.-]+)#([1-9]\d*)$/
+
+function parseResourceRef(
+  kind: TrackedResourceKind,
+  value: string
+): { integration: 'github'; repository: string; kind: TrackedResourceKind; number: number } {
+  const match = OWNER_REPO_NUMBER_REF.exec(value)
+  if (!match) throw new Error('Expected owner/repo#number')
+  return { integration: 'github', repository: match[1]!, kind, number: Number(match[2]) }
+}
+
+interface TrackSelectorOptions {
+  event?: string
+  url?: string
+  issue?: string
+  pr?: string
+  connection?: string
+  delivery?: boolean
+}
+
+function buildTrackRequestBody(options: TrackSelectorOptions): Record<string, unknown> {
+  const selected = [options.event, options.url, options.issue, options.pr].filter((v) => v !== undefined)
+  if (selected.length !== 1) throw new Error('Choose exactly one of --event, --url, --issue, --pr')
+  // An event can carry an issue and an issue is never a delivery change request; a URL is checked by the server.
+  if (options.delivery && (options.event !== undefined || options.issue !== undefined))
+    throw new Error('--delivery applies to pull requests only')
+  const delivery = options.delivery ? { delivery: true } : {}
+  if (options.event !== undefined) return { event: options.event }
+  if (options.url !== undefined) return { url: options.url, ...delivery }
+  const ref = parseResourceRef(options.issue !== undefined ? 'issue' : 'pull_request', options.issue ?? options.pr!)
+  return {
+    resource: { ...ref, ...(options.connection !== undefined ? { connectionId: options.connection } : {}) },
+    ...delivery,
+  }
+}
+
+function buildUntrackRequestBody(options: Omit<TrackSelectorOptions, 'event'>): Record<string, unknown> {
+  const selected = [options.url, options.issue, options.pr].filter((v) => v !== undefined)
+  if (selected.length !== 1) throw new Error('Choose exactly one of --url, --issue, --pr')
+  if (options.url !== undefined) return { url: options.url }
+  const ref = parseResourceRef(options.issue !== undefined ? 'issue' : 'pull_request', options.issue ?? options.pr!)
+  return { resource: { ...ref, ...(options.connection !== undefined ? { connectionId: options.connection } : {}) } }
+}
+
+/** Delivery progress, or nothing at all when no pull request counts toward delivery. */
+function formatTrackedDeliveryFooter(delivery: TrackedResourcesView['delivery']): string | null {
+  const total = delivery.pullRequests.length
+  if (total === 0) return null
+  const merged = delivery.pullRequests.filter((pr) => pr.state === 'merged').length
+  return `Delivery: ${merged}/${total} pull requests merged${delivery.complete ? ' (complete)' : ''}`
+}
+
+function formatTrackedSubscriptionsFooter(status: TrackedResourcesView['subscriptions']): string {
+  switch (status) {
+    case 'active':
+      return 'active'
+    case 'no-flow':
+      return 'no-flow (attach a workflow)'
+    case 'not-following':
+      return 'not-following (workflow does not follow code-host changes)'
+    case 'ended':
+      return 'ended'
+  }
+}
+
+function formatTrackedResourceLine(
+  resource: ResolvedTrackedResource,
+  mergeState?: TrackedResourcesView['resources'][number]['mergeState']
+): string {
+  const sourceLabel = resource.source === 'delivery' ? 'delivery PR' : resource.delivery ? 'delivery' : 'tracked'
+  // Merge state only exists for pull requests the stream has observed an event for.
+  const note = mergeState ? `${sourceLabel}, ${mergeState}` : sourceLabel
+  const url = resource.url ? ` ${resource.url}` : ''
+  return `[${resource.kind}] ${resource.repository}#${resource.number} (${note})${url}`
 }

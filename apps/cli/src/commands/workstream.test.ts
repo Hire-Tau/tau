@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test'
 import { Command } from 'commander'
-import { apiGet, apiPatch, apiPost } from '../client'
+import { apiDelete, apiGet, apiPatch, apiPost } from '../client'
 import { isJsonMode, output, outputError, outputTable, setOutputOptions } from '../output'
 import {
   buildWorkStreamSourceLinks,
@@ -21,6 +21,7 @@ describe('workstream CLI commands', () => {
     ;(apiGet as ReturnType<typeof mock>).mockClear()
     ;(apiPost as ReturnType<typeof mock>).mockClear()
     ;(apiPatch as ReturnType<typeof mock>).mockClear()
+    ;(apiDelete as ReturnType<typeof mock>).mockClear()
     ;(output as ReturnType<typeof mock>).mockClear()
     ;(outputTable as ReturnType<typeof mock>).mockClear()
     ;(outputError as ReturnType<typeof mock>).mockClear()
@@ -354,6 +355,68 @@ describe('workstream CLI commands', () => {
     })
   })
 
+  describe('get tracked resources', () => {
+    it('prints tracked resource lines derived from metadata', async () => {
+      const logSpy = spyOn(console, 'log').mockImplementation(() => {})
+      ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(false)
+      ;(apiGet as ReturnType<typeof mock>).mockResolvedValue({
+        id: '11111111-1111-1111-1111-111111111111',
+        title: 'Fix issue',
+        status: 'active',
+        squadId: 'sq-1',
+        dependsOn: [],
+        agentIds: [],
+        metadata: {
+          tracked: [{ integration: 'github', repository: 'acme/widgets', kind: 'issue', number: 12 }],
+        },
+      })
+
+      await run(['workstream', 'get', '11111111-1111-1111-1111-111111111111'])
+
+      const printed = logSpy.mock.calls.map((call) => String(call[0])).join('\n')
+      expect(printed).toContain('  [issue] acme/widgets#12 (tracked) https://github.com/acme/widgets/issues/12')
+      logSpy.mockRestore()
+    })
+
+    it('labels the primary delivery PR, flagged delivery PRs and plain links, with merge state when known', async () => {
+      const logSpy = spyOn(console, 'log').mockImplementation(() => {})
+      ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(false)
+      ;(apiGet as ReturnType<typeof mock>).mockResolvedValue({
+        id: '11111111-1111-1111-1111-111111111111',
+        title: 'Fix issue',
+        status: 'active',
+        squadId: 'sq-1',
+        dependsOn: [],
+        agentIds: [],
+        metadata: {
+          codeHost: {
+            integration: 'github',
+            repository: 'acme/widgets',
+            changeRequest: { number: 7 },
+          },
+          tracked: [
+            { integration: 'github', repository: 'acme/widgets', kind: 'pull_request', number: 9, delivery: true },
+            { integration: 'github', repository: 'acme/widgets', kind: 'issue', number: 12 },
+          ],
+          delivery: {
+            pullRequests: {
+              'github:acme/widgets:pull_request:7': { state: 'merged', at: '2026-09-14T10:00:00.000Z' },
+              'github:acme/widgets:pull_request:9': { state: 'open', at: '2026-09-15T10:00:00.000Z' },
+            },
+          },
+        },
+      })
+
+      await run(['workstream', 'get', '11111111-1111-1111-1111-111111111111'])
+
+      const printed = logSpy.mock.calls.map((call) => String(call[0])).join('\n')
+      expect(printed).toContain('  [pull_request] acme/widgets#7 (delivery PR, merged)')
+      expect(printed).toContain('  [pull_request] acme/widgets#9 (delivery, open)')
+      expect(printed).toContain('  [issue] acme/widgets#12 (tracked) https://github.com/acme/widgets/issues/12')
+      logSpy.mockRestore()
+    })
+  })
+
   describe('create', () => {
     it('does not emit human progress logs before created flow JSON', async () => {
       const logSpy = spyOn(console, 'log').mockImplementation(() => {})
@@ -504,6 +567,269 @@ describe('workstream CLI commands', () => {
         )
       }
       expect(apiPost).not.toHaveBeenCalled()
+    })
+
+    it('creates from an integration event and reports reuse when the event was already handled', async () => {
+      const eventId = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
+      await run(['workstream', 'create', 'Fix bug', '--squad', 'squad-1', '--from-event', eventId])
+      expect(apiPost).toHaveBeenLastCalledWith(
+        '/api/workstreams',
+        expect.objectContaining({ integrationEventId: eventId })
+      )
+
+      const reused = { id: 'stream-9', number: 9, title: 'Fix bug', reusedFromEvent: true }
+      ;(apiPost as ReturnType<typeof mock>).mockResolvedValue(reused)
+      await run(['workstream', 'create', 'Fix bug', '--squad', 'squad-1', '--from-event', eventId])
+      expect(output).toHaveBeenLastCalledWith(reused, 'Reused existing work stream #9 for this event')
+    })
+  })
+
+  describe('track', () => {
+    it('tracks a GitHub issue given as owner/repo#number', async () => {
+      await run(['workstream', 'track', 'stream-1', '--issue', 'acme/widgets#12'])
+      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', {
+        resource: { integration: 'github', repository: 'acme/widgets', kind: 'issue', number: 12 },
+      })
+    })
+
+    it('tracks a GitHub pull request with a connection id', async () => {
+      await run(['workstream', 'track', 'stream-1', '--pr', 'acme/widgets#7', '--connection', 'conn-1'])
+      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', {
+        resource: {
+          integration: 'github',
+          repository: 'acme/widgets',
+          kind: 'pull_request',
+          number: 7,
+          connectionId: 'conn-1',
+        },
+      })
+    })
+
+    it('tracks by url', async () => {
+      await run(['workstream', 'track', 'stream-1', '--url', 'https://github.com/acme/widgets/pull/7'])
+      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', {
+        url: 'https://github.com/acme/widgets/pull/7',
+      })
+    })
+
+    it('tracks by integration event id', async () => {
+      const eventId = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
+      await run(['workstream', 'track', 'stream-1', '--event', eventId])
+      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', { event: eventId })
+    })
+
+    it('designates a pull request as a delivery change request', async () => {
+      await run(['workstream', 'track', 'stream-1', '--pr', 'acme/widgets#7', '--delivery'])
+      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', {
+        resource: { integration: 'github', repository: 'acme/widgets', kind: 'pull_request', number: 7 },
+        delivery: true,
+      })
+      ;(apiPost as ReturnType<typeof mock>).mockClear()
+
+      await run(['workstream', 'track', 'stream-1', '--url', 'https://github.com/acme/widgets/pull/7', '--delivery'])
+      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', {
+        url: 'https://github.com/acme/widgets/pull/7',
+        delivery: true,
+      })
+    })
+
+    it('refuses to designate an issue or an event as delivery', async () => {
+      await run(['workstream', 'track', 'stream-1', '--issue', 'acme/widgets#12', '--delivery'])
+      expect(outputError).toHaveBeenLastCalledWith(new Error('--delivery applies to pull requests only'))
+
+      await run(['workstream', 'track', 'stream-1', '--event', 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee', '--delivery'])
+      expect(outputError).toHaveBeenLastCalledWith(new Error('--delivery applies to pull requests only'))
+      expect(apiPost).not.toHaveBeenCalled()
+    })
+
+    it('rejects an owner/repo#number reference that does not match the pattern', async () => {
+      await run(['workstream', 'track', 'stream-1', '--issue', 'not-a-valid-ref'])
+      expect(apiPost).not.toHaveBeenCalled()
+      expect(outputError).toHaveBeenCalledWith(new Error('Expected owner/repo#number'))
+    })
+
+    it('rejects zero or multiple selectors', async () => {
+      await run(['workstream', 'track', 'stream-1'])
+      expect(outputError).toHaveBeenLastCalledWith(new Error('Choose exactly one of --event, --url, --issue, --pr'))
+      ;(outputError as ReturnType<typeof mock>).mockClear()
+
+      await run([
+        'workstream',
+        'track',
+        'stream-1',
+        '--url',
+        'https://github.com/acme/widgets/pull/7',
+        '--issue',
+        'acme/widgets#12',
+      ])
+      expect(outputError).toHaveBeenLastCalledWith(new Error('Choose exactly one of --event, --url, --issue, --pr'))
+      expect(apiPost).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('untrack', () => {
+    it('untracks a pull request via DELETE with a resource body', async () => {
+      await run(['workstream', 'untrack', 'stream-1', '--pr', 'acme/widgets#7', '--connection', 'conn-1'])
+      expect(apiDelete).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', {
+        resource: {
+          integration: 'github',
+          repository: 'acme/widgets',
+          kind: 'pull_request',
+          number: 7,
+          connectionId: 'conn-1',
+        },
+      })
+    })
+
+    it('untracks by url', async () => {
+      await run(['workstream', 'untrack', 'stream-1', '--url', 'https://github.com/acme/widgets/issues/12'])
+      expect(apiDelete).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', {
+        url: 'https://github.com/acme/widgets/issues/12',
+      })
+    })
+
+    it('rejects zero or multiple selectors', async () => {
+      await run(['workstream', 'untrack', 'stream-1'])
+      expect(outputError).toHaveBeenLastCalledWith(new Error('Choose exactly one of --url, --issue, --pr'))
+      ;(outputError as ReturnType<typeof mock>).mockClear()
+
+      await run(['workstream', 'untrack', 'stream-1', '--issue', 'acme/widgets#1', '--pr', 'acme/widgets#2'])
+      expect(outputError).toHaveBeenLastCalledWith(new Error('Choose exactly one of --url, --issue, --pr'))
+      expect(apiDelete).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('tracked', () => {
+    it('renders tracked resources as a table with a subscriptions footer', async () => {
+      const logSpy = spyOn(console, 'log').mockImplementation(() => {})
+      ;(apiGet as ReturnType<typeof mock>).mockResolvedValue({
+        resources: [
+          {
+            integration: 'github',
+            repository: 'acme/widgets',
+            kind: 'issue',
+            number: 12,
+            key: 'github:acme/widgets:issue:12',
+            source: 'tracked',
+            subscriptionIds: [],
+            subscribed: true,
+            delivery: false,
+            url: 'https://github.com/acme/widgets/issues/12',
+          },
+        ],
+        subscriptions: 'no-flow',
+        delivery: { pullRequests: [], complete: false },
+      })
+
+      await run(['workstream', 'tracked', 'stream-1'])
+
+      expect(apiGet).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked')
+      expect(outputTable).toHaveBeenCalledWith(
+        [
+          {
+            Kind: 'issue',
+            Resource: 'acme/widgets#12',
+            Source: 'tracked',
+            Delivery: '-',
+            Merge: '-',
+            Subscribed: 'yes',
+            URL: 'https://github.com/acme/widgets/issues/12',
+          },
+        ],
+        ['Kind', 'Resource', 'Source', 'Delivery', 'Merge', 'Subscribed', 'URL']
+      )
+      expect(logSpy).toHaveBeenCalledWith('Subscriptions: no-flow (attach a workflow)')
+      // No delivery pull requests, so the stream has no delivery progress to report.
+      expect(logSpy.mock.calls.map((call) => String(call[0])).join('\n')).not.toContain('Delivery:')
+      logSpy.mockRestore()
+    })
+
+    it('shows delivery designation, merge state and delivery progress', async () => {
+      const logSpy = spyOn(console, 'log').mockImplementation(() => {})
+      const trackedView = (complete: boolean, secondState: 'open' | 'merged') => ({
+        resources: [
+          {
+            integration: 'github',
+            repository: 'acme/widgets',
+            kind: 'pull_request',
+            number: 7,
+            key: 'github:acme/widgets:pull_request:7',
+            source: 'delivery',
+            delivery: true,
+            subscriptionIds: ['sub-1'],
+            subscribed: true,
+            mergeState: 'merged',
+            url: 'https://github.com/acme/widgets/pull/7',
+          },
+          {
+            integration: 'github',
+            repository: 'acme/widgets',
+            kind: 'pull_request',
+            number: 9,
+            key: 'github:acme/widgets:pull_request:9',
+            source: 'tracked',
+            delivery: true,
+            subscriptionIds: [],
+            subscribed: false,
+            mergeState: secondState,
+            url: 'https://github.com/acme/widgets/pull/9',
+          },
+        ],
+        subscriptions: 'active',
+        delivery: {
+          pullRequests: [
+            {
+              key: 'github:acme/widgets:pull_request:7',
+              repository: 'acme/widgets',
+              number: 7,
+              primary: true,
+              state: 'merged',
+            },
+            {
+              key: 'github:acme/widgets:pull_request:9',
+              repository: 'acme/widgets',
+              number: 9,
+              primary: false,
+              state: secondState,
+            },
+          ],
+          complete,
+        },
+      })
+      ;(apiGet as ReturnType<typeof mock>).mockResolvedValue(trackedView(false, 'open'))
+
+      await run(['workstream', 'tracked', 'stream-1'])
+
+      expect(outputTable).toHaveBeenCalledWith(
+        [
+          {
+            Kind: 'pull_request',
+            Resource: 'acme/widgets#7',
+            Source: 'delivery',
+            Delivery: 'primary',
+            Merge: 'merged',
+            Subscribed: 'yes',
+            URL: 'https://github.com/acme/widgets/pull/7',
+          },
+          {
+            Kind: 'pull_request',
+            Resource: 'acme/widgets#9',
+            Source: 'tracked',
+            Delivery: 'yes',
+            Merge: 'open',
+            Subscribed: 'no',
+            URL: 'https://github.com/acme/widgets/pull/9',
+          },
+        ],
+        ['Kind', 'Resource', 'Source', 'Delivery', 'Merge', 'Subscribed', 'URL']
+      )
+      expect(logSpy).toHaveBeenCalledWith('Delivery: 1/2 pull requests merged')
+      ;(apiGet as ReturnType<typeof mock>).mockResolvedValue(trackedView(true, 'merged'))
+
+      await run(['workstream', 'tracked', 'stream-1'])
+
+      expect(logSpy).toHaveBeenCalledWith('Delivery: 2/2 pull requests merged (complete)')
+      logSpy.mockRestore()
     })
   })
 

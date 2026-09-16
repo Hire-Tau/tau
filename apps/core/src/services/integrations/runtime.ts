@@ -91,12 +91,8 @@ import { DbEventPollingDispatchStore } from './db-event-polling-dispatch-store'
 import { GitHubPrWatchPolicy } from './github/watch-policy'
 import { listGitHubPrWorkStreamCandidates, listGitHubTriggerSquads } from './github/database-watch-source'
 import { expandGitHubRepositories } from './github/repository-enumeration-runtime'
+import { extractGitHubDispatchFact, validateGitHubDispatchFact } from './github/dispatch-facts'
 import { createLogger } from '../../lib/infra/logger'
-import {
-  extractGitHubPrDispatchFact,
-  isGitHubPrDispatchFact,
-  type GitHubPrDispatchFact,
-} from '../squad-activity/github-pr-fact'
 import { materializeGitHubDispatch } from '../squad-activity/materialize'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { regenerateEnvFileForSquad } from '../squad/env'
@@ -156,20 +152,6 @@ export function isCurrentExportConsentAgent(
 
 const log = createLogger('integration-event-polling')
 const oauthLog = createLogger('integration-oauth')
-
-function githubFactMatchesWatch(
-  fact: GitHubPrDispatchFact,
-  watch: { providerKey: string; connection: { configuration: unknown } }
-) {
-  if (watch.providerKey !== 'github') return false
-  const configuration = watch.connection.configuration as Record<string, unknown>
-  const owner = typeof configuration.owner === 'string' ? configuration.owner.trim().toLowerCase() : ''
-  const repo = typeof configuration.repo === 'string' ? configuration.repo.trim().toLowerCase() : ''
-  const number = configuration.number
-  return Boolean(
-    owner && repo && Number.isSafeInteger(number) && fact.repository === `${owner}/${repo}` && fact.prNumber === number
-  )
-}
 
 export const integrationConnectionRepository = new DbIntegrationConnectionRepository()
 export const integrationCredentialCleanupWorker = new IntegrationCredentialCleanupWorker(
@@ -435,12 +417,8 @@ export const integrationEventPollingRuntime = new EventPollingRunner({
       skipOutputs: true,
       handledSquadIds: observedPollingSquads.get(event),
     }),
-  extractDispatchFact: (providerKey, event, watch) => {
-    const fact = extractGitHubPrDispatchFact(providerKey, event)
-    return fact && githubFactMatchesWatch(fact, watch) ? fact : null
-  },
-  validateCompletedDispatch: (dispatch, watch) =>
-    isGitHubPrDispatchFact(dispatch.eventFact) && githubFactMatchesWatch(dispatch.eventFact, watch),
+  extractDispatchFact: extractGitHubDispatchFact,
+  validateCompletedDispatch: validateGitHubDispatchFact,
   onCompletedDispatch: async (dispatch, watch) => {
     await materializeGitHubDispatch(dispatch.activityId, watch.connection.squadId)
   },

@@ -12,6 +12,7 @@ import {
   type WorktreeOwnership,
 } from '../services/work-streams/repository-setup'
 import { validateAssignedReviewers } from '../services/workflows/reviewers'
+import { parseTrackedMetadata, validateTrackedMetadata } from '../services/work-streams/tracked-resources'
 import { resolveCreationWorkflow } from '../services/workflows/creation-source'
 import { notifyFlowWaitResolution } from '../services/work-streams/wait-scope'
 import { eq, desc, and, sql, inArray, type SQL } from 'drizzle-orm'
@@ -119,6 +120,14 @@ export class WorkStreamNotReopenableError extends Error {
   constructor(public readonly status: WorkStreamStatus) {
     super(`Only done or canceled work streams can be reopened (status: ${status})`)
     this.name = 'WorkStreamNotReopenableError'
+  }
+}
+
+/** One observed integration event owns at most one live work stream. Routes map this to a 200 reuse. */
+export class WorkStreamEventAlreadyHandledError extends Error {
+  constructor(public readonly workStreamId: string) {
+    super(`This integration event is already tracked by work stream ${workStreamId}`)
+    this.name = 'WorkStreamEventAlreadyHandledError'
   }
 }
 
@@ -313,6 +322,26 @@ async function validateMetadataSources(
   } else {
     delete metadata.sourceWarnings
   }
+}
+
+/** The live stream that already handles an observed integration event, if any. */
+async function streamHandlingEvent(
+  store: Pick<typeof db, 'select'>,
+  squadId: string,
+  eventId: string
+): Promise<string | undefined> {
+  const [existing] = await store
+    .select({ id: workStreams.id })
+    .from(workStreams)
+    .where(
+      and(
+        eq(workStreams.squadId, squadId),
+        inArray(workStreams.status, ['active', 'queued']),
+        sql`${workStreams.metadata}->'tracked' @> ${JSON.stringify([{ origin: { eventId } }])}::jsonb`
+      )
+    )
+    .limit(1)
+  return existing?.id
 }
 
 function isWorkContinuingUpdate(input: UpdateWorkStreamInput): boolean {
@@ -628,6 +657,15 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     input = { ...input, workflow: source }
     let mergedMetadata = WorkStream.mergeTypedFieldsIntoMetadata(input, input.metadata)
     await validateMetadataSources(mergedMetadata)
+    await validateTrackedMetadata(input.squadId, mergedMetadata, undefined, {
+      allowOriginEventId: input.integrationEventId,
+    })
+    // Settle the replay before provisioning anything: the in-transaction check below rolls back,
+    // but a worktree created by setupWorkStreamRepository would already be on disk.
+    if (input.integrationEventId) {
+      const handled = await streamHandlingEvent(db, input.squadId, input.integrationEventId)
+      if (handled) throw new WorkStreamEventAlreadyHandledError(handled)
+    }
     if (input.gitRemote && !input.repository) throw new RepositorySetupError('gitRemote requires repository')
     const streamId = crypto.randomUUID()
     let ownership: WorktreeOwnership | undefined
@@ -657,6 +695,11 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
 
     const row = await db.transaction(async (tx) => {
       await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, input.squadId)).for('update')
+      // One live stream per observed event: concurrent creates serialize on the squad lock.
+      if (input.integrationEventId) {
+        const handled = await streamHandlingEvent(tx, input.squadId, input.integrationEventId)
+        if (handled) throw new WorkStreamEventAlreadyHandledError(handled)
+      }
       await assertWorktreeAttachmentsAvailable(tx, {
         id: streamId,
         squadId: input.squadId,
@@ -1033,6 +1076,10 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
     const prospectiveMetadata =
       prepared ??
       WorkStream.mergeTypedFieldsIntoMetadata(input, deepMergeMetadata(this.metadata ?? {}, input.metadata ?? {}))
+    // Authorize tracked links before the transaction: the provider lookup opens its own
+    // transaction and locks this squad's row, which would hang against the lock taken below.
+    if (input.metadata && Object.prototype.hasOwnProperty.call(input.metadata, 'tracked'))
+      await validateTrackedMetadata(this.squadId, prospectiveMetadata, this.metadata ?? {})
     // Reject a malformed code host binding where it is written, not at flow finish. Only writes that
     // touch codeHost are checked, so unrelated metadata edits never trip over pre-existing shapes.
     if (input.metadata && Object.prototype.hasOwnProperty.call(input.metadata, 'codeHost')) {
@@ -1126,6 +1173,9 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
           // Pass the open transaction: pool reads while holding tx = hold-and-wait.
           await validateMetadataSources(mergedMetadata, tx)
         }
+        // Shape only: authorization already ran above, outside this transaction's locks.
+        if (input.metadata && Object.prototype.hasOwnProperty.call(input.metadata, 'tracked'))
+          parseTrackedMetadata(mergedMetadata)
       }
       await assertWorktreeAttachmentsAvailable(tx, {
         id: this.id,

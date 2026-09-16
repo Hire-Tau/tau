@@ -35,14 +35,14 @@ Handlers run asynchronously after the HTTP response is sent (GitHub enforces a 1
 
 ## Key Files
 
-| File                                          | Purpose                                                                                    |
-| --------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| File                                                   | Purpose                                                                                    |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
 | `apps/core/src/services/webhooks/types.ts`             | Core interfaces: `WebhookProcessor`, `WebhookHandler`, `WebhookContext`, `WebhookRegistry` |
 | `apps/core/src/services/webhooks/registry.ts`          | Singleton registry mapping providers to processors and handlers                            |
 | `apps/core/src/services/webhooks/store.ts`             | Database CRUD for webhook events (audit trail)                                             |
 | `apps/core/src/services/webhooks/index.ts`             | Entry point, `initializeWebhooks()` wires up all processors/handlers                       |
 | `apps/core/src/services/webhooks/processors/github.ts` | GitHub processor + push/ping handlers                                                      |
-| `apps/core/src/routes/webhooks.ts`            | HTTP route: `POST /api/webhooks/:provider`, `GET /api/webhooks/:provider/status`           |
+| `apps/core/src/routes/webhooks.ts`                     | HTTP route: `POST /api/webhooks/:provider`, `GET /api/webhooks/:provider/status`           |
 
 ## Core Interfaces
 
@@ -162,6 +162,17 @@ Webhooks, the managed relay, and polling share event identities and routing:
 - Review line comments include the file, line, and thread URL. Their durable event identities prevent duplicate deliveries; they no longer depend on the shell review batcher.
 
 The integration layer verifies the squad's assigned account and resource access before routing. A repository metadata match alone grants no access. Removing routing entries disables rules limited to those entries. Removing every event rule disables squad actions; existing work-stream subscriptions stay independent.
+
+### Stages
+
+A GitHub event passes through four stages, in order:
+
+1. **Receipt** — the raw webhook is verified and persisted in `webhook_events`, tagged with `activity_squad_ids` for every squad it can reach.
+2. **Normalized output event** — the payload becomes a provider-neutral fact in `integration_output_events`, carrying the authority (which connection observed it) that later authorization checks use.
+3. **Activity projection** — independent of any work-stream delivery, the fact is projected into `squad_activity` under the `github-pr` or `github-issue` family. Projection runs whether or not a work stream or agent is listening; it dedupes by the logical row identity of the change (so a retried webhook and a poll observation of the same close collapse into one row), while genuinely distinct transitions (an edit, then a close, then a reopen) stay separate rows. Polling produces the same families through the same dedupe, so a webhook and a poll of the same event never double up.
+4. **Subscription deliveries** — separately, the event is matched against work-stream and squad subscriptions and recorded in `integration_output_deliveries`, each with a reason (delivered, retained, skipped, and why).
+
+Activity (stage 3) and delivery (stage 4) are independent: an issue or PR can show up in a squad's Activity feed with no agent ever notified, and a delivery can be skipped (work stream ended, not following changes, resource rebound) without affecting the Activity record.
 
 Bundled notification scripts have been retired. The default `actions.yaml` contains no notification rules. On upgrade, references to the old bundled notification commands are ignored, including their review batch, while custom commands remain intact. Native notifications need neither a CLI subprocess nor a host-user login. Custom webhook commands that invoke Tau still receive the instance-bound identity described above.
 

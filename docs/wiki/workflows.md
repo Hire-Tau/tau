@@ -182,10 +182,16 @@ integrationTriggers:
       titlePrefix: 'Investigate: '
       metadata:
         github.repo: { event: repository }
-        github.issue: { event: issue.number }
 ```
 
-This is optional squad policy, not a requirement of its squad preset. A manager can configure a saved preset or an inline flow using the normal squad metadata/configuration tools. Change the trigger source to `pull_request.review_requested`, match `requestedReviewer`, and map `github.pr.number` from `pullRequest.number` to start a configured PR-review flow instead.
+When the triggering event names an issue or pull request, Tau records it
+in `metadata.tracked[0]` for connection-authority events (all GitHub events)
+with a server-stamped `origin` automatically; an instance-authority event has
+no squad connection to pin on the entry, so it records none. Do not
+map `github.issue`/`github.pr.number` into `create.metadata` to attach it; that
+key is never read for tracked-resource identity. `github.repo` above is still
+useful to give the new stream a resolvable repository identity for later
+correlation. This is optional squad policy, not a requirement of its squad preset. A manager can configure a saved preset or an inline flow using the normal squad metadata/configuration tools. Change the trigger source to `pull_request.review_requested`, match `requestedReviewer`, and map `github.pr.number` from `pullRequest.number` to start a configured PR-review flow instead.
 
 The trigger binds metadata atomically and reuses an existing matching nonterminal stream. Repeated events create at most one stream per trigger/resource. A receipt remains even after completion/deletion; starting another stream for the same resource is an explicit action. The selected flow can also declare subscriptions for later updates—for example `issue.updated` and `issue.comment`, matched on `repository` and `issue.number`, sent to its `worker`.
 
@@ -200,7 +206,13 @@ Flow graphs show integrations with dotted connections. Select an integration to 
 
 ### GitHub polling without webhooks
 
-Attaching a PR to stream metadata automatically establishes a polling watch: use `github.repo` and numeric `github.pr.number`, a PR URL, or custom paths referenced by a GitHub subscription's repository and PR-number bindings. Watches track current nonterminal streams and disappear when their bindings are removed or the streams end.
+Attaching a PR to stream metadata automatically establishes a polling watch: use the
+delivery PR (`codeHost.changeRequest`, or legacy `github.repo`/`github.pr.number`), a
+tracked PR (`tau workstream track --pr`/`--event`/`--url`), a PR URL, or custom paths
+referenced by a GitHub subscription's repository and PR-number bindings. Tracked
+issues get a repository-scoped issue-events poll instead of a per-resource watch.
+Watches track current nonterminal streams and disappear when their bindings are
+removed or the streams end.
 
 Issue-assignment triggers can discover work before a stream exists. Specify an exact repository in the trigger's match, as above. If a trigger only matches an assignee, exact repositories in the squad's existing `metadata.github` configuration provide its polling scope. Tau does not expand wildcard repository patterns or scan every repository accessible to the token. The first poll establishes a baseline; subsequent assignments are routed to the chosen workflow. Active watches normally poll every 1–2 minutes, subject to the shared budget and provider failures. A large event backlog may require several bounded page scans.
 
@@ -244,9 +256,9 @@ New work streams use this resource binding:
 }
 ```
 
-An optional `codeHost.connectionId` selects an authorized account; omission uses the squad default. Existing `github.repo`, `github.pr`, and `github.connectionId` are compatibility inputs. An explicit invalid or unsupported `codeHost` binding fails closed rather than falling back to a different provider or account.
+An optional `codeHost.connectionId` selects an authorized account; omission uses the squad default. Existing `github.repo`, `github.pr`, and `github.connectionId` are compatibility inputs for the delivery PR binding. A stale `github.repo`/`github.issue` pair (the old way of following one issue) is converted automatically at startup into a `tracked` issue entry and is never read afterward — use `tracked`/`tau workstream track` going forward. An explicit invalid or unsupported `codeHost` binding fails closed rather than falling back to a different provider or account.
 
-**Code hosting** (`completion.followChanges: true`) derives subscriptions for linked PR and issue updates targeting `delivery-owner` by default. This includes PR comments, reviews, CI, and merges, plus issue comments, edits, and assignment changes. Attach GitHub issues with `github.repo` and `github.issue` in work stream metadata. Set `completion.changeEventsTo: { step: engineer }` to route the entire bundle to a specific agent step instead. This does not change explicit subscriptions for custom events. The effective subscriptions are used by matching, durable delivery validation, polling discovery, and hosted relay interests. Resource/account changes invalidate queued deliveries. The `code-host-` subscription ID prefix is reserved when this option is enabled. No binding means no automatic subscription; adding it does not replay historical events. Existing definitions without this option keep their explicit subscriptions.
+**Code hosting** (`completion.followChanges: true`) derives subscriptions for every resource in the work stream's canonical tracked set targeting `delivery-owner` by default: the primary delivery PR (`codeHost.changeRequest`) and every entry in `metadata.tracked[]`, including any pull request flagged `delivery: true` (see [Work streams](work-streams.md#tracked-issues-and-pull-requests)). This includes PR comments, reviews, CI, and merges, plus issue comments, edits, and assignment changes, for as many issues and PRs as the stream tracks. Attach resources with `tau workstream track` (or `workstream create --from-event`) rather than hand-writing metadata; legacy `github.repo`/`github.pr.number` is still recognized for the delivery PR only. Set `completion.changeEventsTo: { step: engineer }` to route the entire bundle to a specific agent step instead. This does not change explicit subscriptions for custom events. The effective subscriptions are used by matching, durable delivery validation, polling discovery, and hosted relay interests. Resource/account changes invalidate queued deliveries. The `code-host-` and `tracked-` subscription ID prefixes are reserved when this option is enabled; there is no `code-host-issue-` prefix. No binding means no automatic subscription; adding one does not replay historical events. Existing definitions without this option keep their explicit subscriptions. Only the primary delivery PR's merge/completion evidence sets the delivered head for `pr-merge`/`pr-auto-merge`, though every flagged delivery PR must also be verified merged before finish succeeds; activity on any other tracked resource, including an issue closing, never finishes the stream, clears a wait, or bypasses admission and pauses.
 
 `pr-merge` and `pr-auto-merge` retain their serialized names but verify normalized change-request evidence through the selected adapter. `direct-merge` verifies the full `git.commit` SHA is contained in `git.baseBranch`. GitHub-specific link displays and activity rendering can remain provider-specific; the flow engine does not choose credentials or call GitHub directly.
 

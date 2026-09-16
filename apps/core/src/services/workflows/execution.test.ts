@@ -618,6 +618,65 @@ test('PR and direct-merge delivery require independently fetched merge evidence'
     stop.mockRestore()
   }
 })
+test('every designated delivery pull request must be merged before the flow finishes', async () => {
+  const api = spyOn(githubApi, 'githubApiGet')
+  const stop = spyOn(Agent.prototype, 'tryTerminate').mockResolvedValue(undefined)
+  try {
+    const definition = structuredClone(flow)
+    definition.completion.mode = 'pr-merge'
+    const id = await create('active', definition)
+    await advance(id, 'completed')
+    await advance(id, 'approved')
+    const tracked = {
+      integration: 'github',
+      repository: 'example/docs',
+      kind: 'pull_request' as const,
+      number: 7,
+      delivery: true as const,
+    }
+    await db
+      .update(workStreams)
+      .set({
+        metadata: {
+          codeHost: { integration: 'github', repository: 'example/repo', changeRequest: { number: 42 } },
+          tracked: [tracked],
+          git: { branch: 'feature', baseBranch: 'main' },
+        },
+      })
+      .where(eq(workStreams.id, id))
+    const primary = { merged: true, base: { ref: 'main' }, head: { ref: 'feature', sha: 'a'.repeat(40) } }
+    const additional = (merged: boolean) => ({
+      merged,
+      base: { ref: 'main' },
+      head: { ref: 'docs', sha: 'b'.repeat(40) },
+    })
+    api.mockImplementation(((path: string) =>
+      Promise.resolve(path.includes('example/docs') ? additional(false) : primary)) as any)
+    await expect(finishFlow(id, 2, actor)).rejects.toThrow(
+      'Delivery pull request example/docs#7 must be merged before completion'
+    )
+    expect((await WorkStream.mustFind(id)).status).toBe('active')
+    api.mockImplementation(((path: string) =>
+      Promise.resolve(path.includes('example/docs') ? additional(true) : primary)) as any)
+    expect((await finishFlow(id, 2, actor)).status).toBe('done')
+    const metadata = (await WorkStream.mustFind(id)).metadata as any
+    // JSONB does not preserve key order, so assert the map, not its ordering.
+    expect(
+      Object.fromEntries(
+        Object.entries(metadata.delivery.pullRequests).map(([key, value]: [string, any]) => [key, value.state])
+      )
+    ).toEqual({
+      'github:example/repo:pull_request:42': 'merged',
+      'github:example/docs:pull_request:7': 'merged',
+    })
+    const [cleanup] = await db.select().from(worktreeCleanupJobs).where(eq(worktreeCleanupJobs.workStreamId, id))
+    expect(cleanup).toHaveProperty('deliveredHead', 'a'.repeat(40))
+  } finally {
+    api.mockRestore()
+    stop.mockRestore()
+  }
+})
+
 test('review-approval completion requires a human even after every agent gate has passed', async () => {
   const definition = structuredClone(flow)
   definition.completion.mode = 'review-approval'

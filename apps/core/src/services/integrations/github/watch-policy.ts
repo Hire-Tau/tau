@@ -1,6 +1,7 @@
 import {
   effectiveSquadEventRules,
   resolveCodeHostReference,
+  resolveTrackedResources,
   integrationValueAt,
   type IntegrationSubscription,
 } from '@tau/shared'
@@ -154,6 +155,14 @@ export class GitHubPrWatchPolicy {
           ...legacy,
           connectionId: typeof github?.connectionId === 'string' ? github.connectionId : undefined,
         })
+      }
+      for (const resource of resolveTrackedResources(stream.metadata)) {
+        if (resource.integration !== 'github' || !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(resource.repository))
+          continue
+        if (resource.kind === 'pull_request') {
+          const [owner, repo] = resource.repository.split('/')
+          refs.push({ owner: owner!, repo: repo!, number: resource.number, connectionId: resource.connectionId })
+        } else await watchIssues(stream.squadId, resource.repository, resource.connectionId)
       }
       for (const subscription of stream.subscriptions ?? []) {
         if (subscription.source.integration !== 'github') continue

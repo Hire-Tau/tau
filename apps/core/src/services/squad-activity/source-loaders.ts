@@ -1,11 +1,23 @@
-import { isLiveAgentStatus, type AgentStatus } from '@tau/shared'
+import {
+  isLiveAgentStatus,
+  resolveTrackedResources,
+  trackedResourceMatches,
+  type AgentStatus,
+  type TrackedResourceKind,
+} from '@tau/shared'
 import { sql, type SQL } from 'drizzle-orm'
 import { db } from '../../db'
-import { decodeGitHubPrWorkStreamMetadata } from './github-work-stream-metadata'
+import {
+  extractGitHubIssueDispatchFact,
+  isGitHubIssueDispatchFact,
+  type GitHubIssueDispatchFact,
+} from './github-issue-fact'
 import { extractGitHubPrDispatchFact, isGitHubPrDispatchFact, type GitHubPrDispatchFact } from './github-pr-fact'
+import type { VerifiedIngressEvent } from '../integrations/types'
 import type {
   ChatExecutionSnapshot,
   ExecutionSnapshot,
+  GitHubIssueSnapshot,
   GitHubPrSnapshot,
   InboxSnapshot,
   WaitSnapshot,
@@ -20,6 +32,7 @@ export type SourceSnapshot =
   | WorkStreamSnapshot
   | WaitSnapshot
   | GitHubPrSnapshot
+  | GitHubIssueSnapshot
 export interface ActivitySourceKey {
   family: SquadActivitySourceFamily
   groupId: string
@@ -53,12 +66,24 @@ const uuidJoinKey = (expr: SQL) =>
   sql`(CASE WHEN (${expr}) ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' THEN (${expr})::uuid END)`
 const rows = <T>(result: Awaited<ReturnType<Executor['execute']>>) => result as unknown as T[]
 
-interface GitHubActivityBase {
-  sourceId: string
-  activityId: string
-  fact: GitHubPrDispatchFact
-}
+/** Both GitHub receipt families share one durable authority (`hook:`/`poll:` + activity id). */
+export type GitHubActivityFamily = 'github-pr' | 'github-issue'
+export type GitHubDispatchFact = GitHubPrDispatchFact | GitHubIssueDispatchFact
 
+export type GitHubActivityBase =
+  | { sourceId: string; activityId: string; family: 'github-pr'; fact: GitHubPrDispatchFact }
+  | { sourceId: string; activityId: string; family: 'github-issue'; fact: GitHubIssueDispatchFact }
+
+/** The number the fact is about, in its family's vocabulary. */
+const githubFactNumber = (fact: GitHubDispatchFact): number => ('prNumber' in fact ? fact.prNumber : fact.issueNumber)
+
+/**
+ * The receipt's family is decided by the fact its payload yields, never by the
+ * caller: the PR and issue extractors are mutually exclusive by construction
+ * (an `issues` event is never a PR; an `issue_comment` carrying a
+ * `pull_request` link is never an issue), so trying PR first and issue second
+ * classifies every supported receipt exactly once.
+ */
 async function loadGitHubActivityBase(executor: Executor, sourceId: string): Promise<GitHubActivityBase | null> {
   const [prefix, activityId, extra] = sourceId.split(':')
   if (extra || !activityId || (prefix !== 'hook' && prefix !== 'poll')) return null
@@ -68,19 +93,25 @@ async function loadGitHubActivityBase(executor: Executor, sourceId: string): Pro
         WHERE id=${activityId}::uuid AND provider='github' AND verified=true`)
     )[0]
     if (!event) return null
-    const fact = extractGitHubPrDispatchFact('github', {
+    const ingress: VerifiedIngressEvent = {
       type: event.event_type,
       payload: event.payload,
       metadata: { source: 'webhook', providerDeliveryId: event.delivery_id },
-    })
-    return fact ? { sourceId, activityId, fact } : null
+    }
+    const pr = extractGitHubPrDispatchFact('github', ingress)
+    if (pr) return { sourceId, activityId, family: 'github-pr', fact: pr }
+    const issue = extractGitHubIssueDispatchFact('github', ingress)
+    return issue ? { sourceId, activityId, family: 'github-issue', fact: issue } : null
   }
   const dispatch = rows<any>(
     await executor.execute(sql`SELECT event_fact FROM integration_event_polling_dispatches
       WHERE provider_key='github' AND activity_id=${activityId}::uuid AND completed_at IS NOT NULL AND event_fact IS NOT NULL`)
   )[0]
-  return dispatch && isGitHubPrDispatchFact(dispatch.event_fact)
-    ? { sourceId, activityId, fact: dispatch.event_fact }
+  if (!dispatch) return null
+  if (isGitHubPrDispatchFact(dispatch.event_fact))
+    return { sourceId, activityId, family: 'github-pr', fact: dispatch.event_fact }
+  return isGitHubIssueDispatchFact(dispatch.event_fact)
+    ? { sourceId, activityId, family: 'github-issue', fact: dispatch.event_fact }
     : null
 }
 
@@ -89,39 +120,96 @@ export interface GitHubAssociationPage {
   next: string | null
 }
 
-export async function listGitHubAssociationPage(
+/** The squad's tracked array names the resource explicitly — the canonical association. */
+const trackedClause = (kind: TrackedResourceKind, repository: string, number: number) =>
+  sql`EXISTS (SELECT 1 FROM jsonb_array_elements(CASE
+      WHEN jsonb_typeof(ws.metadata->'tracked')='array' THEN ws.metadata->'tracked' ELSE '[]'::jsonb END) t
+    WHERE t->>'integration'='github' AND t->>'kind'=${kind}
+      AND lower(btrim(t->>'repository'))=${repository} AND t->'number'=${JSON.stringify(number)}::jsonb)`
+
+/**
+ * Access is the receipt's, never the work stream's: a stream only ever *names*
+ * a resource, so every association is additionally gated on the immutable
+ * owner list stamped on the webhook/dispatch row. An empty list associates
+ * nothing (fail-closed).
+ */
+const receiptOwnerClause = (sourceId: string) =>
+  sourceId.startsWith('hook:')
+    ? sql`AND EXISTS (SELECT 1 FROM webhook_events we
+        WHERE we.id=${sourceId.slice('hook:'.length)}::uuid AND we.verified=true
+          AND ws.squad_id=ANY(we.activity_squad_ids))`
+    : sql`AND EXISTS (SELECT 1 FROM integration_event_polling_dispatches pd
+          WHERE pd.provider_key='github' AND pd.activity_id=${sourceId.slice('poll:'.length)}::uuid
+            AND ws.squad_id=ANY(pd.activity_squad_ids))`
+
+async function listGitHubResourceAssociationPage(
   sourceId: string,
-  fact: GitHubPrDispatchFact,
+  match: SQL,
   after: string | null,
-  limit = 250
+  limit: number
 ): Promise<GitHubAssociationPage> {
   const squads: any[] = rows<any>(
     await db.execute(sql`SELECT ws.squad_id FROM work_streams ws
       WHERE ${after ? sql`ws.squad_id>${after}::uuid` : sql`true`}
-        AND (
-          (ws.metadata->'codeHost'->>'integration'='github'
-            AND lower(btrim(ws.metadata->'codeHost'->>'repository'))=${fact.repository}
-            AND ws.metadata->'codeHost'->'changeRequest'->'number'=${JSON.stringify(fact.prNumber)}::jsonb)
-          OR (NOT (ws.metadata ? 'codeHost')
-            AND jsonb_typeof(ws.metadata->'github')='object'
-            AND lower(btrim(ws.metadata->'github'->>'repo'))=${fact.repository}
-            AND ws.metadata->'github'->'pr'->'number'=${JSON.stringify(fact.prNumber)}::jsonb)
-        )
-        ${
-          sourceId.startsWith('hook:')
-            ? sql`AND EXISTS (SELECT 1 FROM webhook_events we
-              WHERE we.id=${sourceId.slice('hook:'.length)}::uuid AND we.verified=true
-                AND ws.squad_id=ANY(we.activity_squad_ids))`
-            : sql`AND EXISTS (SELECT 1 FROM integration_event_polling_dispatches pd
-                WHERE pd.provider_key='github' AND pd.activity_id=${sourceId.slice('poll:'.length)}::uuid
-                  AND ws.squad_id=ANY(pd.activity_squad_ids))`
-        }
+        AND (${match})
+        ${receiptOwnerClause(sourceId)}
       GROUP BY ws.squad_id ORDER BY ws.squad_id LIMIT ${limit}`)
   )
   return {
     groupIds: squads.map((squad) => `${sourceId}:${squad.squad_id}`),
     next: squads.length === limit ? (squads.at(-1)?.squad_id ?? null) : null,
   }
+}
+
+export async function listGitHubAssociationPage(
+  sourceId: string,
+  fact: GitHubPrDispatchFact,
+  after: string | null,
+  limit = 250
+): Promise<GitHubAssociationPage> {
+  return listGitHubResourceAssociationPage(
+    sourceId,
+    sql`${trackedClause('pull_request', fact.repository, fact.prNumber)}
+      OR (ws.metadata->'codeHost'->>'integration'='github'
+        AND lower(btrim(ws.metadata->'codeHost'->>'repository'))=${fact.repository}
+        AND ws.metadata->'codeHost'->'changeRequest'->'number'=${JSON.stringify(fact.prNumber)}::jsonb)
+      OR (NOT (ws.metadata ? 'codeHost')
+        AND jsonb_typeof(ws.metadata->'github')='object'
+        AND lower(btrim(ws.metadata->'github'->>'repo'))=${fact.repository}
+        AND ws.metadata->'github'->'pr'->'number'=${JSON.stringify(fact.prNumber)}::jsonb)`,
+    after,
+    limit
+  )
+}
+
+export async function listGitHubIssueAssociationPage(
+  sourceId: string,
+  fact: GitHubIssueDispatchFact,
+  after: string | null,
+  limit = 250
+): Promise<GitHubAssociationPage> {
+  // Issues associate through `tracked` alone: the legacy `github.repo`+`github.issue`
+  // pair is no longer resolved as a tracked resource (it is backfilled into `tracked`
+  // at startup), so a legacy clause here would only ever yield groups the snapshot
+  // loader then resolves to nothing. PR association keeps its legacy clause because
+  // `github.pr` still resolves as the primary delivery change request.
+  return listGitHubResourceAssociationPage(
+    sourceId,
+    trackedClause('issue', fact.repository, fact.issueNumber),
+    after,
+    limit
+  )
+}
+
+/** Page a receipt's associations through its own family's coordinates. */
+export function listGitHubFamilyAssociationPage(
+  base: GitHubActivityBase,
+  after: string | null,
+  limit = 250
+): Promise<GitHubAssociationPage> {
+  return base.family === 'github-pr'
+    ? listGitHubAssociationPage(base.sourceId, base.fact, after, limit)
+    : listGitHubIssueAssociationPage(base.sourceId, base.fact, after, limit)
 }
 
 export async function loadGitHubActivityBaseSource(sourceId: string): Promise<GitHubActivityBase | null> {
@@ -312,34 +400,73 @@ export async function loadInboxSnapshot(executor: Executor, groupId: string): Pr
     : null
 }
 
-export async function loadGitHubPrSnapshot(executor: Executor, groupId: string): Promise<GitHubPrSnapshot | null> {
+/**
+ * One receipt, one row per owning squad: the squad's oldest stream that tracks
+ * the resource carries it. Creation order is the tie-break (`ORDER BY
+ * created_at,id`, keyset-paged on that same immutable pair) so the association
+ * is stable no matter how many of the squad's streams name the resource.
+ */
+async function loadGitHubTrackedSnapshot(
+  executor: Executor,
+  groupId: string,
+  family: GitHubActivityFamily
+): Promise<{ base: GitHubActivityBase; squadId: string; workStreamId: string } | null> {
   const parts = groupId.split(':')
   const squadId = parts.pop()
   const sourceId = parts.join(':')
   if (!sourceId || !squadId) return null
   const base = await loadGitHubActivityBase(executor, sourceId)
-  if (!base || !(await githubSquadOwnsSource(executor, sourceId, squadId))) return null
+  if (!base || base.family !== family) return null
+  if (!(await githubSquadOwnsSource(executor, sourceId, squadId))) return null
+  const target = {
+    integration: 'github',
+    repository: base.fact.repository,
+    kind: (family === 'github-pr' ? 'pull_request' : 'issue') as TrackedResourceKind,
+    number: githubFactNumber(base.fact),
+  }
   let match: any = null
-  let after: string | null = null
+  let after: { createdAt: string; id: string } | null = null
   do {
     const streams: any[] = rows<any>(
-      await executor.execute(sql`SELECT id,metadata FROM work_streams WHERE squad_id=${squadId}::uuid
-        ${after ? sql`AND id>${after}::uuid` : sql``} ORDER BY id LIMIT 250`)
+      await executor.execute(sql`SELECT id,created_at,metadata FROM work_streams WHERE squad_id=${squadId}::uuid
+        ${after ? sql`AND (created_at,id)>(${after.createdAt}::timestamptz,${after.id}::uuid)` : sql``}
+        ORDER BY created_at,id LIMIT 250`)
     )
-    match = streams.find((stream) => {
-      const decoded = decodeGitHubPrWorkStreamMetadata(stream.metadata)
-      return decoded?.repository === base.fact.repository && decoded.number === base.fact.prNumber
-    })
+    match = streams.find((stream) =>
+      resolveTrackedResources(stream.metadata).some((resource) => trackedResourceMatches(resource, target))
+    )
     if (match || streams.length < 250) break
-    after = streams.at(-1)?.id ?? null
+    const last = streams.at(-1)
+    after = last ? { createdAt: new Date(last.created_at).toISOString(), id: last.id } : null
   } while (after)
-  return match
+  return match ? { base, squadId, workStreamId: match.id } : null
+}
+
+export async function loadGitHubPrSnapshot(executor: Executor, groupId: string): Promise<GitHubPrSnapshot | null> {
+  const resolved = await loadGitHubTrackedSnapshot(executor, groupId, 'github-pr')
+  return resolved && resolved.base.family === 'github-pr'
     ? {
-        sourceId: base.sourceId,
-        activityId: base.activityId,
-        squadId,
-        workStreamId: match.id,
-        fact: base.fact,
+        sourceId: resolved.base.sourceId,
+        activityId: resolved.base.activityId,
+        squadId: resolved.squadId,
+        workStreamId: resolved.workStreamId,
+        fact: resolved.base.fact,
+      }
+    : null
+}
+
+export async function loadGitHubIssueSnapshot(
+  executor: Executor,
+  groupId: string
+): Promise<GitHubIssueSnapshot | null> {
+  const resolved = await loadGitHubTrackedSnapshot(executor, groupId, 'github-issue')
+  return resolved && resolved.base.family === 'github-issue'
+    ? {
+        sourceId: resolved.base.sourceId,
+        activityId: resolved.base.activityId,
+        squadId: resolved.squadId,
+        workStreamId: resolved.workStreamId,
+        fact: resolved.base.fact,
       }
     : null
 }
@@ -347,13 +474,13 @@ export async function loadGitHubPrSnapshot(executor: Executor, groupId: string):
 export interface SourceGroupCursor {
   /** Immutable source-row/facet identity; never a mutable transition timestamp. */
   id: string
-  /** Present only while paging work-stream associations for one PR source. */
+  /** Present only while paging work-stream associations for one GitHub source. */
   associationAfter?: string
   sourceKind?: 'poll' | 'hook'
   receiptAt?: string
   scanId?: string
-  pending?: Array<{ sourceId: string; fact: GitHubPrDispatchFact }>
-  activeFact?: GitHubPrDispatchFact
+  pending?: Array<{ sourceId: string; fact: GitHubDispatchFact }>
+  activeFact?: GitHubDispatchFact
   hasMoreCandidates?: boolean
 }
 export interface SourceGroupPage {
@@ -459,7 +586,20 @@ export async function listInboxSourcePage(
   )
 }
 
-export async function listGitHubPrSourcePage(
+/**
+ * The two GitHub families page identically — same two-phase poll-then-hook
+ * walk, same delayed-receipt scan window, same association keyset — and differ
+ * only in which fact a receipt yields and which coordinates it associates on.
+ * That difference is this interface; everything else stays one implementation.
+ */
+interface GitHubSourcePager<F extends GitHubDispatchFact> {
+  extract(providerKey: string, event: VerifiedIngressEvent): F | null
+  isFact(value: unknown): value is F
+  associations(sourceId: string, fact: F, after: string | null, limit: number): Promise<GitHubAssociationPage>
+}
+
+async function listGitHubSourcePage<F extends GitHubDispatchFact>(
+  pager: GitHubSourcePager<F>,
   from: Date,
   to: Date,
   after: SourceGroupCursor | null,
@@ -470,11 +610,11 @@ export async function listGitHubPrSourcePage(
   const toIso = to.toISOString()
   const phase = after?.sourceKind ?? 'poll'
   let sourceId: string
-  let fact: GitHubPrDispatchFact | null
+  let fact: F | null
   let cursor: SourceGroupCursor
   if (after?.associationAfter) {
-    const base = after.activeFact ? null : await loadGitHubActivityBase(db, after.id)
-    fact = after.activeFact ?? base?.fact ?? null
+    const resumed = after.activeFact ?? (await loadGitHubActivityBase(db, after.id))?.fact ?? null
+    fact = resumed && pager.isFact(resumed) ? resumed : null
     if (!fact) return { groupIds: [], next: { ...after, associationAfter: undefined } }
     sourceId = after.id
     cursor = after
@@ -489,7 +629,7 @@ export async function listGitHubPrSourcePage(
     )[0]
     if (!candidate) return { groupIds: [], next: { id: '', sourceKind: 'hook', receiptAt: from.toISOString() } }
     sourceId = `poll:${candidate.id}`
-    fact = isGitHubPrDispatchFact(candidate.event_fact) ? candidate.event_fact : null
+    fact = pager.isFact(candidate.event_fact) ? candidate.event_fact : null
     cursor = { id: sourceId, sourceKind: 'poll' }
   } else {
     let pending = after?.pending ?? []
@@ -506,7 +646,7 @@ export async function listGitHubPrSourcePage(
       )
       if (candidates.length === 0) return { groupIds: [], next: null }
       pending = candidates.flatMap((candidate) => {
-        const extracted = extractGitHubPrDispatchFact('github', {
+        const extracted = pager.extract('github', {
           type: candidate.event_type,
           payload: candidate.payload,
           metadata: { source: 'webhook', providerDeliveryId: candidate.delivery_id },
@@ -531,19 +671,19 @@ export async function listGitHubPrSourcePage(
     }
     const [current, ...remaining] = pending
     sourceId = current.sourceId
-    fact = current.fact
+    fact = pager.isFact(current.fact) ? current.fact : null
     cursor = {
       id: sourceId,
       sourceKind: 'hook',
       receiptAt: after?.receiptAt,
       scanId: after?.scanId,
       pending: remaining,
-      activeFact: fact,
+      activeFact: fact ?? undefined,
       hasMoreCandidates,
     }
   }
   if (!fact) return { groupIds: [], next: cursor }
-  const associations = await listGitHubAssociationPage(sourceId, fact, after?.associationAfter ?? null, limit)
+  const associations = await pager.associations(sourceId, fact, after?.associationAfter ?? null, limit)
   return {
     groupIds: associations.groupIds,
     next: associations.next
@@ -561,6 +701,37 @@ export async function listGitHubPrSourcePage(
           : null
         : { id: cursor.id, sourceKind: cursor.sourceKind },
   }
+}
+
+const PR_SOURCE_PAGER: GitHubSourcePager<GitHubPrDispatchFact> = {
+  extract: extractGitHubPrDispatchFact,
+  isFact: isGitHubPrDispatchFact,
+  associations: listGitHubAssociationPage,
+}
+const ISSUE_SOURCE_PAGER: GitHubSourcePager<GitHubIssueDispatchFact> = {
+  extract: extractGitHubIssueDispatchFact,
+  isFact: isGitHubIssueDispatchFact,
+  associations: listGitHubIssueAssociationPage,
+}
+
+export function listGitHubPrSourcePage(
+  from: Date,
+  to: Date,
+  after: SourceGroupCursor | null,
+  limit = 250,
+  scanTo: Date = to
+): Promise<SourceGroupPage> {
+  return listGitHubSourcePage(PR_SOURCE_PAGER, from, to, after, limit, scanTo)
+}
+
+export function listGitHubIssueSourcePage(
+  from: Date,
+  to: Date,
+  after: SourceGroupCursor | null,
+  limit = 250,
+  scanTo: Date = to
+): Promise<SourceGroupPage> {
+  return listGitHubSourcePage(ISSUE_SOURCE_PAGER, from, to, after, limit, scanTo)
 }
 
 export async function listProjectedSourceGroupPage(

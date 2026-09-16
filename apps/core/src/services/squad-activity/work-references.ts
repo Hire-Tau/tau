@@ -2,9 +2,13 @@ import { inArray } from 'drizzle-orm'
 import type { SquadActivityItem } from '@tau/shared'
 import { db, workStreams } from '../../db'
 
+/** Work-stream id a ref wants enriched with a human-facing number, if it has one. */
+const workStreamIdOf = (ref: SquadActivityItem['ref']): string | null =>
+  ref.type === 'workstream' ? ref.workStreamId : ref.type === 'issue' ? (ref.workStreamId ?? null) : null
+
 /** Enrich only an already-authorized page; historical projection rows keep their storage keys. */
 export async function addWorkReferences<T extends SquadActivityItem>(items: T[]): Promise<T[]> {
-  const ids = [...new Set(items.flatMap((item) => (item.ref.type === 'workstream' ? [item.ref.workStreamId] : [])))]
+  const ids = [...new Set(items.flatMap((item) => workStreamIdOf(item.ref) ?? []))]
   if (!ids.length) return items
   const rows = await db
     .select({ id: workStreams.id, number: workStreams.number })
@@ -12,9 +16,12 @@ export async function addWorkReferences<T extends SquadActivityItem>(items: T[])
     .where(inArray(workStreams.id, ids))
   const numbers = new Map(rows.map((row) => [row.id, row.number]))
   return items.map((item) => {
-    if (item.ref.type !== 'workstream') return item
-    const number = numbers.get(item.ref.workStreamId)
+    const workStreamId = workStreamIdOf(item.ref)
+    if (!workStreamId) return item
+    const number = numbers.get(workStreamId)
     if (!number) return item
+    // Only a work-stream row's summary carries the storage key; an issue summary describes the issue.
+    if (item.ref.type !== 'workstream') return { ...item, ref: { ...item.ref, workStreamNumber: number } }
     return {
       ...item,
       ref: { ...item.ref, workStreamNumber: number },

@@ -51,6 +51,43 @@ describe('squad_activity schema', () => {
     ).toBe(true)
   })
 
+  test('admits lane 71 issue rows only with the issue kind and the workstreams scope', async () => {
+    const [squad] = await db
+      .insert(squads)
+      .values({ name: `activity-schema-${crypto.randomUUID()}`, purpose: 'test' })
+      .returning()
+    squadIds.push(squad.id)
+    const issueRow = {
+      ...values(squad.id),
+      lane: 71,
+      sourceFamily: 'github-issue',
+      kind: 'issue' as const,
+      summary: '[Issue #1 closed]',
+      ref: { type: 'issue' as const, url: 'https://github.com/acme/widgets/issues/1' },
+    }
+    const rejected = async (query: PromiseLike<unknown>) => {
+      try {
+        await query
+        return false
+      } catch {
+        return true
+      }
+    }
+    await db.insert(squadActivity).values(issueRow)
+    // Lane 71 is the issue lane: no other kind, no other scope, and no issue row on the PR lane.
+    expect(
+      await rejected(db.insert(squadActivity).values({ ...issueRow, rowId: crypto.randomUUID(), kind: 'pr' }))
+    ).toBe(true)
+    expect(
+      await rejected(
+        db.insert(squadActivity).values({ ...issueRow, rowId: crypto.randomUUID(), accessScope: 'agents' })
+      )
+    ).toBe(true)
+    expect(await rejected(db.insert(squadActivity).values({ ...issueRow, rowId: crypto.randomUUID(), lane: 70 }))).toBe(
+      true
+    )
+  })
+
   test('feed, kind, agent, and own-inbox shapes use their projection indexes', async () => {
     // drizzle-kit push intentionally skips concurrent/index extras in the shared
     // test schema; install the generated migration definitions before EXPLAIN.

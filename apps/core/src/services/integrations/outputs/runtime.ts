@@ -1,14 +1,13 @@
 import { waitsForAgent } from '../../work-streams/wait-scope'
 import { isDeliveryApprovalWait } from '../../workflows/wait-policy'
-import { resolveGitHubIssueReference } from '../github/issue-reference'
 import { codeHostingRegistry } from '../code-hosting'
+import { isDeliveryFeedbackSubscription } from '../code-hosting/registry'
 import { isIntegrationEnabled } from '../provider-state'
 import { and, eq, inArray, isNull, lte, desc, sql, or } from 'drizzle-orm'
 import {
   integrationValueAt,
   activeWorkflowAttempts,
   integrationSubscriptionMatches,
-  resolveCodeHostReference,
   type IntegrationSubscription,
   type IntegrationOutputFact,
 } from '@tau/shared'
@@ -33,6 +32,8 @@ import { integrationOutputRegistry } from './registry'
 import type { IntegrationOutputAuthority } from './types'
 import type { VerifiedIngressEvent } from '../types'
 import { eventRuleTrigger, routeDefaultNotifications } from './default-routing'
+import { eventTrackedResource, streamTracksEvent } from './tracked-match'
+import { recordDeliveryObservation } from '../../work-streams/delivery-pull-requests'
 import { createLogger } from '../../../lib/infra/logger'
 
 const log = createLogger('integration-outputs')
@@ -79,6 +80,14 @@ async function authorized(
       )
     )
   return !!row
+}
+/** Correlation is not access: a squad only sees an event its own live connection observed. */
+export async function isOutputEventAuthorizedForSquad(event: Event, squadId: string): Promise<boolean> {
+  return (
+    event.authority.kind === 'connection' &&
+    event.authority.squadId === squadId &&
+    (await authorized(db, event.integration, event.authority, squadId))
+  )
 }
 async function shouldNotifyEvent(store: Store, event: Event): Promise<boolean> {
   const adapter = integrationOutputRegistry.adapter(event.integration)
@@ -170,7 +179,7 @@ async function recipientBlocked(
   agentId: string
 ) {
   const waits = await waitsForAgent(store, stream.id, agentId)
-  const deliveryFeedback = subscription.id.startsWith('code-host-')
+  const deliveryFeedback = isDeliveryFeedbackSubscription(subscription, stream.metadata)
   return waits.some(
     (wait) => !(deliveryFeedback && run.state.status === 'completion-ready' && isDeliveryApprovalWait(stream.id, wait))
   )
@@ -322,6 +331,8 @@ async function matchOutputEvent(event: Event) {
           .values({ eventId: event.id, workStreamId: id, subscriptionId: subscription.id, subscription })
           .onConflictDoNothing()
       }
+      // Same locked row, same pass: what the event says about a designated delivery pull request.
+      await recordDeliveryObservation(tx, stream, event)
     })
 }
 
@@ -814,6 +825,7 @@ async function applyOutputTriggers(event: Event) {
             }
             object[parts.at(-1)!] = value
           }
+          const target = eventTrackedResource(event)
           const existing = await tx
             .select()
             .from(workStreams)
@@ -831,33 +843,14 @@ async function applyOutputTriggers(event: Event) {
               return true
             if (
               raw === ruleTrigger &&
-              event.integration === 'github' &&
-              integrationValueAt(event.fact.data, 'pullRequest.number') !== undefined &&
-              event.authority.kind === 'connection'
-            ) {
-              const reference = resolveCodeHostReference(stream.metadata)
-              return (
-                reference?.integration === 'github' &&
-                reference.repository.toLowerCase() === event.fact.data.repository &&
-                reference.changeRequest?.number === integrationValueAt(event.fact.data, 'pullRequest.number') &&
-                (!reference.connectionId || reference.connectionId === event.authority.connectionId)
-              )
-            }
-            if (
-              raw === ruleTrigger &&
-              event.integration === 'github' &&
-              integrationValueAt(event.fact.data, 'issue.number') !== undefined &&
-              event.authority.kind === 'connection'
-            ) {
-              const issue = resolveGitHubIssueReference(stream.metadata)
-              return (
-                !!issue &&
-                issue.repository === event.fact.data.repository &&
-                issue.number === integrationValueAt(event.fact.data, 'issue.number') &&
-                (!issue.connectionId || issue.connectionId === event.authority.connectionId)
-              )
-            }
+              event.authority.kind === 'connection' &&
+              streamTracksEvent(stream.metadata, event)
+            )
+              return true
+            // When the event names an issue or pull request, `streamTracksEvent` above is the only
+            // identity test: bindings like `github.repo` alone would absorb unrelated repository work.
             return (
+              !target &&
               Object.keys(trigger.create.metadata).length > 0 &&
               Object.entries(trigger.create.metadata).every(
                 ([path, binding]) =>
@@ -884,6 +877,29 @@ async function applyOutputTriggers(event: Event) {
           ) {
             const github = metadata.github as Record<string, unknown>
             github.connectionId = event.authority.connectionId
+          }
+          // The stream starts tracking the resource the event named. `origin` is the server's own
+          // record of what it observed; access still comes from the squad's connection assignment.
+          // Connection authority is required, not incidental: a tracked entry pins the connection
+          // the resource was observed under, and an instance-authority event (an instance-wide
+          // webhook with no squad connection behind it) has none to pin. Writing one without a
+          // `connectionId` would record identity the squad was never authorized for, so such
+          // events create the stream without a tracked entry. Every GitHub event carrying an
+          // issue/PR identity today arrives under connection authority.
+          if (target && event.authority.kind === 'connection') {
+            const { mergeTracked } = await import('../../work-streams/tracked-resources')
+            metadata.tracked = mergeTracked(metadata.tracked, [
+              {
+                ...target,
+                connectionId: event.authority.connectionId,
+                origin: {
+                  eventId: event.id,
+                  resourceKey: event.fact.resourceKey,
+                  output: event.fact.output,
+                  ...(event.fact.occurredAt ? { occurredAt: event.fact.occurredAt } : {}),
+                },
+              },
+            ])
           }
           const [stream] = await tx
             .insert(workStreams)

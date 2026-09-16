@@ -1,4 +1,9 @@
-import type { IntegrationOutputDescriptor, IntegrationOutputFact, WorkflowEventTrigger } from '@tau/shared'
+import type {
+  IntegrationOutputDescriptor,
+  IntegrationOutputFact,
+  TrackedResourceKind,
+  WorkflowEventTrigger,
+} from '@tau/shared'
 import type { VerifiedIngressEvent } from '../types'
 
 export interface IntegrationOutputAdapter {
@@ -6,6 +11,10 @@ export interface IntegrationOutputAdapter {
   catalog: readonly IntegrationOutputDescriptor[]
   /** Bind provider resource details when a squad rule starts work. Actions remain provider independent. */
   workStreamBindings?(fact: IntegrationOutputFact): WorkflowEventTrigger['create']['metadata']
+  /** Provider resource identity carried by the fact, for tracking and existing-stream matching. */
+  trackedResource?(
+    fact: IntegrationOutputFact
+  ): { integration: string; repository: string; kind: TrackedResourceKind; number: number; url?: string } | null
   /** Suppress notification echoes without discarding the recorded provider fact. */
   shouldNotify?(fact: IntegrationOutputFact, connectionConfiguration: unknown): boolean
   normalize(event: VerifiedIngressEvent): IntegrationOutputFact[]

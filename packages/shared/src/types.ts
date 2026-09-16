@@ -1372,6 +1372,8 @@ export interface CreateWorkStreamInput {
   /** Advisory scheduling priority. Defaults to 'normal'. */
   priority?: WorkStreamPriority
   metadata?: Record<string, unknown>
+  /** Create from an observed integration event: tracks its resource and reuses the stream already handling it. */
+  integrationEventId?: string
   // Typed fields — translated to metadata at the entity boundary
   /** @deprecated Rejected at creation. Configure workflow completion instead. */
   completionMode?: WorkStreamCompletionMode

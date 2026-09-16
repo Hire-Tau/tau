@@ -33,6 +33,7 @@ import type {
   IntegrationOutputFact,
   IntegrationSubscription,
 } from '@tau/shared'
+import type { GitHubIssueDispatchFact } from '../services/squad-activity/github-issue-fact'
 import type { GitHubPrDispatchFact } from '../services/squad-activity/github-pr-fact'
 import type { SandboxProvisionErrorCode } from '../services/sandbox/k8s/provision-errors'
 import type { ProvisionFailureCode } from '../services/sandbox/k8s/provision-failure'
@@ -657,7 +658,7 @@ export const integrationEventPollingDispatches = pgTable(
       .array()
       .notNull()
       .default(sql`ARRAY[]::uuid[]`),
-    eventFact: jsonb('event_fact').$type<GitHubPrDispatchFact>(),
+    eventFact: jsonb('event_fact').$type<GitHubPrDispatchFact | GitHubIssueDispatchFact>(),
     eventOccurredAt: timestamp('event_occurred_at', { withTimezone: true }),
     leaseToken: uuid('lease_token'),
     leaseUntil: timestamp('lease_until', { withTimezone: true }),
@@ -706,14 +707,14 @@ export const squadActivity = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.squadId, table.lane, table.rowId] }),
-    check('squad_activity_lane_check', sql`${table.lane} IN (10,20,21,22,30,31,40,41,50,60,61,70)`),
+    check('squad_activity_lane_check', sql`${table.lane} IN (10,20,21,22,30,31,40,41,50,60,61,70,71)`),
     check(
       'squad_activity_lane_kind_check',
-      sql`(${table.lane}=10 AND ${table.kind}='message') OR (${table.lane}=20 AND ${table.kind}='message') OR (${table.lane}=21 AND ${table.kind}='message') OR (${table.lane}=22 AND ${table.kind}='subagent') OR (${table.lane}=30 AND ${table.kind}='workstream') OR (${table.lane}=31 AND ${table.kind}='workstream') OR (${table.lane}=40 AND ${table.kind}='wait') OR (${table.lane}=41 AND ${table.kind}='wait') OR (${table.lane}=50 AND ${table.kind}='handoff') OR (${table.lane}=60 AND ${table.kind}='execution') OR (${table.lane}=61 AND ${table.kind}='execution') OR (${table.lane}=70 AND ${table.kind}='pr')`
+      sql`(${table.lane}=10 AND ${table.kind}='message') OR (${table.lane}=20 AND ${table.kind}='message') OR (${table.lane}=21 AND ${table.kind}='message') OR (${table.lane}=22 AND ${table.kind}='subagent') OR (${table.lane}=30 AND ${table.kind}='workstream') OR (${table.lane}=31 AND ${table.kind}='workstream') OR (${table.lane}=40 AND ${table.kind}='wait') OR (${table.lane}=41 AND ${table.kind}='wait') OR (${table.lane}=50 AND ${table.kind}='handoff') OR (${table.lane}=60 AND ${table.kind}='execution') OR (${table.lane}=61 AND ${table.kind}='execution') OR (${table.lane}=70 AND ${table.kind}='pr') OR (${table.lane}=71 AND ${table.kind}='issue')`
     ),
     check(
       'squad_activity_lane_scope_check',
-      sql`(${table.lane}=10 AND ${table.accessScope}='agents') OR (${table.lane}=20 AND ${table.accessScope}='inbox') OR (${table.lane}=21 AND ${table.accessScope}='inbox') OR (${table.lane}=22 AND ${table.accessScope}='inbox') OR (${table.lane}=30 AND ${table.accessScope}='workstreams') OR (${table.lane}=31 AND ${table.accessScope}='workstreams_inbox') OR (${table.lane}=40 AND ${table.accessScope}='workstreams') OR (${table.lane}=41 AND ${table.accessScope}='workstreams') OR (${table.lane}=50 AND ${table.accessScope}='workstreams_inbox') OR (${table.lane}=60 AND ${table.accessScope}='agents') OR (${table.lane}=61 AND ${table.accessScope}='agents') OR (${table.lane}=70 AND ${table.accessScope}='workstreams')`
+      sql`(${table.lane}=10 AND ${table.accessScope}='agents') OR (${table.lane}=20 AND ${table.accessScope}='inbox') OR (${table.lane}=21 AND ${table.accessScope}='inbox') OR (${table.lane}=22 AND ${table.accessScope}='inbox') OR (${table.lane}=30 AND ${table.accessScope}='workstreams') OR (${table.lane}=31 AND ${table.accessScope}='workstreams_inbox') OR (${table.lane}=40 AND ${table.accessScope}='workstreams') OR (${table.lane}=41 AND ${table.accessScope}='workstreams') OR (${table.lane}=50 AND ${table.accessScope}='workstreams_inbox') OR (${table.lane}=60 AND ${table.accessScope}='agents') OR (${table.lane}=61 AND ${table.accessScope}='agents') OR (${table.lane}=70 AND ${table.accessScope}='workstreams') OR (${table.lane}=71 AND ${table.accessScope}='workstreams')`
     ),
     check(
       'squad_activity_recipient_check',

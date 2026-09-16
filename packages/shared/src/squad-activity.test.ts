@@ -37,6 +37,12 @@ describe('squad activity identity and ordering', () => {
     expect(parseSquadActivityId(`70:${rowId}`)).toEqual({ lane: 70, rowId })
   })
 
+  it('creates and parses stable lane-71 issue identities', () => {
+    const rowId = '00000000-0000-4000-8000-000000000071'
+    expect(makeSquadActivityId(71, rowId)).toBe(`71:${rowId}`)
+    expect(parseSquadActivityId(`71:${rowId}`)).toEqual({ lane: 71, rowId })
+  })
+
   it('sorts newest first, then descending lane and UUID', () => {
     const ids = [
       '40:00000000-0000-4000-8000-0000000000ff',
@@ -73,6 +79,19 @@ describe('coerceSquadActivityRef', () => {
   it('parses a double-encoded pr ref back into an object', () => {
     const raw = JSON.stringify({ type: 'pr', url: 'https://github.com/x/y/pull/1' })
     expect(coerceSquadActivityRef(raw)).toEqual({ type: 'pr', url: 'https://github.com/x/y/pull/1' })
+  })
+
+  it('parses a double-encoded issue ref back into an object', () => {
+    const raw = JSON.stringify({
+      type: 'issue',
+      url: 'https://github.com/x/y/issues/1',
+      workStreamId: '00000000-0000-4000-8000-000000000001',
+    })
+    expect(coerceSquadActivityRef(raw)).toEqual({
+      type: 'issue',
+      url: 'https://github.com/x/y/issues/1',
+      workStreamId: '00000000-0000-4000-8000-000000000001',
+    })
   })
 
   it('returns a non-JSON string as-is (no throw)', () => {
