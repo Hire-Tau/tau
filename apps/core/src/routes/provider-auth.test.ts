@@ -612,6 +612,95 @@ describe('provider-auth routes', () => {
     expect(data.error).toContain('OAuth flow failed')
   })
 
+  test('GET / surfaces the exhaustion reason and message alongside health', async () => {
+    const a1 = await (await app.request('/anthropic/accounts', jsonReq('POST', { key: 'sk-a1', label: 'A1' }))).json()
+
+    // Available accounts carry no reason at all.
+    let entry = (await (await app.request('/', jsonReq())).json()).find((p: any) => p.provider === 'anthropic')
+    expect(entry.healthReason).toBeUndefined()
+    expect(entry.accounts[0].healthReason).toBeUndefined()
+
+    providerHealth.markAccountExhausted('anthropic', a1.id, {
+      reason: 'plan-credit',
+      retryAt: Date.now() + 30 * 60_000,
+    })
+    entry = (await (await app.request('/', jsonReq())).json()).find((p: any) => p.provider === 'anthropic')
+    expect(entry.accounts[0]).toMatchObject({
+      health: 'exhausted',
+      healthReason: 'plan-credit',
+      healthMessage: 'Provider plan credit exhausted.',
+    })
+    // The provider summary reflects the account record that makes it unusable.
+    expect(entry).toMatchObject({ health: 'exhausted', healthReason: 'plan-credit' })
+  })
+
+  test('GET /:provider reports a provider-level record reason when there are no account records', async () => {
+    await app.request('/anthropic/accounts', jsonReq('POST', { key: 'sk-a1', label: 'A1' }))
+    providerHealth.markExhausted('anthropic', { reason: 'rate-limit', retryAt: Date.now() + 60_000 })
+    const summary = await (await app.request('/anthropic', jsonReq())).json()
+    expect(summary).toMatchObject({
+      health: 'exhausted',
+      healthReason: 'rate-limit',
+      healthMessage: 'Provider rate limit reached.',
+    })
+  })
+
+  describe('provider health reset', () => {
+    const RESET_AT = () => Date.now() + 30 * 60_000
+
+    test('POST /:provider/health/reset clears the provider and all of its accounts', async () => {
+      const a1 = await (await app.request('/anthropic/accounts', jsonReq('POST', { key: 'sk-a1', label: 'A1' }))).json()
+      const a2 = await (await app.request('/anthropic/accounts', jsonReq('POST', { key: 'sk-a2', label: 'A2' }))).json()
+      providerHealth.markExhausted('anthropic', { reason: 'plan-credit', retryAt: RESET_AT() })
+      providerHealth.markAccountExhausted('anthropic', a1.id, { reason: 'plan-credit', retryAt: RESET_AT() })
+      providerHealth.markAccountExhausted('anthropic', a2.id, { reason: 'plan-credit', retryAt: RESET_AT() })
+
+      const res = await app.request('/anthropic/health/reset', jsonReq('POST'))
+      expect(res.status).toBe(200)
+      const summary = await res.json()
+      expect(summary.provider).toBe('anthropic')
+      expect(summary.health).toBe('available')
+      expect(summary.retryAt).toBeUndefined()
+      for (const account of summary.accounts) {
+        expect(account.health).toBe('available')
+        expect(account.retryAt).toBeUndefined()
+      }
+      expect(providerHealth.isProviderHealthy('anthropic')).toBe(true)
+      expect(providerHealth.isAccountHealthy('anthropic', a1.id)).toBe(true)
+      expect(providerHealth.isAccountHealthy('anthropic', a2.id)).toBe(true)
+    })
+
+    test('POST /:provider/accounts/:accountId/health/reset clears only that account', async () => {
+      const a1 = await (await app.request('/anthropic/accounts', jsonReq('POST', { key: 'sk-a1', label: 'A1' }))).json()
+      const a2 = await (await app.request('/anthropic/accounts', jsonReq('POST', { key: 'sk-a2', label: 'A2' }))).json()
+      providerHealth.markAccountExhausted('anthropic', a1.id, { reason: 'plan-credit', retryAt: RESET_AT() })
+      providerHealth.markAccountExhausted('anthropic', a2.id, { reason: 'plan-credit', retryAt: RESET_AT() })
+
+      const res = await app.request(`/anthropic/accounts/${a1.id}/health/reset`, jsonReq('POST'))
+      expect(res.status).toBe(200)
+      const summary = await res.json()
+      expect(summary.accounts.find((a: any) => a.id === a1.id)).toMatchObject({ health: 'available' })
+      expect(summary.accounts.find((a: any) => a.id === a1.id).retryAt).toBeUndefined()
+      expect(summary.accounts.find((a: any) => a.id === a2.id)).toMatchObject({ health: 'exhausted' })
+      expect(providerHealth.isAccountHealthy('anthropic', a2.id)).toBe(false)
+    })
+
+    test('returns 404 for an unknown provider or account', async () => {
+      await app.request('/anthropic/accounts', jsonReq('POST', { key: 'sk-a1', label: 'A1' }))
+      expect((await app.request('/nonexistent/health/reset', jsonReq('POST'))).status).toBe(404)
+      expect((await app.request('/anthropic/accounts/acct_missing/health/reset', jsonReq('POST'))).status).toBe(404)
+      expect((await app.request('/nonexistent/accounts/acct_missing/health/reset', jsonReq('POST'))).status).toBe(404)
+    })
+
+    test('requires provider-auth:write', async () => {
+      const a1 = await (await app.request('/anthropic/accounts', jsonReq('POST', { key: 'sk-a1', label: 'A1' }))).json()
+      for (const path of ['/anthropic/health/reset', `/anthropic/accounts/${a1.id}/health/reset`]) {
+        expect((await guardRequest(path, { method: 'POST' })).status).toBe(401)
+        expect((await guardRequest(path, { method: 'POST' }, unprivileged.token)).status).toBe(403)
+      }
+    })
+  })
+
   describe('RBAC guards', () => {
     test('requires provider-auth:read for read endpoints', async () => {
       for (const path of ['/', '/oauth/providers', '/anthropic', '/anthropic/oauth/status']) {

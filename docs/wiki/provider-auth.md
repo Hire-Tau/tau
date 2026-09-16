@@ -87,6 +87,37 @@ All under `/api/provider-auth`, protected by auth middleware.
 | `POST`   | `/:provider/oauth/callback` | Complete OAuth flow with auth code        |
 | `GET`    | `/:provider/oauth/status`   | Check status of pending OAuth flow        |
 
+Provider health (all require `provider-auth:write`):
+
+| Method | Endpoint                                      | Description                            |
+| ------ | --------------------------------------------- | -------------------------------------- |
+| `POST` | `/:provider/health/reset`                     | Clear the provider's and all accounts' |
+| `POST` | `/:provider/accounts/:accountId/health/reset` | Clear one account's record             |
+
+Both return the refreshed provider summary, and `404` for an unknown provider or account.
+
+### Resetting provider health
+
+When a provider returns a rate limit or plan-window exhaustion, Tau records a cooldown and stops
+routing to it until `retryAt`. That timestamp is only as good as what the provider told us: the
+error often carries no reset time at all (Tau then applies a default window — 30 minutes for a plan
+limit), and some providers reset their window earlier than they announced. Waiting out a window
+that is already over costs real throughput.
+
+Every account and provider summary reports `health`, `retryAt`, `healthReason` (the health record's
+kind) and `healthMessage`, so the settings page can say WHY a provider is out and how long is left
+rather than a bare "Exhausted". Reset it early with the **Reset** button on that exhausted row in AI
+Providers settings, or from the CLI:
+
+```bash
+tau provider-auth reset <provider>                     # provider + all of its accounts
+tau provider-auth reset <provider> --account <id>      # one account only
+```
+
+Resetting asserts nothing about the upstream state — it only removes Tau's record. If the provider
+is in fact still exhausted, the very next request re-marks it with a fresh cooldown, so the worst
+case is one wasted call.
+
 ### OAuth login intent (`POST /:provider/oauth/start`)
 
 The optional body `{ "accountId": "acc_…" }` selects what the flow's completion writes:

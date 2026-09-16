@@ -1,4 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query'
+import type { ProviderHealthKind } from '@tau/shared'
 import type { ProviderAuthEntry } from '../../api/providerAuth'
 import { queryKeys, onboardingQueryKeys } from '../../queryKeys'
 
@@ -51,4 +52,42 @@ export function invalidateProviderRoutingQueries(queryClient: QueryClient) {
     queryClient.invalidateQueries({ queryKey: queryKeys.providerAuth.all }),
     queryClient.invalidateQueries({ queryKey: ['model-tiers'] }),
   ])
+}
+
+const HEALTH_REASON_LABELS: Record<ProviderHealthKind, string> = {
+  'rate-limit': 'rate limit',
+  'plan-credit': 'plan limit',
+  capacity: 'capacity',
+  network: 'connection',
+  error: 'error',
+  'invalid-credential': 'invalid credential',
+  'expired-oauth': 'expired sign-in',
+}
+
+/** Operator-readable label for a health record's kind; `null` when unknown. */
+export function healthReasonLabel(reason: ProviderHealthKind | undefined): string | null {
+  return reason ? (HEALTH_REASON_LABELS[reason] ?? null) : null
+}
+
+/**
+ * Approximate time until an exhausted record recovers, e.g. `~45s`, `~12m`,
+ * `~4h 12m`, `~2d 3h`. Deliberately coarse — the underlying `retryAt` is an
+ * estimate, and a to-the-second countdown would overstate it. `null` when there
+ * is no reset or it has already elapsed (the row is about to recover anyway).
+ */
+export function formatRetryIn(retryAt: number | undefined, now: number = Date.now()): string | null {
+  if (retryAt == null || !Number.isFinite(retryAt)) return null
+  const seconds = Math.round((retryAt - now) / 1000)
+  if (seconds <= 0) return null
+  if (seconds < 60) return `~${seconds}s`
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `~${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) {
+    const remainder = minutes % 60
+    return remainder ? `~${hours}h ${remainder}m` : `~${hours}h`
+  }
+  const days = Math.floor(hours / 24)
+  const remainderHours = hours % 24
+  return remainderHours ? `~${days}d ${remainderHours}h` : `~${days}d`
 }

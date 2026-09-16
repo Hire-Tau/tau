@@ -118,6 +118,10 @@ export function accountSummary(provider: string, account: Account) {
     hasCredential: true,
     health: health ? 'exhausted' : 'available',
     retryAt: health?.retryAt,
+    // The WHY behind an exhausted row — a rate limit and an invalid credential
+    // need different operator responses, so the UI must not flatten them.
+    healthReason: health?.kind,
+    healthMessage: health?.message,
     lastUsedAt: account.lastUsedAt,
     kind: account.kind,
     providerId: account.providerId,
@@ -136,9 +140,12 @@ function providerSummary(provider: string, accounts: Account[]) {
     (account) => account.enabled && !resolveProviderHealthRecord({ provider, accountId: account.id }, records)
   )
   const exhausted = accounts.length > 0 ? !anyObservedAvailable : providerRecord != null
-  const retryAt = exhausted
-    ? (summaries.find((account) => account.retryAt != null)?.retryAt ?? providerRecord?.retryAt)
-    : undefined
+  // Report the record that actually makes the provider unusable: an exhausted
+  // account first (that is what routing trips over), else the provider record.
+  const exhaustedAccount = exhausted ? summaries.find((account) => account.health === 'exhausted') : undefined
+  const retryAt = exhausted ? (exhaustedAccount?.retryAt ?? providerRecord?.retryAt) : undefined
+  const healthReason = exhausted ? (exhaustedAccount?.healthReason ?? providerRecord?.kind) : undefined
+  const healthMessage = exhausted ? (exhaustedAccount?.healthMessage ?? providerRecord?.message) : undefined
   return {
     provider,
     type: first?.credential.type,
@@ -147,6 +154,8 @@ function providerSummary(provider: string, accounts: Account[]) {
     disabled: isProviderDisabled(provider),
     health: exhausted ? 'exhausted' : 'available',
     retryAt,
+    healthReason,
+    healthMessage,
     accounts: summaries,
   }
 }
@@ -460,6 +469,35 @@ app.delete('/:provider/accounts/:accountId', requirePermission('provider-auth:wr
   retireFlowsTargeting(provider, accountId)
   void refreshModelRuntime()
   return c.json({ provider, accountId, deleted: true })
+})
+
+/**
+ * Clear a provider's exhaustion records early.
+ *
+ * Cooldowns are an estimate: when a provider's window resets ahead of the
+ * `retryAt` Tau recorded, the operator would otherwise have to wait out a
+ * window that is already over. This clears the provider record AND every one of
+ * its accounts, since an exhausted account keeps the provider unusable on its
+ * own. Nothing is asserted about the upstream state — the next failure re-marks
+ * exhaustion immediately.
+ */
+app.post('/:provider/health/reset', requirePermission('provider-auth:write'), (c) => {
+  const provider = c.req.param('provider')
+  const accounts = listAccounts(readAccountStore(), provider)
+  if (accounts.length === 0) return c.json({ error: 'Provider not found' }, 404)
+  providerHealth.markAvailable(provider)
+  for (const account of accounts) providerHealth.markAccountAvailable(provider, account.id)
+  return c.json(providerSummary(provider, accounts))
+})
+
+/** Clear one account's exhaustion record early (see the provider route above). */
+app.post('/:provider/accounts/:accountId/health/reset', requirePermission('provider-auth:write'), (c) => {
+  const provider = c.req.param('provider')
+  const accountId = c.req.param('accountId')
+  const accounts = listAccounts(readAccountStore(), provider)
+  if (!accounts.some((account) => account.id === accountId)) return c.json({ error: 'Account not found' }, 404)
+  providerHealth.markAccountAvailable(provider, accountId)
+  return c.json(providerSummary(provider, accounts))
 })
 
 /** Get auth type for a specific provider (no key exposed) */

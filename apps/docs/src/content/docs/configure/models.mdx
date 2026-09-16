@@ -87,6 +87,6 @@ Use an endpoint reachable from the machine or container running Tau. Its `localh
 
 ## When a model will not start
 
-Check the account's enabled state, model ID, and tier warnings first. Tau skips candidates with missing authentication, disabled providers, unknown models, or a provider in cooldown. If none is usable, connect or correct one of the providers in the chain. If Tau reports that no model chain resolves, select a tier or explicit override for the agent type.
+Check the account's enabled state, model ID, and tier warnings first. Tau skips candidates with missing authentication, disabled providers, unknown models, or a provider in cooldown. If none is usable, connect or correct one of the providers in the chain. If a provider is in cooldown but its limit window has already reset, clear the record with the **Reset** button on that account's row in AI Providers settings, or `tau provider-auth reset <provider>`; Tau re-marks exhaustion on the next failure. If Tau reports that no model chain resolves, select a tier or explicit override for the agent type.
 
 Continue with [Agent types](/configure/agents/) or try your choices on [your first task](/start/first-task/).

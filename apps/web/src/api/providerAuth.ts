@@ -1,3 +1,4 @@
+import type { ProviderHealthKind } from '@tau/shared'
 import { apiFetch } from './client'
 
 export interface ProviderAccountEntry {
@@ -8,6 +9,10 @@ export interface ProviderAccountEntry {
   hasCredential?: boolean
   health?: 'available' | 'exhausted'
   retryAt?: number
+  /** Why the account is exhausted, so the UI can say more than "Exhausted". */
+  healthReason?: ProviderHealthKind
+  /** Human summary of the health record backing `healthReason`. */
+  healthMessage?: string
   lastUsedAt?: number
   kind?: 'openai-compatible'
   providerId?: string
@@ -27,6 +32,10 @@ export interface ProviderAuthEntry {
   health?: 'available' | 'exhausted'
   /** Epoch ms when an exhausted provider should be considered available again. */
   retryAt?: number
+  /** Reason from the record that makes the provider unusable (account first). */
+  healthReason?: ProviderHealthKind
+  /** Human summary of the health record backing `healthReason`. */
+  healthMessage?: string
 }
 
 export interface OpenRouterRoutingSummary {
@@ -149,6 +158,18 @@ export async function setProviderEnabled(provider: string, enabled: boolean): Pr
     method: 'PUT',
     body: JSON.stringify({ enabled }),
   })
+}
+
+/**
+ * Clear an exhaustion record early, for when the provider's limit window reset
+ * ahead of the `retryAt` Tau recorded. Asserts nothing about upstream state —
+ * the next failure re-marks exhaustion.
+ */
+export async function resetProviderHealth(provider: string, accountId?: string): Promise<ProviderAuthEntry> {
+  const path = accountId
+    ? `/provider-auth/${provider}/accounts/${accountId}/health/reset`
+    : `/provider-auth/${provider}/health/reset`
+  return apiFetch<ProviderAuthEntry>(path, { method: 'POST' })
 }
 
 export async function listOAuthProviders(): Promise<OAuthProvider[]> {
