@@ -69,7 +69,6 @@ function LiveSurfaces({ load }: { load: () => Promise<WorkStream[]> }) {
 describe('shared work-stream graph live rendering', () => {
   test('workStream.updated refetches and rerenders both the home list and the work graph', async () => {
     const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}` })
-    dom.window.localStorage.setItem(`tau.wsView.home.${squad.id}`, 'graph')
     dom.window.localStorage.setItem(`tau.wsView.${squad.id}`, 'graph')
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
     queryClient.setQueryData(queryKeys.squads.agents(squad.id), [])
@@ -95,13 +94,11 @@ describe('shared work-stream graph live rendering', () => {
       )
       await dom.act(async () => Bun.sleep(10))
       const doc = dom.window.document
-      // Both placements honour the saved 'graph' preference, but #1413 forces a
-      // compact placement to render a list until it is expanded to fullscreen
-      // (`visibleViewMode = compact && !inFullscreen ? 'list' : viewMode`), and
-      // the home panel is compact. So the home surface is a list and the work
-      // surface is the graph. That is a deliberate product change, not a
-      // regression -- what this test guards is that ONE live event reaches both
-      // surfaces, so assert each in the shape it now renders.
+      // The work tab honours the saved 'graph' preference; the compact home
+      // panel has no view preference at all — it is a list inline and the
+      // dependency graph only inside its dialog. So the home surface is a list
+      // and the work surface is the graph. What this test guards is that ONE
+      // live event reaches both surfaces, so assert each in the shape it renders.
       const homePanel = () => {
         const panel = doc.querySelector('.squad-home-work-streams')
         if (!panel) throw new Error('home work-stream panel not found')
