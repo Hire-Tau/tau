@@ -1,10 +1,13 @@
 import { describe, expect, test } from 'bun:test'
 import {
   ATTENTION_KINDS,
+  ATTENTION_KIND_COPY,
   ATTENTION_LEVELS,
+  ATTENTION_LEVEL_COPY,
   DEFAULT_ATTENTION,
   WATCH_ATTENTION,
   attentionSchema,
+  describeAttentionLevel,
   hasNotify,
   parseAttention,
   summarizeAttention,
@@ -41,6 +44,27 @@ describe('attention vocabulary', () => {
     expect(hasNotify({ decisions: 'mute', progress: 'notify' })).toBe(true)
     expect(hasNotify(DEFAULT_ATTENTION)).toBe(false)
     expect(hasNotify({ decisions: 'mute', progress: 'mute' })).toBe(false)
+  })
+
+  test('every kind and every level carries copy, and each kind describes its own surface', () => {
+    for (const kind of ATTENTION_KINDS) {
+      expect(ATTENTION_KIND_COPY[kind].label.length).toBeGreaterThan(0)
+      expect(ATTENTION_KIND_COPY[kind].helper.length).toBeGreaterThan(0)
+      for (const level of ATTENTION_LEVELS) {
+        expect(ATTENTION_LEVEL_COPY[kind][level].length).toBeGreaterThan(0)
+        expect(describeAttentionLevel(kind, level)).toBe(ATTENTION_LEVEL_COPY[kind][level])
+      }
+    }
+    // The two kinds surface in different places, so their copy must not be interchangeable.
+    expect(describeAttentionLevel('decisions', 'mute')).not.toBe(describeAttentionLevel('progress', 'mute'))
+    expect(describeAttentionLevel('decisions', 'show')).toContain('Needs you')
+    expect(describeAttentionLevel('progress', 'show')).toContain('feed')
+    // Only `notify` promises an interruption; the quieter levels must say they do not.
+    for (const kind of ATTENTION_KINDS) {
+      expect(describeAttentionLevel(kind, 'notify')).toContain('push')
+      expect(describeAttentionLevel(kind, 'show')).toContain('No inbox or push')
+      expect(describeAttentionLevel(kind, 'mute')).toContain('Hidden')
+    }
   })
 
   test('summarizeAttention collapses equal kinds and reports a mix as custom', () => {

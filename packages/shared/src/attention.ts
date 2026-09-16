@@ -57,3 +57,36 @@ export function hasNotify(attention: Attention): boolean {
 export function summarizeAttention(attention: Attention): AttentionLevel | 'custom' {
   return attention.decisions === attention.progress ? attention.decisions : 'custom'
 }
+
+/**
+ * The one set of words for these controls. Web and mobile render the same menu, and a level whose
+ * meaning is described differently on two clients is a level the user cannot reason about — so the
+ * copy lives here beside the vocabulary it describes, not in a component.
+ */
+export const ATTENTION_KIND_COPY: Record<AttentionKind, { label: string; helper: string }> = {
+  decisions: { label: 'Decisions', helper: 'Questions, reviews, and blockers' },
+  progress: { label: 'Progress', helper: 'Active work and completions' },
+}
+
+/**
+ * What each level actually DOES, per kind. The two kinds surface in different places — decisions
+ * in "Needs you", progress in the feed's active work — so one shared sentence per level would be
+ * wrong for one of them.
+ */
+export const ATTENTION_LEVEL_COPY: Record<AttentionKind, Record<AttentionLevel, string>> = {
+  decisions: {
+    mute: 'Hidden from Needs you.',
+    show: 'Shown in Needs you. No inbox or push.',
+    notify: 'Shown in Needs you, plus inbox and push.',
+  },
+  progress: {
+    mute: 'Hidden from the feed’s active work.',
+    show: 'Shown in the feed. No inbox or push.',
+    notify: 'Shown in the feed, plus inbox and push when work finishes.',
+  },
+}
+
+/** What picking `level` for `kind` means, in one sentence. */
+export function describeAttentionLevel(kind: AttentionKind, level: AttentionLevel): string {
+  return ATTENTION_LEVEL_COPY[kind][level]
+}

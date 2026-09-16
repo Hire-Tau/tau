@@ -1,8 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useCallback, useEffect, useId, useRef, useState, type RefObject } from 'react'
 import clsx from 'clsx'
 import {
+  ATTENTION_KIND_COPY,
   ATTENTION_LEVELS,
   DEFAULT_ATTENTION,
+  describeAttentionLevel,
   summarizeAttention,
   type Attention,
   type AttentionKind,
@@ -21,11 +24,6 @@ import {
 import { BellCheckIcon, BellIcon, SpeakerOffIcon } from './icons'
 
 export type AttentionTarget = { kind: 'squad'; id: string } | { kind: 'workStream'; id: string }
-
-const KIND_COPY: Record<AttentionKind, { label: string; helper: string }> = {
-  decisions: { label: 'Decisions', helper: 'Questions, reviews, and blockers' },
-  progress: { label: 'Progress', helper: 'Active work and completions' },
-}
 
 const LEVEL_LABEL: Record<AttentionLevel, string> = { mute: 'Mute', show: 'Show', notify: 'Notify' }
 
@@ -48,12 +46,72 @@ function SummaryIcon({ summary }: { summary: AttentionLevel | 'custom' }) {
 }
 
 /**
+ * Dismisses an open popover the two ways a native `<details>` does not: Escape (which returns
+ * focus to the trigger, so the keyboard user is not dropped at the top of the document) and a
+ * pointer press anywhere outside it. Listeners are attached only while open, so a page of closed
+ * menus costs nothing.
+ *
+ * Escape is handled in the capture phase and stops propagation: a menu opened inside a modal must
+ * take the first Escape for itself rather than closing the modal underneath it. The codebase's
+ * other popovers (AgentViewTabs, WorkStreamFiltersPopover) dismiss exactly this way.
+ */
+function useDismissOnOutside(
+  open: boolean,
+  containerRef: RefObject<HTMLElement | null>,
+  triggerRef: RefObject<HTMLElement | null>,
+  onDismiss: () => void
+) {
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) onDismiss()
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      onDismiss()
+      triggerRef.current?.focus()
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown, true)
+    }
+  }, [open, containerRef, triggerRef, onDismiss])
+}
+
+/**
  * Per-squad and per-work-stream attention. Two independent kinds, one three-point scale each:
  * Mute (not even listed), Show (listed, never interrupts), Notify (inbox message + push). A work
  * stream with no row of its own inherits the squad's levels; "Reset to squad" deletes the row.
  */
-export function AttentionMenu({ target, className }: { target: AttentionTarget; className?: string }) {
+export function AttentionMenu({
+  target,
+  className,
+  align = 'left',
+}: {
+  target: AttentionTarget
+  className?: string
+  /**
+   * Which edge of the trigger the panel hangs from. Defaults to `left`, because most triggers sit
+   * at the LEFT of their header: a right-anchored 16rem panel on a left-hand trigger runs off the
+   * left edge of a phone screen. Pass `right` when the trigger is in a right-hand cluster.
+   */
+  align?: 'left' | 'right'
+}) {
   const queryClient = useQueryClient()
+  // `<details>` owns its own openness, so the state mirrors the element (via onToggle) rather
+  // than driving it; closing writes the DOM property back, which re-fires onToggle.
+  const [open, setOpen] = useState(false)
+  const detailsRef = useRef<HTMLDetailsElement>(null)
+  const summaryRef = useRef<HTMLElement>(null)
+  const close = useCallback(() => {
+    if (detailsRef.current) detailsRef.current.open = false
+    setOpen(false)
+  }, [])
+  useDismissOnOutside(open, detailsRef, summaryRef, close)
   const isSquad = target.kind === 'squad'
   // Two typed queries with a constant hook order, rather than one query whose options type would
   // be a union: only the one matching this target is enabled, so only it ever fetches.
@@ -65,6 +123,10 @@ export function AttentionMenu({ target, className }: { target: AttentionTarget; 
   // flashes "Inherits from squad" on a stream that in fact has its own levels.
   const inheritance = isSquad || !streamQuery.data ? null : streamQuery.data.inherited ? 'squad' : 'own'
   const summary = summarizeAttention(attention)
+
+  // One id per menu instance; each kind's description hangs off it. Several menus render on one
+  // page (a squad header and every stream row), so a constant id would collide.
+  const descriptionId = useId()
 
   const detailKey = isSquad
     ? queryKeys.squadSubscription.detail(target.id)
@@ -99,23 +161,38 @@ export function AttentionMenu({ target, className }: { target: AttentionTarget; 
   const setLevel = (kind: AttentionKind, level: AttentionLevel) => mutation.mutate({ ...attention, [kind]: level })
 
   return (
-    <details className={clsx('attention-menu relative', className)}>
+    <details
+      ref={detailsRef}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      className={clsx('attention-menu relative', className)}
+    >
       <summary
+        ref={summaryRef}
         title="Choose what this notifies you about"
         className="tau-button inline-flex cursor-pointer list-none items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium text-secondary hover:bg-surface-hover"
       >
         <SummaryIcon summary={summary} />
         <span>{SUMMARY_LABEL[summary]}</span>
       </summary>
-      <div className="absolute right-0 z-20 mt-1 w-64 rounded-md border border-th-border bg-surface-primary p-3 shadow-lg">
-        {(Object.keys(KIND_COPY) as AttentionKind[]).map((kind) => (
+      {/* `tau-overlay` + `bg-surface` is the repo's popover surface (AgentViewTabs,
+          AgentConversationBody). The previous `bg-surface-primary` is not a defined token — there
+          is no `surface.primary` in tailwind.config.js, only DEFAULT/secondary/hover — so the
+          panel rendered with no background at all and the page showed through it. */}
+      <div
+        className={clsx(
+          'tau-overlay absolute top-full z-30 mt-1 w-64 max-w-[calc(100vw-2rem)] rounded-lg border border-th-border bg-surface p-3 shadow-theme-lg',
+          align === 'right' ? 'right-0' : 'left-0'
+        )}
+      >
+        {(Object.keys(ATTENTION_KIND_COPY) as AttentionKind[]).map((kind) => (
           <div key={kind} className="mb-3 last:mb-0">
-            <p className="text-xs font-medium text-primary">{KIND_COPY[kind].label}</p>
-            <p className="mb-1 text-xs text-muted">{KIND_COPY[kind].helper}</p>
+            <p className="text-xs font-medium text-primary">{ATTENTION_KIND_COPY[kind].label}</p>
+            <p className="mb-1 text-xs text-muted">{ATTENTION_KIND_COPY[kind].helper}</p>
             <div
               role="radiogroup"
-              aria-label={KIND_COPY[kind].label}
+              aria-label={ATTENTION_KIND_COPY[kind].label}
               aria-busy={mutation.isPending}
+              aria-describedby={`${descriptionId}-${kind}`}
               className={clsx('flex gap-1', mutation.isPending && 'opacity-60')}
             >
               {ATTENTION_LEVELS.map((level) => (
@@ -131,7 +208,7 @@ export function AttentionMenu({ target, className }: { target: AttentionTarget; 
                     type="radio"
                     className="sr-only"
                     name={`${target.kind}-${target.id}-${kind}`}
-                    aria-label={`${KIND_COPY[kind].label}: ${LEVEL_LABEL[level]}`}
+                    aria-label={`${ATTENTION_KIND_COPY[kind].label}: ${LEVEL_LABEL[level]}`}
                     checked={attention[kind] === level}
                     onChange={() => setLevel(kind, level)}
                   />
@@ -139,6 +216,13 @@ export function AttentionMenu({ target, className }: { target: AttentionTarget; 
                 </label>
               ))}
             </div>
+            {/* The CURRENT level's meaning, so the words change as the user moves along the
+                control rather than making them guess what they just chose. Referenced by the
+                radiogroup's aria-describedby, so a screen reader reads the effect with the
+                group. */}
+            <p id={`${descriptionId}-${kind}`} className="mt-1 text-xs text-muted">
+              {describeAttentionLevel(kind, attention[kind])}
+            </p>
           </div>
         ))}
         {inheritance === 'squad' && <p className="text-xs text-muted">Inherits from squad</p>}
