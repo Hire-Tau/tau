@@ -99,6 +99,18 @@ and review; repair conflicts through the flow and review the affected changes.
 Record follow-up work with the owner. Preserve other work and any shared branch;
 clean up owned temporary resources only after delivery and dependent use finish.
 
+The delivery PR is `codeHost.changeRequest`; it is the only resource that gates
+`pr-merge`/`pr-auto-merge` completion. When an integration notification
+supplies `Event reference: <id>`, create or attach work with
+`tau workstream create ... --from-event <id>` or
+`tau workstream track <ws-id> --event <id>` — never hand-write
+`github.*`/`codeHost` metadata to track a resource; `--from-url` links are
+reference material only and receive no updates. `tau workstream track --pr`
+adds a followed pull request alongside the delivery PR without changing
+completion; `tau workstream tracked <ws-id>` lists everything tracked and
+whether its subscriptions are active. A tracked issue closing is information,
+not completion: it never finishes the stream or clears a wait.
+
 Existing non-flow streams have a legacy lifecycle. Do not copy it into new flow
 work or silently reinterpret in-flight work. Inspect the stored policy and ask
 the owner when its routing or delivery is unclear.

@@ -165,6 +165,7 @@ tau workstream create|new [options] <title>
 | `--flow <file>` | Read a saved JSON/YAML workflow source or definition |
 | `-m, --message <msg>` | Handoff message (included in assignment notifications) |
 | `--depends-on <wsId>` | Dependency work stream ID (can be repeated) |
+| `--from-event <eventId>` | Create idempotently from an integration event's issue/PR; a replayed event returns the existing stream (`reusedFromEvent: true`) instead of a duplicate |
 
 **Examples:**
 
@@ -190,6 +191,10 @@ tau workstream create "Fix bug Y" --squad squad-123 --flow-content '{"kind":"pre
 tau workstream create "Integration tests" \
   --depends-on ws-api \
   --depends-on ws-database
+
+# Create idempotently from an integration event (e.g. an issue-assignment
+# notification carrying "Event reference: <id>"); replays reuse the stream
+tau workstream create "Fix reported bug" --squad squad-123 --from-event b2b7c1d0-...
 ```
 
 ---
@@ -518,6 +523,109 @@ tau ws rm ws-123
 
 ---
 
+### tracked
+
+List the issues and pull requests a work stream tracks, alongside its delivery PR.
+
+```bash
+tau workstream tracked <id>
+```
+
+**Arguments:**
+| Argument | Description |
+|----------|-------------|
+| `id` | Work stream ID |
+
+**Aliases:** `links`
+
+**Examples:**
+
+```bash
+tau workstream tracked ws-123
+
+# Table columns: Kind | Resource | Source | Subscribed | URL
+# Source is one of: delivery, legacy-issue, tracked
+# Followed by a "Subscriptions: active|no-flow|not-following|ended" footer
+```
+
+---
+
+### track
+
+Track an issue or pull request alongside a work stream's delivery. Identity
+resolves atomically and is authorized against the squad's own integration
+connection; it never grants access from the link itself.
+
+```bash
+tau workstream track <id> [options]
+```
+
+**Arguments:**
+| Argument | Description |
+|----------|-------------|
+| `id` | Work stream ID |
+
+**Options (choose exactly one of `--event`, `--url`, `--issue`, `--pr`):**
+| Option | Description |
+|--------|-------------|
+| `--event <eventId>` | Track the resource observed by an integration event |
+| `--url <url>` | Track by code-host resource URL |
+| `--issue <ref>` | Track a GitHub issue, e.g. `owner/repo#12` |
+| `--pr <ref>` | Track a GitHub pull request, e.g. `owner/repo#12` |
+| `--connection <connectionId>` | Integration connection ID (only with `--issue`/`--pr`) |
+
+**Examples:**
+
+```bash
+# From the event an integration notification referenced
+tau workstream track ws-123 --event b2b7c1d0-...
+
+# By explicit reference
+tau workstream track ws-123 --issue owner/repo#12
+tau workstream track ws-123 --pr owner/repo#34 --connection conn-abc
+
+# By resource URL
+tau workstream track ws-123 --url https://github.com/owner/repo/pull/34
+```
+
+Tracking a PR this way never changes the work stream's delivery PR
+(`metadata.codeHost.changeRequest`); it adds a followed resource without
+affecting `pr-merge`/`pr-auto-merge` completion.
+
+---
+
+### untrack
+
+Stop tracking an issue or pull request on a work stream.
+
+```bash
+tau workstream untrack <id> [options]
+```
+
+**Arguments:**
+| Argument | Description |
+|----------|-------------|
+| `id` | Work stream ID |
+
+**Options (choose exactly one of `--url`, `--issue`, `--pr`):**
+| Option | Description |
+|--------|-------------|
+| `--url <url>` | Untrack by code-host resource URL |
+| `--issue <ref>` | Untrack a GitHub issue, e.g. `owner/repo#12` |
+| `--pr <ref>` | Untrack a GitHub pull request, e.g. `owner/repo#12` |
+| `--connection <connectionId>` | Integration connection ID (only with `--issue`/`--pr`) |
+
+**Examples:**
+
+```bash
+tau workstream untrack ws-123 --issue owner/repo#12
+```
+
+Untracking the delivery PR is rejected — edit `metadata.codeHost.changeRequest`
+instead of untracking it.
+
+---
+
 ## Work Stream Statuses
 
 Stored statuses are deliberately small:
@@ -569,6 +677,13 @@ tau workstream unset-meta <id> ledger.current.sequence
 ```
 
 `set-meta` and `unset-meta` send only the requested dot-path delta. The server recursively merges objects, deletes keys set to `null`, and serializes concurrent updates so unrelated keys are preserved. Arrays replace the whole array; changing one element requires `get-meta`, local modification, and `set-meta` of the entire array key. Concurrent writers to the same key are last-serialized-writer-wins. Empty path segments and `__proto__`, `prototype`, or `constructor` segments are rejected. `get-meta` uses one entity GET, extracts the value client-side, and reports missing paths as errors.
+
+`set-meta <id> tracked '[...]'` is schema-validated shape-for-shape against the
+[canonical tracked-resource entry](../work-streams.md#tracked-issues-and-pull-requests),
+and any newly introduced entry is authorized exactly like `tau workstream track`.
+`origin` is server-managed — a hand-written `origin` on a new entry is rejected
+with `400`. Prefer `tau workstream track`/`untrack`, which resolve identity and
+stamp `origin` for you instead of requiring the whole array to be rewritten.
 
 ### Code Review Workflow
 

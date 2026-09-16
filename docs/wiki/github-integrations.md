@@ -158,11 +158,42 @@ This is a **rule-selection preview, not a delivery guarantee**. It assumes an au
 
 A squad must have an assigned, usable connection with access to the event resource. Exact repositories in routing or rules declare relay and issue-polling interests. Wildcard patterns filter received webhooks but do not enumerate an account’s repositories. New PR review requests need webhook/relay delivery; polling follows already tracked PRs and issue assignments. Linear currently supplies issue-assignment events. Additional providers can supply their own event adapters while using the same actions.
 
-### Follow an attached issue
+### Follow an attached issue or pull request
 
-With **Code hosting** enabled, a work stream automatically subscribes to comments, updates, assignments, and unassignments for the issue recorded in `github.repo` and `github.issue`. Event-created streams already receive these metadata fields. The issue number can be a positive integer or a decimal string. Manually created streams can attach an issue by setting the same metadata; merely mentioning its URL in the description does not attach it.
+With **Code hosting** enabled, a work stream automatically subscribes to updates for
+every resource in its canonical tracked set: the delivery PR (`codeHost.changeRequest`),
+plus anything recorded in `metadata.tracked[]`. Event-created streams already have the
+triggering issue or PR attached. Attach more resources explicitly instead of
+hand-writing metadata:
 
-Issue events use the same recipient setting and retained-delivery rules as PR events. Active workflows deliver to their configured recipient; parked started workflows can notify their owner while retaining worker delivery; explicit pauses and never-started workflows stay held. The issue may coexist with a PR binding in the same repository. Attaching a PR does not remove the issue subscription.
+```bash
+# Attach the resource an integration event observed (idempotent; the squad
+# must own the connection that observed it)
+tau workstream track <ws-id> --event <event-id>
+
+# Attach by explicit reference
+tau workstream track <ws-id> --issue owner/repo#12
+tau workstream track <ws-id> --pr owner/repo#34
+
+# Attach by resource URL
+tau workstream track <ws-id> --url https://github.com/owner/repo/issues/12
+```
+
+A URL merely mentioned in the description, or attached with `create --from-url`,
+is reference material only — it is not tracked and receives no updates. Use
+`tau workstream tracked <ws-id>` (alias `links`) to see what a stream tracks, its
+source (delivery PR, legacy issue, or tracked), and whether each has an active
+subscription. `tau workstream untrack <ws-id>` removes one (the delivery PR itself
+cannot be untracked this way — change `codeHost.changeRequest` instead).
+
+The legacy `github.repo`/`github.issue` metadata fields are still recognized as an
+issue attachment (surfaced as source `legacy-issue`); new work should prefer `track`.
+
+Issue events use the same recipient setting and retained-delivery rules as PR events. Active workflows deliver to their configured recipient; parked started workflows can notify their owner while retaining worker delivery; explicit pauses and never-started workflows stay held. Tracked resources may coexist with the delivery PR binding in the same or a different repository; tracking or untracking one never changes another.
+
+An issue closing, or any tracked resource's activity, is information only — it never
+completes the work stream, clears an open wait, or bypasses admission and pauses.
+Only the delivery PR's own merge/completion evidence does that.
 
 Comments, review line comments, and submitted reviews authored by the connected GitHub account are recorded but do not notify agents or start work streams. This echo protection applies to Code hosting, explicit workflow subscriptions, and squad rules (including **Any matching event**), and is rechecked before queued delivery. Other accounts' comments still reach linked work streams, including review bots. Assignment, merge, and CI events are unaffected. Legacy instance-level ingress without a connected account cannot identify self-authored events.
 
