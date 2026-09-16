@@ -1,4 +1,5 @@
-import { getActiveExecution, getAgent, getMessage, getMessages } from '../../api/agents'
+import { getActiveExecution, getAgent, getMessage, getMessages, listAgents } from '../../api/agents'
+import { agentHandle, resolveAgentByReference } from './agentResolution'
 import type { Message } from '@tau/shared'
 import type { VoiceAssistantTool, VoiceToolExecutor } from './types'
 
@@ -40,10 +41,14 @@ function mapMessages(messages: Message[]) {
 
 export function createThreadTools(deps: {
   getAgent: typeof getAgent
+  /** Enables handle / mis-copied-id resolution; without it only exact ids resolve. */
+  listAgents?: typeof listAgents
   getActiveExecution: typeof getActiveExecution
   getMessages: typeof getMessages
   getMessage: typeof getMessage
 }) {
+  const resolveAgent = (reference: string) =>
+    resolveAgentByReference(reference, { getAgent: deps.getAgent, listAgents: deps.listAgents ?? (async () => []) })
   async function readMessageDetail(input: {
     agentId: string
     messageId: string
@@ -131,12 +136,19 @@ export function createThreadTools(deps: {
         offset?: number
         limit?: number
       }
-      if (input.messageId) return readMessageDetail(input as typeof input & { messageId: string })
+      if (input.messageId) {
+        // Message ids come from a previous read of the same agent, so only a bare handle needs resolving.
+        const agentId =
+          agentHandle(input.agentId) === input.agentId.trim().toLowerCase()
+            ? (await resolveAgent(input.agentId)).id
+            : input.agentId
+        return readMessageDetail({ ...input, agentId } as typeof input & { messageId: string })
+      }
+      const agent = await resolveAgent(input.agentId)
       const limit = Math.min(Math.max(input.limit ?? 5, 1), 20)
-      const [agent, execution, { messages }] = await Promise.all([
-        deps.getAgent(input.agentId),
-        deps.getActiveExecution(input.agentId),
-        deps.getMessages(input.agentId, { limit }),
+      const [execution, { messages }] = await Promise.all([
+        deps.getActiveExecution(agent.id),
+        deps.getMessages(agent.id, { limit }),
       ])
       return {
         agent: {
@@ -155,6 +167,7 @@ export function createThreadTools(deps: {
 
 export const { readThreadTool, threadTools } = createThreadTools({
   getAgent,
+  listAgents,
   getActiveExecution,
   getMessages,
   getMessage,
