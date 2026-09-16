@@ -37,4 +37,4 @@ If you contribute on behalf of your employer, the Corporate CLA in Part B also a
 
 ## Reporting security issues
 
-Please don't open public issues for security vulnerabilities. Email the maintainers (see the GitHub org page) and we'll coordinate disclosure.
+Please don't open public issues for security vulnerabilities. See [SECURITY.md](SECURITY.md) for how to report one privately; we'll coordinate disclosure with you.

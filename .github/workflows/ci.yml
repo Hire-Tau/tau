@@ -33,7 +33,7 @@ concurrency:
 jobs:
   macos-paths:
     name: Classify macOS portability paths
-    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
+    runs-on: ubuntu-24.04
     outputs:
       run_macos: ${{ steps.classify.outputs.run_macos }}
     steps:
@@ -98,7 +98,7 @@ jobs:
     name: macOS portability
     needs: [macos-paths, macos-portability-suite]
     if: ${{ always() }}
-    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - name: Use Node.js 24
@@ -121,7 +121,7 @@ jobs:
     # touches Postgres, so a gate failure can no longer sit behind a six-minute core
     # suite (or hide one).
     name: test / gates
-    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
@@ -293,7 +293,7 @@ jobs:
     # the step it runs in: while typecheck shared a job with the suites, one bad
     # signature (#1389) suppressed EVERY test result on that PR.
     name: test / typecheck
-    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
@@ -356,8 +356,9 @@ jobs:
       # shipped a TS2677 error in apps/core that no test could catch. Each
       # package's typecheck is `tsc --noEmit`, so this builds nothing and the
       # step it replaced ("Build shared package") never built anything either.
-      # Blacksmith reported 16,169,252 kB (15.42 GiB) of host memory and an
-      # effective 6,492,782,592-byte V8 ceiling, leaving 9.37 GiB outside it.
+      # The 16 GiB runners this measured on reported 16,169,252 kB of host
+      # memory and an effective 6,492,782,592-byte V8 ceiling, leaving 9.37 GiB
+      # outside it.
       # Bun runs dependency-independent workspace scripts concurrently, so the
       # Core-only variable avoids multiplying that ceiling across every tsc.
       - name: Typecheck all packages
@@ -397,7 +398,7 @@ jobs:
     # apps/core, the sterile secret-boundary suite, and the persistent-restart proof.
     # Needs Postgres.
     name: test / core
-    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
@@ -538,7 +539,7 @@ jobs:
     # shared a job, and on 2026-09-04 the web gate's failure aborted the job before
     # the mobile suite ran at all, hiding a second break for hours.
     name: test / web
-    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7
@@ -598,7 +599,7 @@ jobs:
     name: test
     needs: [test-gates, test-typecheck, test-core, test-web]
     if: ${{ always() }}
-    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - name: Use Node.js 24
@@ -616,7 +617,7 @@ jobs:
         run: bun .github/lane-gate.ts verify-result
 
   subprocess-tests:
-    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
 
     steps:
@@ -749,7 +750,7 @@ jobs:
   # End-to-end proof that `bun run setup` produces a running, self-updatable
   # local install (docs/history/superpowers/specs/2026-09-02-local-setup-installer-design.md §9).
   local-setup:
-    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
+    runs-on: ubuntu-24.04
     # Two full installs (the second instance has its own checkout, install and
     # build) plus an in-app update apply.
     timeout-minutes: 40
@@ -1151,7 +1152,7 @@ jobs:
   core-typecheck-diagnostics:
     name: core-typecheck-diagnostics (manual only; a skipped run is not evidence)
     if: github.event_name == 'workflow_dispatch'
-    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7

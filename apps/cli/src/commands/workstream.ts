@@ -1215,7 +1215,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .option('--url <url>', 'Track by code-host resource URL')
     .option('--issue <ref>', 'Track an issue: owner/repo#12 is GitHub, KEY-123 is always a Linear reference')
     .option('--pr <ref>', 'Track a GitHub pull request, e.g. owner/repo#12')
-    .option('--connection <connectionId>', 'Integration connection ID (only with --issue/--pr)')
+    .option('--connection <connectionId>', 'Integration connection ID (--issue/--pr only)')
     .option('--delivery', 'Count this pull request toward the work stream delivery')
     .action(async (id, options) => {
       try {
@@ -1233,7 +1233,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .option('--url <url>', 'Untrack by code-host resource URL')
     .option('--issue <ref>', 'Untrack an issue: owner/repo#12 is GitHub, KEY-123 is always a Linear reference')
     .option('--pr <ref>', 'Untrack a GitHub pull request, e.g. owner/repo#12')
-    .option('--connection <connectionId>', 'Integration connection ID (only with --issue/--pr)')
+    .option('--connection <connectionId>', 'Integration connection ID (--issue/--pr only)')
     .action(async (id, options) => {
       try {
         const body = buildUntrackRequestBody(options)
@@ -1356,6 +1356,10 @@ function buildTrackRequestBody(options: TrackSelectorOptions): Record<string, un
     throw new Error('--delivery applies to pull requests only')
   if (options.delivery && options.url !== undefined && parseTrackedResourceUrl(options.url)?.integration === 'linear')
     throw new Error('--delivery applies to pull requests only')
+  // --connection only applies to a resolved reference (--issue/--pr); with --url or --event it
+  // would silently be dropped, so reject it up front instead of pretending it took effect.
+  if (options.connection !== undefined && (options.url !== undefined || options.event !== undefined))
+    throw new Error('--connection applies to --issue and --pr only')
   const delivery = options.delivery ? { delivery: true } : {}
   if (options.event !== undefined) return { event: options.event }
   if (options.url !== undefined) return { url: options.url, ...delivery }
@@ -1371,6 +1375,8 @@ function buildTrackRequestBody(options: TrackSelectorOptions): Record<string, un
 function buildUntrackRequestBody(options: Omit<TrackSelectorOptions, 'event' | 'delivery'>): Record<string, unknown> {
   const selected = [options.url, options.issue, options.pr].filter((v) => v !== undefined)
   if (selected.length !== 1) throw new Error('Choose exactly one of --url, --issue, --pr')
+  if (options.connection !== undefined && options.url !== undefined)
+    throw new Error('--connection applies to --issue and --pr only')
   if (options.url !== undefined) return { url: options.url }
   if (options.issue !== undefined) return buildIssueRequestBody(options.issue, options.connection)
   rejectLinearPrReference(options.pr!)

@@ -1140,14 +1140,31 @@ describe('box-provision.sh validation (unprivileged — must exit BEFORE any sud
   // These run the real script on real bash as the (non-root) test user. Every
   // case below must decide its fate purely from arg validation, so no sudo /
   // privileged command is ever reached — hence they are safe (and fast) in CI.
-  async function runBoxProvision(args: string[]): Promise<{ exitCode: number; stderr: string }> {
+  async function runBoxProvision(
+    args: string[],
+    options: { env?: Record<string, string> } = {}
+  ): Promise<{ exitCode: number; stderr: string }> {
     const proc = Bun.spawn(['bash', boxProvisionPath, ...args], {
       stdin: 'ignore',
       stdout: 'pipe',
       stderr: 'pipe',
+      ...(options.env ? { env: { ...process.env, ...options.env } } : {}),
     })
     const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited])
     return { exitCode, stderr }
+  }
+
+  /**
+   * A PATH whose `sudo` refuses every call with a marker and exit 77. The
+   * "gets past validation" case must stop at the FIRST privileged call, but
+   * that only happens naturally where sudo prompts; on hosts with passwordless
+   * sudo (GitHub-hosted runners, most dev boxes) the script would really start
+   * provisioning a box user and overrun the test timeout instead.
+   */
+  function refusingSudoPath(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'tau-refusing-sudo-'))
+    writeFileSync(join(dir, 'sudo'), '#!/bin/sh\necho "tau-test: sudo refused: $*" >&2\nexit 77\n', { mode: 0o755 })
+    return `${dir}:${process.env.PATH ?? ''}`
   }
 
   it('rejects an invalid --unix-user charset (exit 2)', async () => {
@@ -1359,17 +1376,22 @@ describe('box-provision.sh validation (unprivileged — must exit BEFORE any sud
   })
 
   it('lets a valid box user + port PAST validation (fails later at the first privileged call, never with the validation exit 2)', async () => {
-    const { exitCode } = await runBoxProvision([
-      '--sandbox-id',
-      'x',
-      '--unix-user',
-      'box_0123456789ab',
-      '--port',
-      '50100',
-    ])
-    // It gets past validation and then trips on the first sudo/useradd on this
-    // host — anything but the validation exit code proves validation passed.
+    const { exitCode, stderr } = await runBoxProvision(
+      ['--sandbox-id', 'x', '--unix-user', 'box_0123456789ab', '--port', '50100'],
+      { env: { PATH: refusingSudoPath() } }
+    )
+    // It gets past validation and then trips on the first privileged call —
+    // anything but the validation exit code proves validation passed. As a
+    // non-root user that call goes through the refusing sudo above, which is
+    // the proof it got that far rather than dying somewhere else.
     expect(exitCode).not.toBe(2)
+    // Only Linux hosts get as far as sudo: elsewhere the script stops at its
+    // systemd preflight (still not exit 2, which is all the assertion above
+    // needs). Root has no sudo call to refuse.
+    if (process.platform === 'linux' && process.getuid?.() !== 0) {
+      expect(exitCode).toBe(77)
+      expect(stderr).toContain('tau-test: sudo refused')
+    }
   }, 30_000)
 })
 

@@ -87,7 +87,10 @@ export default defineConfig({
           ],
         },
       ],
-      head: [{ tag: 'meta', attrs: { name: 'robots', content: 'noindex, nofollow' } }],
+      // The hosted site (docs.hiretau.ai) is public and indexable; the copy
+      // embedded in each instance under /docs sits behind that instance's
+      // sign-in and is kept out of search.
+      head: embedded ? [{ tag: 'meta', attrs: { name: 'robots', content: 'noindex, nofollow' } }] : [],
       credits: false,
     }),
   ],

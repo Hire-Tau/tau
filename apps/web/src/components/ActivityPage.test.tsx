@@ -60,6 +60,23 @@ const messageItem: GlobalSquadActivityItem = {
   ref: { type: 'agent', agentId, view: 'inbox', messageId: '00000000-0000-4000-8000-000000000020' },
   squadId: squadBId,
 }
+// A tracked GitHub issue: the row opens the code host, while the work-stream
+// chip stays in-app and resolves the row's OWN squad slug.
+const issueItem: GlobalSquadActivityItem = {
+  id: '71:00000000-0000-4000-8000-000000000071',
+  at: '2026-08-27T11:58:00.000Z',
+  agentId: null,
+  agentTypeId: null,
+  kind: 'issue',
+  summary: 'Flaky login',
+  ref: {
+    type: 'issue',
+    url: 'https://example.test/issues/12',
+    workStreamId: '00000000-0000-4000-8000-000000000010',
+    workStreamNumber: 12,
+  },
+  squadId: squadAId,
+}
 
 function seedClient(
   items: GlobalSquadActivityItem[],
@@ -174,6 +191,15 @@ describe('ActivityPage rendering', () => {
     const chip = html.slice(html.lastIndexOf('<button', squadColumn), squadColumn)
     expect(chip).toContain('self-start')
     expect(chip).toContain('justify-self-start')
+  })
+
+  test('renders an issue row as an external code-host link with an in-app work-stream chip', () => {
+    const html = staticRender([issueItem])
+    expect(html).toContain('href="https://example.test/issues/12"')
+    expect(html).toContain('target="_blank"')
+    expect(html).toContain('Flaky login')
+    expect(html).toContain('aria-label="Open work stream #12"')
+    expect(html).toContain('#12</button>')
   })
 })
 
@@ -301,6 +327,63 @@ describe('ActivityPage squad chip', () => {
         '/squads/squad-alpha/activity'
       )
       expect(dom.window.document.body.textContent).not.toContain('workstream-modal-opened')
+    } finally {
+      globalThis.fetch = originalFetch
+      await dom.cleanup()
+    }
+  })
+})
+
+describe('ActivityPage issue rows', () => {
+  test('the work-stream chip navigates in-app instead of following the code-host link', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const rendered = dom.createRoot()
+    const client = seedClient([issueItem])
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = mock(async () => {
+      return new dom.window.Response(JSON.stringify({}), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }) as unknown as Response
+    }) as typeof fetch
+    function Harness() {
+      const location = useLocation()
+      return (
+        <>
+          <span data-testid="current-path">
+            {location.pathname}
+            {location.search}
+          </span>
+          <ActivityPage />
+        </>
+      )
+    }
+    try {
+      await dom.act(async () => {
+        rendered.root.render(
+          <MemoryRouter initialEntries={['/activity']}>
+            <QueryClientProvider client={client}>
+              <Harness />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+        await Bun.sleep(20)
+      })
+      const row = [...dom.window.document.querySelectorAll('a')].find(
+        (candidate) => candidate.getAttribute('href') === 'https://example.test/issues/12'
+      )
+      expect(row).toBeDefined()
+      expect(row!.getAttribute('target')).toBe('_blank')
+      expect(row!.getAttribute('rel')).toBe('noreferrer')
+      const chip = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Open work stream #12"]')!
+      expect(chip).toBeDefined()
+      await dom.act(async () => {
+        chip.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }))
+        await Bun.sleep(10)
+      })
+      expect(dom.window.document.querySelector('[data-testid="current-path"]')?.textContent).toBe(
+        '/squads/squad-alpha/work?ws=12'
+      )
     } finally {
       globalThis.fetch = originalFetch
       await dom.cleanup()
