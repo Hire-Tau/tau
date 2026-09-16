@@ -104,6 +104,15 @@ error often carries no reset time at all (Tau then applies a default window — 
 limit), and some providers reset their window earlier than they announced. Waiting out a window
 that is already over costs real throughput.
 
+Codex reports a usage limit in two different shapes, and both are ambiguous between a transient
+throttle and an exhausted plan window. An HTTP 429 is rewritten by the bundled client into `You
+have hit your ChatGPT usage limit (<plan> plan). Try again in ~N min.`, while a limit hit mid-stream
+arrives as an in-stream error event (`Codex error: The usage limit has been reached`, with the raw
+`usage_limit_reached` code and an optional `resets_at` / `resets_in_seconds` in its payload). Tau
+lets the announced reset window decide for both: under 30 minutes is treated as a transient rate
+limit with that reset, and a longer or absent window as a plan limit on its reset or the 30-minute
+default.
+
 Every account and provider summary reports `health`, `retryAt`, `healthReason` (the health record's
 kind) and `healthMessage`, so the settings page can say WHY a provider is out and how long is left
 rather than a bare "Exhausted". Reset it early with the **Reset** button on that exhausted row in AI
