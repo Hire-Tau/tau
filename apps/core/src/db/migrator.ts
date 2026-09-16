@@ -7,6 +7,7 @@ import type { MigrationConfig, MigrationMeta } from 'drizzle-orm/migrator'
 import { readMigrationFiles } from 'drizzle-orm/migrator'
 import type postgres from 'postgres'
 import { backfillMessageEnqueueOrder } from './message-enqueue-order-backfill'
+import { backfillTrackedIssues } from './tracked-issue-backfill'
 
 const CREATE_CONCURRENT_INDEX =
   /^\s*CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\s+"([^"]+)"\s+ON\s+(?:ONLY\s+)?(?:(?:"([^"]+)"\.)?)"([^"]+)"/i
@@ -413,4 +414,5 @@ export async function applyMigrations(
 export async function migrateDatabase(connection: postgres.ReservedSql, config: MigrationConfig): Promise<void> {
   await applyMigrations(connection, readMigrationFiles(config), config)
   await backfillMessageEnqueueOrder(connection)
+  await backfillTrackedIssues(connection)
 }

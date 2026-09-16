@@ -32,7 +32,7 @@ import { integrationOutputRegistry } from './registry'
 import type { IntegrationOutputAuthority } from './types'
 import type { VerifiedIngressEvent } from '../types'
 import { eventRuleTrigger, routeDefaultNotifications } from './default-routing'
-import { streamTracksEvent } from './tracked-match'
+import { eventTrackedResource, streamTracksEvent } from './tracked-match'
 import { createLogger } from '../../../lib/infra/logger'
 
 const log = createLogger('integration-outputs')
@@ -822,6 +822,7 @@ async function applyOutputTriggers(event: Event) {
             }
             object[parts.at(-1)!] = value
           }
+          const target = eventTrackedResource(event)
           const existing = await tx
             .select()
             .from(workStreams)
@@ -843,7 +844,10 @@ async function applyOutputTriggers(event: Event) {
               streamTracksEvent(stream.metadata, event)
             )
               return true
+            // When the event names an issue or pull request, `streamTracksEvent` above is the only
+            // identity test: bindings like `github.repo` alone would absorb unrelated repository work.
             return (
+              !target &&
               Object.keys(trigger.create.metadata).length > 0 &&
               Object.entries(trigger.create.metadata).every(
                 ([path, binding]) =>
@@ -870,6 +874,23 @@ async function applyOutputTriggers(event: Event) {
           ) {
             const github = metadata.github as Record<string, unknown>
             github.connectionId = event.authority.connectionId
+          }
+          // The stream starts tracking the resource the event named. `origin` is the server's own
+          // record of what it observed; access still comes from the squad's connection assignment.
+          if (target && event.authority.kind === 'connection') {
+            const { mergeTracked } = await import('../../work-streams/tracked-resources')
+            metadata.tracked = mergeTracked(metadata.tracked, [
+              {
+                ...target,
+                connectionId: event.authority.connectionId,
+                origin: {
+                  eventId: event.id,
+                  resourceKey: event.fact.resourceKey,
+                  output: event.fact.output,
+                  ...(event.fact.occurredAt ? { occurredAt: event.fact.occurredAt } : {}),
+                },
+              },
+            ])
           }
           const [stream] = await tx
             .insert(workStreams)

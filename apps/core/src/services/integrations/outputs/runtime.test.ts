@@ -1483,11 +1483,25 @@ test('an issue-created stream that tracks its issue automatically receives later
     )[0]!
     const id = trigger.workStreamId!
     const created = (await db.select().from(workStreams).where(eq(workStreams.id, id)))[0]!
-    expect((created.metadata as Record<string, any>).integrationSource.eventId).toBe(eventId)
-    await attachTracked(id, [{ integration: 'github', repository, kind: 'issue', number: 95, connectionId }])
+    const metadata = created.metadata as Record<string, any>
+    expect(metadata.integrationSource.eventId).toBe(eventId)
+    // The trigger records the issue it observed: identity in `tracked`, never a legacy pointer.
+    expect(metadata.github.issue).toBeUndefined()
+    expect(metadata.tracked).toHaveLength(1)
+    expect(metadata.tracked[0]).toMatchObject({
+      integration: 'github',
+      repository,
+      kind: 'issue',
+      number: 95,
+      connectionId,
+      origin: { eventId, resourceKey: event.resourceKey, output: 'issue.assigned' },
+    })
     const commentId = await publishIntegrationOutput('github', issueFact(repository, 95, 'issue.comment'), authority)
     eventIds.push(commentId)
     const retained = (await deliveries(id)).find((row) => row.eventId === commentId)!
+    expect(retained.subscriptionId).toBe(
+      trackedSubscriptionId({ integration: 'github', repository, kind: 'issue', number: 95 }, 'comment')
+    )
     expect(retained.status).toBe('pending')
     expect(retained.targets).toEqual([])
     expect(retained.subscription.source.connectionId).toBe(connectionId)
@@ -1502,6 +1516,65 @@ test('an issue-created stream that tracks its issue automatically receives later
     })
     await reconcileOutputDeliveries(id)
     expect((await deliveries(id)).find((row) => row.eventId === commentId)!.targets).toHaveLength(1)
+  })
+})
+
+test('an unrelated stream in the same repository never absorbs a rule-created issue stream', async () => {
+  await withNativeRouting(async (connectionId) => {
+    const repository = `${prefix}/shared`
+    // Work in the same repository, but about nothing in particular: only the repo binding matches.
+    const unrelated = await create(94)
+    await db
+      .update(workStreams)
+      .set({ metadata: { github: { repo: repository } } })
+      .where(eq(workStreams.id, unrelated))
+    const definition = createBlankWorkflow()
+    definition.participants.worker!.agentTypeId = prefix
+    definition.completion.followChanges = true
+    await db
+      .update(squads)
+      .set({
+        metadata: {
+          github: [{ repo: repository }],
+          integrationRules: {
+            github: [
+              {
+                id: 'shared-repo-issue',
+                enabled: true,
+                source: { integration: 'github', output: 'issue.assigned', version: 1 },
+                filters: { squadRouting: true, audience: 'connected-account' },
+                action: { type: 'start-workstream', workflow: { kind: 'inline', definition } },
+              },
+            ],
+          },
+        },
+      })
+      .where(eq(squads.id, squadId))
+    const event = fact(93, {
+      output: 'issue.assigned',
+      resourceKey: `${repository}#93`,
+      data: { repository, issue: { number: 93 }, assignee: 'tau-bot', labels: ['bug'] },
+    })
+    const eventId = await publishIntegrationOutput('github', event, { kind: 'connection', connectionId, squadId })
+    eventIds.push(eventId)
+    const receipts = await db
+      .select()
+      .from(integrationOutputTriggerRuns)
+      .where(eq(integrationOutputTriggerRuns.eventId, eventId))
+    expect(receipts).toHaveLength(1)
+    const id = receipts[0]!.workStreamId!
+    expect(id).not.toBe(unrelated)
+    const metadata = (await db.select().from(workStreams).where(eq(workStreams.id, id)))[0]!.metadata as Record<
+      string,
+      any
+    >
+    expect(metadata.integrationSource.eventId).toBe(eventId)
+    expect(metadata.github.issue).toBeUndefined()
+    expect(metadata.tracked).toMatchObject([
+      { integration: 'github', repository, kind: 'issue', number: 93, connectionId, origin: { eventId } },
+    ])
+    // The unrelated stream keeps its own metadata and gains no link to the issue.
+    expect(resolveTrackedResources((await WorkStream.mustFind(unrelated)).metadata)).toEqual([])
   })
 })
 
@@ -2291,7 +2364,6 @@ test('an event-created stream and an explicitly tracked stream resolve the same 
       await db.select().from(integrationOutputTriggerRuns).where(eq(integrationOutputTriggerRuns.eventId, assignedId))
     )[0]!.workStreamId!
     const issue = trackedIssue(number, repository)
-    await attachTracked(triggered, [issue])
     const manual = await create(number, { tracked: [issue] })
     // The link is the identity: how the stream acquired it changes nothing.
     expect(resolveTrackedResources((await WorkStream.mustFind(triggered)).metadata).map((item) => item.key)).toEqual(
