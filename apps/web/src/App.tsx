@@ -24,8 +24,13 @@ import { VoiceWorkspacePage } from './components/VoiceWorkspacePage'
 import { OnboardingPage } from './components/onboarding/OnboardingPage'
 import { OnboardingBanner } from './components/onboarding/OnboardingBanner'
 import { useAuth } from './providers/AuthProvider'
+import { useRef } from 'react'
+import { useVisualViewportShell } from './hooks/useVisualViewportShell'
 
 export default function App() {
+  // Fit the fixed shell to the visible area while a software keyboard is open (see the hook).
+  const shellRef = useRef<HTMLDivElement>(null)
+  useVisualViewportShell(shellRef)
   const { authRequired, authStatus, isAuthenticated, needsFirstAdminSetup, loginWithToken } = useAuth()
   const location = useLocation()
 
@@ -62,6 +67,7 @@ export default function App() {
 
   return (
     <div
+      ref={shellRef}
       data-testid="app-shell"
       className="h-full max-h-full overflow-hidden overscroll-none flex flex-col bg-page text-primary"
     >

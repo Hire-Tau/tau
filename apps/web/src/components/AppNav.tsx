@@ -233,7 +233,7 @@ export function MobileBottomNav({
   }, [location.pathname])
 
   return (
-    <nav className="tau-glass md:hidden shrink-0 border-t border-panel-border safe-area-pb z-10">
+    <nav className="tau-glass md:hidden shrink-0 border-t border-panel-border safe-area-pb z-10 [[data-keyboard=open]_&]:hidden">
       <div className="flex justify-around items-center h-16">
         {/* A lone secondary destination belongs directly in the dock. */}
         {dockItems.map((item) => {
