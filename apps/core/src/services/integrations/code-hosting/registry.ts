@@ -2,13 +2,11 @@ import {
   deliveryPullRequests,
   describeCodeHostReference,
   resolveCodeHostReference,
-  resolveTrackedResources,
   type CodeHostReference,
   type IntegrationSubscription,
-  type ResolvedTrackedResource,
-  type TrackedResourceKind,
   type WorkflowDefinition,
 } from '@tau/shared'
+import { subscriptionTargetsResource, trackedResourceRegistry } from '../tracked-resources'
 
 export interface CodeHostingAdapter {
   integration: string
@@ -19,36 +17,6 @@ export interface CodeHostingAdapter {
   ): Promise<{ merged: boolean; headBranch: string; baseBranch: string; headSha?: string } | null>
   containsCommit(reference: CodeHostReference, squadId: string, base: string, commit: string): Promise<boolean>
   subscriptions(reference: CodeHostReference): IntegrationSubscription[]
-  /** Events for a resource tracked alongside the delivery binding. Identity only; never a grant. */
-  trackedSubscriptions?(resource: ResolvedTrackedResource): IntegrationSubscription[]
-  authorizeSquad?(squadId: string, connectionId?: string): Promise<boolean>
-}
-
-function matchValue(subscription: IntegrationSubscription, path: string) {
-  const match = subscription.match[path]
-  return match && 'value' in match ? match.value : undefined
-}
-
-/**
- * Whether `subscription`'s literal `match` values identify `resource`: same integration,
- * repository compared trimmed and case-insensitively, and the resource's number compared on the
- * kind-appropriate match path (`issue.number` or `pullRequest.number`).
- *
- * `matchValue` only reads a literal `value`, so a `streamMetadata`-bound match — which carries no
- * fixed value of its own — never matches here, no matter what the stream currently binds it to.
- */
-export function subscriptionTargetsResource(
-  subscription: IntegrationSubscription,
-  resource: { integration: string; repository: string; kind: TrackedResourceKind; number: number }
-): boolean {
-  const numberPath = resource.kind === 'issue' ? 'issue.number' : 'pullRequest.number'
-  return (
-    subscription.source.integration === resource.integration &&
-    String(matchValue(subscription, 'repository') ?? '')
-      .trim()
-      .toLowerCase() === resource.repository.trim().toLowerCase() &&
-    matchValue(subscription, numberPath) === resource.number
-  )
 }
 
 /**
@@ -108,13 +76,9 @@ export class CodeHostingRegistry {
         ? binding.adapter.subscriptions(binding.reference)
         : []
       : []
-    // Delivery links already own their reserved ids; only extra links fan out.
-    for (const resource of resolveTrackedResources(metadata)) {
-      if (resource.source !== 'tracked') continue
-      const adapter = this.adapters.get(resource.integration)
-      if (!adapter?.trackedSubscriptions || !adapter.validateRepository(resource.repository)) continue
-      inferred.push(...adapter.trackedSubscriptions(resource))
-    }
+    // Delivery links already own their reserved ids; only extra links fan out, and they follow
+    // their own provider's adapter: a stream may track a Linear issue with no code host at all.
+    inferred.push(...trackedResourceRegistry.subscriptions(metadata))
     // IDs are reserved by schema so explicit subscriptions cannot shadow delivery bindings.
     return [
       ...explicit,

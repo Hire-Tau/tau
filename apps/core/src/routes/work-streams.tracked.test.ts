@@ -218,6 +218,42 @@ describe('work-stream tracked-resource routes', () => {
     expect(await removed.json()).toMatchObject({ removed: true, resources: [] })
   })
 
+  it('adds and removes a tracked link written as a reference', async () => {
+    const [row] = await db
+      .insert(workStreams)
+      .values({ squadId: testSquadId, title: `${testPrefix} reference`, metadata: {} })
+      .returning()
+    const id = row!.id
+    const added = await apiFetch(`/api/workstreams/${id}/tracked`, {
+      method: 'POST',
+      body: { reference: `${repo}#4401`, kind: 'pull_request' },
+    })
+    expect(added.status).toBe(200)
+    expect((await added.json()).added).toMatchObject([{ repository: repo, kind: 'pull_request', number: 4401 }])
+    // An issue is the default when the caller names no kind, so this is a second link.
+    const issue = await apiFetch(`/api/workstreams/${id}/tracked`, {
+      method: 'POST',
+      body: { reference: `${repo}#4401` },
+    })
+    expect((await issue.json()).added).toMatchObject([{ kind: 'issue', number: 4401 }])
+    const malformed = await apiFetch(`/api/workstreams/${id}/tracked`, {
+      method: 'POST',
+      body: { reference: 'nonsense reference' },
+    })
+    expect(malformed.status).toBe(400)
+    const removed = await apiFetch(`/api/workstreams/${id}/tracked`, {
+      method: 'DELETE',
+      body: { reference: `${repo}#4401`, kind: 'pull_request' },
+    })
+    expect(removed.status).toBe(200)
+    expect((await removed.json()).resources).toMatchObject([{ kind: 'issue', number: 4401 }])
+    const unknown = await apiFetch(`/api/workstreams/${id}/tracked`, {
+      method: 'DELETE',
+      body: { reference: 'not a reference' },
+    })
+    expect(unknown.status).toBe(400)
+  })
+
   it('refuses to untrack the designated delivery change request', async () => {
     const [row] = await db
       .insert(workStreams)

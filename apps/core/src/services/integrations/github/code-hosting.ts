@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto'
-import { trackedResourceKey } from '@tau/shared'
+import { trackedResourceKey, type IntegrationSubscription, type ResolvedTrackedResource } from '@tau/shared'
 import { resolveGitHubRelayAssignment } from './resolve-connection'
 import type { CodeHostingAdapter } from '../code-hosting/registry'
+import type { TrackedResourceAdapter } from '../tracked-resources/registry'
 import { githubApiGet } from '../../github/api-client'
 
 const ISSUE_EVENTS = ['assigned', 'unassigned', 'updated', 'comment']
@@ -16,9 +17,46 @@ const PULL_REQUEST_EVENTS = [
   'ci_completed',
 ]
 
+const validateRepository = (repository: string) => /^[\w.-]+\/[\w.-]+$/.test(repository)
+
+/** Ids hash the resource identity, so adding or removing a link never renumbers the others. */
+function trackedSubscriptions(resource: ResolvedTrackedResource): IntegrationSubscription[] {
+  const hash = createHash('sha256').update(trackedResourceKey(resource)).digest('hex').slice(0, 12)
+  const repository = resource.repository.trim().toLowerCase()
+  const issue = resource.kind === 'issue'
+  return (issue ? ISSUE_EVENTS : PULL_REQUEST_EVENTS).map((event) => ({
+    id: `tracked-${hash}-${event.replaceAll('_', '-')}`,
+    source: {
+      integration: 'github',
+      output: `${issue ? 'issue' : 'pull_request'}.${event}`,
+      version: 1,
+      ...(resource.connectionId ? { connectionId: resource.connectionId } : {}),
+    },
+    match: {
+      repository: { value: repository },
+      [issue ? 'issue.number' : 'pullRequest.number']: { value: resource.number },
+    },
+    deliver: { to: 'delivery-owner' as const, whenInactive: 'retain' as const },
+  }))
+}
+
+/** Identity and authorization for links this squad follows; the delivery binding is separate. */
+export const githubTrackedResourceAdapter: TrackedResourceAdapter = {
+  integration: 'github',
+  validateRepository,
+  matchFields: (kind) => ({
+    repository: 'repository',
+    number: kind === 'issue' ? 'issue.number' : 'pullRequest.number',
+  }),
+  trackedSubscriptions,
+  async authorizeSquad(squadId, connectionId) {
+    return !!(await resolveGitHubRelayAssignment(squadId, connectionId))
+  },
+}
+
 export const githubCodeHostingAdapter: CodeHostingAdapter = {
   integration: 'github',
-  validateRepository: (repository) => /^[\w.-]+\/[\w.-]+$/.test(repository),
+  validateRepository,
   async changeRequest(reference, squadId) {
     if (!reference.changeRequest) return null
     const pr = await githubApiGet<{ merged: boolean; base: { ref: string }; head: { ref: string; sha?: string } }>(
@@ -58,28 +96,5 @@ export const githubCodeHostingAdapter: CodeHostingAdapter = {
       },
       deliver: { to: 'delivery-owner' as const, whenInactive: 'retain' as const },
     }))
-  },
-  /** Ids hash the resource identity, so adding or removing a link never renumbers the others. */
-  trackedSubscriptions(resource) {
-    const hash = createHash('sha256').update(trackedResourceKey(resource)).digest('hex').slice(0, 12)
-    const repository = resource.repository.trim().toLowerCase()
-    const issue = resource.kind === 'issue'
-    return (issue ? ISSUE_EVENTS : PULL_REQUEST_EVENTS).map((event) => ({
-      id: `tracked-${hash}-${event.replaceAll('_', '-')}`,
-      source: {
-        integration: 'github',
-        output: `${issue ? 'issue' : 'pull_request'}.${event}`,
-        version: 1,
-        ...(resource.connectionId ? { connectionId: resource.connectionId } : {}),
-      },
-      match: {
-        repository: { value: repository },
-        [issue ? 'issue.number' : 'pullRequest.number']: { value: resource.number },
-      },
-      deliver: { to: 'delivery-owner' as const, whenInactive: 'retain' as const },
-    }))
-  },
-  async authorizeSquad(squadId, connectionId) {
-    return !!(await resolveGitHubRelayAssignment(squadId, connectionId))
   },
 }

@@ -120,3 +120,62 @@ test('a pinned connection only matches events observed through that connection',
   // Instance ingress carries no connection, so a pinned link still correlates.
   expect(streamTracksEvent(pinned, event('issue.updated', { issue: { number: 3 } }))).toBe(true)
 })
+
+function linearEvent(
+  output: string,
+  data: Record<string, unknown>,
+  authority: IntegrationOutputAuthority = { kind: 'instance' }
+): Event {
+  const base = event(output, {}, authority)
+  return { ...base, integration: 'linear', fact: { ...base.fact, data, resourceKey: 'linear-issue-uuid' } }
+}
+const comment = linearEvent('issue.comment', { issue: { id: 'linear-issue-uuid' } })
+const updated = linearEvent('issue.updated', { issue: { id: 'linear-issue-uuid', number: 12 }, teamKey: 'eng' })
+const linearLink = { integration: 'linear', repository: 'ENG', kind: 'issue', number: 12 }
+
+test('Linear facts identify the issue by provider id, and by team key and number when they carry one', () => {
+  // A comment names only the issue UUID; it is an identity, not a full resource.
+  expect(eventTrackedResource(comment)).toBeNull()
+  expect(eventTrackedResource(updated)).toEqual({
+    integration: 'linear',
+    repository: 'eng',
+    kind: 'issue',
+    number: 12,
+    externalId: 'linear-issue-uuid',
+  })
+  const withId = { tracked: [{ ...linearLink, externalId: 'linear-issue-uuid' }] }
+  const withoutId = { tracked: [linearLink] }
+  expect(streamTracksEvent(withId, comment)).toBe(true)
+  expect(streamTracksEvent(withId, updated)).toBe(true)
+  expect(streamTracksEvent(withoutId, updated)).toBe(true)
+  // A comment carries no team key or number, so a link that never learned the id cannot claim it.
+  expect(streamTracksEvent(withoutId, comment)).toBe(false)
+  // Another issue's id is another issue, even in the same team.
+  expect(streamTracksEvent(withId, linearEvent('issue.comment', { issue: { id: 'other-issue-uuid' } }))).toBe(false)
+  expect(
+    streamTracksEvent(
+      withId,
+      linearEvent('issue.updated', { issue: { id: 'other-issue-uuid', number: 13 }, teamKey: 'eng' })
+    )
+  ).toBe(false)
+  // Identity never crosses integrations: a GitHub link is not matched by a Linear fact.
+  expect(
+    streamTracksEvent(
+      { tracked: [{ integration: 'github', repository: 'acme/project', kind: 'issue', number: 12 }] },
+      updated
+    )
+  ).toBe(false)
+  expect(streamTracksEvent(withId, linearEvent('issue.comment', { issue: {} }))).toBe(false)
+})
+
+test('provider-id matching stays scoped to the connection the link was observed under', () => {
+  const pinned = { tracked: [{ ...linearLink, externalId: 'linear-issue-uuid', connectionId: connectionOne }] }
+  const from = (connectionId: string) =>
+    linearEvent(
+      'issue.comment',
+      { issue: { id: 'linear-issue-uuid' } },
+      { kind: 'connection', connectionId, squadId: 'squad' }
+    )
+  expect(streamTracksEvent(pinned, from(connectionTwo))).toBe(false)
+  expect(streamTracksEvent(pinned, from(connectionOne))).toBe(true)
+})

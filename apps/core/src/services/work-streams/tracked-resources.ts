@@ -2,10 +2,12 @@ import { isDeepStrictEqual } from 'node:util'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import {
+  parseTrackedResourceReference,
   parseTrackedResourceUrl,
   readDeliveryState,
   resolveTrackedResources,
   trackedResourceKey,
+  trackedResourceLabel,
   trackedResourceObjectSchema,
   trackedResourceSchema,
   type ResolvedTrackedResource,
@@ -16,7 +18,7 @@ import {
 import { db, squads, workStreams, workStreamFlowRuns, integrationOutputEvents, type DbTx } from '../../db'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { codeHostingRegistry } from '../integrations/code-hosting'
-import { subscriptionTargetsResource } from '../integrations/code-hosting/registry'
+import { subscriptionTargetsResource, trackedResourceRegistry } from '../integrations/tracked-resources'
 import { isOutputEventAuthorizedForSquad, reconcileOutputDeliveries } from '../integrations/outputs/runtime'
 import { eventTrackedResource } from '../integrations/outputs/tracked-match'
 import { deliveryView } from './delivery-pull-requests'
@@ -40,10 +42,21 @@ const trackedResourceInputSchema = trackedResourceObjectSchema.pick({
   connectionId: true,
   url: true,
 })
-/** Identity may arrive as an observed event, a resource URL, or an explicit reference. */
+/**
+ * Identity may arrive as an observed event, a resource URL, a written reference
+ * (`owner/repo#12`, `ENG-12`), or an explicit resource.
+ */
 export const trackedResourceRequestSchema = z.union([
   z.object({ event: z.string().uuid() }).strict(),
   z.object({ url: z.string().url(), delivery: z.literal(true).optional() }).strict(),
+  z
+    .object({
+      reference: z.string().trim().min(1).max(500),
+      // GitHub references name no kind of their own, so the caller picks; Linear has only issues.
+      kind: trackedResourceObjectSchema.shape.kind.optional(),
+      delivery: z.literal(true).optional(),
+    })
+    .strict(),
   z.object({ resource: trackedResourceInputSchema, delivery: z.literal(true).optional() }).strict(),
 ])
 export type TrackedResourceRequest = z.infer<typeof trackedResourceRequestSchema>
@@ -79,36 +92,67 @@ export async function resolveEventTrackedResource(eventId: string, squadId: stri
   return parsed.data
 }
 
+/** A request that names an identity directly, rather than through an observed event. */
+export type TrackedResourceIdentityRequest = Exclude<TrackedResourceRequest, { event: string }>
+
+/**
+ * The identity a request names: no access check, no provider read. Untracking uses this on its
+ * own, because a squad may always unlink a resource even after losing the connection.
+ */
+export function trackedResourceRequestIdentity(request: TrackedResourceIdentityRequest): TrackedResource | null {
+  if ('url' in request) {
+    const parsed = parseTrackedResourceUrl(request.url)
+    return parsed ? { ...parsed, url: request.url.trim() } : null
+  }
+  if ('reference' in request) {
+    const parsed = parseTrackedResourceReference(request.reference)
+    if (!parsed) return null
+    // A GitHub reference names no kind of its own, so the caller picks; Linear has only issues.
+    return parsed.kind ? parsed : { ...parsed, kind: request.kind ?? 'issue' }
+  }
+  return request.resource
+}
+
 /** Identity resolution first, then the squad's own authorization. */
 export async function resolveTrackedResourceRequest(
   squadId: string,
   request: TrackedResourceRequest
 ): Promise<TrackedResource> {
   if ('event' in request) return resolveEventTrackedResource(request.event, squadId)
-  let resource: TrackedResource
-  if ('url' in request) {
-    const parsed = parseTrackedResourceUrl(request.url)
-    if (!parsed) throw new TrackedResourceError('Link is not a supported issue or pull request URL', 400)
-    resource = { ...parsed, url: request.url.trim() }
-  } else {
-    resource = request.resource
-  }
+  let resource = trackedResourceRequestIdentity(request)
+  if (!resource)
+    throw new TrackedResourceError(
+      'Not a supported issue or pull request link or reference (use a resource URL, owner/repo#12, or KEY-12)',
+      400
+    )
   if (request.delivery) {
     if (resource.kind !== 'pull_request')
       throw new TrackedResourceError('delivery is only valid for pull requests', 400)
     resource = { ...resource, delivery: true }
   }
   await authorizeTrackedResource(squadId, resource)
+  // Only now, with the squad's own access established, ask the provider what the resource is.
+  // An event-sourced identity skips this: the observed fact already carried it.
+  const adapter = trackedResourceRegistry.adapterFor(resource.integration)
+  if (adapter?.describe && (!resource.externalId || !resource.url)) {
+    const described = await adapter.describe(resource, squadId)
+    if (!described)
+      throw new TrackedResourceError(
+        `${trackedResourceLabel(resource)} was not found on this squad's ${resource.integration} connection`,
+        404
+      )
+    resource = { ...resource, ...described }
+  }
   return resource
 }
 
 /** Access comes from the squad's connection assignment, never from the link itself. */
 export async function authorizeTrackedResource(squadId: string, resource: TrackedResource): Promise<void> {
-  const adapter = codeHostingRegistry.adapterFor(resource.integration)
-  if (!adapter) throw new TrackedResourceError(`Unknown code hosting integration: ${resource.integration}`, 400)
+  const adapter = trackedResourceRegistry.adapterFor(resource.integration)
+  if (!adapter) throw new TrackedResourceError(`Unknown tracked resource integration: ${resource.integration}`, 400)
   if (!adapter.validateRepository(resource.repository))
     throw new TrackedResourceError(`Invalid ${resource.integration} repository: ${resource.repository}`, 400)
-  if (adapter.authorizeSquad && !(await adapter.authorizeSquad(squadId, resource.connectionId)))
+  if (!(await adapter.authorizeSquad(squadId, resource.connectionId)))
     throw new TrackedResourceError(
       `No authorized ${resource.integration} connection is assigned to this squad${
         resource.connectionId ? ' for the requested account' : ''

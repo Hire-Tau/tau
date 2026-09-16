@@ -2501,3 +2501,137 @@ test('an event-created stream and an explicitly tracked stream resolve the same 
       ).toEqual([trackedSubscriptionId(issue, 'updated')])
   })
 })
+
+/** A Linear comment fact: it names the issue by UUID only, exactly as Linear delivers it. */
+function linearComment(issueId: string, changes: Partial<IntegrationOutputFact> = {}) {
+  return fact(0, {
+    output: 'issue.comment',
+    subject: 'Linear comment',
+    resourceKey: issueId,
+    body: 'Could you take another look?',
+    data: { issue: { id: issueId }, teamId: 'team', actor: 'external-user', action: 'create' },
+    ...changes,
+  })
+}
+async function setLinearRule(action: Record<string, unknown>, output = 'issue.comment') {
+  const { squadEventRuleSchema } = await import('@tau/shared')
+  const rule = squadEventRuleSchema.parse({
+    id: `linear-${output.replaceAll('.', '-')}`,
+    predicates: [{ field: 'teamId', op: 'in', value: ['team'] }],
+    source: { integration: 'linear', output, version: 1 },
+    filters: { teamId: 'team', audience: 'any' },
+    action,
+  })
+  await db
+    .update(squads)
+    .set({ metadata: { integrationRules: { linear: [rule] } } })
+    .where(eq(squads.id, squadId))
+}
+
+test('a Linear comment reaches the stream that tracks its issue instead of the squad manager', async () => {
+  await withNativeRouting(async (connectionId, managerId) => {
+    await setLinearRule({ type: 'notify-manager' })
+    const issueId = `${prefix}-linear-comment`
+    const authority = { kind: 'connection' as const, connectionId, squadId }
+    // A comment carries no team key or number, so only the recorded provider id can claim it.
+    const [stream] = await db
+      .insert(workStreams)
+      .values({
+        squadId,
+        title: prefix,
+        status: 'active',
+        metadata: {
+          tracked: [
+            { integration: 'linear', repository: 'eng', kind: 'issue', number: 96, externalId: issueId, connectionId },
+          ],
+        },
+      })
+      .returning()
+    eventIds.push(await publishIntegrationOutput('linear', linearComment(issueId), authority))
+    const tracked = await db.select().from(inbox).where(eq(inbox.recipientId, managerId))
+    expect(tracked).toHaveLength(1)
+    expect(tracked[0]!.metadata).toMatchObject({ source: 'integration-notification', workStreamId: stream!.id })
+    // Another issue in the same team is not this link: the squad rule handles it instead.
+    eventIds.push(await publishIntegrationOutput('linear', linearComment(`${issueId}-other`), authority))
+    const all = await db.select().from(inbox).where(eq(inbox.recipientId, managerId))
+    expect(all).toHaveLength(2)
+    expect(all.find((row) => row.id !== tracked[0]!.id)!.metadata?.workStreamId).toBeUndefined()
+  }, 'linear')
+})
+
+test('a tracked Linear issue fans its events out to the stream that follows it', async () => {
+  await withNativeRouting(async (connectionId) => {
+    const issueId = `${prefix}-linear-tracked`
+    const tracked: TrackedResource = {
+      integration: 'linear',
+      repository: 'eng',
+      kind: 'issue',
+      number: 97,
+      externalId: issueId,
+      connectionId,
+    }
+    const id = await create(97, { tracked: [tracked] })
+    const authority = { kind: 'connection' as const, connectionId, squadId }
+    eventIds.push(await publishIntegrationOutput('linear', linearComment(issueId), authority))
+    const rows = await deliveries(id)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.subscriptionId).toBe(trackedSubscriptionId(tracked, 'comment'))
+    expect(rows[0]!.subscription.source.connectionId).toBe(connectionId)
+    expect(rows[0]!.targets.map((target) => target.agentId)).toEqual([(await getFlow(id))!.attemptAgents['1']!])
+    // Another team's issue with the same number is a different resource.
+    eventIds.push(await publishIntegrationOutput('linear', linearComment(`${issueId}-other`), authority))
+    expect(await deliveries(id)).toHaveLength(1)
+  }, 'linear')
+})
+
+test('a Linear rule records the issue it observed, and a replay reuses that work stream', async () => {
+  await withNativeRouting(async (connectionId) => {
+    const flow = definition()
+    delete flow.subscriptions
+    flow.completion.followChanges = true
+    await setLinearRule({ type: 'start-workstream', workflow: { kind: 'inline', definition: flow } }, 'issue.assigned')
+    const issueId = `${prefix}-linear-start`
+    const assigned = fact(98, {
+      output: 'issue.assigned',
+      resourceKey: issueId,
+      subject: 'Linear issue assigned',
+      data: {
+        issue: { id: issueId, number: 98, identifier: 'ENG-98' },
+        teamId: 'team',
+        teamKey: 'eng',
+        assignee: 'user',
+        action: 'assigned',
+      },
+    })
+    const authority = { kind: 'connection' as const, connectionId, squadId }
+    const eventId = (await publishIntegrationOutput('linear', assigned, authority))!
+    eventIds.push(eventId)
+    const runs = await db
+      .select()
+      .from(integrationOutputTriggerRuns)
+      .where(eq(integrationOutputTriggerRuns.resourceKey, issueId))
+    expect(runs).toHaveLength(1)
+    const created = await WorkStream.mustFind(runs[0]!.workStreamId!)
+    const metadata = created.metadata as Record<string, any>
+    expect(metadata.tracked).toHaveLength(1)
+    expect(metadata.tracked[0]).toMatchObject({
+      integration: 'linear',
+      repository: 'eng',
+      kind: 'issue',
+      number: 98,
+      externalId: issueId,
+      connectionId,
+      origin: { eventId, resourceKey: issueId, output: 'issue.assigned' },
+    })
+    // The recorded link is what a later comment matches on, so the replay reuses the same work.
+    eventIds.push(await publishIntegrationOutput('linear', { ...assigned, eventKey: randomUUID() }, authority))
+    expect(
+      await db.select().from(integrationOutputTriggerRuns).where(eq(integrationOutputTriggerRuns.resourceKey, issueId))
+    ).toHaveLength(1)
+    const commentId = (await publishIntegrationOutput('linear', linearComment(issueId), authority))!
+    eventIds.push(commentId)
+    expect(
+      (await deliveries(created.id)).filter((row) => row.eventId === commentId).map((row) => row.subscriptionId)
+    ).toEqual([trackedSubscriptionId(metadata.tracked[0], 'comment')])
+  }, 'linear')
+})

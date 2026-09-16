@@ -114,7 +114,8 @@ export async function routeDefaultNotifications(event: Event, authorize: (squadI
         !origin.integration &&
         typeof integrationValueAt(event.fact.data, 'issue.id') === 'string' &&
         integrationValueAt(stream.metadata, 'linear.issueId') === integrationValueAt(event.fact.data, 'issue.id')) ||
-      (event.integration === 'github' && streamTracksEvent(stream.metadata, event))
+      // Every provider identifies its own resources; tracking is not a GitHub privilege.
+      streamTracksEvent(stream.metadata, event)
     if (!matches) continue
     matchedStream = true
     // An inactive/retained subscription still owns routing. Never bypass its wait or pause policy.

@@ -14,6 +14,8 @@ export interface TrackedTarget {
   kind: TrackedResourceKind
   number: number
   url?: string
+  /** Provider-native identity, when the fact carries one alongside repository/number. */
+  externalId?: string
 }
 
 export function eventTrackedResource(event: {
@@ -23,9 +25,16 @@ export function eventTrackedResource(event: {
   return integrationOutputRegistry.adapter(event.integration)?.trackedResource?.(event.fact) ?? null
 }
 
-/** Correlation only: a match never grants the connection any access. */
+/**
+ * Correlation only: a match never grants the connection any access.
+ *
+ * Facts that name no repository or number — a Linear comment carries just the issue UUID — still
+ * identify their resource through the adapter's provider-native identity, which only matches a
+ * link that already recorded the same `externalId`.
+ */
 export function streamTracksEvent(metadata: unknown, event: Event): boolean {
-  const target = eventTrackedResource(event)
+  const adapter = integrationOutputRegistry.adapter(event.integration)
+  const target = adapter?.trackedResource?.(event.fact) ?? adapter?.trackedIdentity?.(event.fact)
   if (!target) return false
   const connectionId = event.authority.kind === 'connection' ? event.authority.connectionId : undefined
   return resolveTrackedResources(metadata).some((resource) =>

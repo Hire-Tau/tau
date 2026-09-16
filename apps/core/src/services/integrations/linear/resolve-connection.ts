@@ -16,3 +16,12 @@ export async function resolveLinearConnection(squadId: string) {
   const credential = store.get(connection.credentialRef)
   return credential ? { connection, credential } : null
 }
+
+/**
+ * A declared Linear assignment, for authorization checks that need no credential. Validation
+ * freshness is deliberately not required: losing it suspends delivery, not the squad's interest.
+ */
+export async function resolveLinearAssignment(squadId: string) {
+  const connection = await new DbIntegrationConnectionRepository().getAssigned(squadId, 'linear')
+  return connection?.enabled && connection.authState === 'authenticated' ? { id: connection.id } : undefined
+}
