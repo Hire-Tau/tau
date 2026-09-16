@@ -20,7 +20,7 @@ Install and run Tau locally on macOS or Linux:
 curl -fsSL https://hiretau.ai/cli/setup.sh | bash
 ```
 
-You'll need `curl`, `git` and — unless bun is already installed — `unzip`.
+You'll need `curl` and `git`. Bun's installer needs `unzip` too; on Debian/Ubuntu with passwordless sudo the installer adds it for you, elsewhere install it first.
 Setup installs the remaining dependencies, asks
 where agents should run, and starts your instance.
 
