@@ -45,6 +45,25 @@ describe('squads work stream api', () => {
       ['/squads/squad-1/agents?includeRecentlyTerminated=true&terminatedLimit=20&terminatedOffset=40', undefined],
     ])
   })
+
+  test('listAttentionWorkStreams asks the server to respect attention', async () => {
+    const { listAttentionWorkStreams } = await import('./squads')
+    await listAttentionWorkStreams(apiFetchMock)
+
+    expect(apiFetchCalls.at(-1)).toEqual(['/workstreams?statuses=queued%2Cactive&respectAttention=true', undefined])
+  })
+
+  test('subscribeSquad sends levels only when they were chosen', async () => {
+    const { subscribeSquad } = await import('./squads')
+    await subscribeSquad('squad-1', undefined, apiFetchMock)
+    expect(apiFetchCalls.at(-1)).toEqual(['/squads/squad-1/subscribe', { method: 'POST' }])
+
+    await subscribeSquad('squad-1', { decisions: 'mute', progress: 'notify' }, apiFetchMock)
+    expect(apiFetchCalls.at(-1)).toEqual([
+      '/squads/squad-1/subscribe',
+      { method: 'POST', body: JSON.stringify({ attention: { decisions: 'mute', progress: 'notify' } }) },
+    ])
+  })
 })
 
 test('listSquadActivity serializes normalized filters and pagination', async () => {

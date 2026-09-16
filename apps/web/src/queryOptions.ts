@@ -101,6 +101,7 @@ import {
   listWorkStreams,
   listAllWorkStreams,
   listActiveWorkStreams,
+  listAttentionWorkStreams,
   getWorkStream,
   getWorkStreamMetrics,
   getWorkStreamTracked,
@@ -439,6 +440,11 @@ export const queries = {
       queryOptions({
         queryKey: queryKeys.squads.activeWorkStreams(squadId),
         queryFn: () => listActiveWorkStreams(squadId),
+      }),
+    attentionWorkStreams: () =>
+      queryOptions({
+        queryKey: queryKeys.squads.attentionWorkStreams(),
+        queryFn: () => listAttentionWorkStreams(),
       }),
     workStreamDetail: (id: string) =>
       queryOptions({

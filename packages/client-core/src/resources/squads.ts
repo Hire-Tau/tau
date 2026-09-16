@@ -1,6 +1,7 @@
 import type { Transport } from '../transport'
 import type {
   Agent,
+  Attention,
   GlobalSquadActivityPage,
   Squad,
   SquadActivityKind,
@@ -80,9 +81,11 @@ export interface SandboxStatus {
   runtime?: 'docker' | 'k8s' | 'vm' | 'host'
 }
 
-/** Whether the caller watches a squad (its work-stream updates + manager questions). */
+/** The caller's attention for a squad: stored levels when subscribed, otherwise the default. */
 export interface SquadSubscription {
   subscribed: boolean
+  count: number
+  attention: Attention
 }
 
 /** Lean squads surface used by mobile (list squads + their agents to find the manager). */
@@ -142,10 +145,10 @@ export function squadsResource(t: Transport) {
     startSandbox: (squadId: string): Promise<void> => t.request(`/squads/${squadId}/sandbox/start`, { method: 'POST' }),
     stopSandbox: (squadId: string): Promise<void> => t.request(`/squads/${squadId}/sandbox/stop`, { method: 'POST' }),
 
-    // Squad watch (subscription): see its work-stream updates + manager questions in the feed.
+    // Squad attention: which of this squad's decisions and progress reach you, and how loudly.
     getSquadSubscription: (squadId: string): Promise<SquadSubscription> => t.request(`/squads/${squadId}/subscription`),
-    subscribeSquad: (squadId: string): Promise<SquadSubscription> =>
-      t.request(`/squads/${squadId}/subscribe`, { method: 'POST' }),
+    subscribeSquad: (squadId: string, attention?: Attention): Promise<SquadSubscription> =>
+      t.request(`/squads/${squadId}/subscribe`, { method: 'POST', ...(attention ? { body: { attention } } : {}) }),
     unsubscribeSquad: (squadId: string): Promise<SquadSubscription> =>
       t.request(`/squads/${squadId}/subscribe`, { method: 'DELETE' }),
 

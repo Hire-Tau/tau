@@ -7,7 +7,7 @@ import { WorkStreamList, VALID_WS_STATUS_FILTERS, WS_DONE_STATUSES } from './Wor
 export function WorkStreamListAll({ filterContainer }: { filterContainer?: HTMLElement | null }) {
   const [statusFilters, setStatusFilters] = useURLStringArrayState('status', VALID_WS_STATUS_FILTERS)
   const [squadFilters] = useURLStringArrayState('squad')
-  const { data: activeWorkStreams = [], isLoading: wsLoading } = useQuery(queries.squads.activeWorkStreams())
+  const { data: activeWorkStreams = [], isLoading: wsLoading } = useQuery(queries.squads.attentionWorkStreams())
   const { data: squads = [], isLoading: squadsLoading } = useQuery(queries.squads.list())
   const { data: allAgents = [] } = useQuery(queries.agents.list())
 

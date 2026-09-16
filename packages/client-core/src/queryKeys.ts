@@ -127,6 +127,8 @@ export const queryKeys = {
     activeWorkStreams: (squadId?: string) => [...queryKeys.squads.activeWorkStreamsPrefix(), squadId ?? 'all'] as const,
     activeWorkStreamsInfinite: (squadId?: string) =>
       [...queryKeys.squads.activeWorkStreamsPrefix(), 'infinite', squadId ?? 'all'] as const,
+    /** The feed's cross-squad active list, already narrowed by the viewer's attention. */
+    attentionWorkStreams: () => [...queryKeys.squads.activeWorkStreamsPrefix(), 'attention'] as const,
     doneWorkStreamsInfinite: (squadId: string | undefined, statuses: string, squadIds?: readonly string[]) =>
       [
         ...queryKeys.squads.all,
