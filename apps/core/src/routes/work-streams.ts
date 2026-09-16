@@ -22,6 +22,9 @@ import {
   parkWorkStreamSchema,
   mapLegacyWorkStreamStatus,
   sortCanonicalWorkStreams,
+  attentionSchema,
+  DEFAULT_ATTENTION,
+  type Attention,
 } from '@tau/shared'
 import type { WorkStreamStatus, WorkStreamWaitCreatedBy, WorkStreamPriority } from '@tau/shared'
 import {
@@ -55,9 +58,12 @@ import type { Identity } from '../services/rbac'
 import {
   subscribeToWorkStream,
   unsubscribeFromWorkStream,
-  isSubscribedToWorkStream,
+  getWorkStreamAttention,
   countWorkStreamSubscribers,
 } from '../services/work-streams/subscriptions'
+import { getSquadAttention } from '../services/squad/subscriptions'
+import { loadUserAttention } from '../services/attention/resolver'
+import { parseOptionalJsonObjectBody } from '../middleware/json-body-errors'
 import { computePriorityAnnotations } from '../services/work-streams/priority-annotations'
 import { WorkStreamBusyError, WorkStreamNotParkableError, parkWorkStream } from '../services/work-streams/admission'
 import { computeDerivedStates } from '../services/work-streams/derived-state'
@@ -416,6 +422,29 @@ function trackedResourceFailure(c: Context, error: unknown) {
   )
 }
 
+/** The caller's effective levels for one stream: its row, else the squad's row, else the default. */
+async function resolveStreamSubscription(
+  workStreamId: string,
+  squadId: string,
+  identity: Awaited<ReturnType<typeof resolveActingUser>>
+): Promise<{ subscribed: boolean; attention: Attention; inherited: boolean }> {
+  if (identity?.type !== 'user') return { subscribed: false, attention: DEFAULT_ATTENTION, inherited: true }
+  const streamRow = await getWorkStreamAttention(workStreamId, identity.userId)
+  if (streamRow) return { subscribed: true, attention: streamRow, inherited: false }
+  const squadRow = await getSquadAttention(squadId, identity.userId)
+  return { subscribed: false, attention: squadRow ?? DEFAULT_ATTENTION, inherited: true }
+}
+
+/** Drop streams the caller has muted for `progress`. Non-user identities carry no attention rows. */
+async function filterToAttendedStreams<T extends { id: string; squadId: string }>(
+  identity: Identity,
+  streams: T[]
+): Promise<T[]> {
+  if (identity.type !== 'user' || streams.length === 0) return streams
+  const attention = await loadUserAttention(identity.userId)
+  return streams.filter((stream) => attention.forWorkStream(stream.id, stream.squadId).progress !== 'mute')
+}
+
 export const workStreamsRouter = new Hono()
   .post(
     '/:id/ci-notification',
@@ -469,6 +498,7 @@ export const workStreamsRouter = new Hono()
     const statusesParam = c.req.query('statuses')
     const limitParam = c.req.query('limit')
     const countOnly = c.req.query('countOnly') === 'true'
+    const respectAttention = c.req.query('respectAttention') === 'true'
     const cursor = c.req.query('cursor')
     const completionRange = z
       .object({
@@ -506,6 +536,12 @@ export const workStreamsRouter = new Hono()
     }
 
     const identity: Identity = c.get('identity')
+
+    // The feed's cross-squad query is the only caller. Paginated responses are cursor-snapshotted
+    // server-side, so a per-viewer filter would silently shorten pages and break `totalCount`;
+    // refuse the combination instead of returning a quietly wrong page.
+    if (respectAttention && limitParam !== undefined)
+      return c.json({ error: 'respectAttention is not supported with pagination' }, 400)
 
     // When a specific squadId is requested, verify the identity can access it.
     // When no squadId is given, filter results to accessible squads (filtered-list).
@@ -734,7 +770,8 @@ export const workStreamsRouter = new Hono()
         status: statuses ? undefined : status,
         statuses,
       })
-      return c.json(await serializeCanonicalWorkStreams(streams))
+      const attended = respectAttention ? await filterToAttendedStreams(identity, streams) : streams
+      return c.json(await serializeCanonicalWorkStreams(attended))
     }
 
     // No squadId — filtered-list
@@ -745,7 +782,8 @@ export const workStreamsRouter = new Hono()
     const requestedSet = requestedSquadIds?.length ? new Set(requestedSquadIds) : null
     const requestedStreams = requestedSet ? streams.filter((stream) => requestedSet.has(stream.squadId)) : streams
     const filtered = await filterToAccessibleSquads(identity, requestedStreams, (s) => s.squadId ?? null)
-    return c.json(await serializeCanonicalWorkStreams(filtered))
+    const attended = respectAttention ? await filterToAttendedStreams(identity, filtered) : filtered
+    return c.json(await serializeCanonicalWorkStreams(attended))
   })
   .post('/', zValidator('json', createWorkStreamSchema), async (c) => {
     const input = c.req.valid('json')
@@ -893,16 +931,17 @@ export const workStreamsRouter = new Hono()
       return c.json(json)
     }
   )
-  // --- Work-stream subscriptions ("watch" a stream; needs read access to the stream) ---
+  // --- Work-stream attention (levels for this stream; a row here overrides the squad's) ---
   .get(
     '/:id/subscription',
     requireEntityPermission('workstreams:read', async (c) => routeWorkStreamSquadId(c)),
     async (c) => {
       const id = await routeWorkStreamId(c)
+      const stream = await WorkStream.find(id)
+      if (!stream) return c.json({ error: 'Work stream not found' }, 404)
       const identity = await resolveActingUser(c.get('identity'))
-      const subscribed = identity?.type === 'user' ? await isSubscribedToWorkStream(id, identity.userId) : false
-      const count = await countWorkStreamSubscribers(id)
-      return c.json({ subscribed, count })
+      const resolved = await resolveStreamSubscription(id, stream.squadId, identity)
+      return c.json({ ...resolved, count: await countWorkStreamSubscribers(id) })
     }
   )
   .post(
@@ -912,9 +951,14 @@ export const workStreamsRouter = new Hono()
       const id = await routeWorkStreamId(c)
       const identity = await resolveActingUser(c.get('identity'))
       if (identity?.type !== 'user') return c.json({ error: 'Only users can subscribe' }, 403)
-      if (!(await WorkStream.find(id))) return c.json({ error: 'Work stream not found' }, 404)
-      await subscribeToWorkStream(id, identity.userId)
-      return c.json({ subscribed: true, count: await countWorkStreamSubscribers(id) })
+      const stream = await WorkStream.find(id)
+      if (!stream) return c.json({ error: 'Work stream not found' }, 404)
+      const body = await parseOptionalJsonObjectBody(c, {} as Record<string, unknown>)
+      const requested = body.attention === undefined ? undefined : attentionSchema.safeParse(body.attention)
+      if (requested && !requested.success) return c.json({ error: 'Invalid attention levels' }, 400)
+      await subscribeToWorkStream(id, identity.userId, requested?.data)
+      const resolved = await resolveStreamSubscription(id, stream.squadId, identity)
+      return c.json({ ...resolved, count: await countWorkStreamSubscribers(id) })
     }
   )
   .delete(
@@ -924,8 +968,11 @@ export const workStreamsRouter = new Hono()
       const id = await routeWorkStreamId(c)
       const identity = await resolveActingUser(c.get('identity'))
       if (identity?.type !== 'user') return c.json({ error: 'Only users can unsubscribe' }, 403)
+      const stream = await WorkStream.find(id)
+      if (!stream) return c.json({ error: 'Work stream not found' }, 404)
       await unsubscribeFromWorkStream(id, identity.userId)
-      return c.json({ subscribed: false, count: await countWorkStreamSubscribers(id) })
+      const resolved = await resolveStreamSubscription(id, stream.squadId, identity)
+      return c.json({ ...resolved, count: await countWorkStreamSubscribers(id) })
     }
   )
   // --- Tracked links (issues and pull requests this stream follows alongside its delivery) ---

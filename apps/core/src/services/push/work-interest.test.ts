@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import type { WorkStream } from '@tau/shared'
+import { WATCH_ATTENTION, type Attention, type WorkStream } from '@tau/shared'
+import { buildUserAttention } from '../attention/resolver'
 import { createWorkInterestLoader, type WorkInterestCandidate } from './work-interest'
 
 const now = new Date('2026-08-30T00:00:00Z')
@@ -19,6 +20,8 @@ function candidate(id: string, squadId: string, overrides: Partial<WorkInterestC
 function loader(options: {
   watchedSquads?: string[]
   directStreams?: string[]
+  squadAttention?: Record<string, Attention>
+  streamAttention?: Record<string, Attention>
   candidates?: WorkInterestCandidate[]
   deniedSquads?: string[]
   attention?: string[]
@@ -26,15 +29,19 @@ function loader(options: {
 }) {
   const checked: string[] = []
   let subscriptionLoads = 0
+  const squadRows = new Map<string, Attention>([
+    ...(options.watchedSquads ?? []).map((id) => [id, WATCH_ATTENTION] as const),
+    ...Object.entries(options.squadAttention ?? {}),
+  ])
+  const streamRows = new Map<string, Attention>([
+    ...(options.directStreams ?? []).map((id) => [id, WATCH_ATTENTION] as const),
+    ...Object.entries(options.streamAttention ?? {}),
+  ])
   const load = createWorkInterestLoader({
     isActiveUser: async () => options.activeUser !== false,
-    loadWatchedSquadIds: async () => {
+    loadAttention: async () => {
       subscriptionLoads++
-      return options.watchedSquads ?? []
-    },
-    loadWatchedWorkStreamIds: async () => {
-      subscriptionLoads++
-      return options.directStreams ?? []
+      return buildUserAttention(squadRows, streamRows)
     },
     loadCandidates: async (squadIds, streamIds) =>
       (options.candidates ?? []).filter(
@@ -194,8 +201,7 @@ describe('work interest selector', () => {
     let peak = 0
     const load = createWorkInterestLoader({
       isActiveUser: async () => true,
-      loadWatchedSquadIds: async () => squadIds,
-      loadWatchedWorkStreamIds: async () => [],
+      loadAttention: async () => buildUserAttention(new Map(squadIds.map((id) => [id, WATCH_ATTENTION])), new Map()),
       loadCandidates: async () => squadIds.map((squadId, index) => candidate(`stream-${index}`, squadId)),
       canReadSquad: async () => {
         active++
@@ -210,6 +216,24 @@ describe('work interest selector', () => {
     })
     expect((await load('user-1')).totalCount).toBe(20)
     expect(peak).toBeLessThanOrEqual(8)
+  })
+
+  test('a notify squad with one muted stream keeps the siblings and drops that stream', async () => {
+    const { load } = loader({
+      watchedSquads: ['squad'],
+      streamAttention: { quiet: { decisions: 'mute', progress: 'mute' } },
+      candidates: [candidate('loud', 'squad'), candidate('quiet', 'squad')],
+    })
+    expect((await load('user-1')).top.map(({ id }) => id)).toEqual(['loud'])
+  })
+
+  test('show-level rows are not interest: only notify puts work on the lock screen', async () => {
+    const { load, checked } = loader({
+      squadAttention: { squad: { decisions: 'show', progress: 'show' } },
+      candidates: [candidate('shown', 'squad')],
+    })
+    expect((await load('user-1')).totalCount).toBe(0)
+    expect(checked).toEqual([])
   })
 
   test('empty interest returns widget empty state and an ending APNs state', async () => {

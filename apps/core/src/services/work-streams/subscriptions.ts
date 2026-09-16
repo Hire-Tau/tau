@@ -73,15 +73,6 @@ export async function listUserWorkStreamAttention(userId: string): Promise<Map<s
   return new Map(rows.map((row) => [row.workStreamId, parseAttention(row.attention)]))
 }
 
-/** Work stream ids the user explicitly watches (does not include squad-level watches). */
-export async function listUserWatchedWorkStreamIds(userId: string): Promise<string[]> {
-  const rows = await db
-    .select({ workStreamId: workStreamSubscriptions.workStreamId })
-    .from(workStreamSubscriptions)
-    .where(eq(workStreamSubscriptions.userId, userId))
-  return rows.map((r) => r.workStreamId)
-}
-
 export async function countWorkStreamSubscribers(workStreamId: string): Promise<number> {
   return (await listWorkStreamSubscriberIds(workStreamId)).length
 }

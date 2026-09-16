@@ -68,15 +68,6 @@ export async function listUserSquadAttention(userId: string): Promise<Map<string
   return new Map(rows.map((row) => [row.squadId, parseAttention(row.attention)]))
 }
 
-/** Squad ids the user watches (used to scope the Action Center and notifications). */
-export async function listUserWatchedSquadIds(userId: string): Promise<string[]> {
-  const rows = await db
-    .select({ squadId: squadSubscriptions.squadId })
-    .from(squadSubscriptions)
-    .where(eq(squadSubscriptions.userId, userId))
-  return rows.map((r) => r.squadId)
-}
-
 export async function countSquadSubscribers(squadId: string): Promise<number> {
   return (await listSquadSubscriberIds(squadId)).length
 }
