@@ -19,7 +19,7 @@ const workflows = readdirSync(directory)
     file,
     workflow: Bun.YAML.parse(readFileSync(new URL(file, directory), 'utf8')) as Workflow,
   }))
-const linuxRunner = "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
+const linuxRunner = 'ubuntu-24.04'
 
 describe('external contribution boundaries', () => {
   for (const { file, workflow } of workflows) {

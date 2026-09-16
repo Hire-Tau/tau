@@ -32,7 +32,7 @@ permissions:
 jobs:
   docs:
     name: Build and check documentation
-    runs-on: "${{ github.event.repository.private && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}"
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       ASTRO_TELEMETRY_DISABLED: '1'

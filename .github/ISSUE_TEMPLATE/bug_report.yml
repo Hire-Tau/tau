@@ -1,0 +1,44 @@
+name: Bug report
+description: Something in Tau does not work the way it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. …
+        2. …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Tau version or commit
+      description: '`tau --version`, or the commit shown in Settings → About.'
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How is Tau installed
+      options:
+        - Self-hosted via setup.sh
+        - Self-hosted from source
+        - Docker image
+        - Tau Cloud (hiretau.ai)
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Relevant output from `tau-api`, `tau-worker` or the CLI. Remove tokens and secrets first.
+      render: text

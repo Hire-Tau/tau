@@ -57,8 +57,7 @@ die() {
 }
 
 # Exit code for a failure NO retry can fix. The platform's provision executor
-# (tau-platform apps/platform/src/services/jobs/executors/provision.ts,
-# TOOLKIT_EXIT_PERMANENT) maps exactly this code to a PermanentJobError so the
+# (TOOLKIT_EXIT_PERMANENT in its provision executor) maps exactly this code to a PermanentJobError so the
 # job fails now instead of after five backoff attempts. Every other non-zero
 # exit is retried. Today's only permanent case is the DigitalOcean account
 # droplet limit.
