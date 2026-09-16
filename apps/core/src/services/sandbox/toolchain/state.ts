@@ -272,6 +272,31 @@ function mapProvisionState(row: typeof sandboxToolchainProvisions.$inferSelect):
   }
 }
 
+/**
+ * The toolchain the provisioner actually realizes for a squad: the squad's own
+ * declaration merged with what its enabled, validated integrations contribute
+ * (packages, init hooks, readiness probes) plus the projection fingerprint.
+ *
+ * EVERY fingerprint that is compared against `sandbox_toolchain_provisions`
+ * must be computed from THIS config. Fingerprinting the bare squad config
+ * instead (which the status route once did) never matches the row the
+ * provisioner wrote once an integration contributes anything, so the UI
+ * reported `pending` — and offered "Retry provisioning" — for a toolchain the
+ * database said was `ready`.
+ */
+export async function loadDesiredToolchain(
+  squadId: string,
+  config: SandboxToolchainConfig | undefined
+): Promise<ManagedToolchainConfig> {
+  const effective = await loadEffectiveToolchain(squadId, config)
+  return {
+    ...effective.config,
+    initHooks: effective.initHooks,
+    readiness: effective.readiness,
+    integrationFingerprint: effective.integrationFingerprint,
+  }
+}
+
 export async function readToolchainReconcileSnapshot(
   squadId: string,
   sandboxId: string
@@ -303,14 +328,8 @@ export async function readToolchainReconcileSnapshot(
     sandbox.toolchain !== null
       ? (sandbox.toolchain as SandboxToolchainConfig)
       : undefined
-  const effective = await loadEffectiveToolchain(squadId, config)
   return {
-    config: {
-      ...effective.config,
-      initHooks: effective.initHooks,
-      readiness: effective.readiness,
-      integrationFingerprint: effective.integrationFingerprint,
-    },
+    config: await loadDesiredToolchain(squadId, config),
     provision: row.provision ? mapProvisionState(row.provision) : undefined,
     activation: row.activation
       ? { ...row.activation, appliedFingerprint: row.activation.appliedFingerprint ?? undefined }
