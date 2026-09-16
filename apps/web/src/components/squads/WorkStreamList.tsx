@@ -14,7 +14,7 @@ import { WorkStreamDetailModal, getWsDisplayState } from '../WorkStreamDetailMod
 import { WorkStreamGraph } from '../WorkStreamGraph'
 import { WorkStreamViewToggle, useWorkStreamViewMode } from '../WorkStreamViewToggle'
 import { WorkStreamList as GenericWorkStreamList, WS_ACTIVE_STATUSES } from '../WorkStreamList'
-import { ExpandIcon } from '../icons'
+import { GraphIcon } from '../icons'
 import { Modal } from '../Modal'
 import {
   CanvasSkeleton,
@@ -56,7 +56,7 @@ interface Props {
   compact?: boolean
   /** Make the list Active section collapsible */
   activeCollapsible?: boolean
-  /** Allow the compact Home explorer to open in a viewport-sized dialog. */
+  /** Give the compact Home explorer a button that opens the dependency graph in a dialog. */
   expandable?: boolean
   /** Show loading state instead of empty state when true */
   isLoading?: boolean
@@ -89,7 +89,6 @@ function kanbanColumnFor(workStream: WorkStream): WorkStreamDerivedState {
 }
 
 const WORK_VIEW_MODES = ['list', 'kanban', 'graph'] as const
-const HOME_VIEW_MODES = ['list', 'graph'] as const
 
 export function WorkStreamList({
   workStreams,
@@ -108,8 +107,12 @@ export function WorkStreamList({
   onLoadMoreDone,
 }: Props) {
   const surface = compact ? 'home' : 'work'
-  const modes = compact ? HOME_VIEW_MODES : WORK_VIEW_MODES
-  const [viewMode] = useWorkStreamViewMode(squadId, surface, modes)
+  const modes = WORK_VIEW_MODES
+  // The compact Home explorer has no view toggle: it is always a list inline
+  // and always the dependency graph in its dialog. Only the Work tab persists a
+  // chosen view.
+  const [workViewMode] = useWorkStreamViewMode(squadId, surface, modes)
+  const viewMode = compact ? 'list' : workViewMode
   const [selectedWs, setSelectedWsParam] = useURLStringState<string>('ws', '')
   const setSelectedWs = useCallback(
     (ref: string) => {
@@ -196,17 +199,17 @@ export function WorkStreamList({
           type="button"
           onClick={enterFullscreen}
           className="tau-button rounded-md p-1.5 text-muted transition-colors hover:bg-surface-hover hover:text-primary"
-          aria-label="Expand active work streams"
-          title="Expand active work streams"
+          aria-label="Show work stream graph"
+          title="Show work stream graph"
         >
-          <ExpandIcon className="h-4 w-4" />
+          <GraphIcon className="h-4 w-4" />
         </button>
       )}
     </>
   )
 
   const renderLoadingState = (showExpand: boolean, inFullscreen: boolean) => {
-    const visibleViewMode = compact && !inFullscreen ? 'list' : viewMode
+    const visibleViewMode = compact && inFullscreen ? 'graph' : viewMode
     if (visibleViewMode === 'graph') {
       return (
         <div className="flex h-full flex-col gap-2">
@@ -248,7 +251,7 @@ export function WorkStreamList({
   }
 
   const renderExplorer = (showExpand: boolean, inFullscreen: boolean) => {
-    const visibleViewMode = compact && !inFullscreen ? 'list' : viewMode
+    const visibleViewMode = compact && inFullscreen ? 'graph' : viewMode
     return (
       <div className="flex flex-col h-full">
         {!compact && !inFullscreen && (
@@ -372,15 +375,7 @@ export function WorkStreamList({
   return (
     <>
       {renderExplorer(true, false)}
-      <Modal
-        isOpen
-        onClose={exitFullscreen}
-        title="Active Work Streams"
-        headerActions={<WorkStreamViewToggle squadId={squadId} surface={surface} modes={modes} />}
-        size="default"
-        maxWidth="wide"
-        noChildPadding
-      >
+      <Modal isOpen onClose={exitFullscreen} title="Work Stream Graph" size="default" maxWidth="wide" noChildPadding>
         <div ref={fullscreenContentRef} tabIndex={-1} className="min-h-0 outline-none">
           {renderExplorer(false, true)}
         </div>
