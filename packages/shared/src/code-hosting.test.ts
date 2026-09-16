@@ -142,6 +142,43 @@ describe('tracked resources', () => {
     expect(parseTrackedResourceUrl('https://linear.app/acme/issue/ENG-0')).toBeNull()
   })
 
+  test('a comment fragment or query string still names the issue or pull request it hangs off', () => {
+    // The link a person copies out of a notification points at the comment, not the resource.
+    expect(parseTrackedResourceUrl('https://linear.app/acme/issue/ENG-123/some-slug#comment-9f2c1b')).toEqual({
+      integration: 'linear',
+      repository: 'eng',
+      kind: 'issue',
+      number: 123,
+    })
+    expect(parseTrackedResourceUrl('https://linear.app/acme/issue/ENG-123#comment-9f2c1b')).toEqual({
+      integration: 'linear',
+      repository: 'eng',
+      kind: 'issue',
+      number: 123,
+    })
+    expect(parseTrackedResourceUrl('https://linear.app/acme/issue/ENG-123?workspace=acme')).toEqual({
+      integration: 'linear',
+      repository: 'eng',
+      kind: 'issue',
+      number: 123,
+    })
+    expect(parseTrackedResourceUrl('https://github.com/acme/widgets/issues/12#issuecomment-4412')).toEqual({
+      integration: 'github',
+      repository: 'acme/widgets',
+      kind: 'issue',
+      number: 12,
+    })
+    expect(parseTrackedResourceUrl('https://github.com/acme/widgets/pull/34/?diff=split#discussion_r1')).toEqual({
+      integration: 'github',
+      repository: 'acme/widgets',
+      kind: 'pull_request',
+      number: 34,
+    })
+    // A fragment is not a path: it can never turn a non-resource link into one.
+    expect(parseTrackedResourceUrl('https://github.com/acme/widgets#issues/12')).toBeNull()
+    expect(parseTrackedResourceUrl('https://linear.app/acme/issue/ENG-123/slug/more#comment-1')).toBeNull()
+  })
+
   test('parseTrackedResourceReference parses both provider forms and rejects garbage', () => {
     expect(parseTrackedResourceReference('acme/widgets#12')).toEqual({
       integration: 'github',

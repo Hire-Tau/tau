@@ -55,8 +55,16 @@ export const linearTrackedResourceAdapter: TrackedResourceAdapter = {
   /**
    * Reads the squad's own connection. An issue this connection cannot see is reported as unknown
    * (null); a connection that cannot be used at all is a different answer, and says so.
+   *
+   * Linear's `issue(id:)` accepts either form of identity, so a resource that names only the
+   * issue's UUID — all a comment delivery ever carries — is looked up by that UUID.
    */
   async describe(resource, squadId) {
+    const id =
+      resource.repository && resource.number
+        ? trackedResourceLabel({ ...resource, repository: resource.repository, number: resource.number })
+        : resource.externalId
+    if (!id) return null
     const resolved = await resolveLinearConnection(squadId)
     // The squad still holds the assignment; what it lacks is a credential it may use right now.
     if (!resolved) throw new TrackedResourceError('Linear connection needs revalidation before linking', 409)
@@ -64,7 +72,7 @@ export const linearTrackedResourceAdapter: TrackedResourceAdapter = {
     try {
       // Provider failures are identity answers here, not diagnostics: never leak provider text.
       ;({ issue } = await linearQuery<{ issue?: Record<string, unknown> | null }>(resolved.credential, ISSUE_QUERY, {
-        id: trackedResourceLabel(resource),
+        id,
       }))
     } catch {
       return null

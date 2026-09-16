@@ -230,9 +230,12 @@ export function deliveryPullRequests(metadata: unknown): ResolvedTrackedResource
 export function primaryDeliveryPullRequest(metadata: unknown): ResolvedTrackedResource | null {
   return resolveTrackedResources(metadata).find((resource) => resource.source === 'delivery') ?? null
 }
-const GITHUB_RESOURCE_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(issues|pull)\/([1-9][0-9]*)\/?$/i
+// A link copied out of a notification usually points at a comment, so a trailing `?query` or
+// `#fragment` is part of the ordinary form. It is never part of the path: it cannot introduce a
+// resource the path itself does not already name.
+const GITHUB_RESOURCE_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(issues|pull)\/([1-9][0-9]*)\/?(?:[?#].*)?$/i
 const LINEAR_RESOURCE_URL =
-  /^https:\/\/linear\.app\/[\w.-]+\/issue\/([A-Za-z][A-Za-z0-9]{0,9})-([1-9][0-9]*)(?:\/[^/]*)?\/?$/i
+  /^https:\/\/linear\.app\/[\w.-]+\/issue\/([A-Za-z][A-Za-z0-9]{0,9})-([1-9][0-9]*)(?:\/[^/?#]*)?\/?(?:[?#].*)?$/i
 const TRACKED_RESOURCE_REFERENCE = /^([A-Za-z][A-Za-z0-9]{0,9})-([1-9]\d*)$/
 export function parseTrackedResourceUrl(url: string) {
   const trimmed = url.trim()

@@ -2552,10 +2552,17 @@ test('a Linear comment reaches the stream that tracks its issue instead of the s
     expect(tracked).toHaveLength(1)
     expect(tracked[0]!.metadata).toMatchObject({ source: 'integration-notification', workStreamId: stream!.id })
     // Another issue in the same team is not this link: the squad rule handles it instead.
-    eventIds.push(await publishIntegrationOutput('linear', linearComment(`${issueId}-other`), authority))
+    const otherId = (await publishIntegrationOutput('linear', linearComment(`${issueId}-other`), authority))!
+    eventIds.push(otherId)
     const all = await db.select().from(inbox).where(eq(inbox.recipientId, managerId))
     expect(all).toHaveLength(2)
-    expect(all.find((row) => row.id !== tracked[0]!.id)!.metadata?.workStreamId).toBeUndefined()
+    const fallback = all.find((row) => row.id !== tracked[0]!.id)!
+    expect(fallback.metadata?.workStreamId).toBeUndefined()
+    // The comment names its issue by UUID only; the block still says what to track and how.
+    expect(fallback.content).toContain(`Event reference: ${otherId}`)
+    expect(fallback.content).toContain(`Tracked resource: issue ${issueId}-other`)
+    expect(fallback.content).toContain(`--squad ${squadId} --from-event ${otherId}`)
+    expect(fallback.content).toContain(`tau workstream track <work-stream> --event ${otherId}`)
   }, 'linear')
 })
 
@@ -2581,6 +2588,84 @@ test('a tracked Linear issue fans its events out to the stream that follows it',
     // Another team's issue with the same number is a different resource.
     eventIds.push(await publishIntegrationOutput('linear', linearComment(`${issueId}-other`), authority))
     expect(await deliveries(id)).toHaveLength(1)
+  }, 'linear')
+})
+
+test('a Linear comment rule completes the issue through the connection before recording it', async () => {
+  await withNativeRouting(async (connectionId) => {
+    const flow = definition()
+    delete flow.subscriptions
+    flow.completion.followChanges = true
+    await setLinearRule({ type: 'start-workstream', workflow: { kind: 'inline', definition: flow } })
+    const issueId = randomUUID()
+    const { getSecretStore } = await import('../../secrets')
+    const store = getSecretStore()
+    await store.initialize()
+    await store.set(`fixture:${prefix}`, 'lin_api_fixture', 'test')
+    const queries: unknown[] = []
+    const originalFetch = globalThis.fetch
+    // Stand in for Linear's GraphQL endpoint, as the ingress tests do.
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      queries.push(JSON.parse(String(init?.body)))
+      return Response.json({
+        data: { issue: { id: issueId, url: 'https://linear.app/acme/issue/ENG-99', number: 99, team: { key: 'ENG' } } },
+      })
+    }) as unknown as typeof fetch
+    try {
+      const eventId = (await publishIntegrationOutput('linear', linearComment(issueId), {
+        kind: 'connection',
+        connectionId,
+        squadId,
+      }))!
+      eventIds.push(eventId)
+      // The comment carries only the issue UUID, so the team key and number come from the provider.
+      expect((queries[0] as { variables: unknown }).variables).toEqual({ id: issueId })
+      const runs = await db
+        .select()
+        .from(integrationOutputTriggerRuns)
+        .where(eq(integrationOutputTriggerRuns.resourceKey, issueId))
+      expect(runs).toHaveLength(1)
+      const created = await WorkStream.mustFind(runs[0]!.workStreamId!)
+      const metadata = created.metadata as Record<string, any>
+      expect(metadata.tracked).toHaveLength(1)
+      expect(metadata.tracked[0]).toMatchObject({
+        integration: 'linear',
+        repository: 'eng',
+        kind: 'issue',
+        number: 99,
+        externalId: issueId,
+        url: 'https://linear.app/acme/issue/ENG-99',
+        connectionId,
+        origin: { eventId, resourceKey: issueId, output: 'issue.comment' },
+      })
+    } finally {
+      globalThis.fetch = originalFetch
+      await store.delete(`fixture:${prefix}`)
+    }
+  }, 'linear')
+})
+
+test('a Linear comment rule still starts work when the issue cannot be described', async () => {
+  await withNativeRouting(async (connectionId) => {
+    const flow = definition()
+    delete flow.subscriptions
+    flow.completion.followChanges = true
+    await setLinearRule({ type: 'start-workstream', workflow: { kind: 'inline', definition: flow } })
+    const issueId = randomUUID()
+    // No usable credential: the squad keeps its assignment but nothing may be read with it.
+    const eventId = (await publishIntegrationOutput('linear', linearComment(issueId), {
+      kind: 'connection',
+      connectionId,
+      squadId,
+    }))!
+    eventIds.push(eventId)
+    const runs = await db
+      .select()
+      .from(integrationOutputTriggerRuns)
+      .where(eq(integrationOutputTriggerRuns.resourceKey, issueId))
+    expect(runs).toHaveLength(1)
+    const created = await WorkStream.mustFind(runs[0]!.workStreamId!)
+    expect((created.metadata as Record<string, any>).tracked).toBeUndefined()
   }, 'linear')
 })
 

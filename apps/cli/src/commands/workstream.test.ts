@@ -684,6 +684,14 @@ describe('workstream CLI commands', () => {
       expect(apiPost).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', { reference: 'ENG-12' })
     })
 
+    it('keeps --connection on a Linear reference instead of silently dropping it', async () => {
+      await run(['workstream', 'track', 'stream-1', '--issue', 'ENG-12', '--connection', 'conn-1'])
+      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', {
+        reference: 'ENG-12',
+        connectionId: 'conn-1',
+      })
+    })
+
     it('tracks a Linear issue by its linear.app URL', async () => {
       await run(['workstream', 'track', 'stream-1', '--url', 'https://linear.app/acme/issue/ENG-12/fix-thing'])
       expect(apiPost).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', {
@@ -757,6 +765,14 @@ describe('workstream CLI commands', () => {
     it('untracks a Linear issue given as KEY-123, sending a reference', async () => {
       await run(['workstream', 'untrack', 'stream-1', '--issue', 'ENG-12'])
       expect(apiDelete).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', { reference: 'ENG-12' })
+    })
+
+    it('keeps --connection on a Linear reference', async () => {
+      await run(['workstream', 'untrack', 'stream-1', '--issue', 'ENG-12', '--connection', 'conn-1'])
+      expect(apiDelete).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', {
+        reference: 'ENG-12',
+        connectionId: 'conn-1',
+      })
     })
 
     it('rejects --pr given a Linear reference', async () => {

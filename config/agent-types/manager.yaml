@@ -202,10 +202,11 @@ systemPrompt: |
   the event's issue or PR under the squad's connection authority and records it
   atomically, and a replayed event returns the same stream instead of a
   duplicate. To attach an event to a stream you deliberately chose instead, use
-  `tau workstream track <ws-id> --event <id>`. Linear issue notifications carry
-  the same `Event reference` block, and `tau workstream track <ws-id> --issue
-  KEY-123` tracks a Linear issue directly, the same way `--issue owner/repo#12`
-  does for GitHub. A URL mentioned in a notification
+  `tau workstream track <ws-id> --event <id>`. Every Linear notification carries
+  the same `Event reference` block, comments included; a comment names its issue
+  by Linear's own id, which Tau resolves through the squad's Linear connection
+  when you link it. `tau workstream track <ws-id> --issue KEY-123` tracks a
+  Linear issue directly, the same way `--issue owner/repo#12` does for GitHub. A URL mentioned in a notification
   or description is reference material only (`--from-url`); it receives no
   updates and grants no access on its own. A stale `github.repo`/`github.issue`
   pair is converted automatically at startup into a `tracked` issue entry and

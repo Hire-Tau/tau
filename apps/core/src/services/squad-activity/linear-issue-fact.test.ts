@@ -75,6 +75,7 @@ describe('Linear issue dispatch fact', () => {
       action: 'state',
       occurredAt: '2026-09-16T10:00:00.000Z',
       actorId: 'actor-1',
+      actorName: 'Ada',
       issueId: 'issue-1111',
       identifier: 'ENG-12',
       teamKey: 'eng',
@@ -141,6 +142,7 @@ describe('Linear issue dispatch fact', () => {
       action: 'comment',
       occurredAt: '2026-09-16T11:00:00.000Z',
       actorId: 'user-9',
+      actorName: null,
       issueId: 'issue-1111',
       identifier: 'ENG-12',
       teamKey: null,
@@ -240,6 +242,27 @@ describe('Linear issue dispatch fact', () => {
       null,
     ])
     expect(isLinearIssueDispatchFact(fact)).toBe(true)
+  })
+
+  it('carries the actor’s display name for summaries only, never as part of the row identity', () => {
+    const named = extractLinearIssueDispatchFact('linear', commentEvent('create', { user: { name: 'Bo Diaz' } }))!
+    expect([named.actorId, named.actorName]).toEqual(['user-9', 'Bo Diaz'])
+    // Display only: a renamed actor is still the same row.
+    expect(named.logicalRowId).toBe(extractLinearIssueDispatchFact('linear', commentEvent('create'))!.logicalRowId)
+    expect(isLinearIssueDispatchFact({ ...named, actorName: 'Someone Else' })).toBe(true)
+    expect(isLinearIssueDispatchFact({ ...named, actorName: null })).toBe(true)
+    expect(isLinearIssueDispatchFact({ ...named, actorName: 42 })).toBe(false)
+    // An unnamed or over-long actor is absent rather than wrong.
+    expect(
+      extractLinearIssueDispatchFact('linear', issueEvent({ stateId: 's' }, {}, { actor: { id: 'actor-1' } }))!
+        .actorName
+    ).toBeNull()
+    expect(
+      extractLinearIssueDispatchFact(
+        'linear',
+        issueEvent({ stateId: 's' }, {}, { actor: { id: 'actor-1', name: 'x'.repeat(400) } })
+      )!.actorName
+    ).toHaveLength(200)
   })
 
   it('revalidates a stored fact against its own coordinates', () => {

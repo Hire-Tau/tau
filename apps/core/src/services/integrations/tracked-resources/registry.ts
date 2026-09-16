@@ -20,10 +20,18 @@ export interface TrackedResourceAdapter {
   authorizeSquad(squadId: string, connectionId?: string): Promise<boolean>
   /** Resolve the provider's own view of the resource: its native id, canonical URL and identity. */
   describe?(
-    resource: TrackedResource,
+    resource: DescribableResource,
     squadId: string
   ): Promise<Partial<Pick<TrackedResource, 'externalId' | 'url' | 'repository' | 'number'>> | null>
 }
+
+/**
+ * What `describe` is asked about: as much identity as the caller holds. A written link names
+ * `repository` and `number`; a fact that carries only a provider-native id (a Linear comment
+ * names just the issue UUID) names `externalId` instead.
+ */
+export type DescribableResource = Omit<TrackedResource, 'repository' | 'number'> &
+  Partial<Pick<TrackedResource, 'repository' | 'number'>>
 
 /** Identity of a tracked link, as much of it as the caller knows. */
 export type TrackedResourceIdentity = {

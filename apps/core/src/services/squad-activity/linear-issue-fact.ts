@@ -6,6 +6,8 @@ export interface LinearIssueDispatchFact {
   action: 'assigned' | 'unassigned' | 'state' | 'title' | 'labels' | 'updated' | 'comment' | 'comment-edited'
   occurredAt: string
   actorId: string | null
+  /** Display only: the actor's name when Linear named one. Never part of the row identity. */
+  actorName: string | null
   /** Linear's own issue id — the only identity a comment delivery always carries. */
   issueId: string
   identifier: string | null
@@ -91,6 +93,8 @@ export function isLinearIssueDispatchFact(value: unknown): value is LinearIssueD
     ACTIONS[eventType].has(action) &&
     timestamp(fact.occurredAt) === fact.occurredAt &&
     (fact.actorId === null || identity(fact.actorId) === fact.actorId) &&
+    // Display-only, so a stored name is accepted as it stands: it identifies nothing.
+    (fact.actorName === null || (typeof fact.actorName === 'string' && [...fact.actorName].length <= TITLE_LIMIT)) &&
     identity(fact.issueId) === fact.issueId &&
     (fact.identifier === null || (typeof fact.identifier === 'string' && [...fact.identifier].length <= 100)) &&
     (fact.teamKey === null || (typeof fact.teamKey === 'string' && TEAM_KEY.test(fact.teamKey))) &&
@@ -194,6 +198,8 @@ export function extractLinearIssueDispatchFact(
         : '') || null
   if (detail) detail = bounded(detail, DETAIL_LIMIT)
 
+  // Linear names the actor on the payload; a comment delivery names its author instead.
+  const actorName = string(object(payload.actor)?.name) ?? string(object(data.user)?.name)
   const teamKey = string(object(source.team)?.key)?.toLowerCase() ?? null
   const identifierValue = string(source.identifier)
   const providerDeliveryId =
@@ -206,6 +212,7 @@ export function extractLinearIssueDispatchFact(
     occurredAt,
     // Who acted on this delivery (the editor of an edited comment), not necessarily its author.
     actorId: identity(object(payload.actor)?.id) ?? identity(data.userId),
+    actorName: actorName ? bounded(actorName, TITLE_LIMIT) : null,
     issueId,
     identifier: identifierValue ? bounded(identifierValue, 100) : null,
     teamKey: teamKey && TEAM_KEY.test(teamKey) ? teamKey : null,

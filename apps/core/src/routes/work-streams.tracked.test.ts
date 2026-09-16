@@ -1,5 +1,5 @@
 import { useEnabledIntegrationFixtures } from '../test-utils/enabled-integrations'
-useEnabledIntegrationFixtures('github')
+useEnabledIntegrationFixtures('github', 'linear')
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, spyOn } from 'bun:test'
 import { createHash, randomUUID } from 'node:crypto'
 import { eq, inArray, like } from 'drizzle-orm'
@@ -16,6 +16,8 @@ import {
   inbox,
   integrationOutputDeliveries,
   integrationOutputEvents,
+  integrationConnections,
+  integrationConnectionAssignments,
   settings,
 } from '../db/schema'
 import { AgentType } from '../entities/AgentType'
@@ -161,6 +163,96 @@ describe('work-stream tracked-resource routes', () => {
     const reused = (await again.json()) as { id: string; reusedFromEvent: boolean }
     expect(reused).toMatchObject({ id: stream.id, reusedFromEvent: true })
     expect(await db.select().from(workStreams).where(eq(workStreams.squadId, testSquadId))).toHaveLength(1)
+  })
+
+  /** A Linear connection the squad may use, with a credential the describe step can read. */
+  async function createLinearConnection() {
+    const { getSecretStore } = await import('../services/secrets')
+    const store = getSecretStore()
+    await store.initialize()
+    const id = randomUUID()
+    const revision = randomUUID()
+    const credentialRef = `__integration-test:linear:${id}`
+    await store.set(credentialRef, 'lin_api_fixture', 'test')
+    await db.insert(integrationConnections).values({
+      id,
+      providerKey: 'linear',
+      adapterVersion: 1,
+      displayName: 'linear-fixture',
+      configuration: { version: 1 },
+      credentialRef,
+      enabled: true,
+      authState: 'authenticated',
+      healthState: 'healthy',
+      materialRevision: revision,
+      validatedRevision: revision,
+      validatedAt: new Date(),
+      validationExpiresAt: new Date(Date.now() + 900_000),
+    })
+    await db
+      .insert(integrationConnectionAssignments)
+      .values({ squadId: testSquadId, providerKey: 'linear', connectionId: id, isDefault: true })
+    return {
+      id,
+      dispose: async () => {
+        await db.delete(integrationConnectionAssignments).where(eq(integrationConnectionAssignments.connectionId, id))
+        await db.delete(integrationConnections).where(eq(integrationConnections.id, id))
+        await store.delete(credentialRef)
+      },
+    }
+  }
+
+  it('creates a work stream from a Linear comment event, resolving the issue at link time', async () => {
+    const linear = await createLinearConnection()
+    const issueId = randomUUID()
+    const [row] = await db
+      .insert(integrationOutputEvents)
+      .values({
+        integration: 'linear',
+        sourceKey: `linear:${testPrefix}`,
+        eventKey: randomUUID(),
+        authority: { kind: 'connection', connectionId: linear.id, squadId: testSquadId },
+        // A comment delivery names its issue by UUID only: no team key, no number.
+        fact: {
+          output: 'issue.comment',
+          version: 1,
+          eventKey: randomUUID(),
+          resourceKey: issueId,
+          occurredAt: new Date().toISOString(),
+          data: { issue: { id: issueId }, teamId: 'team-uuid', actor: 'user-a', action: 'create' },
+          subject: 'Linear comment',
+          body: 'Could you take another look?',
+        },
+      })
+      .returning()
+    eventIds.push(row!.id)
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async () =>
+      Response.json({
+        data: { issue: { id: issueId, url: 'https://linear.app/acme/issue/ENG-77', number: 77, team: { key: 'ENG' } } },
+      })) as unknown as typeof fetch
+    try {
+      const created = await apiFetch('/api/workstreams', {
+        method: 'POST',
+        body: { squadId: testSquadId, title: `${testPrefix} from comment`, integrationEventId: row!.id },
+      })
+      expect(created.status).toBe(201)
+      const stream = (await created.json()) as { metadata: Record<string, any> }
+      expect(stream.metadata.tracked).toHaveLength(1)
+      expect(stream.metadata.tracked[0]).toMatchObject({
+        integration: 'linear',
+        repository: 'eng',
+        kind: 'issue',
+        number: 77,
+        externalId: issueId,
+        url: 'https://linear.app/acme/issue/ENG-77',
+        connectionId: linear.id,
+        origin: { eventId: row!.id, output: 'issue.comment' },
+      })
+    } finally {
+      globalThis.fetch = originalFetch
+      await linear.dispose()
+    }
   })
 
   it('refuses to create from an event another squad observed', async () => {

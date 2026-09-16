@@ -58,12 +58,12 @@ function issueFact(number: number, changes: Partial<IntegrationOutputFact> = {})
     ...changes,
   }
 }
-async function insertEvent(fact: IntegrationOutputFact, authority: IntegrationOutputAuthority) {
+async function insertEvent(fact: IntegrationOutputFact, authority: IntegrationOutputAuthority, integration = 'github') {
   const [row] = await db
     .insert(integrationOutputEvents)
     .values({
-      integration: 'github',
-      sourceKey: `github:${prefix}`,
+      integration,
+      sourceKey: `${integration}:${prefix}`,
       eventKey: fact.eventKey,
       authority,
       fact,
@@ -694,6 +694,7 @@ test('Linear links are authorized by the squad’s own assignment, and Linear ha
     await connection.dispose()
   }
   const connection = await createLinearConnection(squadId)
+  const fetching = stubLinearIssue(linearIssue)
   try {
     await authorizeTrackedResource(squadId, issue)
     await authorizeTrackedResource(squadId, { ...issue, connectionId: connection.id })
@@ -701,8 +702,74 @@ test('Linear links are authorized by the squad’s own assignment, and Linear ha
     await expect(authorizeTrackedResource(squadId, { ...issue, connectionId: randomUUID() })).rejects.toMatchObject({
       status: 403,
     })
+    // A reference may name the account it belongs to; it is checked, never quietly ignored.
+    expect(
+      await resolveTrackedResourceRequest(squadId, { reference: 'ENG-12', connectionId: connection.id })
+    ).toMatchObject({ integration: 'linear', repository: 'eng', number: 12, connectionId: connection.id })
+    await expect(
+      resolveTrackedResourceRequest(squadId, { reference: 'ENG-12', connectionId: randomUUID() })
+    ).rejects.toMatchObject({ status: 403 })
   } finally {
+    fetching.mockRestore()
     await connection.dispose()
+  }
+})
+
+/** A Linear comment fact: Linear names the issue by UUID only, exactly as it delivers it. */
+function linearCommentFact(issueId: string): IntegrationOutputFact {
+  return {
+    output: 'issue.comment',
+    version: 1,
+    eventKey: randomUUID(),
+    resourceKey: issueId,
+    occurredAt: new Date().toISOString(),
+    data: { issue: { id: issueId }, teamId: 'team-uuid', actor: 'user-a', action: 'create' },
+    subject: 'Linear comment',
+    body: 'Could you take another look?',
+  }
+}
+
+test('a Linear comment event is completed through the squad’s connection, by the issue’s own id', async () => {
+  const linear = await createLinearConnection(squadId)
+  const event = await insertEvent(
+    linearCommentFact(linearIssue.id),
+    { kind: 'connection', connectionId: linear.id, squadId },
+    'linear'
+  )
+  const queries: unknown[] = []
+  const fetching = stubLinearIssue(linearIssue, queries)
+  try {
+    // The fact carries no team key or number, so the provider is asked by the UUID it does carry.
+    expect(await resolveEventTrackedResource(event.id, squadId)).toEqual({
+      integration: 'linear',
+      repository: 'eng',
+      kind: 'issue',
+      number: 12,
+      externalId: linearIssue.id,
+      url: linearIssue.url,
+      connectionId: linear.id,
+      origin: {
+        eventId: event.id,
+        resourceKey: linearIssue.id,
+        output: 'issue.comment',
+        occurredAt: event.fact.occurredAt,
+      },
+    })
+    expect((queries[0] as { variables: unknown }).variables).toEqual({ id: linearIssue.id })
+    // Correlation is still not access: another squad never reaches the provider at all.
+    await expect(resolveEventTrackedResource(event.id, otherSquadId)).rejects.toMatchObject({ status: 403 })
+    expect(queries).toHaveLength(1)
+  } finally {
+    fetching.mockRestore()
+  }
+  // An issue this connection cannot read is not a link this squad may keep.
+  const missing = stubLinearIssue(null)
+  try {
+    await expect(resolveEventTrackedResource(event.id, squadId)).rejects.toMatchObject({ status: 404 })
+  } finally {
+    missing.mockRestore()
+    await linear.dispose()
+    linearConnections.length = 0
   }
 })
 

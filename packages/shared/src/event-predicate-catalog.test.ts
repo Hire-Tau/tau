@@ -30,6 +30,17 @@ describe('linear output catalog', () => {
     }
   })
 
+  test('descriptions name the webhook source and the state field is the workflow state type', () => {
+    for (const entry of linearOutputCatalog) {
+      // Linear has no polling path; a missed webhook is not recovered by one.
+      expect(entry.description).toBe(`${entry.title} from Linear webhooks.`)
+      expect(entry.fields.state?.description).toBe('Linear workflow state type (e.g. completed, canceled, started).')
+      expect(entry.predicateFields?.state?.description).toBe(
+        'Linear workflow state type (e.g. completed, canceled, started).'
+      )
+    }
+  })
+
   test('every output carries the shared field set', () => {
     for (const entry of linearOutputCatalog) {
       expect(Object.keys(entry.fields).sort()).toEqual(Object.keys(expectedFieldTypes).sort())

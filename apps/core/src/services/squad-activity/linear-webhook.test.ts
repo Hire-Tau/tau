@@ -139,7 +139,8 @@ describe('verified Linear webhook Activity', () => {
       kind: 'issue',
       sourceFamily: 'linear-issue',
       sourceGroupId: `hook:${eventId}:${squad.id}`,
-      summary: '[Issue ENG-12 moved to In Progress] Ship the tracked issue · by actor-1',
+      // The actor reads as the person Linear named, not the raw user id.
+      summary: '[Issue ENG-12 moved to In Progress] Ship the tracked issue · by Ada',
     })
     expect(streams.get(first.id)!.at.toISOString()).toBe('2026-09-10T10:00:00.000Z')
     // The oldest stream keeps the fact's own logical identity; the next gets a derived one.
@@ -161,9 +162,10 @@ describe('verified Linear webhook Activity', () => {
     const all = await rowsForSquad()
     expect(all).toHaveLength(6)
     expect([...new Set(all.map((row) => row.summary))].sort()).toEqual([
+      // A comment delivery that names no display name falls back to the actor id.
       '[Issue ENG-12 comment edited] Ship the tracked issue · by user-9',
       '[Issue ENG-12 comment] Ship the tracked issue · by user-9',
-      '[Issue ENG-12 moved to In Progress] Ship the tracked issue · by actor-1',
+      '[Issue ENG-12 moved to In Progress] Ship the tracked issue · by Ada',
     ])
 
     // Repair over the window backfills a lost row and never deletes the surviving one.

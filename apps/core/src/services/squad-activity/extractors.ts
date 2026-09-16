@@ -522,9 +522,9 @@ function linearIssueLabel(fact: LinearIssueDispatchFact): string {
 export function extractLinearIssueDispatch(snapshot: LinearIssueSnapshot): ExtractedSquadActivity[] {
   // A title-less issue (or an actor-less delivery) must not leave a dangling
   // separator or a doubled space behind the marker.
-  const detail = [snapshot.fact.title.trim(), snapshot.fact.actorId ? `by ${snapshot.fact.actorId}` : '']
-    .filter(Boolean)
-    .join(' · ')
+  // The name Linear gave the actor reads better than its id, and neither identifies the row.
+  const actor = snapshot.fact.actorName ?? snapshot.fact.actorId
+  const detail = [snapshot.fact.title.trim(), actor ? `by ${actor}` : ''].filter(Boolean).join(' · ')
   const summary = structuralSummary(
     `[Issue ${linearIssueLabel(snapshot.fact)} ${describeLinearIssueFact(snapshot.fact)}]`,
     detail

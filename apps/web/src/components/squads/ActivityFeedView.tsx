@@ -368,15 +368,24 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
               return (
                 <li key={item.id}>
                   {item.ref.type === 'pr' || item.ref.type === 'issue' ? (
-                    <a
-                      className={className}
-                      href={item.ref.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      data-activity-layout={isGlobalFeed ? 'global' : 'squad'}
-                    >
-                      {content}
-                    </a>
+                    item.ref.url ? (
+                      <a
+                        className={className}
+                        href={item.ref.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        data-activity-layout={isGlobalFeed ? 'global' : 'squad'}
+                      >
+                        {content}
+                      </a>
+                    ) : (
+                      // Nothing to open: a tracked issue whose provider link the squad never
+                      // recorded. The row is still the record of what happened, so it reads as
+                      // text rather than as an anchor that would reload the page.
+                      <div className={className} data-activity-layout={isGlobalFeed ? 'global' : 'squad'}>
+                        {content}
+                      </div>
+                    )
                   ) : (
                     <Link
                       className={className}

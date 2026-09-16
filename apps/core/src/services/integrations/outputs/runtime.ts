@@ -741,6 +741,36 @@ export async function outputDeliveryHistory(workStreamId: string) {
     .limit(100)
 }
 
+/**
+ * Complete a fact that names its resource natively — a Linear comment carries only the issue UUID
+ * — into a full tracked identity, through this squad's own connection.
+ *
+ * It runs before the creation transaction on purpose: the provider lookup reads the squad's
+ * connections and takes the squad row lock on its own database connection, which would deadlock
+ * against the lock the transaction below already holds. Only a squad whose rule would actually
+ * create a stream is worth a provider call, and an identity this squad cannot read is not an
+ * error: the stream is still created, just without a tracked entry.
+ */
+async function describeIdentityTarget(event: Event, squadId: string) {
+  if (event.authority.kind !== 'connection' || eventTrackedResource(event)) return null
+  if (!integrationOutputRegistry.adapter(event.integration)?.trackedIdentity?.(event.fact)) return null
+  const [squad] = await db.select().from(squads).where(eq(squads.id, squadId))
+  if (!squad || squad.status !== 'active') return null
+  const [connection] = await db
+    .select({ configuration: integrationConnections.configuration })
+    .from(integrationConnections)
+    .where(eq(integrationConnections.id, event.authority.connectionId))
+  const login = (connection?.configuration as { login?: string } | undefined)?.login ?? ''
+  if (!eventRuleTrigger(squad.metadata, event, login)) return null
+  try {
+    const { describeEventTrackedIdentity } = await import('../../work-streams/tracked-resources')
+    return await describeEventTrackedIdentity(event, squadId)
+  } catch (error) {
+    log.debug(`Event ${event.id} names a ${event.integration} resource squad ${squadId} cannot describe`, error)
+    return null
+  }
+}
+
 async function applyOutputTriggers(event: Event) {
   if (event.matchedAt || !(await shouldNotifyEvent(db, event))) return
   const candidates = await db
@@ -759,6 +789,7 @@ async function applyOutputTriggers(event: Event) {
   const errors: unknown[] = []
   for (const { id } of candidates) {
     try {
+      const identityTarget = await describeIdentityTarget(event, id)
       const created = await db.transaction(async (tx) => {
         // Same squad → stream order as admission. Creation and resource identity commit together.
         const [squad] = await tx.select().from(squads).where(eq(squads.id, id)).for('update')
@@ -897,11 +928,15 @@ async function applyOutputTriggers(event: Event) {
           // `connectionId` would record identity the squad was never authorized for, so such
           // events create the stream without a tracked entry. Every GitHub event carrying an
           // issue/PR identity today arrives under connection authority.
-          if (target && event.authority.kind === 'connection') {
+          // A natively identified fact is tracked by what the provider answered for it. The
+          // `bound` test above deliberately keeps using the fact's own target: a Linear comment
+          // still binds a legacy `linear.issueId` stream through its trigger metadata.
+          const trackable = target ?? identityTarget
+          if (trackable && event.authority.kind === 'connection') {
             const { mergeTracked } = await import('../../work-streams/tracked-resources')
             metadata.tracked = mergeTracked(metadata.tracked, [
               {
-                ...target,
+                ...trackable,
                 connectionId: event.authority.connectionId,
                 origin: {
                   eventId: event.id,

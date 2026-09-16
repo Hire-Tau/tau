@@ -349,6 +349,29 @@ test('offers the delivery checkbox only for pull request links and sends the fla
   })
 })
 
+test('never offers the delivery flag for a Linear issue link', async () => {
+  await renderTracked({}, async ({ dom, calls }) => {
+    const { document } = dom.window
+    const input = document.querySelector<HTMLInputElement>('input[type="text"]')!
+    const checkbox = document.querySelector<HTMLInputElement>('input[type="checkbox"]')!
+    await dom.act(async () => {
+      Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!.call(
+        input,
+        'https://linear.app/acme/issue/ENG-12/fix-thing'
+      )
+      input.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+    })
+    // Linear has no pull requests, so nothing about a Linear link can count toward delivery.
+    expect(checkbox.disabled).toBe(true)
+    await dom.act(async () =>
+      [...document.querySelectorAll('button')].find((button) => button.textContent === 'Add')!.click()
+    )
+    expect(JSON.parse(calls.find((call) => call.method === 'POST')!.body!)).toEqual({
+      url: 'https://linear.app/acme/issue/ENG-12/fix-thing',
+    })
+  })
+})
+
 test('marks a tracked pull request as delivery and refreshes the list', async () => {
   const marked = view({ resources: [deliveryPr, trackedPr, flaggedPr, trackedIssue] })
   await renderTracked({ view: marked }, async ({ dom, calls }) => {

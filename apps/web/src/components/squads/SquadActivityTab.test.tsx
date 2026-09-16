@@ -294,6 +294,57 @@ describe('SquadActivityTab issue rows', () => {
   })
 })
 
+describe('SquadActivityTab linkless issue rows', () => {
+  test('an issue row with no recorded link renders as text, not as an anchor to nowhere', async () => {
+    // A tracked Linear issue whose delivery carried no URL and whose link the squad never recorded.
+    const linkless: SquadActivityItem = {
+      ...issueItem,
+      id: '71:00000000-0000-4000-8000-000000000072',
+      summary: '[Issue ENG-12 comment] Ship the tracked issue · by Ada',
+      ref: { ...issueItem.ref, url: '' } as SquadActivityItem['ref'],
+    }
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const rendered = dom.createRoot()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    client.setQueryData(queryKeys.squads.activityInfinite(squadId, filters, accessSignature(new Set())), {
+      pages: [{ items: [linkless], hasMore: false, nextCursor: null }],
+      pageParams: [null],
+    })
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = mock(
+      async () =>
+        new dom.window.Response(JSON.stringify({ items: [linkless], hasMore: false, nextCursor: null }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }) as unknown as Response
+    ) as typeof fetch
+    try {
+      await dom.act(async () => {
+        rendered.root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={client}>
+              <PermissionsProvider usePermissions={permissionHook(new Set())}>
+                <WebSocketContext.Provider value={{ isConnected: true, subscribe: () => () => undefined }}>
+                  <SquadActivityTab squadId={squadId} squadSlug="tau" agents={[agent]} />
+                </WebSocketContext.Provider>
+              </PermissionsProvider>
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+        await Bun.sleep(20)
+      })
+      const { document } = dom.window
+      expect(document.body.textContent).toContain('[Issue ENG-12 comment] Ship the tracked issue · by Ada')
+      // No anchor at all for the row: an empty href would just reload the page.
+      expect([...document.querySelectorAll('a')].map((anchor) => anchor.getAttribute('href'))).not.toContain('')
+      expect(document.querySelector('[aria-label="Open work stream #12"]')).toBeDefined()
+    } finally {
+      globalThis.fetch = originalFetch
+      await dom.cleanup()
+    }
+  })
+})
+
 describe('activity timestamps', () => {
   const now = new Date('2026-08-27T15:00:00.000Z')
   test('today shows time only; other days add month+day, never a year', () => {

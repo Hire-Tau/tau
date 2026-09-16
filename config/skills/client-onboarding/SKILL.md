@@ -1,6 +1,6 @@
 ---
 name: client-onboarding
-description: "End-to-end guide for onboarding a new client — configure secrets, create squads, set up integrations, and verify everything works."
+description: 'End-to-end guide for onboarding a new client — configure secrets, create squads, set up integrations, and verify everything works.'
 ---
 
 # Client Onboarding
@@ -37,6 +37,7 @@ tau squad list      # Should return empty or existing squads
 Configure the essential secrets first, since everything else depends on them.
 
 **Secret handling rules:**
+
 - For **sensitive secrets** (API keys, tokens, passwords): direct the human to
   **the matching Settings → Integrations card or AI Providers form**. Never ask them to paste secrets in chat. If
   they volunteer a value, you can set it for them via CLI.
@@ -52,6 +53,7 @@ Configure the essential secrets first, since everything else depends on them.
 4. `OPENAI_API_KEY` — for memory embeddings and voice (recommended)
 
 **Ask the human:**
+
 - Which AI provider(s) do they want to use? (Anthropic, OpenAI, Google)
 - Do they have API keys ready, or do they want to use OAuth?
 - Do agents need to access private GitHub repos?
@@ -84,10 +86,12 @@ tau squad list
 **Skill:** `setup-github-webhooks`
 
 **Ask the human:**
+
 - Which GitHub repositories should Tau watch?
 - Should issues be routed by labels, or should all issues go to one squad?
 
 Steps:
+
 1. Configure direct webhook delivery in **Settings → Integrations → GitHub → Webhook delivery** (optional when managed relay or polling is sufficient)
 2. Create the webhook on each repo via `gh` CLI
 3. Configure squad metadata for routing (`tau squad set-meta ... github`)
@@ -98,11 +102,13 @@ Steps:
 **Skill:** `setup-linear-integration`
 
 **Ask the human:**
+
 - Do they use Linear for project management?
 - Which Linear team(s) should route to which squad(s)?
 
 Steps:
-1. Set `LINEAR_WEBHOOK_SECRET` and `LINEAR_USER_ID`
+
+1. Set the webhook signing secret in Settings → Integrations → Linear → Webhook delivery (`PUT /api/integrations/providers/linear/webhook`); the `LINEAR_WEBHOOK_SECRET` env var is legacy and imported only once
 2. Walk the human through creating the webhook in Linear's UI
 3. Configure squad metadata for team routing
 4. Verify with `tau webhook status linear`
@@ -185,23 +191,21 @@ tau channel list                      # Channel instances exist
 
 ## Quick Reference: All Secrets
 
-| Secret                          | Required | Purpose                              |
-| ------------------------------- | -------- | ------------------------------------ |
-| `TAU_PASSWORD`                  | Yes      | Web UI / API authentication          |
-| GitHub integration connection | If GitHub | Authorize an account and assign it to the squad |
-
-| GitHub integration webhook settings | Optional | Direct webhook signature verification |
-| `LINEAR_WEBHOOK_SECRET`         | If Linear | Webhook signature verification       |
-| `LINEAR_USER_ID`                | If Linear | Filter events to this user           |
-| `DISCORD_APPLICATION_ID`        | If Discord| Discord app ID                       |
-| `DISCORD_PUBLIC_KEY`            | If Discord| Discord interaction verification     |
-| `DISCORD_BOT_TOKEN`             | If Discord| Discord bot authentication           |
-| `SLACK_SIGNING_SECRET`          | If Slack  | Slack request verification           |
-| `SLACK_BOT_TOKEN`               | If Slack  | Slack bot authentication             |
-| `TELEGRAM_BOT_TOKEN`            | If Telegram| Telegram bot authentication         |
-| `TELEGRAM_WEBHOOK_SECRET`       | If Telegram| Telegram webhook verification       |
-| `TELEGRAM_BOT_ID`               | If Telegram| Telegram bot username               |
-| `OPENAI_API_KEY`                | Recommended| Embeddings, voice, memory           |
-| `GOOGLE_APPLICATION_CREDENTIALS`| Optional  | Text-to-speech                       |
-| `APP_URL`                       | Auto       | Set by infrastructure (K8s ConfigMap)|
-| `VAPID_SUBJECT`                 | For iOS   | Push notification sender identity    |
+| Secret                              | Required    | Purpose                                                                          |
+| ----------------------------------- | ----------- | -------------------------------------------------------------------------------- |
+| `TAU_PASSWORD`                      | Yes         | Web UI / API authentication                                                      |
+| GitHub integration connection       | If GitHub   | Authorize an account and assign it to the squad                                  |
+| GitHub integration webhook settings | Optional    | Direct webhook signature verification                                            |
+| Linear integration webhook settings | If Linear   | Webhook signature verification (legacy `LINEAR_WEBHOOK_SECRET` is imported once) |
+| `DISCORD_APPLICATION_ID`            | If Discord  | Discord app ID                                                                   |
+| `DISCORD_PUBLIC_KEY`                | If Discord  | Discord interaction verification                                                 |
+| `DISCORD_BOT_TOKEN`                 | If Discord  | Discord bot authentication                                                       |
+| `SLACK_SIGNING_SECRET`              | If Slack    | Slack request verification                                                       |
+| `SLACK_BOT_TOKEN`                   | If Slack    | Slack bot authentication                                                         |
+| `TELEGRAM_BOT_TOKEN`                | If Telegram | Telegram bot authentication                                                      |
+| `TELEGRAM_WEBHOOK_SECRET`           | If Telegram | Telegram webhook verification                                                    |
+| `TELEGRAM_BOT_ID`                   | If Telegram | Telegram bot username                                                            |
+| `OPENAI_API_KEY`                    | Recommended | Embeddings, voice, memory                                                        |
+| `GOOGLE_APPLICATION_CREDENTIALS`    | Optional    | Text-to-speech                                                                   |
+| `APP_URL`                           | Auto        | Set by infrastructure (K8s ConfigMap)                                            |
+| `VAPID_SUBJECT`                     | For iOS     | Push notification sender identity                                                |

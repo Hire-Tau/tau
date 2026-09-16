@@ -74,7 +74,7 @@ const linearFields: Record<string, IntegrationOutputField> = {
   assignee: { type: 'string', description: 'Assigned Linear user ID.' },
   action: { type: 'string', description: 'Native Linear event action.' },
   actor: { type: 'string', description: 'Acting Linear user ID.' },
-  state: { type: 'string', description: 'Linear workflow state name.' },
+  state: { type: 'string', description: 'Linear workflow state type (e.g. completed, canceled, started).' },
 }
 const linearPredicateFields: Record<string, EventPredicateField> = {
   ...linearFields,
@@ -92,7 +92,8 @@ export const linearOutputCatalog: IntegrationOutputDescriptor[] = Object.entries
     output,
     version: 1,
     title,
-    description: title + ' from Linear webhooks or polling.',
+    // Linear has no polling path: a missed or failed webhook delivery is not recovered.
+    description: title + ' from Linear webhooks.',
     fields: linearFields,
     predicateFields: linearPredicateFields,
   })

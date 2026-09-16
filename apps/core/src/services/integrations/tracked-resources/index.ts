@@ -3,7 +3,12 @@ import { githubTrackedResourceAdapter } from '../github/code-hosting'
 import { linearTrackedResourceAdapter } from './linear'
 import { TrackedResourceRegistry, type TrackedResourceIdentity } from './registry'
 
-export { TrackedResourceRegistry, type TrackedResourceAdapter, type TrackedResourceIdentity } from './registry'
+export {
+  TrackedResourceRegistry,
+  type DescribableResource,
+  type TrackedResourceAdapter,
+  type TrackedResourceIdentity,
+} from './registry'
 
 // Provider composition belongs here, not in the work-stream service or the event router.
 export const trackedResourceRegistry = new TrackedResourceRegistry([

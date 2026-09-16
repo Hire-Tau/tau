@@ -1213,7 +1213,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .description('Track an issue or pull request alongside this work stream')
     .option('--event <eventId>', 'Track the resource observed by an integration event')
     .option('--url <url>', 'Track by code-host resource URL')
-    .option('--issue <ref>', 'Track a GitHub issue (owner/repo#12) or Linear issue (KEY-123)')
+    .option('--issue <ref>', 'Track an issue: owner/repo#12 is GitHub, KEY-123 is always a Linear reference')
     .option('--pr <ref>', 'Track a GitHub pull request, e.g. owner/repo#12')
     .option('--connection <connectionId>', 'Integration connection ID (only with --issue/--pr)')
     .option('--delivery', 'Count this pull request toward the work stream delivery')
@@ -1231,7 +1231,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
   ws.command('untrack <id>')
     .description('Stop tracking an issue or pull request on this work stream')
     .option('--url <url>', 'Untrack by code-host resource URL')
-    .option('--issue <ref>', 'Untrack a GitHub issue (owner/repo#12) or Linear issue (KEY-123)')
+    .option('--issue <ref>', 'Untrack an issue: owner/repo#12 is GitHub, KEY-123 is always a Linear reference')
     .option('--pr <ref>', 'Untrack a GitHub pull request, e.g. owner/repo#12')
     .option('--connection <connectionId>', 'Integration connection ID (only with --issue/--pr)')
     .action(async (id, options) => {
@@ -1313,12 +1313,15 @@ function parseResourceRef(
 /**
  * `--issue` accepts a GitHub `owner/repo#12` reference or a Linear `KEY-123` reference. GitHub
  * keeps sending the explicit `{ resource }` body (unchanged); Linear sends `{ reference }` so the
- * server's `describe` step can fill in the issue's externalId/url from a live connection.
+ * server's `describe` step can fill in the issue's externalId/url from a live connection. Either
+ * way `--connection` travels with the reference: the server checks it against the squad's own
+ * assignment rather than letting it be silently dropped.
  */
 function buildIssueRequestBody(value: string, connection?: string): Record<string, unknown> {
   const parsed = parseTrackedResourceReference(value)
   if (!parsed) throw new Error('Expected owner/repo#number or KEY-123')
-  if (parsed.integration === 'linear') return { reference: value.trim() }
+  if (parsed.integration === 'linear')
+    return { reference: value.trim(), ...(connection !== undefined ? { connectionId: connection } : {}) }
   return {
     resource: {
       integration: 'github',
