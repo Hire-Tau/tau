@@ -1,6 +1,6 @@
 import { maintenanceStore } from '../maintenance/store'
 import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stream'
-import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, setSystemTime, spyOn } from 'bun:test'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import { db } from '../../db'
@@ -1578,7 +1578,15 @@ describe('work stream continuation', () => {
       .update(executionAdmissionReservations)
       .set({ state: 'released' })
       .where(eq(executionAdmissionReservations.agentId, agent.id))
-    const endedAt = new Date()
+    // A minute back, not `new Date()`. The guard under test is
+    // `runStartedAt > trigger.endedAt`, and the barrier's `runStartedAt` is written by the
+    // DATABASE clock while this value is the host's. Pinning it to "now" left only the tens of
+    // milliseconds between here and `execution.start()` as headroom, so a Docker VM clock lagging
+    // the host by that much inverted the comparison and the test failed for a reason that had
+    // nothing to do with the behavior. `cycleStartedAt` is derived from this, so the observation
+    // window still contains the failed execution, and the barrier completion still ends after
+    // `now` — the "completes before the final check" shape is unchanged.
+    const endedAt = new Date(Date.now() - 60_000)
     const [failed] = await db
       .insert(executions)
       .values({
@@ -1601,6 +1609,60 @@ describe('work stream continuation', () => {
           const execution = await agent.queueExecution({ message: 'Fast healthy continuation' })
           await execution.start()
           await execution.transitionTo({ kind: 'completed' })
+        },
+      },
+    })
+
+    expect(await workStream.getOpenWaits()).toHaveLength(0)
+    expect(await readCycle()).toMatchObject({ status: 'idle', transportAttemptCount: 0 })
+  })
+
+  /**
+   * The production form of the bug the test above was only accidentally exposed to. The watchdog
+   * decides "did the agent already recover?" with `runStartedAt > trigger.endedAt`. While
+   * `endedAt` came from the app host and `runStartedAt` from Postgres, a Core host running ahead
+   * of the database put the trigger's `endedAt` in the database's future, so a recovery that
+   * genuinely started first failed the comparison: the watchdog opened a "continuation exhausted"
+   * manual wait on a healthy stream, which then parked after the grace period until a human
+   * cleared it. `setSystemTime` skews only this process's clock, leaving Postgres alone.
+   */
+  it('does not open a spurious wait when the host clock runs ahead of the database', async () => {
+    const HOST_SKEW_MS = 5_000
+    await workStream.update({ status: 'active', assigneeAgentId: agent.id })
+    await db.delete(executions).where(eq(executions.agentId, agent.id))
+    await db
+      .update(executionAdmissionReservations)
+      .set({ state: 'released' })
+      .where(eq(executionAdmissionReservations.agentId, agent.id))
+
+    // The transport failure is RECORDED while this host is 5s ahead of the database.
+    const failing = await agent.queueExecution({ message: 'Transport failure under clock skew' })
+    await failing.start()
+    setSystemTime(new Date(Date.now() + HOST_SKEW_MS))
+    try {
+      await failing.transitionTo({
+        kind: 'failed',
+        error: 'Provider transport failure: The socket connection was closed unexpectedly',
+      })
+    } finally {
+      setSystemTime()
+    }
+    await attachTrustedWorkStreamMessage(failing.id)
+
+    const endedAt = failing.endedAt!
+    await db
+      .update(workStreamContinuations)
+      .set({ transportAttemptCount: 3, cycleStartedAt: new Date(endedAt.getTime() - 1_000) })
+      .where(eq(workStreamContinuations.workStreamId, workStream.id))
+
+    await reconcileWorkStreamContinuationsOnce({
+      now: endedAt,
+      testHooks: {
+        // The agent recovers on its own, on the DATABASE's clock, before the final check.
+        beforeExhaustionBlock: async () => {
+          const recovery = await agent.queueExecution({ message: 'Recovered after transport failure' })
+          await recovery.start()
+          await recovery.transitionTo({ kind: 'completed' })
         },
       },
     })

@@ -58,6 +58,7 @@ import { decodeMessageCursor, encodeMessageCursor, InvalidMessageCursorError } f
 import * as lifecycle from '../services/agent/lifecycle'
 import { withoutDelta } from '../services/execution/usage-delta'
 import { mapMessage } from './message-mapper'
+import { databaseClockNow } from '../db/clock'
 import { messageEventData } from './message-event'
 import { ACTIVE_EXECUTION_STATUSES } from '../services/execution/status'
 import { refreshAgentActivity } from '../services/agents/activity-summary'
@@ -2045,7 +2046,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
       if (authoritativeAgent.status === 'waiting-input') {
         const [superseded] = await tx
           .update(executions)
-          .set({ status: 'completed', endedAt: new Date() })
+          .set({ status: 'completed', endedAt: databaseClockNow() })
           .where(
             and(
               eq(executions.id, active.id),

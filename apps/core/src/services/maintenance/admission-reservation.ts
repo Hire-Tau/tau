@@ -4,6 +4,7 @@ import { createLogger } from '../../lib/infra/logger'
 import type { DbTransaction } from '../machines/queries'
 import { ADMISSION_LIVENESS_HASH_SEED, ADMISSION_LIVENESS_LOCK_VERSION } from './process-liveness'
 import { restoreQueueOwnedAdmission, restoreStrandedQueuedAdmission } from '../execution/agent-admission'
+import { databaseClockNow } from '../../db/clock'
 
 const log = createLogger('admission-reservation')
 
@@ -1268,7 +1269,7 @@ export class AdmissionReservationStore {
             .update(executions)
             .set({
               status,
-              endedAt: status === 'completed' ? now : null,
+              endedAt: status === 'completed' ? databaseClockNow() : null,
               maintenanceGeneration: status === 'waiting-maintenance' ? maintenance.generation : null,
               maintenanceQueuedAt: status === 'waiting-maintenance' ? now : null,
               runnerClaimToken: null,

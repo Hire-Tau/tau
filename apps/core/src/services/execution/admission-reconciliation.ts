@@ -11,6 +11,7 @@ import { eventEmitter } from '../../lib/infra/event-emitter'
 import { createLogger } from '../../lib/infra/logger'
 import { acquireAgentQueueLock, classifyStrandedQueuedAdmission, restoreQueueOwnedAdmission } from './agent-admission'
 import { ACTIVE_EXECUTION_STATUSES } from './status'
+import { databaseClockNow } from '../../db/clock'
 
 const log = createLogger('admission-reconciliation')
 const TERMINAL_ADMISSION_STATES = ['released', 'revoked'] as const
@@ -133,7 +134,11 @@ export async function reconcileDuplicateActiveExecutions(options?: { agentIds?: 
       if (duplicates.length) {
         await tx
           .update(executions)
-          .set({ status: 'stopped', endedAt: now, error: 'Stopped by startup duplicate-admission reconciliation' })
+          .set({
+            status: 'stopped',
+            endedAt: databaseClockNow(),
+            error: 'Stopped by startup duplicate-admission reconciliation',
+          })
           .where(
             inArray(
               executions.id,
