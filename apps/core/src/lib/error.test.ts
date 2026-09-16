@@ -7,6 +7,7 @@ import {
   getErrorSystemMessage,
   isDurableProviderTransportFailure,
   isInternalExecutionError,
+  providerErrorText,
 } from './error'
 
 describe('classifyCaughtProviderError', () => {
@@ -554,5 +555,90 @@ describe('codex friendly usage-limit string (SDK-rewritten 429)', () => {
   it('leaves a bare "usage limit" error a transient rate-limit', () => {
     expect(classifyProviderError('usage limit reached')?.reason).toBe('rate-limit')
     expect(classifyProviderError('429 usage limit')?.reason).toBe('rate-limit')
+  })
+})
+
+/**
+ * The codex backend's OTHER usage-limit shape: an in-stream SSE/WebSocket
+ * `error` event. `mapCodexEvents` (openai-codex-responses.js) throws
+ * `new CodexApiError("Codex error: " + message, { code, payload: event })`, so
+ * unlike the rewritten 429 the raw `code` and the event survive — but only as
+ * OWN ENUMERABLE fields of the Error, which `error.message` alone discarded.
+ * The bare sentence then matched the generic 'usage limit' rate-limit substring
+ * and parked an exhausted plan for 60 seconds.
+ */
+describe('codex in-stream usage-limit error event (CodexApiError)', () => {
+  const STREAM_MESSAGE = 'Codex error: The usage limit has been reached'
+
+  /** Mirrors the SDK's CodexApiError: `code` and `payload` are own enumerable props. */
+  class CodexApiErrorStub extends Error {
+    code?: string
+    payload?: Record<string, unknown>
+    constructor(message: string, options: { code?: string; payload?: Record<string, unknown> } = {}) {
+      super(message)
+      this.name = 'CodexApiError'
+      this.code = options.code
+      this.payload = options.payload
+    }
+  }
+
+  const streamError = (payload: Record<string, unknown> = {}, code = 'usage_limit_reached') =>
+    new CodexApiErrorStub(STREAM_MESSAGE, {
+      code,
+      payload: { type: 'error', code, message: 'The usage limit has been reached', ...payload },
+    })
+
+  it("folds an Error's own `code` into providerErrorText", () => {
+    const text = providerErrorText(streamError())
+    expect(text).toContain('The usage limit has been reached')
+    expect(text).toContain('usage_limit_reached')
+    // Plain Errors still read as their message alone.
+    expect(providerErrorText(new Error('plain failure'))).toBe('plain failure')
+  })
+
+  it('classifies the stream message alone as a plan limit on the default cooldown', () => {
+    const classification = classifyProviderError(STREAM_MESSAGE)
+    expect(classification?.reason).toBe('plan-credit')
+    expect(classification?.cooldownMs).toBe(30 * 60_000)
+    expect(classification?.retryAt).toBeUndefined()
+  })
+
+  it('classifies an event with no announced window as plan-credit on the default cooldown', () => {
+    const now = Date.now()
+    const classification = classifyCaughtProviderError(streamError(), { now })
+    expect(classification?.kind).toBe('plan-credit')
+    expect(classification?.retryAt).toBeUndefined()
+    expect(classifyProviderError(providerErrorText(streamError())!)?.cooldownMs).toBe(30 * 60_000)
+  })
+
+  it('reads `resets_at` out of the payload and keeps a two-hour window a plan limit', () => {
+    const now = Date.now()
+    const resetsAt = Math.floor((now + 2 * 60 * 60_000) / 1000)
+    const classification = classifyCaughtProviderError(streamError({ plan_type: 'plus', resets_at: resetsAt }), { now })
+    expect(classification?.kind).toBe('plan-credit')
+    expect(classification?.retryAt).toBe(resetsAt * 1000)
+  })
+
+  it('treats a short `resets_in_seconds` window as a transient rate-limit', () => {
+    const now = Date.now()
+    const classification = classifyCaughtProviderError(streamError({ resets_in_seconds: 600 }), { now })
+    expect(classification?.kind).toBe('rate-limit')
+    expect(classification?.retryAt).toBe(now + 600_000)
+  })
+
+  it('classifies the code alone as a plan limit even with a generic message', () => {
+    const error = new CodexApiErrorStub('Codex error: request failed', {
+      code: 'usage_limit_reached',
+      payload: { type: 'error', code: 'usage_limit_reached' },
+    })
+    expect(classifyCaughtProviderError(error)?.kind).toBe('plan-credit')
+  })
+
+  it('leaves an unrelated codex stream error unclassified', () => {
+    const error = new CodexApiErrorStub('Codex error: stream ended unexpectedly', {
+      code: 'internal_error',
+      payload: { type: 'error', code: 'internal_error' },
+    })
+    expect(classifyCaughtProviderError(error)).toBeNull()
   })
 })
