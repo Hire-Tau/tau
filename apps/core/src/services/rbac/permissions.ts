@@ -508,14 +508,15 @@ export async function hasAnySlotCleanupPermission(
 }
 
 /**
- * Return the ids of all enabled users who hold a (system-scoped) permission. Used to fan out shared
- * system notifications (e.g. the system inbox) to the right people instead of broadcasting to all.
+ * Every enabled user holding `permission`, optionally within one squad's scope. This is the only
+ * place that scans all users; use it for content-free fan-out (realtime invalidation) and
+ * routability checks, never for push recipients — those resolve from bounded subscription rows.
  */
-export async function getUserIdsWithPermission(permission: string): Promise<string[]> {
+export async function getUserIdsWithPermission(permission: string, squadId?: string): Promise<string[]> {
   const enabledUsers = await db.select({ id: users.id }).from(users).where(isNull(users.disabledAt))
   const matching: string[] = []
   for (const user of enabledUsers) {
-    if (await hasPermission({ type: 'user', userId: user.id }, permission)) matching.push(user.id)
+    if (await hasPermission({ type: 'user', userId: user.id }, permission, squadId)) matching.push(user.id)
   }
   return matching
 }

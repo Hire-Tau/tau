@@ -44,7 +44,7 @@ describe('squad subscriptions', () => {
     expect(await isSubscribedToSquad(squad.id, user.id)).toBe(false)
   })
 
-  it('a squad watcher receives only high-signal lifecycle updates for streams they never explicitly watched', async () => {
+  it('a squad watcher receives decision and completion updates for streams they never explicitly watched', async () => {
     await subscribeToSquad(squad.id, user.id)
     // A brand-new stream the user did NOT per-stream-subscribe to.
     const ws = await storedLegacyWorkStream({ squadId: squad.id, title: `${prefix} unwatched-stream` })
@@ -62,7 +62,7 @@ describe('squad subscriptions', () => {
           (m.metadata as Record<string, unknown>)?.workStreamId === ws.id &&
           (m.metadata as Record<string, unknown>)?.event === 'blocked'
       )
-    ).toBe(false)
+    ).toBe(true)
     expect(
       msgs.some(
         (m) =>

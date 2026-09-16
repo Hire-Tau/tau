@@ -119,11 +119,13 @@ describe('Action Center canonical WebSocket invalidation', () => {
     expect(sockets.get(owner.id)!.ws.send).not.toHaveBeenCalled()
     expect(sockets.get(unrelated.id)!.ws.send).not.toHaveBeenCalled()
 
+    // The hint audience is permission-shaped, not subscription-shaped: dropping the subscription
+    // does not stop a reader's Needs you list from being invalidated (the frame carries nothing).
     await unsubscribeFromSquad(squadId, watcher.id)
     sockets.get(watcher.id)!.ws.send.mockClear()
     eventEmitter.emit('agent-question.delivery-retrying', { questionId: question.id, agentId, squadId })
-    await waitForCallCount(sockets.get(direct.id)!.ws, 6)
-    expect(sockets.get(watcher.id)!.ws.send).not.toHaveBeenCalled()
+    await waitForCallCount(sockets.get(watcher.id)!.ws, 1)
+    expect(sockets.get(watcher.id)!.ws.send).toHaveBeenCalled()
 
     await db.update(users).set({ disabledAt: new Date() }).where(eq(users.id, direct.id))
     sockets.get(direct.id)!.ws.send.mockClear()

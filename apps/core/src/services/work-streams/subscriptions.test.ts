@@ -48,7 +48,7 @@ describe('work-stream subscriptions', () => {
     expect(await getWorkStreamAttention(ws.id, user.id)).toBeNull()
   })
 
-  it("delivers only high-signal lifecycle updates to a subscriber's personal inbox", async () => {
+  it("delivers decision and completion updates to a subscriber's personal inbox", async () => {
     const ws = await storedLegacyWorkStream({ squadId: squad.id, title: `${prefix} ws2` })
     await subscribeToWorkStream(ws.id, user.id)
 
@@ -65,7 +65,7 @@ describe('work-stream subscriptions', () => {
           (m.metadata as Record<string, unknown>)?.workStreamId === ws.id &&
           (m.metadata as Record<string, unknown>)?.event === 'blocked'
       )
-    ).toBe(false)
+    ).toBe(true)
     expect(
       msgs.some(
         (m) =>
