@@ -669,4 +669,140 @@ describe('tracked GitHub issue Activity', () => {
       summary: '[PR #7 closed]',
     })
   })
+
+  test('attributes one issue event to every tracking stream in the squad, and repair backfills a missing one', async () => {
+    const repository = `shared-issue-${crypto.randomUUID()}/widgets`
+    const [squad] = await db
+      .insert(squads)
+      .values({ name: `shared-issue-${crypto.randomUUID()}`, purpose: 'test' })
+      .returning()
+    squadIds.push(squad.id)
+    const tracker = async (title: string, createdAt: string) =>
+      (
+        await db
+          .insert(workStreams)
+          .values({
+            squadId: squad.id,
+            title,
+            createdAt: new Date(createdAt),
+            metadata: { tracked: [{ integration: 'github', repository, kind: 'issue', number: 12 }] },
+          })
+          .returning()
+      )[0]
+    const first = await tracker('first tracker', '2026-08-01T00:00:00Z')
+    const second = await tracker('second tracker', '2026-08-02T00:00:00Z')
+
+    const payload = issuePayload(repository)
+    const fact = extractGitHubIssueDispatchFact('github', { type: 'issues', payload, metadata: { synthetic: true } })!
+    const eventId = await storeWebhookEvent({
+      provider: 'github',
+      eventType: 'issues',
+      payload,
+      headers: { 'x-github-delivery': crypto.randomUUID() },
+      signature: 'verified',
+      verified: true,
+    })
+    webhookIds.push(eventId)
+    // One squad association, but two rows inside it: one per tracking stream.
+    expect(await materializeGitHubWebhook(eventId)).toBe(1)
+    const rowsForSquad = async () => db.select().from(squadActivity).where(eq(squadActivity.squadId, squad.id))
+    const byStream = async () => new Map((await rowsForSquad()).map((row) => [row.workStreamId, row]))
+
+    const streams = await byStream()
+    expect([...streams.keys()].sort()).toEqual([first.id, second.id].sort())
+    expect([...streams.values()].every((row) => row.lane === 71 && row.sourceFamily === 'github-issue')).toBe(true)
+    // The oldest stream keeps the fact's own logical identity; the next gets a derived one.
+    expect(streams.get(first.id)!.rowId).toBe(fact.logicalRowId)
+    expect(streams.get(second.id)!.rowId).not.toBe(fact.logicalRowId)
+    expect(streams.get(second.id)!.ref).toEqual({
+      type: 'issue',
+      url: `https://github.com/${repository}/issues/12`,
+      workStreamId: second.id,
+    })
+    expect(streams.get(first.id)!.summary).toBe(streams.get(second.id)!.summary)
+
+    // A retried delivery of the same event still projects exactly two rows.
+    const retryId = await storeWebhookEvent({
+      provider: 'github',
+      eventType: 'issues',
+      payload,
+      headers: { 'x-github-delivery': crypto.randomUUID() },
+      signature: 'verified',
+      verified: true,
+    })
+    webhookIds.push(retryId)
+    await materializeGitHubWebhook(retryId)
+    expect(await rowsForSquad()).toHaveLength(2)
+
+    // Repair over a squad that only ever recorded the first stream's row adds the
+    // second stream's row and never deletes the row that was already there.
+    const keptRowId = streams.get(first.id)!.rowId
+    await db
+      .delete(squadActivity)
+      .where(and(eq(squadActivity.squadId, squad.id), eq(squadActivity.workStreamId, second.id)))
+    expect(await rowsForSquad()).toHaveLength(1)
+    await repairSquadActivity({
+      from: new Date('2026-08-27T00:00:00Z'),
+      to: new Date('2026-08-28T00:00:00Z'),
+      pageSize: 2,
+    })
+    const repaired = await byStream()
+    expect([...repaired.keys()].sort()).toEqual([first.id, second.id].sort())
+    expect(repaired.get(first.id)!.rowId).toBe(keptRowId)
+  })
+
+  test('attributes one pull request event to every tracking stream in the squad', async () => {
+    const repository = `shared-pr-${crypto.randomUUID()}/widgets`
+    const [squad] = await db
+      .insert(squads)
+      .values({ name: `shared-pr-${crypto.randomUUID()}`, purpose: 'test' })
+      .returning()
+    squadIds.push(squad.id)
+    const tracker = async (title: string, createdAt: string) =>
+      (
+        await db
+          .insert(workStreams)
+          .values({
+            squadId: squad.id,
+            title,
+            createdAt: new Date(createdAt),
+            metadata: { tracked: [{ integration: 'github', repository, kind: 'pull_request', number: 7 }] },
+          })
+          .returning()
+      )[0]
+    const first = await tracker('first PR tracker', '2026-08-01T00:00:00Z')
+    const second = await tracker('second PR tracker', '2026-08-02T00:00:00Z')
+
+    const payload = {
+      action: 'closed',
+      number: 7,
+      repository: { full_name: repository },
+      pull_request: {
+        id: 7008,
+        number: 7,
+        closed_at: '2026-08-27T05:00:00Z',
+        html_url: `https://github.com/${repository}/pull/7`,
+      },
+    }
+    const fact = extractGitHubPrDispatchFact('github', { type: 'pull_request', payload } as never)!
+    const eventId = await storeWebhookEvent({
+      provider: 'github',
+      eventType: 'pull_request',
+      payload,
+      headers: { 'x-github-delivery': crypto.randomUUID() },
+      signature: 'verified',
+      verified: true,
+    })
+    webhookIds.push(eventId)
+    expect(await materializeGitHubWebhook(eventId)).toBe(1)
+    const rows = await db.select().from(squadActivity).where(eq(squadActivity.squadId, squad.id))
+    expect(rows).toHaveLength(2)
+    const byStream = new Map(rows.map((row) => [row.workStreamId, row]))
+    expect([...byStream.keys()].sort()).toEqual([first.id, second.id].sort())
+    expect([...byStream.values()].every((row) => row.lane === 70 && row.summary === '[PR #7 closed]')).toBe(true)
+    expect(byStream.get(first.id)!.rowId).toBe(fact.logicalRowId)
+    expect(byStream.get(second.id)!.rowId).not.toBe(fact.logicalRowId)
+    // The shared PR ref type names no stream; the row's own column carries it.
+    expect(byStream.get(second.id)!.ref).toEqual({ type: 'pr', url: `https://github.com/${repository}/pull/7` })
+  })
 })

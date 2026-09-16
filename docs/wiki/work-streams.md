@@ -219,8 +219,14 @@ unrelated wait`, or `Waiting for consumer activation`.
 
 ### Known limits
 
-- Activity records one row per `(event, squad)`; if more than one work stream in
-  a squad could match the same event, only the first is associated.
+- Activity records one row per `(event, work stream)`: when several of a squad's
+  work streams track the same issue or PR, each one gets its own row, so the
+  event shows up under every stream that is following it.
+- Those rows are keyed positionally, so that existing rows never move: the oldest
+  tracking stream carries the event's own row identity and the rest derive theirs
+  from it. If that oldest stream is deleted or stops tracking the resource, the
+  next stream becomes first, and a later repair adds a second row for it while
+  its derived row remains — that stream then shows the event twice.
 - Repository visibility for a URL-based link is enforced when events actually
   arrive for it, not at the moment it is linked.
 - Poll/webhook de-duplication relies on GitHub's second-precision timestamps;
