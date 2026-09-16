@@ -678,28 +678,42 @@ describe('getUserIdsWithPermission', () => {
   })
 
   /**
-   * Guards run on the squad id as the ROUTE received it, and `GET /api/squads/:id` accepts the
-   * first 8 characters of one. `squad_id` is a uuid column, so a scope filter that hands a prefix
-   * straight to it fails the whole statement — which reached the caller as a 500 on every
-   * short-prefix route for anyone without `*`.
+   * A squad id of the wrong shape identifies no squad, and `squad_id` is a uuid column, so handing
+   * one to the scope filter used to fail the whole statement (a 500 on every short-prefix route
+   * for anyone without `*`). It now resolves to system scope alone.
+   *
+   * `squad_default` is deliberately NOT applied. A squad-scoped role REPLACES the default tier, so
+   * honouring the default for an unidentifiable squad would hand back precisely the permission an
+   * override exists to withhold — which is a GRANT where the old code produced an error. Route
+   * guards resolve a short id to its full squad id before asking (see `require-permission.ts`);
+   * this is the floor under that, and the floor denies.
    */
-  test('a squad id that is not a uuid matches no squad row instead of failing the query', async () => {
+  test('a squad id that is not a uuid falls back to system scope only, never squad_default', async () => {
     const squad = await Squad.create({ name: `${PREFIX} prefix squad`, purpose: 'prefix' })
     const grants = await createTestRole({ prefix: PREFIX, permissions: ['actions:read'] })
     const squadMember = await createTestUser({ prefix: PREFIX })
     const defaulted = await createTestUser({ prefix: PREFIX })
+    const systemHolder = await createTestUser({ prefix: PREFIX })
     await assignRole({ userId: squadMember.id, roleId: grants.id, scope: 'squad', squadId: squad.id })
     await assignRole({ userId: defaulted.id, roleId: grants.id, scope: 'squad_default' })
+    await assignRole({ userId: systemHolder.id, roleId: grants.id, scope: 'system' })
     invalidatePermissionCache()
 
     const prefix = squad.id.slice(0, 8)
-    // The squad tier simply finds nothing, exactly as it would for an unknown squad id...
+    // Neither squad tier is consulted: no row can match, and the default must not stand in.
     expect(await hasPermission({ type: 'user', userId: squadMember.id }, 'actions:read', prefix)).toBe(false)
-    // ...while `squad_default`, which is not squad-keyed, still applies.
-    expect(await hasPermission({ type: 'user', userId: defaulted.id }, 'actions:read', prefix)).toBe(true)
+    expect(await hasPermission({ type: 'user', userId: defaulted.id }, 'actions:read', prefix)).toBe(false)
+    // A system-scoped grant is squad-independent and still applies.
+    expect(await hasPermission({ type: 'user', userId: systemHolder.id }, 'actions:read', prefix)).toBe(true)
     const scan = await getUserIdsWithPermission('actions:read', prefix)
     expect(scan).not.toContain(squadMember.id)
-    expect(scan).toContain(defaulted.id)
+    expect(scan).not.toContain(defaulted.id)
+    expect(scan).toContain(systemHolder.id)
+
+    // The full id is unaffected — this is about an id that names no squad, not about prefixes
+    // being denied: the guard resolves them first.
+    expect(await hasPermission({ type: 'user', userId: squadMember.id }, 'actions:read', squad.id)).toBe(true)
+    expect(await hasPermission({ type: 'user', userId: defaulted.id }, 'actions:read', squad.id)).toBe(true)
   })
 })
 

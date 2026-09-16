@@ -6,13 +6,13 @@ import {
   agentQuestions,
   executions,
   messages,
-  users,
   workStreams,
 } from '../../db/schema'
 import { isUuid, listTrustedWorkStreamOriginsForExecution } from '../work-streams/execution-provenance'
 import { listWorkStreamSubscriberIds } from '../work-streams/subscriptions'
 import { hasUserPermissionWithExecutor } from '../rbac'
 import { listAgentQuestionAttentionUserIds } from './questions'
+import { listEnabledUserIds } from '../users/enabled'
 
 export interface QuestionAttentionReconciliationOptions {
   executor?: typeof db
@@ -129,14 +129,7 @@ export async function reconcileAgentQuestionAttentionOnce(
       }
     }
 
-    const enabledIds = new Set<string>()
-    if (recipientIds.size > 0) {
-      const enabled = await executor
-        .select({ id: users.id })
-        .from(users)
-        .where(and(inArray(users.id, [...recipientIds]), isNull(users.disabledAt)))
-      for (const { id } of enabled) enabledIds.add(id)
-    }
+    const enabledIds = new Set(await listEnabledUserIds([...recipientIds], executor))
 
     // Subscription rows on the origin streams are a CANDIDATE SIGNAL for routability, not an
     // attention entitlement: they are collected at any level (a `mute` row counts here) because
@@ -147,15 +140,10 @@ export async function reconcileAgentQuestionAttentionOnce(
     const originSubscriberIds = (
       await Promise.all(originIds.map((workStreamId) => listWorkStreamSubscriberIds(workStreamId, executor)))
     ).flat()
-    const enabledOriginSubscribers = originSubscriberIds.length
-      ? await executor
-          .select({ id: users.id })
-          .from(users)
-          .where(and(inArray(users.id, originSubscriberIds), isNull(users.disabledAt)))
-      : []
+    const enabledOriginSubscribers = await listEnabledUserIds(originSubscriberIds, executor)
     const authorizedOriginSubscriberIds = question.squadId
       ? await Promise.all(
-          enabledOriginSubscribers.map(async ({ id }) =>
+          enabledOriginSubscribers.map(async (id) =>
             (await hasUserPermissionWithExecutor(executor, id, 'actions:read', question.squadId ?? undefined))
               ? id
               : null

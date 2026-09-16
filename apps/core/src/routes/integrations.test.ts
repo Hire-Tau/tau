@@ -513,7 +513,18 @@ describe('integration routes', () => {
       name: 'test',
       scopes: ['integrations:read'],
     })
-    const response = await app.request('/api/squads/squad/integrations/bigbrain')
+    // A real squad: the squad guard resolves its route param before authorizing, so a placeholder
+    // id is a 404 before the scopes are ever consulted.
+    const [squad] = await db
+      .insert(squads)
+      .values({ name: `integrations-picker-${crypto.randomUUID()}`, purpose: 'picker test' })
+      .returning()
+    let response: Response
+    try {
+      response = await app.request(`/api/squads/${squad.id}/integrations/bigbrain`)
+    } finally {
+      await db.delete(squads).where(eq(squads.id, squad.id))
+    }
     expect(response.status).toBe(200)
     const text = await response.text()
     expect(JSON.parse(text)).toEqual({

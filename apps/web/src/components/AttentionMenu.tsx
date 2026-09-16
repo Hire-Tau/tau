@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useCallback, useEffect, useId, useRef, useState, type RefObject } from 'react'
+import { useCallback, useId, useRef, useState } from 'react'
 import clsx from 'clsx'
+import { useDismissOnOutside } from '../hooks/useDismissOnOutside'
 import {
   ATTENTION_KIND_COPY,
   ATTENTION_LEVELS,
@@ -43,43 +44,6 @@ function SummaryIcon({ summary }: { summary: AttentionLevel | 'custom' }) {
   if (summary === 'mute') return <SpeakerOffIcon className="h-4 w-4" />
   if (summary === 'notify') return <BellCheckIcon className="h-4 w-4" />
   return <BellIcon className="h-4 w-4" />
-}
-
-/**
- * Dismisses an open popover the two ways a native `<details>` does not: Escape (which returns
- * focus to the trigger, so the keyboard user is not dropped at the top of the document) and a
- * pointer press anywhere outside it. Listeners are attached only while open, so a page of closed
- * menus costs nothing.
- *
- * Escape is handled in the capture phase and stops propagation: a menu opened inside a modal must
- * take the first Escape for itself rather than closing the modal underneath it. The codebase's
- * other popovers (AgentViewTabs, WorkStreamFiltersPopover) dismiss exactly this way.
- */
-function useDismissOnOutside(
-  open: boolean,
-  containerRef: RefObject<HTMLElement | null>,
-  triggerRef: RefObject<HTMLElement | null>,
-  onDismiss: () => void
-) {
-  useEffect(() => {
-    if (!open) return
-    const onPointerDown = (event: PointerEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) onDismiss()
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopPropagation()
-      onDismiss()
-      triggerRef.current?.focus()
-    }
-    document.addEventListener('pointerdown', onPointerDown)
-    document.addEventListener('keydown', onKeyDown, true)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown, true)
-    }
-  }, [open, containerRef, triggerRef, onDismiss])
 }
 
 /**

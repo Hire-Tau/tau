@@ -14,7 +14,7 @@ import { Squad } from '../../entities/Squad'
 import { User } from '../../entities/User'
 import type { WorkStream } from '../../entities/WorkStream'
 import { listWorkStreamNotifyUserIds } from '../attention/resolver'
-import { hasPermission } from '../rbac/permissions'
+import { filterUserIdsWithPermission } from '../rbac/permitted-users'
 import { listEnabledUserIds } from '../users/enabled'
 import { createLogger } from '../../lib/infra/logger'
 import { createHash } from 'node:crypto'
@@ -338,26 +338,17 @@ async function notifyWorkStreamSubscribers(
     if (candidateIds.length === 0) return
     // Permission first, attention second: a notify row is a preference, never an entitlement. A
     // subscription that outlived the user's role on the squad must not deliver stream content.
-    // The candidate list is bounded by subscription rows, so this is a small fan of cached checks.
-    //
-    // `allSettled`, not `all`: one unreadable subject (a corrupt role chain, a lost connection)
-    // must cost that one recipient its notice, not the whole batch. A rejection is treated as NOT
-    // permitted — fail closed — and logged once for the event rather than per recipient.
-    const authorized = await Promise.allSettled(
-      candidateIds.map(async (userId) =>
-        (await hasPermission({ type: 'user', userId }, 'workstreams:read', workStream.squadId)) ? userId : null
-      )
+    // Failure isolation and the fail-closed rule live in the shared helper.
+    const subscriberIds = await filterUserIdsWithPermission(
+      candidateIds,
+      'workstreams:read',
+      workStream.squadId,
+      ({ failed, total, reason }) =>
+        log.error(
+          `Failed to resolve ${failed} of ${total} watcher permission checks for work stream ${workStream.id} (${event}); treating them as not permitted:`,
+          reason
+        )
     )
-    const failures = authorized.filter((result) => result.status === 'rejected')
-    if (failures.length > 0) {
-      log.error(
-        `Failed to resolve ${failures.length} of ${candidateIds.length} watcher permission checks for work stream ${workStream.id} (${event}); treating them as not permitted:`,
-        failures[0].reason
-      )
-    }
-    const subscriberIds = authorized
-      .map((result) => (result.status === 'fulfilled' ? result.value : null))
-      .filter((userId): userId is string => userId !== null)
     if (subscriberIds.length === 0) return
     const description = workStream.description?.trim() ? workStream.description.slice(0, 200) : undefined
     const detail = event === 'done' ? pushDetail || nextSteps || description : workStream.handoffMessage || description

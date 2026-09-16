@@ -1,6 +1,7 @@
 import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stream'
 import { workStreamTitle } from '@tau/shared'
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
+import * as permissions from '../rbac/permissions'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { agents, agentTypes, inbox, squads, users, workStreams } from '../../db/schema'
@@ -730,6 +731,31 @@ describe('work-stream notifications', () => {
     const survivor = watchers.find((id) => id !== firstWatcher)!
     expect(await countLifecycleInbox(workStream.id, 'review', 'user', firstWatcher!)).toBe(0)
     expect(await countLifecycleInbox(workStream.id, 'review', 'user', survivor)).toBe(1)
+  })
+
+  /**
+   * The permission fan-out used to run under `Promise.all`, so one unreadable subject rejected the
+   * whole batch and silenced every watcher whose check had succeeded.
+   */
+  it('still notifies the other watchers when one permission check throws', async () => {
+    const workStream = await storedLegacyWorkStream({ squadId, title: `${typeId} permission outage` })
+    await subscribeToSquad(squadId, squadWatcher.id)
+    await subscribeToWorkStream(workStream.id, streamWatcher.id)
+
+    const original = permissions.hasPermission
+    const spy = spyOn(permissions, 'hasPermission').mockImplementation(async (identity, permission, scope) => {
+      if (identity.type === 'user' && identity.userId === streamWatcher.id) throw new Error('role chain unreadable')
+      return original(identity, permission, scope)
+    })
+    try {
+      await notifyWorkStreamReview(workStream)
+    } finally {
+      spy.mockRestore()
+    }
+
+    // Fail closed for the one that threw; untouched for the one that resolved.
+    expect(await countLifecycleInbox(workStream.id, 'review', 'user', streamWatcher.id)).toBe(0)
+    expect(await countLifecycleInbox(workStream.id, 'review', 'user', squadWatcher.id)).toBe(1)
   })
 
   it('lets a stream row mute a squad the user otherwise gets notified about', async () => {

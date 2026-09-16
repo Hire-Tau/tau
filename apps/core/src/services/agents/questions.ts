@@ -16,7 +16,6 @@ import {
   executions,
   inbox,
   messages,
-  users,
   workStreams,
   workStreamWaits,
 } from '../../db/schema'
@@ -26,7 +25,8 @@ import { closeOpenWaits, openWait } from '../work-streams/waits'
 import { resetContinuationCycle } from '../work-streams/continuation-state'
 import { isUuid, listTrustedWorkStreamOriginsForExecution } from '../work-streams/execution-provenance'
 import { listSquadScopeNotifyUserIds } from '../attention/resolver'
-import { getUserIdsWithPermission, hasPermission } from '../rbac/permissions'
+import { getUserIdsWithPermission } from '../rbac/permissions'
+import { filterUserIdsWithPermission } from '../rbac/permitted-users'
 import { listEnabledUserIds } from '../users/enabled'
 import { drainQuestionAnswerDeliverySoon } from './question-answer-delivery'
 import { ensureQuestionDeliveryFailureAlert } from './question-delivery-failure-alert'
@@ -339,14 +339,7 @@ export async function createAgentQuestion(
       originStreams.flatMap(({ requestingUserId }) => (requestingUserId ? [requestingUserId] : []))
     )
     const candidateRecipientIds = [...new Set([...participantIds, ...requesterIds])]
-    const enabledIds = new Set<string>()
-    if (candidateRecipientIds.length > 0) {
-      const enabled = await tx
-        .select({ id: users.id })
-        .from(users)
-        .where(and(inArray(users.id, candidateRecipientIds), isNull(users.disabledAt)))
-      for (const { id } of enabled) enabledIds.add(id)
-    }
+    const enabledIds = new Set(await listEnabledUserIds(candidateRecipientIds, tx))
     if (enabledIds.size > 0) {
       await tx
         .insert(agentQuestionRecipients)
@@ -635,12 +628,12 @@ export async function listAgentQuestionNotifyUserIds(questionId: string): Promis
       origins.map(({ workStreamId }) => workStreamId),
       'decisions'
     )
-    const authorized = await Promise.all(
-      candidates.map(async (userId) =>
-        (await hasPermission({ type: 'user', userId }, 'actions:read', squadId)) ? userId : null
+    notifyIds = await filterUserIdsWithPermission(candidates, 'actions:read', squadId, ({ failed, total, reason }) =>
+      log.error(
+        `Failed to resolve ${failed} of ${total} notify-permission checks for question ${questionId}; treating them as not permitted:`,
+        reason
       )
     )
-    notifyIds = authorized.filter((userId): userId is string => userId !== null)
   }
 
   return listEnabledUserIds([

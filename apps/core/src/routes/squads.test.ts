@@ -578,6 +578,31 @@ describe('squads routes', () => {
       expect(squad.name).toBe(`${testPrefix} Test`)
     })
 
+    /**
+     * A squad-scoped role is the only grant this user has, so the guard must ask about THIS squad.
+     * Asking about the raw route param instead made the short-prefix form a 403 (the prefix
+     * matches no `squad_id`, so the squad-scoped grant was invisible) while the full id worked.
+     */
+    it('honours a squad-scoped grant through both the full id and a short prefix', async () => {
+      const created = await Squad.create({ name: `${testPrefix} Scoped`, purpose: 'Testing' })
+      const member = await createTestUser({ prefix: testPrefix })
+      const role = await createTestRole({ prefix: testPrefix, permissions: ['squads:read'] })
+      await assignRole({ userId: member.id, roleId: role.id, scope: 'squad', squadId: created.id })
+
+      for (const id of [created.id, created.id.slice(0, 8)]) {
+        const res = await app.request(`/api/squads/${id}`, { headers: authHeaders(member.token) })
+        expect(res.status).toBe(200)
+        expect((await res.json()).id).toBe(created.id)
+      }
+
+      // The grant is scoped: another squad stays forbidden through either form.
+      const other = await Squad.create({ name: `${testPrefix} Unscoped`, purpose: 'Testing' })
+      for (const id of [other.id, other.id.slice(0, 8)]) {
+        const res = await app.request(`/api/squads/${id}`, { headers: authHeaders(member.token) })
+        expect(res.status).toBe(403)
+      }
+    })
+
     it('supports short id prefix', async () => {
       const created = await Squad.create({
         name: `${testPrefix} Prefix`,

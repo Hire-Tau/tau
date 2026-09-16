@@ -14,7 +14,7 @@ import {
 } from '../test-utils'
 import { db } from '../db'
 import { sessions, agentTokens, agents, agentTypes, localDeployments, squads } from '../db/schema'
-import { eq, like } from 'drizzle-orm'
+import { eq, inArray, like } from 'drizzle-orm'
 import { AgentType } from '../entities/AgentType'
 import { Agent } from '../entities/Agent'
 import { resetSecretStore } from '../services/secrets'
@@ -411,14 +411,37 @@ describe('requireSquadPermission', () => {
     })
     expect(res.status).toBe(200)
 
-    // Should fail for a different squad
-    const res2 = await app.request('/squads/00000000-0000-0000-0000-000000000000/agents', {
+    // Should fail for a different squad. It has to be a REAL one: the guard resolves its route
+    // param to a squad before authorizing, so an id that names nothing is a 404, not a verdict
+    // about a squad the caller cannot have a role on.
+    const [otherSquad] = await db
+      .insert(squads)
+      .values({ name: `${PREFIX}-squad-perm-other`, purpose: 'Test' })
+      .returning()
+    const res2 = await app.request(`/squads/${otherSquad.id}/agents`, {
       headers: authHeaders(user.token),
     })
     expect(res2.status).toBe(403)
 
+    // A short id prefix authorizes the squad it resolves to, not the raw string: a squad-scoped
+    // grant must survive the prefix form, and must not leak to another squad through it.
+    const granted = await app.request(`/squads/${squad.id.slice(0, 8)}/agents`, {
+      headers: authHeaders(user.token),
+    })
+    expect(granted.status).toBe(200)
+    const denied = await app.request(`/squads/${otherSquad.id.slice(0, 8)}/agents`, {
+      headers: authHeaders(user.token),
+    })
+    expect(denied.status).toBe(403)
+
+    // An id that resolves to no squad is a 404.
+    const missing = await app.request('/squads/00000000-0000-0000-0000-000000000000/agents', {
+      headers: authHeaders(user.token),
+    })
+    expect(missing.status).toBe(404)
+
     // Cleanup
     await cleanupTestRbac(`${PREFIX}-sp`)
-    await db.delete(squads).where(eq(squads.id, squad.id))
+    await db.delete(squads).where(inArray(squads.id, [squad.id, otherSquad.id]))
   })
 })

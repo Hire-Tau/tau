@@ -156,25 +156,31 @@ export function permissionsFromAssignments(assignments: PermissionAssignment[], 
 }
 
 /**
- * `squad_id` is a uuid column, but a `squadId` ARGUMENT is not always a uuid: route guards run
- * before a short id prefix has been expanded (`GET /api/squads/:id` accepts the first 8 characters
- * of a squad id). A value of the wrong shape can never equal a stored id, so it must match no row
- * — but handing it to a uuid comparison makes the whole statement fail with `invalid input syntax
- * for type uuid`. The previous code only avoided that by never reaching the squad query for a
- * holder of `*`; everyone else got a 500.
+ * `squad_id` is a uuid column, but a `squadId` ARGUMENT is not guaranteed to be one: it arrives
+ * from callers, and a value of the wrong shape handed to a uuid comparison fails the whole
+ * statement with `invalid input syntax for type uuid`.
  */
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
- * The scopes {@link permissionsFromAssignments} can actually consume for this check. An unscoped
- * check reads nothing but system rows, so the squad tiers stay out of the query entirely.
+ * The scopes {@link permissionsFromAssignments} can consume for this check. An unscoped check
+ * reads nothing but system rows, so the squad tiers stay out of the query entirely.
+ *
+ * A squad id that is not a uuid identifies NO squad, so it gets the unscoped treatment: system
+ * rows only. It deliberately does NOT fall back to `squad_default` — a squad-scoped role that
+ * withholds a permission on one squad replaces the default tier, and honouring the default for an
+ * unidentifiable squad would hand back exactly the permission that override exists to remove.
+ * Route guards must resolve a short id to its full squad id BEFORE asking (see
+ * `middleware/require-permission.ts`); this is the fail-closed floor under that, not a substitute
+ * for it. `uuidPrefixCondition` would be wrong here: an ambiguous prefix would union the overrides
+ * of every squad it matches.
  */
 function assignmentScopeFilter(squadId?: string): SQL {
-  if (!squadId) return eq(roleAssignments.scope, 'system')
-  const squadScoped = UUID_SHAPE.test(squadId)
-    ? and(eq(roleAssignments.scope, 'squad'), eq(roleAssignments.squadId, squadId))!
-    : sql`false`
-  return or(inArray(roleAssignments.scope, ['system', 'squad_default']), squadScoped)!
+  if (!squadId || !UUID_SHAPE.test(squadId)) return eq(roleAssignments.scope, 'system')
+  return or(
+    inArray(roleAssignments.scope, ['system', 'squad_default']),
+    and(eq(roleAssignments.scope, 'squad'), eq(roleAssignments.squadId, squadId))
+  )!
 }
 
 async function resolveUserPermissions(
