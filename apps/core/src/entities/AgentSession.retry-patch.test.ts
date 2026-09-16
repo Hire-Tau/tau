@@ -23,6 +23,11 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
  *     (`api/openai-codex-responses.js` `isTerminalRateLimitError`) — the
  *     primary-model (`openai-codex:gpt-5.6-sol`) path.
  *
+ * Both codex usage-limit wordings are asserted: the client's friendly 429
+ * rewrite ("You have hit your ChatGPT usage limit") and the in-stream `error`
+ * event mapCodexEvents throws ("Codex error: The usage limit has been
+ * reached"), which shares no phrasing with the first.
+ *
  * If a future `bun install` / SDK bump drops the patch, the "hard limit" cases
  * below go red. See apps/core/src/lib/error.ts (classifyProviderError) for the
  * downstream failover that relies on this settling on attempt 1.
@@ -89,6 +94,9 @@ describe('Pi SDK non-retryable hard-limit patch', () => {
       // is exactly what makes these RETRYABLE without the patch.
       expect(isRetryable('429 You have hit your ChatGPT usage limit (plus plan). Try again in ~43 min.')).toBe(false)
       expect(isRetryable('429 usage_limit_reached')).toBe(false)
+      // The in-stream `error` event's wording (mapCodexEvents' CodexApiError)
+      // carries neither of the two above, so it needs its own pattern.
+      expect(isRetryable('Codex error: The usage limit has been reached')).toBe(false)
     })
 
     it("preserves the SDK's original non-retryable signals", () => {
@@ -116,6 +124,7 @@ describe('Pi SDK non-retryable hard-limit patch', () => {
     it('treats the codex plan-window markers as terminal', () => {
       expect(isTerminal('You have hit your ChatGPT usage limit (plus plan). Try again in ~43 min.')).toBe(true)
       expect(isTerminal('usage_limit_reached')).toBe(true)
+      expect(isTerminal('Codex error: The usage limit has been reached')).toBe(true)
     })
 
     it("preserves the SDK's original terminal signals", () => {
