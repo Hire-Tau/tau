@@ -27,6 +27,7 @@ import { resetContinuationCycle } from '../work-streams/continuation-state'
 import { isUuid, listTrustedWorkStreamOriginsForExecution } from '../work-streams/execution-provenance'
 import { listSquadScopeNotifyUserIds } from '../attention/resolver'
 import { getUserIdsWithPermission, hasPermission } from '../rbac/permissions'
+import { listEnabledUserIds } from '../users/enabled'
 import { drainQuestionAnswerDeliverySoon } from './question-answer-delivery'
 import { ensureQuestionDeliveryFailureAlert } from './question-delivery-failure-alert'
 
@@ -579,17 +580,6 @@ export async function listAgentQuestions(
 export async function getAgentQuestion(id: string): Promise<AgentQuestion | null> {
   const [row] = await db.select().from(agentQuestions).where(eq(agentQuestions.id, id))
   return row ? toJson(row) : null
-}
-
-/** Disabled accounts cannot open the Action Center and must never receive retained-device push. */
-async function listEnabledUserIds(candidateIds: string[]): Promise<string[]> {
-  if (candidateIds.length === 0) return []
-  const rows = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(and(inArray(users.id, candidateIds), isNull(users.disabledAt)))
-  const enabled = new Set(rows.map(({ id }) => id))
-  return candidateIds.filter((userId) => enabled.has(userId))
 }
 
 /**
