@@ -103,14 +103,24 @@ async function fixture(visible: boolean) {
   }
 }
 
-test('renders every update with its task label and status, and only visible intersecting cards are acknowledged', async () => {
+test('renders unread updates newest first with their task label and status, and only visible intersecting cards are acknowledged', async () => {
   const f = await fixture(true)
   try {
+    // Read cards stay behind the toggle; unread ones list newest first.
+    expect(
+      [...f.container.querySelectorAll<HTMLElement>('[data-update-id]')].map((card) => card.dataset.updateId)
+    ).toEqual([update(2).messageId, update(1).messageId])
+    expect(f.observed).toHaveLength(2)
+    const showRead = [...f.container.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
+      button.textContent?.startsWith('Show read')
+    )!
+    expect(showRead.textContent).toBe('Show read (1)')
+    await f.dom.act(async () => showRead.click())
     expect(f.container.querySelectorAll('[data-update-id]')).toHaveLength(3)
+    expect(showRead.textContent).toBe('Hide read')
     expect(f.container.textContent).toContain('Compare options')
     expect(f.container.textContent).toContain('Needs your input')
     expect(f.container.textContent).toContain('2 unread')
-    expect(f.observed).toHaveLength(3)
     // Rendering alone acknowledges nothing.
     expect(f.onSeen).not.toHaveBeenCalled()
     await f.intersect([update(1).messageId])
@@ -185,9 +195,15 @@ test('the section stays collapsed while everything is seen, opens for unread upd
     expect(region().hidden).toBe(true)
     expect(toggle().textContent).toContain('3')
     expect(toggle().textContent).not.toContain('unread')
-    // Manual toggle opens history without acknowledging anything.
+    // Manual toggle opens the section without acknowledging anything; read history is a toggle away.
     await f.dom.act(async () => toggle().click())
     expect(region().hidden).toBe(false)
+    expect(f.container.querySelectorAll('[data-update-id]')).toHaveLength(0)
+    expect(f.container.textContent).toContain('All caught up.')
+    const showRead = [...f.container.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
+      button.textContent?.startsWith('Show read')
+    )!
+    await f.dom.act(async () => showRead.click())
     expect(f.container.querySelectorAll('[data-update-id]')).toHaveLength(3)
     expect(f.onSeen).not.toHaveBeenCalled()
     await f.dom.act(async () => toggle().click())
@@ -211,23 +227,25 @@ test('Hide marks one card read and keeps it out of view until the section is tog
   const f = await fixture(true)
   try {
     const hideButtons = () => [...f.container.querySelectorAll<HTMLButtonElement>('button[aria-label="Hide update"]')]
+    const hideFor = (id: string) =>
+      f.container.querySelector<HTMLButtonElement>(`[data-update-id="${id}"] button[aria-label="Hide update"]`)!
     expect(hideButtons()).toHaveLength(2)
-    await f.dom.act(async () => hideButtons()[0].click())
+    await f.dom.act(async () => hideFor(update(1).messageId).click())
     expect(f.onSeen).toHaveBeenCalledWith([update(1).messageId])
     expect(f.container.querySelector(`[data-update-id="${update(1).messageId}"]`)).toBeNull()
-    expect(f.container.querySelectorAll('[data-update-id]')).toHaveLength(2)
+    expect(f.container.querySelectorAll('[data-update-id]')).toHaveLength(1)
     // A failed acknowledgment puts the card back.
     f.onSeen.mockImplementationOnce(async () => {
       throw new Error('offline')
     })
-    await f.dom.act(async () => hideButtons()[0].click())
+    await f.dom.act(async () => hideFor(update(2).messageId).click())
     expect(f.container.querySelector(`[data-update-id="${update(2).messageId}"]`)).not.toBeNull()
     expect(f.container.textContent).toContain('Read state could not be saved')
-    // Toggling the section brings hidden history back.
+    // Toggling the section brings hidden unread cards back (the fixture never re-renders seen state).
     const toggle = f.container.querySelector<HTMLButtonElement>('button[aria-expanded]')!
     await f.dom.act(async () => toggle.click())
     await f.dom.act(async () => toggle.click())
-    expect(f.container.querySelectorAll('[data-update-id]')).toHaveLength(3)
+    expect(f.container.querySelectorAll('[data-update-id]')).toHaveLength(2)
   } finally {
     await f.dom.cleanup()
   }
