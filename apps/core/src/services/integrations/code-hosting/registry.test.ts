@@ -336,3 +336,26 @@ test('tracked fan-out is delegated to the tracked-resource adapters, not the cod
   // A tracked Linear issue is still identified by the shared matcher.
   expect(subscriptionTargetsResource(subscriptions[0]!, { ...linear, kind: 'issue' as const })).toBe(true)
 })
+
+test('a Linear issue link is never delivery feedback, even beside a link claiming a Linear pull request', () => {
+  const registry = new CodeHostingRegistry([githubCodeHostingAdapter])
+  const flow = createBlankWorkflow()
+  flow.completion = { mode: 'pr-merge', followChanges: true }
+  const issue = { integration: 'linear', repository: 'eng', kind: 'issue', number: 12, externalId: 'issue-uuid' }
+  // Linear has no pull requests, but stored metadata could still claim one and flag it for delivery.
+  const flagged = { ...issue, kind: 'pull_request', delivery: true }
+  for (const externalId of [issue.externalId, undefined]) {
+    const metadata = {
+      tracked: [
+        { ...issue, externalId },
+        { ...flagged, externalId },
+      ],
+    }
+    const subscriptions = registry.subscriptions(flow, metadata)
+    expect(subscriptions).toHaveLength(4)
+    for (const subscription of subscriptions) {
+      expect(subscription.source.output.startsWith('issue.')).toBe(true)
+      expect(isDeliveryFeedbackSubscription(subscription, metadata)).toBe(false)
+    }
+  }
+})

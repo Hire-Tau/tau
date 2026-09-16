@@ -254,6 +254,28 @@ describe('work-stream tracked-resource routes', () => {
     expect(unknown.status).toBe(400)
   })
 
+  it('refuses a Linear pull request, a resource that provider does not have', async () => {
+    const [row] = await db
+      .insert(workStreams)
+      .values({ squadId: testSquadId, title: `${testPrefix} linear-pr`, metadata: {} })
+      .returning()
+    const reference = await apiFetch(`/api/workstreams/${row!.id}/tracked`, {
+      method: 'POST',
+      body: { reference: 'ENG-12', kind: 'pull_request' },
+    })
+    expect(reference.status).toBe(400)
+    expect((await reference.json()).error).toContain('linear')
+    const flagged = await apiFetch(`/api/workstreams/${row!.id}/tracked`, {
+      method: 'POST',
+      body: {
+        resource: { integration: 'linear', repository: 'eng', kind: 'pull_request', number: 12 },
+        delivery: true,
+      },
+    })
+    expect(flagged.status).toBe(400)
+    expect((await WorkStream.mustFind(row!.id)).metadata).toEqual({})
+  })
+
   it('refuses to untrack the designated delivery change request', async () => {
     const [row] = await db
       .insert(workStreams)

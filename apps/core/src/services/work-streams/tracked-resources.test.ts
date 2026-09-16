@@ -559,7 +559,7 @@ test('untracking a delivery pull request drops the delivery state it left behind
 
 const linearConnections: Array<() => Promise<void>> = []
 /** A Linear connection the squad may use: assignment is the only thing authorization reads. */
-async function createLinearConnection(target: string) {
+async function createLinearConnection(target: string, overrides: Record<string, unknown> = {}) {
   const { getSecretStore } = await import('../secrets')
   const id = randomUUID()
   const revision = randomUUID()
@@ -579,16 +579,18 @@ async function createLinearConnection(target: string) {
     validatedRevision: revision,
     validatedAt: new Date(),
     validationExpiresAt: new Date(Date.now() + 900_000),
+    ...overrides,
   })
   await db
     .insert(integrationConnectionAssignments)
     .values({ squadId: target, providerKey: 'linear', connectionId: id, isDefault: true })
-  linearConnections.push(async () => {
+  const dispose = async () => {
     await db.delete(integrationConnectionAssignments).where(eq(integrationConnectionAssignments.connectionId, id))
     await db.delete(integrationConnections).where(eq(integrationConnections.id, id))
     await getSecretStore().delete(credentialRef)
-  })
-  return id
+  }
+  linearConnections.push(dispose)
+  return { id, dispose }
 }
 /** Stand in for Linear's GraphQL endpoint; `null` is an issue this connection cannot read. */
 function stubLinearIssue(issue: unknown, queries: unknown[] = []) {
@@ -671,5 +673,72 @@ test('a Linear link is described by the squad’s own connection, recording the 
   } finally {
     fetching.mockRestore()
     for (const dispose of linearConnections.splice(0)) await dispose()
+  }
+})
+
+test('Linear links are authorized by the squad’s own assignment, and Linear has no pull requests', async () => {
+  const issue: TrackedResource = { integration: 'linear', repository: 'eng', kind: 'issue', number: 12 }
+  const pullRequest: TrackedResource = { ...issue, kind: 'pull_request' }
+  // Linear has no pull requests, so the kind is refused before any connection is consulted.
+  await expect(authorizeTrackedResource(squadId, pullRequest)).rejects.toMatchObject({ status: 400 })
+  await expect(
+    resolveTrackedResourceRequest(squadId, { reference: 'ENG-12', kind: 'pull_request' })
+  ).rejects.toMatchObject({ status: 400 })
+  await expect(resolveTrackedResourceRequest(squadId, { resource: pullRequest, delivery: true })).rejects.toMatchObject(
+    { status: 400 }
+  )
+  // A disabled or unauthenticated assignment is not one this squad may act on.
+  for (const overrides of [{ enabled: false }, { authState: 'pending' }]) {
+    const connection = await createLinearConnection(squadId, overrides)
+    await expect(authorizeTrackedResource(squadId, issue)).rejects.toMatchObject({ status: 403 })
+    await connection.dispose()
+  }
+  const connection = await createLinearConnection(squadId)
+  try {
+    await authorizeTrackedResource(squadId, issue)
+    await authorizeTrackedResource(squadId, { ...issue, connectionId: connection.id })
+    // A link pinned to another account is not authorized by this squad's assignment.
+    await expect(authorizeTrackedResource(squadId, { ...issue, connectionId: randomUUID() })).rejects.toMatchObject({
+      status: 403,
+    })
+  } finally {
+    await connection.dispose()
+  }
+})
+
+test('a stale Linear connection asks for revalidation; an unreadable issue answers without provider text', async () => {
+  const stale = await createLinearConnection(squadId, { validationExpiresAt: new Date(Date.now() - 1000) })
+  const unused = stubLinearIssue(linearIssue)
+  try {
+    // Authorization still holds — the squad keeps its assignment — but nothing may be read with it.
+    await expect(resolveTrackedResourceRequest(squadId, { reference: 'ENG-12' })).rejects.toMatchObject({
+      status: 409,
+      message: 'Linear connection needs revalidation before linking',
+    })
+    expect(unused).not.toHaveBeenCalled()
+  } finally {
+    unused.mockRestore()
+    await stale.dispose()
+  }
+  const live = await createLinearConnection(squadId)
+  const failing = spyOn(globalThis, 'fetch').mockRejectedValue(new Error('linear said no: token lin_api_secret'))
+  try {
+    const error = await resolveTrackedResourceRequest(squadId, { reference: 'ENG-15' }).catch((caught) => caught)
+    expect(error).toMatchObject({ status: 404 })
+    expect(error.message).toContain('ENG-15')
+    expect(error.message).not.toContain('lin_api_secret')
+    expect(error.message).not.toContain('linear said no')
+  } finally {
+    failing.mockRestore()
+  }
+  // The provider's own answer still has to be an identity this instance can follow.
+  const malformed = stubLinearIssue({ ...linearIssue, team: { key: 'not a team key' } })
+  try {
+    await expect(resolveTrackedResourceRequest(squadId, { reference: 'ENG-12' })).rejects.toMatchObject({
+      status: 400,
+    })
+  } finally {
+    malformed.mockRestore()
+    await live.dispose()
   }
 })

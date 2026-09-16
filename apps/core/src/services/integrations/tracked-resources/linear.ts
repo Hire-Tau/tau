@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { trackedResourceKey, trackedResourceLabel, type IntegrationSubscription } from '@tau/shared'
 import { resolveLinearAssignment, resolveLinearConnection } from '../linear/resolve-connection'
 import { linearQuery } from '../linear/plugin'
+import { TrackedResourceError } from '../../work-streams/tracked-resource-error'
 import type { TrackedResourceAdapter } from './registry'
 
 const ISSUE_EVENTS = ['assigned', 'unassigned', 'updated', 'comment']
@@ -16,7 +17,12 @@ function text(value: unknown, max: number) {
 export const linearTrackedResourceAdapter: TrackedResourceAdapter = {
   integration: 'linear',
   validateRepository: (repository) => TEAM_KEY.test(repository.trim()),
-  matchFields: () => ({ repository: 'teamKey', number: 'issue.number', externalId: 'issue.id' }),
+  // Linear tracks issues only. Any other kind gets fields no Linear fact can ever carry, so a
+  // link that claims one is never identified by an issue's subscriptions.
+  matchFields: (kind) =>
+    kind === 'issue'
+      ? { repository: 'teamKey', number: 'issue.number', externalId: 'issue.id' }
+      : { repository: 'teamKey', number: 'pullRequest.number' },
   /** Ids hash the resource identity, so adding or removing a link never renumbers the others. */
   trackedSubscriptions(resource) {
     // Linear tracks issues only; a pull request lives on the code host, not here.
@@ -46,10 +52,14 @@ export const linearTrackedResourceAdapter: TrackedResourceAdapter = {
     const assignment = await resolveLinearAssignment(squadId)
     return !!assignment && (!connectionId || assignment.id === connectionId)
   },
-  /** Reads the squad's own connection. A resource it cannot see is reported as unknown, not as an error. */
+  /**
+   * Reads the squad's own connection. An issue this connection cannot see is reported as unknown
+   * (null); a connection that cannot be used at all is a different answer, and says so.
+   */
   async describe(resource, squadId) {
     const resolved = await resolveLinearConnection(squadId)
-    if (!resolved) return null
+    // The squad still holds the assignment; what it lacks is a credential it may use right now.
+    if (!resolved) throw new TrackedResourceError('Linear connection needs revalidation before linking', 409)
     let issue: Record<string, unknown> | null | undefined
     try {
       // Provider failures are identity answers here, not diagnostics: never leak provider text.
@@ -63,10 +73,11 @@ export const linearTrackedResourceAdapter: TrackedResourceAdapter = {
     if (!externalId) return null
     const team = issue?.team && typeof issue.team === 'object' ? (issue.team as Record<string, unknown>) : undefined
     const key = text(team?.key, 100)
+    const url = text(issue?.url, 2000)
     const number = typeof issue?.number === 'number' && Number.isSafeInteger(issue.number) ? issue.number : undefined
     return {
       externalId,
-      ...(text(issue?.url, 2000) ? { url: text(issue?.url, 2000)! } : {}),
+      ...(url ? { url } : {}),
       ...(key ? { repository: key.toLowerCase() } : {}),
       ...(number && number > 0 ? { number } : {}),
     }

@@ -22,17 +22,9 @@ import { subscriptionTargetsResource, trackedResourceRegistry } from '../integra
 import { isOutputEventAuthorizedForSquad, reconcileOutputDeliveries } from '../integrations/outputs/runtime'
 import { eventTrackedResource } from '../integrations/outputs/tracked-match'
 import { deliveryView } from './delivery-pull-requests'
+import { TrackedResourceError } from './tracked-resource-error'
 
-/** A tracked-link failure that maps directly onto an API status. */
-export class TrackedResourceError extends Error {
-  constructor(
-    message: string,
-    readonly status: 400 | 403 | 404 | 409
-  ) {
-    super(message)
-    this.name = 'TrackedResourceError'
-  }
-}
+export { TrackedResourceError } from './tracked-resource-error'
 
 const trackedResourceInputSchema = trackedResourceObjectSchema.pick({
   integration: true,
@@ -107,8 +99,9 @@ export function trackedResourceRequestIdentity(request: TrackedResourceIdentityR
   if ('reference' in request) {
     const parsed = parseTrackedResourceReference(request.reference)
     if (!parsed) return null
-    // A GitHub reference names no kind of its own, so the caller picks; Linear has only issues.
-    return parsed.kind ? parsed : { ...parsed, kind: request.kind ?? 'issue' }
+    // A GitHub reference names no kind of its own, so the caller picks. A caller who names a kind
+    // the provider does not have is told so by authorization, never quietly given another resource.
+    return { ...parsed, kind: request.kind ?? parsed.kind ?? 'issue' }
   }
   return request.resource
 }
@@ -142,6 +135,9 @@ export async function resolveTrackedResourceRequest(
         404
       )
     resource = { ...resource, ...described }
+    // The provider's answer is still an identity this instance has to be able to follow.
+    if (!adapter.validateRepository(resource.repository))
+      throw new TrackedResourceError(`Invalid ${resource.integration} repository: ${resource.repository}`, 400)
   }
   return resource
 }
@@ -152,6 +148,9 @@ export async function authorizeTrackedResource(squadId: string, resource: Tracke
   if (!adapter) throw new TrackedResourceError(`Unknown tracked resource integration: ${resource.integration}`, 400)
   if (!adapter.validateRepository(resource.repository))
     throw new TrackedResourceError(`Invalid ${resource.integration} repository: ${resource.repository}`, 400)
+  // Only a code host has pull requests; without one, `delivery` could never be satisfied either.
+  if (resource.kind === 'pull_request' && !codeHostingRegistry.adapterFor(resource.integration))
+    throw new TrackedResourceError(`Pull requests are not supported for ${resource.integration}`, 400)
   if (!(await adapter.authorizeSquad(squadId, resource.connectionId)))
     throw new TrackedResourceError(
       `No authorized ${resource.integration} connection is assigned to this squad${

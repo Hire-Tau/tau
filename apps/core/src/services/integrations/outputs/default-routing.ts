@@ -6,6 +6,7 @@ import {
   type WorkflowEventTrigger,
   selectSquadEventRule,
   eventRuleWorkflow,
+  trackedResourceLabel,
 } from '@tau/shared'
 import {
   db,
@@ -188,7 +189,7 @@ async function send(
     resource && squadId
       ? [
           `Event reference: ${event.id}`,
-          `Tracked resource: ${label} ${resource.repository}#${resource.number}${resource.url ? ` (${resource.url})` : ''}`,
+          `Tracked resource: ${label} ${trackedResourceLabel(resource)}${resource.url ? ` (${resource.url})` : ''}`,
           `To start work that follows this ${label}: tau workstream create '<title>' --squad ${squadId} --from-event ${event.id} [--repository <checkout-path>] [--workflow <id>] [-d '<requirements>']. Tau records the ${label} link with the stream so later updates (closure, reopening, comments, assignment changes) route to it without extra squad rules.`,
           `To attach it to existing work instead: tau workstream track <work-stream> --event ${event.id}`,
           'Do not hand-write github or codeHost metadata to track it; source links (--from-url) are reference material only.',

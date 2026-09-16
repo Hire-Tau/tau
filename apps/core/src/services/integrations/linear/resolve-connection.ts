@@ -23,5 +23,6 @@ export async function resolveLinearConnection(squadId: string) {
  */
 export async function resolveLinearAssignment(squadId: string) {
   const connection = await new DbIntegrationConnectionRepository().getAssigned(squadId, 'linear')
-  return connection?.enabled && connection.authState === 'authenticated' ? { id: connection.id } : undefined
+  if (!connection?.enabled || connection.authState !== 'authenticated') return undefined
+  return { id: connection.id }
 }

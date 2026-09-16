@@ -122,3 +122,20 @@ test('subscriptionTargetsResource identifies Linear links by provider id or by t
     subscriptionTargetsResource(byId!, { ...linearIssue, integration: 'gitlab' }, new TrackedResourceRegistry([]))
   ).toBe(false)
 })
+
+test('Linear match fields are kind-aware, so an issue subscription never identifies a "pull request" link', () => {
+  const [byId] = trackedResourceRegistry.subscriptions({ tracked: [linearIssue] })
+  const { externalId: _id, ...withoutId } = linearIssue
+  const [byNumber] = trackedResourceRegistry.subscriptions({ tracked: [withoutId] })
+  // Linear has no pull requests, but metadata could still claim one with the issue's identity.
+  const claimed = { ...linearIssue, kind: 'pull_request' as const }
+  expect(subscriptionTargetsResource(byId!, claimed)).toBe(false)
+  expect(subscriptionTargetsResource(byNumber!, claimed)).toBe(false)
+  expect(subscriptionTargetsResource(byNumber!, { ...withoutId, kind: 'pull_request' })).toBe(false)
+  expect(linearTrackedResourceAdapter.matchFields('pull_request').externalId).toBeUndefined()
+  expect(linearTrackedResourceAdapter.matchFields('issue')).toEqual({
+    repository: 'teamKey',
+    number: 'issue.number',
+    externalId: 'issue.id',
+  })
+})
