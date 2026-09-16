@@ -64,6 +64,8 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
   const [expandedOverride, setExpandedOverride] = useState<boolean | null>(null)
   // Cards hidden with the per-card action stay out of view until the section is toggled again.
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set())
+  // Read updates stay out of the way by default; a small text toggle brings the history back.
+  const [showRead, setShowRead] = useState(false)
   const propsRef = useStableRef(props)
   const documentVisible = props.dependencies?.documentVisible ?? (() => document.visibilityState === 'visible')
   const documentVisibleRef = useStableRef(documentVisible)
@@ -128,7 +130,11 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
     }
   })
   const createObserver = props.dependencies?.createObserver ?? defaultObserverFactory
-  const shown = props.updates.filter((update) => !hidden.has(update.messageId))
+  const readCount = props.updates.filter((update) => update.seenAt).length
+  const shown = props.updates
+    .filter((update) => !hidden.has(update.messageId) && (showRead || !update.seenAt))
+    // Newest first: the latest result or question is what the user came to see.
+    .sort((a, b) => b.sequence - a.sequence)
   const updateIds = shown.map((update) => update.messageId).join(',')
   useEffect(() => {
     const root = region.current
@@ -175,6 +181,7 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
           onClick={() => {
             setExpandedOverride(!expanded)
             setHidden(new Set())
+            setShowRead(false)
           }}
         >
           <ChevronRightIcon
@@ -223,15 +230,6 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
           expanded && 'flex-1 md:max-h-80 md:flex-none'
         )}
       >
-        {props.hasMore && props.onLoadMore && (
-          <button
-            type="button"
-            className="tau-button w-full py-1.5 text-xs text-muted"
-            onClick={() => void props.onLoadMore?.()}
-          >
-            Load earlier updates
-          </button>
-        )}
         {shown.length === 0 && (
           <p className="px-2 py-3 text-xs text-muted">
             {props.updates.length === 0 ? 'No task updates yet. Delegated tasks report here.' : 'All caught up.'}
@@ -275,6 +273,29 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
             )
           })}
         </ul>
+        {(readCount > 0 || (showRead && props.hasMore && props.onLoadMore)) && (
+          <div className="flex items-center gap-3 px-2 pt-2 text-[11px] text-muted">
+            {readCount > 0 && (
+              <button
+                type="button"
+                aria-pressed={showRead}
+                className="tau-button py-1 hover:text-primary"
+                onClick={() => setShowRead((current) => !current)}
+              >
+                {showRead ? 'Hide read' : `Show read (${readCount}${props.hasMore ? '+' : ''})`}
+              </button>
+            )}
+            {showRead && props.hasMore && props.onLoadMore && (
+              <button
+                type="button"
+                className="tau-button py-1 hover:text-primary"
+                onClick={() => void props.onLoadMore?.()}
+              >
+                Load earlier updates
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </section>
   )

@@ -129,16 +129,20 @@ export function AssistantCommandCenter({
   const activity = useAssistantActivity({ enabled: enabled && !squadScope })
   const updateRows: CommandResult[] =
     !entry && !query.trim()
-      ? (activity.activity?.conversations ?? []).slice(0, 5).map((conversation) => ({
-          id: `update:${conversation.id}`,
-          kind: 'Update' as const,
-          label: conversation.title,
-          detail: conversation.latestUpdate?.preview ?? summarizeAssistantTasks(conversation),
-          summary: conversation.latestUpdate ? summarizeAssistantTasks(conversation) : undefined,
-          unread: conversation.unreadUpdates > 0,
-          timestamp: conversation.latestUpdate?.createdAt ?? conversation.updatedAt,
-          destination: { kind: 'assistant' as const, id: conversation.id, label: 'Assistant' },
-        }))
+      ? (activity.activity?.conversations ?? [])
+          // Only conversations with something unread; unfinished-but-quiet tasks stay off the landing list.
+          .filter((conversation) => conversation.unreadUpdates > 0)
+          .slice(0, 5)
+          .map((conversation) => ({
+            id: `update:${conversation.id}`,
+            kind: 'Update' as const,
+            label: conversation.title,
+            detail: conversation.latestUpdate?.preview ?? summarizeAssistantTasks(conversation),
+            summary: conversation.latestUpdate ? summarizeAssistantTasks(conversation) : undefined,
+            unread: conversation.unreadUpdates > 0,
+            timestamp: conversation.latestUpdate?.createdAt ?? conversation.updatedAt,
+            destination: { kind: 'assistant' as const, id: conversation.id, label: 'Assistant' },
+          }))
       : []
   const results = [
     ...updateRows,

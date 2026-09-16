@@ -6,6 +6,8 @@ import type { PendingAction } from '@tau/shared'
 import { acknowledgeFeedVisit, type FeedVisit } from '../api/auth'
 import { feedQueries, queries } from '../queryOptions'
 import { usePermissions } from '../hooks/usePermissions'
+import { useAssistantActivity } from '../hooks/useAssistantActivity'
+import { formatAssistantUpdateTime } from '../lib/assistantActivityPresentation'
 import { Link, useLocation } from 'react-router-dom'
 import { ChevronRightIcon } from './icons'
 import { ActionCenterContent } from './ActionCenterContent'
@@ -23,15 +25,21 @@ export function AccountFeedVisit({
   ready,
   acknowledge = acknowledgeFeedVisit,
   ActionCenter = ActionCenterContent,
+  useActivity = useAssistantActivity,
 }: {
   userId: string
   actions: PendingAction[]
   ready: boolean
   acknowledge?: typeof acknowledgeFeedVisit
   ActionCenter?: typeof ActionCenterContent
+  useActivity?: typeof useAssistantActivity
 }) {
   const location = useLocation()
   const visit = useQuery(feedQueries.visit(userId))
+  // Passive: unread Assistant task updates are listed here as a pointer into the conversation,
+  // never as a Needs-you action. Opening the row does not mark anything seen.
+  const activity = useActivity()
+  const unreadConversations = (activity.activity?.conversations ?? []).filter((row) => row.unreadUpdates > 0)
   const work = useQuery(queries.squads.activeWorkStreams())
   const [snapshot, setSnapshot] = useState<FeedVisit | null>(null)
   const [dismissed, setDismissed] = useState(false)
@@ -72,6 +80,9 @@ export function AccountFeedVisit({
   const streams = completed.data.pages.flatMap((page) => page.items)
   const parts = [
     totalCount ? `${totalCount} completed` : '',
+    unreadConversations.length
+      ? `${unreadConversations.length} Assistant ${unreadConversations.length === 1 ? 'update' : 'updates'}`
+      : '',
     newActions.length ? `${newActions.length} ${newActions.length === 1 ? 'needs' : 'need'} your input` : '',
   ].filter(Boolean)
   if (!parts.length) return null
@@ -100,6 +111,42 @@ export function AccountFeedVisit({
         </button>
       </summary>
       <div className="space-y-3 pb-3 pt-3">
+        {unreadConversations.length > 0 && (
+          <ul className="space-y-1" aria-label="Assistant updates">
+            {unreadConversations.map((conversation) => {
+              const params = new URLSearchParams(location.search)
+              for (const key of ['commandStack', 'commandQuery', 'assistantChat']) params.delete(key)
+              params.set('chat', 'open')
+              params.set('assistantConversation', conversation.id)
+              const latest = conversation.latestUpdate
+              return (
+                <li key={conversation.id}>
+                  <Link
+                    to={{ pathname: location.pathname, search: params.toString() }}
+                    className="flex items-start gap-2 rounded-lg py-2.5 pl-6 pr-3 hover:bg-surface-hover"
+                  >
+                    <span aria-hidden="true" className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-accent" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-primary break-words">{conversation.title}</span>
+                      {latest && <span className="mt-0.5 block truncate text-xs text-muted">{latest.preview}</span>}
+                      <span className="mt-1 block text-xs text-muted">
+                        {conversation.unreadUpdates === 1
+                          ? '1 unread update'
+                          : `${conversation.unreadUpdates} unread updates`}
+                        {latest && (
+                          <>
+                            {' '}
+                            · <time dateTime={latest.createdAt}>{formatAssistantUpdateTime(latest.createdAt)}</time>
+                          </>
+                        )}
+                      </span>
+                    </span>
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        )}
         {streams.length > 0 && (
           <ul className="space-y-1">
             {streams.map((stream) => {

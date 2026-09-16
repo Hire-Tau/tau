@@ -45,11 +45,17 @@ async function fixture(
   pendingWork?: Promise<any>,
   initialStack: CommandDestination[] = [],
   delayedQuery = false,
-  options: { activity?: boolean } = {}
+  options: { activity?: boolean | 'quiet' } = {}
 ) {
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
   const client = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } })
-  if (options.activity) client.setQueryData(assistantQueryKeys.activity(ownerUserId, 0), activityPage)
+  if (options.activity)
+    client.setQueryData(
+      assistantQueryKeys.activity(ownerUserId, 0),
+      options.activity === 'quiet'
+        ? { ...activityPage, conversations: [{ ...activityPage.conversations[0], unreadUpdates: 0 }] }
+        : activityPage
+    )
   const squad = { id: 'tau', name: 'Tau', purpose: 'Build software', managerAgentId: 'manager' }
   const work = {
     id: 'work',
@@ -705,6 +711,16 @@ test('root Updates rows lead the landing list, take arrow keys and Enter, and di
     expect(f.container.textContent).not.toContain('Updates')
     await f.type(input, '')
     expect(rows()[0].textContent).toContain('Hosting comparison')
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('conversations with only quiet unfinished tasks stay off the root Updates list', async () => {
+  const f = await fixture(undefined, [], false, { activity: 'quiet' })
+  try {
+    expect(f.container.textContent).not.toContain('Hosting comparison')
+    expect(f.container.textContent).not.toContain('Updates')
   } finally {
     await f.cleanup()
   }

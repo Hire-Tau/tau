@@ -51,6 +51,53 @@ test('waits for successful visible loading, freezes the visit baseline, and ackn
     { createdAt: '2026-01-02T00:00:00.000Z' },
     { createdAt: '2025-12-01T00:00:00.000Z' },
   ] as PendingAction[]
+  const conversationId = '507a9ac0-164e-4f49-9441-e57522bdc52b'
+  const useActivity = (() => ({
+    ownerId: 'one',
+    unreadConversations: 1,
+    isError: false,
+    activity: {
+      totals: {
+        unreadConversations: 1,
+        unreadUpdates: 2,
+        workingTasks: 1,
+        waitingTasks: 0,
+        needsInputTasks: 0,
+        unavailableTasks: 0,
+      },
+      hasMore: false,
+      conversations: [
+        {
+          id: conversationId,
+          title: 'Hosting comparison',
+          updatedAt: '2026-01-02T13:00:00.000Z',
+          latestUpdateSequence: 2,
+          unreadUpdates: 2,
+          workingTasks: 1,
+          waitingTasks: 0,
+          needsInputTasks: 0,
+          unavailableTasks: 0,
+          latestUpdate: {
+            messageId: 'm2',
+            preview: 'Comparison table attached.',
+            createdAt: '2026-01-02T13:00:00.000Z',
+          },
+        },
+        {
+          id: '6a1c0b4e-8c2d-4f3e-9a7b-1c2d3e4f5a6b',
+          title: 'Quiet task',
+          updatedAt: '2026-01-02T13:00:00.000Z',
+          latestUpdateSequence: 1,
+          unreadUpdates: 0,
+          workingTasks: 1,
+          waitingTasks: 0,
+          needsInputTasks: 0,
+          unavailableTasks: 0,
+          latestUpdate: null,
+        },
+      ],
+    },
+  })) as never
   const render = () =>
     dom!.act(async () => {
       root.render(
@@ -62,6 +109,7 @@ test('waits for successful visible loading, freezes the visit baseline, and ackn
               actions={actions}
               ready={ready}
               acknowledge={acknowledge}
+              useActivity={useActivity}
             />
           </ReactQueryHooksProvider>
         </MemoryRouter>
@@ -82,10 +130,21 @@ test('waits for successful visible loading, freezes the visit baseline, and ackn
     dom!.window.document.dispatchEvent(new dom!.window.Event('visibilitychange'))
   })
   expect(saved).toEqual([observedAt])
-  expect(dom.window.document.body.textContent).toContain('12 completed · 1 needs your input')
+  expect(dom.window.document.body.textContent).toContain('12 completed · 1 Assistant update · 1 needs your input')
   expect(dom.window.document.body.textContent).toContain('Ship the fix')
   expect(dom.window.document.body.textContent).toContain('1 new question')
-  expect(dom.window.document.querySelector('a')?.getAttribute('href')).toBe('/?squad=test&ws=completed-work')
+  // Unread Assistant updates are passive rows that open the conversation; quiet tasks are not listed.
+  const assistantRows = [...dom.window.document.querySelectorAll('[aria-label="Assistant updates"] a')]
+  expect(assistantRows).toHaveLength(1)
+  expect(assistantRows[0].textContent).toContain('Hosting comparison')
+  expect(assistantRows[0].textContent).toContain('Comparison table attached.')
+  expect(assistantRows[0].textContent).toContain('2 unread updates')
+  expect(assistantRows[0].getAttribute('href')).toBe(`/?squad=test&chat=open&assistantConversation=${conversationId}`)
+  expect(dom.window.document.body.textContent).not.toContain('Quiet task')
+  const completedLink = [...dom.window.document.querySelectorAll('a')].find((link) =>
+    link.textContent?.includes('Ship the fix')
+  )
+  expect(completedLink?.getAttribute('href')).toBe('/?squad=test&ws=completed-work')
   const section = dom.window.document.querySelector('details')!
   expect(section.open).toBe(true)
   await dom.act(async () => {
@@ -124,6 +183,9 @@ test('first visit establishes a watermark without claiming previous completions'
       <MemoryRouter initialEntries={['/?squad=test']}>
         <ReactQueryHooksProvider hooks={hooks}>
           <AccountFeedVisit
+            useActivity={
+              (() => ({ ownerId: null, activity: undefined, unreadConversations: 0, isError: false })) as never
+            }
             userId="new"
             actions={[]}
             ready
