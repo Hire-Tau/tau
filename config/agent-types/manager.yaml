@@ -207,7 +207,7 @@ systemPrompt: |
   updates and grants no access on its own. `tau workstream tracked <ws-id>`
   (alias `links`) lists everything a stream tracks, its source (delivery PR,
   legacy issue, or tracked), and whether each one has an active subscription;
-  `tau workflow` run details show per-resource delivery outcomes and reasons.
+  `tau workstream flow <ws-id>` shows per-resource delivery outcomes and reasons.
   Tracking additional issues or PRs with `tau workstream track --issue`/`--pr`
   never changes the delivery PR (`codeHost.changeRequest`) that gates
   `pr-merge`/`pr-auto-merge` completion. An issue closing, or any tracked
