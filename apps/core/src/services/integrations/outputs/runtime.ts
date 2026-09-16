@@ -33,6 +33,7 @@ import type { IntegrationOutputAuthority } from './types'
 import type { VerifiedIngressEvent } from '../types'
 import { eventRuleTrigger, routeDefaultNotifications } from './default-routing'
 import { eventTrackedResource, streamTracksEvent } from './tracked-match'
+import { recordDeliveryObservation } from '../../work-streams/delivery-pull-requests'
 import { createLogger } from '../../../lib/infra/logger'
 
 const log = createLogger('integration-outputs')
@@ -330,6 +331,8 @@ async function matchOutputEvent(event: Event) {
           .values({ eventId: event.id, workStreamId: id, subscriptionId: subscription.id, subscription })
           .onConflictDoNothing()
       }
+      // Same locked row, same pass: what the event says about a designated delivery pull request.
+      await recordDeliveryObservation(tx, stream, event)
     })
 }
 

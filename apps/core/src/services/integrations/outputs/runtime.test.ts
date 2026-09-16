@@ -1960,6 +1960,34 @@ test('a flagged tracked pull request passes the completion-ready delivery approv
   }
 })
 
+test('a merge on a designated delivery pull request updates the stream delivery state in the same pass', async () => {
+  const tracked: TrackedResource = {
+    integration: 'github',
+    repository: `${prefix}/other`,
+    kind: 'pull_request',
+    number: 1005,
+    delivery: true,
+  }
+  const id = await create(1004, { codeHost: true, tracked: [tracked] })
+  const merged = fact(tracked.number, {
+    output: 'pull_request.merged',
+    resourceKey: `${prefix}/other#${tracked.number}`,
+    data: { repository: `${prefix}/other`, pullRequest: { number: tracked.number, headSha: 'f'.repeat(40) } },
+  })
+  await publish(merged)
+  expect((await deliveries(id)).some((row) => row.subscriptionId === trackedSubscriptionId(tracked, 'merged'))).toBe(
+    true
+  )
+  const state = ((await WorkStream.mustFind(id)).metadata as any).delivery.pullRequests
+  expect(state[trackedResourceKey(tracked)]).toMatchObject({
+    state: 'merged',
+    at: merged.occurredAt,
+    headSha: 'f'.repeat(40),
+  })
+  // The primary pull request has not been observed, so nothing was written for it.
+  expect(Object.keys(state)).toEqual([trackedResourceKey(tracked)])
+})
+
 test('event-created streams preserve their default or explicit opt-out through real repository provisioning', async () => {
   const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises')
   const { tmpdir } = await import('node:os')

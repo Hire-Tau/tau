@@ -949,8 +949,8 @@ export const workStreamsRouter = new Hono()
       if (!stream) return c.json({ error: 'Work stream not found' }, 404)
       try {
         const resource = await resolveTrackedResourceRequest(stream.squadId, c.req.valid('json'))
-        const { added, view } = await addTrackedResources(stream.id, [resource])
-        return c.json({ added, ...view })
+        const { added, changed, view } = await addTrackedResources(stream.id, [resource])
+        return c.json({ added, changed, ...view })
       } catch (error) {
         return trackedResourceFailure(c, error)
       }

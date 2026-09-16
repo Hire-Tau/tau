@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import {
   parseTrackedResourceUrl,
+  readDeliveryState,
   resolveTrackedResources,
   trackedResourceKey,
   trackedResourceObjectSchema,
@@ -18,6 +19,7 @@ import { eventEmitter } from '../../lib/infra/event-emitter'
 import { codeHostingRegistry } from '../integrations/code-hosting'
 import { isOutputEventAuthorizedForSquad, reconcileOutputDeliveries } from '../integrations/outputs/runtime'
 import { eventTrackedResource } from '../integrations/outputs/tracked-match'
+import { deliveryView } from './delivery-pull-requests'
 
 /** A tracked-link failure that maps directly onto an API status. */
 export class TrackedResourceError extends Error {
@@ -41,8 +43,8 @@ const trackedResourceInputSchema = trackedResourceObjectSchema.pick({
 /** Identity may arrive as an observed event, a resource URL, or an explicit reference. */
 export const trackedResourceRequestSchema = z.union([
   z.object({ event: z.string().uuid() }).strict(),
-  z.object({ url: z.string().url() }).strict(),
-  z.object({ resource: trackedResourceInputSchema }).strict(),
+  z.object({ url: z.string().url(), delivery: z.literal(true).optional() }).strict(),
+  z.object({ resource: trackedResourceInputSchema, delivery: z.literal(true).optional() }).strict(),
 ])
 export type TrackedResourceRequest = z.infer<typeof trackedResourceRequestSchema>
 
@@ -90,6 +92,11 @@ export async function resolveTrackedResourceRequest(
     resource = { ...parsed, url: request.url.trim() }
   } else {
     resource = request.resource
+  }
+  if (request.delivery) {
+    if (resource.kind !== 'pull_request')
+      throw new TrackedResourceError('delivery is only valid for pull requests', 400)
+    resource = { ...resource, delivery: true }
   }
   await authorizeTrackedResource(squadId, resource)
   return resource
@@ -230,21 +237,38 @@ async function withLockedStream<T>(
 export async function addTrackedResources(
   streamId: string,
   resources: TrackedResource[]
-): Promise<{ added: ResolvedTrackedResource[]; view: TrackedResourcesView }> {
-  const addedKeys = await withLockedStream(streamId, async (locked, tx) => {
+): Promise<{ added: ResolvedTrackedResource[]; changed: boolean; view: TrackedResourcesView }> {
+  const result = await withLockedStream(streamId, async (locked, tx) => {
     const metadata = (locked.metadata as Record<string, unknown> | null) ?? {}
-    const current = new Set(resolveTrackedResources(metadata).map((resource) => resource.key))
+    const current = new Map(resolveTrackedResources(metadata).map((resource) => [resource.key, resource]))
     const additions = resources.filter((resource) => !current.has(trackedResourceKey(resource)))
-    if (!additions.length) return { value: [] as string[], changed: false }
-    const tracked = mergeTracked(metadata.tracked, additions)
+    // The primary delivery pull request is already designated, so re-adding it with the flag is a no-op.
+    const designate = new Set(
+      resources
+        .filter((resource) => resource.delivery)
+        .map((resource) => trackedResourceKey(resource))
+        .filter((key) => current.get(key)?.source === 'tracked' && !current.get(key)!.delivery)
+    )
+    if (!additions.length && !designate.size)
+      return { value: { addedKeys: [] as string[], changed: false }, changed: false }
+    const tracked = mergeTracked(metadata.tracked, additions).map((entry) =>
+      designate.has(trackedResourceKey(entry)) ? { ...entry, delivery: true as const } : entry
+    )
     await tx
       .update(workStreams)
       .set({ metadata: { ...metadata, tracked }, updatedAt: new Date() })
       .where(eq(workStreams.id, streamId))
-    return { value: additions.map((resource) => trackedResourceKey(resource)), changed: true }
+    return {
+      value: { addedKeys: additions.map((resource) => trackedResourceKey(resource)), changed: true },
+      changed: true,
+    }
   })
   const view = await listTrackedResources(streamId)
-  return { added: view.resources.filter((resource) => addedKeys.includes(resource.key)), view }
+  return {
+    added: view.resources.filter((resource) => result.addedKeys.includes(resource.key)),
+    changed: result.changed,
+    view,
+  }
 }
 
 export async function removeTrackedResource(
@@ -294,6 +318,7 @@ export async function listTrackedResources(streamId: string): Promise<TrackedRes
         : 'active'
   const active =
     subscriptions === 'active' ? codeHostingRegistry.subscriptions(run!.state.definition, stream.metadata) : []
+  const observed = readDeliveryState(stream.metadata).pullRequests
   return {
     subscriptions,
     resources: resolveTrackedResources(stream.metadata).map((resource) => {
@@ -307,9 +332,13 @@ export async function listTrackedResources(streamId: string): Promise<TrackedRes
             matchValue(subscription, numberPath) === resource.number
         )
         .map((subscription) => subscription.id)
-      return { ...resource, subscriptionIds, subscribed: subscriptionIds.length > 0 }
+      return {
+        ...resource,
+        subscriptionIds,
+        subscribed: subscriptionIds.length > 0,
+        ...(observed[resource.key] ? { mergeState: observed[resource.key]!.state } : {}),
+      }
     }),
-    // Populated once delivery pull-request state tracking lands; placeholder keeps the view shape stable.
-    delivery: { pullRequests: [], complete: false },
+    delivery: deliveryView(stream.metadata),
   }
 }

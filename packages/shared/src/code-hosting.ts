@@ -94,8 +94,8 @@ export interface ResolvedTrackedResource extends Omit<TrackedResource, 'delivery
 export const deliveryPullRequestStateSchema = z
   .object({
     state: z.enum(['open', 'merged', 'closed']),
-    at: z.string(),
-    headSha: z.string().optional(),
+    at: z.string().max(64),
+    headSha: z.string().max(64).optional(),
     eventId: z.string().uuid().optional(),
   })
   .strict()

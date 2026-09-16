@@ -408,3 +408,93 @@ test('parseTrackedMetadata validates shape without reading the database', () => 
   expect(() => parseTrackedMetadata({ tracked: 'nope' })).toThrow('metadata.tracked must be an array')
   expect(() => parseTrackedMetadata({ tracked: [{ bad: true }] })).toThrow('metadata.tracked[0] is invalid')
 })
+
+test('a tracked pull request can be designated for delivery, and issues can never be', async () => {
+  const id = await createStream({
+    metadata: { codeHost: { integration: 'github', repository: repo, changeRequest: { number: 2210 } } },
+  })
+  const pullRequest = { integration: 'github', repository: repo, kind: 'pull_request' as const, number: 2211 }
+  const plain = await addTrackedResources(id, [pullRequest])
+  expect(plain.changed).toBe(true)
+  expect(plain.view.delivery.pullRequests.map((item) => item.number)).toEqual([2210])
+
+  // Designating an already tracked pull request adds nothing but does change the stream.
+  const flagged = await addTrackedResources(id, [{ ...pullRequest, delivery: true }])
+  expect(flagged.added).toEqual([])
+  expect(flagged.changed).toBe(true)
+  expect((await metadataOf(id)).tracked).toHaveLength(1)
+  expect((await metadataOf(id)).tracked[0].delivery).toBe(true)
+  expect(flagged.view.delivery).toEqual({
+    pullRequests: [
+      {
+        key: trackedResourceKey({ ...pullRequest, number: 2210 }),
+        repository: repo,
+        number: 2210,
+        url: `https://github.com/${repo}/pull/2210`,
+        primary: true,
+        state: 'open',
+      },
+      {
+        key: trackedResourceKey(pullRequest),
+        repository: repo,
+        number: 2211,
+        url: `https://github.com/${repo}/pull/2211`,
+        primary: false,
+        state: 'open',
+      },
+    ],
+    complete: false,
+  })
+  expect((await addTrackedResources(id, [{ ...pullRequest, delivery: true }])).changed).toBe(false)
+
+  // The primary delivery pull request is already designated: re-adding it with the flag is a no-op.
+  const primary = await addTrackedResources(id, [
+    { integration: 'github', repository: repo, kind: 'pull_request', number: 2210, delivery: true },
+  ])
+  expect(primary.added).toEqual([])
+  expect(primary.changed).toBe(false)
+  expect((await metadataOf(id)).tracked).toHaveLength(1)
+
+  expect(
+    await resolveTrackedResourceRequest(squadId, { url: `https://github.com/${repo}/pull/2212`, delivery: true })
+  ).toMatchObject({ kind: 'pull_request', number: 2212, delivery: true })
+  await expect(
+    resolveTrackedResourceRequest(squadId, { url: `https://github.com/${repo}/issues/2213`, delivery: true })
+  ).rejects.toMatchObject({ status: 400 })
+  await expect(
+    resolveTrackedResourceRequest(squadId, { resource: trackedIssue(2214), delivery: true })
+  ).rejects.toMatchObject({ status: 400 })
+})
+
+test('the view reports the observed merge state of each delivery pull request', async () => {
+  const flagged = {
+    integration: 'github',
+    repository: repo,
+    kind: 'pull_request' as const,
+    number: 2431,
+    delivery: true as const,
+  }
+  const primaryKey = trackedResourceKey({ ...flagged, number: 2430 })
+  const id = await createStream({
+    metadata: {
+      codeHost: { integration: 'github', repository: repo, changeRequest: { number: 2430 } },
+      tracked: [flagged, trackedIssue(2432)],
+      delivery: {
+        pullRequests: {
+          [primaryKey]: { state: 'merged', at: '2026-01-01T00:00:00.000Z', headSha: 'a'.repeat(40) },
+        },
+      },
+    },
+  })
+  const view = await listTrackedResources(id)
+  expect(view.resources.map((resource) => [resource.number, resource.mergeState])).toEqual([
+    [2430, 'merged'],
+    [2431, undefined],
+    [2432, undefined],
+  ])
+  expect(view.delivery.complete).toBe(false)
+  expect(view.delivery.pullRequests.map((item) => [item.number, item.state, item.primary])).toEqual([
+    [2430, 'merged', true],
+    [2431, 'open', false],
+  ])
+})

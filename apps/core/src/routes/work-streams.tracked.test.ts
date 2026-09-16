@@ -542,4 +542,60 @@ describe('work-stream tracked-resource routes', () => {
       setup.mockRestore()
     }
   })
+
+  it('designates a tracked pull request for delivery and refuses the flag on issues', async () => {
+    const [row] = await db
+      .insert(workStreams)
+      .values({
+        squadId: testSquadId,
+        title: `${testPrefix} delivery flag`,
+        metadata: { codeHost: { integration: 'github', repository: repo, changeRequest: { number: 4950 } } },
+      })
+      .returning()
+    const id = row!.id
+    const url = `https://github.com/${repo}/pull/4951`
+
+    const listed = await apiFetch(`/api/workstreams/${id}/tracked`)
+    expect(await listed.json()).toMatchObject({
+      delivery: { pullRequests: [{ number: 4950, primary: true, state: 'open' }], complete: false },
+    })
+
+    const added = await apiFetch(`/api/workstreams/${id}/tracked`, { method: 'POST', body: { url } })
+    expect(added.status).toBe(200)
+    expect(await added.json()).toMatchObject({
+      changed: true,
+      delivery: { pullRequests: [{ number: 4950 }] },
+    })
+
+    const flagged = await apiFetch(`/api/workstreams/${id}/tracked`, {
+      method: 'POST',
+      body: { url, delivery: true },
+    })
+    expect(flagged.status).toBe(200)
+    const body = (await flagged.json()) as {
+      added: unknown[]
+      changed: boolean
+      resources: Array<{ number: number; delivery: boolean }>
+      delivery: { pullRequests: Array<{ number: number; primary: boolean }>; complete: boolean }
+    }
+    expect(body.added).toEqual([])
+    expect(body.changed).toBe(true)
+    expect(body.resources.map((resource) => [resource.number, resource.delivery])).toEqual([
+      [4950, true],
+      [4951, true],
+    ])
+    expect(body.delivery.pullRequests.map((item) => [item.number, item.primary])).toEqual([
+      [4950, true],
+      [4951, false],
+    ])
+    expect((await WorkStream.mustFind(id)).metadata).toMatchObject({ tracked: [{ number: 4951, delivery: true }] })
+
+    const issue = await apiFetch(`/api/workstreams/${id}/tracked`, {
+      method: 'POST',
+      body: { url: `https://github.com/${repo}/issues/4952`, delivery: true },
+    })
+    expect(issue.status).toBe(400)
+    expect((await issue.json()).error).toBeString()
+    expect((await WorkStream.mustFind(id)).metadata).toMatchObject({ tracked: [{ number: 4951 }] })
+  })
 })

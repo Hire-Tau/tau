@@ -20,7 +20,7 @@ export function flowCompletionInstructions(mode: WorkflowDefinition['completion'
     `Delivery policy: ${mode}. The workflow determines responsibility for delivery; no agent role intrinsically owns PR creation or completion.`,
     guidance[mode],
     pr
-      ? 'Use the work stream’s existing codeHost binding. After creating or locating its PR, attach codeHost.changeRequest.number and codeHost.changeRequest.url for event routing. If the binding is missing, identify the repository and squad-authorized integration first. Check live PR mergeability after creation, CI, and approval. Resolve conflicts through an authorized flow return or revision and re-review the affected changes. Do not use a legacy completing review wait to finish a flow.'
+      ? 'Use the work stream’s existing codeHost binding. After creating or locating its PR, attach codeHost.changeRequest.number and codeHost.changeRequest.url for event routing. If the binding is missing, identify the repository and squad-authorized integration first. Check live PR mergeability after creation, CI, and approval. Resolve conflicts through an authorized flow return or revision and re-review the affected changes. Do not use a legacy completing review wait to finish a flow. Additional pull requests that are part of the deliverable must be designated with `tau workstream track <ws-id> --pr <owner/repo#n> --delivery`; finish verifies every designated delivery PR is merged. `tau workstream tracked <ws-id>` shows the delivery state.'
       : '',
     'At completion-ready, use tau workstream finish with the current --version once the delivery condition is met.',
   ]
