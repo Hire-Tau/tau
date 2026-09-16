@@ -80,7 +80,17 @@ test('tracked links match events by identity, never by kind or repository coinci
       issue
     )
   ).toBe(false)
-  expect(streamTracksEvent({ github: { repo: 'acme/project', issue: '3' } }, issue)).toBe(true)
+  // A legacy `github.issue` is not a link; only a `tracked` entry claims the issue.
+  expect(streamTracksEvent({ github: { repo: 'acme/project', issue: '3' } }, issue)).toBe(false)
+  expect(
+    streamTracksEvent(
+      {
+        github: { repo: 'acme/project', issue: '3' },
+        tracked: [{ integration: 'github', repository: 'acme/project', kind: 'issue', number: 3 }],
+      },
+      issue
+    )
+  ).toBe(true)
   expect(
     streamTracksEvent(
       { codeHost: { integration: 'github', repository: 'acme/project', changeRequest: { number: 5 } } },

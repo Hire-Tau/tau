@@ -242,7 +242,7 @@ test('mergeTracked keeps existing entries and their stamps while deduping by ide
   expect(mergeTracked(undefined, [])).toEqual([])
 })
 
-test('the delivery change request cannot be untracked, and a legacy issue link keeps its repository', async () => {
+test('the delivery change request cannot be untracked, and removing a tracked issue keeps the repository', async () => {
   const delivery = await createStream({
     metadata: { codeHost: { integration: 'github', repository: repo, changeRequest: { number: 2301 } } },
   })
@@ -251,8 +251,11 @@ test('the delivery change request cannot be untracked, and a legacy issue link k
   ).rejects.toMatchObject({ status: 409 })
   expect((await metadataOf(delivery)).codeHost.changeRequest.number).toBe(2301)
 
-  const legacy = await createStream({ metadata: { github: { repo, issue: 2302 } } })
-  const removed = await removeTrackedResource(legacy, {
+  // A legacy `github.issue` alongside the tracked entry is inert: removing the entry removes the link.
+  const attached = await createStream({
+    metadata: { github: { repo, issue: 2302 }, tracked: [trackedIssue(2302)] },
+  })
+  const removed = await removeTrackedResource(attached, {
     integration: 'github',
     repository: repo,
     kind: 'issue',
@@ -260,8 +263,8 @@ test('the delivery change request cannot be untracked, and a legacy issue link k
   })
   expect(removed.removed).toBe(true)
   expect(removed.view.resources).toEqual([])
-  const metadata = await metadataOf(legacy)
-  expect(metadata.github.issue).toBeUndefined()
+  const metadata = await metadataOf(attached)
+  expect(metadata.tracked).toEqual([])
   expect(metadata.github.repo).toBe(repo)
 
   const missing = await createStream()

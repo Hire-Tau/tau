@@ -1,4 +1,5 @@
 import {
+  deliveryPullRequests,
   resolveCodeHostReference,
   resolveTrackedResources,
   type CodeHostReference,
@@ -19,6 +20,27 @@ export interface CodeHostingAdapter {
   /** Events for a resource tracked alongside the delivery binding. Identity only; never a grant. */
   trackedSubscriptions?(resource: ResolvedTrackedResource): IntegrationSubscription[]
   authorizeSquad?(squadId: string, connectionId?: string): Promise<boolean>
+}
+
+function matchValue(subscription: IntegrationSubscription, path: string) {
+  const match = subscription.match[path]
+  return match && 'value' in match ? match.value : undefined
+}
+
+/**
+ * Feedback on a delivery change request: the reserved code-host ids, plus the tracked
+ * subscriptions whose identity is a pull request designated as delivery in `metadata`.
+ */
+export function isDeliveryFeedbackSubscription(subscription: IntegrationSubscription, metadata: unknown): boolean {
+  if (subscription.id.startsWith('code-host-')) return true
+  return deliveryPullRequests(metadata).some(
+    (resource) =>
+      resource.integration === subscription.source.integration &&
+      String(matchValue(subscription, 'repository') ?? '')
+        .trim()
+        .toLowerCase() === resource.repository.trim().toLowerCase() &&
+      matchValue(subscription, 'pullRequest.number') === resource.number
+  )
 }
 
 export class CodeHostingRegistry {

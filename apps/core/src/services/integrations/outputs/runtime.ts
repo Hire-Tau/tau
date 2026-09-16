@@ -1,6 +1,7 @@
 import { waitsForAgent } from '../../work-streams/wait-scope'
 import { isDeliveryApprovalWait } from '../../workflows/wait-policy'
 import { codeHostingRegistry } from '../code-hosting'
+import { isDeliveryFeedbackSubscription } from '../code-hosting/registry'
 import { isIntegrationEnabled } from '../provider-state'
 import { and, eq, inArray, isNull, lte, desc, sql, or } from 'drizzle-orm'
 import {
@@ -177,7 +178,7 @@ async function recipientBlocked(
   agentId: string
 ) {
   const waits = await waitsForAgent(store, stream.id, agentId)
-  const deliveryFeedback = subscription.id.startsWith('code-host-')
+  const deliveryFeedback = isDeliveryFeedbackSubscription(subscription, stream.metadata)
   return waits.some(
     (wait) => !(deliveryFeedback && run.state.status === 'completion-ready' && isDeliveryApprovalWait(stream.id, wait))
   )

@@ -84,7 +84,6 @@ async function create(
     codeHost?: boolean
     codeHostTarget?: string
     tracked?: TrackedResource[]
-    legacyIssue?: number
   } = {}
 ) {
   const flow = definition()
@@ -142,9 +141,6 @@ async function create(
             : options.tracked
               ? {}
               : { github: { repo: `${prefix}/repo`, pr: { number } } }),
-          ...(options.legacyIssue !== undefined
-            ? { github: { repo: `${prefix}/repo`, issue: String(options.legacyIssue) } }
-            : {}),
           ...(options.tracked ? { tracked: options.tracked } : {}),
         },
       })
@@ -1384,6 +1380,7 @@ test('periodic flow reconciliation retries a parked owner notice after the webho
   }
 })
 
+/** Attach an issue the way the product does: a `metadata.tracked` link, replacing any earlier one. */
 async function attachIssue(id: string, number: number, connectionId?: string) {
   const stream = await WorkStream.mustFind(id)
   await db
@@ -1391,7 +1388,7 @@ async function attachIssue(id: string, number: number, connectionId?: string) {
     .set({
       metadata: {
         ...stream.metadata,
-        github: { repo: `${prefix}/repo`, issue: String(number), ...(connectionId ? { connectionId } : {}) },
+        tracked: [{ ...trackedIssue(number, `${prefix}/repo`), ...(connectionId ? { connectionId } : {}) }],
       },
     })
     .where(eq(workStreams.id, id))
@@ -1424,7 +1421,9 @@ test('attached issue comments reach the worker once alongside PR events without 
     )
     await publish(fact(92))
     expect(await deliveries(id)).toHaveLength(2)
-    const issue = (await deliveries(id)).find((row) => row.subscriptionId === 'code-host-issue-comment')!
+    const issue = (await deliveries(id)).find(
+      (row) => row.subscriptionId === trackedSubscriptionId(trackedIssue(93, `${prefix}/repo`), 'comment')
+    )!
     const worker = (await getFlow(id))!.attemptAgents['1']
     expect(issue.targets.map((target) => target.agentId)).toEqual([worker!])
     expect(
@@ -1445,11 +1444,14 @@ test('attached issue comments reach the worker once alongside PR events without 
   })
 })
 
-test('an issue-created stream retains its issue binding and automatically receives later comments', async () => {
+test('an issue-created stream that tracks its issue automatically receives later comments', async () => {
   await withNativeRouting(async (connectionId) => {
+    // Its own repository: a rule-created stream must not be confused with other work in this squad.
+    const repository = `${prefix}/created`
     const event = fact(95, {
       output: 'issue.assigned',
-      data: { repository: `${prefix}/repo`, issue: { number: 95 }, assignee: 'tau-bot', labels: ['bug'] },
+      resourceKey: `${repository}#95`,
+      data: { repository, issue: { number: 95 }, assignee: 'tau-bot', labels: ['bug'] },
     })
     const definition = createBlankWorkflow()
     definition.participants.worker!.agentTypeId = prefix
@@ -1458,7 +1460,7 @@ test('an issue-created stream retains its issue binding and automatically receiv
       .update(squads)
       .set({
         metadata: {
-          github: [{ repo: `${prefix}/repo` }],
+          github: [{ repo: repository }],
           integrationRules: {
             github: [
               {
@@ -1480,7 +1482,10 @@ test('an issue-created stream retains its issue binding and automatically receiv
       await db.select().from(integrationOutputTriggerRuns).where(eq(integrationOutputTriggerRuns.eventId, eventId))
     )[0]!
     const id = trigger.workStreamId!
-    const commentId = await publishIntegrationOutput('github', issueComment(95), authority)
+    const created = (await db.select().from(workStreams).where(eq(workStreams.id, id)))[0]!
+    expect((created.metadata as Record<string, any>).integrationSource.eventId).toBe(eventId)
+    await attachTracked(id, [{ integration: 'github', repository, kind: 'issue', number: 95, connectionId }])
+    const commentId = await publishIntegrationOutput('github', issueFact(repository, 95, 'issue.comment'), authority)
     eventIds.push(commentId)
     const retained = (await deliveries(id)).find((row) => row.eventId === commentId)!
     expect(retained.status).toBe('pending')
@@ -1515,10 +1520,11 @@ test('parked issue comments notify the owner while paused issue streams stay hel
   expect((await deliveries(id))[0]!.targets).toEqual([])
 })
 
-test('issue rules reuse a manually attached string-number issue instead of creating another work stream', async () => {
+test('issue rules reuse a stream that already tracks the issue instead of creating another work stream', async () => {
   await withNativeRouting(async (connectionId) => {
+    const repository = `${prefix}/manual`
     const id = await create(98, { codeHost: true })
-    await attachIssue(id, 99, connectionId)
+    await attachTracked(id, [{ integration: 'github', repository, kind: 'issue', number: 99, connectionId }])
     await db
       .update(squads)
       .set({
@@ -1537,7 +1543,7 @@ test('issue rules reuse a manually attached string-number issue instead of creat
         },
       })
       .where(eq(squads.id, squadId))
-    const eventId = await publishIntegrationOutput('github', issueComment(99), {
+    const eventId = await publishIntegrationOutput('github', issueFact(repository, 99, 'issue.comment'), {
       kind: 'connection',
       connectionId,
       squadId,
@@ -1846,6 +1852,41 @@ test('code-host delivery returns to the active engineer after its question clear
   expect((await getFlow(id))!.version).toBe(run.version)
 })
 
+test('a flagged tracked pull request passes the completion-ready delivery approval; an unflagged one does not', async () => {
+  const { openWait } = await import('../../work-streams/waits')
+  for (const flagged of [true, false]) {
+    const number = flagged ? 903 : 904
+    const tracked: TrackedResource = {
+      integration: 'github',
+      repository: `${prefix}/other`,
+      kind: 'pull_request',
+      number: number + 100,
+      ...(flagged ? { delivery: true as const } : {}),
+    }
+    const id = await create(number, { codeHost: true, tracked: [tracked] })
+    const run = (await getFlow(id))!
+    await advanceFlow(
+      id,
+      { action: 'complete', expectedVersion: run.version, attemptId: 1, outcome: 'completed', evidence: 'PR ready' },
+      randomUUID(),
+      { type: 'legacy' }
+    )
+    expect((await getFlow(id))!.state.status).toBe('completion-ready')
+    await openWait(db, { workStreamId: id, type: 'review', message: 'Await PR delivery approval' })
+    await publish(
+      fact(tracked.number, {
+        output: 'pull_request.merged',
+        resourceKey: `${prefix}/other#${tracked.number}`,
+        data: { repository: `${prefix}/other`, pullRequest: { number: tracked.number } },
+      })
+    )
+    const row = (await deliveries(id)).find((item) => item.subscriptionId === trackedSubscriptionId(tracked, 'merged'))!
+    expect(row).toBeDefined()
+    // Only feedback on a designated delivery PR may reach the reviewer behind the approval wait.
+    expect(row.targets.map((target) => target.agentId)).toEqual(flagged ? [run.attemptAgents['1']!] : [])
+  }
+})
+
 test('event-created streams preserve their default or explicit opt-out through real repository provisioning', async () => {
   const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises')
   const { tmpdir } = await import('node:os')
@@ -2001,19 +2042,24 @@ test('tracked issues and pull requests across repositories each route; removal s
   expect(after.filter((row) => row.id !== dropped.id).map((row) => row.status)).toEqual(['queued', 'queued', 'queued'])
 })
 
-test('legacy github.issue plus the same issue in tracked yields one subscription and one delivery', async () => {
-  const id = await create(2010, { codeHost: true, legacyIssue: 2011, tracked: [trackedIssue(2011, `${prefix}/repo`)] })
+test('the same issue tracked twice yields one subscription set and one delivery', async () => {
+  const issue = trackedIssue(2011, `${prefix}/repo`)
+  // Identity is case-insensitive on the repository, so these two entries are the same link.
+  const id = await create(2010, {
+    codeHost: true,
+    tracked: [issue, { ...issue, repository: issue.repository.toUpperCase() }],
+  })
   const { codeHostingRegistry } = await import('../code-hosting')
   const stream = await WorkStream.mustFind(id)
   const subscriptions = codeHostingRegistry.subscriptions((await getFlow(id))!.state.definition, stream.metadata)
   expect(subscriptions.filter((sub) => sub.source.output.startsWith('issue.')).map((sub) => sub.id)).toEqual([
-    'code-host-issue-assigned',
-    'code-host-issue-unassigned',
-    'code-host-issue-updated',
-    'code-host-issue-comment',
+    trackedSubscriptionId(issue, 'assigned'),
+    trackedSubscriptionId(issue, 'unassigned'),
+    trackedSubscriptionId(issue, 'updated'),
+    trackedSubscriptionId(issue, 'comment'),
   ])
   await publish(issueFact(`${prefix}/repo`, 2011, 'issue.comment'))
-  expect((await deliveries(id)).map((row) => row.subscriptionId)).toEqual(['code-host-issue-comment'])
+  expect((await deliveries(id)).map((row) => row.subscriptionId)).toEqual([trackedSubscriptionId(issue, 'comment')])
 })
 
 test('a tracked PR merge notifies but does not alter the designated delivery PR', async () => {
@@ -2207,6 +2253,7 @@ test('a tracked link removed before delivery supersedes the pending delivery ins
 test('an event-created stream and an explicitly tracked stream resolve the same links and both receive events', async () => {
   await withNativeRouting(async (connectionId) => {
     const number = 2080
+    const repository = `${prefix}/equivalence`
     const flow = createBlankWorkflow()
     flow.participants.worker!.agentTypeId = prefix
     flow.completion.followChanges = true
@@ -2214,7 +2261,7 @@ test('an event-created stream and an explicitly tracked stream resolve the same 
       .update(squads)
       .set({
         metadata: {
-          github: [{ repo: `${prefix}/repo` }],
+          github: [{ repo: repository }],
           integrationRules: {
             github: [
               {
@@ -2234,8 +2281,8 @@ test('an event-created stream and an explicitly tracked stream resolve the same 
       'github',
       fact(number, {
         output: 'issue.assigned',
-        resourceKey: `${prefix}/repo#${number}`,
-        data: { repository: `${prefix}/repo`, issue: { number }, assignee: 'tau-bot', labels: ['bug'] },
+        resourceKey: `${repository}#${number}`,
+        data: { repository, issue: { number }, assignee: 'tau-bot', labels: ['bug'] },
       }),
       authority
     ))!
@@ -2243,21 +2290,22 @@ test('an event-created stream and an explicitly tracked stream resolve the same 
     const triggered = (
       await db.select().from(integrationOutputTriggerRuns).where(eq(integrationOutputTriggerRuns.eventId, assignedId))
     )[0]!.workStreamId!
-    const manual = await create(number, { tracked: [trackedIssue(number, `${prefix}/repo`)] })
+    const issue = trackedIssue(number, repository)
+    await attachTracked(triggered, [issue])
+    const manual = await create(number, { tracked: [issue] })
+    // The link is the identity: how the stream acquired it changes nothing.
     expect(resolveTrackedResources((await WorkStream.mustFind(triggered)).metadata).map((item) => item.key)).toEqual(
       resolveTrackedResources((await WorkStream.mustFind(manual)).metadata).map((item) => item.key)
     )
     const updatedId = (await publishIntegrationOutput(
       'github',
-      issueFact(`${prefix}/repo`, number, 'issue.updated'),
+      issueFact(repository, number, 'issue.updated'),
       authority
     ))!
     eventIds.push(updatedId)
-    expect(
-      (await deliveries(triggered)).filter((row) => row.eventId === updatedId).map((row) => row.subscriptionId)
-    ).toEqual(['code-host-issue-updated'])
-    expect(
-      (await deliveries(manual)).filter((row) => row.eventId === updatedId).map((row) => row.subscriptionId)
-    ).toEqual([trackedSubscriptionId(trackedIssue(number, `${prefix}/repo`), 'updated')])
+    for (const id of [triggered, manual])
+      expect(
+        (await deliveries(id)).filter((row) => row.eventId === updatedId).map((row) => row.subscriptionId)
+      ).toEqual([trackedSubscriptionId(issue, 'updated')])
   })
 })

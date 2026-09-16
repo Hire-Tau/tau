@@ -88,6 +88,11 @@ test('issue assignments expose a typed assignee and issue identity without a PR 
   expect(event!.data).toMatchObject({ assignee: 'Noah', issue: { number: 4, title: 'Investigate latency' } })
   expect(event!.data.pullRequest).toBeUndefined()
   expect(() => integrationOutputRegistry.validateFact('github', event!)).not.toThrow()
+  // Issue identity lives in `metadata.tracked`; an event-created stream binds only its repository.
+  expect(githubOutputAdapter.workStreamBindings!(event!)).toEqual({ 'github.repo': { event: 'repository' } })
+  expect(
+    githubOutputAdapter.workStreamBindings!({ ...event!, data: { ...event!.data, pullRequest: { number: 4 } } })
+  ).toEqual({ 'github.repo': { event: 'repository' }, 'github.pr.number': { event: 'pullRequest.number' } })
 })
 
 test('issue comments and PR comments are distinct outputs', () => {
