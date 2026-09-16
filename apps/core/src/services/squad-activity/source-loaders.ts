@@ -401,16 +401,17 @@ export async function loadInboxSnapshot(executor: Executor, groupId: string): Pr
 }
 
 /**
- * One receipt, one row per owning squad: the squad's oldest stream that tracks
- * the resource carries it. Creation order is the tie-break (`ORDER BY
- * created_at,id`, keyset-paged on that same immutable pair) so the association
- * is stable no matter how many of the squad's streams name the resource.
+ * One receipt, one row per (owning squad, tracking stream): every stream in the
+ * squad that names the resource is attributed the event, not just the oldest.
+ * Creation order is preserved (`ORDER BY created_at,id`, keyset-paged on that
+ * same immutable pair) so the oldest stream is always first and therefore keeps
+ * the fact's own logical row id — see `activityRowIdForStream`.
  */
 async function loadGitHubTrackedSnapshot(
   executor: Executor,
   groupId: string,
   family: GitHubActivityFamily
-): Promise<{ base: GitHubActivityBase; squadId: string; workStreamId: string } | null> {
+): Promise<{ base: GitHubActivityBase; squadId: string; workStreamIds: string[] } | null> {
   const parts = groupId.split(':')
   const squadId = parts.pop()
   const sourceId = parts.join(':')
@@ -424,7 +425,7 @@ async function loadGitHubTrackedSnapshot(
     kind: (family === 'github-pr' ? 'pull_request' : 'issue') as TrackedResourceKind,
     number: githubFactNumber(base.fact),
   }
-  let match: any = null
+  const workStreamIds: string[] = []
   let after: { createdAt: string; id: string } | null = null
   do {
     const streams: any[] = rows<any>(
@@ -432,14 +433,14 @@ async function loadGitHubTrackedSnapshot(
         ${after ? sql`AND (created_at,id)>(${after.createdAt}::timestamptz,${after.id}::uuid)` : sql``}
         ORDER BY created_at,id LIMIT 250`)
     )
-    match = streams.find((stream) =>
-      resolveTrackedResources(stream.metadata).some((resource) => trackedResourceMatches(resource, target))
-    )
-    if (match || streams.length < 250) break
+    for (const stream of streams)
+      if (resolveTrackedResources(stream.metadata).some((resource) => trackedResourceMatches(resource, target)))
+        workStreamIds.push(stream.id)
+    if (streams.length < 250) break
     const last = streams.at(-1)
     after = last ? { createdAt: new Date(last.created_at).toISOString(), id: last.id } : null
   } while (after)
-  return match ? { base, squadId, workStreamId: match.id } : null
+  return workStreamIds.length ? { base, squadId, workStreamIds } : null
 }
 
 export async function loadGitHubPrSnapshot(executor: Executor, groupId: string): Promise<GitHubPrSnapshot | null> {
@@ -449,7 +450,7 @@ export async function loadGitHubPrSnapshot(executor: Executor, groupId: string):
         sourceId: resolved.base.sourceId,
         activityId: resolved.base.activityId,
         squadId: resolved.squadId,
-        workStreamId: resolved.workStreamId,
+        workStreamIds: resolved.workStreamIds,
         fact: resolved.base.fact,
       }
     : null
@@ -465,7 +466,7 @@ export async function loadGitHubIssueSnapshot(
         sourceId: resolved.base.sourceId,
         activityId: resolved.base.activityId,
         squadId: resolved.squadId,
-        workStreamId: resolved.workStreamId,
+        workStreamIds: resolved.workStreamIds,
         fact: resolved.base.fact,
       }
     : null

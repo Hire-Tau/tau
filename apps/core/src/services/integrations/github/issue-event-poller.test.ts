@@ -66,6 +66,48 @@ test('new assignments and removals produce the same typed flow outputs as webhoo
   expect(Object.keys(result.events[0]!)).not.toContain('logicalEventKey')
 })
 
+test('synthesized close and reopen events carry the event time as the close time', async () => {
+  // GitHub embeds the issue's CURRENT state in every event, so a page read after a
+  // later transition reports the later close time. Each synthesized event must
+  // describe its own moment instead.
+  const current = { ...item(11).issue, state: 'closed', closed_at: '2026-09-07T20:00:00Z' }
+  const poller = new GitHubIssueEventPoller(
+    async () => 'token',
+    async () =>
+      response([
+        { ...item(13, 'assigned'), issue: current },
+        { ...item(12, 'reopened'), issue: current, assignee: null },
+        { ...item(11, 'closed'), issue: current, assignee: null },
+      ])
+  )
+  const result = await poller.poll(connection, { watermark: 10 })
+  const issues = result.events.map((event) => (event.payload as Record<string, any>).issue)
+  expect(result.events.map((event) => (event.payload as Record<string, any>).action)).toEqual([
+    'closed',
+    'reopened',
+    'assigned',
+  ])
+  expect(issues[0]).toMatchObject({ updated_at: occurredAt, closed_at: occurredAt })
+  expect(issues[1]).toMatchObject({ updated_at: occurredAt, closed_at: null })
+  // Only close transitions restate the close time; anything else keeps the issue as read.
+  expect(issues[2]).toMatchObject({ updated_at: occurredAt, closed_at: '2026-09-07T20:00:00Z' })
+
+  // The webhook for that same close still collapses onto the polled event.
+  const webhook = githubOutputAdapter.normalize({
+    type: 'issues',
+    payload: {
+      action: 'closed',
+      issue: { ...item(11).issue, state: 'closed', updated_at: occurredAt, closed_at: occurredAt },
+      repository: { full_name: 'acme/widgets' },
+      sender: item(11).actor,
+    },
+  })
+  const polled = githubOutputAdapter.normalize(result.events[0]!)
+  expect(polled[0]!.output).toBe('issue.updated')
+  expect(polled[0]!.eventKey).toBe(webhook[0]!.eventKey)
+  expect(polled[0]!.occurredAt).toBe('2026-09-07T10:00:00.000Z')
+})
+
 test('page scans retain the previous watermark until a burst is drained within the request budget', async () => {
   const urls: string[] = []
   const poller = new GitHubIssueEventPoller(

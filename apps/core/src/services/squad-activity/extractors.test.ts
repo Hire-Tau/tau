@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { createHash } from 'node:crypto'
 import {
   extractChatExecution,
   extractExecution,
@@ -163,6 +164,17 @@ describe('chat extraction (operator decision 2026-08-27, verbose retired)', () =
   })
 })
 
+/**
+ * Independent restatement of the derived-row-id contract: sha256 of
+ * `<logicalRowId>:<workStreamId>`, shaped like the logical row ids themselves so
+ * it is storable in the uuid column.
+ */
+const derivedRowId = (logicalRowId: string, workStreamId: string) => {
+  const hex = createHash('sha256').update(`${logicalRowId}:${workStreamId}`).digest('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`
+}
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-a[0-9a-f]{3}-[0-9a-f]{12}$/
+
 describe('GitHub PR row copy (operator report 2026-08-27)', () => {
   const fact = (overrides: Record<string, unknown>) => ({
     eventType: 'pull_request',
@@ -180,7 +192,7 @@ describe('GitHub PR row copy (operator report 2026-08-27)', () => {
     sourceId: 'hook:0f0e0d0c-0000-4000-8000-000000000001',
     activityId: '0f0e0d0c-0000-4000-8000-000000000001',
     squadId: '4ea8b934-a90a-42d1-b6fe-483a2ab9a18b',
-    workStreamId: 'b2cc0a94-0000-4000-8000-000000000001',
+    workStreamIds: ['b2cc0a94-0000-4000-8000-000000000001'],
     fact: fact(factOverrides) as never,
   })
 
@@ -200,6 +212,33 @@ describe('GitHub PR row copy (operator report 2026-08-27)', () => {
     expect(summary({ action: 'synchronize' })).toBe('[PR #1215 updated]')
     expect(summary({ action: 'merged' })).toBe('[PR #1215 merged]')
   })
+
+  test('emits one row per tracking stream; the first keeps the logical row id', () => {
+    const streams = ['b2cc0a94-0000-4000-8000-000000000001', 'b2cc0a94-0000-4000-8000-000000000003']
+    const rows = extractGitHubPrDispatch({ ...snapshot({}), workStreamIds: streams } as never)
+    expect(rows).toHaveLength(2)
+    expect(rows.map((row) => row.workStreamId)).toEqual(streams)
+    expect(rows.map((row) => row.lane)).toEqual([70, 70])
+    // Existing rows stay put: stream one keeps the fact's own logical identity.
+    expect(rows[0].rowId).toBe('c1a2b3d4-0000-4000-8000-0000000000f1')
+    expect(rows[1].rowId).toBe(derivedRowId('c1a2b3d4-0000-4000-8000-0000000000f1', streams[1]))
+    expect(rows[1].rowId).toMatch(UUID)
+    expect(rows.map((row) => row.id)).toEqual([`70:${rows[0].rowId}`, `70:${rows[1].rowId}`])
+    // The shared PR ref type names no stream, so both rows point at the PR itself.
+    expect(rows.map((row) => row.ref)).toEqual([
+      { type: 'pr', url: 'https://github.com/Hire-Tau/tau/pull/1215' },
+      { type: 'pr', url: 'https://github.com/Hire-Tau/tau/pull/1215' },
+    ])
+    expect(rows[0].summary).toBe(rows[1].summary)
+    expect(rows[0].at).toBe(rows[1].at)
+  })
+
+  test('a single tracking stream is unchanged: one row, keyed by the logical row id', () => {
+    const rows = extractGitHubPrDispatch(snapshot({}) as never)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].rowId).toBe('c1a2b3d4-0000-4000-8000-0000000000f1')
+    expect(rows[0].workStreamId).toBe('b2cc0a94-0000-4000-8000-000000000001')
+  })
 })
 
 describe('GitHub issue row copy', () => {
@@ -207,7 +246,7 @@ describe('GitHub issue row copy', () => {
     sourceId: 'hook:0f0e0d0c-0000-4000-8000-000000000002',
     activityId: '0f0e0d0c-0000-4000-8000-000000000002',
     squadId: '4ea8b934-a90a-42d1-b6fe-483a2ab9a18b',
-    workStreamId: 'b2cc0a94-0000-4000-8000-000000000002',
+    workStreamIds: ['b2cc0a94-0000-4000-8000-000000000002'],
     fact: {
       eventType: 'issues',
       action: 'closed',
@@ -260,5 +299,21 @@ describe('GitHub issue row copy', () => {
       url: 'https://github.com/hire-tau/tau/issues/12',
       workStreamId: 'b2cc0a94-0000-4000-8000-000000000002',
     })
+  })
+
+  test('emits one row per tracking stream, each ref naming its own stream', () => {
+    const streams = ['b2cc0a94-0000-4000-8000-000000000002', 'b2cc0a94-0000-4000-8000-000000000004']
+    const rows = extractGitHubIssueDispatch({ ...snapshot({}), workStreamIds: streams } as never)
+    expect(rows).toHaveLength(2)
+    expect(rows.map((row) => row.workStreamId)).toEqual(streams)
+    expect(rows.map((row) => row.lane)).toEqual([71, 71])
+    expect(rows[0].rowId).toBe('c1a2b3d4-0000-4000-8000-0000000000f2')
+    expect(rows[1].rowId).toBe(derivedRowId('c1a2b3d4-0000-4000-8000-0000000000f2', streams[1]))
+    expect(rows[1].rowId).toMatch(UUID)
+    expect(rows.map((row) => row.ref)).toEqual([
+      { type: 'issue', url: 'https://github.com/hire-tau/tau/issues/12', workStreamId: streams[0] },
+      { type: 'issue', url: 'https://github.com/hire-tau/tau/issues/12', workStreamId: streams[1] },
+    ])
+    expect(rows[0].summary).toBe(rows[1].summary)
   })
 })

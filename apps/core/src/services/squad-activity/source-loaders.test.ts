@@ -315,7 +315,8 @@ describe('Activity source pagination', () => {
     const page = await listGitHubAssociationPage(`poll:${activityId}`, fact, null, 10)
     expect(page.groupIds).toEqual([expect.stringContaining(`:${createdSquads[0].id}`)])
     await materializeGitHubDispatch(activityId, createdSquads[0].id)
-    expect(await db.select().from(squadActivity).where(eq(squadActivity.squadId, createdSquads[0].id))).toHaveLength(1)
+    // Squad 0 has two streams naming this PR, and each one is attributed the event.
+    expect(await db.select().from(squadActivity).where(eq(squadActivity.squadId, createdSquads[0].id))).toHaveLength(2)
 
     await materializeGitHubDispatch(activityId, createdSquads[1].id)
     expect(await db.select().from(squadActivity).where(eq(squadActivity.squadId, createdSquads[1].id))).toEqual([])
@@ -609,5 +610,76 @@ describe('tracked GitHub issue source pagination', () => {
       groupId: `poll:${activityId}:${created[1].id}`,
     })
     expect(snapshot).toBeNull()
+  })
+
+  test('carries every stream in the squad that tracks the resource, in creation order', async () => {
+    const repository = `multi-stream-${crypto.randomUUID()}/widgets`
+    const [squad] = await db
+      .insert(squads)
+      .values({ name: `multi-stream-${crypto.randomUUID()}`, purpose: 'test' })
+      .returning()
+    squadIds.push(squad.id)
+    const tracked = (number: number) => ({ tracked: [{ integration: 'github', repository, kind: 'issue', number }] })
+    // Explicit creation times pin the deterministic `ORDER BY created_at,id`.
+    const [first] = await db
+      .insert(workStreams)
+      .values({
+        squadId: squad.id,
+        title: 'first tracker',
+        createdAt: new Date('2026-09-01T00:00:00Z'),
+        metadata: tracked(12),
+      })
+      .returning()
+    await db.insert(workStreams).values({
+      squadId: squad.id,
+      title: 'unrelated tracker',
+      createdAt: new Date('2026-09-02T00:00:00Z'),
+      metadata: tracked(99),
+    })
+    const [third] = await db
+      .insert(workStreams)
+      .values({
+        squadId: squad.id,
+        title: 'second tracker',
+        createdAt: new Date('2026-09-03T00:00:00Z'),
+        metadata: tracked(12),
+      })
+      .returning()
+
+    const fact = extractGitHubIssueDispatchFact('github', {
+      type: 'issues',
+      payload: {
+        action: 'closed',
+        repository: { full_name: repository },
+        sender: { login: 'noahsaso' },
+        issue: {
+          id: 9913,
+          number: 12,
+          title: 'Shared issue',
+          closed_at: '2026-09-10T06:00:00Z',
+          updated_at: '2026-09-10T06:00:00Z',
+          html_url: `https://github.com/${repository}/issues/12`,
+        },
+      },
+      metadata: { synthetic: true },
+    })!
+    const activityId = crypto.randomUUID()
+    const eventKey = crypto.randomUUID()
+    dispatchKeys.push(eventKey)
+    await db.insert(integrationEventPollingDispatches).values({
+      providerKey: 'github',
+      eventKey,
+      activityId,
+      activitySquadIds: [squad.id],
+      eventFact: fact,
+      eventOccurredAt: new Date(fact.occurredAt),
+      completedAt: new Date(),
+    })
+    const snapshot: any = await loadActivitySource(db, {
+      family: 'github-issue',
+      groupId: `poll:${activityId}:${squad.id}`,
+    })
+    expect(snapshot.squadId).toBe(squad.id)
+    expect(snapshot.workStreamIds).toEqual([first.id, third.id])
   })
 })

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { describeGitHubIssueFact, extractGitHubIssueDispatchFact, isGitHubIssueDispatchFact } from './github-issue-fact'
+import { GitHubIssueEventPoller } from '../integrations/github/issue-event-poller'
 
 const event = (
   type: string,
@@ -85,6 +86,56 @@ describe('GitHub issue dispatch fact', () => {
     expect(retry?.logicalRowId).toBe(webhook!.logicalRowId)
     expect(retry?.providerDeliveryId).toBe('delivery-2')
     expect(polled?.actorLogin).toBe('poll-actor')
+  })
+
+  it('collapses a late-polled close onto its webhook row across a reopen and a second close', async () => {
+    const firstClose = '2026-08-26T12:00:00Z'
+    const reopen = '2026-08-26T14:00:00Z'
+    const secondClose = '2026-08-26T16:00:00Z'
+    const webhookClose = (closedAt: string) =>
+      extractGitHubIssueDispatchFact(
+        'github',
+        event('issues', 'closed', {
+          issue: issue({ closed_at: closedAt, updated_at: closedAt, state: 'closed' }),
+          sender: { login: 'ada' },
+        })
+      )!
+    // GitHub's issue-event page embeds the issue's CURRENT state in every entry,
+    // so a poll that only reaches the first close still sees the second close's time.
+    const current = issue({ closed_at: secondClose, updated_at: secondClose, state: 'closed' })
+    const entry = (id: number, eventName: string, createdAt: string) => ({
+      id,
+      event: eventName,
+      created_at: createdAt,
+      issue: current,
+      actor: { login: 'ada' },
+    })
+    const poller = new GitHubIssueEventPoller(
+      async () => 'token',
+      async () =>
+        Response.json([entry(3, 'closed', secondClose), entry(2, 'reopened', reopen), entry(1, 'closed', firstClose)], {
+          headers: { etag: 'head' },
+        })
+    )
+    const { events } = await poller.poll(
+      {
+        id: 'github:squad',
+        squadId: 'squad',
+        providerKey: 'github',
+        adapterVersion: 1,
+        configuration: { kind: 'issue-events', owner: 'Acme', repo: 'Widgets' },
+      } as never,
+      { watermark: 0 }
+    )
+    const facts = events.map((polled) => extractGitHubIssueDispatchFact('github', polled)!)
+    expect(facts.map((fact) => [fact.action, fact.occurredAt])).toEqual([
+      ['closed', '2026-08-26T12:00:00.000Z'],
+      ['reopened', '2026-08-26T14:00:00.000Z'],
+      ['closed', '2026-08-26T16:00:00.000Z'],
+    ])
+    expect(facts[0].logicalRowId).toBe(webhookClose(firstClose).logicalRowId)
+    expect(facts[2].logicalRowId).toBe(webhookClose(secondClose).logicalRowId)
+    expect(facts[0].logicalRowId).not.toBe(facts[2].logicalRowId)
   })
 
   it('keeps distinct edits and the close/reopen transition apart', () => {

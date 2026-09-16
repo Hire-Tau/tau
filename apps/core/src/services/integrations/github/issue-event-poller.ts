@@ -73,12 +73,27 @@ export class GitHubIssueEventPoller implements EventPollingCapability<GitHubIssu
         continue
       if (typeof item.created_at !== 'string' || !Number.isFinite(Date.parse(item.created_at)))
         throw new Error('GitHub issue event has no valid occurrence time')
-      // The embedded issue may reflect a later edit; this fact represents the event's time.
+      // The embedded issue always reflects the issue's CURRENT state, which may be
+      // several transitions later; this fact represents the event's own time. A
+      // close is timed by `closed_at`, so restate that too or a late-polled first
+      // close would carry a later close's time — and miss its webhook's row.
+      // Collapsing a single close's webhook and poll onto one Activity row now
+      // rests on this event's `created_at` equalling the issue's `closed_at`,
+      // which GitHub holds to in practice; any skew would leave a permanent
+      // duplicate row, since these Activity families never delete.
       const event: VerifiedIngressEvent = {
         type: 'issues',
         payload: {
           action: item.event,
-          issue: { ...issue, updated_at: item.created_at },
+          issue: {
+            ...issue,
+            updated_at: item.created_at,
+            ...(item.event === 'closed'
+              ? { closed_at: item.created_at }
+              : item.event === 'reopened'
+                ? { closed_at: null }
+                : {}),
+          },
           repository: { full_name: `${owner}/${repo}` },
           assignee: item.assignee,
           sender: item.actor,
