@@ -49,9 +49,12 @@ once, tagged with its first (highest-priority) source.
 `integration`, `repository`, `kind` (`issue` or `pull_request`), and `number` are
 required identity fields; `connectionId` and `url` are optional. `addedAt` is
 stamped server-side when absent. `origin` records the integration event that
-produced the entry (when there was one) and is **server-managed**: a client
-cannot set or forge it — writing an `origin` that doesn't match the event actually
-being resolved is rejected with `400`.
+produced the entry and is **server-managed**: `workstream create --from-event`
+and `workstream track --event` stamp it for you, from the event they resolve.
+A plain metadata write (`PATCH`/`set-meta`) has no event to resolve, so a
+hand-written `origin` on a new entry is rejected with `400`; only
+`create --from-event` may carry one on directly-written metadata, and only for
+the event named in that same request.
 
 Never hand-write `github.*`/`codeHost` metadata, or a raw `tracked[]` entry, to
 attach a resource. Use the CLI/API paths below; they resolve identity, check
@@ -69,24 +72,26 @@ tau workstream untrack <ws-id> --issue owner/repo#12
 tau workstream tracked <ws-id>   # alias: links
 ```
 
-API surface:
+API surface, each gated by its own permission on the work stream's squad:
 
 - `POST /api/workstreams` accepts `integrationEventId` (a UUID). It resolves the
   event's issue/PR, stores the link with `origin`, and replays of the same event
   return `200 { ...stream, reusedFromEvent: true }` instead of creating a
-  duplicate stream.
+  duplicate stream. Requires `workstreams:create`.
 - `GET /api/workstreams/:id/tracked` returns
-  `{ resources: [...{ integration, repository, kind, number, key, source, url?, subscriptionIds, subscribed }], subscriptions }`.
+  `{ resources: [...{ integration, repository, kind, number, key, source, url?, subscriptionIds, subscribed }], subscriptions }`
+  (plus `connectionId`, `addedAt` and `origin` when present). Requires `workstreams:read`.
 - `POST /api/workstreams/:id/tracked` accepts exactly one of `{ "event": "<uuid>" }`,
   `{ "url": "<resource url>" }`, or `{ "resource": { integration, repository, kind, number, connectionId? } }`.
+  Requires `workstreams:update`, or `workstreams:respond` for an agent bound to the stream.
 - `DELETE /api/workstreams/:id/tracked` accepts `{ "url": ... }` or `{ "resource": ... }`.
   Untracking the delivery PR is rejected with `409 { code: "delivery_change_request" }`
-  — edit `metadata.codeHost.changeRequest` instead.
+  — edit `metadata.codeHost.changeRequest` instead. Same permission as the `POST` above.
 - Writing `metadata.tracked` directly through `PATCH`/`set-meta` is schema-validated
   shape-for-shape, and any newly introduced entry is authorized exactly like an
-  explicit track request.
-
-All of these require `workstreams:update` on the work stream's squad.
+  explicit track request. Same permission as the `POST`/`DELETE` above (the
+  general work-stream `PATCH` gate: `workstreams:update`, or `workstreams:respond`
+  for a bound agent).
 
 ### Authorization: identity is not access
 
