@@ -50,6 +50,22 @@ export interface ProviderErrorClassification {
   retryAt?: number
 }
 
+const PLAN_CREDIT_COOLDOWN_MS = 30 * 60_000
+const RATE_LIMIT_COOLDOWN_MS = 60_000
+
+/**
+ * The sentence the bundled codex client substitutes for EVERY 429 body.
+ *
+ * `parseErrorResponse` (openai-codex-responses.js) discards the upstream
+ * `usage_limit_reached` / `plan_type` / `resets_at` markers and throws
+ * `new Error("You have hit your ChatGPT usage limit (<plan> plan). Try again in
+ * ~N min.")`, so this wording is the only codex limit signal Tau ever sees —
+ * and it is AMBIGUOUS: a transient throttle and an exhausted weekly plan window
+ * arrive as the same sentence. The one thing that distinguishes them is the
+ * announced window, so that is what decides (see classifyCodexUsageLimit).
+ */
+const CODEX_USAGE_LIMIT_MARKER = 'chatgpt usage limit'
+
 /**
  * Rules that map error substrings to an exhaustion reason + cooldown policy.
  *
@@ -81,21 +97,12 @@ const EXHAUSTION_RULES: Array<{ substrings: string[]; reason: ExhaustionReason; 
       // space-separated 'usage limit' that stays a transient rate-limit.
       'usage_limit_reached',
       'plan_type',
-      // The bundled codex client never forwards `usage_limit_reached` — it
-      // REPLACES the 429 body with the friendly string "You have hit your
-      // ChatGPT usage limit (<plan> plan). Try again in ~N min." (see
-      // openai-codex-responses.js `parseErrorResponse`), so that wording is the
-      // only marker Tau ever sees for a codex plan window. Match it here so it
-      // gets the long plan-credit cooldown instead of the 60s transient one the
-      // bare 'usage limit' substring below would win.
-      'hit your chatgpt usage limit',
-      'chatgpt usage limit',
       'credits-has-credits',
       'has-credits": "false',
       'has-credits":"false',
     ],
     reason: 'plan-credit',
-    cooldownMs: 30 * 60_000,
+    cooldownMs: PLAN_CREDIT_COOLDOWN_MS,
   },
   {
     substrings: ['capacity', 'overloaded', 'service unavailable', 'no allowed providers available'],
@@ -105,7 +112,7 @@ const EXHAUSTION_RULES: Array<{ substrings: string[]; reason: ExhaustionReason; 
   {
     substrings: ['rate limit', 'usage limit', '429', 'too many requests'],
     reason: 'rate-limit',
-    cooldownMs: 60_000,
+    cooldownMs: RATE_LIMIT_COOLDOWN_MS,
   },
 ]
 
@@ -390,6 +397,8 @@ export function classifyProviderError(error: string): ProviderErrorClassificatio
   // A tau-internal failure is never provider exhaustion, whatever words it shares.
   if (isInternalExecutionError(error)) return null
   const lower = error.toLowerCase()
+  const codex = classifyCodexUsageLimit(error, lower)
+  if (codex) return codex
   for (const rule of EXHAUSTION_RULES) {
     if (rule.substrings.some((s) => lower.includes(s))) {
       return {
@@ -401,6 +410,31 @@ export function classifyProviderError(error: string): ProviderErrorClassificatio
     }
   }
   return null
+}
+
+/**
+ * Classify the codex client's rewritten 429 (see {@link CODEX_USAGE_LIMIT_MARKER}).
+ *
+ * The wording alone cannot tell a transient throttle from an exhausted plan
+ * window, so the announced "Try again in ~N" window decides: a window shorter
+ * than the plan-credit cooldown is treated as the transient rate limit it
+ * almost certainly is (and keeps its own, shorter, retryAt rather than parking
+ * the account for half an hour), while a longer or ABSENT window is treated as
+ * a plan limit — absent means the upstream sent no `resets_at`, which is the
+ * shape a hard plan window arrives in. Checked before {@link EXHAUSTION_RULES}
+ * because the bare 'usage limit' substring there would otherwise win every one
+ * of these a 60s cooldown with no reset at all.
+ */
+function classifyCodexUsageLimit(error: string, lower: string): ProviderErrorClassification | null {
+  if (!lower.includes(CODEX_USAGE_LIMIT_MARKER)) return null
+  const retryAt = parseFriendlyRelativeResetTimestamp(error)
+  const transient = retryAt != null && retryAt - Date.now() < PLAN_CREDIT_COOLDOWN_MS
+  return {
+    exhausted: true,
+    reason: transient ? 'rate-limit' : 'plan-credit',
+    cooldownMs: transient ? RATE_LIMIT_COOLDOWN_MS : PLAN_CREDIT_COOLDOWN_MS,
+    ...(retryAt != null ? { retryAt } : {}),
+  }
 }
 
 /**

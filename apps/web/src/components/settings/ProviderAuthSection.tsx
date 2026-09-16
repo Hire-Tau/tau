@@ -31,6 +31,7 @@ import {
   extractOAuthCode,
   formatRetryIn,
   healthReasonLabel,
+  isCredentialHealthReason,
   invalidateProviderRoutingQueries,
   providerActivityRank,
   selectableProviders,
@@ -514,16 +515,19 @@ function ProviderGroupStatus({
             Exhausted{suffix}
           </span>
           {detail && <span className="text-muted">{detail}</span>}
-          {canWrite && (
-            <button
-              onClick={() => resetMutation.mutate()}
-              disabled={resetMutation.isPending}
-              aria-label={`Reset health for ${entry.provider}`}
-              className="tau-button hover:text-primary disabled:opacity-50"
-            >
-              Reset
-            </button>
-          )}
+          {canWrite &&
+            (isCredentialHealthReason(entry.healthReason) ? (
+              <span className="text-muted">Re-authorize to clear</span>
+            ) : (
+              <button
+                onClick={() => resetMutation.mutate()}
+                disabled={resetMutation.isPending}
+                aria-label={`Reset health for ${entry.provider}`}
+                className="tau-button hover:text-primary disabled:opacity-50"
+              >
+                Reset
+              </button>
+            ))}
         </>
       )}
     </div>
@@ -897,9 +901,11 @@ export function ProviderAccountsList({
                           ? 'Unverified'
                           : 'Available'}
                   </span>
-                  {account.enabled && account.health === 'exhausted' && (
-                    <span className="text-xs text-muted">{healthDetail(account.healthReason, account.retryAt)}</span>
-                  )}
+                  {account.enabled &&
+                    account.health === 'exhausted' &&
+                    healthDetail(account.healthReason, account.retryAt) && (
+                      <span className="text-xs text-muted">{healthDetail(account.healthReason, account.retryAt)}</span>
+                    )}
                   {account.capabilities && (
                     <span
                       className={clsx(
@@ -938,16 +944,20 @@ export function ProviderAccountsList({
                     </>
                   ) : (
                     <>
-                      {account.enabled && account.health === 'exhausted' && (
-                        <button
-                          onClick={() => resetHealthMutation.mutate(account.id)}
-                          disabled={resetHealthMutation.isPending}
-                          aria-label={`Reset health for ${account.label || account.id}`}
-                          className="tau-button hover:text-primary disabled:opacity-50"
-                        >
-                          Reset
-                        </button>
-                      )}
+                      {account.enabled &&
+                        account.health === 'exhausted' &&
+                        (isCredentialHealthReason(account.healthReason) ? (
+                          <span className="text-muted">Re-authorize to clear</span>
+                        ) : (
+                          <button
+                            onClick={() => resetHealthMutation.mutate(account.id)}
+                            disabled={resetHealthMutation.isPending}
+                            aria-label={`Reset health for ${account.label || account.id}`}
+                            className="tau-button hover:text-primary disabled:opacity-50"
+                          >
+                            Reset
+                          </button>
+                        ))}
                       <ProviderAccountActions label={account.label || account.id}>
                         <button
                           onClick={() => {

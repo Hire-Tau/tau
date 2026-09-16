@@ -288,10 +288,11 @@ export class ModelFailoverCoordinator {
       // Account-scoped failures (every OAuth provider) leave the provider-level
       // record empty, so reading only `getHealth(provider)` here fell back to
       // `Date.now()` and announced "~1m" for every cooldown length.
-      const retryAt = currentAccountId
+      const accountRetryAt = currentAccountId
         ? providerHealth.getAccountHealth(provider, currentAccountId).retryAt
-        : providerHealth.getHealth(provider).retryAt
-      const mins = Math.max(1, Math.round(((retryAt ?? Date.now()) - Date.now()) / 60000))
+        : undefined
+      const retryAt = accountRetryAt ?? providerHealth.getHealth(provider).retryAt ?? Date.now()
+      const mins = Math.max(1, Math.round((retryAt - Date.now()) / 60000))
       this.deps.getBuffer().push({
         type: 'system_message',
         text:

@@ -523,6 +523,34 @@ describe('codex friendly usage-limit string (SDK-rewritten 429)', () => {
     expect(classification?.retryAt).toBeUndefined()
   })
 
+  // The SDK writes this same sentence for EVERY codex 429, transient throttles
+  // included — only the announced window separates them, so the window decides.
+  it('treats a short announced window as a transient rate-limit, keeping its retryAt', () => {
+    const before = Date.now()
+    const classification = classifyProviderError(
+      'You have hit your ChatGPT usage limit (plus plan). Try again in ~5 min.'
+    )
+    expect(classification?.reason).toBe('rate-limit')
+    expect(classification!.retryAt!).toBeGreaterThanOrEqual(before + 5 * 60_000)
+    expect(classification!.retryAt!).toBeLessThanOrEqual(Date.now() + 5 * 60_000 + 5_000)
+  })
+
+  it('treats a long announced window as a plan limit', () => {
+    const before = Date.now()
+    const classification = classifyProviderError(
+      'You have hit your ChatGPT usage limit (plus plan). Try again in ~120 min.'
+    )
+    expect(classification?.reason).toBe('plan-credit')
+    expect(classification!.retryAt!).toBeGreaterThanOrEqual(before + 120 * 60_000)
+  })
+
+  it('treats an unannounced window as a plan limit on the 30-minute default', () => {
+    const classification = classifyProviderError('You have hit your ChatGPT usage limit (plus plan).')
+    expect(classification?.reason).toBe('plan-credit')
+    expect(classification?.retryAt).toBeUndefined()
+    expect(classification?.cooldownMs).toBe(30 * 60_000)
+  })
+
   it('leaves a bare "usage limit" error a transient rate-limit', () => {
     expect(classifyProviderError('usage limit reached')?.reason).toBe('rate-limit')
     expect(classifyProviderError('429 usage limit')?.reason).toBe('rate-limit')

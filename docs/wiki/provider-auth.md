@@ -114,6 +114,11 @@ tau provider-auth reset <provider>                     # provider + all of its a
 tau provider-auth reset <provider> --account <id>      # one account only
 ```
 
+Records for an invalid or expired credential are never cleared: routing already treats those as
+ready, so the record is the only thing telling you to re-authorize. The account endpoint answers
+`409 credential_health` for them, the provider endpoint skips them and lists them in
+`skippedCredentialHealth`, and the settings row shows re-authorize guidance instead of **Reset**.
+
 Resetting asserts nothing about the upstream state — it only removes Tau's record. If the provider
 is in fact still exhausted, the very next request re-marks it with a fresh cooldown, so the worst
 case is one wasted call.

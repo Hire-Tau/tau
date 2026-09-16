@@ -5,6 +5,7 @@ import {
   extractOAuthCode,
   formatRetryIn,
   healthReasonLabel,
+  isCredentialHealthReason,
   invalidateProviderRoutingQueries,
   providerActivityRank,
   selectableProviders,
@@ -537,6 +538,15 @@ describe('formatRetryIn', () => {
   })
 })
 
+describe('isCredentialHealthReason', () => {
+  test('matches only the kinds that re-authorizing fixes', () => {
+    expect(isCredentialHealthReason('invalid-credential')).toBe(true)
+    expect(isCredentialHealthReason('expired-oauth')).toBe(true)
+    expect(isCredentialHealthReason('rate-limit')).toBe(false)
+    expect(isCredentialHealthReason(undefined)).toBe(false)
+  })
+})
+
 describe('healthReasonLabel', () => {
   test('gives each health kind an operator-readable label', () => {
     expect(healthReasonLabel('rate-limit')).toBe('rate limit')
@@ -623,6 +633,23 @@ describe('provider exhaustion status', () => {
     expect(html).toContain('Disabled')
     expect(html).not.toContain('plan limit')
     expect(html).not.toContain('Reset health for')
+  })
+
+  test('points a credential failure at re-authorizing instead of offering Reset', () => {
+    // Routing already treats these as ready — the record IS the remediation
+    // signal, so clearing it would only hide what the operator must fix.
+    const html = renderAccounts([
+      { ...exhaustedAccount, healthReason: 'invalid-credential', healthMessage: 'Provider credential is invalid.' },
+    ])
+    expect(html).toContain('invalid credential')
+    expect(html).toContain('Re-authorize')
+    expect(html).not.toContain('Reset health for')
+  })
+
+  test('renders no empty detail element when the record carries neither reason nor reset', () => {
+    const html = renderAccounts([{ id: 'acc_1', label: 'Work', enabled: true, type: 'api_key', health: 'exhausted' }])
+    expect(html).toContain('Exhausted')
+    expect(html).not.toContain('<span class="text-xs text-muted"></span>')
   })
 
   test('shows a provider-level pill when the provider record — not an account — is exhausted', () => {

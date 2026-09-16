@@ -64,6 +64,17 @@ const HEALTH_REASON_LABELS: Record<ProviderHealthKind, string> = {
   'expired-oauth': 'expired sign-in',
 }
 
+const CREDENTIAL_HEALTH_KINDS: readonly ProviderHealthKind[] = ['invalid-credential', 'expired-oauth']
+
+/**
+ * True for the health kinds a reset cannot fix. Routing already treats these as
+ * ready, so the record exists only to tell the operator to re-authorize —
+ * clearing it would hide the remediation instead of performing it.
+ */
+export function isCredentialHealthReason(reason: ProviderHealthKind | undefined): boolean {
+  return reason != null && CREDENTIAL_HEALTH_KINDS.includes(reason)
+}
+
 /** Operator-readable label for a health record's kind; `null` when unknown. */
 export function healthReasonLabel(reason: ProviderHealthKind | undefined): string | null {
   return reason ? (HEALTH_REASON_LABELS[reason] ?? null) : null

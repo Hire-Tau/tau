@@ -685,6 +685,41 @@ describe('provider-auth routes', () => {
       expect(providerHealth.isAccountHealthy('anthropic', a2.id)).toBe(false)
     })
 
+    test('resets a provider that has a record but no stored accounts', async () => {
+      // Providers configured by environment variable have no account-store rows,
+      // yet failures still record provider-level health against them.
+      providerHealth.markExhausted('envprovider', { reason: 'plan-credit', retryAt: RESET_AT() })
+      const res = await app.request('/envprovider/health/reset', jsonReq('POST'))
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ provider: 'envprovider', health: 'available' })
+      expect(providerHealth.isProviderHealthy('envprovider')).toBe(true)
+    })
+
+    test('refuses to clear a credential-kind account record', async () => {
+      const a1 = await (await app.request('/anthropic/accounts', jsonReq('POST', { key: 'sk-a1', label: 'A1' }))).json()
+      providerHealth.recordFailure(providerHealth.captureAttempt('anthropic', a1.id), { kind: 'invalid-credential' })
+
+      const res = await app.request(`/anthropic/accounts/${a1.id}/health/reset`, jsonReq('POST'))
+      expect(res.status).toBe(409)
+      expect(await res.json()).toMatchObject({ code: 'credential_health' })
+      // The remediation signal survives — re-authorizing is the only real fix.
+      expect(providerHealth.getRecord('anthropic', a1.id)?.kind).toBe('invalid-credential')
+    })
+
+    test('provider reset clears transient records and reports the credential ones it skipped', async () => {
+      const a1 = await (await app.request('/anthropic/accounts', jsonReq('POST', { key: 'sk-a1', label: 'A1' }))).json()
+      const a2 = await (await app.request('/anthropic/accounts', jsonReq('POST', { key: 'sk-a2', label: 'A2' }))).json()
+      providerHealth.markAccountExhausted('anthropic', a1.id, { reason: 'plan-credit', retryAt: RESET_AT() })
+      providerHealth.recordFailure(providerHealth.captureAttempt('anthropic', a2.id), { kind: 'expired-oauth' })
+
+      const res = await app.request('/anthropic/health/reset', jsonReq('POST'))
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.skippedCredentialHealth).toEqual({ provider: false, accounts: [a2.id] })
+      expect(providerHealth.isAccountHealthy('anthropic', a1.id)).toBe(true)
+      expect(providerHealth.getRecord('anthropic', a2.id)?.kind).toBe('expired-oauth')
+    })
+
     test('returns 404 for an unknown provider or account', async () => {
       await app.request('/anthropic/accounts', jsonReq('POST', { key: 'sk-a1', label: 'A1' }))
       expect((await app.request('/nonexistent/health/reset', jsonReq('POST'))).status).toBe(404)

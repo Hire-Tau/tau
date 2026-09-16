@@ -24,7 +24,7 @@ import {
   type CredentialInfo,
   type CredentialStore,
 } from '@earendil-works/pi-ai'
-import { providerLabel, resolveProviderHealthRecord } from '@tau/shared'
+import { providerLabel, resolveProviderHealthRecord, type ProviderHealthKind } from '@tau/shared'
 import { db, modelTiers } from '../db'
 import { detectLocalServers, probeOpenAICompatible } from '../services/model-selection/openai-compatible'
 import { getModelRuntime, refreshModelRuntime, tryGetModelRuntime } from '../services/agent/auth-backend'
@@ -472,6 +472,25 @@ app.delete('/:provider/accounts/:accountId', requirePermission('provider-auth:wr
 })
 
 /**
+ * Health kinds a reset must never clear.
+ *
+ * A bad or expired credential is not a cooldown waiting to elapse — routing
+ * already treats those records as ready (see routeDecision), so the record is
+ * purely the operator's remediation signal. Clearing it would hide the one
+ * thing that tells them to re-authorize, and the account would still fail.
+ */
+const CREDENTIAL_HEALTH_KINDS: readonly ProviderHealthKind[] = ['invalid-credential', 'expired-oauth']
+const CREDENTIAL_HEALTH_ERROR = {
+  error: 'Re-authorize this account instead of resetting its health',
+  code: 'credential_health',
+} as const
+
+function isCredentialHealth(provider: string, accountId?: string): boolean {
+  const record = resolveProviderHealthRecord({ provider, accountId }, providerHealth.snapshotRecords())
+  return record != null && CREDENTIAL_HEALTH_KINDS.includes(record.kind)
+}
+
+/**
  * Clear a provider's exhaustion records early.
  *
  * Cooldowns are an estimate: when a provider's window resets ahead of the
@@ -480,14 +499,30 @@ app.delete('/:provider/accounts/:accountId', requirePermission('provider-auth:wr
  * its accounts, since an exhausted account keeps the provider unusable on its
  * own. Nothing is asserted about the upstream state — the next failure re-marks
  * exhaustion immediately.
+ *
+ * Credential-kind records are left alone and reported back in
+ * `skippedCredentialHealth` rather than failing the whole call, so one account
+ * that needs re-authorizing does not block clearing the others.
  */
 app.post('/:provider/health/reset', requirePermission('provider-auth:write'), (c) => {
   const provider = c.req.param('provider')
   const accounts = listAccounts(readAccountStore(), provider)
-  if (accounts.length === 0) return c.json({ error: 'Provider not found' }, 404)
-  providerHealth.markAvailable(provider)
-  for (const account of accounts) providerHealth.markAccountAvailable(provider, account.id)
-  return c.json(providerSummary(provider, accounts))
+  // Env-var providers hold no account rows, yet failures still record
+  // provider-level health against them — they must be resettable too.
+  const known = accounts.length > 0 || isProviderConfigured(provider) || providerHealth.getRecord(provider) != null
+  if (!known) return c.json({ error: 'Provider not found' }, 404)
+
+  const skippedProvider = isCredentialHealth(provider)
+  if (!skippedProvider) providerHealth.markAvailable(provider)
+  const skippedAccounts: string[] = []
+  for (const account of accounts) {
+    if (isCredentialHealth(provider, account.id)) skippedAccounts.push(account.id)
+    else providerHealth.markAccountAvailable(provider, account.id)
+  }
+  return c.json({
+    ...providerSummary(provider, accounts),
+    skippedCredentialHealth: { provider: skippedProvider, accounts: skippedAccounts },
+  })
 })
 
 /** Clear one account's exhaustion record early (see the provider route above). */
@@ -496,6 +531,7 @@ app.post('/:provider/accounts/:accountId/health/reset', requirePermission('provi
   const accountId = c.req.param('accountId')
   const accounts = listAccounts(readAccountStore(), provider)
   if (!accounts.some((account) => account.id === accountId)) return c.json({ error: 'Account not found' }, 404)
+  if (isCredentialHealth(provider, accountId)) return c.json(CREDENTIAL_HEALTH_ERROR, 409)
   providerHealth.markAccountAvailable(provider, accountId)
   return c.json(providerSummary(provider, accounts))
 })
