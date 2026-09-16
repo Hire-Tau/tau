@@ -108,6 +108,8 @@ export const trackedResourceObjectSchema = z
     url: z.string().url().regex(WEB_URL, WEB_URL_MESSAGE).max(2000).optional(),
     addedAt: z.string().max(64).optional(),
     origin: trackedResourceOriginSchema.optional(),
+    /** Provider-native identity (e.g. a Linear issue UUID), for matching when repository/number aren't known. */
+    externalId: z.string().min(1).max(200).optional(),
     // Only meaningful for kind 'pull_request'; flags a tracked PR as a delivery change request.
     delivery: z.literal(true).optional(),
   })
@@ -180,6 +182,11 @@ export function trackedResourceUrl(r: Pick<TrackedResource, 'integration' | 'rep
   if (r.integration !== 'github') return undefined
   return `https://github.com/${r.repository.trim()}/${r.kind === 'issue' ? 'issues' : 'pull'}/${r.number}`
 }
+/** Human-readable reference: GitHub `owner/repo#12`, Linear `KEY-12`. */
+export function trackedResourceLabel(r: Pick<TrackedResource, 'integration' | 'repository' | 'number'>) {
+  const repository = r.repository.trim()
+  return r.integration === 'linear' ? `${repository.toUpperCase()}-${r.number}` : `${repository}#${r.number}`
+}
 export function resolveTrackedResources(metadata: unknown): ResolvedTrackedResource[] {
   const out: ResolvedTrackedResource[] = []
   const seen = new Set<string>()
@@ -224,27 +231,77 @@ export function primaryDeliveryPullRequest(metadata: unknown): ResolvedTrackedRe
   return resolveTrackedResources(metadata).find((resource) => resource.source === 'delivery') ?? null
 }
 const GITHUB_RESOURCE_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(issues|pull)\/([1-9][0-9]*)\/?$/i
+const LINEAR_RESOURCE_URL =
+  /^https:\/\/linear\.app\/[\w.-]+\/issue\/([A-Za-z][A-Za-z0-9]{0,9})-([1-9][0-9]*)(?:\/[^/]*)?\/?$/i
+const TRACKED_RESOURCE_REFERENCE = /^([A-Za-z][A-Za-z0-9]{0,9})-([1-9]\d*)$/
 export function parseTrackedResourceUrl(url: string) {
-  const match = GITHUB_RESOURCE_URL.exec(url.trim())
-  if (!match) return null
-  const number = Number(match[3])
-  if (!Number.isSafeInteger(number)) return null
-  return {
-    integration: 'github' as const,
-    repository: match[1]!.toLowerCase(),
-    kind: (match[2]!.toLowerCase() === 'issues' ? 'issue' : 'pull_request') as TrackedResourceKind,
-    number,
+  const trimmed = url.trim()
+  const github = GITHUB_RESOURCE_URL.exec(trimmed)
+  if (github) {
+    const number = Number(github[3])
+    if (!Number.isSafeInteger(number)) return null
+    return {
+      integration: 'github' as const,
+      repository: github[1]!.toLowerCase(),
+      kind: (github[2]!.toLowerCase() === 'issues' ? 'issue' : 'pull_request') as TrackedResourceKind,
+      number,
+    }
   }
+  const linear = LINEAR_RESOURCE_URL.exec(trimmed)
+  if (linear) {
+    const number = Number(linear[2])
+    if (!Number.isSafeInteger(number)) return null
+    return {
+      integration: 'linear' as const,
+      repository: linear[1]!.toLowerCase(),
+      kind: 'issue' as const,
+      number,
+    }
+  }
+  return null
+}
+/**
+ * Parses a bare textual reference (as typed by a person, not a URL): GitHub `owner/repo#12` (kind is
+ * ambiguous, so the caller decides issue vs pull request) or Linear `KEY-12`.
+ */
+export function parseTrackedResourceReference(text: string) {
+  const trimmed = text.trim()
+  const github = /^([\w.-]+\/[\w.-]+)#([1-9]\d*)$/.exec(trimmed)
+  if (github) {
+    const number = Number(github[2])
+    if (!Number.isSafeInteger(number)) return null
+    return { integration: 'github' as const, repository: github[1]!.toLowerCase(), number }
+  }
+  const linear = TRACKED_RESOURCE_REFERENCE.exec(trimmed)
+  if (linear) {
+    const number = Number(linear[2])
+    if (!Number.isSafeInteger(number)) return null
+    return { integration: 'linear' as const, repository: linear[1]!.toLowerCase(), kind: 'issue' as const, number }
+  }
+  return null
 }
 export function trackedResourceMatches(
-  resource: Pick<TrackedResource, 'integration' | 'repository' | 'kind' | 'number' | 'connectionId'>,
-  target: { integration: string; repository: string; kind: TrackedResourceKind; number: number; connectionId?: string }
+  resource: Pick<TrackedResource, 'integration' | 'repository' | 'kind' | 'number' | 'connectionId'> & {
+    externalId?: string
+  },
+  target: {
+    integration: string
+    repository?: string
+    kind?: TrackedResourceKind
+    number?: number
+    connectionId?: string
+    externalId?: string
+  }
 ): boolean {
+  const connectionPinned = resource.connectionId && target.connectionId && resource.connectionId !== target.connectionId
+  if (connectionPinned) return false
+  if (resource.externalId && target.externalId && resource.integration === target.integration)
+    return resource.externalId === target.externalId
   return (
     resource.integration === target.integration &&
     resource.kind === target.kind &&
     resource.number === target.number &&
-    resource.repository.trim().toLowerCase() === target.repository.trim().toLowerCase() &&
-    (!resource.connectionId || !target.connectionId || resource.connectionId === target.connectionId)
+    target.repository !== undefined &&
+    resource.repository.trim().toLowerCase() === target.repository.trim().toLowerCase()
   )
 }

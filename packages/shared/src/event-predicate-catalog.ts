@@ -66,21 +66,37 @@ export const githubOutputCatalog: IntegrationOutputDescriptor[] = Object.entries
 }))
 const linearFields: Record<string, IntegrationOutputField> = {
   'issue.id': { type: 'string', description: 'Linear issue ID.' },
+  'issue.number': { type: 'number', description: 'Linear issue number, scoped to its team.' },
+  'issue.identifier': { type: 'string', description: 'Linear issue identifier, e.g. ENG-123.' },
   'issue.title': { type: 'string', description: 'Issue title.' },
   teamId: { type: 'string', description: 'Linear team ID.' },
+  teamKey: { type: 'string', normalize: 'lowercase', description: 'Linear team key, e.g. ENG.' },
   assignee: { type: 'string', description: 'Assigned Linear user ID.' },
+  action: { type: 'string', description: 'Native Linear event action.' },
+  actor: { type: 'string', description: 'Acting Linear user ID.' },
+  state: { type: 'string', description: 'Linear workflow state name.' },
 }
-export const linearOutputCatalog: IntegrationOutputDescriptor[] = [
-  {
+const linearPredicateFields: Record<string, EventPredicateField> = {
+  ...linearFields,
+  labels: { type: 'string[]', description: 'Issue labels.' },
+}
+const linearOutputs: Record<string, string> = {
+  'issue.assigned': 'Issue assigned',
+  'issue.unassigned': 'Issue unassigned',
+  'issue.updated': 'Issue updated',
+  'issue.comment': 'Issue comment',
+}
+export const linearOutputCatalog: IntegrationOutputDescriptor[] = Object.entries(linearOutputs).map(
+  ([output, title]) => ({
     integration: 'linear',
-    output: 'issue.assigned',
+    output,
     version: 1,
-    title: 'Issue assigned',
-    description: 'An issue was assigned to a connected Linear account.',
+    title,
+    description: title + ' from Linear webhooks or polling.',
     fields: linearFields,
-    predicateFields: linearFields,
-  },
-]
+    predicateFields: linearPredicateFields,
+  })
+)
 export function eventPredicateFields(source: { integration: string; output: string; version: number }) {
   return [...githubOutputCatalog, ...linearOutputCatalog].find(
     (event) =>
