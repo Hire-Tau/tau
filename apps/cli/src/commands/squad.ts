@@ -5,6 +5,7 @@ import { apiGet, apiPost, apiPatch, apiPut, apiDelete, apiGetRaw } from '../clie
 import { output, outputTable, outputError, isJsonMode } from '../output'
 import { WorkStream } from './workstream'
 import { registerSquadGrantCommands } from './squad-grant'
+import { describeAttention, resolveAttentionUpdate, type SubscriptionResponse } from './attention'
 import { buildMetadataDelta, getMetadataValue, parseMetadataPath, parseMetadataValue } from '../metadata'
 
 interface Squad {
@@ -1141,32 +1142,46 @@ export function registerSquadCommands(program: Command) {
       }
     })
 
-  // --- Squad watch (subscribe to all of a squad's work-stream updates + manager questions) ---
+  // --- Squad attention (what this squad's decisions and progress do in your Action Center and push) ---
 
   // tau squad subscription <id>
   squad
     .command('subscription <id>')
-    .description('Show whether you watch this squad, and the watcher count')
+    .description('Show your attention levels for this squad, and the watcher count')
     .action(async (id) => {
       try {
-        const sub = await apiGet<{ subscribed: boolean; count: number }>(`/api/squads/${id}/subscription`)
-        output(sub, `Watching: ${sub.subscribed ? 'yes' : 'no'} (${sub.count} watcher(s))`)
+        const sub = await apiGet<SubscriptionResponse>(`/api/squads/${id}/subscription`)
+        output(
+          sub,
+          `Watching: ${sub.subscribed ? 'yes' : 'no'} (${sub.count} watcher(s)) — ${describeAttention(sub.attention)}`
+        )
       } catch (error) {
         outputError(error as Error)
       }
     })
 
-  // tau squad subscribe <id>
+  // tau squad subscribe <id> [--decisions <level>] [--progress <level>]
   squad
     .command('subscribe <id>')
     .alias('watch')
-    .description('Watch a squad (all its work-stream updates + manager questions)')
-    .action(async (id) => {
+    .description('Watch a squad. Levels: mute (hidden), show (listed), notify (inbox + push)')
+    .option('--decisions <level>', 'Questions, reviews, and blockers: mute, show, or notify')
+    .option('--progress <level>', 'Active work and completions: mute, show, or notify')
+    .action(async (id, options) => {
       try {
-        const sub = await apiPost<{ subscribed: boolean; count: number }>(`/api/squads/${id}/subscribe`)
-        output(sub, `Watching squad ${id.slice(0, 8)} (${sub.count} watcher(s))`)
+        // Read the current row only when one level was given and the other must be preserved.
+        const current =
+          options.decisions !== undefined && options.progress !== undefined
+            ? undefined
+            : await apiGet<SubscriptionResponse>(`/api/squads/${id}/subscription`)
+        const attention = resolveAttentionUpdate(current?.attention, current?.subscribed ?? false, options)
+        const sub = attention
+          ? await apiPost<SubscriptionResponse>(`/api/squads/${id}/subscribe`, { attention })
+          : await apiPost<SubscriptionResponse>(`/api/squads/${id}/subscribe`)
+        output(sub, `Watching squad ${id.slice(0, 8)} (${sub.count} watcher(s)) — ${describeAttention(sub.attention)}`)
       } catch (error) {
         outputError(error as Error)
+        throw error
       }
     })
 
@@ -1174,10 +1189,10 @@ export function registerSquadCommands(program: Command) {
   squad
     .command('unsubscribe <id>')
     .alias('unwatch')
-    .description('Stop watching a squad')
+    .description('Stop watching a squad (back to the default: listed, never notified)')
     .action(async (id) => {
       try {
-        const sub = await apiDelete<{ subscribed: boolean; count: number }>(`/api/squads/${id}/subscribe`)
+        const sub = await apiDelete<SubscriptionResponse>(`/api/squads/${id}/subscribe`)
         output(sub, `Unwatched squad ${id.slice(0, 8)} (${sub.count} watcher(s))`)
       } catch (error) {
         outputError(error as Error)
