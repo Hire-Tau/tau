@@ -40,6 +40,7 @@ import { eventEmitter } from '../../lib/infra/event-emitter'
 import { WorkStream } from '../../entities/WorkStream'
 import { isNull } from 'drizzle-orm'
 import { subscribeToSquad } from '../squad/subscriptions'
+import { subscribeToWorkStream } from '../work-streams/subscriptions'
 import { getSettingsStore } from '../settings/store'
 import { waitForQuestionAnswerDeliveryDrains } from './question-answer-delivery'
 import * as admissionModule from '../work-streams/admission'
@@ -341,6 +342,56 @@ describe('async agent questions', () => {
     const q = await createQuestion(agent)
 
     expect(await listAgentQuestionNotifyUserIds(q.id)).not.toContain(loudButBlind.id)
+  })
+
+  it('never fans a squadless question out to instance-wide actions:read holders', async () => {
+    const instanceReader = await createTestUser({ prefix })
+    const direct = await createTestUser({ prefix })
+    createdUserIds.push(instanceReader.id, direct.id)
+    const role = await createTestRole({ prefix, permissions: ['actions:read'] })
+    await assignRole({ userId: instanceReader.id, roleId: role.id, scope: 'system' })
+    const personalAgent = await createAgent({ ownerUserId: user.id })
+    const q = await createQuestion(personalAgent)
+    await db.insert(agentQuestionRecipients).values({
+      questionId: q.id,
+      userId: direct.id,
+      reason: 'execution-participant',
+    })
+
+    // A squadless question has no squad to read: its push audience is exactly its personal owner
+    // and its direct recipients, never everyone holding the permission instance-wide.
+    expect(new Set(await listAgentQuestionNotifyUserIds(q.id))).toEqual(new Set([user.id, direct.id]))
+  })
+
+  it('lets an origin stream mute a question from a squad the reader is notified about', async () => {
+    const reader = await createTestUser({ prefix })
+    createdUserIds.push(reader.id)
+    const role = await createTestRole({ prefix, permissions: ['actions:read'] })
+    await assignRole({ userId: reader.id, roleId: role.id, scope: 'squad', squadId: squad.id })
+    await subscribeToSquad(squad.id, reader.id, { decisions: 'notify', progress: 'notify' })
+    const agent = await createAgent({ squadId: squad.id })
+    const muted = await storedLegacyWorkStream({
+      squadId: squad.id,
+      title: `${prefix} muted origin`,
+      assigneeAgentId: agent.id,
+      agentIds: [agent.id],
+    })
+    await subscribeToWorkStream(muted.id, reader.id, { decisions: 'mute', progress: 'notify' })
+
+    // Origin precedence: the question IS its origin, so the muted stream row wins over the
+    // notified squad row and the squad row alone can never add the reader back.
+    const fromMutedStream = await createQuestion(agent, {}, [muted.id])
+    expect(
+      await db
+        .select({ workStreamId: agentQuestionWorkStreamOrigins.workStreamId })
+        .from(agentQuestionWorkStreamOrigins)
+        .where(eq(agentQuestionWorkStreamOrigins.questionId, fromMutedStream.id))
+    ).toEqual([{ workStreamId: muted.id }])
+    expect(await listAgentQuestionNotifyUserIds(fromMutedStream.id)).not.toContain(reader.id)
+
+    // With no origins the question is the squad's own, so the squad row decides.
+    const squadLevel = await createQuestion(agent)
+    expect(await listAgentQuestionNotifyUserIds(squadLevel.id)).toContain(reader.id)
   })
 
   describe('exact execution attention', () => {
