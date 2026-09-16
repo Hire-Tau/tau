@@ -29,7 +29,7 @@ describe('PWA iOS top safe area', () => {
       'tau-glass relative border-b border-panel-border shrink-0 z-10 safe-area-pt safe-area-status-bar-scrim'
     )
     expect(css).toContain('.safe-area-status-bar-scrim::before')
-    expect(css).toContain('background: var(--color-status-bar-scrim);')
+    expect(css).toContain('background: rgb(var(--color-status-bar-scrim));')
     expect(css).toContain('pointer-events: none;')
   })
 

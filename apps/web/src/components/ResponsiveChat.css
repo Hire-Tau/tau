@@ -63,7 +63,7 @@
   }
 
   .chat-composer .chat-composer-stop:hover {
-    background: var(--color-bg-surface-hover);
+    background: rgb(var(--color-bg-surface-hover));
   }
 
   .chat-composer-delivery {
@@ -74,17 +74,17 @@
     min-height: 44px;
     border: 0;
     border-radius: 8px;
-    color: var(--color-text-muted);
+    color: rgb(var(--color-text-muted));
     background: transparent;
   }
 
   .chat-composer .chat-composer-mode:hover {
-    background: var(--color-bg-surface-hover);
+    background: rgb(var(--color-bg-surface-hover));
   }
 
   .chat-composer-send button[type='submit']:disabled {
-    background: var(--color-bg-pill);
-    color: var(--color-text-muted);
+    background: rgb(var(--color-bg-pill));
+    color: rgb(var(--color-text-muted));
   }
 
   .chat-composer .chat-composer-submit {
