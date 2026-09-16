@@ -16,7 +16,7 @@ export async function dispatchVerifiedWebhookContext(
     const { publishGitHubWebhookOutputs } = await import('../integrations/github/ingress')
     ctx.integrationHandledSquadIds = await publishGitHubWebhookOutputs({ type: ctx.eventType, payload: ctx.payload })
   } else if (ctx.provider === 'linear') {
-    // Linear's assignment handler verifies connected-account issue access before publishing.
+    // Linear's event handler verifies connected-account issue access before publishing.
     ctx.integrationHandledSquadIds = []
   } else
     ctx.integrationHandledSquadIds = await publishIntegrationOutputs(

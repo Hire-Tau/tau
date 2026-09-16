@@ -1,11 +1,11 @@
-import { routeLinearAssignment } from './ingress'
+import { routeLinearEvent } from './ingress'
 import { resolveLinearWebhookSecret } from './webhook-settings'
 /**
  * Linear Webhook Processor
  *
  * Handles webhook events from Linear including:
  * - Signature verification using Linear-Signature header (HMAC-SHA256, raw hex)
- * - Issue events for task creation on assignment
+ * - Issue and comment events for task creation on assignment
  */
 
 import { createHmac, timingSafeEqual } from 'crypto'
@@ -105,9 +105,9 @@ export const linearProcessor: WebhookProcessor = {
   },
 }
 
-/** Route assignments through connected account authority, then existing team metadata as a fallback. */
+/** Route Linear issue and comment events through connected account authority; assignments keep the legacy fallback. */
 export const handleLinearIssueUpdate: WebhookHandler = async (ctx) => {
-  await routeLinearAssignment({ type: ctx.eventType, payload: ctx.payload }, async (squadId) => {
+  await routeLinearEvent({ type: ctx.eventType, payload: ctx.payload }, async (squadId) => {
     const rule = actionConfig && getEventRules(actionConfig, 'linear', 'issue_assigned')?.[0]
     if (rule) await executeRuleCommands(rule, ctx.payload, 'issue_assigned', squadId)
   })
