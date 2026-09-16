@@ -1,6 +1,11 @@
 import { expect, test } from 'bun:test'
 import { createBlankWorkflow, integrationSubscriptionSchema } from '@tau/shared'
-import { CodeHostingRegistry, isDeliveryFeedbackSubscription, type CodeHostingAdapter } from './registry'
+import {
+  CodeHostingRegistry,
+  isDeliveryFeedbackSubscription,
+  subscriptionTargetsResource,
+  type CodeHostingAdapter,
+} from './registry'
 import { githubCodeHostingAdapter } from '../github/code-hosting'
 
 test('a new code hosting adapter supplies delivery evidence and events without changing the flow', async () => {
@@ -182,6 +187,81 @@ test('delivery feedback covers the code-host binding and flagged tracked pull re
     deliver: { to: 'delivery-owner', whenInactive: 'retain' },
   })
   expect(isDeliveryFeedbackSubscription(explicit, metadata)).toBe(false)
+})
+
+test('subscriptionTargetsResource compares literal matches case/whitespace-insensitively and by kind-specific number field', () => {
+  const pr = integrationSubscriptionSchema.parse({
+    id: 'watch-pr',
+    source: { integration: 'github', output: 'pull_request.merged', version: 1 },
+    match: { repository: { value: '  Acme/Widgets  ' }, 'pullRequest.number': { value: 34 } },
+    deliver: { to: 'delivery-owner', whenInactive: 'retain' },
+  })
+  expect(
+    subscriptionTargetsResource(pr, {
+      integration: 'github',
+      repository: 'acme/widgets',
+      kind: 'pull_request',
+      number: 34,
+    })
+  ).toBe(true)
+  // Whitespace/casing on the resource side is normalized too.
+  expect(
+    subscriptionTargetsResource(pr, {
+      integration: 'github',
+      repository: '  ACME/WIDGETS  ',
+      kind: 'pull_request',
+      number: 34,
+    })
+  ).toBe(true)
+  expect(
+    subscriptionTargetsResource(pr, {
+      integration: 'github',
+      repository: 'acme/widgets',
+      kind: 'pull_request',
+      number: 35,
+    })
+  ).toBe(false)
+  expect(
+    subscriptionTargetsResource(pr, {
+      integration: 'gitlab',
+      repository: 'acme/widgets',
+      kind: 'pull_request',
+      number: 34,
+    })
+  ).toBe(false)
+  // Same number, but the resource is an issue: the pull request match path never matches it.
+  expect(
+    subscriptionTargetsResource(pr, { integration: 'github', repository: 'acme/widgets', kind: 'issue', number: 34 })
+  ).toBe(false)
+
+  const issue = integrationSubscriptionSchema.parse({
+    id: 'watch-issue',
+    source: { integration: 'github', output: 'issue.updated', version: 1 },
+    match: { repository: { value: 'acme/widgets' }, 'issue.number': { value: 12 } },
+    deliver: { to: 'delivery-owner', whenInactive: 'retain' },
+  })
+  expect(
+    subscriptionTargetsResource(issue, { integration: 'github', repository: 'acme/widgets', kind: 'issue', number: 12 })
+  ).toBe(true)
+
+  // A `streamMetadata`-bound match carries no fixed value of its own, so it never matches a resource.
+  const bound = integrationSubscriptionSchema.parse({
+    id: 'watch-bound',
+    source: { integration: 'github', output: 'pull_request.merged', version: 1 },
+    match: {
+      repository: { streamMetadata: 'github.repo' },
+      'pullRequest.number': { streamMetadata: 'github.pr.number' },
+    },
+    deliver: { to: 'delivery-owner', whenInactive: 'retain' },
+  })
+  expect(
+    subscriptionTargetsResource(bound, {
+      integration: 'github',
+      repository: 'acme/widgets',
+      kind: 'pull_request',
+      number: 34,
+    })
+  ).toBe(false)
 })
 
 test('tracked resources fan out with stable identity-hashed ids and never duplicate delivery/legacy bindings', () => {

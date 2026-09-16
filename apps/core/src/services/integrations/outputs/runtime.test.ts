@@ -1988,6 +1988,98 @@ test('a merge on a designated delivery pull request updates the stream delivery 
   expect(Object.keys(state)).toEqual([trackedResourceKey(tracked)])
 })
 
+test('a merge on a designated delivery pull request emits workStream.updated; an unmatched merge does not', async () => {
+  const tracked: TrackedResource = {
+    integration: 'github',
+    repository: `${prefix}/other`,
+    kind: 'pull_request',
+    number: 1006,
+    delivery: true,
+  }
+  const id = await create(1007, { codeHost: true, tracked: [tracked] })
+  const stream = await WorkStream.mustFind(id)
+  const { eventEmitter } = await import('../../../lib/infra/event-emitter')
+  const events: Array<{ workStreamId: string; squadId: string }> = []
+  const stop = eventEmitter.on('workStream.updated', (payload) => events.push(payload))
+  try {
+    // A merge on a pull request the stream does not designate for delivery: no observation is
+    // recorded, so nothing is emitted.
+    await publish(
+      fact(9999, {
+        output: 'pull_request.merged',
+        resourceKey: `${prefix}/other#9999`,
+        data: { repository: `${prefix}/other`, pullRequest: { number: 9999 } },
+      })
+    )
+    expect(events).toHaveLength(0)
+    const merged = fact(tracked.number, {
+      output: 'pull_request.merged',
+      resourceKey: `${prefix}/other#${tracked.number}`,
+      data: { repository: `${prefix}/other`, pullRequest: { number: tracked.number } },
+    })
+    await publish(merged)
+    expect(events).toEqual([{ workStreamId: id, squadId: stream.squadId }])
+  } finally {
+    stop()
+  }
+})
+
+test('a later stream throwing during the same event does not swallow an earlier stream’s already-committed notification', async () => {
+  const tracked: TrackedResource = {
+    integration: 'github',
+    repository: `${prefix}/other`,
+    kind: 'pull_request',
+    number: 1008,
+    delivery: true,
+  }
+  // Two independent streams designate the same pull request as their delivery change request, so
+  // one merge event is observed — and would notify — for both.
+  const id1 = await create(1009, { codeHost: true, tracked: [tracked] })
+  const id2 = await create(1010, { codeHost: true, tracked: [tracked] })
+  const stream1 = await WorkStream.mustFind(id1)
+  const relevant = new Set([id1, id2])
+  const deliveryModule = await import('../../work-streams/delivery-pull-requests')
+  const original = deliveryModule.recordDeliveryObservation
+  let calls = 0
+  const spy = spyOn(deliveryModule, 'recordDeliveryObservation').mockImplementation(async (tx, stream, event) => {
+    if (!relevant.has(stream.id)) return original(tx, stream, event)
+    calls++
+    // Whichever of the two streams the runtime happens to process second fails after the first
+    // has already committed its observation.
+    if (calls === 2) throw new Error('second stream observation boom')
+    return original(tx, stream, event)
+  })
+  const { eventEmitter } = await import('../../../lib/infra/event-emitter')
+  const events: Array<{ workStreamId: string; squadId: string }> = []
+  const stop = eventEmitter.on('workStream.updated', (payload) => events.push(payload))
+  const merged = fact(tracked.number, {
+    output: 'pull_request.merged',
+    resourceKey: `${prefix}/other#${tracked.number}`,
+    data: { repository: `${prefix}/other`, pullRequest: { number: tracked.number } },
+  })
+  try {
+    await expect(publishIntegrationOutput('github', merged, { kind: 'instance' })).rejects.toThrow(
+      'second stream observation boom'
+    )
+    const [pending] = await db
+      .select()
+      .from(integrationOutputEvents)
+      .where(eq(integrationOutputEvents.eventKey, merged.eventKey))
+    eventIds.push(pending!.id)
+    // The stream processed first already committed its observation before the second one threw;
+    // its notification must have gone out despite the later failure.
+    expect(calls).toBe(2)
+    expect(events).toHaveLength(1)
+    expect([id1, id2]).toContain(events[0]!.workStreamId)
+    expect(events[0]!.squadId).toBe(stream1.squadId)
+    const succeededState = ((await WorkStream.mustFind(events[0]!.workStreamId)).metadata as any).delivery.pullRequests
+    expect(succeededState[trackedResourceKey(tracked)]).toMatchObject({ state: 'merged' })
+  } finally {
+    stop()
+    spy.mockRestore()
+  }
+})
+
 test('event-created streams preserve their default or explicit opt-out through real repository provisioning', async () => {
   const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises')
   const { tmpdir } = await import('node:os')

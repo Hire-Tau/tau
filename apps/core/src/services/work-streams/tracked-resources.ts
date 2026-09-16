@@ -8,7 +8,6 @@ import {
   trackedResourceKey,
   trackedResourceObjectSchema,
   trackedResourceSchema,
-  type IntegrationSubscription,
   type ResolvedTrackedResource,
   type TrackedResource,
   type TrackedResourceKind,
@@ -17,6 +16,7 @@ import {
 import { db, squads, workStreams, workStreamFlowRuns, integrationOutputEvents, type DbTx } from '../../db'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { codeHostingRegistry } from '../integrations/code-hosting'
+import { subscriptionTargetsResource } from '../integrations/code-hosting/registry'
 import { isOutputEventAuthorizedForSquad, reconcileOutputDeliveries } from '../integrations/outputs/runtime'
 import { eventTrackedResource } from '../integrations/outputs/tracked-match'
 import { deliveryView } from './delivery-pull-requests'
@@ -310,11 +310,6 @@ export async function removeTrackedResource(
   return { removed, view: await listTrackedResources(streamId) }
 }
 
-function matchValue(subscription: IntegrationSubscription, path: string) {
-  const match = subscription.match[path]
-  return match && 'value' in match ? match.value : undefined
-}
-
 export async function listTrackedResources(streamId: string): Promise<TrackedResourcesView> {
   const [stream] = await db.select().from(workStreams).where(eq(workStreams.id, streamId))
   if (!stream) throw new TrackedResourceError('Work stream not found', 404)
@@ -335,15 +330,8 @@ export async function listTrackedResources(streamId: string): Promise<TrackedRes
   return {
     subscriptions,
     resources: resolveTrackedResources(stream.metadata).map((resource) => {
-      const repository = resource.repository.trim().toLowerCase()
-      const numberPath = resource.kind === 'issue' ? 'issue.number' : 'pullRequest.number'
       const subscriptionIds = active
-        .filter(
-          (subscription) =>
-            subscription.source.integration === resource.integration &&
-            String(matchValue(subscription, 'repository') ?? '').toLowerCase() === repository &&
-            matchValue(subscription, numberPath) === resource.number
-        )
+        .filter((subscription) => subscriptionTargetsResource(subscription, resource))
         .map((subscription) => subscription.id)
       return {
         ...resource,
