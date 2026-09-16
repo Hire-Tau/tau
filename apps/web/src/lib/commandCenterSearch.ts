@@ -50,6 +50,7 @@ export function consultantConversations(agents: readonly Agent[]) {
 export function actionTitle(action: PendingAction): string {
   const data = action.data
   if ('workStreamTitle' in data) return data.workStreamTitle
+  if ('taskLabel' in data) return data.taskLabel
   if ('reason' in data) return data.reason || 'Work needs attention'
   if ('questionData' in data) {
     const question = data.questionData as { question?: string; questions?: { question?: string }[] }

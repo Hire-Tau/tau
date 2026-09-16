@@ -20,6 +20,7 @@ import { InboxMessage, formatInboxMessages, setBeforeRecipientLifecycleLockHookF
 import { assistantInboxRecipientId } from '@tau/shared'
 import { inboxRouter } from './inbox'
 import { assistantTasksRouter } from './assistant-tasks'
+import { actionsRouter } from './actions'
 import { identityMiddleware } from '../middleware/identity'
 import {
   assignRole,
@@ -38,6 +39,7 @@ const app = new Hono()
   .use('*', identityMiddleware)
   .route('/api/assistant', assistantRouter)
   .route('/api/assistant-tasks', assistantTasksRouter)
+  .route('/api/actions', actionsRouter)
   .route('/api/inbox', inboxRouter)
 const entry = (id: string, text: string, final = true) => ({ id, text, final, role: 'user' as const })
 async function fixture(kind: 'assistant' | 'page-editor' = 'assistant') {
@@ -1327,4 +1329,47 @@ test('the delegated agent can report task status directly without tracking reque
   expect(formatInboxMessages([await InboxMessage.mustFind(receipt.id)])).toContain(
     `tau assistant-task status ${receipt.taskId}`
   )
+})
+
+test("a task waiting for the owner's answer is a Needs-you item until the owner answers", async () => {
+  const f = await activityFixture()
+  const receipt = await f.start('Compare hosting options')
+  const pending = async (token = f.owner.token) => {
+    const response = await app.request('/api/actions/pending', { headers: authHeaders(token) })
+    expect(response.status).toBe(200)
+    return (await response.json()) as Array<{ id: string; type: string; canRespond: boolean; data: any }>
+  }
+  const mine = (items: Array<{ id: string }>) => items.filter((item) => item.id.endsWith(receipt.taskId))
+  expect(mine(await pending())).toEqual([])
+  await f.update(receipt.id, 'Working on it.', 'working')
+  expect(mine(await pending())).toEqual([])
+  const question = await f.update(receipt.id, 'Which region should the deployment use?', 'needs-input')
+  const [item] = mine(await pending())
+  expect(item).toMatchObject({
+    id: `assistant-needs-input:${receipt.taskId}`,
+    type: 'assistant-needs-input',
+    canRespond: true,
+    data: {
+      conversationId: f.id,
+      taskId: receipt.taskId,
+      taskLabel: 'Compare options',
+      ownerUserId: f.owner.id,
+      question: 'Which region should the deployment use?',
+      updateMessageId: question.id,
+    },
+  })
+  // Private to the owner, even for a user with squad-wide action access.
+  expect(mine(await pending(f.other.token))).toEqual([])
+  // Answering inside the conversation advances the task and clears the item.
+  expect(
+    (
+      await f.request(`/${f.id}/messages`, {
+        clientId: randomUUID(),
+        request: 'us-east',
+        agentId: f.agent.id,
+        inReplyTo: question.id,
+      })
+    ).status
+  ).toBe(200)
+  expect(mine(await pending())).toEqual([])
 })

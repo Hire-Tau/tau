@@ -67,6 +67,8 @@ Initial agent-history loading uses message-shaped skeletons in the transcript, r
 
 Needs you actions use a subtle neutral surface without colored frames or shadows. Keep semantic color on the small status icon; identify the squad and requester in a quiet subtitle. Use purple for the primary action, a neutral outline for secondary choices, and quiet text for navigation or dismissal. Embedded question forms share the surrounding action's surface and padding.
 
+A delegated Assistant task whose delegate reported `needs-input` is a Needs-you item (“Assistant task · needs your answer”), grouped with the other questions and visible only to the conversation owner. The card shows the question and an “Answer in Assistant” action that opens the conversation; the answer is given there so it stays correlated to the task, and the item clears once the task leaves `needs-input`.
+
 “Since your last visit” also lists conversations with unread Assistant updates as passive rows (title, latest preview, unread count, time) that open the Assistant on that conversation; they are never Needs-you actions and opening one marks nothing seen.
 
 A single review, blocked-work item, or halted agent opens with its details visible and no redundant category heading. Question forms remain collapsed until opened so landing on the Feed does not trigger the keyboard. Keep approval confirmations, permissions, retry states, and dismissal behavior intact. Bare GitHub pull-request URLs in action messages may display as `PR #123`, preserving the destination and explicitly authored link labels.
