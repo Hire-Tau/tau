@@ -5,6 +5,7 @@ import {
   parseTrackedResourceUrl,
   resolveTrackedResources,
   trackedResourceKey,
+  trackedResourceObjectSchema,
   trackedResourceSchema,
   type IntegrationSubscription,
   type ResolvedTrackedResource,
@@ -29,7 +30,7 @@ export class TrackedResourceError extends Error {
   }
 }
 
-const trackedResourceInputSchema = trackedResourceSchema.pick({
+const trackedResourceInputSchema = trackedResourceObjectSchema.pick({
   integration: true,
   repository: true,
   kind: true,
@@ -266,11 +267,6 @@ export async function removeTrackedResource(
         const parsed = trackedResourceSchema.safeParse(entry)
         return !parsed.success || trackedResourceKey(parsed.data) !== key
       })
-    if (resource.source === 'legacy-issue') {
-      const github = { ...((next.github as Record<string, unknown> | undefined) ?? {}) }
-      delete github.issue
-      next.github = github
-    }
     await tx.update(workStreams).set({ metadata: next, updatedAt: new Date() }).where(eq(workStreams.id, streamId))
     return { value: true, changed: true }
   })
@@ -313,5 +309,7 @@ export async function listTrackedResources(streamId: string): Promise<TrackedRes
         .map((subscription) => subscription.id)
       return { ...resource, subscriptionIds, subscribed: subscriptionIds.length > 0 }
     }),
+    // Populated once delivery pull-request state tracking lands; placeholder keeps the view shape stable.
+    delivery: { pullRequests: [], complete: false },
   }
 }

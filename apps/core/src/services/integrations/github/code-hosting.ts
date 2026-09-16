@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto'
 import { trackedResourceKey } from '@tau/shared'
-import { resolveGitHubIssueReference } from './issue-reference'
 import { resolveGitHubRelayAssignment } from './resolve-connection'
 import type { CodeHostingAdapter } from '../code-hosting/registry'
 import { githubApiGet } from '../../github/api-client'
@@ -43,21 +42,6 @@ export const githubCodeHostingAdapter: CodeHostingAdapter = {
       reference.connectionId
     )
     return !!comparison && ['identical', 'behind'].includes(comparison.status)
-  },
-  issueSubscriptions(reference, metadata) {
-    const issue = resolveGitHubIssueReference(metadata, reference)
-    if (!issue) return []
-    return ISSUE_EVENTS.map((event) => ({
-      id: `code-host-issue-${event}`,
-      source: {
-        integration: 'github',
-        output: `issue.${event}`,
-        version: 1,
-        ...(issue.connectionId ? { connectionId: issue.connectionId } : {}),
-      },
-      match: { repository: { value: issue.repository }, 'issue.number': { value: issue.number } },
-      deliver: { to: 'delivery-owner' as const, whenInactive: 'retain' as const },
-    }))
   },
   subscriptions(reference) {
     return PULL_REQUEST_EVENTS.map((event) => ({

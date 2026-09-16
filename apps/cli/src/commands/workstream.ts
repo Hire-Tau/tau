@@ -1335,8 +1335,7 @@ function formatTrackedSubscriptionsFooter(status: TrackedResourcesView['subscrip
 }
 
 function formatTrackedResourceLine(resource: ResolvedTrackedResource): string {
-  const sourceLabel =
-    resource.source === 'delivery' ? 'delivery PR' : resource.source === 'legacy-issue' ? 'legacy issue' : 'tracked'
+  const sourceLabel = resource.source === 'delivery' ? 'delivery PR' : 'tracked'
   const url = resource.url ? ` ${resource.url}` : ''
   return `[${resource.kind}] ${resource.repository}#${resource.number} (${sourceLabel})${url}`
 }

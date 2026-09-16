@@ -16,7 +16,6 @@ export interface CodeHostingAdapter {
   ): Promise<{ merged: boolean; headBranch: string; baseBranch: string; headSha?: string } | null>
   containsCommit(reference: CodeHostReference, squadId: string, base: string, commit: string): Promise<boolean>
   subscriptions(reference: CodeHostReference): IntegrationSubscription[]
-  issueSubscriptions?(reference: CodeHostReference, metadata: unknown): IntegrationSubscription[]
   /** Events for a resource tracked alongside the delivery binding. Identity only; never a grant. */
   trackedSubscriptions?(resource: ResolvedTrackedResource): IntegrationSubscription[]
   authorizeSquad?(squadId: string, connectionId?: string): Promise<boolean>
@@ -43,12 +42,11 @@ export class CodeHostingRegistry {
     if (!definition.completion.followChanges) return explicit
     const binding = this.resolve(metadata)
     const inferred = binding
-      ? [
-          ...(binding.reference.changeRequest ? binding.adapter.subscriptions(binding.reference) : []),
-          ...(binding.adapter.issueSubscriptions?.(binding.reference, metadata) ?? []),
-        ]
+      ? binding.reference.changeRequest
+        ? binding.adapter.subscriptions(binding.reference)
+        : []
       : []
-    // Delivery and legacy-issue links already own their reserved ids; only extra links fan out.
+    // Delivery links already own their reserved ids; only extra links fan out.
     for (const resource of resolveTrackedResources(metadata)) {
       if (resource.source !== 'tracked') continue
       const adapter = this.adapters.get(resource.integration)

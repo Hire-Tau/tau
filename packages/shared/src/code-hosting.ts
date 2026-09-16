@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { integrationValueAt } from './integration-outputs'
 
 /** Resource identity only. Access always comes from the integration's squad connection. */
 export const codeHostReferenceSchema = z
@@ -58,7 +57,7 @@ export const trackedResourceOriginSchema = z
   })
   .strict()
 /** Tracked resource identity. Access always comes from the squad's integration connection, never from this record. */
-export const trackedResourceSchema = z
+export const trackedResourceObjectSchema = z
   .object({
     integration: integrationName,
     repository: z.string().trim().min(1).max(500),
@@ -74,19 +73,69 @@ export const trackedResourceSchema = z
       .optional(),
     addedAt: z.string().max(64).optional(),
     origin: trackedResourceOriginSchema.optional(),
+    // Only meaningful for kind 'pull_request'; flags a tracked PR as a delivery change request.
+    delivery: z.literal(true).optional(),
   })
   .strict()
+/** Same identity as {@link trackedResourceObjectSchema}, plus the cross-field delivery/kind constraint. */
+export const trackedResourceSchema = trackedResourceObjectSchema.refine(
+  (value) => !value.delivery || value.kind === 'pull_request',
+  { message: 'delivery is only valid for pull requests', path: ['delivery'] }
+)
 export type TrackedResource = z.infer<typeof trackedResourceSchema>
-export type TrackedResourceSource = 'delivery' | 'legacy-issue' | 'tracked'
-export interface ResolvedTrackedResource extends TrackedResource {
+export type TrackedResourceSource = 'delivery' | 'tracked'
+export interface ResolvedTrackedResource extends Omit<TrackedResource, 'delivery'> {
   key: string
   source: TrackedResourceSource
   url?: string
+  /** True for the codeHost PR and any tracked PR explicitly flagged as a delivery change request. */
+  delivery: boolean
+}
+export const deliveryPullRequestStateSchema = z
+  .object({
+    state: z.enum(['open', 'merged', 'closed']),
+    at: z.string(),
+    headSha: z.string().optional(),
+    eventId: z.string().uuid().optional(),
+  })
+  .strict()
+export const workStreamDeliveryStateSchema = z
+  .object({
+    pullRequests: z.record(z.string(), deliveryPullRequestStateSchema),
+  })
+  .strict()
+export type WorkStreamDeliveryState = z.infer<typeof workStreamDeliveryStateSchema>
+/** Parses the work stream's delivery state, defaulting to an empty map when absent or invalid. */
+export function readDeliveryState(metadata: unknown): WorkStreamDeliveryState {
+  const record =
+    metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? (metadata as Record<string, unknown>) : {}
+  const parsed = workStreamDeliveryStateSchema.safeParse(record.delivery)
+  return parsed.success ? parsed.data : { pullRequests: {} }
+}
+export interface DeliveryPullRequestView {
+  key: string
+  repository: string
+  number: number
+  url?: string
+  primary: boolean
+  state: 'open' | 'merged' | 'closed'
+  at?: string
+  headSha?: string
 }
 export interface TrackedResourcesView {
-  resources: Array<ResolvedTrackedResource & { subscriptionIds: string[]; subscribed: boolean }>
+  resources: Array<
+    ResolvedTrackedResource & {
+      subscriptionIds: string[]
+      subscribed: boolean
+      mergeState?: 'open' | 'merged' | 'closed'
+    }
+  >
   /** Why subscriptions may be inactive even though links exist. */
   subscriptions: 'active' | 'no-flow' | 'not-following' | 'ended'
+  delivery: {
+    pullRequests: DeliveryPullRequestView[]
+    complete: boolean
+  }
 }
 export function trackedResourceKey(r: Pick<TrackedResource, 'integration' | 'repository' | 'kind' | 'number'>) {
   return `${r.integration}:${r.repository.trim().toLowerCase()}:${r.kind}:${r.number}`
@@ -96,38 +145,14 @@ export function trackedResourceUrl(r: Pick<TrackedResource, 'integration' | 'rep
   if (r.integration !== 'github') return undefined
   return `https://github.com/${r.repository.trim()}/${r.kind === 'issue' ? 'issues' : 'pull'}/${r.number}`
 }
-/** Shared issue identity for subscriptions and existing-stream matching; never grants access. */
-export function resolveGitHubIssueReference(
-  metadata: unknown,
-  reference: CodeHostReference | null = resolveCodeHostReference(metadata)
-) {
-  if (reference?.integration !== 'github') return null
-  const repository = integrationValueAt(metadata, 'github.repo')
-  const rawNumber = integrationValueAt(metadata, 'github.issue')
-  if (typeof repository !== 'string' || repository.toLowerCase() !== reference.repository.toLowerCase()) return null
-  if (typeof rawNumber !== 'number' && !(typeof rawNumber === 'string' && /^[1-9][0-9]*$/.test(rawNumber))) return null
-  const number = Number(rawNumber)
-  if (!Number.isSafeInteger(number) || number <= 0) return null
-  const originMatches =
-    integrationValueAt(metadata, 'integrationSource.integration') === 'github' &&
-    integrationValueAt(metadata, 'integrationSource.resourceKey') === `${repository.toLowerCase()}#${number}`
-  const connectionId =
-    integrationValueAt(metadata, 'github.connectionId') ??
-    reference.connectionId ??
-    (originMatches ? integrationValueAt(metadata, 'integrationSource.connectionId') : undefined)
-  const identity = codeHostReferenceSchema.safeParse({ ...reference, connectionId })
-  return identity.success
-    ? { repository: repository.toLowerCase(), number, connectionId: identity.data.connectionId }
-    : null
-}
 export function resolveTrackedResources(metadata: unknown): ResolvedTrackedResource[] {
   const out: ResolvedTrackedResource[] = []
   const seen = new Set<string>()
-  const push = (entry: TrackedResource, source: TrackedResourceSource) => {
+  const push = (entry: TrackedResource, source: TrackedResourceSource, delivery: boolean) => {
     const key = trackedResourceKey(entry)
     if (seen.has(key)) return
     seen.add(key)
-    out.push({ ...entry, key, source, url: trackedResourceUrl(entry) })
+    out.push({ ...entry, key, source, url: trackedResourceUrl(entry), delivery })
   }
   const reference = resolveCodeHostReference(metadata)
   if (reference?.changeRequest)
@@ -140,19 +165,8 @@ export function resolveTrackedResources(metadata: unknown): ResolvedTrackedResou
         ...(reference.connectionId ? { connectionId: reference.connectionId } : {}),
         ...(reference.changeRequest.url ? { url: reference.changeRequest.url } : {}),
       },
-      'delivery'
-    )
-  const issue = resolveGitHubIssueReference(metadata, reference)
-  if (issue)
-    push(
-      {
-        integration: 'github',
-        repository: issue.repository,
-        kind: 'issue',
-        number: issue.number,
-        ...(issue.connectionId ? { connectionId: issue.connectionId } : {}),
-      },
-      'legacy-issue'
+      'delivery',
+      true
     )
   const tracked =
     metadata && typeof metadata === 'object' && !Array.isArray(metadata)
@@ -161,9 +175,18 @@ export function resolveTrackedResources(metadata: unknown): ResolvedTrackedResou
   if (Array.isArray(tracked))
     for (const raw of tracked) {
       const parsed = trackedResourceSchema.safeParse(raw)
-      if (parsed.success) push(parsed.data, 'tracked')
+      if (parsed.success) push(parsed.data, 'tracked', !!parsed.data.delivery)
     }
   return out
+}
+/** Pull requests designated as delivery change requests: the codeHost binding plus any flagged tracked PRs, primary first. */
+export function deliveryPullRequests(metadata: unknown): ResolvedTrackedResource[] {
+  // resolveTrackedResources always yields the codeHost-bound delivery PR first, so this preserves primary-first order.
+  return resolveTrackedResources(metadata).filter((resource) => resource.kind === 'pull_request' && resource.delivery)
+}
+/** The codeHost-bound delivery pull request, if any. */
+export function primaryDeliveryPullRequest(metadata: unknown): ResolvedTrackedResource | null {
+  return resolveTrackedResources(metadata).find((resource) => resource.source === 'delivery') ?? null
 }
 const GITHUB_RESOURCE_URL = /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/(issues|pull)\/([1-9][0-9]*)\/?$/i
 export function parseTrackedResourceUrl(url: string) {
