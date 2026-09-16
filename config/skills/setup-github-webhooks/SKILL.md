@@ -120,11 +120,15 @@ tau workstream track <ws-id> --event <event-id>
 
 # By explicit reference
 tau workstream track <ws-id> --pr owner/repo-name#<pr-number>
+
+# Flag an additional PR as a delivery change request — it must also be merged
+# before the stream can finish, alongside the primary codeHost PR
+tau workstream track <ws-id> --pr owner/repo-name#<pr-number> --delivery
 ```
 
 Tau resolves and records the tracked PR atomically, and validates the squad has
 an authorized connection for it. Legacy `github.pr.number`/`github.pr.url`/`github.repo`
-metadata set with `set-meta` is still recognized.
+metadata set with `set-meta` is still recognized (for the primary delivery PR only).
 
 ## Step 6: Configure Issue Tracking on Work Streams
 
@@ -143,8 +147,11 @@ tau workstream track <ws-id> --issue owner/repo-name#<issue-number>
 ```
 
 `tau workstream tracked <ws-id>` (alias `links`) lists everything a stream
-tracks and whether its subscriptions are active. Legacy `github.issue`/`github.repo`
-metadata set with `set-meta` is still recognized.
+tracks, whether each PR counts toward delivery, its observed merge state, and
+whether its subscriptions are active. A stale `github.repo`/`github.issue`
+pair from before tracked resources existed is converted automatically at
+startup into a `tracked` issue entry; `github.issue` itself is never read, so
+always use `track`/`set-meta tracked` for new work.
 
 ## Setting Up for Multiple Repos
 

@@ -99,17 +99,26 @@ and review; repair conflicts through the flow and review the affected changes.
 Record follow-up work with the owner. Preserve other work and any shared branch;
 clean up owned temporary resources only after delivery and dependent use finish.
 
-The delivery PR is `codeHost.changeRequest`; it is the only resource that gates
-`pr-merge`/`pr-auto-merge` completion. When an integration notification
-supplies `Event reference: <id>`, create or attach work with
+The primary delivery PR is `codeHost.changeRequest`. When an integration
+notification supplies `Event reference: <id>`, create or attach work with
 `tau workstream create ... --from-event <id>` or
 `tau workstream track <ws-id> --event <id>` — never hand-write
 `github.*`/`codeHost` metadata to track a resource; `--from-url` links are
-reference material only and receive no updates. `tau workstream track --pr`
-adds a followed pull request alongside the delivery PR without changing
-completion; `tau workstream tracked <ws-id>` lists everything tracked and
-whether its subscriptions are active. A tracked issue closing is information,
-not completion: it never finishes the stream or clears a wait.
+reference material only and receive no updates. A stale
+`github.repo`/`github.issue` pair is converted automatically at startup into a
+`tracked` issue entry and is never read afterward.
+
+`tau workstream track --pr` adds a followed pull request alongside the
+primary delivery PR without changing completion, unless `--pr ... --delivery`
+(or `--url ... --delivery`) flags it as an additional delivery pull request:
+`tau workstream finish` then also requires that PR to be independently
+verified merged, on top of the primary PR, before `pr-merge`/`pr-auto-merge`
+can complete (`409 Delivery pull request <repo>#<n> must be merged before
+completion` otherwise). `--delivery` only applies to pull requests. `tau
+workstream tracked <ws-id>` lists everything tracked, which pull requests
+count toward delivery, their observed merge state, and whether subscriptions
+are active. A tracked issue closing, or any non-delivery resource's activity,
+is information, not completion: it never finishes the stream or clears a wait.
 
 Existing non-flow streams have a legacy lifecycle. Do not copy it into new flow
 work or silently reinterpret in-flight work. Inspect the stored policy and ask

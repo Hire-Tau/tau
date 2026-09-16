@@ -222,6 +222,12 @@ tau workstream get ws-123
 tau ws info ws-123
 ```
 
+When the stream tracks any issue or pull request, `get` prints a `Tracked:`
+section listing each one as `[kind] repo#number (label)`, where `label` is
+`delivery PR` for the primary `codeHost.changeRequest`, `delivery` for a
+tracked pull request flagged `--delivery`, or `tracked` otherwise, followed by
+the observed merge state when one exists (e.g. `(delivery, merged)`).
+
 ---
 
 ### update
@@ -543,9 +549,14 @@ tau workstream tracked <id>
 ```bash
 tau workstream tracked ws-123
 
-# Table columns: Kind | Resource | Source | Subscribed | URL
-# Source is one of: delivery, legacy-issue, tracked
-# Followed by a "Subscriptions: active|no-flow|not-following|ended" footer
+# Table columns: Kind | Resource | Source | Delivery | Merge | Subscribed | URL
+# Source is one of: delivery, tracked
+# Delivery is "primary" for the codeHost PR, "yes" for a tracked PR flagged
+# --delivery, otherwise "-"; Merge shows the observed merge state (open,
+# merged, closed) or "-" when nothing has been observed yet
+# Followed by a "Subscriptions: active|no-flow|not-following|ended" footer,
+# then a "Delivery: m/n pull requests merged" line when the stream has at
+# least one delivery pull request
 ```
 
 ---
@@ -573,6 +584,7 @@ tau workstream track <id> [options]
 | `--issue <ref>` | Track a GitHub issue, e.g. `owner/repo#12` |
 | `--pr <ref>` | Track a GitHub pull request, e.g. `owner/repo#12` |
 | `--connection <connectionId>` | Integration connection ID (only with `--issue`/`--pr`) |
+| `--delivery` | Count this pull request toward the work stream's delivery (only with `--url`/`--pr`) |
 
 **Examples:**
 
@@ -586,11 +598,20 @@ tau workstream track ws-123 --pr owner/repo#34 --connection conn-abc
 
 # By resource URL
 tau workstream track ws-123 --url https://github.com/owner/repo/pull/34
+
+# Flag an additional pull request as a delivery change request: it must also
+# be merged before the stream can finish
+tau workstream track ws-123 --pr owner/repo#35 --delivery
+tau workstream track ws-123 --url https://github.com/owner/repo/pull/35 --delivery
 ```
 
-Tracking a PR this way never changes the work stream's delivery PR
+Tracking a PR this way never changes the work stream's primary delivery PR
 (`metadata.codeHost.changeRequest`); it adds a followed resource without
-affecting `pr-merge`/`pr-auto-merge` completion.
+affecting `pr-merge`/`pr-auto-merge` completion, unless `--delivery` flags it,
+in which case `tau workstream finish` additionally requires it to be merged.
+`--delivery` combined with `--issue` or `--event` is rejected — an issue is
+never a delivery change request, and an event's resource kind isn't known
+until the server resolves it.
 
 ---
 

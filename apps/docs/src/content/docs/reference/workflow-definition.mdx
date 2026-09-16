@@ -209,7 +209,13 @@ Reaching the end of the graph makes a satisfied flow `completion-ready`. `tau wo
 | `pr-auto-merge`   | The current squad must explicitly allow automatic merge. The agent can enable it, but delivery still requires a verified merge. |
 | `direct-merge`    | The squad must explicitly allow direct merge; Tau verifies the recorded commit is contained in the remote base branch.          |
 
-**Code hosting** (`completion.followChanges: true`) subscribes to linked PR and issue updates through the stream's code-hosting adapter, including PR comments, reviews, CI, and merges, plus issue comments, edits, and assignment changes. Issues and additional pull requests are tracked with `tau workstream track <ws-id> --url <issue-or-pr-url>`, or recorded at creation from an integration notification with `tau workstream create … --from-event <event-id>`; legacy `github.repo`/`github.issue` metadata is still recognized. Set `completion.changeEventsTo: { step: engineer }` to send the entire event bundle to an existing agent step. Omit it or use `delivery-owner` for automatic delivery ownership. Events are retained while the recipient cannot receive them; they do not start a future step. It is optional and does not itself grant repository access or authorize delivery.
+**Code hosting** (`completion.followChanges: true`) subscribes to linked PR and issue updates through the stream's code-hosting adapter, including PR comments, reviews, CI, and merges, plus issue comments, edits, and assignment changes. Issues and additional pull requests are tracked with `tau workstream track <ws-id> --url <issue-or-pr-url>`, or recorded at creation from an integration notification with `tau workstream create … --from-event <event-id>`; legacy `github.repo`/`github.pr.number` metadata is still recognized for the primary delivery PR, but a stale `github.repo`/`github.issue` pair is converted automatically at startup into a tracked issue entry and is never read afterward. Add `--delivery` when tracking a pull request that must also be merged before completion, alongside the primary `codeHost.changeRequest` PR — see [Delivery pull requests](#delivery-pull-requests) below. Set `completion.changeEventsTo: { step: engineer }` to send the entire event bundle to an existing agent step. Omit it or use `delivery-owner` for automatic delivery ownership. Events are retained while the recipient cannot receive them; they do not start a future step. It is optional and does not itself grant repository access or authorize delivery.
+
+### Delivery pull requests
+
+A work stream has one primary delivery PR (`codeHost.changeRequest`) and may designate additional **delivery pull requests** — tracked pull requests flagged `delivery: true` (issues cannot be flagged). For `pr-merge`/`pr-auto-merge`, `tau workstream finish` verifies the primary change request is merged (its head/branch identity is what completion records), then independently verifies every flagged delivery PR is merged too; an unmerged one fails finish with `409 Delivery pull request <repo>#<n> must be merged before completion`. `direct-merge` does not consider delivery pull requests.
+
+Observed merge/close/reopen events for a delivery PR (`pull_request.merged`, `pull_request.closed`, or `pull_request.updated` with a reopened action) are recorded under the stream's row lock in `metadata.delivery.pullRequests[<key>]` as `{ state: "open" | "merged" | "closed", at, headSha?, eventId? }`, with a newer `occurredAt` always superseding an older one; finish re-verifies live and overwrites this with the verified result. `GET /api/workstreams/:id/tracked` reports this as `delivery: { pullRequests: [{ key, repository, number, url?, primary, state, at?, headSha? }], complete }`, where `complete` requires at least one delivery pull request and all of them merged. Delivery pull request subscriptions (the primary PR's and any flagged tracked PR's) may pass the delivery-approval wait once the flow reaches `completion-ready`; other tracked resources' subscriptions never do.
 
 GitHub is the implemented adapter today. The serialized `pr-merge` and `pr-auto-merge` names describe provider-neutral change-request verification, so future adapters do not require copies of your flow. Bind the resource in **work-stream metadata**, not the workflow definition:
 
@@ -272,10 +278,13 @@ integrationTriggers:
       titlePrefix: 'Investigate: '
       metadata:
         github.repo: { event: repository }
-        github.issue: { event: issue.number }
 ```
 
-Triggers deduplicate work for their resource. They do not grant access to a repository. The resulting style can subscribe to later updates. Trigger metadata mappings accept up to 16 entries and cannot write reserved `completion`, `sources`, or `sourceWarnings` roots.
+When the triggering event names an issue or pull request, Tau records it in
+`metadata.tracked[0]` with a server-stamped `origin` automatically; do not map
+`github.issue`/`github.pr.number` into `create.metadata` for that — it is
+never read for tracked-resource identity. `github.repo` above still gives the
+new stream a resolvable repository identity. Triggers deduplicate work for their resource. They do not grant access to a repository. The resulting style can subscribe to later updates. Trigger metadata mappings accept up to 16 entries and cannot write reserved `completion`, `sources`, or `sourceWarnings` roots.
 
 ## Questions, waits, and pauses
 

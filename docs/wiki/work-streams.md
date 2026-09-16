@@ -9,22 +9,71 @@ Examples: `tau workstream get 42`, `tau workstream get '#42'`, and `GET /api/wor
 ## Tracked issues and pull requests
 
 A work stream can track any number of GitHub issues and pull requests alongside
-the one PR that gates its delivery. The canonical set is computed, not stored as
-one field — it is the union of:
+the one PR that gates its delivery, and can designate additional pull requests
+that must also be merged before the stream completes. The canonical set is
+computed, not stored as one field — it is the union of:
 
 1. **The delivery PR** — `metadata.codeHost.changeRequest` (or the legacy
    `metadata.github.repo`/`metadata.github.pr.number`/`.url` equivalent). This is
-   the only resource whose merge/completion evidence can finish a `pr-merge` or
-   `pr-auto-merge` work stream.
-2. **The legacy issue** — `metadata.github.repo` + `metadata.github.issue`, kept
-   for backward compatibility.
-3. **`metadata.tracked[]`** — an array of explicit entries, the canonical way to
-   attach additional resources.
+   the primary delivery resource and always has source `delivery`.
+2. **`metadata.tracked[]`** — an array of explicit entries, the canonical way to
+   attach additional resources. A tracked pull request may carry `delivery: true`
+   to designate it as an additional delivery pull request (rejected on issues).
 
 Resolution walks the list in that order and de-duplicates by
 `integration:repository:kind:number` (case-insensitive on the repository), so the
 same PR referenced as both the delivery binding and a `tracked[]` entry appears
-once, tagged with its first (highest-priority) source.
+once, tagged with its first (highest-priority) source. A stale
+`metadata.github.repo` + `metadata.github.issue` pair is no longer part of this
+set: at startup, `migrateDatabase` runs a one-time, idempotent backfill that
+converts any row still carrying that pair into a `tracked` issue entry
+(repository lowercased, `connectionId` carried over) and removes the
+`github.issue` key. `github.issue` is never read after that; use `tracked` /
+`tau workstream track` going forward.
+
+### Delivery pull requests
+
+Every work stream has at most one **primary** delivery PR (`codeHost.changeRequest`)
+plus zero or more **flagged** delivery PRs — tracked pull requests with
+`delivery: true`. Together they are the pull requests whose merge state gates
+completion:
+
+- `POST /api/workstreams/:id/tracked` accepts `{ url, delivery: true }` or
+  `{ resource, delivery: true }` (only valid when the resource is a pull
+  request) to flag a tracked PR as delivery, alongside the identity fields
+  described below; the response includes `changed`. The CLI equivalent is
+  `tau workstream track <id> --pr owner/repo#n --delivery` (or
+  `--url <pr-url> --delivery`). `--delivery` combined with `--issue` or
+  `--event` is rejected — an issue is never a delivery change request, and an
+  event's resource kind isn't known until the server resolves it.
+- For `pr-merge`/`pr-auto-merge` completion, `tau workstream finish` still
+  verifies the primary change request is merged first (branch identity and the
+  recorded `deliveredHead` come only from the primary PR), then additionally
+  requires every flagged delivery PR to be independently verified as merged.
+  An unmerged one fails finish with
+  `409 Delivery pull request <repo>#<n> must be merged before completion`.
+  `direct-merge` ignores flagged delivery PRs entirely.
+- What is observed about each delivery PR is recorded in
+  `metadata.delivery.pullRequests[<key>]` as
+  `{ state: "open" | "merged" | "closed", at, headSha?, eventId? }`. Merge,
+  close, and reopen events (`pull_request.merged`, `pull_request.closed`,
+  `pull_request.updated` with `action: "reopened"`) update this under the
+  stream's row lock, keyed by the matching delivery PR's
+  `integration:repository:kind:number` key; a newer `occurredAt` always wins
+  over a stale one. `tau workstream finish` re-verifies every delivery PR live
+  against the code hosting adapter and records the result, independent of
+  whatever was last observed from events. Unobserved is treated as open —
+  delivery is only complete on positive evidence.
+- `GET /api/workstreams/:id/tracked` and the work stream view additionally
+  return
+  `delivery: { pullRequests: [{ key, repository, number, url?, primary, state, at?, headSha? }], complete }`,
+  where `complete` is true only when there is at least one delivery PR and
+  every one of them is `merged`.
+- Delivery PR subscriptions (both the primary `code-host-*` ones and any
+  flagged tracked PR's `tracked-*` ones) may pass the delivery-approval wait
+  once the flow reaches `completion-ready`, so CI/merge/review feedback on a
+  delivery PR still reaches the recipient during that wait. Subscriptions for
+  non-delivery tracked resources never do.
 
 ### `metadata.tracked[]` entry shape
 
@@ -48,7 +97,10 @@ once, tagged with its first (highest-priority) source.
 
 `integration`, `repository`, `kind` (`issue` or `pull_request`), and `number` are
 required identity fields; `connectionId` and `url` are optional. `addedAt` is
-stamped server-side when absent. `origin` records the integration event that
+stamped server-side when absent. An entry with `kind: "pull_request"` may also
+carry `"delivery": true` to designate it as an additional delivery pull request
+(see [Delivery pull requests](#delivery-pull-requests) above); setting it on an
+issue is rejected. `origin` records the integration event that
 produced the entry and is **server-managed**: `workstream create --from-event`
 and `workstream track --event` stamp it for you, from the event they resolve.
 A plain metadata write (`PATCH`/`set-meta`) has no event to resolve, so a
@@ -67,6 +119,7 @@ tau workstream create "<title>" --squad <squad-id> --from-event <event-id>   # n
 tau workstream track <ws-id> --event <event-id>                             # attach to an existing stream
 tau workstream track <ws-id> --issue owner/repo#12
 tau workstream track <ws-id> --pr owner/repo#34
+tau workstream track <ws-id> --pr owner/repo#35 --delivery
 tau workstream track <ws-id> --url https://github.com/owner/repo/pull/34
 tau workstream untrack <ws-id> --issue owner/repo#12
 tau workstream tracked <ws-id>   # alias: links
@@ -79,11 +132,13 @@ API surface, each gated by its own permission on the work stream's squad:
   return `200 { ...stream, reusedFromEvent: true }` instead of creating a
   duplicate stream. Requires `workstreams:create`.
 - `GET /api/workstreams/:id/tracked` returns
-  `{ resources: [...{ integration, repository, kind, number, key, source, url?, subscriptionIds, subscribed }], subscriptions }`
+  `{ resources: [...{ integration, repository, kind, number, key, source, delivery, url?, subscriptionIds, subscribed, mergeState? }], subscriptions, delivery: { pullRequests: [...], complete } }`
   (plus `connectionId`, `addedAt` and `origin` when present). Requires `workstreams:read`.
 - `POST /api/workstreams/:id/tracked` accepts exactly one of `{ "event": "<uuid>" }`,
-  `{ "url": "<resource url>" }`, or `{ "resource": { integration, repository, kind, number, connectionId? } }`.
-  Requires `workstreams:update`, or `workstreams:respond` for an agent bound to the stream.
+  `{ "url": "<resource url>", "delivery"?: true }`, or
+  `{ "resource": { integration, repository, kind, number, connectionId? }, "delivery"?: true }`.
+  The response includes `changed`. Requires `workstreams:update`, or
+  `workstreams:respond` for an agent bound to the stream.
 - `DELETE /api/workstreams/:id/tracked` accepts `{ "url": ... }` or `{ "resource": ... }`.
   Untracking the delivery PR is rejected with `409 { code: "delivery_change_request" }`
   — edit `metadata.codeHost.changeRequest` instead. Same permission as the `POST` above.
@@ -114,21 +169,28 @@ Turning on **Code hosting** (`completion.followChanges: true`) derives a
 subscription set for every resource in the canonical tracked set, each
 targeting `delivery-owner` by default:
 
-| Source            | ID prefix (reserved)            |
-| ----------------- | ------------------------------- |
-| Delivery PR       | `code-host-<event>`             |
-| Legacy issue      | `code-host-issue-<event>`       |
-| `tracked[]` entry | `tracked-<12-hex-hash>-<event>` |
+| Source                                                           | ID prefix (reserved)            |
+| ---------------------------------------------------------------- | ------------------------------- |
+| Primary delivery PR                                              | `code-host-<event>`             |
+| `tracked[]` entry (issue or PR, including a flagged delivery PR) | `tracked-<12-hex-hash>-<event>` |
 
 The hash in a `tracked-` ID is derived from the resource's identity
 (`integration:repository:kind:number`), so adding or removing one tracked link
-never renumbers another's subscriptions.
+never renumbers another's subscriptions. Tracked issues subscribe to
+`assigned`, `unassigned`, `updated`, and `comment`; tracked pull requests
+(including flagged delivery PRs) subscribe to the same event set as the
+primary PR. There is no separate `code-host-issue-` prefix — a legacy
+`github.issue` binding is never read, so it never derives a subscription.
 
-Only the delivery PR's merge/completion evidence can finish a `pr-merge` or
-`pr-auto-merge` work stream. Activity on any other tracked resource — a tracked
-PR's reviews or CI, a tracked issue closing, reopening, or being relabeled — is
-informational: it never finishes the stream, clears an open manual/review wait,
-bypasses admission or a pause, or discards acceptance requirements.
+Only the primary delivery PR's merge/completion evidence sets the delivered
+head and branch identity for `pr-merge`/`pr-auto-merge` completion, but every
+flagged delivery PR must also be independently verified merged before
+`tau workstream finish` succeeds (see
+[Delivery pull requests](#delivery-pull-requests)). Activity on any
+non-delivery tracked resource — a tracked PR's reviews or CI, a tracked issue
+closing, reopening, or being relabeled — is informational: it never finishes
+the stream, clears an open manual/review wait, bypasses admission or a pause,
+or discards acceptance requirements.
 
 ### Diagnosing "why isn't this delivering"
 

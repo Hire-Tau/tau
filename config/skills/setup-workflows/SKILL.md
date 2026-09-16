@@ -142,14 +142,18 @@ See `docs/wiki/workflows.md` for the reference. Flow `subscriptions` and squad `
 For linked PR and issue updates, enable **Code hosting** in the workflow editor
 (`completion.followChanges: true`) and bind the stream's `metadata.codeHost` with
 `integration`, `repository`, and `changeRequest: {number}` (plus optional
-`connectionId`). The provider adapter supplies subscriptions to the delivery
-owner and verifies merge evidence. GitHub is supported today; other providers
-need adapters before use. Existing `metadata.github` remains compatible. For GitHub issues, attach
-`metadata.github.repo` and `metadata.github.issue`; Code hosting then includes
-issue comments, edits, and assignment changes alongside any linked PR events.
-The three shipped coding workflows enable this option. Use explicit subscriptions
-for additional outputs or different consumers; do not duplicate the generated
-subscriptions or use their reserved `code-host-` ID prefix.
+`connectionId`) for the primary delivery PR. The provider adapter supplies
+subscriptions to the delivery owner and verifies merge evidence. GitHub is
+supported today; other providers need adapters before use. Existing
+`metadata.github` remains compatible for that primary PR binding. To follow a
+GitHub issue (or an additional pull request), use `tau workstream track` — do
+not hand-write `github.repo`/`github.issue`, which is never read; Code hosting
+then includes issue comments, edits, and assignment changes alongside any
+linked PR events. Add `--delivery` when tracking a PR that must also be merged
+before completion. The three shipped coding workflows enable this option. Use
+explicit subscriptions for additional outputs or different consumers; do not
+duplicate the generated subscriptions or use their reserved `code-host-` ID
+prefix.
 
 Ask which external events should create new work versus update existing work. Use `tau integration outputs` to inspect accepted output names, versions, and data fields. Add flow `subscriptions` for updates to existing work, selecting local participants/steps, active attempts, or delivery-owner. Match explicit typed event fields against stream metadata; missing bindings do not match. Choose retain or manager handling for an inactive consumer. Notifications do not approve gates or clear questions.
 
