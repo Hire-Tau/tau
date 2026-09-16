@@ -3813,6 +3813,41 @@ PYREPACK
 fi
 rm -rf "${ART_SHIM}"
 
+# --- git_env_setup: git-https without a token clones anonymously -----------
+# Core is public, so an unattended box with no $GH_TOKEN must clone rather
+# than die. With a token the askpass path is unchanged.
+GES_ANON=$(
+  (
+    SRC_MODE=git-https SRC_REPO=https://github.com/example-org/tau.git
+    unset GH_TOKEN
+    is_tty() { return 1; }
+    git_env_setup 2>/dev/null
+    printf '%s|%s|%s' "${GIT_AUTH_URL}" "${GIT_CLEAN_URL}" "${GIT_ASKPASS:-unset}"
+  )
+)
+expect_eq 'git_env_setup: git-https with no token → anonymous https URL, no askpass helper' \
+  "${GES_ANON}" 'https://github.com/example-org/tau.git|https://github.com/example-org/tau.git|unset'
+GES_SSH_STYLE=$(
+  (
+    SRC_MODE=git-https SRC_REPO=git@github.com:example-org/tau.git
+    unset GH_TOKEN
+    is_tty() { return 1; }
+    git_env_setup 2>/dev/null
+    printf '%s' "${GIT_AUTH_URL}"
+  )
+)
+expect_eq 'git_env_setup: anonymous clone still normalizes an ssh-style URL' \
+  "${GES_SSH_STYLE}" 'https://github.com/example-org/tau.git'
+GES_TOKEN=$(
+  (
+    SRC_MODE=git-https SRC_REPO=https://github.com/example-org/tau.git GH_TOKEN=ghp_test
+    git_env_setup 2>/dev/null
+    printf '%s|%s' "${GIT_AUTH_URL}" "$([[ -x ${GIT_ASKPASS:-/nonexistent} ]] && echo askpass || echo none)"
+  )
+)
+expect_eq 'git_env_setup: git-https with a token keeps the x-access-token askpass path' \
+  "${GES_TOKEN}" 'https://x-access-token@github.com/example-org/tau.git|askpass'
+
 # --- ensure_system_bun_node -------------------------------------------------
 # Managed hosts expose Bun through stable system paths so Node shebangs never
 # resolve Bun's process-global /tmp shim.
