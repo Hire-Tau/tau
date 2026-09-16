@@ -29,10 +29,30 @@ let cachedManagedToolchainEnv: string | null = null
 export function devboxHasPackages(devboxJson: string): boolean {
   try {
     const parsed = JSON.parse(readFileSync(devboxJson, 'utf-8')) as { packages?: unknown }
-    return Array.isArray(parsed.packages) && parsed.packages.length > 0
+    const count = declaredDevboxPackageCount(parsed.packages)
+    return count !== null && count > 0
   } catch {
     return false
   }
+}
+
+/**
+ * How many packages a devbox.json `packages` value declares, or `null` when the
+ * value is not a package collection at all.
+ *
+ * devbox accepts TWO shapes and both are real environments: the list form Tau
+ * seeds (`["nodejs_24@latest", …]`) and the map form
+ * (`{"nodejs_24": "latest", "zlib": {"version": "latest", "outputs": ["dev"]}}`)
+ * that devbox itself rewrites the file into as soon as any package carries
+ * options (`devbox add zlib --outputs dev`). Treating the map as "no packages"
+ * left a box's server permanently reporting devboxReady=false — Core's setup
+ * reconciler then marked the box `devbox_unavailable` on every retry even though
+ * `devbox shellenv` against the file succeeded.
+ */
+export function declaredDevboxPackageCount(packages: unknown): number | null {
+  if (Array.isArray(packages)) return packages.length
+  if (packages !== null && typeof packages === 'object') return Object.keys(packages).length
+  return null
 }
 
 export function prepareDevboxShellEnv(runShellenv?: (cwd: string) => string): boolean {
@@ -40,8 +60,9 @@ export function prepareDevboxShellEnv(runShellenv?: (cwd: string) => string): bo
   if (!existsSync(devboxJson)) return false
   try {
     const parsed = JSON.parse(readFileSync(devboxJson, 'utf-8')) as { packages?: unknown }
-    if (!Array.isArray(parsed.packages)) return false
-    if (parsed.packages.length === 0) {
+    const count = declaredDevboxPackageCount(parsed.packages)
+    if (count === null) return false
+    if (count === 0) {
       cachedShellEnv = null
       return true
     }
