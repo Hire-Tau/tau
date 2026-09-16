@@ -193,8 +193,8 @@ test('the section stays collapsed while everything is seen, opens for unread upd
     expect(toggle().getAttribute('aria-expanded')).toBe('false')
     expect(f.onExpandedChange).toHaveBeenLastCalledWith(false)
     expect(region().hidden).toBe(true)
-    expect(toggle().textContent).toContain('3')
-    expect(toggle().textContent).not.toContain('unread')
+    // The header always counts unread, including zero.
+    expect(toggle().textContent).toContain('0 unread')
     // Manual toggle opens the section without acknowledging anything; read history is a toggle away.
     await f.dom.act(async () => toggle().click())
     expect(region().hidden).toBe(false)
