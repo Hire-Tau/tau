@@ -1,6 +1,10 @@
 import { buildVoiceNavigationGuide } from '../../navigationGuide'
 import { getVisibleAgentContexts } from '../../pageContext'
 import { resolveVoiceSquadId, squadReferenceFromPath } from '../../squadReferences'
+import { agentHandle } from '../../tools/agentResolution'
+
+/** Managers are listed by handle: shorter to read aloud and to copy, and tools resolve either form. */
+const handleOf = (id: string) => agentHandle(id) ?? id
 import type { VisibleAgentContext } from '../../pageContext'
 import type { SiteOperatorSessionContext } from './siteOperatorTypes'
 
@@ -65,10 +69,12 @@ export function buildVoiceInstructions(ctx: VoiceSessionContext): string {
     for (const squad of ctx.squads) {
       const manager = squad.agents.find((a) => a.agentTypeId === 'manager')
       lines.push(
-        `- **${squad.name}** (id: ${squad.id}, manager: ${manager?.id ?? 'none'}): ${squad.purpose ?? 'No description'}`
+        `- **${squad.name}** (id: ${squad.id}, manager: ${manager ? handleOf(manager.id) : 'none'}): ${squad.purpose ?? 'No description'}`
       )
     }
-    lines.push(`Other squad agents are available through get_work with the squad ID.`)
+    lines.push(
+      `Manager values are agent handles (the first segment of the ID); pass them exactly as shown. Other squad agents are available through get_work with the squad ID.`
+    )
   }
   lines.push('')
 
@@ -100,7 +106,7 @@ export function buildVoiceInstructions(ctx: VoiceSessionContext): string {
       if (squad) {
         lines.push(`Current squad name: ${squad.name}`)
         const manager = squad.agents.find((agent) => agent.agentTypeId === 'manager')
-        if (manager) lines.push(`Current squad manager ID: ${manager.id}`)
+        if (manager) lines.push(`Current squad manager ID: ${handleOf(manager.id)}`)
       }
     }
 
@@ -115,7 +121,7 @@ export function buildVoiceInstructions(ctx: VoiceSessionContext): string {
 
   lines.push(`## Rules`)
   lines.push(
-    `- Use the full squad and agent IDs above for API tools. Squad URL segments may be slugs, not IDs. Never use a squad slug as an agent ID.`
+    `- Use squad IDs and agent handles or IDs exactly as listed above or returned by tools; never assemble an ID from memory. Squad URL segments may be slugs, not IDs. Never use a squad slug as an agent ID.`
   )
   lines.push(`- For "this", "here", or anything on screen, use the Current Screen context above.`)
   lines.push(

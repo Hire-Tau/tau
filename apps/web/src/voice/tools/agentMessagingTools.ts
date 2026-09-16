@@ -1,6 +1,7 @@
 import type { Agent, DeliveryMode } from '@tau/shared'
-import { getAgent, sendAgentMessage, stopAgent } from '../../api/agents'
+import { getAgent, listAgents, sendAgentMessage, stopAgent } from '../../api/agents'
 import { sendInboxMessage } from '../../api/inbox'
+import { resolveAgentByReference } from './agentResolution'
 import type { VoiceAssistantTool, VoiceToolExecutor } from './types'
 
 function createMessageAgentDefinition(options: { allowStop: boolean }) {
@@ -48,6 +49,7 @@ function createMessageAgentDefinition(options: { allowStop: boolean }) {
 
 export type AgentMessagingDependencies = {
   getAgent: typeof getAgent
+  listAgents: typeof listAgents
   sendAgentMessage: typeof sendAgentMessage
   stopAgent: typeof stopAgent
   sendInboxMessage: typeof sendInboxMessage
@@ -68,7 +70,8 @@ export function createAgentMessagingTools(deps: AgentMessagingDependencies) {
         mode?: DeliveryMode | 'stop'
         inReplyTo?: string
       }
-      const agent = await deps.getAgent(agentId)
+      // The model may pass a handle or a mis-copied id; resolve before any target check.
+      const agent = await resolveAgentByReference(agentId, deps)
       if (!isAllowedMessageAgentTarget(agent)) return disallowedMessageAgentTargetResult()
       if (mode === 'stop') {
         await deps.stopAgent(agent.id)
@@ -124,6 +127,7 @@ export function createAgentMessagingTools(deps: AgentMessagingDependencies) {
 
 export const { directMessageAgentTool, workspaceInboxMessageAgentTool } = createAgentMessagingTools({
   getAgent,
+  listAgents,
   sendAgentMessage,
   stopAgent,
   sendInboxMessage,
