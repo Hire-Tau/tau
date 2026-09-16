@@ -1,4 +1,12 @@
-import { workStreamLabel, workStreamRef, readDeliveryState, resolveTrackedResources } from '@tau/shared'
+import {
+  workStreamLabel,
+  workStreamRef,
+  readDeliveryState,
+  resolveTrackedResources,
+  parseTrackedResourceReference,
+  parseTrackedResourceUrl,
+  trackedResourceLabel,
+} from '@tau/shared'
 import { addStructuredInputOptions, readWorkflowSource } from '../structured-input'
 import { registerWorkstreamFlowCommands, type WorkstreamFlowDependencies } from './workstream-flow'
 import { Command } from 'commander'
@@ -1182,12 +1190,12 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           outputTable(
             view.resources.map((r) => ({
               Kind: r.kind,
-              Resource: `${r.repository}#${r.number}`,
+              Resource: trackedResourceLabel(r),
               Source: r.source,
               Delivery: r.source === 'delivery' ? 'primary' : r.delivery ? 'yes' : '-',
               Merge: r.mergeState ?? '-',
               Subscribed: r.subscribed ? 'yes' : 'no',
-              URL: r.url ?? '',
+              URL: r.url ?? '-',
             })),
             ['Kind', 'Resource', 'Source', 'Delivery', 'Merge', 'Subscribed', 'URL']
           )
@@ -1205,7 +1213,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .description('Track an issue or pull request alongside this work stream')
     .option('--event <eventId>', 'Track the resource observed by an integration event')
     .option('--url <url>', 'Track by code-host resource URL')
-    .option('--issue <ref>', 'Track a GitHub issue, e.g. owner/repo#12')
+    .option('--issue <ref>', 'Track a GitHub issue (owner/repo#12) or Linear issue (KEY-123)')
     .option('--pr <ref>', 'Track a GitHub pull request, e.g. owner/repo#12')
     .option('--connection <connectionId>', 'Integration connection ID (only with --issue/--pr)')
     .option('--delivery', 'Count this pull request toward the work stream delivery')
@@ -1223,7 +1231,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
   ws.command('untrack <id>')
     .description('Stop tracking an issue or pull request on this work stream')
     .option('--url <url>', 'Untrack by code-host resource URL')
-    .option('--issue <ref>', 'Untrack a GitHub issue, e.g. owner/repo#12')
+    .option('--issue <ref>', 'Untrack a GitHub issue (owner/repo#12) or Linear issue (KEY-123)')
     .option('--pr <ref>', 'Untrack a GitHub pull request, e.g. owner/repo#12')
     .option('--connection <connectionId>', 'Integration connection ID (only with --issue/--pr)')
     .action(async (id, options) => {
@@ -1302,6 +1310,32 @@ function parseResourceRef(
   return { integration: 'github', repository: match[1]!, kind, number: Number(match[2]) }
 }
 
+/**
+ * `--issue` accepts a GitHub `owner/repo#12` reference or a Linear `KEY-123` reference. GitHub
+ * keeps sending the explicit `{ resource }` body (unchanged); Linear sends `{ reference }` so the
+ * server's `describe` step can fill in the issue's externalId/url from a live connection.
+ */
+function buildIssueRequestBody(value: string, connection?: string): Record<string, unknown> {
+  const parsed = parseTrackedResourceReference(value)
+  if (!parsed) throw new Error('Expected owner/repo#number or KEY-123')
+  if (parsed.integration === 'linear') return { reference: value.trim() }
+  return {
+    resource: {
+      integration: 'github',
+      repository: parsed.repository,
+      kind: 'issue',
+      number: parsed.number,
+      ...(connection !== undefined ? { connectionId: connection } : {}),
+    },
+  }
+}
+
+/** Linear has no pull requests, so a Linear-shaped `--pr` value is always a mistake. */
+function rejectLinearPrReference(value: string): void {
+  if (parseTrackedResourceReference(value)?.integration === 'linear')
+    throw new Error('Linear references are issues; use --issue')
+}
+
 interface TrackSelectorOptions {
   event?: string
   url?: string
@@ -1317,21 +1351,27 @@ function buildTrackRequestBody(options: TrackSelectorOptions): Record<string, un
   // An event can carry an issue and an issue is never a delivery change request; a URL is checked by the server.
   if (options.delivery && (options.event !== undefined || options.issue !== undefined))
     throw new Error('--delivery applies to pull requests only')
+  if (options.delivery && options.url !== undefined && parseTrackedResourceUrl(options.url)?.integration === 'linear')
+    throw new Error('--delivery applies to pull requests only')
   const delivery = options.delivery ? { delivery: true } : {}
   if (options.event !== undefined) return { event: options.event }
   if (options.url !== undefined) return { url: options.url, ...delivery }
-  const ref = parseResourceRef(options.issue !== undefined ? 'issue' : 'pull_request', options.issue ?? options.pr!)
+  if (options.issue !== undefined) return buildIssueRequestBody(options.issue, options.connection)
+  rejectLinearPrReference(options.pr!)
+  const ref = parseResourceRef('pull_request', options.pr!)
   return {
     resource: { ...ref, ...(options.connection !== undefined ? { connectionId: options.connection } : {}) },
     ...delivery,
   }
 }
 
-function buildUntrackRequestBody(options: Omit<TrackSelectorOptions, 'event'>): Record<string, unknown> {
+function buildUntrackRequestBody(options: Omit<TrackSelectorOptions, 'event' | 'delivery'>): Record<string, unknown> {
   const selected = [options.url, options.issue, options.pr].filter((v) => v !== undefined)
   if (selected.length !== 1) throw new Error('Choose exactly one of --url, --issue, --pr')
   if (options.url !== undefined) return { url: options.url }
-  const ref = parseResourceRef(options.issue !== undefined ? 'issue' : 'pull_request', options.issue ?? options.pr!)
+  if (options.issue !== undefined) return buildIssueRequestBody(options.issue, options.connection)
+  rejectLinearPrReference(options.pr!)
+  const ref = parseResourceRef('pull_request', options.pr!)
   return { resource: { ...ref, ...(options.connection !== undefined ? { connectionId: options.connection } : {}) } }
 }
 
@@ -1364,5 +1404,5 @@ function formatTrackedResourceLine(
   // Merge state only exists for pull requests the stream has observed an event for.
   const note = mergeState ? `${sourceLabel}, ${mergeState}` : sourceLabel
   const url = resource.url ? ` ${resource.url}` : ''
-  return `[${resource.kind}] ${resource.repository}#${resource.number} (${note})${url}`
+  return `[${resource.kind}] ${trackedResourceLabel(resource)} (${note})${url}`
 }
