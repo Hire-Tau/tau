@@ -35,7 +35,10 @@ export function ActionCenterContent({
     maxCount: 8,
   })
   const agentErrors = actions.filter((a) => a.type === 'agent-error')
-  const questions = actions.filter((action) => action.type === 'agent-question' || action.type === 'squad-question')
+  const questions = actions.filter(
+    (action) =>
+      action.type === 'agent-question' || action.type === 'squad-question' || action.type === 'assistant-needs-input'
+  )
   const workstreamReviews = actions.filter((a) => a.type === 'workstream-review')
   const workstreamBlocked = actions.filter((a) => a.type === 'workstream-blocked')
 

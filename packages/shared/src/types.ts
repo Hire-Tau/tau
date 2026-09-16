@@ -688,6 +688,7 @@ export type PendingActionType =
   | 'agent-error'
   | 'workstream-review'
   | 'workstream-blocked'
+  | 'assistant-needs-input'
 
 // An async agent question (status stays open; the agent keeps working). Visible in the conversation
 // view (pending, near the input) and the context tab (answered history) to anyone with canonical
@@ -803,11 +804,29 @@ export interface AgentErrorActionData {
   reason: string
 }
 
+// A task delegated from a saved Assistant conversation whose delegate reported `needs-input`:
+// work is blocked on the owner's answer, which is given inside that conversation.
+export interface AssistantTaskActionData {
+  conversationId: string
+  conversationTitle: string
+  taskId: string
+  taskLabel: string
+  ownerUserId: string
+  agentId: string | null
+  squadId: string | null
+  squadName: string | null
+  /** The latest update on the task, usually the question itself. */
+  question: string
+  updateMessageId: string | null
+  updateCreatedAt: string | null
+}
+
 export type PendingActionData =
   | SquadQuestionActionData
   | AgentQuestionActionData
   | AgentErrorActionData
   | WorkStreamActionData
+  | AssistantTaskActionData
 
 export interface PendingAction {
   id: string

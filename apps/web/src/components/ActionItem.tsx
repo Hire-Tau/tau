@@ -2,7 +2,7 @@ import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../queryKeys'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { QuestionInput } from './QuestionInput'
 import { AgentQuestionCard } from './AgentQuestionCard'
 import { RejectionModal } from './RejectionModal'
@@ -21,6 +21,7 @@ import type {
   SquadQuestionActionData,
   AgentQuestionActionData,
   AgentErrorActionData,
+  AssistantTaskActionData,
   WorkStreamActionData,
 } from '@tau/shared'
 import type { StatusRole } from '@tau/shared'
@@ -31,6 +32,7 @@ const actionIcons: Record<string, string> = {
   'agent-error': '⚠',
   'squad-question': '?',
   'agent-question': '?',
+  'assistant-needs-input': '?',
   'workstream-review': '◎',
   'workstream-blocked': '⊘',
 }
@@ -39,8 +41,18 @@ const actionRoles: Record<PendingAction['type'], StatusRole> = {
   'agent-error': 'danger',
   'squad-question': 'humanWait',
   'agent-question': 'humanWait',
+  'assistant-needs-input': 'humanWait',
   'workstream-review': 'review',
   'workstream-blocked': 'danger',
+}
+
+/** Opens the saved Assistant conversation on the current page; the navigation reader picks it up. */
+function assistantConversationSearch(search: string, conversationId: string): string {
+  const params = new URLSearchParams(search)
+  for (const key of ['commandStack', 'commandQuery', 'assistantChat']) params.delete(key)
+  params.set('chat', 'open')
+  params.set('assistantConversation', conversationId)
+  return params.toString()
 }
 
 // Link to an agent's conversation thread (squad agents open in the squad view; personal agents in chat).
@@ -120,12 +132,23 @@ export function ActionItem({
     action.type === 'agent-question' || action.type === 'agent-error'
       ? (action.data as { agentId: string; agentName: string | null; agentTypeId: string; squadId: string | null })
       : null
-  const linkTo = agentItem ? agentThreadPath(agentItem.agentId, agentItem.squadId) : `/squads/${action.squadId}`
+  const assistantTask = action.type === 'assistant-needs-input' ? (action.data as AssistantTaskActionData) : null
+  const headerLocation = useLocation()
+  const linkTo = assistantTask
+    ? {
+        pathname: headerLocation.pathname,
+        search: assistantConversationSearch(headerLocation.search, assistantTask.conversationId),
+      }
+    : agentItem
+      ? agentThreadPath(agentItem.agentId, agentItem.squadId)
+      : `/squads/${action.squadId}`
   const title = isWorkStreamAction
     ? wsData!.workStreamTitle
-    : agentItem
-      ? agentItem.agentName || agentItem.agentTypeId
-      : action.squadName
+    : assistantTask
+      ? assistantTask.taskLabel
+      : agentItem
+        ? agentItem.agentName || agentItem.agentTypeId
+        : action.squadName
 
   return (
     <>
@@ -255,6 +278,14 @@ function ActionSubtitle({ action }: { action: PendingAction }) {
       const data = action.data as AgentErrorActionData
       return <p className="text-xs text-muted truncate">{data.squadName ? `${data.squadName} · ` : ''}Agent halted</p>
     }
+    case 'assistant-needs-input': {
+      const data = action.data as AssistantTaskActionData
+      return (
+        <p className="text-xs text-muted truncate">
+          Assistant task{data.squadName ? ` · ${data.squadName}` : ''} · needs your answer
+        </p>
+      )
+    }
     case 'workstream-review': {
       const data = action.data as WorkStreamActionData
       const assignee = data.assigneeName || (data.assigneeAgentId ? data.assigneeAgentId.slice(0, 8) : null)
@@ -308,6 +339,8 @@ function ActionContent({
           continueHaltedActions={continueHaltedActions}
         />
       )
+    case 'assistant-needs-input':
+      return <AssistantTaskActionContent action={action} />
     case 'workstream-review':
       return (
         <WorkStreamReviewActionContent
@@ -704,3 +737,39 @@ function WorkStreamBlockedActionContent({
 }
 
 /** Fetches a work stream and renders the detail modal */
+
+/**
+ * A delegated Assistant task waiting on the owner's answer. The answer is given inside the
+ * conversation so it stays correlated to the task (`inReplyTo`); this card only presents the
+ * question and takes the user there. Opening it marks nothing seen.
+ */
+function AssistantTaskActionContent({ action }: { action: PendingAction }) {
+  const data = action.data as AssistantTaskActionData
+  const location = useLocation()
+  const { closeActionCenter } = useActionCenter()
+  return (
+    <div className="space-y-3">
+      <MarkdownContent className="text-sm">{data.question}</MarkdownContent>
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
+        <span className="truncate">{data.conversationTitle}</span>
+        {data.updateCreatedAt && (
+          <time dateTime={data.updateCreatedAt}>
+            {new Date(data.updateCreatedAt).toLocaleString(undefined, {
+              month: 'short',
+              day: 'numeric',
+              hour: 'numeric',
+              minute: '2-digit',
+            })}
+          </time>
+        )}
+      </div>
+      <Link
+        to={{ pathname: location.pathname, search: assistantConversationSearch(location.search, data.conversationId) }}
+        onClick={closeActionCenter}
+        className="tau-button tau-button-primary inline-flex min-h-10 items-center px-3 py-2 text-sm"
+      >
+        Answer in Assistant
+      </Link>
+    </div>
+  )
+}

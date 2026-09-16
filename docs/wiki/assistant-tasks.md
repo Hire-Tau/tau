@@ -82,6 +82,14 @@ Two independent facts are stored for every update:
 Catch-up batches feed at most 10 updates or 12,000 characters of model context per turn; the
 stored message and the visible card are never truncated.
 
+## Needs you
+
+A task in `needs-input` appears in the Action Center (`GET /api/actions/pending`, type
+`assistant-needs-input`) for the conversation owner only, carrying the task label, the latest update
+as the question, and the conversation to answer in. It clears when the task leaves `needs-input`,
+normally because the owner's answer advanced the current request. The Action Center is nudged
+through the existing `actions.invalidated` frame whenever a conversation's activity changes.
+
 ## Discovery and notifications
 
 `GET /api/assistant/activity` returns owner-scoped totals plus the conversations with unread
