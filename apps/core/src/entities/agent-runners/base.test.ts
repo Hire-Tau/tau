@@ -3364,6 +3364,49 @@ describe('AgentRunner (base class)', () => {
       expect(sysMsg.text).toContain(ZAI)
       expect(sysMsg.text).toContain('retry in')
     })
+
+    it('announces the account cooldown when the failure was recorded against an account', async () => {
+      // OAuth/account failures are recorded per ACCOUNT, so the provider-level
+      // record stays empty; reading only `getHealth(provider)` made every such
+      // failover announce a bogus "retry in ~1m" no matter how long the real
+      // cooldown was.
+      const ANTHROPIC = 'anthropic:claude-haiku-4-5'
+      const ZAI = 'zai:glm-5-turbo'
+      selectModelSpy.mockReturnValue(explicitProviderFailoverSelection(ANTHROPIC, ZAI))
+      const readAccountStoreSpy = spyOn(accountStore, 'readAccountStore').mockReturnValue({
+        version: 1,
+        accounts: {
+          anthropic: [{ id: 'a1', enabled: true, credential: { type: 'api_key', key: 'sk-a' } }],
+        },
+      })
+      const mutateAccountStoreSpy = spyOn(accountStore, 'mutateAccountStore').mockResolvedValue(undefined)
+
+      const buffer = new StreamBuffer()
+      const events: any[] = []
+      buffer.subscribe((e) => events.push(e))
+      createBufferSpy.mockReturnValue(buffer)
+
+      try {
+        await runner.run()
+        ;(runner as any).priorityList = `${ANTHROPIC},${ZAI}`
+        ;(runner as any).currentSelectedSpec = ANTHROPIC
+        ;(mockSession as any).accountId = 'a1'
+        ;(mockSession as any).authBackend = { selectAccount: mock() }
+        const failoverAttempt = runner.waitForNextFailoverAttempt()
+        // The codex client's friendly plan-limit string → plan-credit, 30m cooldown.
+        mockSession.pi.simulateErrorEnd('You have hit your ChatGPT usage limit (plus plan).')
+        await failoverAttempt
+
+        // Only the account record exists — the provider record is empty.
+        expect(providerHealth.isAccountHealthy('anthropic', 'a1')).toBe(false)
+        const sysMsg = events.find((e) => e.type === 'system_message')
+        expect(sysMsg.text).toContain('retry in ~30m')
+        expect(sysMsg.text).not.toContain('~1m')
+      } finally {
+        readAccountStoreSpy.mockRestore()
+        mutateAccountStoreSpy.mockRestore()
+      }
+    })
   })
 })
 

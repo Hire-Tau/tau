@@ -81,6 +81,15 @@ const EXHAUSTION_RULES: Array<{ substrings: string[]; reason: ExhaustionReason; 
       // space-separated 'usage limit' that stays a transient rate-limit.
       'usage_limit_reached',
       'plan_type',
+      // The bundled codex client never forwards `usage_limit_reached` — it
+      // REPLACES the 429 body with the friendly string "You have hit your
+      // ChatGPT usage limit (<plan> plan). Try again in ~N min." (see
+      // openai-codex-responses.js `parseErrorResponse`), so that wording is the
+      // only marker Tau ever sees for a codex plan window. Match it here so it
+      // gets the long plan-credit cooldown instead of the 60s transient one the
+      // bare 'usage limit' substring below would win.
+      'hit your chatgpt usage limit',
+      'chatgpt usage limit',
       'credits-has-credits',
       'has-credits": "false',
       'has-credits":"false',
@@ -411,6 +420,8 @@ export function classifyProviderError(error: string): ProviderErrorClassificatio
  *     Used only when no absolute reset key is present. If an absolute key is
  *     present but stale/past, absolute still wins and the result is
  *     `undefined` rather than falling back to a relative window.
+ *  4. Human-readable relative, as written by the bundled codex client's
+ *     friendly 429 rewrite: "Try again in ~43 min." → now + 43 min.
  */
 function parseResetTimestamp(error: string): number | undefined {
   const dateReset = parseDateResetTimestamp(error)
@@ -419,7 +430,27 @@ function parseResetTimestamp(error: string): number | undefined {
   const absoluteReset = parseUnixAbsoluteResetTimestamp(error)
   if (absoluteReset.present) return absoluteReset.retryAt
 
-  return parseUnixRelativeResetTimestamp(error)
+  const unixRelative = parseUnixRelativeResetTimestamp(error)
+  if (unixRelative !== undefined) return unixRelative
+
+  return parseFriendlyRelativeResetTimestamp(error)
+}
+
+/**
+ * Human-readable RELATIVE reset, as written by the bundled codex client when it
+ * rewrites a 429: `Try again in ~43 min.` (it computes the minutes from the
+ * upstream `resets_at` and then discards it, so this prose is the only reset
+ * signal that survives). Also accepts the unabbreviated and hour forms
+ * ("in 15 minutes", "in ~2 h"). Returns `now + N * 60_000`; `undefined` for a
+ * zero/absent window, which leaves the caller on its default cooldown.
+ */
+function parseFriendlyRelativeResetTimestamp(error: string): number | undefined {
+  const match = error.match(/try again in\s*~?\s*(\d+(?:\.\d+)?)\s*(minutes?|mins?|hours?|hrs?|m|h)\b/i)
+  if (!match) return undefined
+  const amount = Number(match[1])
+  if (!Number.isFinite(amount) || amount <= 0) return undefined
+  const unitMs = /^h/i.test(match[2]) ? 60 * 60_000 : 60_000
+  return Date.now() + amount * unitMs
 }
 
 /**
