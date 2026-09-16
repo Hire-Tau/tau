@@ -1,4 +1,4 @@
-import { workStreamLabel, workStreamRef, resolveTrackedResources } from '@tau/shared'
+import { workStreamLabel, workStreamRef, readDeliveryState, resolveTrackedResources } from '@tau/shared'
 import { addStructuredInputOptions, readWorkflowSource } from '../structured-input'
 import { registerWorkstreamFlowCommands, type WorkstreamFlowDependencies } from './workstream-flow'
 import { Command } from 'commander'
@@ -528,9 +528,10 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
           }
           const tracked = resolveTrackedResources(ws.metadata)
           if (tracked.length > 0) {
+            const observed = readDeliveryState(ws.metadata).pullRequests
             console.log(`\n\x1b[36mTracked:\x1b[0m`)
             for (const resource of tracked) {
-              console.log(`  ${formatTrackedResourceLine(resource)}`)
+              console.log(`  ${formatTrackedResourceLine(resource, observed[resource.key]?.state)}`)
             }
           }
           if (ws.openWaits && ws.openWaits.length > 0) {
@@ -1183,12 +1184,16 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
               Kind: r.kind,
               Resource: `${r.repository}#${r.number}`,
               Source: r.source,
+              Delivery: r.source === 'delivery' ? 'primary' : r.delivery ? 'yes' : '-',
+              Merge: r.mergeState ?? '-',
               Subscribed: r.subscribed ? 'yes' : 'no',
               URL: r.url ?? '',
             })),
-            ['Kind', 'Resource', 'Source', 'Subscribed', 'URL']
+            ['Kind', 'Resource', 'Source', 'Delivery', 'Merge', 'Subscribed', 'URL']
           )
           console.log(`Subscriptions: ${formatTrackedSubscriptionsFooter(view.subscriptions)}`)
+          const footer = formatTrackedDeliveryFooter(view.delivery)
+          if (footer) console.log(footer)
         }
       } catch (error) {
         outputError(error as Error)
@@ -1203,6 +1208,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .option('--issue <ref>', 'Track a GitHub issue, e.g. owner/repo#12')
     .option('--pr <ref>', 'Track a GitHub pull request, e.g. owner/repo#12')
     .option('--connection <connectionId>', 'Integration connection ID (only with --issue/--pr)')
+    .option('--delivery', 'Count this pull request toward the work stream delivery')
     .action(async (id, options) => {
       try {
         const body = buildTrackRequestBody(options)
@@ -1302,15 +1308,23 @@ interface TrackSelectorOptions {
   issue?: string
   pr?: string
   connection?: string
+  delivery?: boolean
 }
 
 function buildTrackRequestBody(options: TrackSelectorOptions): Record<string, unknown> {
   const selected = [options.event, options.url, options.issue, options.pr].filter((v) => v !== undefined)
   if (selected.length !== 1) throw new Error('Choose exactly one of --event, --url, --issue, --pr')
+  // An event can carry an issue and an issue is never a delivery change request; a URL is checked by the server.
+  if (options.delivery && (options.event !== undefined || options.issue !== undefined))
+    throw new Error('--delivery applies to pull requests only')
+  const delivery = options.delivery ? { delivery: true } : {}
   if (options.event !== undefined) return { event: options.event }
-  if (options.url !== undefined) return { url: options.url }
+  if (options.url !== undefined) return { url: options.url, ...delivery }
   const ref = parseResourceRef(options.issue !== undefined ? 'issue' : 'pull_request', options.issue ?? options.pr!)
-  return { resource: { ...ref, ...(options.connection !== undefined ? { connectionId: options.connection } : {}) } }
+  return {
+    resource: { ...ref, ...(options.connection !== undefined ? { connectionId: options.connection } : {}) },
+    ...delivery,
+  }
 }
 
 function buildUntrackRequestBody(options: Omit<TrackSelectorOptions, 'event'>): Record<string, unknown> {
@@ -1319,6 +1333,14 @@ function buildUntrackRequestBody(options: Omit<TrackSelectorOptions, 'event'>): 
   if (options.url !== undefined) return { url: options.url }
   const ref = parseResourceRef(options.issue !== undefined ? 'issue' : 'pull_request', options.issue ?? options.pr!)
   return { resource: { ...ref, ...(options.connection !== undefined ? { connectionId: options.connection } : {}) } }
+}
+
+/** Delivery progress, or nothing at all when no pull request counts toward delivery. */
+function formatTrackedDeliveryFooter(delivery: TrackedResourcesView['delivery']): string | null {
+  const total = delivery.pullRequests.length
+  if (total === 0) return null
+  const merged = delivery.pullRequests.filter((pr) => pr.state === 'merged').length
+  return `Delivery: ${merged}/${total} pull requests merged${delivery.complete ? ' (complete)' : ''}`
 }
 
 function formatTrackedSubscriptionsFooter(status: TrackedResourcesView['subscriptions']): string {
@@ -1334,8 +1356,13 @@ function formatTrackedSubscriptionsFooter(status: TrackedResourcesView['subscrip
   }
 }
 
-function formatTrackedResourceLine(resource: ResolvedTrackedResource): string {
-  const sourceLabel = resource.source === 'delivery' ? 'delivery PR' : 'tracked'
+function formatTrackedResourceLine(
+  resource: ResolvedTrackedResource,
+  mergeState?: TrackedResourcesView['resources'][number]['mergeState']
+): string {
+  const sourceLabel = resource.source === 'delivery' ? 'delivery PR' : resource.delivery ? 'delivery' : 'tracked'
+  // Merge state only exists for pull requests the stream has observed an event for.
+  const note = mergeState ? `${sourceLabel}, ${mergeState}` : sourceLabel
   const url = resource.url ? ` ${resource.url}` : ''
-  return `[${resource.kind}] ${resource.repository}#${resource.number} (${sourceLabel})${url}`
+  return `[${resource.kind}] ${resource.repository}#${resource.number} (${note})${url}`
 }

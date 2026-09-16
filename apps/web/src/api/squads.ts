@@ -265,14 +265,20 @@ export async function getWorkStreamTracked(id: string): Promise<TrackedResources
   return apiFetch<TrackedResourcesView>(`/workstreams/${encodeURIComponent(id)}/tracked`)
 }
 
+/** Track a link, or designate an already tracked pull request as part of the delivery. */
+export type AddWorkStreamTrackedBody = { delivery?: true } & (
+  | { url: string }
+  | { resource: Pick<TrackedResource, 'integration' | 'repository' | 'kind' | 'number'> }
+)
+
 /** Track one more link; the server resolves the URL against the squad's connections. */
 export async function addWorkStreamTracked(
   id: string,
-  url: string
-): Promise<TrackedResourcesView & { added: ResolvedTrackedResource[] }> {
+  body: AddWorkStreamTrackedBody
+): Promise<TrackedResourcesView & { added: ResolvedTrackedResource[]; changed: boolean }> {
   return apiFetch(`/workstreams/${encodeURIComponent(id)}/tracked`, {
     method: 'POST',
-    body: JSON.stringify({ url }),
+    body: JSON.stringify(body),
   })
 }
 

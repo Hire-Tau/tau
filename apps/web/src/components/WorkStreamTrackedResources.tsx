@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TrackedResourcesView } from '@tau/shared'
-import { trackedResourceUrl } from '@tau/shared'
-import { addWorkStreamTracked, removeWorkStreamTracked } from '../api/squads'
+import { parseTrackedResourceUrl, trackedResourceUrl } from '@tau/shared'
+import { addWorkStreamTracked, removeWorkStreamTracked, type AddWorkStreamTrackedBody } from '../api/squads'
 import { queries } from '../queryOptions'
 import { queryKeys } from '../queryKeys'
-import { Badge } from './Badge'
+import { Badge, type BadgeColor } from './Badge'
 import { IssueIcon, PullRequestIcon } from './icons'
 
 type TrackedRow = TrackedResourcesView['resources'][number]
@@ -23,6 +23,19 @@ const SUBSCRIPTION_HINTS: Record<Exclude<TrackedResourcesView['subscriptions'], 
 
 const resourceLabel = (resource: TrackedRow) => `${resource.repository}#${resource.number}`
 
+/** An open pull request gets no chip: it is the unremarkable state while work is in flight. */
+const MERGE_STATE_COLORS: Partial<Record<NonNullable<TrackedRow['mergeState']>, BadgeColor>> = {
+  merged: 'green',
+  closed: 'gray',
+}
+
+const resourceIdentity = (resource: TrackedRow) => ({
+  integration: resource.integration,
+  repository: resource.repository,
+  kind: resource.kind,
+  number: resource.number,
+})
+
 /**
  * Issues and pull requests a work stream follows. Reference material (the
  * stream's `sources`) deliberately stays out — only links that can produce
@@ -31,28 +44,33 @@ const resourceLabel = (resource: TrackedRow) => `${resource.repository}#${resour
 export function WorkStreamTrackedResources({ workStreamId, canUpdate }: { workStreamId: string; canUpdate: boolean }) {
   const cache = useQueryClient()
   const [url, setUrl] = useState('')
+  const [countsTowardDelivery, setCountsTowardDelivery] = useState(false)
   const { data } = useQuery(queries.squads.workStreamTracked(workStreamId))
   const invalidate = () => cache.invalidateQueries({ queryKey: queryKeys.squads.workStreamTracked(workStreamId) })
   const add = useMutation({
-    mutationFn: (value: string) => addWorkStreamTracked(workStreamId, value),
+    mutationFn: (body: AddWorkStreamTrackedBody) => addWorkStreamTracked(workStreamId, body),
     onSuccess: async () => {
       setUrl('')
+      setCountsTowardDelivery(false)
       await invalidate()
     },
   })
-  const remove = useMutation({
+  const designate = useMutation({
     mutationFn: (resource: TrackedRow) =>
-      removeWorkStreamTracked(workStreamId, {
-        integration: resource.integration,
-        repository: resource.repository,
-        kind: resource.kind,
-        number: resource.number,
-      }),
+      addWorkStreamTracked(workStreamId, { resource: resourceIdentity(resource), delivery: true }),
+    onSuccess: async () => invalidate(),
+  })
+  const remove = useMutation({
+    mutationFn: (resource: TrackedRow) => removeWorkStreamTracked(workStreamId, resourceIdentity(resource)),
     onSuccess: async () => invalidate(),
   })
   const resources = data?.resources ?? []
   const hint = data && data.subscriptions !== 'active' ? SUBSCRIPTION_HINTS[data.subscriptions] : null
-  const error = add.error ?? remove.error
+  const error = add.error ?? remove.error ?? designate.error
+  const deliveryPullRequests = data?.delivery?.pullRequests ?? []
+  const merged = deliveryPullRequests.filter((pullRequest) => pullRequest.state === 'merged').length
+  // Only a pull request can count toward delivery, so the flag follows what the typed link resolves to.
+  const deliverable = parseTrackedResourceUrl(url.trim())?.kind === 'pull_request'
 
   return (
     <section aria-label="Tracked issues and PRs" className="space-y-1.5">
@@ -81,8 +99,22 @@ export function WorkStreamTrackedResources({ workStreamId, canUpdate }: { workSt
                     {label}
                   </span>
                 )}
-                {resource.source === 'delivery' && <Badge color="purple">delivery</Badge>}
+                {resource.delivery && <Badge color="purple">delivery</Badge>}
+                {resource.mergeState && MERGE_STATE_COLORS[resource.mergeState] && (
+                  <Badge color={MERGE_STATE_COLORS[resource.mergeState]}>{resource.mergeState}</Badge>
+                )}
                 {!resource.subscribed && <span className="text-muted">not subscribed</span>}
+                {canUpdate && resource.kind === 'pull_request' && !resource.delivery && (
+                  <button
+                    type="button"
+                    aria-label={`Mark ${label} as delivery`}
+                    className="tau-button text-muted hover:text-primary"
+                    disabled={designate.isPending}
+                    onClick={() => designate.mutate(resource)}
+                  >
+                    Mark as delivery
+                  </button>
+                )}
                 {canUpdate && resource.source !== 'delivery' && (
                   <button
                     type="button"
@@ -100,6 +132,11 @@ export function WorkStreamTrackedResources({ workStreamId, canUpdate }: { workSt
         </ul>
       )}
       {!resources.length && !canUpdate && <p className="text-xs text-muted">Nothing tracked</p>}
+      {deliveryPullRequests.length > 0 && (
+        <p className="text-xs text-muted">
+          Delivery: {merged} of {deliveryPullRequests.length} pull requests merged
+        </p>
+      )}
       {hint && <p className="text-xs text-muted">{hint}</p>}
       {canUpdate && (
         <form
@@ -107,7 +144,8 @@ export function WorkStreamTrackedResources({ workStreamId, canUpdate }: { workSt
           onSubmit={(event) => {
             event.preventDefault()
             const value = url.trim()
-            if (value) add.mutate(value)
+            if (value)
+              add.mutate({ url: value, ...(deliverable && countsTowardDelivery ? { delivery: true as const } : {}) })
           }}
         >
           <input
@@ -118,6 +156,15 @@ export function WorkStreamTrackedResources({ workStreamId, canUpdate }: { workSt
             value={url}
             onChange={(event) => setUrl(event.target.value)}
           />
+          <label className="flex items-center gap-1 text-xs text-muted">
+            <input
+              type="checkbox"
+              checked={deliverable && countsTowardDelivery}
+              disabled={!deliverable}
+              onChange={(event) => setCountsTowardDelivery(event.target.checked)}
+            />
+            Counts toward delivery
+          </label>
           <button type="submit" className="tau-button text-xs" disabled={add.isPending || !url.trim()}>
             Add
           </button>
