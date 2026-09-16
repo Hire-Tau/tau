@@ -9,6 +9,7 @@ export type SquadActivitySourceFamily =
   | 'wait'
   | 'github-pr'
   | 'github-issue'
+  | 'linear-issue'
 export type SquadActivityAccessScope = 'agents' | 'workstreams' | 'inbox' | 'workstreams_inbox'
 
 export interface ExtractedSquadActivity extends SquadActivityItem {

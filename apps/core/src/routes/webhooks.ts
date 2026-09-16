@@ -28,7 +28,7 @@ import { createLogger } from '../lib/infra/logger'
 import { requirePermission } from '../middleware/require-permission'
 import type { WebhookTriggerRequest, WebhookTriggerResult } from '@tau/shared'
 import { ScheduleExecutionError } from '../services/scheduling/failure-classifier'
-import { materializeGitHubWebhook } from '../services/squad-activity/materialize'
+import { materializeGitHubWebhook, materializeWebhookActivity } from '../services/squad-activity/materialize'
 
 const log = createLogger('webhooks')
 
@@ -303,11 +303,16 @@ webhooksRouter.post('/:provider', async (c) => {
   })
 
   const materializeActivity = () => {
-    if (provider !== 'github') return
+    // GitHub keeps its own named entry point; both project through one engine.
+    const project =
+      provider === 'github'
+        ? () => materializeGitHubWebhook(eventId)
+        : provider === 'linear'
+          ? () => materializeWebhookActivity('linear', eventId)
+          : null
+    if (!project) return
     queueMicrotask(() => {
-      void materializeGitHubWebhook(eventId).catch((error) =>
-        log.error(`Activity materialization failed for ${provider}:${eventType}:`, error)
-      )
+      void project().catch((error) => log.error(`Activity materialization failed for ${provider}:${eventType}:`, error))
     })
   }
 

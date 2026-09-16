@@ -13,6 +13,11 @@ import {
   type GitHubIssueDispatchFact,
 } from './github-issue-fact'
 import { extractGitHubPrDispatchFact, isGitHubPrDispatchFact, type GitHubPrDispatchFact } from './github-pr-fact'
+import {
+  extractLinearIssueDispatchFact,
+  isLinearIssueDispatchFact,
+  type LinearIssueDispatchFact,
+} from './linear-issue-fact'
 import type { VerifiedIngressEvent } from '../integrations/types'
 import type {
   ChatExecutionSnapshot,
@@ -20,6 +25,7 @@ import type {
   GitHubIssueSnapshot,
   GitHubPrSnapshot,
   InboxSnapshot,
+  LinearIssueSnapshot,
   WaitSnapshot,
   WorkStreamSnapshot,
 } from './extractors'
@@ -33,6 +39,7 @@ export type SourceSnapshot =
   | WaitSnapshot
   | GitHubPrSnapshot
   | GitHubIssueSnapshot
+  | LinearIssueSnapshot
 export interface ActivitySourceKey {
   family: SquadActivitySourceFamily
   groupId: string
@@ -74,29 +81,48 @@ export type GitHubActivityBase =
   | { sourceId: string; activityId: string; family: 'github-pr'; fact: GitHubPrDispatchFact }
   | { sourceId: string; activityId: string; family: 'github-issue'; fact: GitHubIssueDispatchFact }
 
+/**
+ * Every receipt-backed family: GitHub's two (webhook receipts plus the poller's
+ * synthesized dispatches) and Linear's issue stream (webhook receipts only —
+ * Linear has no poller, so `poll:` never names a Linear source).
+ */
+export type ReceiptActivityFamily = GitHubActivityFamily | 'linear-issue'
+export type ReceiptDispatchFact = GitHubDispatchFact | LinearIssueDispatchFact
+export type ReceiptActivityBase =
+  | GitHubActivityBase
+  | { sourceId: string; activityId: string; family: 'linear-issue'; fact: LinearIssueDispatchFact }
+
 /** The number the fact is about, in its family's vocabulary. */
 const githubFactNumber = (fact: GitHubDispatchFact): number => ('prNumber' in fact ? fact.prNumber : fact.issueNumber)
 
+/** Each provider names its delivery id in its own header; a receipt carries exactly one. */
+const deliveryIdSql = sql`CASE WHEN provider='linear' THEN headers->>'linear-delivery' ELSE headers->>'x-github-delivery' END`
+
 /**
- * The receipt's family is decided by the fact its payload yields, never by the
- * caller: the PR and issue extractors are mutually exclusive by construction
- * (an `issues` event is never a PR; an `issue_comment` carrying a
- * `pull_request` link is never an issue), so trying PR first and issue second
- * classifies every supported receipt exactly once.
+ * The receipt's family is decided by the provider that delivered it and by the
+ * fact its payload yields, never by the caller: within GitHub the PR and issue
+ * extractors are mutually exclusive by construction (an `issues` event is never
+ * a PR; an `issue_comment` carrying a `pull_request` link is never an issue), so
+ * trying PR first and issue second classifies every supported receipt exactly
+ * once, and a Linear receipt only ever yields the Linear issue fact.
  */
-async function loadGitHubActivityBase(executor: Executor, sourceId: string): Promise<GitHubActivityBase | null> {
+async function loadWebhookActivityBase(executor: Executor, sourceId: string): Promise<ReceiptActivityBase | null> {
   const [prefix, activityId, extra] = sourceId.split(':')
   if (extra || !activityId || (prefix !== 'hook' && prefix !== 'poll')) return null
   if (prefix === 'hook') {
     const event = rows<any>(
-      await executor.execute(sql`SELECT event_type,payload,headers->>'x-github-delivery' delivery_id FROM webhook_events
-        WHERE id=${activityId}::uuid AND provider='github' AND verified=true`)
+      await executor.execute(sql`SELECT provider,event_type,payload,${deliveryIdSql} delivery_id FROM webhook_events
+        WHERE id=${activityId}::uuid AND provider IN ('github','linear') AND verified=true`)
     )[0]
     if (!event) return null
     const ingress: VerifiedIngressEvent = {
       type: event.event_type,
       payload: event.payload,
       metadata: { source: 'webhook', providerDeliveryId: event.delivery_id },
+    }
+    if (event.provider === 'linear') {
+      const issue = extractLinearIssueDispatchFact('linear', ingress)
+      return issue ? { sourceId, activityId, family: 'linear-issue', fact: issue } : null
     }
     const pr = extractGitHubPrDispatchFact('github', ingress)
     if (pr) return { sourceId, activityId, family: 'github-pr', fact: pr }
@@ -115,7 +141,7 @@ async function loadGitHubActivityBase(executor: Executor, sourceId: string): Pro
     : null
 }
 
-export interface GitHubAssociationPage {
+export interface ReceiptAssociationPage {
   groupIds: string[]
   next: string | null
 }
@@ -142,12 +168,12 @@ const receiptOwnerClause = (sourceId: string) =>
           WHERE pd.provider_key='github' AND pd.activity_id=${sourceId.slice('poll:'.length)}::uuid
             AND ws.squad_id=ANY(pd.activity_squad_ids))`
 
-async function listGitHubResourceAssociationPage(
+async function listResourceAssociationPage(
   sourceId: string,
   match: SQL,
   after: string | null,
   limit: number
-): Promise<GitHubAssociationPage> {
+): Promise<ReceiptAssociationPage> {
   const squads: any[] = rows<any>(
     await db.execute(sql`SELECT ws.squad_id FROM work_streams ws
       WHERE ${after ? sql`ws.squad_id>${after}::uuid` : sql`true`}
@@ -166,8 +192,8 @@ export async function listGitHubAssociationPage(
   fact: GitHubPrDispatchFact,
   after: string | null,
   limit = 250
-): Promise<GitHubAssociationPage> {
-  return listGitHubResourceAssociationPage(
+): Promise<ReceiptAssociationPage> {
+  return listResourceAssociationPage(
     sourceId,
     sql`${trackedClause('pull_request', fact.repository, fact.prNumber)}
       OR (ws.metadata->'codeHost'->>'integration'='github'
@@ -187,36 +213,54 @@ export async function listGitHubIssueAssociationPage(
   fact: GitHubIssueDispatchFact,
   after: string | null,
   limit = 250
-): Promise<GitHubAssociationPage> {
+): Promise<ReceiptAssociationPage> {
   // Issues associate through `tracked` alone: the legacy `github.repo`+`github.issue`
   // pair is no longer resolved as a tracked resource (it is backfilled into `tracked`
   // at startup), so a legacy clause here would only ever yield groups the snapshot
   // loader then resolves to nothing. PR association keeps its legacy clause because
   // `github.pr` still resolves as the primary delivery change request.
-  return listGitHubResourceAssociationPage(
+  return listResourceAssociationPage(sourceId, trackedClause('issue', fact.repository, fact.issueNumber), after, limit)
+}
+
+/**
+ * Linear names its issues by their own id, so association is by identity rather
+ * than by repository coordinates: a `tracked` entry carrying the issue's
+ * `externalId`, or the legacy `linear.issueId` a work stream was created with.
+ */
+export async function listLinearIssueAssociationPage(
+  sourceId: string,
+  fact: LinearIssueDispatchFact,
+  after: string | null,
+  limit = 250
+): Promise<ReceiptAssociationPage> {
+  return listResourceAssociationPage(
     sourceId,
-    trackedClause('issue', fact.repository, fact.issueNumber),
+    sql`EXISTS (SELECT 1 FROM jsonb_array_elements(CASE
+        WHEN jsonb_typeof(ws.metadata->'tracked')='array' THEN ws.metadata->'tracked' ELSE '[]'::jsonb END) t
+      WHERE t->>'integration'='linear' AND t->>'externalId'=${fact.issueId})
+      OR ws.metadata->'linear'->>'issueId'=${fact.issueId}`,
     after,
     limit
   )
 }
 
 /** Page a receipt's associations through its own family's coordinates. */
-export function listGitHubFamilyAssociationPage(
-  base: GitHubActivityBase,
+export function listReceiptAssociationPage(
+  base: ReceiptActivityBase,
   after: string | null,
   limit = 250
-): Promise<GitHubAssociationPage> {
+): Promise<ReceiptAssociationPage> {
+  if (base.family === 'linear-issue') return listLinearIssueAssociationPage(base.sourceId, base.fact, after, limit)
   return base.family === 'github-pr'
     ? listGitHubAssociationPage(base.sourceId, base.fact, after, limit)
     : listGitHubIssueAssociationPage(base.sourceId, base.fact, after, limit)
 }
 
-export async function loadGitHubActivityBaseSource(sourceId: string): Promise<GitHubActivityBase | null> {
-  return loadGitHubActivityBase(db, sourceId)
+export async function loadWebhookActivityBaseSource(sourceId: string): Promise<ReceiptActivityBase | null> {
+  return loadWebhookActivityBase(db, sourceId)
 }
 
-async function githubSquadOwnsSource(executor: Executor, sourceId: string, squadId: string): Promise<boolean> {
+async function squadOwnsSource(executor: Executor, sourceId: string, squadId: string): Promise<boolean> {
   if (sourceId.startsWith('hook:')) {
     const owned = rows<any>(
       await executor.execute(sql`SELECT 1 FROM webhook_events
@@ -400,6 +444,35 @@ export async function loadInboxSnapshot(executor: Executor, groupId: string): Pr
     : null
 }
 
+/** Does this work stream's metadata name the receipt's resource, and under which link? */
+type TrackedStreamMatcher = (metadata: unknown) => { url: string | null } | null
+
+function trackedStreamMatcher(base: ReceiptActivityBase): TrackedStreamMatcher {
+  const target =
+    base.family === 'linear-issue'
+      ? { integration: 'linear', externalId: base.fact.issueId }
+      : {
+          integration: 'github',
+          repository: base.fact.repository,
+          kind: (base.family === 'github-pr' ? 'pull_request' : 'issue') as TrackedResourceKind,
+          number: githubFactNumber(base.fact),
+        }
+  const legacyLinearIssueId = base.family === 'linear-issue' ? base.fact.issueId : null
+  return (metadata) => {
+    const matched = resolveTrackedResources(metadata).find((resource) => trackedResourceMatches(resource, target))
+    if (matched) return { url: matched.url ?? null }
+    // Legacy Linear streams predate `tracked`: they name the issue by id alone,
+    // and therefore carry no link of their own.
+    const legacy =
+      legacyLinearIssueId &&
+      metadata &&
+      typeof metadata === 'object' &&
+      !Array.isArray(metadata) &&
+      (metadata as Record<string, any>).linear?.issueId === legacyLinearIssueId
+    return legacy ? { url: null } : null
+  }
+}
+
 /**
  * One receipt, one row per (owning squad, tracking stream): every stream in the
  * squad that names the resource is attributed the event, not just the oldest.
@@ -407,25 +480,27 @@ export async function loadInboxSnapshot(executor: Executor, groupId: string): Pr
  * same immutable pair) so the oldest stream is always first and therefore keeps
  * the fact's own logical row id — see `activityRowIdForStream`.
  */
-async function loadGitHubTrackedSnapshot(
+async function loadTrackedSnapshot(
   executor: Executor,
   groupId: string,
-  family: GitHubActivityFamily
-): Promise<{ base: GitHubActivityBase; squadId: string; workStreamIds: string[] } | null> {
+  family: ReceiptActivityFamily
+): Promise<{
+  base: ReceiptActivityBase
+  squadId: string
+  workStreamIds: string[]
+  /** The first link the tracking streams recorded, for facts that carry none. */
+  trackedUrl: string | null
+} | null> {
   const parts = groupId.split(':')
   const squadId = parts.pop()
   const sourceId = parts.join(':')
   if (!sourceId || !squadId) return null
-  const base = await loadGitHubActivityBase(executor, sourceId)
+  const base = await loadWebhookActivityBase(executor, sourceId)
   if (!base || base.family !== family) return null
-  if (!(await githubSquadOwnsSource(executor, sourceId, squadId))) return null
-  const target = {
-    integration: 'github',
-    repository: base.fact.repository,
-    kind: (family === 'github-pr' ? 'pull_request' : 'issue') as TrackedResourceKind,
-    number: githubFactNumber(base.fact),
-  }
+  if (!(await squadOwnsSource(executor, sourceId, squadId))) return null
+  const matches = trackedStreamMatcher(base)
   const workStreamIds: string[] = []
+  let trackedUrl: string | null = null
   let after: { createdAt: string; id: string } | null = null
   do {
     const streams: any[] = rows<any>(
@@ -433,18 +508,21 @@ async function loadGitHubTrackedSnapshot(
         ${after ? sql`AND (created_at,id)>(${after.createdAt}::timestamptz,${after.id}::uuid)` : sql``}
         ORDER BY created_at,id LIMIT 250`)
     )
-    for (const stream of streams)
-      if (resolveTrackedResources(stream.metadata).some((resource) => trackedResourceMatches(resource, target)))
-        workStreamIds.push(stream.id)
+    for (const stream of streams) {
+      const match = matches(stream.metadata)
+      if (!match) continue
+      workStreamIds.push(stream.id)
+      trackedUrl ??= match.url
+    }
     if (streams.length < 250) break
     const last = streams.at(-1)
     after = last ? { createdAt: new Date(last.created_at).toISOString(), id: last.id } : null
   } while (after)
-  return workStreamIds.length ? { base, squadId, workStreamIds } : null
+  return workStreamIds.length ? { base, squadId, workStreamIds, trackedUrl } : null
 }
 
 export async function loadGitHubPrSnapshot(executor: Executor, groupId: string): Promise<GitHubPrSnapshot | null> {
-  const resolved = await loadGitHubTrackedSnapshot(executor, groupId, 'github-pr')
+  const resolved = await loadTrackedSnapshot(executor, groupId, 'github-pr')
   return resolved && resolved.base.family === 'github-pr'
     ? {
         sourceId: resolved.base.sourceId,
@@ -460,7 +538,7 @@ export async function loadGitHubIssueSnapshot(
   executor: Executor,
   groupId: string
 ): Promise<GitHubIssueSnapshot | null> {
-  const resolved = await loadGitHubTrackedSnapshot(executor, groupId, 'github-issue')
+  const resolved = await loadTrackedSnapshot(executor, groupId, 'github-issue')
   return resolved && resolved.base.family === 'github-issue'
     ? {
         sourceId: resolved.base.sourceId,
@@ -472,16 +550,33 @@ export async function loadGitHubIssueSnapshot(
     : null
 }
 
+export async function loadLinearIssueSnapshot(
+  executor: Executor,
+  groupId: string
+): Promise<LinearIssueSnapshot | null> {
+  const resolved = await loadTrackedSnapshot(executor, groupId, 'linear-issue')
+  return resolved && resolved.base.family === 'linear-issue'
+    ? {
+        sourceId: resolved.base.sourceId,
+        activityId: resolved.base.activityId,
+        squadId: resolved.squadId,
+        workStreamIds: resolved.workStreamIds,
+        trackedUrl: resolved.trackedUrl,
+        fact: resolved.base.fact,
+      }
+    : null
+}
+
 export interface SourceGroupCursor {
   /** Immutable source-row/facet identity; never a mutable transition timestamp. */
   id: string
-  /** Present only while paging work-stream associations for one GitHub source. */
+  /** Present only while paging work-stream associations for one receipt source. */
   associationAfter?: string
   sourceKind?: 'poll' | 'hook'
   receiptAt?: string
   scanId?: string
-  pending?: Array<{ sourceId: string; fact: GitHubDispatchFact }>
-  activeFact?: GitHubDispatchFact
+  pending?: Array<{ sourceId: string; fact: ReceiptDispatchFact }>
+  activeFact?: ReceiptDispatchFact
   hasMoreCandidates?: boolean
 }
 export interface SourceGroupPage {
@@ -588,19 +683,23 @@ export async function listInboxSourcePage(
 }
 
 /**
- * The two GitHub families page identically — same two-phase poll-then-hook
- * walk, same delayed-receipt scan window, same association keyset — and differ
- * only in which fact a receipt yields and which coordinates it associates on.
- * That difference is this interface; everything else stays one implementation.
+ * The receipt families page identically — same delayed-receipt scan window,
+ * same association keyset — and differ only in which provider delivered the
+ * receipt, whether a poller can also produce one, which fact a receipt yields
+ * and which coordinates it associates on. That difference is this interface;
+ * everything else stays one implementation.
  */
-interface GitHubSourcePager<F extends GitHubDispatchFact> {
+interface ReceiptSourcePager<F extends ReceiptDispatchFact> {
+  provider: 'github' | 'linear'
+  /** GitHub receipts are also produced by its issue/PR pollers; Linear has no poller. */
+  polled: boolean
   extract(providerKey: string, event: VerifiedIngressEvent): F | null
   isFact(value: unknown): value is F
-  associations(sourceId: string, fact: F, after: string | null, limit: number): Promise<GitHubAssociationPage>
+  associations(sourceId: string, fact: F, after: string | null, limit: number): Promise<ReceiptAssociationPage>
 }
 
-async function listGitHubSourcePage<F extends GitHubDispatchFact>(
-  pager: GitHubSourcePager<F>,
+async function listReceiptSourcePage<F extends ReceiptDispatchFact>(
+  pager: ReceiptSourcePager<F>,
   from: Date,
   to: Date,
   after: SourceGroupCursor | null,
@@ -609,12 +708,12 @@ async function listGitHubSourcePage<F extends GitHubDispatchFact>(
 ): Promise<SourceGroupPage> {
   const fromIso = from.toISOString()
   const toIso = to.toISOString()
-  const phase = after?.sourceKind ?? 'poll'
+  const phase = after?.sourceKind ?? (pager.polled ? 'poll' : 'hook')
   let sourceId: string
   let fact: F | null
   let cursor: SourceGroupCursor
   if (after?.associationAfter) {
-    const resumed = after.activeFact ?? (await loadGitHubActivityBase(db, after.id))?.fact ?? null
+    const resumed = after.activeFact ?? (await loadWebhookActivityBase(db, after.id))?.fact ?? null
     fact = resumed && pager.isFact(resumed) ? resumed : null
     if (!fact) return { groupIds: [], next: { ...after, associationAfter: undefined } }
     sourceId = after.id
@@ -639,15 +738,15 @@ async function listGitHubSourcePage<F extends GitHubDispatchFact>(
     let hasMoreCandidates = after?.hasMoreCandidates ?? true
     if (pending.length === 0) {
       const candidates = rows<any>(
-        await db.execute(sql`SELECT id::text id,event_type,payload,headers->>'x-github-delivery' delivery_id,created_at FROM webhook_events
-          WHERE provider='github' AND verified=true
+        await db.execute(sql`SELECT id::text id,event_type,payload,${deliveryIdSql} delivery_id,created_at FROM webhook_events
+          WHERE provider=${pager.provider} AND verified=true
             AND created_at>=${fromIso}::timestamptz AND created_at<${scanTo.toISOString()}::timestamptz
             AND (created_at>${receiptAfter}::timestamptz OR (created_at=${receiptAfter}::timestamptz AND id::text>${eventAfter}))
           ORDER BY created_at,id LIMIT ${limit}`)
       )
       if (candidates.length === 0) return { groupIds: [], next: null }
       pending = candidates.flatMap((candidate) => {
-        const extracted = pager.extract('github', {
+        const extracted = pager.extract(pager.provider, {
           type: candidate.event_type,
           payload: candidate.payload,
           metadata: { source: 'webhook', providerDeliveryId: candidate.delivery_id },
@@ -704,15 +803,26 @@ async function listGitHubSourcePage<F extends GitHubDispatchFact>(
   }
 }
 
-const PR_SOURCE_PAGER: GitHubSourcePager<GitHubPrDispatchFact> = {
+const PR_SOURCE_PAGER: ReceiptSourcePager<GitHubPrDispatchFact> = {
+  provider: 'github',
+  polled: true,
   extract: extractGitHubPrDispatchFact,
   isFact: isGitHubPrDispatchFact,
   associations: listGitHubAssociationPage,
 }
-const ISSUE_SOURCE_PAGER: GitHubSourcePager<GitHubIssueDispatchFact> = {
+const ISSUE_SOURCE_PAGER: ReceiptSourcePager<GitHubIssueDispatchFact> = {
+  provider: 'github',
+  polled: true,
   extract: extractGitHubIssueDispatchFact,
   isFact: isGitHubIssueDispatchFact,
   associations: listGitHubIssueAssociationPage,
+}
+const LINEAR_ISSUE_SOURCE_PAGER: ReceiptSourcePager<LinearIssueDispatchFact> = {
+  provider: 'linear',
+  polled: false,
+  extract: extractLinearIssueDispatchFact,
+  isFact: isLinearIssueDispatchFact,
+  associations: listLinearIssueAssociationPage,
 }
 
 export function listGitHubPrSourcePage(
@@ -722,7 +832,7 @@ export function listGitHubPrSourcePage(
   limit = 250,
   scanTo: Date = to
 ): Promise<SourceGroupPage> {
-  return listGitHubSourcePage(PR_SOURCE_PAGER, from, to, after, limit, scanTo)
+  return listReceiptSourcePage(PR_SOURCE_PAGER, from, to, after, limit, scanTo)
 }
 
 export function listGitHubIssueSourcePage(
@@ -732,7 +842,18 @@ export function listGitHubIssueSourcePage(
   limit = 250,
   scanTo: Date = to
 ): Promise<SourceGroupPage> {
-  return listGitHubSourcePage(ISSUE_SOURCE_PAGER, from, to, after, limit, scanTo)
+  return listReceiptSourcePage(ISSUE_SOURCE_PAGER, from, to, after, limit, scanTo)
+}
+
+/** Linear delivers only by webhook, so its pager is the hook phase alone. */
+export function listLinearIssueSourcePage(
+  from: Date,
+  to: Date,
+  after: SourceGroupCursor | null,
+  limit = 250,
+  scanTo: Date = to
+): Promise<SourceGroupPage> {
+  return listReceiptSourcePage(LINEAR_ISSUE_SOURCE_PAGER, from, to, after, limit, scanTo)
 }
 
 export async function listProjectedSourceGroupPage(
