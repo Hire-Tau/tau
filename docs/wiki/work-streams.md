@@ -8,10 +8,14 @@ Examples: `tau workstream get 42`, `tau workstream get '#42'`, and `GET /api/wor
 
 ## Tracked issues and pull requests
 
-A work stream can track any number of GitHub issues and pull requests alongside
-the one PR that gates its delivery, and can designate additional pull requests
-that must also be merged before the stream completes. The canonical set is
-computed, not stored as one field — it is the union of:
+A work stream can track any number of GitHub issues and pull requests, and any
+number of Linear issues, alongside the one PR that gates its delivery, and can
+designate additional pull requests that must also be merged before the stream
+completes. Pull requests are a GitHub-only concept here: Linear supplies
+issues only, and `delivery` can never be set on a Linear entry — see
+[Linear integrations: Tracked issues](linear-integrations.md#tracked-issues)
+for the Linear-specific identity, linking, and subscription details. The
+canonical set is computed, not stored as one field — it is the union of:
 
 1. **The delivery PR** — `metadata.codeHost.changeRequest` (or the legacy
    `metadata.github.repo`/`metadata.github.pr.number`/`.url` equivalent). This is
@@ -113,6 +117,15 @@ hand-written `origin` on a new entry is rejected with `400`; only
 `create --from-event` may carry one on directly-written metadata, and only for
 the event named in that same request.
 
+A Linear issue entry additionally carries `externalId` (the Linear issue's own
+UUID): `{ "integration": "linear", "repository": "<team key, lowercase>", "kind": "issue", "number": 12, "externalId": "1f2e3d4c-..." }`.
+Its `repository` is the lowercased Linear team key (`eng`), not an `owner/repo`
+path, and its `number` is the issue's team-scoped number. `externalId` is what
+subscriptions actually match on — a Linear comment fact carries only the issue
+UUID — so it takes priority over team key + number whenever it is known. The
+human-readable label for a Linear entry is `KEY-123` (`trackedResourceLabel`),
+not `owner/repo#12`.
+
 Never hand-write `github.*`/`codeHost` metadata, or a raw `tracked[]` entry, to
 attach a resource. Use the CLI/API paths below; they resolve identity, check
 authorization, and stamp `origin` atomically.
@@ -123,9 +136,11 @@ authorization, and stamp `origin` atomically.
 tau workstream create "<title>" --squad <squad-id> --from-event <event-id>   # new stream, idempotent
 tau workstream track <ws-id> --event <event-id>                             # attach to an existing stream
 tau workstream track <ws-id> --issue owner/repo#12
+tau workstream track <ws-id> --issue KEY-123                                 # Linear issue
 tau workstream track <ws-id> --pr owner/repo#34
 tau workstream track <ws-id> --pr owner/repo#35 --delivery
 tau workstream track <ws-id> --url https://github.com/owner/repo/pull/34
+tau workstream track <ws-id> --url https://linear.app/workspace/issue/KEY-123/slug
 tau workstream untrack <ws-id> --issue owner/repo#12
 tau workstream tracked <ws-id>   # alias: links
 ```
@@ -163,10 +178,16 @@ meant. **Access** always comes from the squad's own integration connection:
   (non-squad) authority, is rejected with `403`. An unknown event ID is `404`.
 - A URL or explicit `{ integration, repository, kind, number }` reference is
   checked against the squad's assigned, authorized connection for that
-  integration; a squad with no authorized GitHub connection gets `403`.
+  integration; a squad with no authorized GitHub or Linear connection gets
+  `403`.
+- For Linear, this authorization also resolves identity: linking asks the
+  squad's connection to `describe` the issue over GraphQL, which is where
+  `externalId` and `url` come from. No usable connection → `409` (needs
+  revalidation); the connection can't read the issue → `404`.
 
-This means the same GitHub issue can be tracked by two different squads, each
-authorized through its own connection, without either granting the other access.
+This means the same GitHub issue or Linear issue can be tracked by two
+different squads, each authorized through its own connection, without either
+granting the other access.
 
 ### Subscription IDs and completion semantics
 
@@ -231,4 +252,3 @@ unrelated wait`, or `Waiting for consumer activation`.
   arrive for it, not at the moment it is linked.
 - Poll/webhook de-duplication relies on GitHub's second-precision timestamps;
   two independent changes inside the same second can collapse.
-- Linear issues/links are not covered by tracked resources.
