@@ -21,7 +21,6 @@ import {
   unblockWorkStreamSchema,
   parkWorkStreamSchema,
   mapLegacyWorkStreamStatus,
-  parseTrackedResourceUrl,
   sortCanonicalWorkStreams,
 } from '@tau/shared'
 import type { WorkStreamStatus, WorkStreamWaitCreatedBy, WorkStreamPriority } from '@tau/shared'
@@ -42,6 +41,7 @@ import {
   removeTrackedResource,
   resolveEventTrackedResource,
   resolveTrackedResourceRequest,
+  trackedResourceRequestIdentity,
   trackedResourceRequestSchema,
 } from '../services/work-streams/tracked-resources'
 import { Squad } from '../entities/Squad'
@@ -965,9 +965,9 @@ export const workStreamsRouter = new Hono()
       if (!stream) return c.json({ error: 'Work stream not found' }, 404)
       const request = c.req.valid('json')
       // Untracking is identity-only: a squad can always unlink, even after losing the connection.
-      if ('event' in request) return c.json({ error: 'Untrack a link by url or resource' }, 400)
-      const target = 'url' in request ? parseTrackedResourceUrl(request.url) : request.resource
-      if (!target) return c.json({ error: 'Link is not a supported issue or pull request URL' }, 400)
+      if ('event' in request) return c.json({ error: 'Untrack a link by url, reference or resource' }, 400)
+      const target = trackedResourceRequestIdentity(request)
+      if (!target) return c.json({ error: 'Link is not a supported issue or pull request URL or reference' }, 400)
       try {
         const { removed, view } = await removeTrackedResource(stream.id, target)
         return c.json({ removed, ...view })

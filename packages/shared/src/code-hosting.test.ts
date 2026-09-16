@@ -2,13 +2,16 @@ import { describe, expect, test } from 'bun:test'
 import {
   deliveryPullRequests,
   describeCodeHostReference,
+  parseTrackedResourceReference,
   parseTrackedResourceUrl,
   primaryDeliveryPullRequest,
   readDeliveryState,
   resolveCodeHostReference,
   resolveTrackedResources,
   trackedResourceKey,
+  trackedResourceLabel,
   trackedResourceMatches,
+  trackedResourceObjectSchema,
   trackedResourceSchema,
   trackedResourceUrl,
 } from './code-hosting'
@@ -109,6 +112,130 @@ describe('tracked resources', () => {
     expect(resolveTrackedResources({ tracked: 'nope' })).toEqual([])
   })
 
+  test('parses Linear issue URLs, rejecting http and requiring a valid key-number', () => {
+    expect(parseTrackedResourceUrl('https://linear.app/acme/issue/ENG-123')).toEqual({
+      integration: 'linear',
+      repository: 'eng',
+      kind: 'issue',
+      number: 123,
+    })
+    expect(parseTrackedResourceUrl('https://linear.app/acme/issue/ENG-123/some-slug-here')).toEqual({
+      integration: 'linear',
+      repository: 'eng',
+      kind: 'issue',
+      number: 123,
+    })
+    expect(parseTrackedResourceUrl('https://linear.app/acme/issue/ENG-123/')).toEqual({
+      integration: 'linear',
+      repository: 'eng',
+      kind: 'issue',
+      number: 123,
+    })
+    expect(parseTrackedResourceUrl('https://LINEAR.APP/acme/issue/eng-123')).toEqual({
+      integration: 'linear',
+      repository: 'eng',
+      kind: 'issue',
+      number: 123,
+    })
+    expect(parseTrackedResourceUrl('http://linear.app/acme/issue/ENG-123')).toBeNull()
+    expect(parseTrackedResourceUrl('https://linear.app/acme/issue/123')).toBeNull()
+    expect(parseTrackedResourceUrl('https://linear.app/acme/issue/ENG-0')).toBeNull()
+  })
+
+  test('a comment fragment or query string still names the issue or pull request it hangs off', () => {
+    // The link a person copies out of a notification points at the comment, not the resource.
+    expect(parseTrackedResourceUrl('https://linear.app/acme/issue/ENG-123/some-slug#comment-9f2c1b')).toEqual({
+      integration: 'linear',
+      repository: 'eng',
+      kind: 'issue',
+      number: 123,
+    })
+    expect(parseTrackedResourceUrl('https://linear.app/acme/issue/ENG-123#comment-9f2c1b')).toEqual({
+      integration: 'linear',
+      repository: 'eng',
+      kind: 'issue',
+      number: 123,
+    })
+    expect(parseTrackedResourceUrl('https://linear.app/acme/issue/ENG-123?workspace=acme')).toEqual({
+      integration: 'linear',
+      repository: 'eng',
+      kind: 'issue',
+      number: 123,
+    })
+    expect(parseTrackedResourceUrl('https://github.com/acme/widgets/issues/12#issuecomment-4412')).toEqual({
+      integration: 'github',
+      repository: 'acme/widgets',
+      kind: 'issue',
+      number: 12,
+    })
+    expect(parseTrackedResourceUrl('https://github.com/acme/widgets/pull/34/?diff=split#discussion_r1')).toEqual({
+      integration: 'github',
+      repository: 'acme/widgets',
+      kind: 'pull_request',
+      number: 34,
+    })
+    // A fragment is not a path: it can never turn a non-resource link into one.
+    expect(parseTrackedResourceUrl('https://github.com/acme/widgets#issues/12')).toBeNull()
+    expect(parseTrackedResourceUrl('https://linear.app/acme/issue/ENG-123/slug/more#comment-1')).toBeNull()
+  })
+
+  test('parseTrackedResourceReference parses both provider forms and rejects garbage', () => {
+    expect(parseTrackedResourceReference('acme/widgets#12')).toEqual({
+      integration: 'github',
+      repository: 'acme/widgets',
+      number: 12,
+    })
+    expect(parseTrackedResourceReference('Acme/Widgets#12')).toEqual({
+      integration: 'github',
+      repository: 'acme/widgets',
+      number: 12,
+    })
+    expect(parseTrackedResourceReference('ENG-123')).toEqual({
+      integration: 'linear',
+      repository: 'eng',
+      kind: 'issue',
+      number: 123,
+    })
+    expect(parseTrackedResourceReference('eng-123')).toEqual({
+      integration: 'linear',
+      repository: 'eng',
+      kind: 'issue',
+      number: 123,
+    })
+    expect(parseTrackedResourceReference('not a reference')).toBeNull()
+    expect(parseTrackedResourceReference('ENG-0')).toBeNull()
+    expect(parseTrackedResourceReference('acme/widgets#0')).toBeNull()
+    expect(parseTrackedResourceReference('')).toBeNull()
+  })
+
+  test('trackedResourceLabel formats github as owner/repo#n and linear as KEY-n', () => {
+    expect(trackedResourceLabel({ integration: 'github', repository: 'acme/widgets', number: 12 })).toBe(
+      'acme/widgets#12'
+    )
+    expect(trackedResourceLabel({ integration: 'linear', repository: 'eng', number: 123 })).toBe('ENG-123')
+  })
+
+  test('trackedResourceUrl for linear only returns the stored url, never synthesizes one', () => {
+    expect(trackedResourceUrl({ integration: 'linear', repository: 'eng', kind: 'issue', number: 123 })).toBeUndefined()
+    expect(
+      trackedResourceUrl({
+        integration: 'linear',
+        repository: 'eng',
+        kind: 'issue',
+        number: 123,
+        url: 'https://linear.app/acme/issue/ENG-123/some-slug',
+      })
+    ).toBe('https://linear.app/acme/issue/ENG-123/some-slug')
+  })
+
+  test('schema accepts an optional externalId', () => {
+    const base = { integration: 'linear', repository: 'eng', kind: 'issue' as const, number: 1 }
+    expect(trackedResourceObjectSchema.safeParse(base).success).toBe(true)
+    expect(trackedResourceObjectSchema.safeParse({ ...base, externalId: 'issue-uuid-123' }).success).toBe(true)
+    expect(trackedResourceObjectSchema.safeParse({ ...base, externalId: '' }).success).toBe(false)
+    expect(trackedResourceObjectSchema.safeParse({ ...base, externalId: 'x'.repeat(201) }).success).toBe(false)
+  })
+
   test('matching respects kind, repository case and connection pinning', () => {
     const r = { integration: 'github', repository: 'Acme/Widgets', kind: 'issue' as const, number: 12 }
     const t = { integration: 'github', repository: 'acme/widgets', kind: 'issue' as const, number: 12 }
@@ -117,6 +244,35 @@ describe('tracked resources', () => {
     expect(trackedResourceMatches(r, { ...t, connectionId: 'c1' })).toBe(true) // unpinned resource accepts any connection
     expect(trackedResourceMatches({ ...r, connectionId: 'c1' }, { ...t, connectionId: 'c2' })).toBe(false)
     expect(trackedResourceMatches({ ...r, connectionId: 'c1' }, t)).toBe(true) // event without connection (instance authority)
+  })
+
+  test('matching also succeeds provider-neutrally via externalId, even when the target omits repository/number/kind', () => {
+    const resource = {
+      integration: 'linear',
+      repository: 'eng',
+      kind: 'issue' as const,
+      number: 123,
+      externalId: 'issue-uuid-abc',
+    }
+    expect(trackedResourceMatches(resource, { integration: 'linear', externalId: 'issue-uuid-abc' })).toBe(true)
+    // Different integration never matches, even with the same externalId.
+    expect(trackedResourceMatches(resource, { integration: 'github', externalId: 'issue-uuid-abc' })).toBe(false)
+    // Mismatched externalId never matches.
+    expect(trackedResourceMatches(resource, { integration: 'linear', externalId: 'other-id' })).toBe(false)
+    // Connection pinning still applies even when matching via externalId.
+    expect(
+      trackedResourceMatches(
+        { ...resource, connectionId: 'c1' },
+        { integration: 'linear', externalId: 'issue-uuid-abc', connectionId: 'c2' }
+      )
+    ).toBe(false)
+    // No externalId on the resource: falls back to normal identity matching (fails when repository/number missing).
+    expect(
+      trackedResourceMatches(
+        { integration: 'linear', repository: 'eng', kind: 'issue', number: 123 },
+        { integration: 'linear', externalId: 'issue-uuid-abc' }
+      )
+    ).toBe(false)
   })
 
   test('schema rejects resource urls that are not http(s)', () => {

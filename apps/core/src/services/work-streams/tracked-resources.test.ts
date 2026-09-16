@@ -1,5 +1,5 @@
 import { useEnabledIntegrationFixtures } from '../../test-utils/enabled-integrations'
-useEnabledIntegrationFixtures('github')
+useEnabledIntegrationFixtures('github', 'linear')
 import { afterAll, beforeAll, expect, spyOn, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { eq, inArray } from 'drizzle-orm'
@@ -12,6 +12,7 @@ import {
   squads,
   workStreams,
   integrationConnections,
+  integrationConnectionAssignments,
   integrationOutputDeliveries,
   integrationOutputEvents,
 } from '../../db'
@@ -57,12 +58,12 @@ function issueFact(number: number, changes: Partial<IntegrationOutputFact> = {})
     ...changes,
   }
 }
-async function insertEvent(fact: IntegrationOutputFact, authority: IntegrationOutputAuthority) {
+async function insertEvent(fact: IntegrationOutputFact, authority: IntegrationOutputAuthority, integration = 'github') {
   const [row] = await db
     .insert(integrationOutputEvents)
     .values({
-      integration: 'github',
-      sourceKey: `github:${prefix}`,
+      integration,
+      sourceKey: `${integration}:${prefix}`,
       eventKey: fact.eventKey,
       authority,
       fact,
@@ -554,4 +555,257 @@ test('untracking a delivery pull request drops the delivery state it left behind
       .removed
   ).toBe(true)
   expect(await metadataOf(solo)).not.toHaveProperty('delivery')
+})
+
+const linearConnections: Array<() => Promise<void>> = []
+/** A Linear connection the squad may use: assignment is the only thing authorization reads. */
+async function createLinearConnection(target: string, overrides: Record<string, unknown> = {}) {
+  const { getSecretStore } = await import('../secrets')
+  const id = randomUUID()
+  const revision = randomUUID()
+  const credentialRef = `__integration-test:linear:${id}`
+  await getSecretStore().set(credentialRef, 'lin_api_fixture', 'test')
+  await db.insert(integrationConnections).values({
+    id,
+    providerKey: 'linear',
+    adapterVersion: 1,
+    displayName: 'linear-fixture',
+    configuration: { version: 1 },
+    credentialRef,
+    enabled: true,
+    authState: 'authenticated',
+    healthState: 'healthy',
+    materialRevision: revision,
+    validatedRevision: revision,
+    validatedAt: new Date(),
+    validationExpiresAt: new Date(Date.now() + 900_000),
+    ...overrides,
+  })
+  await db
+    .insert(integrationConnectionAssignments)
+    .values({ squadId: target, providerKey: 'linear', connectionId: id, isDefault: true })
+  const dispose = async () => {
+    await db.delete(integrationConnectionAssignments).where(eq(integrationConnectionAssignments.connectionId, id))
+    await db.delete(integrationConnections).where(eq(integrationConnections.id, id))
+    await getSecretStore().delete(credentialRef)
+  }
+  linearConnections.push(dispose)
+  return { id, dispose }
+}
+/** Stand in for Linear's GraphQL endpoint; `null` is an issue this connection cannot read. */
+function stubLinearIssue(issue: unknown, queries: unknown[] = []) {
+  return spyOn(globalThis, 'fetch').mockImplementation((async (_input: unknown, init?: { body?: string }) => {
+    queries.push(JSON.parse(String(init?.body)))
+    return new Response(JSON.stringify({ data: { issue } }), { headers: { 'Content-Type': 'application/json' } })
+  }) as unknown as typeof fetch)
+}
+const linearIssue = {
+  id: 'f2a7c1e0-1111-4222-8333-444455556666',
+  url: 'https://linear.app/acme/issue/ENG-12/keyboard-navigation',
+  number: 12,
+  team: { key: 'ENG' },
+}
+
+test('a typed reference resolves on the provider that owns it, and GitHub needs the caller to pick a kind', async () => {
+  expect(await resolveTrackedResourceRequest(squadId, { reference: `${repo}#2401` })).toMatchObject({
+    integration: 'github',
+    repository: repo,
+    kind: 'issue',
+    number: 2401,
+  })
+  expect(
+    await resolveTrackedResourceRequest(squadId, { reference: `${repo}#2402`, kind: 'pull_request' })
+  ).toMatchObject({ integration: 'github', repository: repo, kind: 'pull_request', number: 2402 })
+  await expect(resolveTrackedResourceRequest(squadId, { reference: 'not a reference' })).rejects.toMatchObject({
+    status: 400,
+  })
+  // A squad with no Linear connection cannot claim a Linear issue, however well-formed.
+  await expect(resolveTrackedResourceRequest(squadId, { reference: 'ENG-12' })).rejects.toMatchObject({ status: 403 })
+})
+
+test('a Linear link is described by the squad’s own connection, recording the provider id and URL', async () => {
+  await createLinearConnection(squadId)
+  const queries: unknown[] = []
+  const fetching = stubLinearIssue(linearIssue, queries)
+  try {
+    const expected = {
+      integration: 'linear',
+      repository: 'eng',
+      kind: 'issue',
+      number: 12,
+      externalId: linearIssue.id,
+      url: linearIssue.url,
+    }
+    expect(await resolveTrackedResourceRequest(squadId, { reference: 'eng-12' })).toMatchObject(expected)
+    expect(await resolveTrackedResourceRequest(squadId, { url: linearIssue.url })).toMatchObject(expected)
+    expect(queries).toHaveLength(2)
+    expect((queries[0] as { variables: unknown }).variables).toEqual({ id: 'ENG-12' })
+    // An identity that already carries both is not re-read: the provider is asked only what is missing.
+    const known = {
+      integration: 'linear',
+      repository: 'eng',
+      kind: 'issue' as const,
+      number: 12,
+      externalId: linearIssue.id,
+      url: linearIssue.url,
+    }
+    expect(await resolveTrackedResourceRequest(squadId, { resource: known })).toMatchObject(known)
+    expect(queries).toHaveLength(2)
+    // A link the connection cannot read is not a link this squad may keep.
+    fetching.mockRestore()
+    const missing = stubLinearIssue(null)
+    try {
+      await expect(resolveTrackedResourceRequest(squadId, { reference: 'ENG-13' })).rejects.toMatchObject({
+        status: 404,
+      })
+    } finally {
+      missing.mockRestore()
+    }
+    // A provider failure is an identity answer, not a leaked provider error.
+    const failing = spyOn(globalThis, 'fetch').mockRejectedValue(new Error('linear said no'))
+    try {
+      await expect(resolveTrackedResourceRequest(squadId, { reference: 'ENG-14' })).rejects.toMatchObject({
+        status: 404,
+      })
+    } finally {
+      failing.mockRestore()
+    }
+  } finally {
+    fetching.mockRestore()
+    for (const dispose of linearConnections.splice(0)) await dispose()
+  }
+})
+
+test('Linear links are authorized by the squad’s own assignment, and Linear has no pull requests', async () => {
+  const issue: TrackedResource = { integration: 'linear', repository: 'eng', kind: 'issue', number: 12 }
+  const pullRequest: TrackedResource = { ...issue, kind: 'pull_request' }
+  // Linear has no pull requests, so the kind is refused before any connection is consulted.
+  await expect(authorizeTrackedResource(squadId, pullRequest)).rejects.toMatchObject({ status: 400 })
+  await expect(
+    resolveTrackedResourceRequest(squadId, { reference: 'ENG-12', kind: 'pull_request' })
+  ).rejects.toMatchObject({ status: 400 })
+  await expect(resolveTrackedResourceRequest(squadId, { resource: pullRequest, delivery: true })).rejects.toMatchObject(
+    { status: 400 }
+  )
+  // A disabled or unauthenticated assignment is not one this squad may act on.
+  for (const overrides of [{ enabled: false }, { authState: 'pending' }]) {
+    const connection = await createLinearConnection(squadId, overrides)
+    await expect(authorizeTrackedResource(squadId, issue)).rejects.toMatchObject({ status: 403 })
+    await connection.dispose()
+  }
+  const connection = await createLinearConnection(squadId)
+  const fetching = stubLinearIssue(linearIssue)
+  try {
+    await authorizeTrackedResource(squadId, issue)
+    await authorizeTrackedResource(squadId, { ...issue, connectionId: connection.id })
+    // A link pinned to another account is not authorized by this squad's assignment.
+    await expect(authorizeTrackedResource(squadId, { ...issue, connectionId: randomUUID() })).rejects.toMatchObject({
+      status: 403,
+    })
+    // A reference may name the account it belongs to; it is checked, never quietly ignored.
+    expect(
+      await resolveTrackedResourceRequest(squadId, { reference: 'ENG-12', connectionId: connection.id })
+    ).toMatchObject({ integration: 'linear', repository: 'eng', number: 12, connectionId: connection.id })
+    await expect(
+      resolveTrackedResourceRequest(squadId, { reference: 'ENG-12', connectionId: randomUUID() })
+    ).rejects.toMatchObject({ status: 403 })
+  } finally {
+    fetching.mockRestore()
+    await connection.dispose()
+  }
+})
+
+/** A Linear comment fact: Linear names the issue by UUID only, exactly as it delivers it. */
+function linearCommentFact(issueId: string): IntegrationOutputFact {
+  return {
+    output: 'issue.comment',
+    version: 1,
+    eventKey: randomUUID(),
+    resourceKey: issueId,
+    occurredAt: new Date().toISOString(),
+    data: { issue: { id: issueId }, teamId: 'team-uuid', actor: 'user-a', action: 'create' },
+    subject: 'Linear comment',
+    body: 'Could you take another look?',
+  }
+}
+
+test('a Linear comment event is completed through the squad’s connection, by the issue’s own id', async () => {
+  const linear = await createLinearConnection(squadId)
+  const event = await insertEvent(
+    linearCommentFact(linearIssue.id),
+    { kind: 'connection', connectionId: linear.id, squadId },
+    'linear'
+  )
+  const queries: unknown[] = []
+  const fetching = stubLinearIssue(linearIssue, queries)
+  try {
+    // The fact carries no team key or number, so the provider is asked by the UUID it does carry.
+    expect(await resolveEventTrackedResource(event.id, squadId)).toEqual({
+      integration: 'linear',
+      repository: 'eng',
+      kind: 'issue',
+      number: 12,
+      externalId: linearIssue.id,
+      url: linearIssue.url,
+      connectionId: linear.id,
+      origin: {
+        eventId: event.id,
+        resourceKey: linearIssue.id,
+        output: 'issue.comment',
+        occurredAt: event.fact.occurredAt,
+      },
+    })
+    expect((queries[0] as { variables: unknown }).variables).toEqual({ id: linearIssue.id })
+    // Correlation is still not access: another squad never reaches the provider at all.
+    await expect(resolveEventTrackedResource(event.id, otherSquadId)).rejects.toMatchObject({ status: 403 })
+    expect(queries).toHaveLength(1)
+  } finally {
+    fetching.mockRestore()
+  }
+  // An issue this connection cannot read is not a link this squad may keep.
+  const missing = stubLinearIssue(null)
+  try {
+    await expect(resolveEventTrackedResource(event.id, squadId)).rejects.toMatchObject({ status: 404 })
+  } finally {
+    missing.mockRestore()
+    await linear.dispose()
+    linearConnections.length = 0
+  }
+})
+
+test('a stale Linear connection asks for revalidation; an unreadable issue answers without provider text', async () => {
+  const stale = await createLinearConnection(squadId, { validationExpiresAt: new Date(Date.now() - 1000) })
+  const unused = stubLinearIssue(linearIssue)
+  try {
+    // Authorization still holds — the squad keeps its assignment — but nothing may be read with it.
+    await expect(resolveTrackedResourceRequest(squadId, { reference: 'ENG-12' })).rejects.toMatchObject({
+      status: 409,
+      message: 'Linear connection needs revalidation before linking',
+    })
+    expect(unused).not.toHaveBeenCalled()
+  } finally {
+    unused.mockRestore()
+    await stale.dispose()
+  }
+  const live = await createLinearConnection(squadId)
+  const failing = spyOn(globalThis, 'fetch').mockRejectedValue(new Error('linear said no: token lin_api_secret'))
+  try {
+    const error = await resolveTrackedResourceRequest(squadId, { reference: 'ENG-15' }).catch((caught) => caught)
+    expect(error).toMatchObject({ status: 404 })
+    expect(error.message).toContain('ENG-15')
+    expect(error.message).not.toContain('lin_api_secret')
+    expect(error.message).not.toContain('linear said no')
+  } finally {
+    failing.mockRestore()
+  }
+  // The provider's own answer still has to be an identity this instance can follow.
+  const malformed = stubLinearIssue({ ...linearIssue, team: { key: 'not a team key' } })
+  try {
+    await expect(resolveTrackedResourceRequest(squadId, { reference: 'ENG-12' })).rejects.toMatchObject({
+      status: 400,
+    })
+  } finally {
+    malformed.mockRestore()
+    await live.dispose()
+  }
 })

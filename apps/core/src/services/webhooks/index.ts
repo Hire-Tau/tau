@@ -84,7 +84,8 @@ export function initializeWebhooks(): void {
 
   // Register Linear event handlers
   webhookRegistry.registerHandler('linear', 'Issue', handleLinearIssueUpdate)
-  log.info('Registered 1 Linear handler: Issue')
+  webhookRegistry.registerHandler('linear', 'Comment', handleLinearIssueUpdate)
+  log.info('Registered 2 Linear handlers: Issue, Comment')
 
   log.info(`Initialization complete. Providers: ${webhookRegistry.getProviders().join(', ')}`)
 }

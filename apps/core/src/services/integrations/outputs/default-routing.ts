@@ -6,6 +6,7 @@ import {
   type WorkflowEventTrigger,
   selectSquadEventRule,
   eventRuleWorkflow,
+  trackedResourceLabel,
 } from '@tau/shared'
 import {
   db,
@@ -114,7 +115,8 @@ export async function routeDefaultNotifications(event: Event, authorize: (squadI
         !origin.integration &&
         typeof integrationValueAt(event.fact.data, 'issue.id') === 'string' &&
         integrationValueAt(stream.metadata, 'linear.issueId') === integrationValueAt(event.fact.data, 'issue.id')) ||
-      (event.integration === 'github' && streamTracksEvent(stream.metadata, event))
+      // Every provider identifies its own resources; tracking is not a GitHub privilege.
+      streamTracksEvent(stream.metadata, event)
     if (!matches) continue
     matchedStream = true
     // An inactive/retained subscription still owns routing. Never bypass its wait or pause policy.
@@ -182,12 +184,22 @@ async function send(
   squadId?: string
 ) {
   const resource = !workStreamId ? eventTrackedResource(event) : null
-  const label = resource?.kind === 'issue' ? 'issue' : 'pull request'
+  // A fact may name its resource natively instead — a Linear comment carries only the issue UUID.
+  // The recipient still gets the same commands: creation resolves the identity on the squad's
+  // own connection, which is the only place the team key and number could come from.
+  const identity =
+    !workStreamId && !resource
+      ? integrationOutputRegistry.adapter(event.integration)?.trackedIdentity?.(event.fact)
+      : null
+  const label = resource && resource.kind !== 'issue' ? 'pull request' : 'issue'
+  const named = resource
+    ? `${trackedResourceLabel(resource)}${resource.url ? ` (${resource.url})` : ''}`
+    : identity?.externalId
   const reference =
-    resource && squadId
+    named && squadId
       ? [
           `Event reference: ${event.id}`,
-          `Tracked resource: ${label} ${resource.repository}#${resource.number}${resource.url ? ` (${resource.url})` : ''}`,
+          `Tracked resource: ${label} ${named}`,
           `To start work that follows this ${label}: tau workstream create '<title>' --squad ${squadId} --from-event ${event.id} [--repository <checkout-path>] [--workflow <id>] [-d '<requirements>']. Tau records the ${label} link with the stream so later updates (closure, reopening, comments, assignment changes) route to it without extra squad rules.`,
           `To attach it to existing work instead: tau workstream track <work-stream> --event ${event.id}`,
           'Do not hand-write github or codeHost metadata to track it; source links (--from-url) are reference material only.',

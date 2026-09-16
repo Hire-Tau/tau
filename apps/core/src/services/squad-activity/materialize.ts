@@ -5,7 +5,7 @@ import { eventEmitter } from '../../lib/infra/event-emitter'
 import { ActivityMaintenanceLeaseLostError, type ActivityMaintenanceLeaseFence } from './lease'
 import { materializedItem } from './types'
 import { activityFamily, loadActivitySource } from './families'
-import { listGitHubFamilyAssociationPage, loadGitHubActivityBaseSource, type ActivitySourceKey } from './source-loaders'
+import { listReceiptAssociationPage, loadWebhookActivityBaseSource, type ActivitySourceKey } from './source-loaders'
 import { activityPayloadHash, activityPersistencePayload, type ExtractedSquadActivity } from './types'
 import { coerceSquadActivityRef } from '@tau/shared'
 
@@ -146,12 +146,18 @@ export async function materializeGitHubDispatch(activityId: string, squadId: str
   const sourceId = `poll:${activityId}`
   // The dispatch's own stored fact decides the family; an append-only family
   // never deletes, so a dispatch that yields no fact has nothing to settle.
-  const base = await loadGitHubActivityBaseSource(sourceId)
+  const base = await loadWebhookActivityBaseSource(sourceId)
   if (!base) return EMPTY_MATERIALIZATION
   return materializeSourceGroup({ family: base.family, groupId: `${sourceId}:${squadId}` })
 }
 
-export async function materializeGitHubWebhook(
+/**
+ * Project one verified webhook receipt onto every squad that owns it. The
+ * receipt's own stored payload decides its family, so the provider argument
+ * only says which webhook stream the id belongs to.
+ */
+export async function materializeWebhookActivity(
+  provider: 'github' | 'linear',
   eventId: string,
   options: {
     pageSize?: number
@@ -169,17 +175,17 @@ export async function materializeGitHubWebhook(
     concurrency < 4 ||
     concurrency > 8
   )
-    throw new TypeError('Invalid GitHub Activity materialization bounds')
+    throw new TypeError('Invalid Activity materialization bounds')
   const materialize = options.materialize ?? materializeSourceGroup
   const sourceId = `hook:${eventId}`
-  const base = await loadGitHubActivityBaseSource(sourceId)
+  const base = await loadWebhookActivityBaseSource(sourceId)
   if (!base) return 0
   let after: string | null = null
   let materialized = 0
   let failureCount = 0
   let firstFailure: unknown
   do {
-    const page = await listGitHubFamilyAssociationPage(base, after, pageSize)
+    const page = await listReceiptAssociationPage(base, after, pageSize)
     for (let offset = 0; offset < page.groupIds.length; offset += concurrency) {
       const groupIds = page.groupIds.slice(offset, offset + concurrency)
       const results = await Promise.allSettled(groupIds.map((groupId) => materialize({ family: base.family, groupId })))
@@ -196,7 +202,15 @@ export async function materializeGitHubWebhook(
   if (failureCount)
     throw new AggregateError(
       firstFailure === undefined ? [] : [firstFailure],
-      `${failureCount} GitHub Activity association(s) failed`
+      `${failureCount} ${provider} Activity association(s) failed`
     )
   return materialized
+}
+
+/** The GitHub webhook entry point; projection itself is provider-agnostic. */
+export async function materializeGitHubWebhook(
+  eventId: string,
+  options: Parameters<typeof materializeWebhookActivity>[2] = {}
+): Promise<number> {
+  return materializeWebhookActivity('github', eventId, options)
 }

@@ -415,6 +415,37 @@ describe('workstream CLI commands', () => {
       expect(printed).toContain('  [issue] acme/widgets#12 (tracked) https://github.com/acme/widgets/issues/12')
       logSpy.mockRestore()
     })
+
+    it('labels a tracked Linear issue with its KEY-number reference', async () => {
+      const logSpy = spyOn(console, 'log').mockImplementation(() => {})
+      ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(false)
+      ;(apiGet as ReturnType<typeof mock>).mockResolvedValue({
+        id: '11111111-1111-1111-1111-111111111111',
+        title: 'Fix issue',
+        status: 'active',
+        squadId: 'sq-1',
+        dependsOn: [],
+        agentIds: [],
+        metadata: {
+          tracked: [
+            {
+              integration: 'linear',
+              repository: 'eng',
+              kind: 'issue',
+              number: 12,
+              externalId: 'issue-uuid-1',
+              url: 'https://linear.app/acme/issue/ENG-12/fix-thing',
+            },
+          ],
+        },
+      })
+
+      await run(['workstream', 'get', '11111111-1111-1111-1111-111111111111'])
+
+      const printed = logSpy.mock.calls.map((call) => String(call[0])).join('\n')
+      expect(printed).toContain('  [issue] ENG-12 (tracked) https://linear.app/acme/issue/ENG-12/fix-thing')
+      logSpy.mockRestore()
+    })
   })
 
   describe('create', () => {
@@ -642,10 +673,53 @@ describe('workstream CLI commands', () => {
       expect(apiPost).not.toHaveBeenCalled()
     })
 
-    it('rejects an owner/repo#number reference that does not match the pattern', async () => {
+    it('rejects an --issue reference that matches neither owner/repo#number nor KEY-123', async () => {
       await run(['workstream', 'track', 'stream-1', '--issue', 'not-a-valid-ref'])
       expect(apiPost).not.toHaveBeenCalled()
-      expect(outputError).toHaveBeenCalledWith(new Error('Expected owner/repo#number'))
+      expect(outputError).toHaveBeenCalledWith(new Error('Expected owner/repo#number or KEY-123'))
+    })
+
+    it('tracks a Linear issue given as KEY-123, sending a reference so the server can describe it', async () => {
+      await run(['workstream', 'track', 'stream-1', '--issue', 'ENG-12'])
+      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', { reference: 'ENG-12' })
+    })
+
+    it('keeps --connection on a Linear reference instead of silently dropping it', async () => {
+      await run(['workstream', 'track', 'stream-1', '--issue', 'ENG-12', '--connection', 'conn-1'])
+      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', {
+        reference: 'ENG-12',
+        connectionId: 'conn-1',
+      })
+    })
+
+    it('tracks a Linear issue by its linear.app URL', async () => {
+      await run(['workstream', 'track', 'stream-1', '--url', 'https://linear.app/acme/issue/ENG-12/fix-thing'])
+      expect(apiPost).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', {
+        url: 'https://linear.app/acme/issue/ENG-12/fix-thing',
+      })
+    })
+
+    it('rejects --pr given a Linear reference', async () => {
+      await run(['workstream', 'track', 'stream-1', '--pr', 'ENG-12'])
+      expect(apiPost).not.toHaveBeenCalled()
+      expect(outputError).toHaveBeenCalledWith(new Error('Linear references are issues; use --issue'))
+    })
+
+    it('refuses --delivery with a Linear issue reference or URL', async () => {
+      await run(['workstream', 'track', 'stream-1', '--issue', 'ENG-12', '--delivery'])
+      expect(outputError).toHaveBeenLastCalledWith(new Error('--delivery applies to pull requests only'))
+      expect(apiPost).not.toHaveBeenCalled()
+
+      await run([
+        'workstream',
+        'track',
+        'stream-1',
+        '--url',
+        'https://linear.app/acme/issue/ENG-12/fix-thing',
+        '--delivery',
+      ])
+      expect(outputError).toHaveBeenLastCalledWith(new Error('--delivery applies to pull requests only'))
+      expect(apiPost).not.toHaveBeenCalled()
     })
 
     it('refuses --connection combined with --url or --event', async () => {
@@ -712,6 +786,25 @@ describe('workstream CLI commands', () => {
       expect(apiDelete).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', {
         url: 'https://github.com/acme/widgets/issues/12',
       })
+    })
+
+    it('untracks a Linear issue given as KEY-123, sending a reference', async () => {
+      await run(['workstream', 'untrack', 'stream-1', '--issue', 'ENG-12'])
+      expect(apiDelete).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', { reference: 'ENG-12' })
+    })
+
+    it('keeps --connection on a Linear reference', async () => {
+      await run(['workstream', 'untrack', 'stream-1', '--issue', 'ENG-12', '--connection', 'conn-1'])
+      expect(apiDelete).toHaveBeenCalledWith('/api/workstreams/stream-1/tracked', {
+        reference: 'ENG-12',
+        connectionId: 'conn-1',
+      })
+    })
+
+    it('rejects --pr given a Linear reference', async () => {
+      await run(['workstream', 'untrack', 'stream-1', '--pr', 'ENG-12'])
+      expect(apiDelete).not.toHaveBeenCalled()
+      expect(outputError).toHaveBeenCalledWith(new Error('Linear references are issues; use --issue'))
     })
 
     it('rejects zero or multiple selectors', async () => {
@@ -870,6 +963,44 @@ describe('workstream CLI commands', () => {
 
       expect(logSpy).toHaveBeenCalledWith('Delivery: 2/2 pull requests merged (complete)')
       logSpy.mockRestore()
+    })
+
+    it('labels a Linear issue as KEY-number and shows - when no url is stored', async () => {
+      ;(apiGet as ReturnType<typeof mock>).mockResolvedValue({
+        resources: [
+          {
+            integration: 'linear',
+            repository: 'eng',
+            kind: 'issue',
+            number: 12,
+            externalId: 'issue-uuid-1',
+            key: 'linear:eng:issue:12',
+            source: 'tracked',
+            subscriptionIds: [],
+            subscribed: false,
+            delivery: false,
+          },
+        ],
+        subscriptions: 'active',
+        delivery: { pullRequests: [], complete: false },
+      })
+
+      await run(['workstream', 'tracked', 'stream-1'])
+
+      expect(outputTable).toHaveBeenCalledWith(
+        [
+          {
+            Kind: 'issue',
+            Resource: 'ENG-12',
+            Source: 'tracked',
+            Delivery: '-',
+            Merge: '-',
+            Subscribed: 'no',
+            URL: '-',
+          },
+        ],
+        ['Kind', 'Resource', 'Source', 'Delivery', 'Merge', 'Subscribed', 'URL']
+      )
     })
   })
 

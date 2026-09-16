@@ -1,11 +1,7 @@
 import { expect, test } from 'bun:test'
 import { createBlankWorkflow, integrationSubscriptionSchema } from '@tau/shared'
-import {
-  CodeHostingRegistry,
-  isDeliveryFeedbackSubscription,
-  subscriptionTargetsResource,
-  type CodeHostingAdapter,
-} from './registry'
+import { CodeHostingRegistry, isDeliveryFeedbackSubscription, type CodeHostingAdapter } from './registry'
+import { subscriptionTargetsResource } from '../tracked-resources'
 import { githubCodeHostingAdapter } from '../github/code-hosting'
 
 test('a new code hosting adapter supplies delivery evidence and events without changing the flow', async () => {
@@ -310,4 +306,56 @@ test('tracked resources fan out with stable identity-hashed ids and never duplic
   const without = registry.subscriptions(flow, { ...metadata, tracked: metadata.tracked.filter((t) => t.number !== 7) })
   const removed = new Set(subs.filter(isIssueSeven).map((s) => s.id))
   expect(without.map((s) => s.id).sort()).toEqual(ids.filter((id) => !removed.has(id)).sort())
+})
+
+test('tracked fan-out is delegated to the tracked-resource adapters, not the code-hosting ones', () => {
+  // The code-hosting registry knows GitHub only; Linear has no code-hosting adapter at all.
+  const registry = new CodeHostingRegistry([githubCodeHostingAdapter])
+  const flow = createBlankWorkflow()
+  flow.completion.followChanges = true
+  const linear = { integration: 'linear', repository: 'eng', kind: 'issue', number: 12, externalId: 'issue-uuid' }
+  const subscriptions = registry.subscriptions(flow, { tracked: [linear] })
+  expect(subscriptions.map((sub) => sub.source.output)).toEqual([
+    'issue.assigned',
+    'issue.unassigned',
+    'issue.updated',
+    'issue.comment',
+  ])
+  for (const sub of subscriptions) {
+    expect(integrationSubscriptionSchema.parse(sub).source.integration).toBe('linear')
+    expect(sub.match).toEqual({ 'issue.id': { value: 'issue-uuid' } })
+    // The flow's own delivery target still applies to every inferred subscription.
+    expect(sub.deliver).toEqual({ to: 'delivery-owner', whenInactive: 'retain' })
+  }
+  flow.completion.changeEventsTo = { step: flow.entry }
+  expect(
+    registry
+      .subscriptions(flow, { tracked: [linear] })
+      .every((sub) => JSON.stringify(sub.deliver.to) === JSON.stringify({ step: flow.entry }))
+  ).toBe(true)
+  // A tracked Linear issue is still identified by the shared matcher.
+  expect(subscriptionTargetsResource(subscriptions[0]!, { ...linear, kind: 'issue' as const })).toBe(true)
+})
+
+test('a Linear issue link is never delivery feedback, even beside a link claiming a Linear pull request', () => {
+  const registry = new CodeHostingRegistry([githubCodeHostingAdapter])
+  const flow = createBlankWorkflow()
+  flow.completion = { mode: 'pr-merge', followChanges: true }
+  const issue = { integration: 'linear', repository: 'eng', kind: 'issue', number: 12, externalId: 'issue-uuid' }
+  // Linear has no pull requests, but stored metadata could still claim one and flag it for delivery.
+  const flagged = { ...issue, kind: 'pull_request', delivery: true }
+  for (const externalId of [issue.externalId, undefined]) {
+    const metadata = {
+      tracked: [
+        { ...issue, externalId },
+        { ...flagged, externalId },
+      ],
+    }
+    const subscriptions = registry.subscriptions(flow, metadata)
+    expect(subscriptions).toHaveLength(4)
+    for (const subscription of subscriptions) {
+      expect(subscription.source.output.startsWith('issue.')).toBe(true)
+      expect(isDeliveryFeedbackSubscription(subscription, metadata)).toBe(false)
+    }
+  }
 })

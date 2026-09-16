@@ -60,6 +60,26 @@ const flaggedPr: TrackedRow = {
   subscriptionIds: ['sub-11'],
   subscribed: true,
 }
+const linearIssue: TrackedRow = {
+  integration: 'linear',
+  repository: 'eng',
+  kind: 'issue',
+  number: 12,
+  externalId: 'issue-uuid-1',
+  url: 'https://linear.app/acme/issue/ENG-12/fix-thing',
+  key: 'linear:eng:issue:12',
+  source: 'tracked',
+  delivery: false,
+  subscriptionIds: [],
+  subscribed: false,
+}
+/** A Linear issue without a stored `url`: no code-host fallback exists for Linear, so it renders unlinked. */
+const linearIssueWithoutUrl: TrackedRow = {
+  ...linearIssue,
+  number: 13,
+  key: 'linear:eng:issue:13',
+  url: undefined,
+}
 const deliveryState = (
   pullRequests: TrackedResourcesView['delivery']['pullRequests'] = [],
   complete = false
@@ -167,6 +187,21 @@ test('renders tracked issues and pull requests with their links, delivery badge 
   })
 })
 
+test('renders a Linear issue label with its link, and without an anchor when no url is stored', async () => {
+  await renderTracked({ view: view({ resources: [linearIssue, linearIssueWithoutUrl] }) }, ({ dom }) => {
+    const { document } = dom.window
+    const text = document.body.textContent ?? ''
+    expect(text).toContain('ENG-12')
+    expect(text).toContain('ENG-13')
+    const links = [...document.querySelectorAll('a')]
+    const linked = links.find((link) => link.getAttribute('href') === 'https://linear.app/acme/issue/ENG-12/fix-thing')
+    expect(linked).toBeDefined()
+    expect(linked!.textContent).toContain('ENG-12')
+    // No stored url and no GitHub fallback exists for Linear, so ENG-13 renders as plain text, not a link.
+    expect(links.some((link) => link.textContent?.includes('ENG-13'))).toBe(false)
+  })
+})
+
 test('hides every update affordance and shows the empty state without workstreams:update', async () => {
   await renderTracked({ view: view({ resources: [] }), canUpdate: false }, ({ dom }) => {
     const { document } = dom.window
@@ -208,7 +243,7 @@ test('adds a link by URL and surfaces the API error inline', async () => {
     async ({ dom, calls }) => {
       const { document } = dom.window
       const input = document.querySelector<HTMLInputElement>(
-        'input[placeholder="https://github.com/owner/repo/issues/12"]'
+        'input[placeholder="https://github.com/owner/repo/issues/12 or https://linear.app/team/issue/KEY-123"]'
       )!
       const setValue = async (value: string) =>
         dom.act(async () => {
@@ -311,6 +346,29 @@ test('offers the delivery checkbox only for pull request links and sends the fla
     await submit()
     const posts = calls.filter((call) => call.method === 'POST')
     expect(JSON.parse(posts[posts.length - 1]!.body!)).toEqual({ url: 'https://github.com/acme/api/issues/99' })
+  })
+})
+
+test('never offers the delivery flag for a Linear issue link', async () => {
+  await renderTracked({}, async ({ dom, calls }) => {
+    const { document } = dom.window
+    const input = document.querySelector<HTMLInputElement>('input[type="text"]')!
+    const checkbox = document.querySelector<HTMLInputElement>('input[type="checkbox"]')!
+    await dom.act(async () => {
+      Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value')!.set!.call(
+        input,
+        'https://linear.app/acme/issue/ENG-12/fix-thing'
+      )
+      input.dispatchEvent(new dom.window.Event('input', { bubbles: true }))
+    })
+    // Linear has no pull requests, so nothing about a Linear link can count toward delivery.
+    expect(checkbox.disabled).toBe(true)
+    await dom.act(async () =>
+      [...document.querySelectorAll('button')].find((button) => button.textContent === 'Add')!.click()
+    )
+    expect(JSON.parse(calls.find((call) => call.method === 'POST')!.body!)).toEqual({
+      url: 'https://linear.app/acme/issue/ENG-12/fix-thing',
+    })
   })
 })
 

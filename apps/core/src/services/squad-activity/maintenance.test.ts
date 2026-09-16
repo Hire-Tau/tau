@@ -67,6 +67,7 @@ describe('Activity maintenance', () => {
       wait: family(),
       'github-pr': family(),
       'github-issue': family(),
+      'linear-issue': family(),
     }
     await expect(
       runActivityRepairTick(async () => ({
@@ -193,6 +194,7 @@ describe('Activity repair scan watermarks', () => {
         wait: { ...family },
         'github-pr': { ...family },
         'github-issue': { ...family },
+        'linear-issue': { ...family },
       },
     }
   }

@@ -66,16 +66,16 @@ Both API and worker process-local caches call `startPeriodicRefresh()` to reload
 
 The store has a fixed list of known secret keys used across the application:
 
-| Category     | Keys                                                                                    |
-| ------------ | --------------------------------------------------------------------------------------- |
-| Auth         | `TAU_PASSWORD`                                                                          |
-| AI Providers | `OPENAI_API_KEY`, `PROVIDER_AUTH_DATA`                                                  |
-| Git          | `GIT_USER_NAME`, `GIT_USER_EMAIL`                                                       |
-| Linear       | `LINEAR_WEBHOOK_SECRET`, `LINEAR_USER_ID`                                               |
-| Chat (legacy)| `DISCORD_*`, `SLACK_*`, `TELEGRAM_*` — migrated into integration connections on boot |
-| Push Notif   | `VAPID_SUBJECT`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`                                |
-| Apple Push   | `APNS_KEY_P8`, `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID`, `APNS_ENV`              |
-| Google Cloud | `GOOGLE_SERVICE_ACCOUNT_JSON`                                                           |
+| Category      | Keys                                                                                 |
+| ------------- | ------------------------------------------------------------------------------------ |
+| Auth          | `TAU_PASSWORD`                                                                       |
+| AI Providers  | `OPENAI_API_KEY`, `PROVIDER_AUTH_DATA`                                               |
+| Git           | `GIT_USER_NAME`, `GIT_USER_EMAIL`                                                    |
+| Linear        | `LINEAR_WEBHOOK_SECRET` (legacy; one-time import into integration webhook settings)  |
+| Chat (legacy) | `DISCORD_*`, `SLACK_*`, `TELEGRAM_*` — migrated into integration connections on boot |
+| Push Notif    | `VAPID_SUBJECT`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`                             |
+| Apple Push    | `APNS_KEY_P8`, `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID`, `APNS_ENV`           |
+| Google Cloud  | `GOOGLE_SERVICE_ACCOUNT_JSON`                                                        |
 
 `PROVIDER_AUTH_DATA` is a special JSON blob managed by the [Provider Auth](provider-auth.md) system, not edited directly.
 

@@ -7,26 +7,37 @@ import { linearOutputAdapter } from './outputs'
 import { linearQuery } from './plugin'
 import { resolveLinearConnection } from './resolve-connection'
 
-export interface LinearAssignmentAccess {
+export interface LinearIssueAccess {
   viewer: { id: string }
   issue: { id: string; team: { id: string }; assignee: { id: string } | null } | null
 }
-export function canReceiveLinearAssignment(
-  access: LinearAssignmentAccess,
-  issue: { id: string; teamId: string; assigneeId: string }
-) {
-  return (
-    access.viewer.id === issue.assigneeId &&
-    access.issue?.id === issue.id &&
-    access.issue.team.id === issue.teamId &&
-    access.issue.assignee?.id === issue.assigneeId
-  )
+export interface LinearEventIdentity {
+  output: string
+  issueId: string
+  teamId: string
+  assignee: string
+}
+/** Readability by the connected account is the floor; assignment outputs additionally bind that account. */
+export function canReceiveLinearEvent(access: LinearIssueAccess, event: LinearEventIdentity) {
+  if (access.issue?.id !== event.issueId) return false
+  if (event.teamId && access.issue.team?.id !== event.teamId) return false
+  if (event.output === 'issue.assigned')
+    return !!event.assignee && access.viewer.id === event.assignee && access.issue.assignee?.id === event.assignee
+  if (event.output === 'issue.unassigned') return !!event.assignee && access.viewer.id === event.assignee
+  return true
 }
 
 /** A valid signature proves origin; each connected account must also be able to read the issue. */
-export async function routeLinearAssignment(event: VerifiedIngressEvent, fallback: (squadId: string) => Promise<void>) {
-  if (!linearOutputAdapter.normalize(event).length) return
-  const issue = (event.payload as { data: { id: string; teamId: string; assigneeId: string } }).data
+export async function routeLinearEvent(event: VerifiedIngressEvent, fallback: (squadId: string) => Promise<void>) {
+  const [fact] = linearOutputAdapter.normalize(event)
+  if (!fact) return
+  const data = fact.data as { issue: { id: string }; teamId?: string; assignee?: string }
+  const identity: LinearEventIdentity = {
+    output: fact.output,
+    issueId: data.issue.id,
+    teamId: typeof data.teamId === 'string' ? data.teamId : '',
+    assignee: typeof data.assignee === 'string' ? data.assignee : '',
+  }
   const assignments = await db
     .select({ squadId: integrationConnectionAssignments.squadId })
     .from(integrationConnectionAssignments)
@@ -41,23 +52,24 @@ export async function routeLinearAssignment(event: VerifiedIngressEvent, fallbac
   for (const { squadId } of assignments) {
     const resolved = await resolveLinearConnection(squadId)
     if (!resolved) continue
-    let access: LinearAssignmentAccess
+    let access: LinearIssueAccess
     try {
-      access = await linearQuery<LinearAssignmentAccess>(
+      access = await linearQuery<LinearIssueAccess>(
         resolved.credential,
-        'query AssignmentAccess($id: String!) { viewer { id } issue(id: $id) { id team { id } assignee { id } } }',
-        { id: issue.id }
+        'query IssueAccess($id: String!) { viewer { id } issue(id: $id) { id team { id } assignee { id } } }',
+        { id: identity.issueId }
       )
     } catch {
       continue
     }
-    if (!canReceiveLinearAssignment(access, issue)) continue
+    if (!canReceiveLinearEvent(access, identity)) continue
     const handled = await publishIntegrationOutputs('linear', event, {
       kind: 'connection',
       squadId,
       connectionId: resolved.connection.id,
       connectionRevision: resolved.connection.materialRevision,
     })
-    if (!handled.includes(squadId)) await fallback(squadId)
+    // Only assignments carry the legacy team-metadata path; other outputs are subscription-only.
+    if (identity.output === 'issue.assigned' && !handled.includes(squadId)) await fallback(squadId)
   }
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { TrackedResourcesView } from '@tau/shared'
-import { parseTrackedResourceUrl, trackedResourceUrl } from '@tau/shared'
+import { parseTrackedResourceUrl, trackedResourceLabel, trackedResourceUrl } from '@tau/shared'
 import { addWorkStreamTracked, removeWorkStreamTracked, type AddWorkStreamTrackedBody } from '../api/squads'
 import { queries } from '../queryOptions'
 import { queryKeys } from '../queryKeys'
@@ -20,8 +20,6 @@ const SUBSCRIPTION_HINTS: Record<Exclude<TrackedResourcesView['subscriptions'], 
   'not-following': 'This workflow does not follow code-host changes',
   ended: 'Work stream ended',
 }
-
-const resourceLabel = (resource: TrackedRow) => `${resource.repository}#${resource.number}`
 
 /** An open pull request gets no chip: it is the unremarkable state while work is in flight. */
 const MERGE_STATE_COLORS: Partial<Record<NonNullable<TrackedRow['mergeState']>, BadgeColor>> = {
@@ -79,7 +77,7 @@ export function WorkStreamTrackedResources({ workStreamId, canUpdate }: { workSt
         <ul className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
           {resources.map((resource) => {
             const href = trackedResourceUrl(resource)
-            const label = resourceLabel(resource)
+            const label = trackedResourceLabel(resource)
             const Icon = resource.kind === 'issue' ? IssueIcon : PullRequestIcon
             return (
               <li key={resource.key} className="flex items-center gap-1.5">
@@ -151,7 +149,7 @@ export function WorkStreamTrackedResources({ workStreamId, canUpdate }: { workSt
           <input
             type="text"
             className="tau-field min-w-0 flex-1 px-2 py-1 text-xs"
-            placeholder="https://github.com/owner/repo/issues/12"
+            placeholder="https://github.com/owner/repo/issues/12 or https://linear.app/team/issue/KEY-123"
             aria-label="Link to track"
             value={url}
             onChange={(event) => setUrl(event.target.value)}

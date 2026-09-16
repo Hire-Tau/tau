@@ -1,6 +1,8 @@
+import { trackedResourceLabel } from '@tau/shared'
 import { activityRowIdForStream } from './activity-row-id'
 import { describeGitHubIssueFact, type GitHubIssueDispatchFact } from './github-issue-fact'
 import type { GitHubPrDispatchFact } from './github-pr-fact'
+import { describeLinearIssueFact, type LinearIssueDispatchFact } from './linear-issue-fact'
 import type { ExtractedSquadActivity } from './types'
 
 const at = (value: Date | string) =>
@@ -483,6 +485,65 @@ export function extractGitHubIssueDispatch(snapshot: GitHubIssueSnapshot): Extra
       summary,
       ref: { type: 'issue', url: snapshot.fact.url, workStreamId },
       sourceFamily: 'github-issue',
+      sourceGroupId: `${snapshot.sourceId}:${snapshot.squadId}`,
+      workStreamId,
+      quietEligible: true,
+      accessScope: 'workstreams',
+      inboxRecipientId: null,
+      agentTypeRequiresAgentsRead: false,
+    }
+  })
+}
+
+export interface LinearIssueSnapshot {
+  /** Namespaced durable authority identity: hook:<uuid>. */
+  sourceId: string
+  activityId: string
+  squadId: string
+  /** Every stream in the squad tracking the issue, oldest first. Never empty. */
+  workStreamIds: string[]
+  /**
+   * The link the squad's own tracked entry stores, used when the delivery carries
+   * none. Linear issue URLs embed a workspace slug no payload field implies, so a
+   * link that is not in the delivery can only come from what the squad recorded.
+   */
+  trackedUrl: string | null
+  fact: LinearIssueDispatchFact
+}
+
+/** The issue as a person refers to it: `ENG-12` when known, else Linear's own id. */
+function linearIssueLabel(fact: LinearIssueDispatchFact): string {
+  if (fact.identifier) return fact.identifier
+  return fact.teamKey && fact.number
+    ? trackedResourceLabel({ integration: 'linear', repository: fact.teamKey, number: fact.number })
+    : fact.issueId
+}
+
+export function extractLinearIssueDispatch(snapshot: LinearIssueSnapshot): ExtractedSquadActivity[] {
+  // A title-less issue (or an actor-less delivery) must not leave a dangling
+  // separator or a doubled space behind the marker.
+  // The name Linear gave the actor reads better than its id, and neither identifies the row.
+  const actor = snapshot.fact.actorName ?? snapshot.fact.actorId
+  const detail = [snapshot.fact.title.trim(), actor ? `by ${actor}` : ''].filter(Boolean).join(' · ')
+  const summary = structuralSummary(
+    `[Issue ${linearIssueLabel(snapshot.fact)} ${describeLinearIssueFact(snapshot.fact)}]`,
+    detail
+  )
+  const url = snapshot.fact.url ?? snapshot.trackedUrl ?? ''
+  return snapshot.workStreamIds.map((workStreamId, index) => {
+    const rowId = activityRowIdForStream(snapshot.fact.logicalRowId, workStreamId, index)
+    return {
+      id: `71:${rowId}`,
+      lane: 71,
+      rowId,
+      squadId: snapshot.squadId,
+      at: at(snapshot.fact.occurredAt),
+      agentId: null,
+      agentTypeId: null,
+      kind: 'issue',
+      summary,
+      ref: { type: 'issue', url, workStreamId },
+      sourceFamily: 'linear-issue',
       sourceGroupId: `${snapshot.sourceId}:${snapshot.squadId}`,
       workStreamId,
       quietEligible: true,

@@ -223,10 +223,12 @@ tau ws info ws-123
 ```
 
 When the stream tracks any issue or pull request, `get` prints a `Tracked:`
-section listing each one as `[kind] repo#number (label)`, where `label` is
+section listing each one as `[kind] reference (label)`, where `reference` is
+`owner/repo#12` for GitHub or `KEY-123` for Linear, and `label` is
 `delivery PR` for the primary `codeHost.changeRequest`, `delivery` for a
 tracked pull request flagged `--delivery`, or `tracked` otherwise, followed by
-the observed merge state when one exists (e.g. `(delivery, merged)`).
+the observed merge state when one exists (e.g. `(delivery, merged)`). Merge
+state only ever appears for pull requests — Linear has none.
 
 ---
 
@@ -550,10 +552,12 @@ tau workstream tracked <id>
 tau workstream tracked ws-123
 
 # Table columns: Kind | Resource | Source | Delivery | Merge | Subscribed | URL
+# Resource is owner/repo#12 for GitHub, KEY-123 for a Linear issue
 # Source is one of: delivery, tracked
 # Delivery is "primary" for the codeHost PR, "yes" for a tracked PR flagged
 # --delivery, otherwise "-"; Merge shows the observed merge state (open,
-# merged, closed) or "-" when nothing has been observed yet
+# merged, closed) or "-" for anything without one, including every Linear
+# issue (Linear has no pull requests)
 # Followed by a "Subscriptions: active|no-flow|not-following|ended" footer,
 # then a "Delivery: m/n pull requests merged" line when the stream has at
 # least one delivery pull request, suffixed with " (complete)" once every one
@@ -582,7 +586,7 @@ tau workstream track <id> [options]
 |--------|-------------|
 | `--event <eventId>` | Track the resource observed by an integration event |
 | `--url <url>` | Track by code-host resource URL |
-| `--issue <ref>` | Track a GitHub issue, e.g. `owner/repo#12` |
+| `--issue <ref>` | Track a GitHub issue (`owner/repo#12`) or a Linear issue (`KEY-123`) |
 | `--pr <ref>` | Track a GitHub pull request, e.g. `owner/repo#12` |
 | `--connection <connectionId>` | Integration connection ID (`--issue`/`--pr` only) |
 | `--delivery` | Count this pull request toward the work stream's delivery (only with `--url`/`--pr`) |
@@ -595,10 +599,12 @@ tau workstream track ws-123 --event b2b7c1d0-...
 
 # By explicit reference
 tau workstream track ws-123 --issue owner/repo#12
+tau workstream track ws-123 --issue KEY-123
 tau workstream track ws-123 --pr owner/repo#34 --connection conn-abc
 
 # By resource URL
 tau workstream track ws-123 --url https://github.com/owner/repo/pull/34
+tau workstream track ws-123 --url https://linear.app/workspace/issue/KEY-123/slug
 
 # Flag an additional pull request as a delivery change request: it must also
 # be merged before the stream can finish
@@ -616,7 +622,11 @@ until the server resolves it. Likewise, `--connection` combined with `--url`
 or `--event` is rejected with `--connection applies to --issue and --pr
 only` — it only ever applied to a resolved `--issue`/`--pr` reference, so
 silently dropping it there would let a mistyped combination look like it
-took effect.
+took effect. Linear has no pull requests: `--pr KEY-123` and `--delivery`
+against a Linear reference or URL are both rejected with an error, and
+`--issue KEY-123` resolves the issue live through the squad's Linear
+connection (`409` if that connection needs revalidation, `404` if the issue
+is unreadable or unknown).
 
 ---
 
@@ -637,7 +647,7 @@ tau workstream untrack <id> [options]
 | Option | Description |
 |--------|-------------|
 | `--url <url>` | Untrack by code-host resource URL |
-| `--issue <ref>` | Untrack a GitHub issue, e.g. `owner/repo#12` |
+| `--issue <ref>` | Untrack a GitHub issue (`owner/repo#12`) or a Linear issue (`KEY-123`) |
 | `--pr <ref>` | Untrack a GitHub pull request, e.g. `owner/repo#12` |
 | `--connection <connectionId>` | Integration connection ID (`--issue`/`--pr` only) |
 
@@ -645,6 +655,7 @@ tau workstream untrack <id> [options]
 
 ```bash
 tau workstream untrack ws-123 --issue owner/repo#12
+tau workstream untrack ws-123 --issue KEY-123
 ```
 
 Untracking the delivery PR is rejected — edit `metadata.codeHost.changeRequest`

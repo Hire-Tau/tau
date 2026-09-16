@@ -5,6 +5,7 @@ import {
   extractGitHubIssueDispatch,
   extractGitHubPrDispatch,
   extractInboxMessage,
+  extractLinearIssueDispatch,
   extractWait,
   extractWorkStream,
 } from './extractors'
@@ -14,6 +15,7 @@ import {
   listGitHubIssueSourcePage,
   listGitHubPrSourcePage,
   listInboxSourcePage,
+  listLinearIssueSourcePage,
   listWaitSourcePage,
   listWorkStreamSourcePage,
   loadChatSnapshot,
@@ -21,6 +23,7 @@ import {
   loadGitHubIssueSnapshot,
   loadGitHubPrSnapshot,
   loadInboxSnapshot,
+  loadLinearIssueSnapshot,
   loadWaitSnapshot,
   loadWorkStreamSnapshot,
   type ActivitySourceKey,
@@ -122,6 +125,12 @@ export const ACTIVITY_FAMILIES: Record<SquadActivitySourceFamily, ActivityFamily
     loadSnapshot: loadGitHubIssueSnapshot,
     extract: extractGitHubIssueDispatch as ActivityFamilyDefinition['extract'],
     listSourcePage: listGitHubIssueSourcePage,
+    appendOnly: true,
+  },
+  'linear-issue': {
+    loadSnapshot: loadLinearIssueSnapshot,
+    extract: extractLinearIssueDispatch as ActivityFamilyDefinition['extract'],
+    listSourcePage: listLinearIssueSourcePage,
     appendOnly: true,
   },
 }

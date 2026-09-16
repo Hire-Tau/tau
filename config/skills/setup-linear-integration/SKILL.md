@@ -23,7 +23,11 @@ Existing team routing remains available:
 tau squad set-meta <squad-id> linear '[{"teamId":"team-id"}]'
 ```
 
-Only a squad with an enabled, assigned Linear connection receives these events. For declarative routing, use the integration output `linear / issue.assigned / version 1` in workflow subscriptions or squad event triggers. Match `issue.id`, `teamId`, or `assignee` as needed. A handled flow event does not also produce the legacy manager notification for that squad.
+Only a squad with an enabled, assigned Linear connection receives these events. For declarative routing, use the typed outputs `linear / issue.assigned`, `issue.unassigned`, `issue.updated`, and `issue.comment` (all `version 1`) in workflow subscriptions or squad event triggers. Match `issue.id`, `issue.identifier`, `teamId`, `assignee`, `action`, or `state` as needed. A handled flow event does not also produce the legacy manager notification for that squad. Tau checks each assigned squad's own connection can currently read the issue before delivering it, independent of any other squad's connection.
+
+## Tracking issues on work streams
+
+`tau workstream track <ws-id> --issue KEY-123` (or `--url <linear issue url>`) links a work stream to a Linear issue through the squad's Linear connection — the same command used for GitHub issues and PRs. Linear has no pull requests, so `--pr` and `--delivery` are rejected for a Linear reference. A squad-level Linear notification (or `tau workstream create --from-event <id>`) carries an `Event reference:` block naming the issue the same way GitHub notifications do — including comment notifications, which name the issue by its Linear id and are resolved through the squad's Linear connection when the link is made. See `docs/wiki/linear-integrations.md` (Tracked issues) for identity and linking details.
 
 For live issue search, enable the squad’s Linear connection. Memory grants may further restrict team keys, but cannot grant access beyond the connected account. To run an external command with the selected key, use `tau integration exec linear --squad <id> -- <command>`; credentials are injected for that command and should never be printed.
 

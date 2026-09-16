@@ -5,11 +5,31 @@
  */
 
 import { db } from '../../db'
-import { squadSourceConfigs, webhookEvents, workStreams } from '../../db/schema'
+import { squads, squadSourceConfigs, webhookEvents, workStreams } from '../../db/schema'
 import { eq, sql } from 'drizzle-orm'
 import { extractGitHubIssueDispatchFact } from '../squad-activity/github-issue-fact'
 import { extractGitHubPrDispatchFact } from '../squad-activity/github-pr-fact'
 import type { StoreWebhookEventInput, WebhookEvent } from './types'
+
+const object = (value: unknown): Record<string, unknown> | null =>
+  value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
+const identity = (value: unknown): string | null =>
+  typeof value === 'string' && value.trim() && value.trim().length <= 200 ? value.trim() : null
+
+/**
+ * Ownership of a Linear delivery needs only the issue it is about (and the team
+ * that owns the issue), which every `Issue`/`Comment` payload carries — no fact,
+ * and therefore no supported-action check, is involved: a squad's interest in an
+ * issue does not depend on which of its fields moved.
+ */
+function linearReceiptIdentity(eventType: string, payload: unknown): { issueId: string; teamId: string | null } | null {
+  if (eventType !== 'Issue' && eventType !== 'Comment') return null
+  const data = object(object(payload)?.data)
+  if (!data) return null
+  const issueId =
+    eventType === 'Comment' ? (identity(data.issueId) ?? identity(object(data.issue)?.id)) : identity(data.id)
+  return issueId ? { issueId, teamId: identity(data.teamId) } : null
+}
 
 /**
  * Store a webhook event in the database
@@ -19,7 +39,11 @@ export async function storeWebhookEvent(input: StoreWebhookEventInput): Promise<
   const ingress = {
     type: input.eventType,
     payload: input.payload,
-    metadata: { providerDeliveryId: input.headers['x-github-delivery'] },
+    // Each provider names its delivery id in its own header.
+    metadata: {
+      providerDeliveryId:
+        input.provider === 'linear' ? input.headers['linear-delivery'] : input.headers['x-github-delivery'],
+    },
   }
   // Ownership only needs the delivering repository, which both GitHub receipt
   // families carry; the two extractors are mutually exclusive, so at most one
@@ -28,6 +52,8 @@ export async function storeWebhookEvent(input: StoreWebhookEventInput): Promise<
     input.verified && input.provider === 'github'
       ? (extractGitHubPrDispatchFact('github', ingress) ?? extractGitHubIssueDispatchFact('github', ingress))
       : null
+  const linear =
+    input.verified && input.provider === 'linear' ? linearReceiptIdentity(input.eventType, input.payload) : null
   return db.transaction(async (tx) => {
     await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`)
     // A squad owns interest in a repo's PR/issue events through EITHER claim:
@@ -61,7 +87,9 @@ export async function storeWebhookEvent(input: StoreWebhookEventInput): Promise<
                     WHERE lower(btrim(t->>'repository'))=lower(${fact.repository}))`
               )
           )
-      : []
+      : linear
+        ? await linearOwners(tx, linear)
+        : []
     const [result] = await tx
       .insert(webhookEvents)
       .values({
@@ -77,6 +105,42 @@ export async function storeWebhookEvent(input: StoreWebhookEventInput): Promise<
       .returning({ id: webhookEvents.id })
     return result.id
   })
+}
+
+/**
+ * A squad owns interest in a Linear issue's events through EITHER claim: a work
+ * stream that names the issue — a `tracked` entry carrying its provider id, or
+ * the legacy `linear.issueId` a stream was created with — or the squad's own
+ * Linear team routing, which claims every issue on that team.
+ */
+async function linearOwners(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  linear: { issueId: string; teamId: string | null }
+): Promise<Array<{ squadId: string }>> {
+  const naming = tx
+    .selectDistinct({ squadId: workStreams.squadId })
+    .from(workStreams)
+    .where(
+      sql`EXISTS (SELECT 1 FROM jsonb_array_elements(CASE
+          WHEN jsonb_typeof(${workStreams.metadata}->'tracked')='array'
+            THEN ${workStreams.metadata}->'tracked' ELSE '[]'::jsonb END) t
+          WHERE t->>'integration'='linear' AND t->>'externalId'=${linear.issueId})
+        OR ${workStreams.metadata}->'linear'->>'issueId'=${linear.issueId}`
+    )
+  if (!linear.teamId) return naming
+  return naming.union(
+    tx
+      .selectDistinct({ squadId: squads.id })
+      .from(squads)
+      .where(
+        // Team routing is stored as one object or as a list of them.
+        sql`EXISTS (SELECT 1 FROM jsonb_array_elements(CASE
+          WHEN jsonb_typeof(${squads.metadata}->'linear')='array' THEN ${squads.metadata}->'linear'
+          WHEN jsonb_typeof(${squads.metadata}->'linear')='object' THEN jsonb_build_array(${squads.metadata}->'linear')
+          ELSE '[]'::jsonb END) routing
+          WHERE routing->>'teamId'=${linear.teamId})`
+      )
+  )
 }
 
 /**

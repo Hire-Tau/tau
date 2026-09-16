@@ -304,60 +304,37 @@ What tau does with each event:
 
 - **Signature:** HMAC-SHA256 via `Linear-Signature` header (raw hex, no prefix), timing-safe comparison
 - **Event type:** Extracted from `Linear-Event` header
-- **Secret:** `LINEAR_WEBHOOK_SECRET` env var
-- **Assignee:** `LINEAR_USER_ID` env var (Linear user UUID)
+- **Secret:** managed by integration settings (`GET`/`PUT /api/integrations/providers/linear/webhook`), not an env var — see [Linear integrations](linear-integrations.md) and `apps/core/src/services/integrations/linear/webhook-settings.ts`. The legacy `LINEAR_WEBHOOK_SECRET` env var is imported once on startup into that encrypted setting and is not read again afterward. `LINEAR_USER_ID` is retired: identity comes from each squad's connected account, checked live per event (see Stages below), not a single configured user.
 
-**Current handlers:**
+**Handled events:** `Issue` (assignment, unassignment, state/title/label/other updates) and `Comment` (created and edited). Issue creation and removal are received but produce no output or Activity row. There is no polling fallback for Linear — a missed or failed webhook delivery is not recovered.
 
-| Event   | Handler                   | Behavior                                                       |
-| ------- | ------------------------- | -------------------------------------------------------------- |
-| `Issue` | `handleLinearIssueUpdate` | Runs commands when an issue is assigned to the configured user |
+### Stages
+
+A Linear event passes through four stages, in order, mirroring GitHub's:
+
+1. **Receipt** — the raw webhook is verified and persisted in `webhook_events`, tagged with `activity_squad_ids` for every squad that owns it: either a work stream that already names the issue (a `tracked` entry's `externalId`, or the legacy `metadata.linear.issueId`), or a squad with matching team routing (`metadata.linear[].teamId`). Team routing only owns deliveries that name a team: a `Comment` payload carries no `data.teamId`, so a comment receipt is owned through a tracking stream alone. Ownership is not a row either way — see stage 4.
+2. **Per-squad access probe** — a valid signature only proves the payload came from Linear. For every squad with an enabled, assigned Linear connection, Tau queries that squad's own connection to confirm it can currently read the issue — and, for assignment/unassignment, that the connected account is the (previous) assignee — before publishing the event under that squad's authority. A squad whose connection cannot read the issue never receives it, even when another squad's connection can.
+3. **Outputs** — the payload becomes the provider-neutral `issue.assigned`, `issue.unassigned`, `issue.updated`, or `issue.comment` fact in `integration_output_events`, published once per authorized squad. See [Linear integrations → Outputs](linear-integrations.md#outputs) for the full field list.
+4. **Activity and delivery** — independent of each other: the fact projects into `squad_activity` under the `linear-issue` family (lane 71, kind `issue`), one row per stream tracking the issue, so an owned receipt with no tracking stream produces no rows (and produces them later if a stream starts tracking it); separately, the event is matched against work-stream and squad subscriptions and recorded in `integration_output_deliveries`. See [Linear integrations → Activity](linear-integrations.md#activity).
 
 ### Linear Webhook Setup
 
-#### 1. Generate a webhook secret
+#### 1. Configure the signing secret in Tau
 
-```bash
-openssl rand -hex 32
-```
+Open **Settings → Integrations → Linear → Webhook delivery**, generate or enter a secret, and save it. Saved values cannot be revealed; rotation means entering a new secret on both sides. Copy the endpoint URL shown in this panel (`https://your-domain.com/api/webhooks/linear`, path-prefixed if applicable).
 
-#### 2. Find your Linear user ID
-
-Go to Linear **Settings → Account**, scroll down, click "Copy user ID".
-
-Or via GraphQL:
-
-```graphql
-query {
-  viewer {
-    id
-    name
-    email
-  }
-}
-```
-
-#### 3. Set environment variables
-
-Add to your `.env` or server environment:
-
-```
-LINEAR_WEBHOOK_SECRET=your_generated_secret
-LINEAR_USER_ID=your_user_uuid
-```
-
-#### 4. Create webhook in Linear
+#### 2. Create webhook in Linear
 
 1. Go to **Settings → API → Webhooks** (requires admin)
 2. Click **New webhook**
 3. **Label:** `Tau Integration`
-4. **URL:** `https://your-domain.com/api/webhooks/linear`
-5. **Signing secret:** Paste the secret from step 1
-6. **Data change events:** Check **Issues**
-7. **Team:** Select specific team or "All public teams"
+4. **URL:** the endpoint URL from step 1
+5. **Signing secret:** paste the same secret you entered in Tau
+6. **Data change events:** check **Issues** and **Comments**
+7. **Team:** select specific team(s) or "All public teams"
 8. Save
 
-#### 5. Verify setup
+#### 3. Verify setup
 
 ```bash
 # webhooks:read required — the bootstrap TAU_PASSWORD works until the first admin passkey exists

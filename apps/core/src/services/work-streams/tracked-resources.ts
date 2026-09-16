@@ -2,12 +2,15 @@ import { isDeepStrictEqual } from 'node:util'
 import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import {
+  parseTrackedResourceReference,
   parseTrackedResourceUrl,
   readDeliveryState,
   resolveTrackedResources,
   trackedResourceKey,
+  trackedResourceLabel,
   trackedResourceObjectSchema,
   trackedResourceSchema,
+  type IntegrationOutputFact,
   type ResolvedTrackedResource,
   type TrackedResource,
   type TrackedResourceKind,
@@ -16,21 +19,14 @@ import {
 import { db, squads, workStreams, workStreamFlowRuns, integrationOutputEvents, type DbTx } from '../../db'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { codeHostingRegistry } from '../integrations/code-hosting'
-import { subscriptionTargetsResource } from '../integrations/code-hosting/registry'
+import { subscriptionTargetsResource, trackedResourceRegistry } from '../integrations/tracked-resources'
 import { isOutputEventAuthorizedForSquad, reconcileOutputDeliveries } from '../integrations/outputs/runtime'
-import { eventTrackedResource } from '../integrations/outputs/tracked-match'
+import { integrationOutputRegistry } from '../integrations/outputs/registry'
+import { eventTrackedResource, type TrackedTarget } from '../integrations/outputs/tracked-match'
 import { deliveryView } from './delivery-pull-requests'
+import { TrackedResourceError } from './tracked-resource-error'
 
-/** A tracked-link failure that maps directly onto an API status. */
-export class TrackedResourceError extends Error {
-  constructor(
-    message: string,
-    readonly status: 400 | 403 | 404 | 409
-  ) {
-    super(message)
-    this.name = 'TrackedResourceError'
-  }
-}
+export { TrackedResourceError } from './tracked-resource-error'
 
 const trackedResourceInputSchema = trackedResourceObjectSchema.pick({
   integration: true,
@@ -40,10 +36,24 @@ const trackedResourceInputSchema = trackedResourceObjectSchema.pick({
   connectionId: true,
   url: true,
 })
-/** Identity may arrive as an observed event, a resource URL, or an explicit reference. */
+/**
+ * Identity may arrive as an observed event, a resource URL, a written reference
+ * (`owner/repo#12`, `ENG-12`), or an explicit resource.
+ */
 export const trackedResourceRequestSchema = z.union([
   z.object({ event: z.string().uuid() }).strict(),
   z.object({ url: z.string().url(), delivery: z.literal(true).optional() }).strict(),
+  z
+    .object({
+      reference: z.string().trim().min(1).max(500),
+      // GitHub references name no kind of their own, so the caller picks; Linear has only issues.
+      kind: trackedResourceObjectSchema.shape.kind.optional(),
+      // The account the reference belongs to, when the caller names one. Authorization checks it
+      // against the squad's own assignment, exactly as it does for an explicit resource.
+      connectionId: trackedResourceObjectSchema.shape.connectionId,
+      delivery: z.literal(true).optional(),
+    })
+    .strict(),
   z.object({ resource: trackedResourceInputSchema, delivery: z.literal(true).optional() }).strict(),
 ])
 export type TrackedResourceRequest = z.infer<typeof trackedResourceRequestSchema>
@@ -55,6 +65,43 @@ export interface TrackedResourceTarget {
   number: number
 }
 
+/**
+ * Complete a fact that carries only a provider-native identity. A Linear comment names just the
+ * issue UUID, so `repository`/`number` come from the provider — read through the squad's own
+ * connection, which is identity resolution and never a grant. Null when the event names no such
+ * identity; it throws when the squad named one it cannot read (404) or cannot read anything (409).
+ */
+export async function describeEventTrackedIdentity(
+  event: { integration: string; fact: IntegrationOutputFact },
+  squadId: string
+): Promise<TrackedTarget | null> {
+  const identity = integrationOutputRegistry.adapter(event.integration)?.trackedIdentity?.(event.fact)
+  if (!identity) return null
+  const adapter = trackedResourceRegistry.adapterFor(identity.integration)
+  if (!adapter?.describe) return null
+  // Only an issue is ever named this way: a pull request identity always carries repository/number.
+  const described = await adapter.describe(
+    { integration: identity.integration, kind: 'issue', externalId: identity.externalId },
+    squadId
+  )
+  if (!described?.repository || described.number === undefined)
+    throw new TrackedResourceError(
+      `The ${identity.integration} issue this event names was not found on this squad's ${identity.integration} connection`,
+      404
+    )
+  // The provider's answer is still an identity this instance has to be able to follow.
+  if (!adapter.validateRepository(described.repository))
+    throw new TrackedResourceError(`Invalid ${identity.integration} repository: ${described.repository}`, 400)
+  return {
+    integration: identity.integration,
+    repository: described.repository,
+    kind: 'issue',
+    number: described.number,
+    externalId: described.externalId ?? identity.externalId,
+    ...(described.url ? { url: described.url } : {}),
+  }
+}
+
 /** Correlation is not access: the squad must own the connection that observed the event. */
 export async function resolveEventTrackedResource(eventId: string, squadId: string): Promise<TrackedResource> {
   const [event] = await db.select().from(integrationOutputEvents).where(eq(integrationOutputEvents.id, eventId))
@@ -63,7 +110,9 @@ export async function resolveEventTrackedResource(eventId: string, squadId: stri
     throw new TrackedResourceError('Event is not accessible from this squad', 403)
   if (!(await isOutputEventAuthorizedForSquad(event, squadId)))
     throw new TrackedResourceError('Event connection is not authorized for this squad', 403)
-  const target = eventTrackedResource(event)
+  // A fact without repository/number still identifies its resource, just natively; completing it
+  // is a read on the squad's own connection, which the checks above have already established.
+  const target = eventTrackedResource(event) ?? (await describeEventTrackedIdentity(event, squadId))
   if (!target) throw new TrackedResourceError('Event does not reference a trackable issue or pull request', 400)
   const parsed = trackedResourceSchema.safeParse({
     ...target,
@@ -79,36 +128,78 @@ export async function resolveEventTrackedResource(eventId: string, squadId: stri
   return parsed.data
 }
 
+/** A request that names an identity directly, rather than through an observed event. */
+export type TrackedResourceIdentityRequest = Exclude<TrackedResourceRequest, { event: string }>
+
+/**
+ * The identity a request names: no access check, no provider read. Untracking uses this on its
+ * own, because a squad may always unlink a resource even after losing the connection.
+ */
+export function trackedResourceRequestIdentity(request: TrackedResourceIdentityRequest): TrackedResource | null {
+  if ('url' in request) {
+    const parsed = parseTrackedResourceUrl(request.url)
+    return parsed ? { ...parsed, url: request.url.trim() } : null
+  }
+  if ('reference' in request) {
+    const parsed = parseTrackedResourceReference(request.reference)
+    if (!parsed) return null
+    // A GitHub reference names no kind of its own, so the caller picks. A caller who names a kind
+    // the provider does not have is told so by authorization, never quietly given another resource.
+    return {
+      ...parsed,
+      kind: request.kind ?? parsed.kind ?? 'issue',
+      ...(request.connectionId ? { connectionId: request.connectionId } : {}),
+    }
+  }
+  return request.resource
+}
+
 /** Identity resolution first, then the squad's own authorization. */
 export async function resolveTrackedResourceRequest(
   squadId: string,
   request: TrackedResourceRequest
 ): Promise<TrackedResource> {
   if ('event' in request) return resolveEventTrackedResource(request.event, squadId)
-  let resource: TrackedResource
-  if ('url' in request) {
-    const parsed = parseTrackedResourceUrl(request.url)
-    if (!parsed) throw new TrackedResourceError('Link is not a supported issue or pull request URL', 400)
-    resource = { ...parsed, url: request.url.trim() }
-  } else {
-    resource = request.resource
-  }
+  let resource = trackedResourceRequestIdentity(request)
+  if (!resource)
+    throw new TrackedResourceError(
+      'Not a supported issue or pull request link or reference (use a resource URL, owner/repo#12, or KEY-12)',
+      400
+    )
   if (request.delivery) {
     if (resource.kind !== 'pull_request')
       throw new TrackedResourceError('delivery is only valid for pull requests', 400)
     resource = { ...resource, delivery: true }
   }
   await authorizeTrackedResource(squadId, resource)
+  // Only now, with the squad's own access established, ask the provider what the resource is.
+  // An event-sourced identity skips this: the observed fact already carried it.
+  const adapter = trackedResourceRegistry.adapterFor(resource.integration)
+  if (adapter?.describe && (!resource.externalId || !resource.url)) {
+    const described = await adapter.describe(resource, squadId)
+    if (!described)
+      throw new TrackedResourceError(
+        `${trackedResourceLabel(resource)} was not found on this squad's ${resource.integration} connection`,
+        404
+      )
+    resource = { ...resource, ...described }
+    // The provider's answer is still an identity this instance has to be able to follow.
+    if (!adapter.validateRepository(resource.repository))
+      throw new TrackedResourceError(`Invalid ${resource.integration} repository: ${resource.repository}`, 400)
+  }
   return resource
 }
 
 /** Access comes from the squad's connection assignment, never from the link itself. */
 export async function authorizeTrackedResource(squadId: string, resource: TrackedResource): Promise<void> {
-  const adapter = codeHostingRegistry.adapterFor(resource.integration)
-  if (!adapter) throw new TrackedResourceError(`Unknown code hosting integration: ${resource.integration}`, 400)
+  const adapter = trackedResourceRegistry.adapterFor(resource.integration)
+  if (!adapter) throw new TrackedResourceError(`Unknown tracked resource integration: ${resource.integration}`, 400)
   if (!adapter.validateRepository(resource.repository))
     throw new TrackedResourceError(`Invalid ${resource.integration} repository: ${resource.repository}`, 400)
-  if (adapter.authorizeSquad && !(await adapter.authorizeSquad(squadId, resource.connectionId)))
+  // Only a code host has pull requests; without one, `delivery` could never be satisfied either.
+  if (resource.kind === 'pull_request' && !codeHostingRegistry.adapterFor(resource.integration))
+    throw new TrackedResourceError(`Pull requests are not supported for ${resource.integration}`, 400)
+  if (!(await adapter.authorizeSquad(squadId, resource.connectionId)))
     throw new TrackedResourceError(
       `No authorized ${resource.integration} connection is assigned to this squad${
         resource.connectionId ? ' for the requested account' : ''
