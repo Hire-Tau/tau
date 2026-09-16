@@ -498,3 +498,60 @@ test('the view reports the observed merge state of each delivery pull request', 
     [2431, 'open', false],
   ])
 })
+
+test('an issue is never stamped as a delivery pull request, however it is designated', async () => {
+  const id = await createStream({ metadata: { tracked: [trackedIssue(2440)] } })
+  // The request layer rejects `delivery` on an issue with a 400, so this can only come from an
+  // internal caller — the write itself still refuses to flag anything that is not a pull request.
+  const result = await addTrackedResources(id, [{ ...trackedIssue(2440), delivery: true }])
+  expect(result.added).toEqual([])
+  const metadata = await metadataOf(id)
+  expect(metadata.tracked).toHaveLength(1)
+  expect(metadata.tracked[0].delivery).toBeUndefined()
+  expect(result.view.resources.map((resource) => resource.delivery)).toEqual([false])
+  expect(result.view.delivery).toEqual({ pullRequests: [], complete: false })
+})
+
+test('untracking a delivery pull request drops the delivery state it left behind', async () => {
+  const flagged = {
+    integration: 'github',
+    repository: repo,
+    kind: 'pull_request' as const,
+    number: 2451,
+    delivery: true as const,
+  }
+  const flaggedKey = trackedResourceKey(flagged)
+  const primaryKey = trackedResourceKey({ ...flagged, number: 2450 })
+  const observed = { state: 'merged' as const, at: '2026-01-01T00:00:00.000Z', headSha: 'a'.repeat(40) }
+  const id = await createStream({
+    metadata: {
+      codeHost: { integration: 'github', repository: repo, changeRequest: { number: 2450 } },
+      tracked: [flagged, trackedIssue(2452)],
+      delivery: { pullRequests: { [primaryKey]: observed, [flaggedKey]: observed } },
+    },
+  })
+  // Removing the issue is not a pull request removal: the delivery state is untouched.
+  expect((await removeTrackedResource(id, { ...trackedIssue(2452) })).removed).toBe(true)
+  expect(Object.keys((await metadataOf(id)).delivery.pullRequests).sort()).toEqual([primaryKey, flaggedKey].sort())
+
+  const removed = await removeTrackedResource(id, {
+    integration: 'github',
+    repository: repo,
+    kind: 'pull_request',
+    number: 2451,
+  })
+  expect(removed.removed).toBe(true)
+  expect(removed.view.delivery.pullRequests.map((item) => item.number)).toEqual([2450])
+  // The orphaned entry is gone; the primary's own state survives.
+  expect((await metadataOf(id)).delivery).toEqual({ pullRequests: { [primaryKey]: observed } })
+
+  // The last entry takes the whole object with it rather than leaving an empty husk.
+  const solo = await createStream({
+    metadata: { tracked: [flagged], delivery: { pullRequests: { [flaggedKey]: observed } } },
+  })
+  expect(
+    (await removeTrackedResource(solo, { integration: 'github', repository: repo, kind: 'pull_request', number: 2451 }))
+      .removed
+  ).toBe(true)
+  expect(await metadataOf(solo)).not.toHaveProperty('delivery')
+})

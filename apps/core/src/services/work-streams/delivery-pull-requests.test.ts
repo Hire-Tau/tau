@@ -61,6 +61,16 @@ async function metadataOf(id: string) {
   const [row] = await db.select().from(workStreams).where(eq(workStreams.id, id))
   return row!.metadata as Record<string, any>
 }
+async function updatedAtOf(id: string) {
+  const [row] = await db.select({ updatedAt: workStreams.updatedAt }).from(workStreams).where(eq(workStreams.id, id))
+  return row!.updatedAt.getTime()
+}
+/** `updatedAt` has no database default on update, so a stale one has to be visible to be caught. */
+async function backdate(id: string) {
+  const stale = new Date('2020-01-01T00:00:00.000Z')
+  await db.update(workStreams).set({ updatedAt: stale }).where(eq(workStreams.id, id))
+  return stale.getTime()
+}
 /** Runs the observation exactly as `matchOutputEvent` does: inside the caller's transaction. */
 async function observe(streamId: string, event: Awaited<ReturnType<typeof insertEvent>>) {
   return db.transaction(async (tx) => {
@@ -130,8 +140,11 @@ test('the delivery view is complete only when every designated pull request is m
 
 test('observations record merge, close and reopen for designated pull requests only', async () => {
   const stream = await createStream()
+  const stale = await backdate(stream.id)
   const merged = await insertEvent(prFact(other, 20, { occurredAt: '2026-02-01T00:00:00.000Z' }))
   expect(await observe(stream.id, merged)).toBe(true)
+  // The row changed, so it stamps `updatedAt` like every other work-stream writer.
+  expect(await updatedAtOf(stream.id)).toBeGreaterThan(stale)
   expect((await metadataOf(stream.id)).delivery.pullRequests[flaggedKey]).toEqual({
     state: 'merged',
     at: '2026-02-01T00:00:00.000Z',
@@ -224,14 +237,29 @@ test('an observation from another connection than the designated one is ignored'
 
 test('verification results are written under the stream lock without disturbing other metadata', async () => {
   const stream = await createStream()
-  await recordDeliveryVerification(stream.id, [
-    { key: primaryKey, state: 'merged', headSha: 'c'.repeat(40) },
-    { key: flaggedKey, state: 'merged' },
-  ])
+  const stale = await backdate(stream.id)
+  const results = [
+    { key: primaryKey, state: 'merged' as const, headSha: 'c'.repeat(40) },
+    { key: flaggedKey, state: 'merged' as const },
+  ]
+  await recordDeliveryVerification(stream.id, results)
   const metadata = await metadataOf(stream.id)
   expect(metadata.codeHost).toEqual(baseMetadata.codeHost)
   expect(metadata.tracked).toHaveLength(3)
   expect(deliveryView(metadata).complete).toBe(true)
   expect(metadata.delivery.pullRequests[primaryKey]).toMatchObject({ state: 'merged', headSha: 'c'.repeat(40) })
   expect(metadata.delivery.pullRequests[flaggedKey]!.at).toBeString()
+  const written = await updatedAtOf(stream.id)
+  expect(written).toBeGreaterThan(stale)
+
+  // Re-verifying the same evidence changes nothing, so it must not touch the row at all.
+  await backdate(stream.id)
+  await recordDeliveryVerification(stream.id, results)
+  expect(await updatedAtOf(stream.id)).toBe(stale)
+  expect(await metadataOf(stream.id)).toEqual(metadata)
+
+  // A differing head sha is new evidence: it is written, and stamps `updatedAt`.
+  await recordDeliveryVerification(stream.id, [{ key: primaryKey, state: 'merged', headSha: 'd'.repeat(40) }])
+  expect((await metadataOf(stream.id)).delivery.pullRequests[primaryKey]).toMatchObject({ headSha: 'd'.repeat(40) })
+  expect(await updatedAtOf(stream.id)).toBeGreaterThan(stale)
 })

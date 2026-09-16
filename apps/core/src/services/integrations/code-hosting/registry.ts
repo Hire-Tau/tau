@@ -30,9 +30,15 @@ function matchValue(subscription: IntegrationSubscription, path: string) {
 /**
  * Feedback on a delivery change request: the reserved code-host ids, plus the tracked
  * subscriptions whose identity is a pull request designated as delivery in `metadata`.
+ *
+ * Both id prefixes are reserved by schema, so only subscriptions this registry derived can
+ * qualify. An author-written explicit subscription is never delivery feedback even when its
+ * literal `match` names a delivery pull request: otherwise any flow could mint a subscription
+ * that bypasses the delivery-approval wait.
  */
 export function isDeliveryFeedbackSubscription(subscription: IntegrationSubscription, metadata: unknown): boolean {
   if (subscription.id.startsWith('code-host-')) return true
+  if (!subscription.id.startsWith('tracked-')) return false
   return deliveryPullRequests(metadata).some(
     (resource) =>
       resource.integration === subscription.source.integration &&

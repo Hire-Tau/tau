@@ -516,21 +516,33 @@ describe('tracked GitHub issue Activity', () => {
     ])
   })
 
-  test('associates legacy issue coordinates but never an untracked source link', async () => {
-    const repository = `legacy-issue-${crypto.randomUUID()}/widgets`
+  test('associates tracked issue coordinates but never an untracked source link', async () => {
+    const repository = `tracked-issue-${crypto.randomUUID()}/widgets`
+    const [trackedSquad] = await db
+      .insert(squads)
+      .values({ name: `tracked-issue-${crypto.randomUUID()}`, purpose: 'test' })
+      .returning()
+    squadIds.push(trackedSquad.id)
+    const [trackedStream] = await db
+      .insert(workStreams)
+      .values({
+        squadId: trackedSquad.id,
+        title: 'Tracked issue stream',
+        metadata: { tracked: [{ integration: 'github', repository, kind: 'issue', number: 12 }] },
+      })
+      .returning()
+    // Owns the repo's events through `github.repo`, but the legacy `github.issue`
+    // key is never read: it names no tracked resource, so it associates nothing.
     const [legacySquad] = await db
       .insert(squads)
       .values({ name: `legacy-issue-${crypto.randomUUID()}`, purpose: 'test' })
       .returning()
     squadIds.push(legacySquad.id)
-    const [legacyStream] = await db
-      .insert(workStreams)
-      .values({
-        squadId: legacySquad.id,
-        title: 'Legacy issue stream',
-        metadata: { github: { repo: repository, issue: 12 } },
-      })
-      .returning()
+    await db.insert(workStreams).values({
+      squadId: legacySquad.id,
+      title: 'Legacy issue stream',
+      metadata: { github: { repo: repository, issue: 12 } },
+    })
     const [linkSquad] = await db
       .insert(squads)
       .values({ name: `source-link-issue-${crypto.randomUUID()}`, purpose: 'test' })
@@ -562,11 +574,12 @@ describe('tracked GitHub issue Activity', () => {
       .select({ owners: webhookEvents.activitySquadIds })
       .from(webhookEvents)
       .where(eq(webhookEvents.id, eventId))
-    expect([...stored.owners].sort()).toEqual([legacySquad.id, linkSquad.id].sort())
+    expect([...stored.owners].sort()).toEqual([trackedSquad.id, legacySquad.id, linkSquad.id].sort())
     expect(await materializeGitHubWebhook(eventId)).toBe(1)
-    const legacyRows = await db.select().from(squadActivity).where(eq(squadActivity.squadId, legacySquad.id))
-    expect(legacyRows).toHaveLength(1)
-    expect(legacyRows[0].workStreamId).toBe(legacyStream.id)
+    const trackedRows = await db.select().from(squadActivity).where(eq(squadActivity.squadId, trackedSquad.id))
+    expect(trackedRows).toHaveLength(1)
+    expect(trackedRows[0].workStreamId).toBe(trackedStream.id)
+    expect(await db.select().from(squadActivity).where(eq(squadActivity.squadId, legacySquad.id))).toEqual([])
     expect(await db.select().from(squadActivity).where(eq(squadActivity.squadId, linkSquad.id))).toEqual([])
   })
 

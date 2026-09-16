@@ -173,6 +173,15 @@ test('delivery feedback covers the code-host binding and flagged tracked pull re
       tracked: [{ ...flagged, delivery: undefined }, plain, issue],
     })
   ).toBe(false)
+  // An author-written subscription is never delivery feedback, even when it names the primary
+  // delivery PR literally: only the server's own reserved ids may pass the delivery-approval wait.
+  const explicit = integrationSubscriptionSchema.parse({
+    id: 'watch-the-delivery-pr',
+    source: { integration: 'github', output: 'pull_request.merged', version: 1 },
+    match: { repository: { value: 'acme/widgets' }, 'pullRequest.number': { value: 34 } },
+    deliver: { to: 'delivery-owner', whenInactive: 'retain' },
+  })
+  expect(isDeliveryFeedbackSubscription(explicit, metadata)).toBe(false)
 })
 
 test('tracked resources fan out with stable identity-hashed ids and never duplicate delivery/legacy bindings', () => {

@@ -188,13 +188,14 @@ export async function listGitHubIssueAssociationPage(
   after: string | null,
   limit = 250
 ): Promise<GitHubAssociationPage> {
+  // Issues associate through `tracked` alone: the legacy `github.repo`+`github.issue`
+  // pair is no longer resolved as a tracked resource (it is backfilled into `tracked`
+  // at startup), so a legacy clause here would only ever yield groups the snapshot
+  // loader then resolves to nothing. PR association keeps its legacy clause because
+  // `github.pr` still resolves as the primary delivery change request.
   return listGitHubResourceAssociationPage(
     sourceId,
-    sql`${trackedClause('issue', fact.repository, fact.issueNumber)}
-      OR (jsonb_typeof(ws.metadata->'github')='object'
-        AND lower(btrim(ws.metadata->'github'->>'repo'))=${fact.repository}
-        AND (ws.metadata->'github'->'issue'=${JSON.stringify(fact.issueNumber)}::jsonb
-          OR ws.metadata->'github'->>'issue'=${String(fact.issueNumber)}))`,
+    trackedClause('issue', fact.repository, fact.issueNumber),
     after,
     limit
   )

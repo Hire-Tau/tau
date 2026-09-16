@@ -84,7 +84,7 @@ export async function recordDeliveryObservation(
   }
   await tx
     .update(workStreams)
-    .set({ metadata: writeDeliveryState(stream.metadata, next) })
+    .set({ metadata: writeDeliveryState(stream.metadata, next), updatedAt: new Date() })
     .where(eq(workStreams.id, stream.id))
   return true
 }
@@ -106,13 +106,22 @@ export async function recordDeliveryVerification(
     const [locked] = await tx.select().from(workStreams).where(eq(workStreams.id, streamId)).for('update')
     if (!locked) return
     const pullRequests = { ...readDeliveryState(locked.metadata).pullRequests }
+    let changed = false
     for (const result of results) {
       const headSha = readString(result.headSha, 64)
+      // `at` is a fresh verification timestamp on every call, so it cannot be part of the
+      // comparison: state and head sha are what the verification actually asserts.
+      const current = pullRequests[result.key]
+      if (current?.state === result.state && current.headSha === headSha) continue
+      changed = true
       pullRequests[result.key] = { state: result.state, at, ...(headSha ? { headSha } : {}) }
     }
+    // Re-verifying evidence the row already carries must not touch it: the write would bump
+    // `updatedAt` and wake every work-stream watcher for nothing.
+    if (!changed) return
     await tx
       .update(workStreams)
-      .set({ metadata: writeDeliveryState(locked.metadata, pullRequests) })
+      .set({ metadata: writeDeliveryState(locked.metadata, pullRequests), updatedAt: new Date() })
       .where(eq(workStreams.id, streamId))
   })
 }

@@ -880,6 +880,12 @@ async function applyOutputTriggers(event: Event) {
           }
           // The stream starts tracking the resource the event named. `origin` is the server's own
           // record of what it observed; access still comes from the squad's connection assignment.
+          // Connection authority is required, not incidental: a tracked entry pins the connection
+          // the resource was observed under, and an instance-authority event (an instance-wide
+          // webhook with no squad connection behind it) has none to pin. Writing one without a
+          // `connectionId` would record identity the squad was never authorized for, so such
+          // events create the stream without a tracked entry. Every GitHub event carrying an
+          // issue/PR identity today arrives under connection authority.
           if (target && event.authority.kind === 'connection') {
             const { mergeTracked } = await import('../../work-streams/tracked-resources')
             metadata.tracked = mergeTracked(metadata.tracked, [

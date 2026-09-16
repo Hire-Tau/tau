@@ -251,8 +251,12 @@ export async function addTrackedResources(
     )
     if (!additions.length && !designate.size)
       return { value: { addedKeys: [] as string[], changed: false }, changed: false }
+    // `delivery` is only ever valid on a pull request, so the kind is re-checked at the write
+    // itself rather than trusted from the caller's request.
     const tracked = mergeTracked(metadata.tracked, additions).map((entry) =>
-      designate.has(trackedResourceKey(entry)) ? { ...entry, delivery: true as const } : entry
+      entry.kind === 'pull_request' && designate.has(trackedResourceKey(entry))
+        ? { ...entry, delivery: true as const }
+        : entry
     )
     await tx
       .update(workStreams)
@@ -291,6 +295,15 @@ export async function removeTrackedResource(
         const parsed = trackedResourceSchema.safeParse(entry)
         return !parsed.success || trackedResourceKey(parsed.data) !== key
       })
+    // Observed delivery state is keyed by the resource that is going away, so it goes with it —
+    // otherwise an orphaned entry lingers and re-tracking the PR would resurrect a stale state.
+    if (resource.kind === 'pull_request') {
+      const { [key]: orphaned, ...remaining } = readDeliveryState(metadata).pullRequests
+      if (orphaned) {
+        if (Object.keys(remaining).length) next.delivery = { pullRequests: remaining }
+        else delete next.delivery
+      }
+    }
     await tx.update(workStreams).set({ metadata: next, updatedAt: new Date() }).where(eq(workStreams.id, streamId))
     return { value: true, changed: true }
   })
