@@ -87,6 +87,8 @@ This is a responsive webapp, including installed web experiences. Preserve brows
 
 At narrow widths, use a section chooser for settings and More for secondary squad destinations. Keep important content and actions reachable. Use full viewport chat layouts on phones, accounting for the visual viewport when the software keyboard opens. Inputs should avoid accidental mobile browser zoom.
 
+The app shell is a fixed, scroll-locked 100% box, so the layout viewport does not shrink when iOS shows the keyboard; left alone, Safari scrolls the visual viewport over the fixed page to reveal the focused composer and drags the whole shell upward. `useVisualViewportShell` therefore pins the shell's height to the visual viewport while the keyboard is open (`data-keyboard="open"` on the shell, which also hides the mobile dock) and resets that scroll, so the composer sits directly above the keyboard and the transcript scrolls inside. Do not add per-surface keyboard padding or `scrollIntoView` workarounds on top of this.
+
 Workspace panes share the available height; a default terminal size must not consume the entire file browser. Dense tables can scroll inside their region rather than causing page overflow.
 
 Below 768px a base rule gives every `a` and `button` a 24px minimum height for touch targets. A link inside a text-sized metadata row (feed work cards, inbox rows) therefore gets a taller box than its neighbors; make such links `inline-flex items-center` so their text stays on the row's centerline next to separators and timestamps instead of pinning to the top of the box.
