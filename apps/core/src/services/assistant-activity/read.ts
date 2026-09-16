@@ -27,8 +27,9 @@ const UNFINISHED = sql`status NOT IN ('completed', 'failed', 'cancelled')`
  */
 const activityRows = (ownerUserId: string, where?: ReturnType<typeof sql>) => sql<ActivityRow>`
   WITH owned AS (
+    -- Page-editor conversations are scoped to their page and never surface in app-wide activity.
     SELECT id, title, updated_at, next_update_sequence FROM assistant_conversations
-    WHERE owner_user_id = ${ownerUserId} ${where ?? sql``}
+    WHERE owner_user_id = ${ownerUserId} AND kind = 'assistant' ${where ?? sql``}
   ),
   task_counts AS (
     SELECT t.conversation_id,

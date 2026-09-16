@@ -1,0 +1,1 @@
+ALTER TABLE "assistant_conversations" ADD COLUMN "kind" varchar(20) DEFAULT 'assistant' NOT NULL;

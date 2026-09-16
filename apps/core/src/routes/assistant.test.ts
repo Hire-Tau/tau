@@ -40,7 +40,7 @@ const app = new Hono()
   .route('/api/assistant-tasks', assistantTasksRouter)
   .route('/api/inbox', inboxRouter)
 const entry = (id: string, text: string, final = true) => ({ id, text, final, role: 'user' as const })
-async function fixture() {
+async function fixture(kind: 'assistant' | 'page-editor' = 'assistant') {
   const owner = await createTestUser({ prefix }),
     other = await createTestUser({ prefix })
   const role = await createTestRole({ prefix, permissions: ['chat:send'] })
@@ -53,7 +53,7 @@ async function fixture() {
       headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     })
-  expect((await request('/', { id })).status).toBe(200)
+  expect((await request('/', { id, kind })).status).toBe(200)
   return { id, owner, other, request }
 }
 afterEach(async () => {
@@ -277,7 +277,7 @@ test('only contacted agents can reply; inReplyTo stays local and cannot cross co
 test('page editors scope tools to their conversation and reject stale, invalid, and closed proposals', async () => {
   const { createBlankWorkflow } = await import('@tau/shared')
   const { createPageEditorTools } = await import('../tools/page-editor')
-  const f = await fixture()
+  const f = await fixture('page-editor')
   const role = await createTestRole({ prefix, permissions: ['workflows:create', 'agent-types:read'] })
   await assignRole({ userId: f.owner.id, roleId: role.id, scope: 'system' })
   const draft = { kind: 'workflow', target: {}, revision: 0, document: createBlankWorkflow(), selection: 'execute' }
@@ -335,6 +335,10 @@ test('page editors scope tools to their conversation and reject stale, invalid, 
     400
   )
   expect((await update({ ...draft, revision: 2, target: { presetId: 'solo' } })).status).not.toBe(200)
+  // A conversation with saved turns survives closing its editor; the editor itself stays closed.
+  expect(
+    (await f.request(`/${f.id}/entries`, { entries: [entry('turn', 'Keep this draft conversation')] })).status
+  ).toBe(200)
   expect(
     (await app.request(`/api/assistant/${f.id}/editor`, { method: 'DELETE', headers: authHeaders(f.owner.token) }))
       .status
@@ -343,9 +347,77 @@ test('page editors scope tools to their conversation and reject stale, invalid, 
   expect((await update({ ...draft, revision: 2 })).status).toBe(409)
 })
 
+test('closing a page editor that never became a conversation deletes it, and empty shells are not listed', async () => {
+  const { createBlankWorkflow } = await import('@tau/shared')
+  const f = await fixture('page-editor')
+  const role = await createTestRole({ prefix, permissions: ['workflows:create'] })
+  await assignRole({ userId: f.owner.id, roleId: role.id, scope: 'system' })
+  // The bare conversation created by fixture() has no turns yet, so the list hides it.
+  expect((await (await f.request('/')).json()).conversations).toEqual([])
+  const draft = { kind: 'workflow', target: {}, revision: 0, document: createBlankWorkflow(), selection: 'execute' }
+  expect(
+    (
+      await app.request(`/api/assistant/${f.id}/editor`, {
+        method: 'PUT',
+        headers: { ...authHeaders(f.owner.token), 'Content-Type': 'application/json' },
+        body: JSON.stringify(draft),
+      })
+    ).status
+  ).toBe(200)
+  expect(
+    (await app.request(`/api/assistant/${f.id}/editor`, { method: 'DELETE', headers: authHeaders(f.owner.token) }))
+      .status
+  ).toBe(200)
+  expect(await db.select().from(assistantConversations).where(eq(assistantConversations.id, f.id))).toEqual([])
+  expect((await f.request(`/${f.id}`)).status).toBe(404)
+  // A conversation with a delegated task but no saved turns is still real and still listed.
+  const kept = randomUUID()
+  conversationIds.push(kept)
+  expect((await f.request('/', { id: kept })).status).toBe(200)
+  const agent = await Agent.create({ agentTypeId: 'system-manager', ownerUserId: f.owner.id, context: {} })
+  agentIds.push(agent.id)
+  expect(
+    (await f.request(`/${kept}/messages`, { clientId: randomUUID(), request: 'Compare options', agentId: agent.id }))
+      .status
+  ).toBe(200)
+  expect((await (await f.request('/')).json()).conversations.map((row: { id: string }) => row.id)).toEqual([kept])
+  // A page-editor conversation with saved turns is a different kind of assistant: never listed app-wide.
+  const editor = randomUUID()
+  conversationIds.push(editor)
+  expect((await f.request('/', { id: editor, kind: 'page-editor' })).status).toBe(200)
+  expect((await (await f.request(`/${editor}`)).json()).conversation.kind).toBe('page-editor')
+  expect((await (await f.request(`/${kept}`)).json()).conversation.kind).toBe('assistant')
+  // An app-wide conversation never becomes a page editor by syncing a draft into it.
+  expect(
+    (
+      await app.request(`/api/assistant/${kept}/editor`, {
+        method: 'PUT',
+        headers: { ...authHeaders(f.owner.token), 'Content-Type': 'application/json' },
+        body: JSON.stringify(draft),
+      })
+    ).status
+  ).toBe(409)
+  expect((await f.request(`/${editor}/entries`, { entries: [entry('turn', 'Draft the flow')] })).status).toBe(200)
+  expect(
+    (
+      await app.request(`/api/assistant/${editor}/editor`, {
+        method: 'PUT',
+        headers: { ...authHeaders(f.owner.token), 'Content-Type': 'application/json' },
+        body: JSON.stringify(draft),
+      })
+    ).status
+  ).toBe(200)
+  expect((await (await f.request('/')).json()).conversations.map((row: { id: string }) => row.id)).toEqual([kept])
+  expect((await (await f.request('/activity')).json()).conversations.map((row: { id: string }) => row.id)).toEqual([
+    kept,
+  ])
+  // Still reachable directly by its page.
+  expect((await f.request(`/${editor}`)).status).toBe(200)
+})
+
 test('page editor validation prevents an agent proposal from accepting an unknown integration output', async () => {
   const { createBlankWorkflow } = await import('@tau/shared')
-  const f = await fixture()
+  const f = await fixture('page-editor')
   const role = await createTestRole({ prefix, permissions: ['workflows:create'] })
   await assignRole({ userId: f.owner.id, roleId: role.id, scope: 'system' })
   const document = createBlankWorkflow()
@@ -374,7 +446,7 @@ test('page editor validation prevents an agent proposal from accepting an unknow
 
 test('editor operations and history actions share revision checks and atomic proposal delivery', async () => {
   const { createBlankWorkflow } = await import('@tau/shared')
-  const f = await fixture()
+  const f = await fixture('page-editor')
   const role = await createTestRole({ prefix, permissions: ['workflows:create'] })
   await assignRole({ userId: f.owner.id, roleId: role.id, scope: 'system' })
   const draft = {

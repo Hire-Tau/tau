@@ -3,6 +3,7 @@ import type {
   AssistantActivityPage,
   AssistantConversation,
   AssistantConversationActivityDetail,
+  AssistantConversationKind,
   AssistantEntry,
   AssistantMessageReceipt,
   AssistantMailbox,
@@ -19,8 +20,8 @@ export const assistantApi = {
     t.request<{ conversations: AssistantConversation[]; hasMore: boolean }>(
       `/assistant?${new URLSearchParams({ q, offset: String(offset) })}`
     ),
-  create: (id: string, title?: string) =>
-    t.request<AssistantConversation>('/assistant', { method: 'POST', body: { id, title } }),
+  create: (id: string, title?: string, kind: AssistantConversationKind = 'assistant') =>
+    t.request<AssistantConversation>('/assistant', { method: 'POST', body: { id, title, kind } }),
   history: (id: string, before?: number) =>
     t.request<{
       conversation: AssistantConversation

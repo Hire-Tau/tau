@@ -35,7 +35,12 @@ export class SystemManagerRunner extends AgentRunner {
   }
 
   protected async getPageEditorConversation(): Promise<
-    { id: string; editor: import('@tau/shared').AssistantEditorState | null } | undefined
+    | {
+        id: string
+        kind: import('@tau/shared').AssistantConversationKind
+        editor: import('@tau/shared').AssistantEditorState | null
+      }
+    | undefined
   > {
     return findOwningConversation(this.agent.id)
   }
@@ -116,6 +121,10 @@ export class SystemManagerRunner extends AgentRunner {
     )
 
     const editorConversation = await this.getPageEditorConversation()
+    // The conversation's kind decides the tool set, not whether a draft has synced yet: a page
+    // editor gets only its two editor tools from the first turn, and an app-wide conversation never
+    // gains them.
+    const pageEditor = editorConversation?.kind === 'page-editor' ? editorConversation : undefined
     const managerPromptResult = await SystemManagerRunner.buildManagerPrompt({
       type: 'agent',
       agentId: this.agent.id,
@@ -142,9 +151,7 @@ export class SystemManagerRunner extends AgentRunner {
     })
     const navigateTool = createNavigateTool()
     const assistantDelegate = await this.isAssistantDelegate()
-    const pageEditorTools = editorConversation?.editor
-      ? createPageEditorTools(this.agent.id, editorConversation.id)
-      : []
+    const pageEditorTools = pageEditor ? createPageEditorTools(this.agent.id, pageEditor.id) : []
     const askHumanTool = assistantDelegate
       ? null
       : createAsyncAskHumanTool(
@@ -163,16 +170,16 @@ export class SystemManagerRunner extends AgentRunner {
 
     return this.createPiSession(scope, async () => {
       const sessionOptions = await this.buildBaseSessionOptions({
-        systemPrompt: editorConversation?.editor ? assistantEditorInstructions : systemPrompt,
-        skillPaths: editorConversation?.editor ? [] : skillPaths,
-        extensionPaths: editorConversation?.editor ? [] : extensionPaths,
+        systemPrompt: pageEditor ? assistantEditorInstructions : systemPrompt,
+        skillPaths: pageEditor ? [] : skillPaths,
+        extensionPaths: pageEditor ? [] : extensionPaths,
         sandboxId,
         workspacePath,
         // The system manager resolves its model spec independently of the
         // agent's own effective spec.
         model: managerModel,
         tools: {
-          core: editorConversation?.editor
+          core: pageEditor
             ? pageEditorTools
             : [
                 navigateTool,
@@ -183,7 +190,7 @@ export class SystemManagerRunner extends AgentRunner {
                 setAgentPurposeTool,
                 ...shortTermMemoryTools,
               ],
-          available: editorConversation?.editor ? [] : environmentTools,
+          available: pageEditor ? [] : environmentTools,
         },
       })
       const effectiveEnvironmentTools = filterToolsByPolicy(
@@ -191,7 +198,7 @@ export class SystemManagerRunner extends AgentRunner {
         sessionOptions.tools?.allow,
         sessionOptions.tools?.deny
       )
-      if (!editorConversation?.editor)
+      if (!pageEditor)
         sessionOptions.tools!.core = [
           ...(sessionOptions.tools?.core ?? []),
           createDispatchTool({

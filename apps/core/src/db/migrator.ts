@@ -8,6 +8,7 @@ import { readMigrationFiles } from 'drizzle-orm/migrator'
 import type postgres from 'postgres'
 import { backfillMessageEnqueueOrder } from './message-enqueue-order-backfill'
 import { backfillAssistantActivity } from './assistant-activity-backfill'
+import { backfillAssistantConversationKinds } from './assistant-conversation-kind-backfill'
 
 const CREATE_CONCURRENT_INDEX =
   /^\s*CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\s+"([^"]+)"\s+ON\s+(?:ONLY\s+)?(?:(?:"([^"]+)"\.)?)"([^"]+)"/i
@@ -407,6 +408,11 @@ export async function applyMigrations(
             await backfill(connection)
           }
           statements.push(statement)
+          // Some transforms need the column they populate; they run right after their DDL.
+          if (/ALTER TABLE "assistant_conversations" ADD COLUMN "kind"/.test(statement)) {
+            await flush()
+            await backfillAssistantConversationKinds(connection)
+          }
         }
         await flush()
         await insertLedger(connection, qualifiedLedger, migration)

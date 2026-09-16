@@ -1268,6 +1268,13 @@
       "when": 1789502494968,
       "tag": "0180_oval_captain_cross",
       "breakpoints": true
+    },
+    {
+      "idx": 181,
+      "version": "7",
+      "when": 1789521649766,
+      "tag": "0181_faithful_hex",
+      "breakpoints": true
     }
   ]
 }
