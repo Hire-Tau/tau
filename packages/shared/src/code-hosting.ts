@@ -1,5 +1,9 @@
 import { z } from 'zod'
 
+/** Only web links: a `javascript:`/`data:` value would otherwise render as a clickable link. */
+const WEB_URL = /^https?:\/\//i
+const WEB_URL_MESSAGE = 'must be an http(s) URL'
+
 /** Resource identity only. Access always comes from the integration's squad connection. */
 export const codeHostReferenceSchema = z
   .object({
@@ -9,7 +13,10 @@ export const codeHostReferenceSchema = z
       .max(100),
     repository: z.string().trim().min(1).max(500),
     changeRequest: z
-      .object({ number: z.number().int().positive().safe(), url: z.string().url().optional() })
+      .object({
+        number: z.number().int().positive().safe(),
+        url: z.string().url().regex(WEB_URL, WEB_URL_MESSAGE).max(2000).optional(),
+      })
       .strict()
       .optional(),
     connectionId: z.string().uuid().optional(),
@@ -98,13 +105,7 @@ export const trackedResourceObjectSchema = z
     kind: z.enum(TRACKED_RESOURCE_KINDS),
     number: z.number().int().positive().safe(),
     connectionId: z.string().uuid().optional(),
-    // Only web links: a `javascript:`/`data:` value would otherwise render as a clickable link.
-    url: z
-      .string()
-      .url()
-      .regex(/^https?:\/\//i)
-      .max(2000)
-      .optional(),
+    url: z.string().url().regex(WEB_URL, WEB_URL_MESSAGE).max(2000).optional(),
     addedAt: z.string().max(64).optional(),
     origin: trackedResourceOriginSchema.optional(),
     // Only meaningful for kind 'pull_request'; flags a tracked PR as a delivery change request.

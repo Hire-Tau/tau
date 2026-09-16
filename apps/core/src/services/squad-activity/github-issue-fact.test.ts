@@ -326,4 +326,11 @@ describe('GitHub issue dispatch fact', () => {
     expect(describe_('issue_comment', 'created', null)).toBe('comment')
     expect(describe_('issue_comment', 'edited', null)).toBe('comment edited')
   })
+
+  it('treats inherited Object.prototype names as unsupported event types instead of throwing', () => {
+    for (const type of ['constructor', 'toString', 'valueOf']) {
+      expect(extractGitHubIssueDispatchFact('github', event(type, 'closed', { issue: issue() }))).toBeNull()
+      expect(isGitHubIssueDispatchFact({ eventType: type, action: 'closed' })).toBe(false)
+    }
+  })
 })

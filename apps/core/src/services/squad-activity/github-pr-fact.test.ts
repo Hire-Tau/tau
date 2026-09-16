@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { extractGitHubPrDispatchFact } from './github-pr-fact'
+import { extractGitHubPrDispatchFact, isGitHubPrDispatchFact } from './github-pr-fact'
 
 const event = (
   type: string,
@@ -233,5 +233,17 @@ describe('GitHub PR dispatch fact', () => {
         })
       )
     ).toBeNull()
+  })
+
+  it('treats inherited Object.prototype names as unsupported event types instead of throwing', () => {
+    for (const type of ['constructor', 'toString', 'valueOf']) {
+      expect(
+        extractGitHubPrDispatchFact(
+          'github',
+          event(type, 'closed', { number: 42, pull_request: { id: 4200, number: 42 } })
+        )
+      ).toBeNull()
+      expect(isGitHubPrDispatchFact({ eventType: type, action: 'closed' })).toBe(false)
+    }
   })
 })

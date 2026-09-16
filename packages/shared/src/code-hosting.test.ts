@@ -160,6 +160,26 @@ describe('code host reference', () => {
     expect(describeCodeHostReference({ codeHost: binding })).toEqual({ status: 'valid', reference: binding })
   })
 
+  test('a change request url that is not http(s) fails the binding closed', () => {
+    const scripted = { ...binding, changeRequest: { number: 1, url: 'javascript:alert(1)' } }
+    expect(resolveCodeHostReference({ codeHost: scripted })).toBeNull()
+    const described = describeCodeHostReference({ codeHost: scripted })
+    expect(described.status).toBe('invalid')
+    expect(described.status === 'invalid' && described.issues).toEqual([
+      'codeHost.changeRequest.url: must be an http(s) URL',
+    ])
+    expect(
+      resolveCodeHostReference({
+        codeHost: { ...binding, changeRequest: { number: 1, url: 'http://ghe.internal/a/b/pull/1' } },
+      })
+    ).not.toBeNull()
+  })
+
+  test('a change request url is bounded like every other stored link', () => {
+    const long = `https://github.com/a/b/pull/1?x=${'y'.repeat(2000)}`
+    expect(resolveCodeHostReference({ codeHost: { ...binding, changeRequest: { number: 1, url: long } } })).toBeNull()
+  })
+
   test('extra keys on the change request are reported as invalid, never as an absent binding', () => {
     const annotated = {
       codeHost: {

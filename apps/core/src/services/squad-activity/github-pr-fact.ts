@@ -60,7 +60,7 @@ export function isGitHubPrDispatchFact(value: unknown): value is GitHubPrDispatc
   return Boolean(
     fact &&
     eventType &&
-    eventType in ACTIONS &&
+    Object.hasOwn(ACTIONS, eventType) &&
     action &&
     (ACTIONS[eventType].has(action) || (eventType === 'pull_request' && action === 'merged')) &&
     timestamp(fact.occurredAt) === fact.occurredAt &&
@@ -90,7 +90,7 @@ export function extractGitHubPrDispatchFact(
   providerKey: string,
   event: VerifiedIngressEvent
 ): GitHubPrDispatchFact | null {
-  if (providerKey !== 'github' || !(event.type in ACTIONS)) return null
+  if (providerKey !== 'github' || !Object.hasOwn(ACTIONS, event.type)) return null
   const eventType = event.type as GitHubPrDispatchFact['eventType']
   const payload = object(event.payload)
   const action = string(payload?.action)

@@ -225,9 +225,11 @@ export const workflowDefinitionSchema = definitionShape
     const subscriptionIds = new Set<string>()
     for (const [index, subscription] of (definition.subscriptions ?? []).entries()) {
       const path = ['subscriptions', index]
-      if (definition.completion.followChanges && subscription.id.startsWith('code-host-'))
+      // Unconditional: the runtime classifies by id prefix alone (a code-host-* id is
+      // delivery feedback whatever the flow declares), so the namespace is always reserved.
+      if (subscription.id.startsWith('code-host-'))
         issue([...path, 'id'], 'The code-host- prefix is reserved for automatic change subscriptions')
-      if (definition.completion.followChanges && subscription.id.startsWith('tracked-'))
+      if (subscription.id.startsWith('tracked-'))
         issue([...path, 'id'], 'The tracked- prefix is reserved for automatic tracked-resource subscriptions')
       if (subscriptionIds.has(subscription.id)) issue([...path, 'id'], 'Duplicate subscription ID')
       subscriptionIds.add(subscription.id)

@@ -562,3 +562,26 @@ test('shipped workflow roles describe the work and every participant is used', a
     )
   }
 })
+
+test('the code-host- and tracked- id prefixes stay reserved even when change following is off', () => {
+  const flow = createBlankWorkflow()
+  flow.completion = { ...flow.completion, followChanges: false }
+  const subscription = (id: string) => ({
+    id,
+    source: { integration: 'github', output: 'issue.assigned', version: 1 },
+    match: { repository: { value: 'acme/widgets' } },
+    deliver: { to: 'active' as const, whenInactive: 'retain' as const },
+  })
+  const messages = {
+    'code-host-x': 'The code-host- prefix is reserved for automatic change subscriptions',
+    'tracked-x': 'The tracked- prefix is reserved for automatic tracked-resource subscriptions',
+  }
+  // The runtime reads any code-host-*/tracked-* id as an automatic subscription
+  // regardless of followChanges, so the namespace cannot be conditionally open.
+  for (const [id, message] of Object.entries(messages)) {
+    const result = workflowDefinitionSchema.safeParse({ ...flow, subscriptions: [subscription(id)] })
+    expect(result.success).toBe(false)
+    if (!result.success) expect(result.error.issues.map((issue) => issue.message)).toContain(message)
+  }
+  expect(workflowDefinitionSchema.safeParse({ ...flow, subscriptions: [subscription('mine')] }).success).toBe(true)
+})

@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test'
-import { expectedTableColumns, findSchemaDrift, parseColumnRows } from './expected-schema'
+import { sql } from 'drizzle-orm'
+import { check, integer, pgSchema, pgTable, text } from 'drizzle-orm/pg-core'
+import { expectedCheckConstraints, expectedTableColumns, findSchemaDrift, parseColumnRows } from './expected-schema'
 
 describe('expectedTableColumns', () => {
   test('derives tables and their snake_case column names from schema.ts', () => {
@@ -33,6 +35,48 @@ describe('expectedTableColumns', () => {
       alsoNot: null,
     })
     expect(expected.size).toBe(0)
+  })
+})
+
+describe('expectedCheckConstraints', () => {
+  test('derives declared constraints, their table, and recreatable SQL from schema.ts', () => {
+    const expected = expectedCheckConstraints()
+    const lane = expected.get('squad_activity_lane_check')
+    expect(lane?.table).toBe('squad_activity')
+    // The lane list itself, not just the name — this is what gets re-applied.
+    expect(lane?.expression).toContain('71')
+    expect(lane?.expression).toContain('"squad_activity"."lane"')
+    expect(expected.size).toBeGreaterThan(20)
+  })
+
+  test('ignores exports that are not tables, and tables outside the public schema', () => {
+    const other = pgSchema('other')
+    expect(
+      expectedCheckConstraints({
+        notATable: 'string',
+        alsoNot: null,
+        elsewhere: other.table('elsewhere', { n: integer('n') }, (t) => [check('elsewhere_n', sql`${t.n} > 0`)]),
+      }).size
+    ).toBe(0)
+  })
+
+  test('refuses a constraint whose SQL would need a bound parameter', () => {
+    const table = pgTable('bound', { name: text('name') }, (t) => [
+      // A JS value in the template becomes $1, which is not legal in DDL.
+      check('bound_name', sql`${t.name} = ${'literal-by-accident'}`),
+    ])
+    expect(() => expectedCheckConstraints({ table })).toThrow(/bound parameters/)
+  })
+
+  test('refuses two constraints that collide once Postgres truncates the name', () => {
+    // Postgres stores 63 bytes; silently keeping the last one would re-apply a
+    // definition under a name the other constraint also claims.
+    const base = 'a'.repeat(63)
+    const table = pgTable('collide', { n: integer('n') }, (t) => [
+      check(`${base}_first`, sql`${t.n} > 0`),
+      check(`${base}_second`, sql`${t.n} < 100`),
+    ])
+    expect(() => expectedCheckConstraints({ table })).toThrow(/truncat/i)
   })
 })
 

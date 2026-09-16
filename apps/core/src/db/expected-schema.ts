@@ -1,5 +1,5 @@
 import { is } from 'drizzle-orm'
-import { PgTable, getTableConfig } from 'drizzle-orm/pg-core'
+import { PgDialect, PgTable, getTableConfig } from 'drizzle-orm/pg-core'
 import * as schema from './schema'
 
 /**
@@ -26,6 +26,48 @@ export function expectedTableColumns(source: Record<string, unknown> = schema): 
     // Only the default schema — the test DB check queries `public`.
     if (config.schema && config.schema !== 'public') continue
     expected.set(config.name, new Set(config.columns.map((column) => column.name)))
+  }
+  return expected
+}
+
+export type ExpectedCheckConstraint = { table: string; expression: string }
+
+/**
+ * Every CHECK constraint `schema.ts` declares, keyed by the name Postgres will
+ * store, with the SQL needed to (re)create it.
+ *
+ * Unlike columns, CHECK constraints are NOT maintained by an incremental
+ * `drizzle-kit push`: push emits them inline when it creates a table and then
+ * never adds, drops or ALTERs one again, so a warm database keeps whatever
+ * definition it was born with. That makes this the authoritative definition
+ * rather than merely the expectation — see test-setup.ts.
+ *
+ * Names are truncated to Postgres's 63-byte identifier limit, which is what
+ * `pg_constraint.conname` will actually hold.
+ */
+export function expectedCheckConstraints(
+  source: Record<string, unknown> = schema
+): Map<string, ExpectedCheckConstraint> {
+  const dialect = new PgDialect()
+  const expected = new Map<string, ExpectedCheckConstraint>()
+  for (const value of Object.values(source)) {
+    if (!is(value, PgTable)) continue
+    const config = getTableConfig(value)
+    // Only the default schema — the test DB check queries `public`.
+    if (config.schema && config.schema !== 'public') continue
+    for (const constraint of config.checks) {
+      const query = dialect.sqlToQuery(constraint.value)
+      // A bound parameter cannot appear in DDL; no declared check uses one, and
+      // silently emitting `$1` would produce a constraint that never matches.
+      if (query.params.length > 0) throw new Error(`CHECK ${constraint.name} uses bound parameters`)
+      const name = constraint.name.slice(0, 63)
+      // Two names that differ only past byte 63 are one name to Postgres, and
+      // overwriting here would re-apply whichever won last under a name the
+      // other constraint also claims. Rename one in schema.ts instead.
+      const clash = expected.get(name)
+      if (clash) throw new Error(`CHECK ${constraint.name} truncates to '${name}', already used by ${clash.table}`)
+      expected.set(name, { table: config.name, expression: query.sql })
+    }
   }
   return expected
 }
