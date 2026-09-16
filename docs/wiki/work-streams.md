@@ -25,7 +25,7 @@ Resolution walks the list in that order and de-duplicates by
 same PR referenced as both the delivery binding and a `tracked[]` entry appears
 once, tagged with its first (highest-priority) source. A stale
 `metadata.github.repo` + `metadata.github.issue` pair is no longer part of this
-set: at startup, `migrateDatabase` runs a one-time, idempotent backfill that
+set: `migrateDatabase` runs an idempotent backfill at every startup that
 converts any row still carrying that pair into a `tracked` issue entry
 (repository lowercased, `connectionId` carried over) and removes the
 `github.issue` key. `github.issue` is never read after that; use `tracked` /
@@ -64,16 +64,21 @@ completion:
   against the code hosting adapter and records the result, independent of
   whatever was last observed from events. Unobserved is treated as open —
   delivery is only complete on positive evidence.
-- `GET /api/workstreams/:id/tracked` and the work stream view additionally
-  return
+- `GET /api/workstreams/:id/tracked` (and the web tracked panel, which reads
+  that endpoint) is the only surface that returns the summary
   `delivery: { pullRequests: [{ key, repository, number, url?, primary, state, at?, headSha? }], complete }`,
   where `complete` is true only when there is at least one delivery PR and
-  every one of them is `merged`.
+  every one of them is `merged`. `GET /api/workstreams/:id` exposes no summary;
+  it returns the raw stored `metadata.delivery` along with the rest of the
+  work stream's metadata.
 - Delivery PR subscriptions (both the primary `code-host-*` ones and any
   flagged tracked PR's `tracked-*` ones) may pass the delivery-approval wait
   once the flow reaches `completion-ready`, so CI/merge/review feedback on a
   delivery PR still reaches the recipient during that wait. Subscriptions for
-  non-delivery tracked resources never do.
+  non-delivery tracked resources never do, and neither does an explicit
+  subscription written in the flow definition — only those two reserved id
+  prefixes qualify, so a hand-written `match` on a delivery PR cannot buy a
+  way past the wait.
 
 ### `metadata.tracked[]` entry shape
 

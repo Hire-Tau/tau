@@ -556,7 +556,8 @@ tau workstream tracked ws-123
 # merged, closed) or "-" when nothing has been observed yet
 # Followed by a "Subscriptions: active|no-flow|not-following|ended" footer,
 # then a "Delivery: m/n pull requests merged" line when the stream has at
-# least one delivery pull request
+# least one delivery pull request, suffixed with " (complete)" once every one
+# of them is merged
 ```
 
 ---

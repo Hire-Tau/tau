@@ -185,7 +185,9 @@ integrationTriggers:
 ```
 
 When the triggering event names an issue or pull request, Tau records it
-in `metadata.tracked[0]` with a server-stamped `origin` automatically — do not
+in `metadata.tracked[0]` for connection-authority events (all GitHub events)
+with a server-stamped `origin` automatically; an instance-authority event has
+no squad connection to pin on the entry, so it records none. Do not
 map `github.issue`/`github.pr.number` into `create.metadata` to attach it; that
 key is never read for tracked-resource identity. `github.repo` above is still
 useful to give the new stream a resolvable repository identity for later

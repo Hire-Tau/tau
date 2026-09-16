@@ -281,7 +281,9 @@ integrationTriggers:
 ```
 
 When the triggering event names an issue or pull request, Tau records it in
-`metadata.tracked[0]` with a server-stamped `origin` automatically; do not map
+`metadata.tracked[0]` for connection-authority events (all GitHub events) with a
+server-stamped `origin` automatically; an instance-authority event has no squad
+connection to pin on the entry, so it records none. Do not map
 `github.issue`/`github.pr.number` into `create.metadata` for that — it is
 never read for tracked-resource identity. `github.repo` above still gives the
 new stream a resolvable repository identity. Triggers deduplicate work for their resource. They do not grant access to a repository. The resulting style can subscribe to later updates. Trigger metadata mappings accept up to 16 entries and cannot write reserved `completion`, `sources`, or `sourceWarnings` roots.
