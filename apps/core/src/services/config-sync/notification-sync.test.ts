@@ -47,12 +47,9 @@ describe('NotificationSync', () => {
     const rules = row.rules as Array<{ event?: string; channels: string[] }>
 
     expect(rules.find((rule) => rule.event === 'workStream.blocked')).toBeUndefined()
-    expect(rules.find((rule) => rule.event === 'workStream.review')?.channels).toEqual([
-      'push',
-      'discord',
-      'slack',
-      'telegram',
-    ])
+    // Work-stream events carry no recipient, so they never push directly; humans get the watcher
+    // inbox notices instead. External squad channels still receive review and done.
+    expect(rules.find((rule) => rule.event === 'workStream.review')?.channels).toEqual(['discord', 'slack', 'telegram'])
     expect(rules.find((rule) => rule.event === 'workStream.done')?.channels).toEqual(['discord', 'slack', 'telegram'])
   })
 

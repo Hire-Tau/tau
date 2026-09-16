@@ -277,7 +277,7 @@ export interface MyNotificationPrefs {
   showPreviews?: boolean
   pushEnabled: boolean
   mutedEvents: string[]
-  /** Event types that currently route to push (so the UI can offer per-event mute toggles). */
+  /** Mutable push category ids (see PUSH_CATEGORIES in @tau/shared); each gets a toggle in the UI. */
   pushEvents: string[]
 }
 

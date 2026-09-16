@@ -7,15 +7,12 @@ import { notificationSync } from '../services/config-sync'
 import { notificationService } from '../services/notifications'
 import { requirePermission } from '../middleware/require-permission'
 import { UserNotificationPreferences } from '../entities/UserNotificationPreferences'
+import { PUSH_CATEGORY_IDS } from '@tau/shared'
 
-// Event types that currently route to the push channel (from the global rules) — surfaced so the
-// per-user preferences UI can present meaningful "mute this event" toggles.
+// The mutable push categories (see PUSH_CATEGORIES) — surfaced so the per-user preferences UI can
+// present one toggle per kind of push, independent of how routing rules are configured.
 function pushEventTypes(): string[] {
-  const rules = notificationService.getConfig()?.rules ?? []
-  const events = rules
-    .filter((r) => Array.isArray(r.channels) && r.channels.includes('push') && r.event)
-    .map((r) => r.event as string)
-  return [...new Set(events)]
+  return [...PUSH_CATEGORY_IDS]
 }
 
 export const notificationConfigRouter = new Hono()

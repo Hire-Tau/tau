@@ -135,6 +135,8 @@ export interface ResponseContext {
  */
 export interface NotificationEvent {
   notificationKind?: string
+  /** Origin marker for inbox-derived events, e.g. 'fleet-alert'. */
+  source?: string
   workStreamNumber?: number
   type: string
   squadId?: string

@@ -1,3 +1,5 @@
+import { pushCategoryFor } from './push-category'
+import type { PushCategory } from '@tau/shared'
 import { pushAlertText, pushEventType } from '@tau/shared/push-relay'
 import { WorkStream } from '../../entities/WorkStream'
 import { requireAllowedChannel } from '../channel-policy'
@@ -195,7 +197,11 @@ export class NotificationService {
   // Resolve which users' devices should receive a push for this event, then their subscriptions.
   // Inbox events use their concrete recipient; agent questions use their persisted attention recipients.
   /** Recipient user IDs that should receive a push for this event (after per-user preferences). */
-  private async resolveEnabledPushUserIds(data: unknown, eventType: string): Promise<string[]> {
+  private async resolveEnabledPushUserIds(
+    data: unknown,
+    eventType: string,
+    category?: PushCategory
+  ): Promise<string[]> {
     let userIds: string[] = []
 
     if (eventType === 'agent-question.created') {
@@ -224,7 +230,7 @@ export class NotificationService {
 
     // Respect each user's notification preferences (master push toggle + muted events).
     const allowed = await Promise.all(
-      userIds.map(async (id) => ((await UserNotificationPreferences.shouldPush(id, eventType)) ? id : null))
+      userIds.map(async (id) => ((await UserNotificationPreferences.shouldPush(id, eventType, category)) ? id : null))
     )
     return allowed.filter((id): id is string => id !== null)
   }
@@ -241,7 +247,8 @@ export class NotificationService {
 
     await this.configureVapid()
 
-    const userIds = await this.resolveEnabledPushUserIds(data, eventType)
+    const category = pushCategoryFor(eventType, event, data)
+    const userIds = await this.resolveEnabledPushUserIds(data, eventType, category)
     log.info(`Resolved push recipients for ${eventType}: ${userIds.length > 0 ? userIds.join(', ') : 'none'}`)
     if (userIds.length === 0) {
       log.info(`No push recipients for ${eventType}; skipping push`)

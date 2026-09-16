@@ -46,10 +46,23 @@ describe('UserNotificationPreferences', () => {
     expect(await UserNotificationPreferences.shouldPush(user.id, 'workStream.blocked')).toBe(true)
   })
 
+  it('muting a category suppresses only pushes of that category, and legacy event names still mute', async () => {
+    await UserNotificationPreferences.upsert(user.id, { mutedEvents: ['done'] })
+    expect(await UserNotificationPreferences.shouldPush(user.id, 'inbox.messageReceived', 'done')).toBe(false)
+    expect(await UserNotificationPreferences.shouldPush(user.id, 'inbox.messageReceived', 'review')).toBe(true)
+    expect(await UserNotificationPreferences.shouldPush(user.id, 'inbox.messageReceived', 'message')).toBe(true)
+    // A mute stored before categories existed keeps working for every inbox push.
+    await UserNotificationPreferences.upsert(user.id, { mutedEvents: ['inbox.messageReceived'] })
+    expect(await UserNotificationPreferences.shouldPush(user.id, 'inbox.messageReceived', 'review')).toBe(false)
+    expect(await UserNotificationPreferences.shouldPush(user.id, 'agent-question.created', 'question')).toBe(true)
+    await UserNotificationPreferences.upsert(user.id, { mutedEvents: [] })
+  })
+
   it('upsert merges partial updates', async () => {
+    await UserNotificationPreferences.upsert(user.id, { mutedEvents: ['inbox.messageReceived'] })
     await UserNotificationPreferences.upsert(user.id, { pushEnabled: false })
     const prefs = await UserNotificationPreferences.get(user.id)
-    // mutedEvents from the previous test should persist through a pushEnabled-only update
+    // mutedEvents should persist through a pushEnabled-only update
     expect(prefs.pushEnabled).toBe(false)
     expect(prefs.mutedEvents).toEqual(['inbox.messageReceived'])
   })
