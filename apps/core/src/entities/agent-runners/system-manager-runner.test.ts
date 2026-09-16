@@ -108,8 +108,12 @@ describe('SystemManagerRunner sandbox_status tool gating on runtime', () => {
     editor = false
     protected override async getPageEditorConversation() {
       return this.editor
-        ? { id: 'conversation', editor: { kind: 'workflow' as const, target: {}, revision: 0, document: {} } }
-        : undefined
+        ? {
+            id: 'conversation',
+            kind: 'page-editor' as const,
+            editor: { kind: 'workflow' as const, target: {}, revision: 0, document: {} },
+          }
+        : { id: 'conversation', kind: 'assistant' as const, editor: null }
     }
     protected override async isAssistantDelegate() {
       return this.assistantDelegate

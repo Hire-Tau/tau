@@ -3664,6 +3664,11 @@ export const assistantConversations = pgTable(
     ownerUserId: uuid('owner_user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    /** Which assistant this is: the app-wide Assistant, or a page editor bound to one draft. */
+    kind: varchar('kind', { length: 20 })
+      .$type<import('@tau/shared').AssistantConversationKind>()
+      .notNull()
+      .default('assistant'),
     title: text('title').notNull().default('New conversation'),
     editor: jsonb('editor').$type<import('@tau/shared').AssistantEditorState>(),
     inboxConsumerId: uuid('inbox_consumer_id'),

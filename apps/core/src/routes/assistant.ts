@@ -13,6 +13,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { zValidator } from '@hono/zod-validator'
 import { and, asc, desc, eq, ilike, isNull, notInArray, sql } from 'drizzle-orm'
 import {
+  ASSISTANT_CONVERSATION_KINDS,
   assistantEntrySchema,
   assistantInboxRecipientId,
   chatPagePathSchema,
@@ -41,7 +42,11 @@ import { resolveActingUser, hasAgentResourcePermission, hasPermission } from '..
 import { requirePermission } from '../middleware/require-permission'
 
 const uuid = z.string().uuid()
-const createSchema = z.object({ id: uuid, title: z.string().trim().min(1).max(120).optional() })
+const createSchema = z.object({
+  id: uuid,
+  title: z.string().trim().min(1).max(120).optional(),
+  kind: z.enum(ASSISTANT_CONVERSATION_KINDS).default('assistant'),
+})
 const appendSchema = z.object({ entries: z.array(assistantEntrySchema).min(1).max(50) })
 const messageSchema = z
   .object({
@@ -91,7 +96,12 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
         .where(
           and(
             eq(assistantConversations.ownerUserId, c.get('assistantOwner')),
-            query ? ilike(assistantConversations.title, `%${query.replace(/[\\%_]/g, '\\$&')}%`) : undefined
+            query ? ilike(assistantConversations.title, `%${query.replace(/[\\%_]/g, '\\$&')}%`) : undefined,
+            // Page-editor conversations belong to their page, not the app-wide Assistant, and empty
+            // shells (unused drafts) are not conversations yet.
+            eq(assistantConversations.kind, 'assistant'),
+            sql`(EXISTS (SELECT 1 FROM ${assistantEntries} WHERE ${assistantEntries.conversationId} = ${assistantConversations.id})
+              OR EXISTS (SELECT 1 FROM ${assistantTasks} WHERE ${assistantTasks.conversationId} = ${assistantConversations.id}))`
           )
         )
         .orderBy(desc(assistantConversations.updatedAt), desc(assistantConversations.id))

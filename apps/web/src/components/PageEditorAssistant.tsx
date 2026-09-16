@@ -47,7 +47,7 @@ export function PageEditorAssistant({
       const operation = writes.current
         .catch(() => {})
         .then(async () => {
-          create.current ??= assistantApi.create(id, 'Design a workflow').catch((error) => {
+          create.current ??= assistantApi.create(id, 'Design a workflow', 'page-editor').catch((error) => {
             create.current = null
             throw error
           })

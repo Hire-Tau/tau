@@ -17,8 +17,12 @@ export const assistantEntrySchema = z.object({
   assistantUpdateIds: z.array(z.string().uuid()).max(10).optional(),
 })
 export type AssistantEntry = z.infer<typeof assistantEntrySchema>
+/** App-wide Assistant conversations and page-editor drafts carry different tools and surfaces. */
+export const ASSISTANT_CONVERSATION_KINDS = ['assistant', 'page-editor'] as const
+export type AssistantConversationKind = (typeof ASSISTANT_CONVERSATION_KINDS)[number]
 export interface AssistantConversation {
   id: string
+  kind: AssistantConversationKind
   title: string
   createdAt: string
   updatedAt: string
