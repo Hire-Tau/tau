@@ -136,6 +136,7 @@ export const queryKeys = {
         statuses,
       ] as const,
     workStreamDetail: (id: string) => [...queryKeys.squads.all, 'workStreamDetail', id] as const,
+    workStreamTracked: (id: string) => [...queryKeys.squads.all, 'workStreamTracked', id] as const,
     workStreamMetrics: (id: string) => [...queryKeys.squads.all, 'workStreamMetrics', id] as const,
     schedules: (squadId: string) => [...queryKeys.squads.all, 'schedules', squadId] as const,
     relationships: (squadId: string) => [...queryKeys.squads.all, 'relationships', squadId] as const,

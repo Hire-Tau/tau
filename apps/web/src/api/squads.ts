@@ -12,6 +12,9 @@ import type {
   SquadActivityPage,
   SquadActivityKind,
   NormalizedSquadActivityFilters,
+  ResolvedTrackedResource,
+  TrackedResource,
+  TrackedResourcesView,
 } from '@tau/shared'
 import { apiFetch } from './client'
 import { client } from './clientInstance'
@@ -255,6 +258,33 @@ export async function listDoneWorkStreams(
 
 export async function getWorkStream(id: string): Promise<WorkStream> {
   return apiFetch<WorkStream>(`/workstreams/${encodeURIComponent(id)}`)
+}
+
+/** Issues and pull requests this work stream follows alongside its delivery change request. */
+export async function getWorkStreamTracked(id: string): Promise<TrackedResourcesView> {
+  return apiFetch<TrackedResourcesView>(`/workstreams/${encodeURIComponent(id)}/tracked`)
+}
+
+/** Track one more link; the server resolves the URL against the squad's connections. */
+export async function addWorkStreamTracked(
+  id: string,
+  url: string
+): Promise<TrackedResourcesView & { added: ResolvedTrackedResource[] }> {
+  return apiFetch(`/workstreams/${encodeURIComponent(id)}/tracked`, {
+    method: 'POST',
+    body: JSON.stringify({ url }),
+  })
+}
+
+/** Untrack by identity rather than URL — a resource stays removable without a resolvable link. */
+export async function removeWorkStreamTracked(
+  id: string,
+  resource: Pick<TrackedResource, 'integration' | 'repository' | 'kind' | 'number'>
+): Promise<TrackedResourcesView & { removed: boolean }> {
+  return apiFetch(`/workstreams/${encodeURIComponent(id)}/tracked`, {
+    method: 'DELETE',
+    body: JSON.stringify({ resource }),
+  })
 }
 
 export async function getWorkStreamMetrics(id: string): Promise<WorkStreamMetrics | null> {

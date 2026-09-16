@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { useState } from 'react'
-import { MemoryRouter } from 'react-router-dom'
+import { MemoryRouter, useLocation } from 'react-router-dom'
 import type { Agent, NormalizedSquadActivityFilters, SquadActivityItem } from '@tau/shared'
 import type { AuthIdentity } from '@tau/client-core'
 import { queryKeys } from '../../queryKeys'
@@ -77,6 +77,23 @@ const historicalMessageItem: SquadActivityItem = {
     agentId: historicalAgentId,
     view: 'chat',
     messageId: '00000000-0000-4000-8000-000000000021',
+  },
+}
+
+// A tracked GitHub issue: the row opens the code host, while the work-stream
+// chip stays in-app.
+const issueItem: SquadActivityItem = {
+  id: '71:00000000-0000-4000-8000-000000000071',
+  at: '2026-08-26T11:57:00.000Z',
+  agentId: null,
+  agentTypeId: null,
+  kind: 'issue',
+  summary: '[issue #12 opened] Flaky login',
+  ref: {
+    type: 'issue',
+    url: 'https://example.test/issues/12',
+    workStreamId: '00000000-0000-4000-8000-000000000010',
+    workStreamNumber: 12,
   },
 }
 
@@ -185,6 +202,7 @@ describe('SquadActivityTab rendering', () => {
         summary: '[PR #42 created]',
         ref: { type: 'pr', url: 'https://example.test/pull/42' },
       },
+      issueItem,
     ]
     const html = staticRender(emittedKinds, true)
     expect(html).toContain('>All<')
@@ -193,6 +211,11 @@ describe('SquadActivityTab rendering', () => {
     expect(html).toContain('/squads/tau?agent=00000000-0000-4000-8000-000000000002&amp;view=inbox')
     expect(html).toContain('/squads/tau?agent=00000000-0000-4000-8000-000000000002')
     expect(html).toContain('href="https://example.test/pull/42"')
+    // Issue rows leave the app like PR rows, and carry an in-app work-stream chip.
+    expect(html).toContain('href="https://example.test/issues/12"')
+    expect(html).toContain('Flaky login')
+    expect(html).toContain('aria-label="Open work stream #12"')
+    expect(html).toContain('#12</button>')
     expect(html).toContain('target="_blank"')
     expect(html).toContain('dateTime="2026-08-26T12:00:00.123Z"')
     expect(html).toContain('dir="ltr"')
@@ -212,6 +235,62 @@ describe('SquadActivityTab rendering', () => {
     expect(html).toContain('lg:col-span-1 lg:col-start-3')
     expect(html).toContain('>GitHub<')
     expect(html).toContain('>Subagents<')
+  })
+})
+
+describe('SquadActivityTab issue rows', () => {
+  test('the work-stream chip navigates in-app instead of following the code-host link', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const rendered = dom.createRoot()
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    client.setQueryData(queryKeys.squads.activityInfinite(squadId, filters, accessSignature(new Set())), {
+      pages: [{ items: [issueItem], hasMore: false, nextCursor: null }],
+      pageParams: [null],
+    })
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = mock(
+      async () =>
+        new dom.window.Response(JSON.stringify({ items: [issueItem], hasMore: false, nextCursor: null }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }) as unknown as Response
+    ) as typeof fetch
+    function LocationProbe() {
+      const location = useLocation()
+      return <span data-location={`${location.pathname}${location.search}`} />
+    }
+    try {
+      await dom.act(async () => {
+        rendered.root.render(
+          <MemoryRouter>
+            <LocationProbe />
+            <QueryClientProvider client={client}>
+              <PermissionsProvider usePermissions={permissionHook(new Set())}>
+                <WebSocketContext.Provider value={{ isConnected: true, subscribe: () => () => undefined }}>
+                  <SquadActivityTab squadId={squadId} squadSlug="tau" agents={[agent]} />
+                </WebSocketContext.Provider>
+              </PermissionsProvider>
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+        await Bun.sleep(20)
+      })
+      const row = [...dom.window.document.querySelectorAll('a')].find(
+        (candidate) => candidate.getAttribute('href') === 'https://example.test/issues/12'
+      )
+      expect(row).toBeDefined()
+      expect(row!.getAttribute('target')).toBe('_blank')
+      expect(row!.getAttribute('rel')).toBe('noreferrer')
+      const chip = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Open work stream #12"]')!
+      expect(chip).toBeDefined()
+      await dom.act(async () => chip.click())
+      expect(dom.window.document.querySelector('[data-location]')!.getAttribute('data-location')).toBe(
+        '/squads/tau/work?ws=12'
+      )
+    } finally {
+      globalThis.fetch = originalFetch
+      await dom.cleanup()
+    }
   })
 })
 

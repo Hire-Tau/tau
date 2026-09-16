@@ -253,6 +253,24 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
               const showLiveDot = !!item.agentId && workingAgentIds.has(item.agentId) && !liveDotted.has(item.agentId)
               if (showLiveDot) liveDotted.add(item.agentId!)
               const chip = squadChipFor?.(item)
+              // Issue rows point at the code host; when the server resolved the
+              // stream they also offer an in-app jump to it. Reusing `hrefFor`
+              // with a work-stream ref keeps the spread's squadId, so the global
+              // feed resolves each row's OWN squad slug.
+              const workStreamChip =
+                item.ref.type === 'issue' && item.ref.workStreamNumber !== undefined
+                  ? {
+                      number: item.ref.workStreamNumber,
+                      href: hrefFor({
+                        ...item,
+                        ref: {
+                          type: 'workstream',
+                          workStreamId: item.ref.workStreamId ?? '',
+                          workStreamNumber: item.ref.workStreamNumber,
+                        },
+                      } as T),
+                    }
+                  : null
               const content = (
                 <>
                   {/* Responsive rows keep identity and time on one compact line. Global rows give
@@ -327,13 +345,29 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                     data-activity-column="summary"
                   >
                     {item.summary}
+                    {workStreamChip && (
+                      // Same reason as the squad chip: this row is already an
+                      // <a> (the code host), so the in-app jump is a button.
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          navigate(workStreamChip.href)
+                        }}
+                        className="tau-button ml-1.5 rounded bg-pill px-1.5 py-0.5 align-middle text-[10px] font-medium text-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        aria-label={`Open work stream #${workStreamChip.number}`}
+                      >
+                        #{workStreamChip.number}
+                      </button>
+                    )}
                   </span>
                 </>
               )
               const className = rowClassName
               return (
                 <li key={item.id}>
-                  {item.ref.type === 'pr' ? (
+                  {item.ref.type === 'pr' || item.ref.type === 'issue' ? (
                     <a
                       className={className}
                       href={item.ref.url}

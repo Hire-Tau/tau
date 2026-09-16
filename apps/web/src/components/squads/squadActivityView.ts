@@ -14,14 +14,14 @@ export const FILTER_GROUPS: Array<{ label: string; kinds: SquadActivityKind[] }>
   // Operator-audited grouping (2026-08-27 v2): Messages = chat firsts +
   // inbox sends between agents; Work = work-stream lifecycle (status
   // changes, waits, handoffs); Subagents = dispatch lifecycle rows;
-  // GitHub = PR events. 'execution' rows moved out of Work — subagent
-  // starts/finishes are a different signal than work-stream state.
+  // GitHub = pull-request and issue events. 'execution' rows moved out of
+  // Work — subagent starts/finishes are a different signal than work-stream state.
   // 'subagent' rows (a subagent's report to its parent — its completion
   // signal) deliberately belong to BOTH Messages and Subagents.
   { label: 'Messages', kinds: ['message', 'subagent'] },
   { label: 'Work', kinds: ['workstream', 'wait', 'handoff'] },
   { label: 'Subagents', kinds: ['execution', 'subagent'] },
-  { label: 'GitHub', kinds: ['pr'] },
+  { label: 'GitHub', kinds: ['pr', 'issue'] },
 ]
 
 /** Row agent label: the Title-Cased agent type ONLY, 'system' for rows with no agent type. */
