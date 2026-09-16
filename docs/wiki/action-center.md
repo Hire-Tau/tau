@@ -13,7 +13,7 @@ agent conversation/context
   -> all requested-lifecycle questions for that agent
 
 agent-question lifecycle event
-  -> durable direct attention recipients + compatible owner + authorized subscriptions
+  -> durable direct attention recipients + compatible owner + authorized attention
   -> Action Center / push / targeted actions.invalidated WebSocket frame with data: {}
   -> actions + exact-question cache invalidation
   -> authoritative REST refetch
@@ -21,11 +21,13 @@ agent-question lifecycle event
 
 `PendingAction` and its action-data types live in `packages/shared/src/types.ts`. Each action has a full `id`, numeric `priority`, ISO-string `createdAt`, type-specific `data`, and `canRespond`. A visible action with `canRespond: false` remains visible and is explicitly read-only.
 
-The `actions.invalidated` frame is only a content-free reconciliation hint. It contains no action, question, answer, agent, squad, work-stream, or recipient identifier. Core targets it to currently subscribed authenticated user sockets in the current attention-recipient set. REST remains authoritative.
+The `actions.invalidated` frame is only a content-free reconciliation hint. It contains no action, question, answer, agent, squad, work-stream, or recipient identifier. Core targets it to currently subscribed authenticated user sockets in the wider, permission-shaped invalidation audience described below. REST remains authoritative.
 
 ## Attention, visibility, and capability
 
-Action Center items, push, and targeted realtime hints derive recipients only from durable direct-attention records (consumed execution participants and attributable work-stream requesters), a compatible squadless personal owner, and currently authorized squad/work-stream watchers (`actions:read` plus a subscription). Disabled and unauthorized users are filtered. `agents:read` alone never adds an Action Center item, push, or socket invalidation, and merely opening an agent's chat never subscribes anyone.
+Action Center items and push derive recipients from durable direct-attention records (consumed execution participants and attributable work-stream requesters), a compatible squadless personal owner, and every authorized reader whose ATTENTION has not silenced that source. Attention is two independent kinds per squad and per work stream — `decisions` (questions, review waits, manual waits, halted agents) and `progress` (active work in the feed, completions) — each at `mute`, `show`, or `notify`. A work stream's own levels override its squad's; with no row anywhere the effective levels are `show`/`show`, so everything a user is permitted to see is listed and nothing interrupts. An item is VISIBLE when the viewer holds `actions:read` and the relevant kind is not `mute`; it is PUSHED only when that kind is `notify`. A subscription is no longer required for visibility. Disabled and unauthorized users are filtered. `agents:read` alone never adds an Action Center item, push, or socket invalidation, and merely opening an agent's chat never subscribes anyone.
+
+Targeted `actions.invalidated` frames use a wider, permission-shaped audience: every enabled user with `actions:read` on the affected squad, plus the question's direct recipients and compatible personal owner. Attention levels are deliberately not applied there — the frame carries no content, so over-targeting costs one refetch while under-targeting would leave a real recipient's list stale.
 
 Chat/history visibility is deliberately separate: anyone with canonical `agents:read` on the current agent sees that agent's open questions and answered/dismissed history through the by-agent API, regardless of attention routing. Conversely, a direct attention recipient without `agents:read` receives the Action Center item but cannot read the agent's chat history. The physical `audience_resolution`/`agent_question_recipients` schema names are legacy-compatible storage for this attention-routing state.
 

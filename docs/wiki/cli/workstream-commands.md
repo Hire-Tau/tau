@@ -663,6 +663,19 @@ instead of untracking it.
 
 ---
 
+## Attention (watch)
+
+A work stream inherits its squad's attention levels until you set its own. `decisions` covers its reviews and blockers; `progress` covers its presence in the feed and its completion notice. Levels are `mute`, `show`, or `notify`.
+
+```bash
+tau workstream subscription STREAM_ID            # levels + whether they are inherited
+tau workstream watch STREAM_ID                   # both kinds at notify (alias of subscribe)
+tau workstream watch STREAM_ID --progress mute   # reviews still reach you, completions do not
+tau workstream unwatch STREAM_ID                 # drop the row; inherit the squad again
+```
+
+An omitted flag keeps the level already stored on this stream, or defaults to `notify` when the stream has no row yet.
+
 ## Work Stream Statuses
 
 Stored statuses are deliberately small:

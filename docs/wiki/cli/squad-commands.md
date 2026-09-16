@@ -414,6 +414,20 @@ tau squad unspawn agent-789
 
 ---
 
+## Attention (watch)
+
+Watching a squad sets two independent attention levels for it: `decisions` (questions, reviews, blockers) and `progress` (active work and completions). Each is `mute` (hidden from your Action Center and feed), `show` (listed, never interrupts), or `notify` (listed, plus an inbox message and push).
+
+```bash
+tau squad subscription SQUAD_ID          # your levels + watcher count
+tau squad watch SQUAD_ID                 # both kinds at notify (alias of subscribe)
+tau squad watch SQUAD_ID --progress mute # keep decisions as-is, stop completion notices
+tau squad watch SQUAD_ID --decisions mute --progress mute
+tau squad unwatch SQUAD_ID               # remove the row; back to show/show
+```
+
+An omitted flag keeps the level already stored, or defaults to `notify` when no row exists yet. A per-work-stream row overrides these levels for that one stream.
+
 ## Workflow configuration
 
 Configure the default source in squad `metadata.workflow`. Store selection guidance and alternatives in `metadata.workflowSetup`. The `setup-workflows` manager skill helps choose these without creating agents. A squad preset describes its domain; worker combinations and orchestration belong to workflows. See [the workflow guide](../workflows.md).
