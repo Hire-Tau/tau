@@ -55,6 +55,8 @@ export const linearOutputAdapter: IntegrationOutputAdapter = {
     if (!payload || !data) return []
     const action = text(payload.action, 100)
     const comment = event.type === 'Comment'
+    // The signature covers the body only, so a replay with a mutated `Linear-Event` header cannot re-type it.
+    if (text(payload.type, 100) && payload.type !== event.type) return []
     if (comment ? action !== 'create' && action !== 'update' : event.type !== 'Issue' || action !== 'update') return []
     // Issue details live on the payload for issue events, and on the nested issue for comments.
     const source = comment ? (record(data.issue) ?? {}) : data
@@ -86,9 +88,13 @@ export const linearOutputAdapter: IntegrationOutputAdapter = {
       }
     }
     const stamp = typeof payload.webhookTimestamp === 'number' && Math.abs(payload.webhookTimestamp) < 8.64e15
+    const fallback = stamp ? new Date(payload.webhookTimestamp).toISOString() : ''
+    // An edit is timed by the edit, so a later revision is its own fact rather than a duplicate of the first.
     const at = comment
-      ? when(data.createdAt, data.updatedAt, stamp ? new Date(payload.webhookTimestamp).toISOString() : '')
-      : when(data.updatedAt, stamp ? new Date(payload.webhookTimestamp).toISOString() : '')
+      ? action === 'update'
+        ? when(data.updatedAt, data.createdAt, fallback)
+        : when(data.createdAt, data.updatedAt, fallback)
+      : when(data.updatedAt, fallback)
     if (!at) return []
     const title = text(source.title)
     const number = positive(source.number)
@@ -96,6 +102,7 @@ export const linearOutputAdapter: IntegrationOutputAdapter = {
     const team = record(source.team)
     const teamKey = text(team?.key, 100).toLowerCase()
     const state = text(record(source.state)?.type, 100)
+    // Who acted on this delivery (the editor of an edited comment), not necessarily its author.
     const actor = text(record(payload.actor)?.id, 200) || text(data.userId, 200)
     const url = text(data.url, 2000)
     const details = comment ? text(data.body, 30000) : text(data.description, 30000) || title
@@ -106,7 +113,10 @@ export const linearOutputAdapter: IntegrationOutputAdapter = {
         resourceKey: id,
         occurredAt: at,
         eventKey: createHash('sha256')
-          .update(JSON.stringify([output, id, verb, actor, at, state, assignee]))
+          // The comment id separates two comments on one issue that share a timestamp.
+          .update(
+            JSON.stringify([output, id, verb, actor, at, state, assignee, ...(comment ? [text(data.id, 200)] : [])])
+          )
           .digest('hex'),
         data: {
           issue: { id, title, ...(number === undefined ? {} : { number }), ...(identifier ? { identifier } : {}) },

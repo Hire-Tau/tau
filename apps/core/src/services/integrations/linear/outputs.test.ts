@@ -131,6 +131,33 @@ test('comments become issue facts keyed by the issue', () => {
   expect(only(commentEvent({ issueId: undefined })).resourceKey).toBe('issue-uuid')
 })
 
+test('each comment edit is its own fact, timed by the edit', () => {
+  const first = only(commentEvent({ updatedAt: '2026-09-07T12:30:00.000Z' }, 'update'))
+  const second = only(commentEvent({ updatedAt: '2026-09-07T12:45:00.000Z' }, 'update'))
+  expect(first.occurredAt).toBe('2026-09-07T12:30:00.000Z')
+  expect(second.occurredAt).toBe('2026-09-07T12:45:00.000Z')
+  expect(first.eventKey).not.toBe(second.eventKey)
+  // A redelivery of the very same webhook stays one fact.
+  expect(only(commentEvent({ updatedAt: '2026-09-07T12:45:00.000Z' }, 'update')).eventKey).toBe(second.eventKey)
+  // Creation still reports the creation time, and is distinct from an edit at the same instant.
+  expect(only(commentEvent({ createdAt: '2026-09-07T12:30:00.000Z' })).occurredAt).toBe('2026-09-07T12:30:00.000Z')
+  expect(only(commentEvent({ updatedAt: undefined }, 'update')).occurredAt).toBe('2026-09-07T12:00:00.000Z')
+  // Two different comments posted at the same instant are two facts.
+  expect(only(commentEvent({ id: 'other-comment-uuid' })).eventKey).not.toBe(only(commentEvent()).eventKey)
+})
+
+test('a mutated Linear-Event header cannot re-type a signed body', () => {
+  // Each body below normalizes fine under its own header; only the disagreement rejects it.
+  const comment = commentEvent()
+  expect(only(comment).output).toBe('issue.comment')
+  expect(linearOutputAdapter.normalize({ ...comment, payload: { ...comment.payload, type: 'Issue' } })).toEqual([])
+  const issue = issueEvent({ assigneeId: null })
+  expect(only(issue).output).toBe('issue.assigned')
+  expect(linearOutputAdapter.normalize({ ...issue, payload: { ...issue.payload, type: 'Comment' } })).toEqual([])
+  // Payloads that carry no type at all are still normalized on the header alone.
+  expect(only({ type: 'Comment', payload: { ...comment.payload, type: undefined } }).output).toBe('issue.comment')
+})
+
 test('unusable Linear events are ignored rather than thrown on', () => {
   expect(linearOutputAdapter.normalize(issueEvent({ assigneeId: null }, {}, 'create'))).toEqual([])
   expect(linearOutputAdapter.normalize(issueEvent({ assigneeId: null }, {}, 'remove'))).toEqual([])
