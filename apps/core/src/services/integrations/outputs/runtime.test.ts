@@ -2669,6 +2669,92 @@ test('a Linear comment rule still starts work when the issue cannot be described
   }, 'linear')
 })
 
+test('only the squad whose connection observed a comment asks Linear about it', async () => {
+  await withNativeRouting(async (connectionId, managerId) => {
+    // The owning squad has a rule that starts nothing, so any provider call can only come from
+    // the other squad — which has a matching comment rule but did not observe the event.
+    await setLinearRule({ type: 'notify-manager' })
+    const flow = definition()
+    delete flow.subscriptions
+    const { squadEventRuleSchema } = await import('@tau/shared')
+    const [other] = await db
+      .insert(squads)
+      .values({
+        name: `${prefix}-other`,
+        purpose: 'Linear comment rule on a squad that observed nothing',
+        metadata: {
+          integrationRules: {
+            linear: [
+              squadEventRuleSchema.parse({
+                id: 'linear-issue-comment',
+                predicates: [{ field: 'teamId', op: 'in', value: ['team'] }],
+                source: { integration: 'linear', output: 'issue.comment', version: 1 },
+                filters: { teamId: 'team', audience: 'any' },
+                action: { type: 'start-workstream', workflow: { kind: 'inline', definition: flow } },
+              }),
+            ],
+          },
+        },
+      })
+      .returning()
+    const revision = randomUUID()
+    const [otherConnection] = await db
+      .insert(integrationConnections)
+      .values({
+        providerKey: 'linear',
+        adapterVersion: 1,
+        displayName: `${prefix}-other`,
+        configuration: { version: 1 },
+        credentialRef: `fixture:${prefix}-other`,
+        enabled: true,
+        authState: 'authenticated',
+        healthState: 'healthy',
+        materialRevision: revision,
+        validatedRevision: revision,
+        validationExpiresAt: new Date(Date.now() + 60000),
+      })
+      .returning()
+    await db
+      .insert(integrationConnectionAssignments)
+      .values({ squadId: other!.id, providerKey: 'linear', connectionId: otherConnection!.id })
+    const { getSecretStore } = await import('../../secrets')
+    const store = getSecretStore()
+    await store.initialize()
+    // A credential the other squad could read with, so a describe call would really reach Linear.
+    await store.set(`fixture:${prefix}-other`, 'lin_api_other', 'test')
+    const calls: unknown[] = []
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (async (_url: unknown, init?: RequestInit) => {
+      calls.push(JSON.parse(String(init?.body)))
+      return Response.json({ data: { issue: null } })
+    }) as unknown as typeof fetch
+    try {
+      const issueId = randomUUID()
+      eventIds.push(
+        (await publishIntegrationOutput('linear', linearComment(issueId), {
+          kind: 'connection',
+          connectionId,
+          squadId,
+        }))!
+      )
+      // Correlation is not authority: a squad that did not observe the event never reaches Linear.
+      expect(calls).toEqual([])
+      expect(await db.select().from(workStreams).where(eq(workStreams.squadId, other!.id))).toEqual([])
+      // The event still reached its own squad, through the rule that squad actually has.
+      expect(await db.select().from(inbox).where(eq(inbox.recipientId, managerId))).toHaveLength(1)
+    } finally {
+      globalThis.fetch = originalFetch
+      await store.delete(`fixture:${prefix}-other`)
+      await db
+        .delete(integrationConnectionAssignments)
+        .where(eq(integrationConnectionAssignments.connectionId, otherConnection!.id))
+      await db.delete(integrationConnections).where(eq(integrationConnections.id, otherConnection!.id))
+      await db.delete(workStreams).where(eq(workStreams.squadId, other!.id))
+      await db.delete(squads).where(eq(squads.id, other!.id))
+    }
+  }, 'linear')
+})
+
 test('a Linear rule records the issue it observed, and a replay reuses that work stream', async () => {
   await withNativeRouting(async (connectionId) => {
     const flow = definition()

@@ -750,9 +750,14 @@ export async function outputDeliveryHistory(workStreamId: string) {
  * against the lock the transaction below already holds. Only a squad whose rule would actually
  * create a stream is worth a provider call, and an identity this squad cannot read is not an
  * error: the stream is still created, just without a tracked entry.
+ *
+ * Only the squad whose connection observed the event asks: correlation is not authority, and
+ * `authorized()` below would reject any other candidate anyway — after this read had already
+ * cost it a provider query.
  */
 async function describeIdentityTarget(event: Event, squadId: string) {
-  if (event.authority.kind !== 'connection' || eventTrackedResource(event)) return null
+  if (event.authority.kind !== 'connection' || event.authority.squadId !== squadId) return null
+  if (eventTrackedResource(event)) return null
   if (!integrationOutputRegistry.adapter(event.integration)?.trackedIdentity?.(event.fact)) return null
   const [squad] = await db.select().from(squads).where(eq(squads.id, squadId))
   if (!squad || squad.status !== 'active') return null
