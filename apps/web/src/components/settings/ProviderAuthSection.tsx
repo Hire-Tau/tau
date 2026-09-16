@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
+import type { ProviderHealthKind } from '@tau/shared'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import {
@@ -24,9 +25,13 @@ import {
   type CompatibleProbeResult,
   type OpenRouterRoutingSummary,
   setOpenRouterRoutingEnabled,
+  resetProviderHealth,
 } from '../../api/providerAuth'
 import {
   extractOAuthCode,
+  formatRetryIn,
+  healthReasonLabel,
+  isCredentialHealthReason,
   invalidateProviderRoutingQueries,
   providerActivityRank,
   selectableProviders,
@@ -460,6 +465,75 @@ export function AddProviderSection({ options }: { options: ProviderCatalogEntry[
   )
 }
 
+/**
+ * Muted trailing detail for an exhausted record: `· plan limit · retry ~30m`.
+ * Both halves are optional — a record may carry no reason or no reset — so the
+ * row degrades to a bare status rather than printing empty separators.
+ */
+function healthDetail(reason: ProviderHealthKind | undefined, retryAt: number | undefined): string | null {
+  const retryIn = formatRetryIn(retryAt)
+  const parts = [healthReasonLabel(reason), retryIn ? `retry ${retryIn}` : null].filter(Boolean) as string[]
+  return parts.length ? parts.map((part) => `\u00b7 ${part}`).join(' ') : null
+}
+
+/**
+ * Provider-level status for one account group.
+ *
+ * Only shown for state the account rows do NOT already carry: a globally
+ * disabled provider, or a provider-wide exhaustion record with no exhausted
+ * account behind it. Otherwise this renders nothing, so exhaustion is announced
+ * exactly once, on the row that owns it.
+ */
+function ProviderGroupStatus({
+  entry,
+  suffix,
+  canWrite,
+}: {
+  entry: ProviderAuthEntry
+  suffix: string
+  canWrite: boolean
+}) {
+  const queryClient = useQueryClient()
+  const resetMutation = useMutation({
+    mutationFn: () => resetProviderHealth(entry.provider),
+    onSuccess: () => invalidateProviderRoutingQueries(queryClient),
+  })
+  const accountExhausted = entry.accounts?.some((account) => account.health === 'exhausted') ?? false
+  const exhausted = entry.health === 'exhausted' && !accountExhausted
+  if (!entry.disabled && !exhausted) return null
+  const detail = healthDetail(entry.healthReason, entry.retryAt)
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      {entry.disabled && (
+        <span className="rounded bg-gray-200 px-1.5 py-0.5 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+          Disabled{suffix}
+        </span>
+      )}
+      {exhausted && (
+        <>
+          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+            Exhausted{suffix}
+          </span>
+          {detail && <span className="text-muted">{detail}</span>}
+          {canWrite &&
+            (isCredentialHealthReason(entry.healthReason) ? (
+              <span className="text-muted">Re-authorize to clear</span>
+            ) : (
+              <button
+                onClick={() => resetMutation.mutate()}
+                disabled={resetMutation.isPending}
+                aria-label={`Reset health for ${entry.provider}`}
+                className="tau-button hover:text-primary disabled:opacity-50"
+              >
+                Reset
+              </button>
+            ))}
+        </>
+      )}
+    </div>
+  )
+}
+
 export function ProviderRow({
   provider,
   entry,
@@ -518,31 +592,11 @@ export function ProviderRow({
 
   return (
     <div className="space-y-4">
-      {entries.some((entry) => entry.disabled || entry.health === 'exhausted') && (
-        <div className="flex flex-wrap items-center gap-2">
-          {entries
-            .filter((e) => e.disabled)
-            .map((e) => (
-              <span
-                key={e.provider}
-                className="rounded bg-gray-200 px-1.5 py-0.5 text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-300"
-              >
-                Disabled{entrySuffix(e)}
-              </span>
-            ))}
-          {entries
-            .filter((e) => e.health === 'exhausted')
-            .map((e) => (
-              <span
-                key={e.provider}
-                className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
-              >
-                Exhausted{entrySuffix(e)}
-                {e.retryAt ? ` (retry ~${Math.max(1, Math.round((e.retryAt - Date.now()) / 60000))}m)` : ''}
-              </span>
-            ))}
-        </div>
-      )}
+      {entries
+        .filter((e) => !accountGroups.includes(e))
+        .map((e) => (
+          <ProviderGroupStatus key={e.provider} entry={e} suffix={entrySuffix(e)} canWrite={canWrite} />
+        ))}
       {canWrite && !hasAnyAccounts && addMode === 'closed' && (
         <button
           onClick={() => setAddMode(oauthAvailable ? 'choose' : 'api-key')}
@@ -562,13 +616,15 @@ export function ProviderRow({
           )}
 
           {accountGroups.map((e) => (
-            <ProviderAccountsList
-              key={e.provider}
-              providerId={e.provider}
-              accounts={e.accounts!}
-              canWrite={canWrite}
-              oauthLabel={provider.oauthLabel ?? provider.name}
-            />
+            <div key={e.provider} className="space-y-2">
+              <ProviderGroupStatus entry={e} suffix={entrySuffix(e)} canWrite={canWrite} />
+              <ProviderAccountsList
+                providerId={e.provider}
+                accounts={e.accounts!}
+                canWrite={canWrite}
+                oauthLabel={provider.oauthLabel ?? provider.name}
+              />
+            </div>
           ))}
           {canWrite && hasAnyAccounts && addMode === 'closed' && (
             <button
@@ -765,6 +821,12 @@ export function ProviderAccountsList({
     mutationFn: (order: string[]) => reorderProviderAccounts(providerId, order),
     onSuccess: invalidate,
   })
+  // Cooldowns are an estimate; when the provider's window resets early the
+  // operator can clear the record instead of waiting it out.
+  const resetHealthMutation = useMutation({
+    mutationFn: (id: string) => resetProviderHealth(providerId, id),
+    onSuccess: invalidate,
+  })
 
   const moveAccount = (index: number, direction: -1 | 1) => {
     const target = index + direction
@@ -839,6 +901,11 @@ export function ProviderAccountsList({
                           ? 'Unverified'
                           : 'Available'}
                   </span>
+                  {account.enabled &&
+                    account.health === 'exhausted' &&
+                    healthDetail(account.healthReason, account.retryAt) && (
+                      <span className="text-xs text-muted">{healthDetail(account.healthReason, account.retryAt)}</span>
+                    )}
                   {account.capabilities && (
                     <span
                       className={clsx(
@@ -876,40 +943,58 @@ export function ProviderAccountsList({
                       </button>
                     </>
                   ) : (
-                    <ProviderAccountActions label={account.label || account.id}>
-                      <button
-                        onClick={() => {
-                          setEditingAccountId(account.id)
-                          setEditLabelValue(account.label ?? '')
-                        }}
-                        className="tau-button hover:text-primary"
-                      >
-                        Edit label
-                      </button>
-                      {account.type === 'oauth' && (
+                    <>
+                      {account.enabled &&
+                        account.health === 'exhausted' &&
+                        (isCredentialHealthReason(account.healthReason) ? (
+                          <span className="text-muted">Re-authorize to clear</span>
+                        ) : (
+                          <button
+                            onClick={() => resetHealthMutation.mutate(account.id)}
+                            disabled={resetHealthMutation.isPending}
+                            aria-label={`Reset health for ${account.label || account.id}`}
+                            className="tau-button hover:text-primary disabled:opacity-50"
+                          >
+                            Reset
+                          </button>
+                        ))}
+                      <ProviderAccountActions label={account.label || account.id}>
                         <button
-                          onClick={() => setReloginAccountId(account.id)}
+                          onClick={() => {
+                            setEditingAccountId(account.id)
+                            setEditLabelValue(account.label ?? '')
+                          }}
                           className="tau-button hover:text-primary"
                         >
-                          Re-authorize
+                          Edit label
                         </button>
-                      )}
-                      <button
-                        onClick={() => updateMutation.mutate({ id: account.id, patch: { enabled: !account.enabled } })}
-                        className="tau-button hover:text-primary"
-                      >
-                        {account.enabled ? 'Disable' : 'Enable'}
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (confirm(`Delete account ${account.label || account.id}?`))
-                            deleteMutation.mutate(account.id)
-                        }}
-                        className="tau-button text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
-                      >
-                        Delete
-                      </button>
-                    </ProviderAccountActions>
+                        {account.type === 'oauth' && (
+                          <button
+                            onClick={() => setReloginAccountId(account.id)}
+                            className="tau-button hover:text-primary"
+                          >
+                            Re-authorize
+                          </button>
+                        )}
+                        <button
+                          onClick={() =>
+                            updateMutation.mutate({ id: account.id, patch: { enabled: !account.enabled } })
+                          }
+                          className="tau-button hover:text-primary"
+                        >
+                          {account.enabled ? 'Disable' : 'Enable'}
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm(`Delete account ${account.label || account.id}?`))
+                              deleteMutation.mutate(account.id)
+                          }}
+                          className="tau-button text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+                        >
+                          Delete
+                        </button>
+                      </ProviderAccountActions>
+                    </>
                   )}
                 </fieldset>
               )}

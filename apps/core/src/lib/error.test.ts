@@ -467,3 +467,92 @@ describe('internal errors are never attributed to the provider', () => {
     expect(isInternalExecutionError('a totally unrelated failure')).toBe(false)
   })
 })
+
+/**
+ * The bundled codex client rewrites a 429 body before Tau ever sees it: it
+ * throws `new Error(friendlyMessage)` where `friendlyMessage` is built as
+ * `You have hit your ChatGPT usage limit (<plan> plan). Try again in ~N min.`
+ * (see node_modules/@earendil-works/pi-ai/dist/api/openai-codex-responses.js,
+ * parseErrorResponse). The raw `usage_limit_reached` / `plan_type` /
+ * `resets_at` markers never reach the classifier, so this friendly string is
+ * the ONLY signal available — it must classify as a hard plan limit and its
+ * relative "try again in" window must become the retryAt.
+ */
+describe('codex friendly usage-limit string (SDK-rewritten 429)', () => {
+  const WITH_RESET = 'You have hit your ChatGPT usage limit (plus plan). Try again in ~43 min.'
+  const WITHOUT_RESET = 'You have hit your ChatGPT usage limit (plus plan).'
+
+  it('classifies the production string as plan-credit, not a transient rate-limit', () => {
+    expect(classifyProviderError(WITH_RESET)?.reason).toBe('plan-credit')
+    expect(classifyProviderError(WITHOUT_RESET)?.reason).toBe('plan-credit')
+  })
+
+  it('parses "Try again in ~N min." into retryAt ≈ now + N minutes', () => {
+    const before = Date.now()
+    const retryAt = classifyProviderError(WITH_RESET)?.retryAt
+    expect(retryAt).toBeDefined()
+    expect(retryAt!).toBeGreaterThanOrEqual(before + 43 * 60_000)
+    expect(retryAt!).toBeLessThanOrEqual(Date.now() + 43 * 60_000 + 5_000)
+  })
+
+  it('falls back to the 30-minute plan-credit cooldown when the SDK omits the reset', () => {
+    const classification = classifyProviderError(WITHOUT_RESET)
+    expect(classification?.retryAt).toBeUndefined()
+    expect(classification?.cooldownMs).toBe(30 * 60_000)
+  })
+
+  it('accepts the "N minutes" and "~N h" wordings', () => {
+    const before = Date.now()
+    const minutes = classifyProviderError('You have hit your ChatGPT usage limit. Try again in 15 minutes.')?.retryAt
+    expect(minutes!).toBeGreaterThanOrEqual(before + 15 * 60_000)
+    const hours = classifyProviderError('You have hit your ChatGPT usage limit. Try again in ~2 h.')?.retryAt
+    expect(hours!).toBeGreaterThanOrEqual(before + 2 * 60 * 60_000)
+  })
+
+  it('classifies the thrown Error exactly as production raises it (no status property)', () => {
+    const now = Date.now()
+    const classification = classifyCaughtProviderError(new Error(WITH_RESET), { now })
+    expect(classification?.kind).toBe('plan-credit')
+    expect(classification?.status).toBeUndefined()
+    expect(classification?.retryAt).toBeGreaterThanOrEqual(now + 43 * 60_000)
+  })
+
+  it('classifies the reset-less thrown Error as plan-credit with no retryAt', () => {
+    const classification = classifyCaughtProviderError(new Error(WITHOUT_RESET))
+    expect(classification?.kind).toBe('plan-credit')
+    expect(classification?.retryAt).toBeUndefined()
+  })
+
+  // The SDK writes this same sentence for EVERY codex 429, transient throttles
+  // included — only the announced window separates them, so the window decides.
+  it('treats a short announced window as a transient rate-limit, keeping its retryAt', () => {
+    const before = Date.now()
+    const classification = classifyProviderError(
+      'You have hit your ChatGPT usage limit (plus plan). Try again in ~5 min.'
+    )
+    expect(classification?.reason).toBe('rate-limit')
+    expect(classification!.retryAt!).toBeGreaterThanOrEqual(before + 5 * 60_000)
+    expect(classification!.retryAt!).toBeLessThanOrEqual(Date.now() + 5 * 60_000 + 5_000)
+  })
+
+  it('treats a long announced window as a plan limit', () => {
+    const before = Date.now()
+    const classification = classifyProviderError(
+      'You have hit your ChatGPT usage limit (plus plan). Try again in ~120 min.'
+    )
+    expect(classification?.reason).toBe('plan-credit')
+    expect(classification!.retryAt!).toBeGreaterThanOrEqual(before + 120 * 60_000)
+  })
+
+  it('treats an unannounced window as a plan limit on the 30-minute default', () => {
+    const classification = classifyProviderError('You have hit your ChatGPT usage limit (plus plan).')
+    expect(classification?.reason).toBe('plan-credit')
+    expect(classification?.retryAt).toBeUndefined()
+    expect(classification?.cooldownMs).toBe(30 * 60_000)
+  })
+
+  it('leaves a bare "usage limit" error a transient rate-limit', () => {
+    expect(classifyProviderError('usage limit reached')?.reason).toBe('rate-limit')
+    expect(classifyProviderError('429 usage limit')?.reason).toBe('rate-limit')
+  })
+})

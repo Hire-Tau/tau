@@ -3,6 +3,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   extractOAuthCode,
+  formatRetryIn,
+  healthReasonLabel,
+  isCredentialHealthReason,
   invalidateProviderRoutingQueries,
   providerActivityRank,
   selectableProviders,
@@ -511,5 +514,213 @@ describe('OpenRouter universal fallback section', () => {
     expect(disabled).not.toContain('Backed vendors')
     expect(disabled).not.toContain('Backed tiers')
     expect(disabled).not.toContain('Connect account')
+  })
+})
+
+describe('formatRetryIn', () => {
+  const now = 1_000_000_000_000
+
+  test('formats sub-minute, minute, hour and day windows', () => {
+    expect(formatRetryIn(now + 45_000, now)).toBe('~45s')
+    expect(formatRetryIn(now + 12 * 60_000, now)).toBe('~12m')
+    expect(formatRetryIn(now + (4 * 60 + 12) * 60_000, now)).toBe('~4h 12m')
+    expect(formatRetryIn(now + (2 * 24 + 3) * 60 * 60_000, now)).toBe('~2d 3h')
+  })
+
+  test('drops a zero remainder instead of printing "~4h 0m"', () => {
+    expect(formatRetryIn(now + 4 * 60 * 60_000, now)).toBe('~4h')
+    expect(formatRetryIn(now + 2 * 24 * 60 * 60_000, now)).toBe('~2d')
+  })
+
+  test('returns null for a missing or elapsed reset', () => {
+    expect(formatRetryIn(undefined, now)).toBeNull()
+    expect(formatRetryIn(now - 1, now)).toBeNull()
+  })
+})
+
+describe('isCredentialHealthReason', () => {
+  test('matches only the kinds that re-authorizing fixes', () => {
+    expect(isCredentialHealthReason('invalid-credential')).toBe(true)
+    expect(isCredentialHealthReason('expired-oauth')).toBe(true)
+    expect(isCredentialHealthReason('rate-limit')).toBe(false)
+    expect(isCredentialHealthReason(undefined)).toBe(false)
+  })
+})
+
+describe('healthReasonLabel', () => {
+  test('gives each health kind an operator-readable label', () => {
+    expect(healthReasonLabel('rate-limit')).toBe('rate limit')
+    expect(healthReasonLabel('plan-credit')).toBe('plan limit')
+    expect(healthReasonLabel('capacity')).toBe('capacity')
+    expect(healthReasonLabel('network')).toBe('connection')
+    expect(healthReasonLabel('error')).toBe('error')
+    expect(healthReasonLabel('invalid-credential')).toBe('invalid credential')
+    expect(healthReasonLabel('expired-oauth')).toBe('expired sign-in')
+    expect(healthReasonLabel(undefined)).toBeNull()
+  })
+})
+
+/**
+ * Exhaustion used to be announced twice — a chip strip at the top of the card
+ * AND a bare "Exhausted" word on the account row — while saying neither WHY the
+ * provider is out nor how long is left, and offering no way to clear a window
+ * that has already reset upstream. Status now lives on the row that owns it.
+ */
+describe('provider exhaustion status', () => {
+  const exhaustedAccount = {
+    id: 'acc_1',
+    label: 'Work',
+    enabled: true,
+    type: 'api_key' as const,
+    health: 'exhausted' as const,
+    healthReason: 'plan-credit' as const,
+    healthMessage: 'Provider plan credit exhausted.',
+    retryAt: Date.now() + 30 * 60_000,
+  }
+
+  function renderAccounts(accounts: any[], canWrite = true) {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    return renderToStaticMarkup(
+      <QueryClientProvider client={queryClient}>
+        <ProviderAccountsList
+          providerId="anthropic"
+          accounts={accounts as ProviderAccountEntry[]}
+          canWrite={canWrite}
+        />
+      </QueryClientProvider>
+    )
+  }
+
+  test('renders no top chip strip — the account row carries the status', () => {
+    const html = renderRow({
+      provider: 'anthropic',
+      type: 'api_key',
+      hasCredential: true,
+      configured: true,
+      disabled: false,
+      health: 'exhausted',
+      healthReason: 'plan-credit',
+      retryAt: exhaustedAccount.retryAt,
+      accounts: [exhaustedAccount],
+    })
+    expect(html.match(/Exhausted/g) ?? []).toHaveLength(1)
+    expect(html).not.toContain('(retry ~30m)')
+  })
+
+  test('an exhausted account row states the reason and the remaining window', () => {
+    const html = renderAccounts([exhaustedAccount])
+    expect(html).toContain('Exhausted')
+    expect(html).toContain('plan limit')
+    expect(html).toContain('retry ~30m')
+  })
+
+  test('a healthy account row stays a plain Available pill', () => {
+    const html = renderAccounts([{ id: 'acc_1', label: 'Work', enabled: true, type: 'api_key', health: 'available' }])
+    expect(html).toContain('Available')
+    expect(html).not.toContain('Exhausted')
+    expect(html).not.toContain('Reset health for')
+  })
+
+  test('offers Reset only on exhausted rows, and only to writers', () => {
+    expect(renderAccounts([exhaustedAccount])).toContain('aria-label="Reset health for Work"')
+    expect(renderAccounts([exhaustedAccount], false)).not.toContain('Reset health for')
+  })
+
+  test('a disabled account reads Disabled, with no exhaustion detail or reset', () => {
+    // The row already explains why it is unusable; an exhaustion record behind a
+    // switched-off account is not what the operator needs to act on.
+    const html = renderAccounts([{ ...exhaustedAccount, enabled: false }])
+    expect(html).toContain('Disabled')
+    expect(html).not.toContain('plan limit')
+    expect(html).not.toContain('Reset health for')
+  })
+
+  test('points a credential failure at re-authorizing instead of offering Reset', () => {
+    // Routing already treats these as ready — the record IS the remediation
+    // signal, so clearing it would only hide what the operator must fix.
+    const html = renderAccounts([
+      { ...exhaustedAccount, healthReason: 'invalid-credential', healthMessage: 'Provider credential is invalid.' },
+    ])
+    expect(html).toContain('invalid credential')
+    expect(html).toContain('Re-authorize')
+    expect(html).not.toContain('Reset health for')
+  })
+
+  test('renders no empty detail element when the record carries neither reason nor reset', () => {
+    const html = renderAccounts([{ id: 'acc_1', label: 'Work', enabled: true, type: 'api_key', health: 'exhausted' }])
+    expect(html).toContain('Exhausted')
+    expect(html).not.toContain('<span class="text-xs text-muted"></span>')
+  })
+
+  test('shows a provider-level pill when the provider record — not an account — is exhausted', () => {
+    const html = renderRow({
+      provider: 'anthropic',
+      type: 'api_key',
+      hasCredential: true,
+      configured: true,
+      disabled: false,
+      health: 'exhausted',
+      healthReason: 'rate-limit',
+      retryAt: Date.now() + 60_000,
+      accounts: [{ id: 'acc_1', label: 'Work', enabled: true, type: 'api_key', health: 'available' }],
+    })
+    expect(html).toContain('Exhausted')
+    expect(html).toContain('rate limit')
+    expect(html).toContain('aria-label="Reset health for anthropic"')
+  })
+
+  test('shows a provider-level Disabled pill without a reset action', () => {
+    const html = renderRow({
+      provider: 'anthropic',
+      type: 'api_key',
+      hasCredential: true,
+      configured: true,
+      disabled: true,
+      accounts: [{ id: 'acc_1', label: 'Work', enabled: true, type: 'api_key', health: 'available' }],
+    })
+    expect(html).toContain('Disabled')
+    expect(html).not.toContain('Reset health for')
+  })
+
+  test('resetting an exhausted account calls the endpoint and the row returns to Available', async () => {
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const requests: { url: string; method?: string }[] = []
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push({ url: String(input), method: init?.method })
+      return Response.json({ provider: 'anthropic', health: 'available', accounts: [] })
+    }) as typeof fetch
+    try {
+      const { createRoot } = await import('react-dom/client')
+      const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } })
+      const container = document.createElement('div')
+      document.body.appendChild(container)
+      const root = createRoot(container)
+      const render = (accounts: any[]) => (
+        <QueryClientProvider client={queryClient}>
+          <ProviderAccountsList providerId="anthropic" accounts={accounts as ProviderAccountEntry[]} canWrite={true} />
+        </QueryClientProvider>
+      )
+      await dom.act(async () => {
+        root.render(render([exhaustedAccount]))
+      })
+      await dom.act(async () => {
+        ;(container.querySelector('[aria-label="Reset health for Work"]') as HTMLButtonElement).click()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+      expect(
+        requests.find((r) => r.url.endsWith('/api/provider-auth/anthropic/accounts/acc_1/health/reset'))
+      ).toMatchObject({ method: 'POST' })
+
+      // The refreshed query result flips the row back to Available.
+      await dom.act(async () => {
+        root.render(render([{ id: 'acc_1', label: 'Work', enabled: true, type: 'api_key', health: 'available' }]))
+      })
+      expect(container.textContent).toContain('Available')
+      expect(container.querySelector('[aria-label="Reset health for Work"]')).toBeNull()
+      await dom.act(async () => root.unmount())
+      queryClient.clear()
+    } finally {
+      await dom.cleanup()
+    }
   })
 })

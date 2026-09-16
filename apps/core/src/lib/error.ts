@@ -50,6 +50,22 @@ export interface ProviderErrorClassification {
   retryAt?: number
 }
 
+const PLAN_CREDIT_COOLDOWN_MS = 30 * 60_000
+const RATE_LIMIT_COOLDOWN_MS = 60_000
+
+/**
+ * The sentence the bundled codex client substitutes for EVERY 429 body.
+ *
+ * `parseErrorResponse` (openai-codex-responses.js) discards the upstream
+ * `usage_limit_reached` / `plan_type` / `resets_at` markers and throws
+ * `new Error("You have hit your ChatGPT usage limit (<plan> plan). Try again in
+ * ~N min.")`, so this wording is the only codex limit signal Tau ever sees —
+ * and it is AMBIGUOUS: a transient throttle and an exhausted weekly plan window
+ * arrive as the same sentence. The one thing that distinguishes them is the
+ * announced window, so that is what decides (see classifyCodexUsageLimit).
+ */
+const CODEX_USAGE_LIMIT_MARKER = 'chatgpt usage limit'
+
 /**
  * Rules that map error substrings to an exhaustion reason + cooldown policy.
  *
@@ -86,7 +102,7 @@ const EXHAUSTION_RULES: Array<{ substrings: string[]; reason: ExhaustionReason; 
       'has-credits":"false',
     ],
     reason: 'plan-credit',
-    cooldownMs: 30 * 60_000,
+    cooldownMs: PLAN_CREDIT_COOLDOWN_MS,
   },
   {
     substrings: ['capacity', 'overloaded', 'service unavailable', 'no allowed providers available'],
@@ -96,7 +112,7 @@ const EXHAUSTION_RULES: Array<{ substrings: string[]; reason: ExhaustionReason; 
   {
     substrings: ['rate limit', 'usage limit', '429', 'too many requests'],
     reason: 'rate-limit',
-    cooldownMs: 60_000,
+    cooldownMs: RATE_LIMIT_COOLDOWN_MS,
   },
 ]
 
@@ -381,6 +397,8 @@ export function classifyProviderError(error: string): ProviderErrorClassificatio
   // A tau-internal failure is never provider exhaustion, whatever words it shares.
   if (isInternalExecutionError(error)) return null
   const lower = error.toLowerCase()
+  const codex = classifyCodexUsageLimit(error, lower)
+  if (codex) return codex
   for (const rule of EXHAUSTION_RULES) {
     if (rule.substrings.some((s) => lower.includes(s))) {
       return {
@@ -392,6 +410,31 @@ export function classifyProviderError(error: string): ProviderErrorClassificatio
     }
   }
   return null
+}
+
+/**
+ * Classify the codex client's rewritten 429 (see {@link CODEX_USAGE_LIMIT_MARKER}).
+ *
+ * The wording alone cannot tell a transient throttle from an exhausted plan
+ * window, so the announced "Try again in ~N" window decides: a window shorter
+ * than the plan-credit cooldown is treated as the transient rate limit it
+ * almost certainly is (and keeps its own, shorter, retryAt rather than parking
+ * the account for half an hour), while a longer or ABSENT window is treated as
+ * a plan limit — absent means the upstream sent no `resets_at`, which is the
+ * shape a hard plan window arrives in. Checked before {@link EXHAUSTION_RULES}
+ * because the bare 'usage limit' substring there would otherwise win every one
+ * of these a 60s cooldown with no reset at all.
+ */
+function classifyCodexUsageLimit(error: string, lower: string): ProviderErrorClassification | null {
+  if (!lower.includes(CODEX_USAGE_LIMIT_MARKER)) return null
+  const retryAt = parseFriendlyRelativeResetTimestamp(error)
+  const transient = retryAt != null && retryAt - Date.now() < PLAN_CREDIT_COOLDOWN_MS
+  return {
+    exhausted: true,
+    reason: transient ? 'rate-limit' : 'plan-credit',
+    cooldownMs: transient ? RATE_LIMIT_COOLDOWN_MS : PLAN_CREDIT_COOLDOWN_MS,
+    ...(retryAt != null ? { retryAt } : {}),
+  }
 }
 
 /**
@@ -411,6 +454,8 @@ export function classifyProviderError(error: string): ProviderErrorClassificatio
  *     Used only when no absolute reset key is present. If an absolute key is
  *     present but stale/past, absolute still wins and the result is
  *     `undefined` rather than falling back to a relative window.
+ *  4. Human-readable relative, as written by the bundled codex client's
+ *     friendly 429 rewrite: "Try again in ~43 min." → now + 43 min.
  */
 function parseResetTimestamp(error: string): number | undefined {
   const dateReset = parseDateResetTimestamp(error)
@@ -419,7 +464,27 @@ function parseResetTimestamp(error: string): number | undefined {
   const absoluteReset = parseUnixAbsoluteResetTimestamp(error)
   if (absoluteReset.present) return absoluteReset.retryAt
 
-  return parseUnixRelativeResetTimestamp(error)
+  const unixRelative = parseUnixRelativeResetTimestamp(error)
+  if (unixRelative !== undefined) return unixRelative
+
+  return parseFriendlyRelativeResetTimestamp(error)
+}
+
+/**
+ * Human-readable RELATIVE reset, as written by the bundled codex client when it
+ * rewrites a 429: `Try again in ~43 min.` (it computes the minutes from the
+ * upstream `resets_at` and then discards it, so this prose is the only reset
+ * signal that survives). Also accepts the unabbreviated and hour forms
+ * ("in 15 minutes", "in ~2 h"). Returns `now + N * 60_000`; `undefined` for a
+ * zero/absent window, which leaves the caller on its default cooldown.
+ */
+function parseFriendlyRelativeResetTimestamp(error: string): number | undefined {
+  const match = error.match(/try again in\s*~?\s*(\d+(?:\.\d+)?)\s*(minutes?|mins?|hours?|hrs?|m|h)\b/i)
+  if (!match) return undefined
+  const amount = Number(match[1])
+  if (!Number.isFinite(amount) || amount <= 0) return undefined
+  const unitMs = /^h/i.test(match[2]) ? 60 * 60_000 : 60_000
+  return Date.now() + amount * unitMs
 }
 
 /**

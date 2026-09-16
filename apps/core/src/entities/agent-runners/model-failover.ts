@@ -284,8 +284,15 @@ export class ModelFailoverCoordinator {
         text: `OpenRouter route ${failedSpec} unavailable — failed over to ${next}.`,
       })
     } else {
-      const providerRetryAt = providerHealth.getHealth(provider).retryAt ?? Date.now()
-      const mins = Math.max(1, Math.round((providerRetryAt - Date.now()) / 60000))
+      // Read the cooldown from the record the failure was actually written to.
+      // Account-scoped failures (every OAuth provider) leave the provider-level
+      // record empty, so reading only `getHealth(provider)` here fell back to
+      // `Date.now()` and announced "~1m" for every cooldown length.
+      const accountRetryAt = currentAccountId
+        ? providerHealth.getAccountHealth(provider, currentAccountId).retryAt
+        : undefined
+      const retryAt = accountRetryAt ?? providerHealth.getHealth(provider).retryAt ?? Date.now()
+      const mins = Math.max(1, Math.round((retryAt - Date.now()) / 60000))
       this.deps.getBuffer().push({
         type: 'system_message',
         text:

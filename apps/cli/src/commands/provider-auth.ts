@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import { apiGet, apiPut, apiDelete } from '../client'
+import { apiGet, apiPost, apiPut, apiDelete } from '../client'
 import { output, outputTable, outputError, isJsonMode } from '../output'
 
 export function registerProviderAuthCommands(program: Command) {
@@ -61,6 +61,24 @@ export function registerProviderAuthCommands(program: Command) {
       try {
         await apiDelete(`/api/provider-auth/${provider}`)
         output({ provider, deleted: true }, `Removed auth for provider "${provider}"`)
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+
+  // tau provider-auth reset <provider> [--account <id>]
+  auth
+    .command('reset <provider>')
+    .description("Clear a provider's exhaustion cooldown (use when its limit window reset early)")
+    .option('--account <id>', 'Clear only this account instead of the whole provider')
+    .action(async (provider, options) => {
+      try {
+        const path = options.account
+          ? `/api/provider-auth/${provider}/accounts/${options.account}/health/reset`
+          : `/api/provider-auth/${provider}/health/reset`
+        const result = await apiPost<any>(path)
+        const scope = options.account ? `account "${options.account}" of "${provider}"` : `provider "${provider}"`
+        output(result, `Reset health for ${scope} — now ${result?.health ?? 'unknown'}`)
       } catch (error) {
         outputError(error as Error)
       }

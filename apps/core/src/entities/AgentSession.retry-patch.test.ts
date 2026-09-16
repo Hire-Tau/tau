@@ -80,6 +80,17 @@ describe('Pi SDK non-retryable hard-limit patch', () => {
       expect(isRetryable('429 Too Many Requests')).toBe(true)
     })
 
+    it('treats the codex plan-window markers as NON-retryable', () => {
+      // The bundled codex client rewrites a 429 body into this friendly string
+      // (openai-codex-responses.js parseErrorResponse), so the raw
+      // `usage_limit_reached` code usually never survives — both wordings must
+      // fail over on attempt 1 rather than hammer an exhausted ChatGPT plan.
+      // Asserted with the transient "429" token the wrapper text carries, which
+      // is exactly what makes these RETRYABLE without the patch.
+      expect(isRetryable('429 You have hit your ChatGPT usage limit (plus plan). Try again in ~43 min.')).toBe(false)
+      expect(isRetryable('429 usage_limit_reached')).toBe(false)
+    })
+
     it("preserves the SDK's original non-retryable signals", () => {
       expect(isRetryable('insufficient_quota')).toBe(false)
       expect(isRetryable('Monthly usage limit reached')).toBe(false)
@@ -100,6 +111,11 @@ describe('Pi SDK non-retryable hard-limit patch', () => {
     it('still lets a plain transient rate limit stay retryable', () => {
       expect(isTerminal('429 Too Many Requests')).toBe(false)
       expect(isTerminal('rate limit exceeded, please retry')).toBe(false)
+    })
+
+    it('treats the codex plan-window markers as terminal', () => {
+      expect(isTerminal('You have hit your ChatGPT usage limit (plus plan). Try again in ~43 min.')).toBe(true)
+      expect(isTerminal('usage_limit_reached')).toBe(true)
     })
 
     it("preserves the SDK's original terminal signals", () => {
