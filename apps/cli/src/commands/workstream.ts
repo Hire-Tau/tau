@@ -15,6 +15,7 @@ import { output, outputTable, outputError, isJsonMode, setOutputOptions } from '
 import { WORK_STREAM_COMPLETION_MODES, WORK_STREAM_PRIORITIES } from '@tau/shared'
 import { buildMetadataDelta, getMetadataValue, parseMetadataPath, parseMetadataValue } from '../metadata'
 import { selectOpenWait } from './workstream-wait-selection'
+import { describeAttention, performAttentionSubscribe, type SubscriptionResponse } from './attention'
 import type {
   Agent as AgentJson,
   ResolvedTrackedResource,
@@ -1249,43 +1250,57 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
 
   // tau workstream subscription <id>
   ws.command('subscription <id>')
-    .description('Show whether you watch this work stream, and the watcher count')
+    .description('Show your attention levels for this work stream, and the watcher count')
     .action(async (id) => {
       try {
-        const sub = await apiGet<{ subscribed: boolean; count: number }>(
-          `/api/workstreams/${encodeURIComponent(id)}/subscription`
+        const sub = await apiGet<SubscriptionResponse>(`/api/workstreams/${encodeURIComponent(id)}/subscription`)
+        output(
+          sub,
+          `Watching: ${sub.subscribed ? 'yes' : 'no'} (${sub.count} watcher(s)) — ${describeAttention(sub.attention, { inherited: sub.inherited })}`
         )
-        output(sub, `Watching: ${sub.subscribed ? 'yes' : 'no'} (${sub.count} watcher(s))`)
       } catch (error) {
         outputError(error as Error)
       }
     })
 
-  // tau workstream subscribe <id>
+  // tau workstream subscribe <id> [--decisions <level>] [--progress <level>]
   ws.command('subscribe <id>')
     .alias('watch')
-    .description('Watch a work stream (get its lifecycle updates)')
-    .action(async (id) => {
+    .description('Watch a work stream. Levels: mute (hidden), show (listed), notify (inbox + push)')
+    .option('--decisions <level>', 'Questions, reviews, and blockers: mute, show, or notify')
+    .option('--progress <level>', 'Active work and completions: mute, show, or notify')
+    .action(async (id, options) => {
       try {
-        const sub = await apiPost<{ subscribed: boolean; count: number }>(
-          `/api/workstreams/${encodeURIComponent(id)}/subscribe`
+        const sub = await performAttentionSubscribe({
+          apiGet,
+          apiPost,
+          subscriptionPath: `/api/workstreams/${encodeURIComponent(id)}/subscription`,
+          subscribePath: `/api/workstreams/${encodeURIComponent(id)}/subscribe`,
+          flags: options,
+        })
+        output(
+          sub,
+          `Watching work stream ${id.slice(0, 8)} (${sub.count} watcher(s)) — ${describeAttention(sub.attention)}`
         )
-        output(sub, `Watching work stream ${id.slice(0, 8)} (${sub.count} watcher(s))`)
       } catch (error) {
         outputError(error as Error)
+        // outputError is a no-op under the test mock (see test-setup.ts) and calls
+        // process.exit in production; rethrow so tests can observe the rejection.
+        throw error
       }
     })
 
   // tau workstream unsubscribe <id>
   ws.command('unsubscribe <id>')
     .alias('unwatch')
-    .description('Stop watching a work stream')
+    .description('Stop watching a work stream (back to inheriting the squad levels)')
     .action(async (id) => {
       try {
-        const sub = await apiDelete<{ subscribed: boolean; count: number }>(
-          `/api/workstreams/${encodeURIComponent(id)}/subscribe`
+        const sub = await apiDelete<SubscriptionResponse>(`/api/workstreams/${encodeURIComponent(id)}/subscribe`)
+        output(
+          sub,
+          `Unwatched work stream ${id.slice(0, 8)} (${sub.count} watcher(s)) — now ${describeAttention(sub.attention, { inherited: sub.inherited })}`
         )
-        output(sub, `Unwatched work stream ${id.slice(0, 8)} (${sub.count} watcher(s))`)
       } catch (error) {
         outputError(error as Error)
       }

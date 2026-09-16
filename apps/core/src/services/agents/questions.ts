@@ -22,12 +22,11 @@ import {
 } from '../../db/schema'
 import { createLogger } from '../../lib/infra/logger'
 import { eventEmitter } from '../../lib/infra/event-emitter'
-import { listSquadSubscriberIds, listUserWatchedSquadIds } from '../squad/subscriptions'
 import { closeOpenWaits, openWait } from '../work-streams/waits'
 import { resetContinuationCycle } from '../work-streams/continuation-state'
 import { isUuid, listTrustedWorkStreamOriginsForExecution } from '../work-streams/execution-provenance'
-import { listUserWatchedWorkStreamIds, listWorkStreamSubscriberIds } from '../work-streams/subscriptions'
-import { canReceiveAgentQuestionAttention } from './pending-action-policy'
+import { listSquadScopeNotifyUserIds } from '../attention/resolver'
+import { getUserIdsWithPermission, hasPermission } from '../rbac/permissions'
 import { drainQuestionAnswerDeliverySoon } from './question-answer-delivery'
 import { ensureQuestionDeliveryFailureAlert } from './question-delivery-failure-alert'
 
@@ -582,60 +581,81 @@ export async function getAgentQuestion(id: string): Promise<AgentQuestion | null
   return row ? toJson(row) : null
 }
 
+/** Disabled accounts cannot open the Action Center and must never receive retained-device push. */
+async function listEnabledUserIds(candidateIds: string[]): Promise<string[]> {
+  if (candidateIds.length === 0) return []
+  const rows = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(inArray(users.id, candidateIds), isNull(users.disabledAt)))
+  const enabled = new Set(rows.map(({ id }) => id))
+  return candidateIds.filter((userId) => enabled.has(userId))
+}
+
 /**
- * Users eligible to see a question-created notification. The persisted question is authoritative:
- * its owner always qualifies, while squad subscribers must also be allowed to read pending actions.
+ * Users who may SEE this question in their Action Center: everyone with `actions:read` on its
+ * squad, plus its durable direct recipients and a compatible squadless personal owner. This is the
+ * audience for the content-free `actions.invalidated` hint and for the routability check behind
+ * `audience_resolution`. Attention levels are deliberately NOT applied here — the hint carries no
+ * content, so over-targeting someone who muted the squad costs one refetch, while under-targeting
+ * would leave a real recipient's list stale.
  */
 export async function listAgentQuestionAttentionUserIds(questionId: string): Promise<string[]> {
   const question = await getAgentQuestion(questionId)
   if (!question) return []
 
-  const squadId = question.squadId
-  const subscribers = squadId ? await listSquadSubscriberIds(squadId) : []
-  const persistedOrigins = await db
-    .select({ workStreamId: agentQuestionWorkStreamOrigins.workStreamId })
-    .from(agentQuestionWorkStreamOrigins)
-    .where(eq(agentQuestionWorkStreamOrigins.questionId, questionId))
-  const originSubscribers = (
-    await Promise.all(persistedOrigins.map(({ workStreamId }) => listWorkStreamSubscriberIds(workStreamId)))
-  ).flat()
-  const dynamicSubscribers = [...new Set([...subscribers, ...originSubscribers])]
+  const permittedIds = question.squadId ? await getUserIdsWithPermission('actions:read', question.squadId) : []
   const explicitRecipients = await db
     .select({ userId: agentQuestionRecipients.userId })
     .from(agentQuestionRecipients)
     .where(eq(agentQuestionRecipients.questionId, questionId))
-  const explicitIds = explicitRecipients.map(({ userId }) => userId)
-  // A stored owner is an attention candidate only for a squadless personal agent; a
-  // squad-bound agent's owner snapshot is metadata, not an attention entitlement.
+  // A stored owner is an attention candidate only for a squadless personal agent; a squad-bound
+  // agent's owner snapshot is metadata, not an attention entitlement.
   const personalOwnerIds = question.ownerUserId && !question.squadId ? [question.ownerUserId] : []
-  const candidateIds = [...new Set([...personalOwnerIds, ...explicitIds, ...dynamicSubscribers])]
-  if (candidateIds.length === 0) return []
+  return listEnabledUserIds([
+    ...new Set([...personalOwnerIds, ...explicitRecipients.map(({ userId }) => userId), ...permittedIds]),
+  ])
+}
 
-  // Disabled accounts cannot access Action Center and must never receive retained-device push content.
-  const enabledRows = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(and(inArray(users.id, candidateIds), isNull(users.disabledAt)))
-  const enabled = new Set(enabledRows.map(({ id }) => id))
+/**
+ * Users who should be PUSHED about this question: its squadless personal owner, its durable direct
+ * recipients, and every user whose effective `decisions` level is `notify` for the question's squad
+ * or one of its work-stream origins AND who can read pending actions there. The candidate set is
+ * bounded by subscription rows, never by the user table.
+ */
+export async function listAgentQuestionNotifyUserIds(questionId: string): Promise<string[]> {
+  const question = await getAgentQuestion(questionId)
+  if (!question) return []
 
-  const authorized = await Promise.all(
-    [...enabled].map(async (userId) => {
-      const [watchedSquadIds, watchedWorkStreamIds] = await Promise.all([
-        listUserWatchedSquadIds(userId),
-        listUserWatchedWorkStreamIds(userId),
-      ])
-      const visible = await canReceiveAgentQuestionAttention(
-        { type: 'user', userId },
-        { id: question.id, ownerUserId: question.ownerUserId, squadId: question.squadId },
-        {
-          watchedSquadIds: new Set(watchedSquadIds),
-          watchedWorkStreamIds: new Set(watchedWorkStreamIds),
-        }
+  const explicitRecipients = await db
+    .select({ userId: agentQuestionRecipients.userId })
+    .from(agentQuestionRecipients)
+    .where(eq(agentQuestionRecipients.questionId, questionId))
+  const personalOwnerIds = question.ownerUserId && !question.squadId ? [question.ownerUserId] : []
+
+  let notifyIds: string[] = []
+  const squadId = question.squadId
+  if (squadId) {
+    const origins = await db
+      .select({ workStreamId: agentQuestionWorkStreamOrigins.workStreamId })
+      .from(agentQuestionWorkStreamOrigins)
+      .where(eq(agentQuestionWorkStreamOrigins.questionId, questionId))
+    const candidates = await listSquadScopeNotifyUserIds(
+      squadId,
+      origins.map(({ workStreamId }) => workStreamId),
+      'decisions'
+    )
+    const authorized = await Promise.all(
+      candidates.map(async (userId) =>
+        (await hasPermission({ type: 'user', userId }, 'actions:read', squadId)) ? userId : null
       )
-      return visible ? userId : null
-    })
-  )
-  return authorized.filter((userId): userId is string => Boolean(userId))
+    )
+    notifyIds = authorized.filter((userId): userId is string => userId !== null)
+  }
+
+  return listEnabledUserIds([
+    ...new Set([...personalOwnerIds, ...explicitRecipients.map(({ userId }) => userId), ...notifyIds]),
+  ])
 }
 
 export async function listActionableAgentQuestions(): Promise<AgentQuestion[]> {

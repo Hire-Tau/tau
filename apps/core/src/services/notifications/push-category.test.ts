@@ -16,7 +16,7 @@ describe('pushCategoryFor', () => {
     expect(inbox({ source: 'fleet-alert' }, { recipientType: 'system' })).toBe('fleet')
     expect(inbox({}, { recipientType: 'voice_assistant', recipientId: 'assistant:x' })).toBe('assistant')
     expect(inbox({})).toBe('message')
-    expect(inbox({ notificationKind: 'workStream.blocked' })).toBe('message')
+    expect(inbox({ notificationKind: 'workStream.blocked' })).toBe('review')
   })
 
   test('an unbuilt event still resolves to a category', () => {

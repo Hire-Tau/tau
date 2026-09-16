@@ -31,8 +31,8 @@ function parsedConsumedAt(metadata: Record<string, unknown> | null): Date | null
  * Repair legacy open questions whose attention audience was never durably
  * resolved (resolution null/pending and no denormalized owner). For each, the
  * trusted execution/origin evidence is replayed to backfill recipients and
- * origins, resolving the audience when attention recipients exist and marking
- * it `legacy-unresolved` otherwise. An unresolved audience is a routing state,
+ * origins, resolving the audience when some authorized human can reach the
+ * question and marking it `legacy-unresolved` otherwise. An unresolved audience is a routing state,
  * not a failure: the question stays visible and answerable, and no
  * system-inbox notice is sent for it.
  */
@@ -138,6 +138,12 @@ export async function reconcileAgentQuestionAttentionOnce(
       for (const { id } of enabled) enabledIds.add(id)
     }
 
+    // Subscription rows on the origin streams are a CANDIDATE SIGNAL for routability, not an
+    // attention entitlement: they are collected at any level (a `mute` row counts here) because
+    // what is being decided is whether anyone can reach this question at all, not who gets
+    // interrupted about it. Visibility is permission-shaped, so the candidates are narrowed by
+    // `actions:read` below; attention levels only decide notification, and are applied by the
+    // notify-time resolvers, never here.
     const originSubscriberIds = (
       await Promise.all(originIds.map((workStreamId) => listWorkStreamSubscriberIds(workStreamId, executor)))
     ).flat()
@@ -156,7 +162,9 @@ export async function reconcileAgentQuestionAttentionOnce(
           )
         )
       : []
-    const hasAttentionRecipients =
+    // "Is this question reachable by some authorized human?" — the routing question, not "who is
+    // notified?".
+    const hasRoutableAudience =
       enabledIds.size > 0 ||
       authorizedOriginSubscriberIds.some(Boolean) ||
       (executor === db && (await listAgentQuestionAttentionUserIds(question.id)).length > 0)
@@ -191,7 +199,7 @@ export async function reconcileAgentQuestionAttentionOnce(
           .onConflictDoNothing()
       }
 
-      if (execution && hasAttentionRecipients) {
+      if (execution && hasRoutableAudience) {
         await tx
           .update(agentQuestions)
           .set({

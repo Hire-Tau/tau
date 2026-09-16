@@ -13,7 +13,7 @@ export const PUSH_CATEGORIES = [
   {
     id: 'review',
     label: 'Review requests',
-    description: 'A work stream you watch is ready for your review.',
+    description: 'A work stream you watch is ready for your review or is blocked on you.',
   },
   {
     id: 'done',

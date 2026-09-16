@@ -104,6 +104,9 @@ export function NotificationPreferences() {
               </li>
             ))}
           </ul>
+          <p className="mt-3 text-xs text-muted">
+            Which squads and work streams notify you is set on each squad and work stream (Notify / Show / Mute).
+          </p>
         </div>
       )}
     </div>

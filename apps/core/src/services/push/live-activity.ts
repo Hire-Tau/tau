@@ -373,9 +373,13 @@ export function registerLiveActivityFanout(emitter: {
   on<K extends keyof EventMap>(event: K, handler: (payload: EventMap[K]) => void): () => void
 }): LiveActivityFanout {
   const fanout = createLiveActivityFanout({
-    // Same recipient set the work-stream inbox notification uses: watchers of the stream ∪
-    // watchers of its squad. Reused rather than re-derived so the card and the inbox never
-    // disagree about who cares.
+    // The RECOMPUTE set, not a recipient set: every user with a subscription row on the stream or
+    // its squad, at any level. Deliberately wider than the inbox notice (which resolves effective
+    // `notify` and checks permission) because a row at any level can change what the card should
+    // show — including dropping the stream off it. Each user's own snapshot then decides what, if
+    // anything, they see: `loadWorkInterestSnapshot` keeps only work whose effective attention is
+    // `notify` and whose squad the user may read, so a mute or a lost role ends the card instead
+    // of leaking content into it.
     resolveUserIds: async ({ workStreamId, squadId }) => {
       const [streamWatchers, squadWatchers] = await Promise.all([
         workStreamId ? listWorkStreamSubscriberIds(workStreamId) : Promise.resolve([]),

@@ -30,6 +30,7 @@ import {
   listActionableAgentQuestions,
   listAgentQuestions,
   listAgentQuestionAttentionUserIds,
+  listAgentQuestionNotifyUserIds,
   reconcileTerminatedAgentQuestionsOnce,
   retryAgentQuestionAnswerDelivery,
   setQuestionBlocking,
@@ -39,6 +40,7 @@ import { eventEmitter } from '../../lib/infra/event-emitter'
 import { WorkStream } from '../../entities/WorkStream'
 import { isNull } from 'drizzle-orm'
 import { subscribeToSquad } from '../squad/subscriptions'
+import { subscribeToWorkStream } from '../work-streams/subscriptions'
 import { getSettingsStore } from '../settings/store'
 import { waitForQuestionAnswerDeliveryDrains } from './question-answer-delivery'
 import * as admissionModule from '../work-streams/admission'
@@ -257,7 +259,7 @@ describe('async agent questions', () => {
     expect(await listAgentQuestionAttentionUserIds(disabledQuestion.id)).toEqual([])
   })
 
-  it('resolves personal owners, direct recipients, and authorized squad watchers without leaking', async () => {
+  it('resolves personal owners, direct recipients, and every authorized reader without leaking', async () => {
     const authorizedWatcher = await createTestUser({ prefix })
     const unauthorizedWatcher = await createTestUser({ prefix })
     createdUserIds.push(authorizedWatcher.id, unauthorizedWatcher.id)
@@ -276,13 +278,18 @@ describe('async agent questions', () => {
     const agent = await createAgent({ squadId: squad.id, ownerUserId: user.id })
     const q = await createQuestion(agent)
 
-    // The squad-bound agent's stored owner is metadata, not an attention entitlement: user
-    // watches without actions:read, so only the authorized watcher gets attention.
-    expect(await listAgentQuestionAttentionUserIds(q.id)).toEqual([authorizedWatcher.id])
+    // Watching is no longer part of visibility: actions:read on the squad is. The owner without
+    // that permission stays out; the unauthorized watcher never gets in.
+    const before = new Set(await listAgentQuestionAttentionUserIds(q.id))
+    expect(before).toContain(authorizedWatcher.id)
+    expect(before).not.toContain(unauthorizedWatcher.id)
+    expect(before).not.toContain(user.id)
 
-    // The same owner qualifies through the authorized watcher path once granted actions:read.
     await assignRole({ userId: user.id, roleId: role.id, scope: 'squad', squadId: squad.id })
-    expect(new Set(await listAgentQuestionAttentionUserIds(q.id))).toEqual(new Set([user.id, authorizedWatcher.id]))
+    const after = new Set(await listAgentQuestionAttentionUserIds(q.id))
+    expect(after).toContain(user.id)
+    expect(after).toContain(authorizedWatcher.id)
+    expect(after).not.toContain(unauthorizedWatcher.id)
     expect(await listAgentQuestionAttentionUserIds('00000000-0000-0000-0000-000000000000')).toEqual([])
   })
 
@@ -299,7 +306,92 @@ describe('async agent questions', () => {
     const agent = await createAgent({ squadId: squad.id })
     const q = await createQuestion(agent)
 
-    expect(await listAgentQuestionAttentionUserIds(q.id)).toEqual([enabledWatcher.id])
+    const resolved = new Set(await listAgentQuestionAttentionUserIds(q.id))
+    expect(resolved).toContain(enabledWatcher.id)
+    expect(resolved).not.toContain(disabledWatcher.id)
+  })
+
+  it('pushes a squad question to notify-level readers only, while show-level readers still see it', async () => {
+    const notifier = await createTestUser({ prefix })
+    const shower = await createTestUser({ prefix })
+    const muter = await createTestUser({ prefix })
+    createdUserIds.push(notifier.id, shower.id, muter.id)
+    const role = await createTestRole({ prefix, permissions: ['actions:read'] })
+    for (const reader of [notifier, shower, muter]) {
+      await assignRole({ userId: reader.id, roleId: role.id, scope: 'squad', squadId: squad.id })
+    }
+    await subscribeToSquad(squad.id, notifier.id)
+    await subscribeToSquad(squad.id, muter.id, { decisions: 'mute', progress: 'mute' })
+    const agent = await createAgent({ squadId: squad.id })
+    const q = await createQuestion(agent)
+
+    const notified = new Set(await listAgentQuestionNotifyUserIds(q.id))
+    expect(notified).toContain(notifier.id)
+    expect(notified).not.toContain(shower.id)
+    expect(notified).not.toContain(muter.id)
+
+    // The show-level reader is not pushed, but the question is still theirs to see.
+    expect(new Set(await listAgentQuestionAttentionUserIds(q.id))).toContain(shower.id)
+  })
+
+  it('never pushes a squad question to a notify-level user who cannot read actions', async () => {
+    const loudButBlind = await createTestUser({ prefix })
+    createdUserIds.push(loudButBlind.id)
+    await subscribeToSquad(squad.id, loudButBlind.id)
+    const agent = await createAgent({ squadId: squad.id })
+    const q = await createQuestion(agent)
+
+    expect(await listAgentQuestionNotifyUserIds(q.id)).not.toContain(loudButBlind.id)
+  })
+
+  it('never fans a squadless question out to instance-wide actions:read holders', async () => {
+    const instanceReader = await createTestUser({ prefix })
+    const direct = await createTestUser({ prefix })
+    createdUserIds.push(instanceReader.id, direct.id)
+    const role = await createTestRole({ prefix, permissions: ['actions:read'] })
+    await assignRole({ userId: instanceReader.id, roleId: role.id, scope: 'system' })
+    const personalAgent = await createAgent({ ownerUserId: user.id })
+    const q = await createQuestion(personalAgent)
+    await db.insert(agentQuestionRecipients).values({
+      questionId: q.id,
+      userId: direct.id,
+      reason: 'execution-participant',
+    })
+
+    // A squadless question has no squad to read: its push audience is exactly its personal owner
+    // and its direct recipients, never everyone holding the permission instance-wide.
+    expect(new Set(await listAgentQuestionNotifyUserIds(q.id))).toEqual(new Set([user.id, direct.id]))
+  })
+
+  it('lets an origin stream mute a question from a squad the reader is notified about', async () => {
+    const reader = await createTestUser({ prefix })
+    createdUserIds.push(reader.id)
+    const role = await createTestRole({ prefix, permissions: ['actions:read'] })
+    await assignRole({ userId: reader.id, roleId: role.id, scope: 'squad', squadId: squad.id })
+    await subscribeToSquad(squad.id, reader.id, { decisions: 'notify', progress: 'notify' })
+    const agent = await createAgent({ squadId: squad.id })
+    const muted = await storedLegacyWorkStream({
+      squadId: squad.id,
+      title: `${prefix} muted origin`,
+      assigneeAgentId: agent.id,
+      agentIds: [agent.id],
+    })
+    await subscribeToWorkStream(muted.id, reader.id, { decisions: 'mute', progress: 'notify' })
+
+    // Origin precedence: the question IS its origin, so the muted stream row wins over the
+    // notified squad row and the squad row alone can never add the reader back.
+    const fromMutedStream = await createQuestion(agent, {}, [muted.id])
+    expect(
+      await db
+        .select({ workStreamId: agentQuestionWorkStreamOrigins.workStreamId })
+        .from(agentQuestionWorkStreamOrigins)
+        .where(eq(agentQuestionWorkStreamOrigins.questionId, fromMutedStream.id))
+    ).toEqual([{ workStreamId: muted.id }])
+    expect(await listAgentQuestionNotifyUserIds(fromMutedStream.id)).not.toContain(reader.id)
+
+    // With no origins the question is the squad's own, so the squad row decides.
+    const squadLevel = await createQuestion(agent)
+    expect(await listAgentQuestionNotifyUserIds(squadLevel.id)).toContain(reader.id)
   })
 
   describe('exact execution attention', () => {

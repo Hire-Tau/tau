@@ -16,12 +16,13 @@ import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/rea
 import { queryKeys } from '../queryKeys'
 import { queries } from '../queryOptions'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
-import { resolveWorkStreamWait, subscribeWorkStream, unsubscribeWorkStream } from '../api/squads'
+import { resolveWorkStreamWait } from '../api/squads'
 import { MarkdownContent } from './MarkdownContent'
 import { Modal } from './Modal'
 import { Badge, type BadgeColor } from './Badge'
 import { WorkStreamFileList } from './WorkStreamFileCard'
-import { BellCheckIcon, BellIcon, GitHubIcon, PullRequestIcon } from './icons'
+import { GitHubIcon, PullRequestIcon } from './icons'
+import { AttentionMenu } from './AttentionMenu'
 import type { WorkStream, WorkStreamPriority, WorkStreamWaitType, Squad, Agent } from '@tau/shared'
 import { getAgentPrimaryLabel } from '../lib/agentDisplay'
 import { computeWorkStreamElapsedMs } from '../lib/workStreamRuntime'
@@ -261,7 +262,7 @@ export function WorkStreamDetailModal({
       queryClient.invalidateQueries({ queryKey: queryKeys.actions.pending() })
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.allWorkStreams() })
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.workStreams(workStream.squadId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.squads.activeWorkStreams() })
+      queryClient.invalidateQueries({ queryKey: queryKeys.squads.activeWorkStreamsPrefix() })
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.activeWorkStreams(workStream.squadId) })
       queryClient.invalidateQueries({ queryKey: [...queryKeys.squads.all, 'doneWorkStreams'] })
       queryClient.invalidateQueries({ queryKey: queryKeys.squads.workStreamDetail(workStream.id) })
@@ -282,17 +283,6 @@ export function WorkStreamDetailModal({
     }
   }
 
-  // Watch ("subscribe") — get review and completion updates in your inbox (and push).
-  const { data: subscription } = useQuery(queries.workStreamSubscription.detail(workStream.id))
-  const isWatching = subscription?.subscribed ?? false
-  const watchMutation = useMutation({
-    mutationFn: (subscribe: boolean) =>
-      subscribe ? subscribeWorkStream(workStream.id) : unsubscribeWorkStream(workStream.id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.workStreamSubscription.detail(workStream.id) })
-    },
-  })
-
   const headerExtra = <WorkStreamStatusBadges workStream={workStream} showQueuePosition />
 
   const hasActiveRuntime = (workStream.runtime?.activeCount ?? 0) > 0
@@ -307,35 +297,12 @@ export function WorkStreamDetailModal({
       onClose={onClose}
       title={workStreamTitle(workStream)}
       headerExtra={headerExtra}
-      headerActions={
-        <button
-          type="button"
-          onClick={() => watchMutation.mutate(!isWatching)}
-          disabled={!subscription || watchMutation.isPending}
-          aria-label={isWatching ? 'Stop watching work stream' : 'Watch work stream'}
-          aria-pressed={isWatching}
-          title={`${isWatching ? 'Watching — click to stop updates' : 'Watch for updates'} · ${subscription?.count ?? 0} watching`}
-          className={clsx(
-            'tau-button inline-flex items-center gap-1.5 rounded-md p-1.5 text-xs hover:bg-surface-hover',
-            isWatching ? 'text-accent' : 'text-muted'
-          )}
-        >
-          <span aria-hidden="true">
-            {isWatching ? <BellCheckIcon className="h-4 w-4" /> : <BellIcon className="h-4 w-4" />}
-          </span>
-          <span>{subscription?.count ?? 0}</span>
-        </button>
-      }
+      headerActions={<AttentionMenu target={{ kind: 'workStream', id: workStream.id }} />}
       maxWidth="readable"
     >
       <div className="space-y-6 text-sm [&>details:not([open])+div:last-child]:!mt-3">
         {workStream.status !== 'done' && workStream.status !== 'canceled' && (
           <WorkStreamPauseControls stream={workStream} />
-        )}
-        {watchMutation.isError && (
-          <p role="alert" className="text-xs text-danger">
-            Could not update watching. Try again.
-          </p>
         )}
 
         {/* Review/manual wait respond panel */}

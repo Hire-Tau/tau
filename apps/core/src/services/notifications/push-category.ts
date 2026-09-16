@@ -11,7 +11,9 @@ export function pushCategoryFor(eventType: string, event: NotificationEvent | nu
   const recipientType = (data as { recipientType?: unknown } | null | undefined)?.recipientType
   if (recipientType === 'voice_assistant') return 'assistant'
   if (event?.source === 'fleet-alert') return 'fleet'
-  if (event?.notificationKind === 'workStream.review') return 'review'
+  // A manual wait is a decision waiting on a person, like a review — one mute covers both.
+  if (event?.notificationKind === 'workStream.review' || event?.notificationKind === 'workStream.blocked')
+    return 'review'
   if (event?.notificationKind === 'workStream.done') return 'done'
   return 'message'
 }

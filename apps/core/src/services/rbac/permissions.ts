@@ -2,6 +2,7 @@ import { db } from '../../db'
 import { agentExtraScopes, agents, agentTypes, roleAssignments, roles, users } from '../../db/schema'
 import { eq, and, isNotNull, isNull } from 'drizzle-orm'
 import { isLiveAgentStatus, permissionMatches } from '@tau/shared'
+import { mapWithConcurrency } from '../../lib/infra/mapWithConcurrency'
 
 export { permissionMatches }
 
@@ -507,17 +508,23 @@ export async function hasAnySlotCleanupPermission(
   return permissions.some((permission) => heldPermissions.some((held) => permissionMatches(held, permission)))
 }
 
+/** How many per-user permission checks may be in flight during a full-user scan. */
+const PERMISSION_SCAN_CONCURRENCY = 16
+
 /**
- * Return the ids of all enabled users who hold a (system-scoped) permission. Used to fan out shared
- * system notifications (e.g. the system inbox) to the right people instead of broadcasting to all.
+ * Every enabled user holding `permission`, optionally within one squad's scope. This is the only
+ * place that scans all users; use it for content-free fan-out (realtime invalidation) and
+ * routability checks, never for push recipients — those resolve from bounded subscription rows.
  */
-export async function getUserIdsWithPermission(permission: string): Promise<string[]> {
+export async function getUserIdsWithPermission(permission: string, squadId?: string): Promise<string[]> {
   const enabledUsers = await db.select({ id: users.id }).from(users).where(isNull(users.disabledAt))
-  const matching: string[] = []
-  for (const user of enabledUsers) {
-    if (await hasPermission({ type: 'user', userId: user.id }, permission)) matching.push(user.id)
-  }
-  return matching
+  // Resolved with a bounded number of checks in flight rather than one sequential await per user:
+  // question lifecycle events call this repeatedly, and each check is a cache hit or a small read.
+  // `mapWithConcurrency` returns results in input order, so the audience order is unchanged.
+  const holds = await mapWithConcurrency(enabledUsers, PERMISSION_SCAN_CONCURRENCY, (user) =>
+    hasPermission({ type: 'user', userId: user.id }, permission, squadId)
+  )
+  return enabledUsers.filter((_, index) => holds[index]).map(({ id }) => id)
 }
 
 export async function getAccessibleSquadIds(identity: Identity): Promise<string[] | 'all'> {

@@ -1,0 +1,2 @@
+ALTER TABLE "squad_subscriptions" ADD COLUMN "attention" jsonb DEFAULT '{"decisions":"notify","progress":"notify"}'::jsonb NOT NULL;--> statement-breakpoint
+ALTER TABLE "work_stream_subscriptions" ADD COLUMN "attention" jsonb DEFAULT '{"decisions":"notify","progress":"notify"}'::jsonb NOT NULL;

@@ -1,4 +1,5 @@
 import type {
+  Attention,
   Squad,
   SquadWithRelationships,
   SquadRelationship,
@@ -16,6 +17,10 @@ import type {
   TrackedResource,
   TrackedResourcesView,
 } from '@tau/shared'
+// The payload shapes live with the transport in @tau/client-core; web re-exports them so
+// components keep importing their api-layer types from one place, with one definition behind it.
+import type { SquadSubscription, WorkStreamSubscription } from '@tau/client-core'
+export type { SquadSubscription, WorkStreamSubscription }
 import { apiFetch } from './client'
 import { client } from './clientInstance'
 
@@ -232,6 +237,12 @@ export async function listActiveWorkStreams(
   return fetch<WorkStream[]>(`/workstreams?${params.toString()}`)
 }
 
+/** The feed's active-work list, server-filtered to what this user has not muted for progress. */
+export async function listAttentionWorkStreams(fetch: typeof apiFetch = apiFetch): Promise<WorkStream[]> {
+  const params = new URLSearchParams({ statuses: WS_ACTIVE_STATUSES.join(','), respectAttention: 'true' })
+  return fetch<WorkStream[]>(`/workstreams?${params.toString()}`)
+}
+
 export async function listDoneWorkStreams(
   opts: {
     squadId?: string
@@ -300,29 +311,34 @@ export async function getWorkStreamMetrics(id: string): Promise<WorkStreamMetric
   return result.metrics
 }
 
-export interface WorkStreamSubscription {
-  subscribed: boolean
-  count: number
-}
-
 export async function getWorkStreamSubscription(id: string): Promise<WorkStreamSubscription> {
   return apiFetch<WorkStreamSubscription>(`/workstreams/${encodeURIComponent(id)}/subscription`)
 }
 
-export async function getSquadSubscription(id: string): Promise<WorkStreamSubscription> {
-  return apiFetch<WorkStreamSubscription>(`/squads/${id}/subscription`)
+export async function getSquadSubscription(id: string): Promise<SquadSubscription> {
+  return apiFetch<SquadSubscription>(`/squads/${id}/subscription`)
 }
 
-export async function subscribeSquad(id: string): Promise<WorkStreamSubscription> {
-  return apiFetch<WorkStreamSubscription>(`/squads/${id}/subscribe`, { method: 'POST' })
+export async function subscribeSquad(
+  id: string,
+  attention?: Attention,
+  fetch: typeof apiFetch = apiFetch
+): Promise<SquadSubscription> {
+  return fetch<SquadSubscription>(`/squads/${id}/subscribe`, {
+    method: 'POST',
+    ...(attention ? { body: JSON.stringify({ attention }) } : {}),
+  })
 }
 
-export async function unsubscribeSquad(id: string): Promise<WorkStreamSubscription> {
-  return apiFetch<WorkStreamSubscription>(`/squads/${id}/subscribe`, { method: 'DELETE' })
+export async function unsubscribeSquad(id: string): Promise<SquadSubscription> {
+  return apiFetch<SquadSubscription>(`/squads/${id}/subscribe`, { method: 'DELETE' })
 }
 
-export async function subscribeWorkStream(id: string): Promise<WorkStreamSubscription> {
-  return apiFetch<WorkStreamSubscription>(`/workstreams/${encodeURIComponent(id)}/subscribe`, { method: 'POST' })
+export async function subscribeWorkStream(id: string, attention?: Attention): Promise<WorkStreamSubscription> {
+  return apiFetch<WorkStreamSubscription>(`/workstreams/${encodeURIComponent(id)}/subscribe`, {
+    method: 'POST',
+    ...(attention ? { body: JSON.stringify({ attention }) } : {}),
+  })
 }
 
 export async function unsubscribeWorkStream(id: string): Promise<WorkStreamSubscription> {

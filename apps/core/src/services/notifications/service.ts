@@ -30,7 +30,7 @@ import {
 import { ChannelInstance } from '../../entities/ChannelInstance'
 import { Squad } from '../../entities/Squad'
 import { buildNotificationEvent, getAppOrigin } from './event-builders'
-import { listAgentQuestionAttentionUserIds } from '../agents/questions'
+import { listAgentQuestionNotifyUserIds } from '../agents/questions'
 
 const log = createLogger('notify')
 
@@ -195,7 +195,8 @@ export class NotificationService {
   }
 
   // Resolve which users' devices should receive a push for this event, then their subscriptions.
-  // Inbox events use their concrete recipient; agent questions use their persisted attention recipients.
+  // Inbox events use their concrete recipient; agent questions use their notify-level attention
+  // audience (direct recipients and a personal owner always included).
   /** Recipient user IDs that should receive a push for this event (after per-user preferences). */
   private async resolveEnabledPushUserIds(
     data: unknown,
@@ -206,7 +207,7 @@ export class NotificationService {
 
     if (eventType === 'agent-question.created') {
       const questionId = (data as { questionId?: unknown } | null)?.questionId
-      userIds = typeof questionId === 'string' ? await listAgentQuestionAttentionUserIds(questionId) : []
+      userIds = typeof questionId === 'string' ? await listAgentQuestionNotifyUserIds(questionId) : []
     } else {
       const d = data as { recipientType?: string; recipientId?: string } | undefined
       if (!d?.recipientType || !d.recipientId) return []

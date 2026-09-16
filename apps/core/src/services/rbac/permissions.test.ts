@@ -6,6 +6,7 @@ import {
   hasPermission,
   hasAnyPermission,
   getAccessibleSquadIds,
+  getUserIdsWithPermission,
   resolveRoleSummaries,
   type UserIdentity,
   type AgentIdentity,
@@ -533,6 +534,54 @@ describe('hasPermission', () => {
 
     expect(await hasAnyPermission(identity, ['secrets:read', 'secrets:read:integration'])).toBe(true)
     expect(await hasAnyPermission(identity, ['secrets:read', 'secrets:read:system'])).toBe(false)
+  })
+})
+
+describe('getUserIdsWithPermission', () => {
+  beforeAll(cleanup)
+  afterAll(cleanup)
+
+  test('scopes to one squad and resolves more users than fit in a single concurrency window', async () => {
+    const squad = await Squad.create({ name: `${PREFIX} audience squad`, purpose: 'audience scan' })
+    const other = await Squad.create({ name: `${PREFIX} other squad`, purpose: 'audience scan' })
+    const role = await createTestRole({ prefix: PREFIX, permissions: ['actions:read'] })
+    const permitted: string[] = []
+    const denied: string[] = []
+    // More users than the internal concurrency window, alternating, so a batched resolver that
+    // misaligned or dropped results would show up as a missing, duplicated, or extra id.
+    for (let index = 0; index < 20; index++) {
+      const member = await createTestUser({ prefix: PREFIX })
+      if (index % 2 === 0) {
+        await assignRole({ userId: member.id, roleId: role.id, scope: 'squad', squadId: squad.id })
+        permitted.push(member.id)
+      } else {
+        denied.push(member.id)
+      }
+    }
+    invalidatePermissionCache()
+
+    const scoped = await getUserIdsWithPermission('actions:read', squad.id)
+    for (const userId of permitted) expect(scoped).toContain(userId)
+    for (const userId of denied) expect(scoped).not.toContain(userId)
+    expect(new Set(scoped).size).toBe(scoped.length)
+    // The audience is a SET: the underlying SELECT is unordered, so two calls may legitimately
+    // return the same ids in a different order. Compare sorted — callers must not depend on order.
+    expect([...(await getUserIdsWithPermission('actions:read', squad.id))].sort()).toEqual([...scoped].sort())
+
+    // A squad-scoped grant reaches neither another squad nor the system-only form.
+    const systemWide = await getUserIdsWithPermission('actions:read')
+    const otherSquad = await getUserIdsWithPermission('actions:read', other.id)
+    for (const userId of permitted) {
+      expect(systemWide).not.toContain(userId)
+      expect(otherSquad).not.toContain(userId)
+    }
+
+    // A system-scoped grant is visible to both forms.
+    const systemReader = await createTestUser({ prefix: PREFIX })
+    await assignRole({ userId: systemReader.id, roleId: role.id, scope: 'system' })
+    invalidatePermissionCache()
+    expect(await getUserIdsWithPermission('actions:read')).toContain(systemReader.id)
+    expect(await getUserIdsWithPermission('actions:read', squad.id)).toContain(systemReader.id)
   })
 })
 

@@ -2,6 +2,7 @@ import { UserNotificationPreferences } from '../../entities/UserNotificationPref
 import { and, eq, inArray, isNull, or } from 'drizzle-orm'
 import {
   buildWorkInterestSnapshot,
+  hasNotify,
   type WorkInterestSnapshot,
   type WorkStreamDerivedState,
   type WorkStreamStatus,
@@ -10,9 +11,8 @@ import {
 import { db } from '../../db'
 import { users, workStreams } from '../../db/schema'
 import { hasPermission } from '../rbac/permissions'
-import { listUserWatchedSquadIds } from '../squad/subscriptions'
+import { loadUserAttention, type UserAttention } from '../attention/resolver'
 import { computeDerivedStates } from '../work-streams/derived-state'
-import { listUserWatchedWorkStreamIds } from '../work-streams/subscriptions'
 
 export interface WorkInterestCandidate {
   id: string
@@ -33,8 +33,7 @@ export const WORK_INTEREST_AUTH_CONCURRENCY = 8
 
 export interface WorkInterestLoaderDeps {
   isActiveUser(userId: string): Promise<boolean>
-  loadWatchedSquadIds(userId: string): Promise<string[]>
-  loadWatchedWorkStreamIds(userId: string): Promise<string[]>
+  loadAttention(userId: string): Promise<UserAttention>
   loadCandidates(squadIds: string[], streamIds: string[]): Promise<WorkInterestCandidate[]>
   canReadSquad(userId: string, squadId: string): Promise<boolean>
   derive(streams: WorkInterestCandidate[]): Promise<Map<string, DerivedFacts>>
@@ -66,19 +65,27 @@ export function createWorkInterestLoader(deps: WorkInterestLoaderDeps) {
   return async (userId: string): Promise<WorkInterestSnapshot> => {
     if (!(await deps.isActiveUser(userId))) return buildWorkInterestSnapshot([], deps.now())
 
-    const [squadIds, streamIds] = await Promise.all([
-      deps.loadWatchedSquadIds(userId),
-      deps.loadWatchedWorkStreamIds(userId),
-    ])
+    // Live Activity and the widget carry work the user asked to be interrupted about, so interest
+    // is `notify` on either kind. DEFAULT_ATTENTION never notifies, which is why rows alone bound
+    // the candidate query.
+    const attention = await deps.loadAttention(userId)
+    const squadIds = Array.from(attention.squads.entries())
+      .filter(([, levels]) => hasNotify(levels))
+      .map(([squadId]) => squadId)
+    const streamIds = Array.from(attention.workStreams.entries())
+      .filter(([, levels]) => hasNotify(levels))
+      .map(([workStreamId]) => workStreamId)
     if (squadIds.length === 0 && streamIds.length === 0) return buildWorkInterestSnapshot([], deps.now())
 
     const candidates = await deps.loadCandidates(squadIds, streamIds)
     const deduped = [...new Map(candidates.map((stream) => [stream.id, stream])).values()]
-    const candidateSquadIds = [...new Set(deduped.map((stream) => stream.squadId))]
+    // A stream row can quiet one stream inside a notify squad; re-check each candidate.
+    const interested = deduped.filter((stream) => hasNotify(attention.forWorkStream(stream.id, stream.squadId)))
+    const candidateSquadIds = [...new Set(interested.map((stream) => stream.squadId))]
     const authorizedSquads = await filterAuthorizedSquads(candidateSquadIds, (squadId) =>
       deps.canReadSquad(userId, squadId)
     )
-    const authorized = deduped.filter((stream) => authorizedSquads.has(stream.squadId))
+    const authorized = interested.filter((stream) => authorizedSquads.has(stream.squadId))
     const derived = await deps.derive(authorized)
     return buildWorkInterestSnapshot(
       authorized.map((stream) => ({ ...stream, ...derived.get(stream.id) })),
@@ -119,8 +126,7 @@ const loadSnapshot = createWorkInterestLoader({
       .limit(1)
     return Boolean(user)
   },
-  loadWatchedSquadIds: listUserWatchedSquadIds,
-  loadWatchedWorkStreamIds: listUserWatchedWorkStreamIds,
+  loadAttention: loadUserAttention,
   loadCandidates,
   canReadSquad: (userId, squadId) => hasPermission({ type: 'user', userId }, 'workstreams:read', squadId),
   derive: computeDerivedStates,

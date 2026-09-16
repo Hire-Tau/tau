@@ -1,5 +1,6 @@
 import { externalDeliveryStreamIds } from './delivery-state'
 import { listPendingActions } from '../agents/actions'
+import { EMPTY_USER_ATTENTION } from '../attention/resolver'
 import { evaluatePendingAction } from '../agents/pending-action-policy'
 import { afterAll, beforeAll, describe, expect, spyOn, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
@@ -1281,7 +1282,7 @@ test('action center human gates use review permission and assigned reviewer filt
   await assignRole({ userId: reviewer.id, roleId: reviewRole.id, scope: 'squad', squadId })
   await assignRole({ userId: responder.id, roleId: responseRole.id, scope: 'squad', squadId })
   const action = (await listPendingActions()).find((a) => 'workStreamId' in a.data && a.data.workStreamId === id)!
-  const context = { watchedSquadIds: new Set([squadId]), watchedWorkStreamIds: new Set<string>() }
+  const context = { attention: EMPTY_USER_ATTENTION }
   expect(await evaluatePendingAction({ type: 'user', userId: reviewer.id }, action, context)).toEqual({
     visible: true,
     canRespond: true,

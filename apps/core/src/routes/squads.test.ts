@@ -133,6 +133,66 @@ describe('squads routes', () => {
     })
   })
 
+  describe('squad attention subscription', () => {
+    it('defaults to show/show, upserts explicit levels, and resets on delete', async () => {
+      const squad = await Squad.create({ name: `${testPrefix} Attention`, purpose: 'Testing' })
+      const get = () => app.request(`/api/squads/${squad.id}/subscription`, { headers: authHeaders(admin.token) })
+
+      expect(await (await get()).json()).toEqual({
+        subscribed: false,
+        count: 0,
+        attention: { decisions: 'show', progress: 'show' },
+      })
+
+      const watched = await app.request(`/api/squads/${squad.id}/subscribe`, {
+        method: 'POST',
+        headers: authHeaders(admin.token),
+      })
+      expect(watched.status).toBe(200)
+      expect(await watched.json()).toEqual({
+        subscribed: true,
+        count: 1,
+        attention: { decisions: 'notify', progress: 'notify' },
+      })
+
+      const tuned = await app.request(`/api/squads/${squad.id}/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
+        body: JSON.stringify({ attention: { decisions: 'notify', progress: 'mute' } }),
+      })
+      expect(await tuned.json()).toEqual({
+        subscribed: true,
+        count: 1,
+        attention: { decisions: 'notify', progress: 'mute' },
+      })
+      expect(await (await get()).json()).toMatchObject({ attention: { decisions: 'notify', progress: 'mute' } })
+
+      const removed = await app.request(`/api/squads/${squad.id}/subscribe`, {
+        method: 'DELETE',
+        headers: authHeaders(admin.token),
+      })
+      expect(await removed.json()).toEqual({
+        subscribed: false,
+        count: 0,
+        attention: { decisions: 'show', progress: 'show' },
+      })
+    })
+
+    it('rejects a malformed attention body without changing the row', async () => {
+      const squad = await Squad.create({ name: `${testPrefix} BadAttention`, purpose: 'Testing' })
+      for (const attention of [{ decisions: 'loud', progress: 'mute' }, { decisions: 'mute' }, 'mute']) {
+        const response = await app.request(`/api/squads/${squad.id}/subscribe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
+          body: JSON.stringify({ attention }),
+        })
+        expect(response.status).toBe(400)
+      }
+      const current = await app.request(`/api/squads/${squad.id}/subscription`, { headers: authHeaders(admin.token) })
+      expect(await current.json()).toMatchObject({ subscribed: false })
+    })
+  })
+
   describe('squad creation options and host workspace', () => {
     let previousRuntime: string | undefined
 
