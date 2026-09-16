@@ -23,6 +23,7 @@ import {
 import type {
   AmtpEnvelope,
   AmtpSignedAgentCard,
+  Attention,
   ProviderHealthKind,
   SquadActivityKind,
   SquadActivityRef,
@@ -1758,9 +1759,11 @@ export const userNotificationPreferences = pgTable('user_notification_preference
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 })
 
-// Work-stream subscriptions ("watchers"). Any user can subscribe to a work stream to receive its
-// lifecycle updates in their personal inbox (and push), like watching a GitHub PR/issue. The
-// requesting user is auto-subscribed on creation.
+// Work-stream subscriptions ("watchers"). A row records a user's ATTENTION for one stream:
+// `decisions` (questions, review and manual waits) and `progress` (feed presence, completion)
+// each at mute/show/notify. A stream row overrides the squad row; with no row at either level the
+// user gets DEFAULT_ATTENTION (show/show) — visible, never interrupting. The requesting user is
+// auto-subscribed on creation at WATCH_ATTENTION.
 export const workStreamSubscriptions = pgTable(
   'work_stream_subscriptions',
   {
@@ -1770,6 +1773,9 @@ export const workStreamSubscriptions = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    // Literal, not the imported WATCH_ATTENTION constant: drizzle-kit reads this file to emit SQL,
+    // so the default must be inspectable here. It is WATCH_ATTENTION by definition.
+    attention: jsonb('attention').$type<Attention>().notNull().default({ decisions: 'notify', progress: 'notify' }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.workStreamId, table.userId] })]
@@ -1874,9 +1880,11 @@ export const agentQuestionWorkStreamOrigins = pgTable(
   ]
 )
 
-// Squad-level subscriptions ("watch the whole squad"). A squad watcher is treated as watching every
-// work stream in the squad (current and future) for lifecycle notifications, and is an attention
-// recipient for the squad's manager questions in the Action Center (with actions:read).
+// Squad-level subscriptions ("watch the whole squad"). A row records a user's ATTENTION for every
+// stream in the squad (current and future) and for the squad's own items (manager questions,
+// halted agents): `decisions` and `progress`, each at mute/show/notify. A per-stream row overrides
+// this one; with no row anywhere the user gets DEFAULT_ATTENTION (show/show). `actions:read` and
+// `workstreams:read` still gate everything — attention only narrows what permission already allows.
 export const squadSubscriptions = pgTable(
   'squad_subscriptions',
   {
@@ -1886,6 +1894,9 @@ export const squadSubscriptions = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    // Literal, not the imported WATCH_ATTENTION constant: drizzle-kit reads this file to emit SQL,
+    // so the default must be inspectable here. It is WATCH_ATTENTION by definition.
+    attention: jsonb('attention').$type<Attention>().notNull().default({ decisions: 'notify', progress: 'notify' }),
     createdAt: timestamp('created_at').notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.squadId, table.userId] })]

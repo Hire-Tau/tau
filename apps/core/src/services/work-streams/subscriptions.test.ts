@@ -9,6 +9,7 @@ import {
   unsubscribeFromWorkStream,
   isSubscribedToWorkStream,
   listWorkStreamSubscriberIds,
+  getWorkStreamAttention,
 } from './subscriptions'
 import { cleanupTestRbac, createTestUser, type TestUser } from '../../test-utils'
 
@@ -39,8 +40,12 @@ describe('work-stream subscriptions', () => {
     expect(await isSubscribedToWorkStream(ws.id, user.id)).toBe(true)
     expect(await listWorkStreamSubscriberIds(ws.id)).toEqual([user.id])
 
+    await subscribeToWorkStream(ws.id, user.id, { decisions: 'show', progress: 'mute' })
+    expect(await getWorkStreamAttention(ws.id, user.id)).toEqual({ decisions: 'show', progress: 'mute' })
+
     await unsubscribeFromWorkStream(ws.id, user.id)
     expect(await isSubscribedToWorkStream(ws.id, user.id)).toBe(false)
+    expect(await getWorkStreamAttention(ws.id, user.id)).toBeNull()
   })
 
   it("delivers only high-signal lifecycle updates to a subscriber's personal inbox", async () => {

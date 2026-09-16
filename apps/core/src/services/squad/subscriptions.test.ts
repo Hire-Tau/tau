@@ -9,6 +9,7 @@ import {
   unsubscribeFromSquad,
   isSubscribedToSquad,
   listSquadSubscriberIds,
+  listUserSquadAttention,
   listUserWatchedSquadIds,
 } from './subscriptions'
 import { cleanupTestRbac, createTestUser, type TestUser } from '../../test-utils'
@@ -38,6 +39,7 @@ describe('squad subscriptions', () => {
     expect(await isSubscribedToSquad(squad.id, user.id)).toBe(true)
     expect(await listSquadSubscriberIds(squad.id)).toEqual([user.id])
     expect(await listUserWatchedSquadIds(user.id)).toContain(squad.id)
+    expect((await listUserSquadAttention(user.id)).get(squad.id)).toEqual({ decisions: 'notify', progress: 'notify' })
     await unsubscribeFromSquad(squad.id, user.id)
     expect(await isSubscribedToSquad(squad.id, user.id)).toBe(false)
   })

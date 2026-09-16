@@ -1,16 +1,32 @@
 import { and, eq } from 'drizzle-orm'
+import { WATCH_ATTENTION, parseAttention, type Attention } from '@tau/shared'
 import { db } from '../../db'
 import { squadSubscriptions } from '../../db/schema'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 
 /**
- * Squad-level subscriptions ("watch the whole squad"). A squad watcher is treated as watching every
- * work stream in the squad (current and future) for review/completion notifications, and is the audience for
- * the squad's manager questions in the Action Center.
+ * Squad-level attention rows. A row carries the user's `decisions` and `progress` levels for the
+ * whole squad; a per-work-stream row overrides it (see services/attention/resolver.ts). No row at
+ * all means DEFAULT_ATTENTION — visible everywhere the user has permission, notifying nowhere.
  */
 
-export async function subscribeToSquad(squadId: string, userId: string): Promise<void> {
-  await db.insert(squadSubscriptions).values({ squadId, userId }).onConflictDoNothing()
+/**
+ * Create or update the caller's squad attention row.
+ *
+ * With `attention`, the row is upserted to exactly those levels. Without it, a NEW row is created
+ * at WATCH_ATTENTION and an EXISTING row is left alone — a plain `tau squad watch` must never
+ * silently reset levels the user configured.
+ */
+export async function subscribeToSquad(squadId: string, userId: string, attention?: Attention): Promise<void> {
+  const insert = db.insert(squadSubscriptions).values({ squadId, userId, attention: attention ?? WATCH_ATTENTION })
+  if (attention) {
+    await insert.onConflictDoUpdate({
+      target: [squadSubscriptions.squadId, squadSubscriptions.userId],
+      set: { attention },
+    })
+  } else {
+    await insert.onConflictDoNothing()
+  }
   eventEmitter.emit('liveActivity.interestChanged', { userId })
 }
 
@@ -22,12 +38,17 @@ export async function unsubscribeFromSquad(squadId: string, userId: string): Pro
 }
 
 export async function isSubscribedToSquad(squadId: string, userId: string): Promise<boolean> {
+  return (await getSquadAttention(squadId, userId)) !== null
+}
+
+/** This user's stored levels for this squad, or null when there is no row. */
+export async function getSquadAttention(squadId: string, userId: string): Promise<Attention | null> {
   const [row] = await db
-    .select({ userId: squadSubscriptions.userId })
+    .select({ attention: squadSubscriptions.attention })
     .from(squadSubscriptions)
     .where(and(eq(squadSubscriptions.squadId, squadId), eq(squadSubscriptions.userId, userId)))
     .limit(1)
-  return Boolean(row)
+  return row ? parseAttention(row.attention) : null
 }
 
 export async function listSquadSubscriberIds(squadId: string): Promise<string[]> {
@@ -36,6 +57,15 @@ export async function listSquadSubscriberIds(squadId: string): Promise<string[]>
     .from(squadSubscriptions)
     .where(eq(squadSubscriptions.squadId, squadId))
   return rows.map((r) => r.userId)
+}
+
+/** Every squad row this user has, as a batch loader for one-request attention resolution. */
+export async function listUserSquadAttention(userId: string): Promise<Map<string, Attention>> {
+  const rows = await db
+    .select({ squadId: squadSubscriptions.squadId, attention: squadSubscriptions.attention })
+    .from(squadSubscriptions)
+    .where(eq(squadSubscriptions.userId, userId))
+  return new Map(rows.map((row) => [row.squadId, parseAttention(row.attention)]))
 }
 
 /** Squad ids the user watches (used to scope the Action Center and notifications). */
