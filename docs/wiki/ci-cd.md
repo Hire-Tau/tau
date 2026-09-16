@@ -25,9 +25,9 @@ credential. Release jobs run on main pushes, version tags or manual dispatch,
 and use GitHub's automatic token to publish; PR jobs do not publish releases or
 container images. The unsigned Core build is retained as a workflow artifact.
 
-Linux jobs use GitHub-hosted Ubuntu 24.04 runners for public repositories and
-Blacksmith for private repositories. Native portability tests remain on macOS.
-Runner selection does not change required checks, tests or completion guards.
+Linux jobs run on GitHub-hosted Ubuntu 24.04 runners; native portability
+tests remain on macOS. Runner selection does not change required checks, tests
+or completion guards.
 
 Run `bun typecheck` and the relevant package test entrypoints before opening a
 pull request. See [development](development.md) for local commands and isolated
