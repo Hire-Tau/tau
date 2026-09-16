@@ -84,8 +84,15 @@ async function decisionsUnmuted(
  * rows) and compatible squadless personal owners receive the action with no permission or level
  * check; everyone else needs `actions:read` AND an un-muted `decisions` level for the question's
  * squad or one of its work-stream origins. A subscription is no longer required — the default for
- * a user with no row at all is `show`. This is deliberately NOT chat/history readability, which
- * follows canonical agents:read on the agent (see routes/agent-questions.ts).
+ * a user with no row at all is `show`.
+ *
+ * SQUADLESS QUESTIONS ARE NOT AN ATTENTION SURFACE. A personal agent belongs to no squad and to no
+ * work stream, so there is nothing its question could be muted or followed through; the `show`
+ * default must not turn instance-wide `actions:read` into a view of someone else's personal
+ * questions. Those stay exactly where they were: their owner and their direct recipients.
+ *
+ * This is deliberately NOT chat/history readability, which follows canonical agents:read on the
+ * agent (see routes/agent-questions.ts).
  */
 export async function canReceiveAgentQuestionAttention(
   identity: Identity,
@@ -98,7 +105,10 @@ export async function canReceiveAgentQuestionAttention(
   if (userId && question.ownerUserId === userId && !question.squadId) return true
   if (userId && (await isDirectQuestionAttentionRecipient(question.id, userId))) return true
   if (!(await hasPermission(identity, 'actions:read', question.squadId ?? undefined))) return false
-  return identity.type !== 'user' || (await decisionsUnmuted(question, context))
+  // Non-user identities (agents, system/legacy tokens) never carried attention rows.
+  if (identity.type !== 'user') return true
+  if (!question.squadId) return false
+  return decisionsUnmuted(question, context)
 }
 
 export async function evaluatePendingAction(
@@ -110,8 +120,11 @@ export async function evaluatePendingAction(
   const squadId = action.squadId
   const canRead = await hasPermission(identity, 'actions:read', squadId)
   // Non-user identities (agents, system/legacy tokens) never carried attention rows and keep
-  // permission-only visibility.
-  const squadUnmuted = identity.type !== 'user' || context.attention.forSquad(squadId).decisions !== 'mute'
+  // permission-only visibility. For a user this is the squad's `decisions` level — and a SQUADLESS
+  // item never qualifies, because there is no squad or stream through which anyone could follow a
+  // personal agent; such items reach their owner only (see canReceiveAgentQuestionAttention).
+  const squadUnmuted =
+    identity.type !== 'user' || Boolean(squadId && context.attention.forSquad(squadId).decisions !== 'mute')
 
   if (action.type === 'agent-question') {
     const data = action.data as {

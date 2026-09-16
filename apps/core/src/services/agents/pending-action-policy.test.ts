@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import type { PendingAction } from '@tau/shared'
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import {
+  agentQuestionRecipients,
   agentQuestions,
   agentQuestionWorkStreamOrigins,
   agents,
@@ -22,6 +23,8 @@ let staleSquad: Squad
 let currentSquad: Squad
 let target: Agent
 let responder: TestUser
+/** Squadless agents created inside tests; no squad cascade reaches them. */
+const personalAgentIds: string[] = []
 
 beforeAll(async () => {
   await AgentType.create({
@@ -46,7 +49,7 @@ beforeAll(async () => {
 })
 
 afterAll(async () => {
-  await db.delete(agents).where(eq(agents.id, target.id))
+  await db.delete(agents).where(inArray(agents.id, [target.id, ...personalAgentIds]))
   await db.delete(squads).where(eq(squads.id, staleSquad.id))
   await db.delete(squads).where(eq(squads.id, currentSquad.id))
   await db.delete(agentTypes).where(eq(agentTypes.id, `${prefix}-type`))
@@ -151,6 +154,70 @@ describe('pending action response capability', () => {
 
     // With no origins the squad row decides, and it is muted.
     expect(await receives(plainQuestion, mutedSquadLoudStream)).toBe(false)
+  })
+
+  test('a squadless personal item stays owner-and-recipient only, even for instance-wide actions:read', async () => {
+    const personalOwner = await createTestUser({ prefix: `${prefix}-personal-owner` })
+    const directRecipient = await createTestUser({ prefix: `${prefix}-personal-recipient` })
+    const instanceReader = await createTestUser({ prefix: `${prefix}-instance-reader` })
+    const systemRole = await createTestRole({
+      prefix: `${prefix}-system-role`,
+      permissions: ['actions:read', 'agents:run'],
+    })
+    await assignRole({ userId: instanceReader.id, roleId: systemRole.id, scope: 'system' })
+
+    const personalAgent = await Agent.create({ agentTypeId: `${prefix}-type`, ownerUserId: personalOwner.id })
+    personalAgentIds.push(personalAgent.id)
+    const [question] = await db
+      .insert(agentQuestions)
+      .values({
+        agentId: personalAgent.id,
+        ownerUserId: personalOwner.id,
+        questionData: { questions: [{ id: 'input', type: 'text', question: 'Personal input?' }] },
+      })
+      .returning()
+    await db
+      .insert(agentQuestionRecipients)
+      .values({ questionId: question.id, userId: directRecipient.id, reason: 'execution-participant' })
+
+    const receives = (user: TestUser) =>
+      canReceiveAgentQuestionAttention(
+        { type: 'user', userId: user.id },
+        { id: question.id, ownerUserId: personalOwner.id, squadId: null },
+        { attention: EMPTY_USER_ATTENTION }
+      )
+
+    expect(await receives(personalOwner)).toBe(true)
+    expect(await receives(directRecipient)).toBe(true)
+    // A squadless agent has no attention surface at all — nobody can mute or follow a personal
+    // agent — so instance-wide actions:read must never route someone else's personal question.
+    expect(await receives(instanceReader)).toBe(false)
+
+    const halted: PendingAction = {
+      id: `agent-error:${personalAgent.id}`,
+      type: 'agent-error',
+      priority: 0,
+      createdAt: new Date().toISOString(),
+      canRespond: false,
+      data: {
+        agentId: personalAgent.id,
+        agentName: null,
+        agentTypeId: personalAgent.agentTypeId,
+        squadId: null,
+        squadName: null,
+        ownerUserId: personalOwner.id,
+        reason: 'Provider unavailable',
+      },
+    }
+    const attention = { attention: EMPTY_USER_ATTENTION }
+    expect(await evaluatePendingAction({ type: 'user', userId: personalOwner.id }, halted, attention)).toEqual({
+      visible: true,
+      canRespond: true,
+    })
+    expect(await evaluatePendingAction({ type: 'user', userId: instanceReader.id }, halted, attention)).toEqual({
+      visible: false,
+      canRespond: false,
+    })
   })
 
   test('uses the live nonterminated agent squad for legacy squad questions', async () => {
