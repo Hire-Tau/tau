@@ -12,6 +12,13 @@ import { useEffect, type RefObject } from 'react'
  * target free to run. Today's modals close on a backdrop click rather than on Escape, so this is
  * about future-proofing the nesting, not about a handler that exists now.
  *
+ * The implication of `stopImmediatePropagation` with several instances open at once: they all
+ * listen on `document` in the capture phase, so the FIRST-REGISTERED open popover consumes the key
+ * and closes, and the others stay open until the next press. That is the right behavior for the
+ * nested case this protects (inner before outer), and harmless for siblings, which cannot both be
+ * open under a pointer-dismiss policy — but it is registration order, not DOM nesting, that
+ * decides, so do not rely on it for a deliberately stacked UI.
+ *
  * `apps/web/src/components/AgentViewTabs.tsx` and `WorkStreamFiltersPopover.tsx` still carry their
  * own inline copies of this shape; adopting this hook there is a follow-up.
  */

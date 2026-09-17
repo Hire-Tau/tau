@@ -1,10 +1,12 @@
 import { Hono } from 'hono'
-import type { Context } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as squadEnv from '../services/squad/env'
 import { getSecretStore } from '../services/secrets'
 import { requirePermission, requireSquadPermission } from '../middleware'
+// The full squad id the guard already resolved AND authorized: re-deriving it from the route param
+// would repeat the lookup and could let a handler act on a different squad than the guard checked.
+import { resolvedSquadId } from '../middleware/require-permission'
 
 const setEnvSchema = z.object({
   content: z.string(),
@@ -17,16 +19,6 @@ const envNameSchema = z
 const setEnvSecretsSchema = z.object({
   keys: z.array(envNameSchema),
 })
-
-/**
- * The full squad id `requireSquadPermission` already resolved and authorized for this request.
- * Re-deriving it from the route param would repeat that lookup, and — worse — would let the
- * handler act on a different squad than the one the guard checked if the two ever resolved
- * differently.
- */
-function resolvedSquadId(c: Context): string {
-  return c.get('squadId') as string
-}
 
 export const squadEnvRouter = new Hono()
   // Get .tau/.env content
