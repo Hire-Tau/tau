@@ -1,14 +1,14 @@
 id: builder-reviewer
-description: Produce a deliverable and get an independent review, with explicit returns for rework.
+description: An engineer produces a deliverable and an independent reviewer checks it, with explicit returns for rework.
 definition:
   schemaVersion: 1
   name: With Review
   participants:
     builder:
-      agentTypeId: general
+      agentTypeId: engineer
       session: reuse-within-stream
     reviewer:
-      agentTypeId: general
+      agentTypeId: reviewer
       session: reuse-within-stream
   entry: build
   routing:
