@@ -297,7 +297,7 @@ export function WorkStreamDetailModal({
       onClose={onClose}
       title={workStreamTitle(workStream)}
       headerExtra={headerExtra}
-      headerActions={<AttentionMenu target={{ kind: 'workStream', id: workStream.id }} />}
+      headerActions={<AttentionMenu target={{ kind: 'workStream', id: workStream.id }} align="right" />}
       maxWidth="readable"
     >
       <div className="space-y-6 text-sm [&>details:not([open])+div:last-child]:!mt-3">

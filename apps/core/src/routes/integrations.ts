@@ -8,6 +8,9 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { requireSquadPermission } from '../middleware'
+// Every squad route below is guarded, so the handler acts on the id the guard resolved and
+// authorized rather than the raw param, which may be a short prefix naming a different scope.
+import { resolvedSquadId } from '../middleware/require-permission'
 import { auditActor, hasPermission, type Identity } from '../services/rbac'
 import {
   IntegrationConnectionInUseError,
@@ -578,7 +581,7 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
       requireSquadPermission('integrations:read', 'squadId'),
       async (c) => {
         c.header('Cache-Control', 'no-store')
-        return c.json(await resolveDefaultGitHubIdentity(c.req.param('squadId')))
+        return c.json(await resolveDefaultGitHubIdentity(resolvedSquadId(c)))
       }
     )
     .put(
@@ -591,31 +594,20 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
       async (c) => {
         const provider = parseProviderParam(c.req.param('provider'))
         if (!provider || !service.configureScope) return c.json({ error: 'Unsupported integration' }, 404)
-        return c.json(await service.configureScope(c.req.param('squadId'), provider, c.req.valid('json')))
+        return c.json(await service.configureScope(resolvedSquadId(c), provider, c.req.valid('json')))
       }
     )
     .post(
       '/:squadId/integrations/:provider/execute-environment',
-      async (c, next) => {
-        const identity: Identity | undefined = c.get('identity')
-        if (!identity) return c.json({ error: 'Sign in to Tau before using integration commands.' }, 401)
-        c.set('authzChecked', true)
-        if (!(await hasPermission(identity, 'integrations:use', c.req.param('squadId'))))
-          return c.json(
-            {
-              error:
-                'This agent or account cannot use integrations for this squad. Ask an administrator to grant integrations:use.',
-            },
-            403
-          )
-        await next()
-      },
+      // Same resolution as every other squad guard — the raw route param may be a short id
+      // prefix, which names no squad and would authorize the wrong scope.
+      requireSquadPermission('integrations:use', 'squadId'),
       zValidator('json', z.object({ connectionId: z.string().uuid().optional() }).strict()),
       async (c) => {
         const providerKey = parseProviderParam(c.req.param('provider'))
         if (!providerKey || !service.executionEnvironment) return c.json({ error: 'Unsupported integration' }, 404)
         const environment = await service.executionEnvironment(
-          c.req.param('squadId'),
+          resolvedSquadId(c),
           providerKey,
           c.req.valid('json').connectionId
         )
@@ -633,7 +625,7 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
     .get('/:squadId/integrations/:provider', requireSquadPermission('integrations:read', 'squadId'), async (c) => {
       const providerKey = parseProviderParam(c.req.param('provider'))
       if (!providerKey) return c.json({ error: 'Invalid provider' }, 400)
-      const selection = await service.selection(c.req.param('squadId'), providerKey)
+      const selection = await service.selection(resolvedSquadId(c), providerKey)
       return c.json({
         providerKey,
         ...(selection.scope ? { scope: selection.scope } : {}),
@@ -655,7 +647,7 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
         return c.json(
           redactSummary(
             await service.assign(
-              c.req.param('squadId'),
+              resolvedSquadId(c),
               providerKey,
               c.req.valid('json').connectionId,
               assignmentActor(c.get('identity')),
@@ -671,7 +663,7 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
       async (c) => {
         const providerKey = parseProviderParam(c.req.param('provider'))
         if (!providerKey) return c.json({ error: 'Invalid provider' }, 400)
-        return c.json({ projection: await service.retryProjection(c.req.param('squadId'), providerKey) })
+        return c.json({ projection: await service.retryProjection(resolvedSquadId(c), providerKey) })
       }
     )
     .delete(
@@ -684,7 +676,7 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
         if (connectionId !== undefined && !z.string().uuid().safeParse(connectionId).success)
           return c.json({ error: 'Invalid connection' }, 400)
         await service.unassign(
-          c.req.param('squadId'),
+          resolvedSquadId(c),
           providerKey,
           assignmentActor(c.get('identity')),
           ...(connectionId ? [connectionId] : [])

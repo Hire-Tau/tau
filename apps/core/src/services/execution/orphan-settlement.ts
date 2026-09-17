@@ -11,6 +11,7 @@ import {
 } from '../maintenance/admission-reservation'
 import { AGENT_REMOVED_FAILURE } from './failure-classification'
 import { ACTIVE_EXECUTION_STATUSES } from './status'
+import { databaseClockNow } from '../../db/clock'
 
 const log = createLogger('orphan-settlement')
 
@@ -96,7 +97,7 @@ export async function settleExecutionForRemovedAgent(executionId: string): Promi
       .update(executions)
       .set({
         status: 'failed',
-        endedAt: new Date(),
+        endedAt: databaseClockNow(),
         error: `Agent ${locked.agentId} was removed before this execution could start`,
         failureClass: AGENT_REMOVED_FAILURE.failureClass,
         failureReason: AGENT_REMOVED_FAILURE.failureReason,

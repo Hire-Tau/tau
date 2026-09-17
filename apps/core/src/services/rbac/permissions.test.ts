@@ -13,7 +13,16 @@ import {
 } from './permissions'
 import { createTestUser, createTestRole, assignRole, cleanupTestRbac } from '../../test-utils'
 import { db } from '../../db'
-import { agents, agentTypes, squads, roles, roleAssignments, channelInstances, agentExtraScopes } from '../../db/schema'
+import {
+  agents,
+  agentTypes,
+  squads,
+  roles,
+  roleAssignments,
+  channelInstances,
+  agentExtraScopes,
+  users,
+} from '../../db/schema'
 import { like, eq, inArray } from 'drizzle-orm'
 import { Squad } from '../../entities/Squad'
 import { Agent } from '../../entities/Agent'
@@ -541,14 +550,14 @@ describe('getUserIdsWithPermission', () => {
   beforeAll(cleanup)
   afterAll(cleanup)
 
-  test('scopes to one squad and resolves more users than fit in a single concurrency window', async () => {
+  test('scopes to one squad and handles more users than one page', async () => {
     const squad = await Squad.create({ name: `${PREFIX} audience squad`, purpose: 'audience scan' })
     const other = await Squad.create({ name: `${PREFIX} other squad`, purpose: 'audience scan' })
     const role = await createTestRole({ prefix: PREFIX, permissions: ['actions:read'] })
     const permitted: string[] = []
     const denied: string[] = []
-    // More users than the internal concurrency window, alternating, so a batched resolver that
-    // misaligned or dropped results would show up as a missing, duplicated, or extra id.
+    // More users than any one internal batch, alternating, so a resolver that misgrouped rows by
+    // user or dropped a page would show up as a missing, duplicated, or extra id.
     for (let index = 0; index < 20; index++) {
       const member = await createTestUser({ prefix: PREFIX })
       if (index % 2 === 0) {
@@ -582,6 +591,129 @@ describe('getUserIdsWithPermission', () => {
     invalidatePermissionCache()
     expect(await getUserIdsWithPermission('actions:read')).toContain(systemReader.id)
     expect(await getUserIdsWithPermission('actions:read', squad.id)).toContain(systemReader.id)
+  })
+
+  /**
+   * The audience scan and the single-user check are two different resolutions of the same rule —
+   * one grouped query versus one query per subject. This pins them together over the cases where
+   * they could plausibly diverge (wildcards, the squad-override-replaces-default rule, and a
+   * disabled holder), so a future change to either path cannot quietly widen an audience.
+   */
+  test('agrees with hasPermission for every enabled user, and excludes disabled holders', async () => {
+    const squadA = await Squad.create({ name: `${PREFIX} parity A`, purpose: 'parity' })
+    const squadB = await Squad.create({ name: `${PREFIX} parity B`, purpose: 'parity' })
+    const grants = await createTestRole({ prefix: PREFIX, permissions: ['actions:read'] })
+    const everything = await createTestRole({ prefix: PREFIX, permissions: ['*'] })
+    const actionsWildcard = await createTestRole({ prefix: PREFIX, permissions: ['actions:*'] })
+    // A squad role that grants something ELSE: on squad A it replaces the squad_default tier
+    // wholesale, so it must take `actions:read` away rather than add to it.
+    const otherPermission = await createTestRole({ prefix: PREFIX, permissions: ['squads:read'] })
+
+    const user = async () => (await createTestUser({ prefix: PREFIX })).id
+    const systemWildcard = await user()
+    const systemExplicit = await user()
+    const systemPatterned = await user()
+    const squadOnlyA = await user()
+    const squadDefaultOnly = await user()
+    const overriddenOnA = await user()
+    const disabledHolder = await user()
+    const roleless = await user()
+
+    await assignRole({ userId: systemWildcard, roleId: everything.id, scope: 'system' })
+    await assignRole({ userId: systemExplicit, roleId: grants.id, scope: 'system' })
+    await assignRole({ userId: systemPatterned, roleId: actionsWildcard.id, scope: 'system' })
+    await assignRole({ userId: squadOnlyA, roleId: grants.id, scope: 'squad', squadId: squadA.id })
+    await assignRole({ userId: squadDefaultOnly, roleId: grants.id, scope: 'squad_default' })
+    await assignRole({ userId: overriddenOnA, roleId: grants.id, scope: 'squad_default' })
+    await assignRole({ userId: overriddenOnA, roleId: otherPermission.id, scope: 'squad', squadId: squadA.id })
+    await assignRole({ userId: disabledHolder, roleId: grants.id, scope: 'system' })
+    await db.update(users).set({ disabledAt: new Date() }).where(eq(users.id, disabledHolder))
+    invalidatePermissionCache()
+
+    const fixture = [
+      systemWildcard,
+      systemExplicit,
+      systemPatterned,
+      squadOnlyA,
+      squadDefaultOnly,
+      overriddenOnA,
+      disabledHolder,
+      roleless,
+    ]
+    const enabled = fixture.filter((userId) => userId !== disabledHolder)
+    // Other suites share this database, so compare within the fixture rather than over every row.
+    const scan = async (squadId?: string) =>
+      (await getUserIdsWithPermission('actions:read', squadId)).filter((userId) => fixture.includes(userId)).sort()
+    const individually = async (squadId?: string) => {
+      const held: string[] = []
+      for (const userId of enabled) {
+        if (await hasPermission({ type: 'user', userId }, 'actions:read', squadId)) held.push(userId)
+      }
+      return held.sort()
+    }
+
+    expect(await scan(squadA.id)).toEqual(await individually(squadA.id))
+    expect(await scan(squadB.id)).toEqual(await individually(squadB.id))
+    expect(await scan()).toEqual(await individually())
+
+    // ...and the parity is over a non-trivial expectation, not two empty lists.
+    expect(await scan(squadA.id)).toEqual(
+      [systemWildcard, systemExplicit, systemPatterned, squadOnlyA, squadDefaultOnly].sort()
+    )
+    // A squad override REPLACES squad_default: the same user is a holder on a squad it has no
+    // override for, and not on the one it does.
+    expect(await scan(squadB.id)).toEqual(
+      [systemWildcard, systemExplicit, systemPatterned, squadDefaultOnly, overriddenOnA].sort()
+    )
+    expect(await scan()).toEqual([systemWildcard, systemExplicit, systemPatterned].sort())
+
+    // `hasPermission` answers for the identity, not the account: the disabled user still HOLDS
+    // the permission, and it is this scan that keeps it out of every audience.
+    expect(await hasPermission({ type: 'user', userId: disabledHolder }, 'actions:read')).toBe(true)
+    expect(await scan()).not.toContain(disabledHolder)
+    expect(await scan(squadA.id)).not.toContain(disabledHolder)
+    // A pattern role matches through the same helper the individual check uses.
+    expect(await getUserIdsWithPermission('actions:respond', squadA.id)).toContain(systemPatterned)
+    expect(await getUserIdsWithPermission('actions:respond', squadA.id)).not.toContain(systemExplicit)
+  })
+
+  /**
+   * A squad id of the wrong shape identifies no squad, and `squad_id` is a uuid column, so handing
+   * one to the scope filter used to fail the whole statement (a 500 on every short-prefix route
+   * for anyone without `*`). It now resolves to system scope alone.
+   *
+   * `squad_default` is deliberately NOT applied. A squad-scoped role REPLACES the default tier, so
+   * honouring the default for an unidentifiable squad would hand back precisely the permission an
+   * override exists to withhold — which is a GRANT where the old code produced an error. Route
+   * guards resolve a short id to its full squad id before asking (see `require-permission.ts`);
+   * this is the floor under that, and the floor denies.
+   */
+  test('a squad id that is not a uuid falls back to system scope only, never squad_default', async () => {
+    const squad = await Squad.create({ name: `${PREFIX} prefix squad`, purpose: 'prefix' })
+    const grants = await createTestRole({ prefix: PREFIX, permissions: ['actions:read'] })
+    const squadMember = await createTestUser({ prefix: PREFIX })
+    const defaulted = await createTestUser({ prefix: PREFIX })
+    const systemHolder = await createTestUser({ prefix: PREFIX })
+    await assignRole({ userId: squadMember.id, roleId: grants.id, scope: 'squad', squadId: squad.id })
+    await assignRole({ userId: defaulted.id, roleId: grants.id, scope: 'squad_default' })
+    await assignRole({ userId: systemHolder.id, roleId: grants.id, scope: 'system' })
+    invalidatePermissionCache()
+
+    const prefix = squad.id.slice(0, 8)
+    // Neither squad tier is consulted: no row can match, and the default must not stand in.
+    expect(await hasPermission({ type: 'user', userId: squadMember.id }, 'actions:read', prefix)).toBe(false)
+    expect(await hasPermission({ type: 'user', userId: defaulted.id }, 'actions:read', prefix)).toBe(false)
+    // A system-scoped grant is squad-independent and still applies.
+    expect(await hasPermission({ type: 'user', userId: systemHolder.id }, 'actions:read', prefix)).toBe(true)
+    const scan = await getUserIdsWithPermission('actions:read', prefix)
+    expect(scan).not.toContain(squadMember.id)
+    expect(scan).not.toContain(defaulted.id)
+    expect(scan).toContain(systemHolder.id)
+
+    // The full id is unaffected — this is about an id that names no squad, not about prefixes
+    // being denied: the guard resolves them first.
+    expect(await hasPermission({ type: 'user', userId: squadMember.id }, 'actions:read', squad.id)).toBe(true)
+    expect(await hasPermission({ type: 'user', userId: defaulted.id }, 'actions:read', squad.id)).toBe(true)
   })
 })
 

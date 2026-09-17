@@ -1,10 +1,12 @@
 import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stream'
 import { workStreamTitle } from '@tau/shared'
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
+import * as permissions from '../rbac/permissions'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
-import { agents, agentTypes, inbox, squads, workStreams } from '../../db/schema'
+import { agents, agentTypes, inbox, squads, users, workStreams } from '../../db/schema'
 import { Agent } from '../../entities/Agent'
+import { InboxMessage } from '../../entities/InboxMessage'
 import { AgentType } from '../../entities/AgentType'
 import { Squad } from '../../entities/Squad'
 import { assignRole, cleanupTestRbac, createTestRole, createTestUser, type TestUser } from '../../test-utils'
@@ -678,6 +680,82 @@ describe('work-stream notifications', () => {
       expect(await countLifecycleInbox(workStream.id, event, 'user', loudButBlind.id)).toBe(0)
       expect(await countLifecycleInbox(workStream.id, event, 'user', squadWatcher.id)).toBe(1)
     }
+  })
+
+  it('never notifies a disabled account, however loud its notify row and however broad its role', async () => {
+    const retired = await createTestUser({ prefix: typeId })
+    const readerRole = await createTestRole({ prefix: typeId, permissions: ['workstreams:read'] })
+    await assignRole({ userId: retired.id, roleId: readerRole.id, scope: 'squad', squadId })
+    const workStream = await storedLegacyWorkStream({ squadId, title: `${typeId} disabled watcher` })
+    // Identical notify rows on the same squad; only the account state differs.
+    await subscribeToSquad(squadId, retired.id)
+    await subscribeToSquad(squadId, squadWatcher.id)
+    await db.update(users).set({ disabledAt: new Date() }).where(eq(users.id, retired.id))
+
+    await notifyWorkStreamBlocked(workStream)
+    await notifyWorkStreamReview(workStream)
+    await notifyWorkStreamDone(workStream)
+
+    for (const event of ['blocked', 'review', 'done']) {
+      expect(await countLifecycleInbox(workStream.id, event, 'user', retired.id)).toBe(0)
+      expect(await countLifecycleInbox(workStream.id, event, 'user', squadWatcher.id)).toBe(1)
+    }
+  })
+
+  it('keeps notifying the rest of the batch when one recipient\u2019s send throws', async () => {
+    const workStream = await storedLegacyWorkStream({ squadId, title: `${typeId} partial failure` })
+    await subscribeToSquad(squadId, squadWatcher.id)
+    await subscribeToWorkStream(workStream.id, streamWatcher.id)
+
+    const watchers = [squadWatcher.id, streamWatcher.id]
+    const original = InboxMessage.sendOnce.bind(InboxMessage)
+    // Fail whichever watcher the resolver happens to put first: the recipient order is a SET's
+    // order, and a failure that only ever lands last would not prove isolation at all.
+    let firstWatcher: string | undefined
+    const sendOnce = spyOn(InboxMessage, 'sendOnce').mockImplementation(async (input, idempotencyKey) => {
+      if (input.recipientType !== 'user' || !watchers.includes(input.recipientId))
+        return original(input, idempotencyKey)
+      firstWatcher ??= input.recipientId
+      if (input.recipientId === firstWatcher) throw new Error('inbox write failed')
+      return original(input, idempotencyKey)
+    })
+
+    try {
+      // The lifecycle transition itself must still complete: the outer guard stays.
+      await notifyWorkStreamReview(workStream)
+    } finally {
+      sendOnce.mockRestore()
+    }
+
+    expect(firstWatcher).toBeDefined()
+    const survivor = watchers.find((id) => id !== firstWatcher)!
+    expect(await countLifecycleInbox(workStream.id, 'review', 'user', firstWatcher!)).toBe(0)
+    expect(await countLifecycleInbox(workStream.id, 'review', 'user', survivor)).toBe(1)
+  })
+
+  /**
+   * The permission fan-out used to run under `Promise.all`, so one unreadable subject rejected the
+   * whole batch and silenced every watcher whose check had succeeded.
+   */
+  it('still notifies the other watchers when one permission check throws', async () => {
+    const workStream = await storedLegacyWorkStream({ squadId, title: `${typeId} permission outage` })
+    await subscribeToSquad(squadId, squadWatcher.id)
+    await subscribeToWorkStream(workStream.id, streamWatcher.id)
+
+    const original = permissions.hasPermission
+    const spy = spyOn(permissions, 'hasPermission').mockImplementation(async (identity, permission, scope) => {
+      if (identity.type === 'user' && identity.userId === streamWatcher.id) throw new Error('role chain unreadable')
+      return original(identity, permission, scope)
+    })
+    try {
+      await notifyWorkStreamReview(workStream)
+    } finally {
+      spy.mockRestore()
+    }
+
+    // Fail closed for the one that threw; untouched for the one that resolved.
+    expect(await countLifecycleInbox(workStream.id, 'review', 'user', streamWatcher.id)).toBe(0)
+    expect(await countLifecycleInbox(workStream.id, 'review', 'user', squadWatcher.id)).toBe(1)
   })
 
   it('lets a stream row mute a squad the user otherwise gets notified about', async () => {

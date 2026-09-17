@@ -6,13 +6,16 @@ import {
   agentQuestions,
   executions,
   messages,
-  users,
   workStreams,
 } from '../../db/schema'
 import { isUuid, listTrustedWorkStreamOriginsForExecution } from '../work-streams/execution-provenance'
 import { listWorkStreamSubscriberIds } from '../work-streams/subscriptions'
-import { hasUserPermissionWithExecutor } from '../rbac'
+import { filterUserIdsWithPermission } from '../rbac/permitted-users'
+import { createLogger } from '../../lib/infra/logger'
 import { listAgentQuestionAttentionUserIds } from './questions'
+import { listEnabledUserIds } from '../users/enabled'
+
+const log = createLogger('question-attention-reconciliation')
 
 export interface QuestionAttentionReconciliationOptions {
   executor?: typeof db
@@ -129,14 +132,7 @@ export async function reconcileAgentQuestionAttentionOnce(
       }
     }
 
-    const enabledIds = new Set<string>()
-    if (recipientIds.size > 0) {
-      const enabled = await executor
-        .select({ id: users.id })
-        .from(users)
-        .where(and(inArray(users.id, [...recipientIds]), isNull(users.disabledAt)))
-      for (const { id } of enabled) enabledIds.add(id)
-    }
+    const enabledIds = new Set(await listEnabledUserIds([...recipientIds], executor))
 
     // Subscription rows on the origin streams are a CANDIDATE SIGNAL for routability, not an
     // attention entitlement: they are collected at any level (a `mute` row counts here) because
@@ -144,29 +140,32 @@ export async function reconcileAgentQuestionAttentionOnce(
     // interrupted about it. Visibility is permission-shaped, so the candidates are narrowed by
     // `actions:read` below; attention levels only decide notification, and are applied by the
     // notify-time resolvers, never here.
-    const originSubscriberIds = (
-      await Promise.all(originIds.map((workStreamId) => listWorkStreamSubscriberIds(workStreamId, executor)))
-    ).flat()
-    const enabledOriginSubscribers = originSubscriberIds.length
-      ? await executor
-          .select({ id: users.id })
-          .from(users)
-          .where(and(inArray(users.id, originSubscriberIds), isNull(users.disabledAt)))
-      : []
+    // Deduped: a user subscribed to several of this question's origin streams is one candidate,
+    // not one per stream, and each duplicate would otherwise cost a permission check.
+    const originSubscriberIds = [
+      ...new Set(
+        (await Promise.all(originIds.map((workStreamId) => listWorkStreamSubscriberIds(workStreamId, executor)))).flat()
+      ),
+    ]
+    const enabledOriginSubscribers = await listEnabledUserIds(originSubscriberIds, executor)
     const authorizedOriginSubscriberIds = question.squadId
-      ? await Promise.all(
-          enabledOriginSubscribers.map(async ({ id }) =>
-            (await hasUserPermissionWithExecutor(executor, id, 'actions:read', question.squadId ?? undefined))
-              ? id
-              : null
-          )
+      ? await filterUserIdsWithPermission(
+          enabledOriginSubscribers,
+          'actions:read',
+          question.squadId,
+          ({ failed, total, reason }) =>
+            log.error(
+              `Failed to resolve ${failed} of ${total} origin-subscriber permission checks for question ${question.id}; treating them as not permitted:`,
+              reason
+            ),
+          executor
         )
       : []
     // "Is this question reachable by some authorized human?" — the routing question, not "who is
     // notified?".
     const hasRoutableAudience =
       enabledIds.size > 0 ||
-      authorizedOriginSubscriberIds.some(Boolean) ||
+      authorizedOriginSubscriberIds.length > 0 ||
       (executor === db && (await listAgentQuestionAttentionUserIds(question.id)).length > 0)
     const outcome = await executor.transaction(async (tx): Promise<'resolved' | 'unresolved' | null> => {
       const [current] = await tx

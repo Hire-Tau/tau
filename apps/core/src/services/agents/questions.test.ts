@@ -1,5 +1,6 @@
 import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stream'
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
+import * as permissions from '../rbac/permissions'
 import { and, eq, inArray, like, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import {
@@ -332,6 +333,39 @@ describe('async agent questions', () => {
 
     // The show-level reader is not pushed, but the question is still theirs to see.
     expect(new Set(await listAgentQuestionAttentionUserIds(q.id))).toContain(shower.id)
+  })
+
+  /**
+   * The notify fan-out used to run under `Promise.all`: one unreadable subject rejected the whole
+   * batch, so a single corrupt role chain silenced the push for every other notify-level reader.
+   */
+  it('still pushes to the other notify-level readers when one permission check throws', async () => {
+    const healthy = await createTestUser({ prefix })
+    const unreadable = await createTestUser({ prefix })
+    createdUserIds.push(healthy.id, unreadable.id)
+    const role = await createTestRole({ prefix, permissions: ['actions:read'] })
+    for (const reader of [healthy, unreadable]) {
+      await assignRole({ userId: reader.id, roleId: role.id, scope: 'squad', squadId: squad.id })
+      await subscribeToSquad(squad.id, reader.id)
+    }
+    const agent = await createAgent({ squadId: squad.id })
+    const q = await createQuestion(agent)
+
+    const original = permissions.hasPermission
+    const spy = spyOn(permissions, 'hasPermission').mockImplementation(async (identity, permission, scope) => {
+      if (identity.type === 'user' && identity.userId === unreadable.id) throw new Error('role chain unreadable')
+      return original(identity, permission, scope)
+    })
+    let notified: string[]
+    try {
+      notified = await listAgentQuestionNotifyUserIds(q.id)
+    } finally {
+      spy.mockRestore()
+    }
+
+    // Fail closed for the one that threw; the other is unaffected.
+    expect(notified).toContain(healthy.id)
+    expect(notified).not.toContain(unreadable.id)
   })
 
   it('never pushes a squad question to a notify-level user who cannot read actions', async () => {

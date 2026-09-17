@@ -16,7 +16,6 @@ import {
   executions,
   inbox,
   messages,
-  users,
   workStreams,
   workStreamWaits,
 } from '../../db/schema'
@@ -26,7 +25,9 @@ import { closeOpenWaits, openWait } from '../work-streams/waits'
 import { resetContinuationCycle } from '../work-streams/continuation-state'
 import { isUuid, listTrustedWorkStreamOriginsForExecution } from '../work-streams/execution-provenance'
 import { listSquadScopeNotifyUserIds } from '../attention/resolver'
-import { getUserIdsWithPermission, hasPermission } from '../rbac/permissions'
+import { getUserIdsWithPermission } from '../rbac/permissions'
+import { filterUserIdsWithPermission } from '../rbac/permitted-users'
+import { listEnabledUserIds } from '../users/enabled'
 import { drainQuestionAnswerDeliverySoon } from './question-answer-delivery'
 import { ensureQuestionDeliveryFailureAlert } from './question-delivery-failure-alert'
 
@@ -91,10 +92,9 @@ async function lockExpectedAgent(
 }
 
 async function resetChangedContinuations(tx: DbTransaction, rows: ChangedWorkStream[]): Promise<void> {
-  const now = new Date()
   for (const row of rows) {
     if (row.assigneeAgentId && (row.status === 'active' || row.status === 'queued')) {
-      await resetContinuationCycle(tx, row.id, row.assigneeAgentId, now)
+      await resetContinuationCycle(tx, row.id, row.assigneeAgentId)
     }
   }
 }
@@ -338,14 +338,7 @@ export async function createAgentQuestion(
       originStreams.flatMap(({ requestingUserId }) => (requestingUserId ? [requestingUserId] : []))
     )
     const candidateRecipientIds = [...new Set([...participantIds, ...requesterIds])]
-    const enabledIds = new Set<string>()
-    if (candidateRecipientIds.length > 0) {
-      const enabled = await tx
-        .select({ id: users.id })
-        .from(users)
-        .where(and(inArray(users.id, candidateRecipientIds), isNull(users.disabledAt)))
-      for (const { id } of enabled) enabledIds.add(id)
-    }
+    const enabledIds = new Set(await listEnabledUserIds(candidateRecipientIds, tx))
     if (enabledIds.size > 0) {
       await tx
         .insert(agentQuestionRecipients)
@@ -581,17 +574,6 @@ export async function getAgentQuestion(id: string): Promise<AgentQuestion | null
   return row ? toJson(row) : null
 }
 
-/** Disabled accounts cannot open the Action Center and must never receive retained-device push. */
-async function listEnabledUserIds(candidateIds: string[]): Promise<string[]> {
-  if (candidateIds.length === 0) return []
-  const rows = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(and(inArray(users.id, candidateIds), isNull(users.disabledAt)))
-  const enabled = new Set(rows.map(({ id }) => id))
-  return candidateIds.filter((userId) => enabled.has(userId))
-}
-
 /**
  * Users who may SEE this question in their Action Center: everyone with `actions:read` on its
  * squad, plus its durable direct recipients and a compatible squadless personal owner. This is the
@@ -645,12 +627,12 @@ export async function listAgentQuestionNotifyUserIds(questionId: string): Promis
       origins.map(({ workStreamId }) => workStreamId),
       'decisions'
     )
-    const authorized = await Promise.all(
-      candidates.map(async (userId) =>
-        (await hasPermission({ type: 'user', userId }, 'actions:read', squadId)) ? userId : null
+    notifyIds = await filterUserIdsWithPermission(candidates, 'actions:read', squadId, ({ failed, total, reason }) =>
+      log.error(
+        `Failed to resolve ${failed} of ${total} notify-permission checks for question ${questionId}; treating them as not permitted:`,
+        reason
       )
     )
-    notifyIds = authorized.filter((userId): userId is string => userId !== null)
   }
 
   return listEnabledUserIds([

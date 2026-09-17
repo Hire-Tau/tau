@@ -61,6 +61,34 @@ describe('squad-env routes', () => {
       expect(res.status).toBe(403)
     })
 
+    /**
+     * A squad-scoped role REPLACES the `squad_default` tier, so this user must be denied on this
+     * squad even though their default grants `env:read`. The guard has to resolve the short id
+     * first: a raw prefix matches no `squad_id`, which hides the override and (before that
+     * resolution existed) turned the prefix form of this URL into a GRANT while the full-uuid form
+     * was correctly denied.
+     */
+    it('denies a squad override that withholds env:read, by full id and by short prefix alike', async () => {
+      const user = await createTestUser({ prefix: rbacPrefix })
+      const defaultRole = await createTestRole({ prefix: rbacPrefix, permissions: ['env:read'] })
+      const withholdingRole = await createTestRole({ prefix: rbacPrefix, permissions: ['squads:read'] })
+      await assignRole({ userId: user.id, roleId: defaultRole.id, scope: 'squad_default' })
+      await assignRole({ userId: user.id, roleId: withholdingRole.id, scope: 'squad', squadId })
+
+      for (const id of [squadId, squadId.slice(0, 8)]) {
+        const res = await app.request(`/api/squads/workspace/${id}/env`, { headers: authHeaders(user.token) })
+        expect(res.status).toBe(403)
+      }
+
+      // The default still applies to a squad the user has no override on.
+      const [other] = await db
+        .insert(squads)
+        .values({ name: `${testPrefix} other squad`, purpose: 'override scope', status: 'active' })
+        .returning()
+      const allowed = await app.request(`/api/squads/workspace/${other.id}/env`, { headers: authHeaders(user.token) })
+      expect(allowed.status).toBe(200)
+    })
+
     it('allows system settings readers to view global exposed secret keys', async () => {
       const user = await createTestUser({ prefix: rbacPrefix })
       const role = await createTestRole({ prefix: rbacPrefix, permissions: ['settings:read'] })

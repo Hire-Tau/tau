@@ -3,8 +3,10 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as squadEnv from '../services/squad/env'
 import { getSecretStore } from '../services/secrets'
-import { Squad } from '../entities/Squad'
 import { requirePermission, requireSquadPermission } from '../middleware'
+// The full squad id the guard already resolved AND authorized: re-deriving it from the route param
+// would repeat the lookup and could let a handler act on a different squad than the guard checked.
+import { resolvedSquadId } from '../middleware/require-permission'
 
 const setEnvSchema = z.object({
   content: z.string(),
@@ -18,16 +20,10 @@ const setEnvSecretsSchema = z.object({
   keys: z.array(envNameSchema),
 })
 
-async function getValidSquadId(squadId: string): Promise<string | null> {
-  const squad = await Squad.find(squadId)
-  return squad ? squad.id : null
-}
-
 export const squadEnvRouter = new Hono()
   // Get .tau/.env content
   .get('/:squadId/env', requireSquadPermission('env:read', 'squadId'), async (c) => {
-    const squadId = await getValidSquadId(c.req.param('squadId'))
-    if (!squadId) return c.json({ error: 'Squad not found' }, 404)
+    const squadId = resolvedSquadId(c)
 
     const content = squadEnv.getEnvFile(squadId)
     return c.json({ content: content ?? '', exposedSecretKeys: await squadEnv.getExposedSecretKeys(squadId) })
@@ -35,8 +31,7 @@ export const squadEnvRouter = new Hono()
 
   // Set .tau/.env content
   .put('/:squadId/env', requireSquadPermission('env:write', 'squadId'), zValidator('json', setEnvSchema), async (c) => {
-    const squadId = await getValidSquadId(c.req.param('squadId'))
-    if (!squadId) return c.json({ error: 'Squad not found' }, 404)
+    const squadId = resolvedSquadId(c)
 
     const { content } = c.req.valid('json')
     const reserved = squadEnv.findReservedSquadEnvKeys(content)
@@ -47,8 +42,7 @@ export const squadEnvRouter = new Hono()
 
   // List Secret Store keys and which are explicitly exposed to this squad (no values)
   .get('/:squadId/env/secrets', requireSquadPermission('env:read', 'squadId'), async (c) => {
-    const squadId = await getValidSquadId(c.req.param('squadId'))
-    if (!squadId) return c.json({ error: 'Squad not found' }, 404)
+    const squadId = resolvedSquadId(c)
 
     const [exposedKeys, globallyExposedKeys, secrets] = await Promise.all([
       squadEnv.getExposedSecretKeys(squadId),
@@ -124,8 +118,7 @@ export const squadEnvRouter = new Hono()
     requireSquadPermission('env:write', 'squadId'),
     zValidator('json', setEnvSecretsSchema),
     async (c) => {
-      const squadId = await getValidSquadId(c.req.param('squadId'))
-      if (!squadId) return c.json({ error: 'Squad not found' }, 404)
+      const squadId = resolvedSquadId(c)
 
       const { keys } = c.req.valid('json')
       await squadEnv.setExposedSecretKeys(squadId, keys)
@@ -139,8 +132,7 @@ export const squadEnvRouter = new Hono()
     requireSquadPermission('env:write', 'squadId'),
     zValidator('json', setEnvSecretsSchema),
     async (c) => {
-      const squadId = await getValidSquadId(c.req.param('squadId'))
-      if (!squadId) return c.json({ error: 'Squad not found' }, 404)
+      const squadId = resolvedSquadId(c)
 
       const { keys } = c.req.valid('json')
       const existingKeys = await squadEnv.getExposedSecretKeys(squadId)
@@ -156,8 +148,7 @@ export const squadEnvRouter = new Hono()
     requireSquadPermission('env:write', 'squadId'),
     zValidator('json', setEnvSecretsSchema),
     async (c) => {
-      const squadId = await getValidSquadId(c.req.param('squadId'))
-      if (!squadId) return c.json({ error: 'Squad not found' }, 404)
+      const squadId = resolvedSquadId(c)
 
       const { keys } = c.req.valid('json')
       const keysToRemove = new Set(keys)
