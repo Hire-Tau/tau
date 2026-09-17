@@ -92,10 +92,9 @@ async function lockExpectedAgent(
 }
 
 async function resetChangedContinuations(tx: DbTransaction, rows: ChangedWorkStream[]): Promise<void> {
-  const now = new Date()
   for (const row of rows) {
     if (row.assigneeAgentId && (row.status === 'active' || row.status === 'queued')) {
-      await resetContinuationCycle(tx, row.id, row.assigneeAgentId, now)
+      await resetContinuationCycle(tx, row.id, row.assigneeAgentId)
     }
   }
 }

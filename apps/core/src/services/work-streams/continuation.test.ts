@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, setSystemTime, spyOn } fro
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import { db } from '../../db'
+import * as clockModule from '../../db/clock'
+import { resetContinuationCycle } from './continuation-state'
 import {
   agents,
   agentTypes,
@@ -1671,6 +1673,43 @@ describe('work stream continuation', () => {
     expect(await readCycle()).toMatchObject({ status: 'idle', transportAttemptCount: 0 })
   })
 
+  /**
+   * The high-water side of the same skew. `cycleStartedAt` marks "progress after this point is
+   * new"; it is compared against `executions.ended_at`, which the database stamps. While the mark
+   * was written from the app host, a host running ahead put it in the database's future, so a
+   * genuine completion failed `isAfterProgressHighWater` and the stream sat there — the failure D
+   * removed from the wait path, relocated to the progress path.
+   */
+  it('recognizes progress made after a cycle whose mark was stamped under host clock skew', async () => {
+    const HOST_SKEW_MS = 5_000
+
+    // The cycle is (re)stamped while this host runs 5s ahead of the database.
+    setSystemTime(new Date(Date.now() + HOST_SKEW_MS))
+    try {
+      await workStream.update({ status: 'active', assigneeAgentId: agent.id })
+      await db.transaction(async (tx) => resetContinuationCycle(tx, workStream.id, agent.id))
+    } finally {
+      setSystemTime()
+    }
+
+    // The mark must be on the DATABASE's timeline, not 5s into its future.
+    const cycle = await readCycle()
+    const databaseNow = new Date((await db.execute<{ now: Date }>(sql`select clock_timestamp() as now`))[0].now)
+    expect(cycle.cycleStartedAt.getTime() - databaseNow.getTime()).toBeLessThan(HOST_SKEW_MS / 2)
+
+    // ...so a completion recorded now counts as progress rather than as pre-cycle history.
+    await db.delete(executions).where(eq(executions.agentId, agent.id))
+    await db
+      .update(executionAdmissionReservations)
+      .set({ state: 'released' })
+      .where(eq(executionAdmissionReservations.agentId, agent.id))
+    const execution = await agent.queueExecution({ message: 'Progress after a skewed reset' })
+    await execution.start()
+    await execution.transitionTo({ kind: 'completed' })
+    await execution.reload()
+    expect(execution.endedAt!.getTime()).toBeGreaterThan(cycle.cycleStartedAt.getTime())
+  })
+
   it('production exhaustion path rejects a same-assignee reset at its block boundary', async () => {
     await workStream.update({ status: 'active', assigneeAgentId: agent.id })
     await db
@@ -2281,6 +2320,27 @@ describe('work stream continuation', () => {
       expect(await persistentIdleNotices()).toHaveLength(0)
     })
   }
+
+  /**
+   * The sweep's own `now` used to come from the app host, while everything it compares against —
+   * `executions.ended_at` here — is stamped by the database. It now reads the database's clock, so
+   * the idle decision sits on the same timeline as the rows it is reading. Driving that read is
+   * what makes this observable: the notice is due only on the clock the sweep asks for.
+   */
+  it('decides the idle notice on the database clock it reads, not the host one', async () => {
+    const { endedAt } = await finishNormalContinuationForNotice()
+    const dueOnDatabaseClock = new Date(endedAt.getTime() + 60_000)
+    const clockSpy = spyOn(clockModule, 'readDatabaseClock').mockResolvedValue(dueOnDatabaseClock)
+    try {
+      // No `now` argument: the sweep must source one, and it must source it from the database.
+      await reconcileWorkStreamContinuationsOnce()
+      expect(clockSpy).toHaveBeenCalled()
+    } finally {
+      clockSpy.mockRestore()
+    }
+
+    expect(await persistentIdleNotices()).toHaveLength(1)
+  })
 
   it('does not record a persistent idle notice when later work started and completed', async () => {
     const { endedAt } = await finishNormalContinuationForNotice()

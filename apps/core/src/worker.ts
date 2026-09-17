@@ -58,6 +58,7 @@ import { registerOnboardingEventSources } from './services/onboarding/events'
 import { registerAgentActivityEventHandlers } from './services/agents/activity-summary'
 import { registerSquadActivityEventHandlers } from './services/squad-activity/event-handlers'
 import { registerWorkStreamContinuationEventHandlers } from './services/work-streams/continuation'
+import { databaseClockNow } from './db/clock'
 import { registerWorkStreamPlatformFailureNoticeHandlers } from './services/work-streams/platform-failure-notice'
 import {
   PRUNE_INTERVAL_MS,
@@ -218,9 +219,12 @@ export { registerConcurrencyReleaseListeners as registerConcurrencyReleaseListen
 export async function drainLegacyPausedExecutionsForStartup(): Promise<number> {
   // Compare through text so this remains a safe no-op after execution_status no
   // longer contains the legacy labels.
+  // `ended_at` is UTC wall time written by the database clock everywhere else (see
+  // `db/clock.ts`); `NOW()` here would use the session TimeZone and, inside a transaction, the
+  // transaction's start rather than the statement's.
   const legacy = await db.execute(sql`
     UPDATE executions
-    SET status = 'stopped', ended_at = COALESCE(ended_at, NOW())
+    SET status = 'stopped', ended_at = COALESCE(ended_at, ${databaseClockNow()})
     WHERE status::text IN ('pausing', 'paused')
     RETURNING id
   `)
