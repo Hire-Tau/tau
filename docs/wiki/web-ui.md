@@ -166,3 +166,7 @@ Use the shared `tau-field` role for text inputs, search inputs, selects, and tex
 Buttons and inset controls use 8px; catalog cards (`tau-panel` or equivalent) and modals (`tau-overlay`) use 12px. Reserve pills for compact badges, chips, and avatars. Search fields are ordinary fields, not pills.
 
 Configuration catalogs—Workflows, Agent Types, Squad Presets, and Skills—use a shared search field, individually bordered surface cards separated by a consistent gap, and explicit Edit/View actions opening a modal. This is an intentional exception to flat settings sections: each card represents an independently managed resource. Long forms use wide dialogs; the workflow co-editor uses the viewport with an interactive canvas and side conversation.
+
+### Storage inspection
+
+Settings → Storage sits beside Logs and uses `system:logs` authorization. It reports VM sandbox machine disk usage, largest-first squad totals, and expandable directory trees (including repository/worktree folders). Sizes are inclusive allocated-byte estimates, not deletion suggestions. Always retain timestamps and show partial or unavailable measurements explicitly. Scans run in the background with concurrency and time limits, share an in-process cache, and never provision or wake agents. Other runtimes show an explicit unsupported state.

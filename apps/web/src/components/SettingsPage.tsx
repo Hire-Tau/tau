@@ -50,6 +50,7 @@ import { DevicesSection } from './settings/DevicesSection'
 import { SystemTokensSection } from './settings/SystemTokensSection'
 import { SignupPolicySection } from './settings/SignupPolicySection'
 import { AmtpSection } from './settings/AmtpSection'
+import { StorageSection } from './settings/StorageSection'
 import { SystemLogsSection } from './settings/SystemLogsSection'
 import { RecommendationsPage } from './RecommendationsPage'
 import { MachinesSection } from './settings/MachinesSection'
@@ -190,6 +191,7 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
           {activeSection === 'system-tokens' && <SystemTokensSection />}
           {activeSection === 'signup' && <SignupPolicySection />}
           {activeSection === 'system' && <SystemSection />}
+          {activeSection === 'storage' && <StorageSection />}
           {activeSection === 'system-logs' && <SystemLogsSection />}
           {activeSection === 'ops-insights' && <RecommendationsPage />}
           {activeSection === 'updates' && <SystemUpdateSection />}
