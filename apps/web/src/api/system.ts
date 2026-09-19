@@ -1,3 +1,4 @@
+import type { StorageSnapshot } from '@tau/shared'
 import { apiFetch } from './client'
 
 export interface PublicMaintenanceStatus {
@@ -33,4 +34,12 @@ export function setAdminPause(active: boolean, reason?: string): Promise<Mainten
     method: 'PUT',
     body: JSON.stringify({ active, ...(reason ? { reason } : {}) }),
   })
+}
+
+export function getStorage(): Promise<StorageSnapshot> {
+  return apiFetch('/system/storage')
+}
+
+export function refreshStorage(): Promise<StorageSnapshot> {
+  return apiFetch('/system/storage/refresh', { method: 'POST' })
 }

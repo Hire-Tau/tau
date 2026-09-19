@@ -14,7 +14,7 @@ import { getModelCatalog } from './api/modelCatalog'
 import { modelCatalogQueryKeys } from './queryKeys'
 import { infiniteQueryOptions, keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { queryKeys, onboardingQueryKeys, integrationQueryKeys } from './queryKeys'
-import { getSystemPause, getSystemPauseDetails } from './api/system'
+import { getStorage, getSystemPause, getSystemPauseDetails } from './api/system'
 import { getGlobalActivityPresence, listGlobalActivity } from './api/activity'
 
 // API functions
@@ -733,6 +733,12 @@ export const queries = {
       }),
   },
   system: {
+    storage: () =>
+      queryOptions({
+        queryKey: queryKeys.system.storage(),
+        queryFn: getStorage,
+        refetchInterval: (query) => (query.state.data?.scanning ? 2000 : 300000),
+      }),
     pause: () =>
       queryOptions({
         queryKey: queryKeys.system.pause(),

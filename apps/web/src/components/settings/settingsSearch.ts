@@ -37,6 +37,7 @@ export const SETTINGS_PAGE_KEYWORDS: Record<string, string> = {
   'remote-hosts': 'remote ssh hosts register tunnel endpoint keys',
   system:
     'runtime status worker maintenance pause resume restart reload max concurrent active agents concurrency limit',
+  storage: 'disk space usage pressure squad project repository worktree cache files',
   'system-logs': 'logs severity errors diagnostics search',
   'ops-insights': 'recommendations optimization analysis operations',
   updates: 'automatic updates branch remote interval manual rebuild latest run',
