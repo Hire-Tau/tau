@@ -30,14 +30,14 @@ test('coalesces concurrent requests and throttles manual refresh without holding
   finish(snapshot)
   await cache.settled()
   expect(cache.read(true)).toEqual(snapshot)
-  now = 15000
+  now = 60000
   expect(cache.read().scanning).toBe(false)
   expect(cache.read(true).scanning).toBe(true)
   await Promise.resolve()
   expect(scans).toBe(2)
   finish(snapshot)
   await cache.settled()
-  now = 75000
+  now = 360000
   expect(cache.read().scanning).toBe(true)
   await Promise.resolve()
   finish(snapshot)
@@ -57,7 +57,7 @@ test('preserves last good measurements on failure and does not immediately resca
   cache.read()
   await cache.settled()
   fail = true
-  now = 60000
+  now = 300000
   cache.read()
   await cache.settled()
   const result = cache.read()

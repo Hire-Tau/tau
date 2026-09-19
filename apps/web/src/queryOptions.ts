@@ -737,7 +737,7 @@ export const queries = {
       queryOptions({
         queryKey: queryKeys.system.storage(),
         queryFn: getStorage,
-        refetchInterval: (query) => (query.state.data?.scanning ? 2000 : 60000),
+        refetchInterval: (query) => (query.state.data?.scanning ? 2000 : 300000),
       }),
     pause: () =>
       queryOptions({

@@ -148,7 +148,7 @@ export function StorageSection() {
             estimates of allocated space; shared files and changes during a scan can affect attribution.
           </p>
           <p>
-            Updates about once a minute while this page is open. Manual scans are limited to once every 15 seconds.
+            Updates about every five minutes while this page is open. Manual scans are limited to once a minute.
             Scanning does not start agents or remove files.
           </p>
         </div>

@@ -12,9 +12,10 @@ import { createStorageCache } from './cache'
 
 // One traversal per machine: GNU du deduplicates hardlinks within the scan.
 // -x avoids mounted filesystems, -P (the default) avoids symlink traversal.
+// Best-effort CPU and I/O priorities let foreground work take precedence.
 // Remote timeout also terminates the traversal if the SSH connection is lost.
 export const STORAGE_SCAN_COMMAND =
-  "df -B1 --output=used,size /home; printf '\\0'; sudo -n timeout 45s du -x -B1 --max-depth=4 --null /home 2>/dev/null"
+  "df -B1 --output=used,size /home; printf '\\0'; sudo -n timeout 45s nice -n 19 ionice -c 3 du -x -B1 --max-depth=4 --null /home 2>/dev/null"
 
 async function scanStorage(): Promise<StorageSnapshot> {
   if (!isVmRuntime())

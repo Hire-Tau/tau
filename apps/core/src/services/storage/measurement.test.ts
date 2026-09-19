@@ -11,7 +11,7 @@ test('reports disk capacity and inclusive squad totals from one bounded machine 
     run: async (target, command, opts) => {
       expect(target).toBe(machine)
       expect(command).toBe(STORAGE_SCAN_COMMAND)
-      expect(command).toContain('timeout 45s du -x -B1 --max-depth=4 --null /home')
+      expect(command).toContain('timeout 45s nice -n 19 ionice -c 3 du -x -B1 --max-depth=4 --null /home')
       expect(opts?.timeoutMs).toBe(55000)
       return { exitCode: 0, stdout, stderr: '' }
     },

@@ -10,7 +10,7 @@ export function createStorageCache(scan: () => Promise<StorageSnapshot>, now = D
   return {
     read(refresh = false): StorageSnapshot {
       const age = completedAt === null ? Infinity : now() - completedAt
-      if (!pending && age >= (refresh ? 15_000 : 60_000)) {
+      if (!pending && age >= (refresh ? 60_000 : 300_000)) {
         pending = Promise.resolve()
           .then(scan)
           .then((result) => {
