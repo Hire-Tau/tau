@@ -125,6 +125,23 @@ For automation, use a separately scoped [system token](/configure/access/#give-a
 
 ## Discover commands and troubleshoot
 
+### Inspect disk usage
+
+Read the same cached breakdown shown in **Settings → Storage**, or request a background scan:
+
+```sh
+tau system storage --json
+tau system storage --refresh --json
+```
+
+Both commands return immediately with `scanning`, `scannedAt`, `error`, and the per-machine, squad, and folder sizes in bytes. While `scanning` is true, read again after a few seconds; existing results retain the previous scan's timestamp until the scan finishes. Check each machine's `status`: unavailable or partial measurements are not evidence of an empty disk. Folder totals include their children.
+
+Reads request a new scan when the cache is five minutes old. `--refresh` requests one sooner, subject to a one-minute cooldown; concurrent requests share the running scan. This requires `system:logs` permission and VM sandbox machines. Other runtimes return `supported: false`. The User Assistant can use these commands with your permissions.
+
+The API equivalents are `GET /api/system/storage` and `POST /api/system/storage/refresh`, with the same permissions and cache behavior. See [disk troubleshooting](/self-host/troubleshooting/#find-what-is-using-disk-space) for measurement limits.
+
+### Get help
+
 ```sh
 tau --help
 tau workstream create --help
