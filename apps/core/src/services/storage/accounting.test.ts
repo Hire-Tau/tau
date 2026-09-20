@@ -26,9 +26,53 @@ describe('storage accounting', () => {
     ])
     expect(result[1].folders[0].children[0].children[0].children[0]).toEqual({
       name: 'project',
+      path: '/home/box_a/workspace/repos/project',
       bytes: 100,
+      status: 'available',
       children: [],
     })
+  })
+
+  test('retains descendants when timeout interrupts du before parent totals, without double counting', () => {
+    const result = attributeStorage(
+      parseDirectoryUsage(
+        '30\t/home/box_a/workspace/worktrees/one/target\0' +
+          '40\t/home/box_a/workspace/worktrees/one\0' +
+          '20\t/home/box_a/workspace/worktrees/two/target\0'
+      ),
+      [{ home: '/home/box_a', squadId: 'a', squadName: 'Product', label: 'Workspace' }],
+      true
+    )
+    expect(result[0].bytes).toBe(60)
+    expect(result[0].status).toBe('partial')
+    const home = result[0].folders[0]
+    expect(home.path).toBe('/home/box_a')
+    expect(home.bytes).toBe(60)
+    expect(home.children[0].children[0].children.map((f) => [f.name, f.bytes])).toEqual([
+      ['one', 40],
+      ['two', 20],
+    ])
+  })
+
+  test('keeps unvisited homes visible and distinguishes them from a measured zero', () => {
+    const owner = { home: '/home/box_a', squadId: 'a', squadName: 'Product', label: 'Workspace' }
+    const result = attributeStorage(parseDirectoryUsage('0\t/home/box_b\0'), [
+      owner,
+      { ...owner, home: '/home/box_b', label: 'Agent files' },
+    ])
+    expect(result[0].bytes).toBe(0)
+    expect(result[0].status).toBe('partial')
+    expect(result[0].folders.map((f) => [f.bytes, f.status])).toEqual([
+      [0, 'available'],
+      [null, 'unavailable'],
+    ])
+    const absent = attributeStorage(new Map(), [owner])
+    expect(absent[0].bytes).toBeNull()
+    expect(absent[0].status).toBe('unavailable')
+  })
+
+  test('ignores an unterminated final record instead of accepting a truncated path', () => {
+    expect([...parseDirectoryUsage('5\t/home/box_a\0' + '100\t/home/box_b')]).toEqual([['/home/box_a', 5]])
   })
 
   test('preserves unusual directory names without accepting malformed or escaping records', () => {
