@@ -110,6 +110,8 @@ systemPrompt: |
 
   ### Checking on Work
 
+  For disk-pressure questions, use `tau system storage --json` to inspect the cached per-machine, squad, and folder breakdown. Use `tau system storage --refresh --json` to request a background scan, then read again every few seconds while `scanning` is true. Reads return immediately; `scannedAt` describes the displayed results, which may be from the previous scan. Refresh requests share the UI's one-minute cooldown and cannot bypass an in-progress scan. Check `supported`, `error`, and each machine's status before drawing conclusions; unavailable or partial measurements do not mean an empty disk. This requires the user's `system:logs` permission. Inspection never deletes files; do not delete active worktrees or other data without authorization.
+
   You can check squad status at any time:
   - `tau squad list` — list all squads
   - `tau squad agents <squad-id>` — list agents in a squad

@@ -1,4 +1,5 @@
 import { Command } from 'commander'
+import type { StorageSnapshot } from '@tau/shared'
 import { apiGet, apiPost, apiPut } from '../client'
 import { config } from '../config'
 import { output, outputError } from '../output'
@@ -103,6 +104,27 @@ async function streamSystemLogs(options: { component: string; tail: string; foll
 
 export function registerSystemCommands(program: Command) {
   const system = program.command('system').description('System management')
+
+  system
+    .command('storage')
+    .description('Show disk usage, scan state, and last scan time (requires system:logs)')
+    .option('--refresh', 'Request a background scan (rate-limited); returns scan state immediately')
+    .addHelpText(
+      'after',
+      '\nUse --json for scripts. Read again while scanning is true to get the completed breakdown.\n' +
+        'Cached results refresh after five minutes; --refresh has a one-minute cooldown.\n' +
+        'Existing results remain visible during scans. Check scannedAt, error, and each machine status.'
+    )
+    .action(async (options: { refresh?: boolean }) => {
+      try {
+        const result = options.refresh
+          ? await apiPost<StorageSnapshot>('/api/system/storage/refresh')
+          : await apiGet<StorageSnapshot>('/api/system/storage')
+        output(result, JSON.stringify(result, null, 2))
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
 
   system
     .command('pause-status')

@@ -589,16 +589,22 @@ describe('machines routes', () => {
         },
       })
       const created = await createMachine(router, { name: `${prefix}-ev-boot-noop` })
-      // First bootstrap: registered → ready (a genuine status flip).
-      await router.request(`/${created.id}/bootstrap`, req('POST'))
-
       const spy = spyOn(eventEmitter, 'emit')
       try {
+        // A 202 response only acknowledges startup. Wait for the first run's
+        // terminal event before testing a new run; otherwise the second request
+        // can correctly return the still-running bootstrap without starting one.
+        const first = await router.request(`/${created.id}/bootstrap`, req('POST'))
+        expect(first.status).toBe(202)
+        expect(await waitForEmittedStatus(spy, created.id, 'ready')).toBe(true)
+        spy.mockClear()
+
         // Second bootstrap on a READY machine. Under the ASYNC route this is
         // no longer silent: re-running it is a real state change an operator
         // should see (ready → bootstrapping → ready). The UI hides the button
         // once ready, so this path is API-only.
-        await router.request(`/${created.id}/bootstrap`, req('POST'))
+        const second = await router.request(`/${created.id}/bootstrap`, req('POST'))
+        expect(second.status).toBe(202)
         expect(await waitForEmittedStatus(spy, created.id, 'bootstrapping')).toBe(true)
         expect(await waitForMachineStatus(created.id, 'ready')).toBe('ready')
         expect(await waitForEmittedStatus(spy, created.id, 'ready')).toBe(true)
