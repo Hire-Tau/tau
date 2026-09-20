@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { StorageFolder } from '@tau/shared'
+import type { StorageFolder, StorageMachine } from '@tau/shared'
 import { refreshStorage } from '../../api/system'
 import { queryKeys } from '../../queryKeys'
 import { queries } from '../../queryOptions'
@@ -13,11 +13,30 @@ function storageSize(bytes: number | null): string {
   return `${(bytes / 1024 ** (index + 1)).toFixed(1)} ${units[index]}`
 }
 
+const scanReasons: Record<NonNullable<StorageMachine['diagnostics']>['reasons'][number], string> = {
+  scan_timeout: 'The scan reached its 45-second time limit.',
+  permission_denied: 'Some directories could not be read with the scanner’s permissions.',
+  scan_failed: 'The scan command did not complete successfully.',
+  incomplete_output: 'The directory traversal did not return all totals.',
+  missing_home_totals: 'Some sandbox home totals are missing; their measured folders are still shown.',
+  disk_usage_unavailable: 'Filesystem capacity could not be measured.',
+  ssh_timeout: 'The connection timed out before results were received.',
+  ssh_failed: 'The machine could not be reached for storage measurement.',
+  machine_not_ready: 'The machine is offline, parked, or not ready to scan.',
+}
+
+function measuredSize(item: { bytes: number | null; status?: string }): string {
+  if (item.bytes === null) return 'Not measured'
+  return `${storageSize(item.bytes)}${item.status === 'partial' ? ' measured · Partial' : ''}`
+}
+
 function FolderRow({ folder }: { folder: StorageFolder }) {
   const label = (
     <span className="inline-flex w-full min-w-0 items-baseline justify-between gap-4">
-      <span className="min-w-0 break-all">{folder.name}</span>
-      <span className="shrink-0 tabular-nums text-secondary">{storageSize(folder.bytes)}</span>
+      <span className="min-w-0 break-all" title={folder.path}>
+        {folder.name}
+      </span>
+      <span className="shrink-0 tabular-nums text-secondary">{measuredSize(folder)}</span>
     </span>
   )
   if (!folder.children.length) return <div className="py-2 pl-5 text-sm">{label}</div>
@@ -111,6 +130,16 @@ export function StorageSection() {
                 : 'Storage is unavailable. The machine may be offline or parked.'}
             </p>
           )}
+          {machine.diagnostics && machine.status !== 'available' && (
+            <div className="space-y-1 text-xs text-secondary">
+              {machine.diagnostics.reasons.map((reason) => (
+                <p key={reason}>{scanReasons[reason]}</p>
+              ))}
+              <p>
+                {machine.diagnostics.measuredHomes} of {machine.diagnostics.expectedHomes} sandbox home totals returned.
+              </p>
+            </div>
+          )}
           <div className="divide-y divide-th-border">
             {machine.squads.map((squad) => (
               <details key={squad.id} className="[&[open]>summary>svg]:rotate-90">
@@ -118,7 +147,7 @@ export function StorageSection() {
                   <ChevronRightIcon className="h-4 w-4 shrink-0 text-secondary" />
                   <span className="inline-flex w-full min-w-0 justify-between gap-4 text-sm">
                     <span className="min-w-0 break-words font-medium">{squad.name}</span>
-                    <span className="shrink-0 tabular-nums">{storageSize(squad.bytes)}</span>
+                    <span className="shrink-0 tabular-nums">{measuredSize(squad)}</span>
                   </span>
                 </summary>
                 <div className="pb-3 pl-5">
@@ -145,7 +174,9 @@ export function StorageSection() {
           </p>
           <p>
             Other disk usage includes shared tools, system files, and storage not attributed to a squad. Sizes are
-            estimates of allocated space; shared files and changes during a scan can affect attribution.
+            estimates of allocated space; shared files and changes during a scan can affect attribution. Hardlinked
+            files are counted once and may be attributed to the first folder visited; a folder's size is not a
+            prediction of space freed by deleting it.
           </p>
           <p>
             Updates about every five minutes while this page is open. Manual scans are limited to once a minute.
