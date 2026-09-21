@@ -286,7 +286,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
           type="button"
           onClick={() => updateMutation.mutate({ github: githubEntries, linear: linearEntries, rules: eventRules })}
           disabled={updateMutation.isPending || !squadEventRulesSchema.safeParse({ [provider]: eventRules }).success}
-          className="tau-button tau-button-primary rounded-md bg-accent px-3 py-2 text-sm text-white"
+          className="tau-button tau-button-primary rounded-md bg-accent px-3 py-2 text-sm text-on-accent"
         >
           {updateMutation.isPending ? 'Saving…' : 'Save settings'}
         </button>

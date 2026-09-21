@@ -61,7 +61,7 @@ export function NotificationPreferences() {
             'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
             pushEnabled
               ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50'
-              : 'bg-accent text-white hover:bg-accent-hover'
+              : 'bg-accent text-on-accent hover:bg-accent-hover'
           )}
         >
           {pushEnabled ? 'Disable' : 'Enable'}

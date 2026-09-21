@@ -4,13 +4,13 @@ import type { AgentStatus } from '@tau/shared'
 import { AgentActivityDot } from './AgentActivityDot'
 
 const cases: Array<[AgentStatus, string, string]> = [
-  ['active', 'Working', 'bg-blue-500'],
-  ['idle', 'Idle', 'bg-gray-500'],
-  ['waiting-input', 'Waiting for input', 'bg-purple-500'],
-  ['compacting', 'Compacting', 'bg-amber-500'],
-  ['resetting', 'Resetting', 'bg-amber-500'],
-  ['dormant', 'Dormant', 'bg-gray-500'],
-  ['terminated', 'Terminated', 'bg-gray-500'],
+  ['active', 'Working', 'bg-status-progress-solid'],
+  ['idle', 'Idle', 'bg-status-neutral-solid'],
+  ['waiting-input', 'Waiting for input', 'bg-status-human-wait-solid'],
+  ['compacting', 'Compacting', 'bg-status-attention-solid'],
+  ['resetting', 'Resetting', 'bg-status-attention-solid'],
+  ['dormant', 'Dormant', 'bg-status-neutral-solid'],
+  ['terminated', 'Terminated', 'bg-status-neutral-solid'],
 ]
 
 describe('AgentActivityDot', () => {

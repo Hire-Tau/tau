@@ -1,66 +1,54 @@
+import type { StatusRole } from '@tau/shared'
 import clsx from 'clsx'
 import { Link } from 'react-router-dom'
 
+// Decorative accents are deliberately separate from status meaning.
 export type BadgeColor =
-  | 'gray'
-  | 'red'
-  | 'orange'
-  | 'amber'
-  | 'yellow'
-  | 'lime'
-  | 'green'
-  | 'emerald'
-  | 'teal'
-  | 'cyan'
-  | 'sky'
-  | 'blue'
-  | 'indigo'
-  | 'violet'
-  | 'purple'
-  | 'fuchsia'
-  | 'pink'
-  | 'rose'
+  | StatusRole
+  | 'accent-1'
+  | 'accent-2'
+  | 'accent-3'
+  | 'accent-4'
+  | 'accent-5'
+  | 'accent-6'
+  | 'accent-7'
 
 const COLOR_CLASSES: Record<BadgeColor, string> = {
-  gray: 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-200',
-  red: 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200',
-  orange: 'bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-200',
-  amber: 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200',
-  yellow: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200',
-  lime: 'bg-lime-100 dark:bg-lime-900/30 text-lime-800 dark:text-lime-200',
-  green: 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200',
-  emerald: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-200',
-  teal: 'bg-teal-100 dark:bg-teal-900/30 text-teal-800 dark:text-teal-200',
-  cyan: 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-800 dark:text-cyan-200',
-  sky: 'bg-sky-100 dark:bg-sky-900/30 text-sky-800 dark:text-sky-200',
-  blue: 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200',
-  indigo: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-200',
-  violet: 'bg-violet-100 dark:bg-violet-900/30 text-violet-800 dark:text-violet-200',
-  purple: 'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-200',
-  fuchsia: 'bg-fuchsia-100 dark:bg-fuchsia-900/30 text-fuchsia-800 dark:text-fuchsia-200',
-  pink: 'bg-pink-100 dark:bg-pink-900/30 text-pink-800 dark:text-pink-200',
-  rose: 'bg-rose-100 dark:bg-rose-900/30 text-rose-800 dark:text-rose-200',
+  progress: 'bg-status-progress-badge-surface text-status-progress-badge-fg',
+  queue: 'bg-status-queue-badge-surface text-status-queue-badge-fg',
+  review: 'bg-status-review-badge-surface text-status-review-badge-fg',
+  humanWait: 'bg-status-human-wait-badge-surface text-status-human-wait-badge-fg',
+  externalWait: 'bg-status-external-wait-badge-surface text-status-external-wait-badge-fg',
+  attention: 'bg-status-attention-badge-surface text-status-attention-badge-fg',
+  danger: 'bg-status-danger-badge-surface text-status-danger-badge-fg',
+  success: 'bg-status-success-badge-surface text-status-success-badge-fg',
+  neutral: 'bg-status-neutral-badge-surface text-status-neutral-badge-fg',
+  'accent-1': 'bg-badge-accent-1-surface text-badge-accent-1-fg',
+  'accent-2': 'bg-badge-accent-2-surface text-badge-accent-2-fg',
+  'accent-3': 'bg-badge-accent-3-surface text-badge-accent-3-fg',
+  'accent-4': 'bg-badge-accent-4-surface text-badge-accent-4-fg',
+  'accent-5': 'bg-badge-accent-5-surface text-badge-accent-5-fg',
+  'accent-6': 'bg-badge-accent-6-surface text-badge-accent-6-fg',
+  'accent-7': 'bg-badge-accent-7-surface text-badge-accent-7-fg',
 }
 
 const HOVER_CLASSES: Record<BadgeColor, string> = {
-  gray: 'hover:bg-gray-200 dark:hover:bg-gray-700',
-  red: 'hover:bg-red-200 dark:hover:bg-red-900/70',
-  orange: 'hover:bg-orange-200 dark:hover:bg-orange-900/70',
-  amber: 'hover:bg-amber-200 dark:hover:bg-amber-900/70',
-  yellow: 'hover:bg-yellow-200 dark:hover:bg-yellow-900/70',
-  lime: 'hover:bg-lime-200 dark:hover:bg-lime-900/70',
-  green: 'hover:bg-green-200 dark:hover:bg-green-900/70',
-  emerald: 'hover:bg-emerald-200 dark:hover:bg-emerald-900/70',
-  teal: 'hover:bg-teal-200 dark:hover:bg-teal-900/70',
-  cyan: 'hover:bg-cyan-200 dark:hover:bg-cyan-900/70',
-  sky: 'hover:bg-sky-200 dark:hover:bg-sky-900/70',
-  blue: 'hover:bg-blue-200 dark:hover:bg-blue-900/70',
-  indigo: 'hover:bg-indigo-200 dark:hover:bg-indigo-900/70',
-  violet: 'hover:bg-violet-200 dark:hover:bg-violet-900/70',
-  purple: 'hover:bg-purple-200 dark:hover:bg-purple-900/70',
-  fuchsia: 'hover:bg-fuchsia-200 dark:hover:bg-fuchsia-900/70',
-  pink: 'hover:bg-pink-200 dark:hover:bg-pink-900/70',
-  rose: 'hover:bg-rose-200 dark:hover:bg-rose-900/70',
+  progress: 'hover:bg-status-progress-badge-hover',
+  queue: 'hover:bg-status-queue-badge-hover',
+  review: 'hover:bg-status-review-badge-hover',
+  humanWait: 'hover:bg-status-human-wait-badge-hover',
+  externalWait: 'hover:bg-status-external-wait-badge-hover',
+  attention: 'hover:bg-status-attention-badge-hover',
+  danger: 'hover:bg-status-danger-badge-hover',
+  success: 'hover:bg-status-success-badge-hover',
+  neutral: 'hover:bg-status-neutral-badge-hover',
+  'accent-1': 'hover:bg-badge-accent-1-hover',
+  'accent-2': 'hover:bg-badge-accent-2-hover',
+  'accent-3': 'hover:bg-badge-accent-3-hover',
+  'accent-4': 'hover:bg-badge-accent-4-hover',
+  'accent-5': 'hover:bg-badge-accent-5-hover',
+  'accent-6': 'hover:bg-badge-accent-6-hover',
+  'accent-7': 'hover:bg-badge-accent-7-hover',
 }
 
 interface BadgeProps {
@@ -76,7 +64,7 @@ interface BadgeProps {
 
 const BASE_CLASSES = 'inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium leading-4'
 
-export function Badge({ children, color = 'gray', to, onClick, className, title }: BadgeProps) {
+export function Badge({ children, color = 'neutral', to, onClick, className, title }: BadgeProps) {
   const colorClasses = COLOR_CLASSES[color]
 
   if (to) {

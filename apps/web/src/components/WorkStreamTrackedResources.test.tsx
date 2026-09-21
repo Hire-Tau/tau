@@ -299,7 +299,7 @@ test('badges every delivery pull request, chips resolved merge state and summari
       // Settled merge states are visible; an open pull request needs no chip.
       const merged = textOf(document, 'merged')
       expect(merged).toHaveLength(1)
-      expect(merged[0]!.className).toContain('green')
+      expect(merged[0]!.className).toContain('bg-status-success-badge-surface')
       expect(textOf(document, 'closed')).toHaveLength(1)
       expect(textOf(document, 'open')).toHaveLength(0)
       expect(text).toContain('Delivery: 1 of 3 pull requests merged')

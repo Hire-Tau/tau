@@ -171,7 +171,7 @@ export function SkillsSection() {
               Import
             </button>
             <button
-              className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-white rounded-md"
+              className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md"
               onClick={() =>
                 editSkill({
                   id: '',
@@ -208,7 +208,7 @@ export function SkillsSection() {
               onChange={(e) => setImportContent(e.target.value)}
             />
             <button
-              className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-white rounded-md disabled:opacity-50"
+              className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md disabled:opacity-50"
               disabled={!importContent.trim() || importer.isPending}
               onClick={() => importer.mutate()}
             >
@@ -340,7 +340,7 @@ export function SkillsSection() {
 
             <div className="flex items-center gap-2">
               <button
-                className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-white rounded-md"
+                className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md"
                 disabled={save.isPending}
               >
                 Save

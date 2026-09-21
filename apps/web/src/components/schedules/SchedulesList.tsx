@@ -43,16 +43,16 @@ const ACTION_LABELS: Record<string, string> = {
 }
 
 const HEALTH_BADGE: Record<Schedule['healthStatus'], { label: string; color: BadgeColor }> = {
-  never_run: { label: 'Never run', color: 'gray' },
-  healthy: { label: 'Healthy', color: 'green' },
-  failing: { label: 'Failing', color: 'red' },
-  automatically_disabled: { label: 'Automatically disabled', color: 'red' },
+  never_run: { label: 'Never run', color: 'neutral' },
+  healthy: { label: 'Healthy', color: 'success' },
+  failing: { label: 'Failing', color: 'danger' },
+  automatically_disabled: { label: 'Automatically disabled', color: 'danger' },
 }
 
 const ACTION_BADGE_COLORS: Record<string, BadgeColor> = {
-  spawn_agent: 'blue',
-  inbox_message: 'purple',
-  create_work_stream: 'green',
+  spawn_agent: 'accent-2',
+  inbox_message: 'accent-1',
+  create_work_stream: 'accent-3',
 }
 
 function actionCreatesWorkStream(action: Schedule['action']): boolean {
@@ -487,7 +487,7 @@ function ScopeBadge({
     const squad = squadMap.get(schedule.scopeId)
     const name = squad?.name || schedule.scopeId.slice(0, 8)
     return (
-      <Badge to={`/squads/${schedule.scopeId}`} color="amber" onClick={onClick} className={className}>
+      <Badge to={`/squads/${schedule.scopeId}`} color="accent-6" onClick={onClick} className={className}>
         {name}
       </Badge>
     )
@@ -495,7 +495,7 @@ function ScopeBadge({
 
   // Agent scope - no link for now
   return (
-    <Badge color="cyan" className={className}>
+    <Badge color="accent-7" className={className}>
       Agent: {schedule.scopeId.slice(0, 8)}
     </Badge>
   )
@@ -536,7 +536,7 @@ function ScheduleCard({
         )}
 
         {/* Action type badge - shorter on mobile */}
-        <Badge color={ACTION_BADGE_COLORS[schedule.action.type] || 'gray'}>
+        <Badge color={ACTION_BADGE_COLORS[schedule.action.type] || 'neutral'}>
           <span className="hidden sm:inline">{ACTION_LABELS[schedule.action.type] || schedule.action.type}</span>
           <span className="sm:hidden">
             {schedule.action.type === 'inbox_message' ? '✉️' : schedule.action.type === 'spawn_agent' ? '🤖' : '📋'}
@@ -729,7 +729,7 @@ function ScheduleDetailModal({
     <div className="flex items-center justify-between flex-1">
       <div className="flex items-center gap-2">
         {showScope && <ScopeBadge schedule={schedule} squads={squads} />}
-        <Badge color={ACTION_BADGE_COLORS[schedule.action.type] || 'gray'}>
+        <Badge color={ACTION_BADGE_COLORS[schedule.action.type] || 'neutral'}>
           {ACTION_LABELS[schedule.action.type] || schedule.action.type}
         </Badge>
       </div>
@@ -806,7 +806,7 @@ function ScheduleDetailModal({
                       'tau-button',
                       'px-2 py-0.5 text-xs rounded',
                       editState.scheduleType === 'interval'
-                        ? 'bg-accent text-white'
+                        ? 'bg-accent text-on-accent'
                         : 'bg-surface-secondary text-muted hover:text-primary'
                     )}
                   >
@@ -818,7 +818,7 @@ function ScheduleDetailModal({
                       'tau-button',
                       'px-2 py-0.5 text-xs rounded',
                       editState.scheduleType === 'cron'
-                        ? 'bg-accent text-white'
+                        ? 'bg-accent text-on-accent'
                         : 'bg-surface-secondary text-muted hover:text-primary'
                     )}
                   >
@@ -830,7 +830,7 @@ function ScheduleDetailModal({
                       'tau-button',
                       'px-2 py-0.5 text-xs rounded',
                       editState.scheduleType === 'runAt'
-                        ? 'bg-accent text-white'
+                        ? 'bg-accent text-on-accent'
                         : 'bg-surface-secondary text-muted hover:text-primary'
                     )}
                   >
@@ -843,7 +843,7 @@ function ScheduleDetailModal({
                         'tau-button',
                         'px-2 py-0.5 text-xs rounded',
                         editState.scheduleType === 'webhookOnly'
-                          ? 'bg-accent text-white'
+                          ? 'bg-accent text-on-accent'
                           : 'bg-surface-secondary text-muted hover:text-primary'
                       )}
                     >
@@ -1009,7 +1009,7 @@ function ScheduleDetailModal({
             <button
               onClick={saveEdits}
               disabled={updateMutation.isPending}
-              className="tau-button tau-button-primary px-3 py-1.5 bg-accent text-white text-xs font-medium rounded hover:bg-accent-hover disabled:opacity-50"
+              className="tau-button tau-button-primary px-3 py-1.5 bg-accent text-on-accent text-xs font-medium rounded hover:bg-accent-hover disabled:opacity-50"
             >
               {updateMutation.isPending ? 'Saving...' : 'Save'}
             </button>
@@ -1285,7 +1285,7 @@ function EditActionFields({
                   'tau-button',
                   'px-2 py-0.5 text-xs rounded',
                   editState.inboxTarget === 'agent'
-                    ? 'bg-accent text-white'
+                    ? 'bg-accent text-on-accent'
                     : 'bg-surface-secondary text-muted hover:text-primary'
                 )}
               >
@@ -1297,7 +1297,7 @@ function EditActionFields({
                   'tau-button',
                   'px-2 py-0.5 text-xs rounded',
                   editState.inboxTarget === 'squad_manager'
-                    ? 'bg-accent text-white'
+                    ? 'bg-accent text-on-accent'
                     : 'bg-surface-secondary text-muted hover:text-primary'
                 )}
               >

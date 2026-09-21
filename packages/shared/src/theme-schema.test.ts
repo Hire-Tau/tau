@@ -14,6 +14,8 @@ import {
   themeTokenFamily,
   validateThemeRegistry,
   validateThemeTokenSet,
+  validateThemeTokenOverrides,
+  STATUS_TOKENS,
   type ThemeDescriptor,
 } from './theme-schema'
 
@@ -36,24 +38,19 @@ describe('theme token registry', () => {
     }
   })
 
-  test('the active set is exactly the 29 chrome tokens from index.css', () => {
-    expect(ACTIVE_THEME_TOKENS).toHaveLength(29)
+  test('chrome and semantic families are active', () => {
+    for (const family of ['chrome', 'status', 'agent-type', 'misc-chrome', 'badge-decoration']) {
+      expect(THEME_TOKEN_FAMILIES.find((entry) => entry.family === family)?.status).toBe('active')
+    }
     expect(ACTIVE_THEME_TOKENS).toContain('--color-bg-page')
-    expect(ACTIVE_THEME_TOKENS).toContain('--color-status-bar-scrim')
-    expect(ACTIVE_THEME_TOKENS).not.toContain('--status-progress-fg')
+    expect(ACTIVE_THEME_TOKENS).toContain('--status-progress-fg')
+    expect(PLANNED_THEME_TOKENS).not.toContain('--status-progress-fg')
   })
 
-  test('planned families cover the report taxonomy: status, agent-type, syntax, terminal, ANSI, graph, misc-chrome, brand', () => {
-    const families = THEME_TOKEN_FAMILIES.filter((f) => f.status === 'planned').map((f) => f.family)
-    expect(families).toEqual(['status', 'agent-type', 'syntax', 'terminal', 'ansi', 'graph', 'misc-chrome', 'brand'])
-    expect(PLANNED_THEME_TOKENS.length).toBeGreaterThan(0)
-  })
-
-  test('status family is the 9 roles × fg/solid/surface/border grid', () => {
-    const status = THEME_TOKEN_FAMILIES.find((f) => f.family === 'status')!
-    expect(status.tokens).toHaveLength(36)
-    for (const suffix of ['fg', 'solid', 'surface', 'border']) {
-      expect(status.tokens).toContain(`--status-human-wait-${suffix}`)
+  test('status family includes all nine roles and their distinct badge treatments', () => {
+    expect(STATUS_TOKENS).toHaveLength(63)
+    for (const suffix of ['fg', 'solid', 'surface', 'border', 'badge-fg', 'badge-surface', 'badge-hover']) {
+      expect(STATUS_TOKENS).toContain(`--status-human-wait-${suffix}`)
     }
   })
 
@@ -97,10 +94,10 @@ describe('validateThemeTokenSet (completeness schema)', () => {
   })
 
   test('reports unknown tokens, including planned names defined before their family activates', () => {
-    const tokens = [...ACTIVE_THEME_TOKENS, '--status-danger-solid']
+    const tokens = [...ACTIVE_THEME_TOKENS, '--brand-tile']
     const result = validateThemeTokenSet(tokens)
     expect(result.ok).toBe(false)
-    expect(result.unexpected).toEqual(['--status-danger-solid'])
+    expect(result.unexpected).toEqual(['--brand-tile'])
   })
 
   test('duplicate definitions stay valid (a set is a set)', () => {
@@ -254,5 +251,27 @@ describe('normalizeStoredThemeSelection (localStorage migration)', () => {
     expect(isAppearanceSetting('Dark')).toBe(false)
     expect(isAppearanceSetting(null)).toBe(false)
     expect(isAppearanceSetting(42)).toBe(false)
+  })
+})
+
+describe('coherent partial theme overrides', () => {
+  test('non-status overrides may inherit the rest of the theme', () => {
+    expect(validateThemeTokenOverrides([]).ok).toBe(true)
+    expect(validateThemeTokenOverrides(['--color-focus', '--agent-type-1-fg']).ok).toBe(true)
+  })
+  test('any status slot requires all roles and every slot, including badges', () => {
+    for (const token of STATUS_TOKENS) {
+      const result = validateThemeTokenOverrides([token])
+      expect(result.ok).toBe(false)
+      expect(result.missing).toEqual(STATUS_TOKENS.filter((name) => name !== token))
+      expect(validateThemeTokenOverrides(STATUS_TOKENS.filter((name) => name !== token)).missing).toEqual([token])
+    }
+    expect(validateThemeTokenOverrides(STATUS_TOKENS).ok).toBe(true)
+  })
+  test('rejects unknown and inactive token names', () => {
+    expect(validateThemeTokenOverrides(['--status-typo-fg', '--brand-tile']).unexpected).toEqual([
+      '--status-typo-fg',
+      '--brand-tile',
+    ])
   })
 })
