@@ -30,6 +30,7 @@ type Row = Record<string, unknown> & {
   agent_type_id: string | null
   kind: SquadActivityKind
   summary: string
+  preview: SquadActivityItem['preview']
   ref: SquadActivityItem['ref']
 }
 
@@ -84,7 +85,7 @@ export async function projectSquadActivity(input: ProjectSquadActivityInput): Pr
     ), page AS (
       SELECT lane,row_id,date_trunc('milliseconds',at) at,
         agent_id,CASE WHEN agent_type_requires_agents_read AND NOT ${input.access.agentsRead} THEN NULL ELSE agent_type_id END agent_type_id,
-        kind,summary,ref
+        kind,summary,preview,ref
       FROM squad_activity,params
       WHERE squad_id=${input.squadId}::uuid AND at>=params.retention_floor
         AND ((access_scope='agents' AND ${input.access.agentsRead})
@@ -122,6 +123,7 @@ export async function projectSquadActivity(input: ProjectSquadActivityInput): Pr
     agentTypeId: row.agent_type_id,
     kind: row.kind,
     summary: row.summary,
+    preview: row.preview,
     ref: coerceSquadActivityRef(row.ref),
   }))
   const last = selected.at(-1)

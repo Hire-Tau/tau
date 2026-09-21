@@ -41,6 +41,7 @@ type GlobalRow = Record<string, unknown> & {
   agent_type_id: string | null
   kind: SquadActivityKind
   summary: string
+  preview: GlobalSquadActivityItem['preview']
   ref: GlobalSquadActivityItem['ref']
 }
 
@@ -83,7 +84,7 @@ export async function projectGlobalActivity(input: ProjectGlobalActivityInput): 
     ), page AS (
       SELECT squad_activity.squad_id,lane,row_id,date_trunc('milliseconds',at) at,
         agent_id,CASE WHEN agent_type_requires_agents_read AND NOT squad_access.agents_read THEN NULL ELSE agent_type_id END agent_type_id,
-        kind,summary,ref
+        kind,summary,preview,ref
       FROM squad_activity
       JOIN squad_access ON squad_activity.squad_id=squad_access.squad_id
       CROSS JOIN params
@@ -129,6 +130,7 @@ export async function projectGlobalActivity(input: ProjectGlobalActivityInput): 
     agentTypeId: row.agent_type_id,
     kind: row.kind,
     summary: row.summary,
+    preview: row.preview,
     ref: coerceSquadActivityRef(row.ref),
     squadId: row.squad_id as string,
   }))

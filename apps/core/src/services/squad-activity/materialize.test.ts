@@ -79,7 +79,7 @@ describe('Activity materialization', () => {
     await db.insert(messages).values({
       agentId: agent.id,
       role: 'assistant',
-      content: '  Building projection\nignored',
+      content: '  Building [#241](tau:ws:241)\n**ready**',
       metadata: { executionId: execution.id },
       createdAt: new Date(runStartedAt.getTime() + 30_000),
     })
@@ -91,7 +91,24 @@ describe('Activity materialization', () => {
     expect(first.errors).toBe(0)
     expect(second.changed).toBe(0)
     const stored = await db.select().from(squadActivity).where(eq(squadActivity.squadId, squad.id))
-    expect(stored.map((row) => row.summary)).toContain('Building projection')
+    expect(stored.map((row) => row.summary)).toContain('Building #241 ready')
+    // Simulate a pre-preview materialization. Repair must read original Markdown,
+    // not parse the lossy stored summary or leave its old hash untouched.
+    await db
+      .update(squadActivity)
+      .set({ summary: '[broken legacy', preview: [], payloadHash: 'old' })
+      .where(eq(squadActivity.squadId, squad.id))
+    const regenerated = await repairSquadActivity(repairWindow)
+    expect(regenerated.errors).toBe(0)
+    const [repaired] = await db.select().from(squadActivity).where(eq(squadActivity.squadId, squad.id))
+    expect(repaired.preview).toEqual([
+      { text: 'Building ' },
+      { text: '#241', href: 'tau:ws:241' },
+      { text: ' ' },
+      { text: 'ready', bold: true },
+    ])
+    expect(repaired.summary).toBe('Building #241 ready')
+    expect((await repairSquadActivity(repairWindow)).changed).toBe(0)
   })
 
   test('subagent report rows carry the PARENT agent type through the REAL inbox loader', async () => {

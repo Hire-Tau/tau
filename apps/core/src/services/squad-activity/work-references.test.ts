@@ -29,6 +29,7 @@ const item = (overrides: Partial<SquadActivityItem>): SquadActivityItem => ({
   agentId: null,
   agentTypeId: null,
   kind: 'issue',
+  preview: [{ text: 'summary' }],
   summary: 'summary',
   ref: { type: 'pr', url: 'https://github.com/x/y/pull/1' },
   ...overrides,
@@ -39,6 +40,7 @@ describe('addWorkReferences', () => {
     const stream = await createSquadWithWorkStream()
     const issueItem = item({
       kind: 'issue',
+      preview: [{ text: 'Fix the bug' }],
       summary: 'Fix the bug',
       ref: { type: 'issue', url: 'https://github.com/x/y/issues/1', workStreamId: stream.id },
     })
@@ -56,6 +58,7 @@ describe('addWorkReferences', () => {
   test('leaves an issue ref without a workStreamId untouched', async () => {
     const issueItem = item({
       kind: 'issue',
+      preview: [{ text: 'Fix the bug' }],
       summary: 'Fix the bug',
       ref: { type: 'issue', url: 'https://github.com/x/y/issues/1' },
     })
@@ -73,18 +76,21 @@ describe('addWorkReferences', () => {
     const stream = await createSquadWithWorkStream()
     const workstreamItem = item({
       kind: 'workstream',
+      preview: [{ text: `[ws-${stream.id.replace(/-/g, '')} created` }],
       summary: `[ws-${stream.id.replace(/-/g, '')} created`,
       ref: { type: 'workstream', workStreamId: stream.id },
     })
     const [enriched] = await addWorkReferences([workstreamItem])
     expect(enriched.ref).toEqual({ type: 'workstream', workStreamId: stream.id, workStreamNumber: stream.number })
     expect(enriched.summary).toBe(`[#${stream.number} created`)
+    expect(enriched.preview).toEqual([{ text: `[#${stream.number} created` }])
   })
 
   test('leaves a ref pointing at an unknown work stream id unchanged', async () => {
     const unknownId = crypto.randomUUID()
     const workstreamItem = item({
       kind: 'workstream',
+      preview: [{ text: `[ws-deadbeef created` }],
       summary: `[ws-deadbeef created`,
       ref: { type: 'workstream', workStreamId: unknownId },
     })

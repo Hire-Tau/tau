@@ -10,7 +10,16 @@ const EntityReferencePreview = lazy(() =>
   import('./EntityReferencePreview').then((module) => ({ default: module.EntityReferencePreview }))
 )
 
-export function EntityReferenceLink({ reference, children }: { reference: EntityReference; children: ReactNode }) {
+export function EntityReferenceLink({
+  reference,
+  children,
+  preloadOnVisible = true,
+}: {
+  reference: EntityReference
+  children: ReactNode
+  /** Compact feeds already materialize their content; resolve only on intent. */
+  preloadOnVisible?: boolean
+}) {
   const client = useContext(QueryClientContext)
   const button = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
@@ -59,7 +68,7 @@ export function EntityReferenceLink({ reference, children }: { reference: Entity
   }, [client, kind, id])
 
   useEffect(() => {
-    if (!button.current || typeof IntersectionObserver === 'undefined') return
+    if (!preloadOnVisible || !button.current || typeof IntersectionObserver === 'undefined') return
     const observer = new IntersectionObserver((entries) => {
       if (!entries.some((entry) => entry.isIntersecting)) return
       observer.disconnect()
@@ -67,7 +76,7 @@ export function EntityReferenceLink({ reference, children }: { reference: Entity
     })
     observer.observe(button.current)
     return () => observer.disconnect()
-  }, [preload])
+  }, [preload, preloadOnVisible])
 
   return (
     <>

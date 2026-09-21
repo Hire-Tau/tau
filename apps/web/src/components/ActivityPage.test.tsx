@@ -46,6 +46,7 @@ const workItem: GlobalSquadActivityItem = {
   agentId: null,
   agentTypeId: null,
   kind: 'workstream',
+  preview: [{ text: '[ws-abcd created] Cross-squad work' }],
   summary: '[ws-abcd created] Cross-squad work',
   ref: { type: 'workstream', workStreamId: '00000000-0000-4000-8000-000000000010' },
   squadId: squadAId,
@@ -56,6 +57,7 @@ const messageItem: GlobalSquadActivityItem = {
   agentId,
   agentTypeId: 'engineer',
   kind: 'message',
+  preview: [{ text: 'Implementation ready' }],
   summary: 'Implementation ready',
   ref: { type: 'agent', agentId, view: 'inbox', messageId: '00000000-0000-4000-8000-000000000020' },
   squadId: squadBId,
@@ -68,6 +70,7 @@ const issueItem: GlobalSquadActivityItem = {
   agentId: null,
   agentTypeId: null,
   kind: 'issue',
+  preview: [{ text: 'Flaky login' }],
   summary: 'Flaky login',
   ref: {
     type: 'issue',
@@ -374,7 +377,7 @@ describe('ActivityPage issue rows', () => {
       )
       expect(row).toBeDefined()
       expect(row!.getAttribute('target')).toBe('_blank')
-      expect(row!.getAttribute('rel')).toBe('noreferrer')
+      expect(row!.getAttribute('rel')).toBe('noopener noreferrer')
       const chip = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Open work stream #12"]')!
       expect(chip).toBeDefined()
       await dom.act(async () => {
@@ -440,7 +443,7 @@ describe('ActivityPage in-place modals', () => {
         await Bun.sleep(20)
       })
       const wsRow = [...dom.window.document.querySelectorAll('a')].find((a) =>
-        a.textContent?.includes('Cross-squad work')
+        a.getAttribute('aria-label')?.includes('Cross-squad work')
       )!
       expect(wsRow).toBeDefined()
       await dom.act(async () => {
@@ -452,7 +455,7 @@ describe('ActivityPage in-place modals', () => {
       )
 
       const agentRow = [...dom.window.document.querySelectorAll('a')].find((a) =>
-        a.textContent?.includes('Implementation ready')
+        a.getAttribute('aria-label')?.includes('Implementation ready')
       )!
       expect(agentRow).toBeDefined()
       await dom.act(async () => {
@@ -497,7 +500,7 @@ describe('ActivityPage in-place modals', () => {
         await Bun.sleep(20)
       })
       const agentRow = [...dom.window.document.querySelectorAll('a')].find((a) =>
-        a.textContent?.includes('Implementation ready')
+        a.getAttribute('aria-label')?.includes('Implementation ready')
       )!
       await dom.act(async () => {
         agentRow.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }))

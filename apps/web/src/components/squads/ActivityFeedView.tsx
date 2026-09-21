@@ -1,3 +1,4 @@
+import { ActivityPreview, activityExternalHref } from './ActivityPreview'
 import clsx from 'clsx'
 import { useEffect, useRef } from 'react'
 import type { Dispatch, MouseEvent as ReactMouseEvent, SetStateAction } from 'react'
@@ -71,7 +72,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
   onLoadMore,
 }: ActivityFeedViewProps<T>) {
   const rowClassName = clsx(
-    'flex flex-col gap-y-1 rounded-lg px-2 py-2.5 hover:bg-surface-hover lg:grid lg:gap-x-3',
+    'relative flex flex-col gap-y-1 rounded-lg px-2 py-2.5 hover:bg-surface-hover lg:grid lg:gap-x-3',
     activityGridClass(squadChipFor !== undefined)
   )
   const navigate = useNavigate()
@@ -205,7 +206,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                     <div className={rowClassName} aria-hidden="true">
                       <div
                         className={clsx(
-                          'min-w-0 items-center lg:contents',
+                          'pointer-events-none min-w-0 items-center lg:contents',
                           isGlobalFeed ? 'grid grid-cols-[minmax(0,1fr)_minmax(0,auto)_auto] gap-x-2' : 'flex gap-2'
                         )}
                       >
@@ -278,7 +279,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                       wrapper so all cells align to the row's desktop grid. */}
                   <div
                     className={clsx(
-                      'min-w-0 items-center lg:contents',
+                      'pointer-events-none min-w-0 items-center lg:contents',
                       isGlobalFeed ? 'grid grid-cols-[minmax(0,1fr)_minmax(0,auto)_auto] gap-x-2' : 'flex gap-2'
                     )}
                     data-activity-mobile-header={isGlobalFeed ? 'global' : 'squad'}
@@ -297,8 +298,6 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                       {formatActivityTimestamp(item.at)}
                     </time>
                     {chip && (
-                      // A <button> navigating imperatively, not a nested <Link>: an <a> can't
-                      // contain another <a> (invalid HTML — the row itself is already a Link).
                       <button
                         type="button"
                         onClick={(event) => {
@@ -306,7 +305,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                           event.stopPropagation()
                           navigate(chip.href)
                         }}
-                        className="tau-button col-start-2 row-start-1 min-w-0 max-w-full self-start justify-self-end overflow-hidden rounded bg-pill px-1.5 py-0.5 text-right text-[10px] font-sans font-medium text-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent lg:col-start-2 lg:justify-self-start lg:text-left"
+                        className="tau-button pointer-events-auto relative z-10 col-start-2 row-start-1 min-w-0 max-w-full self-start justify-self-end overflow-hidden rounded bg-pill px-1.5 py-0.5 text-right text-[10px] font-sans font-medium text-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent lg:col-start-2 lg:justify-self-start lg:text-left"
                         data-activity-column="squad"
                         aria-label={`Open activity for ${chip.label}`}
                         title={chip.label}
@@ -338,16 +337,14 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                   </div>
                   <span
                     className={clsx(
-                      'min-w-0 break-words lg:col-span-1',
+                      'pointer-events-none relative z-10 min-w-0 break-words lg:col-span-1',
                       isGlobalFeed ? 'lg:col-start-4' : 'lg:col-start-3',
                       item.kind !== 'message' && ACTIVITY_SMALL_TEXT_CLASS
                     )}
                     data-activity-column="summary"
                   >
-                    {item.summary}
+                    <ActivityPreview spans={item.preview} />
                     {workStreamChip && (
-                      // Same reason as the squad chip: this row is already an
-                      // <a> (the code host), so the in-app jump is a button.
                       <button
                         type="button"
                         onClick={(event) => {
@@ -355,7 +352,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                           event.stopPropagation()
                           navigate(workStreamChip.href)
                         }}
-                        className="tau-button ml-1.5 rounded bg-pill px-1.5 py-0.5 align-middle text-[10px] font-medium text-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                        className="tau-button pointer-events-auto relative z-10 ml-1.5 rounded bg-pill px-1.5 py-0.5 align-middle text-[10px] font-medium text-muted hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                         aria-label={`Open work stream #${workStreamChip.number}`}
                       >
                         #{workStreamChip.number}
@@ -364,38 +361,33 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                   </span>
                 </>
               )
-              const className = rowClassName
+              const external = item.ref.type === 'pr' || item.ref.type === 'issue'
+              const sourceHref =
+                item.ref.type === 'pr' || item.ref.type === 'issue' ? activityExternalHref(item.ref.url) : hrefFor(item)
               return (
                 <li key={item.id}>
-                  {item.ref.type === 'pr' || item.ref.type === 'issue' ? (
-                    item.ref.url ? (
-                      <a
-                        className={className}
-                        href={item.ref.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        data-activity-layout={isGlobalFeed ? 'global' : 'squad'}
-                      >
-                        {content}
-                      </a>
-                    ) : (
-                      // Nothing to open: a tracked issue whose provider link the squad never
-                      // recorded. The row is still the record of what happened, so it reads as
-                      // text rather than as an anchor that would reload the page.
-                      <div className={className} data-activity-layout={isGlobalFeed ? 'global' : 'squad'}>
-                        {content}
-                      </div>
-                    )
-                  ) : (
-                    <Link
-                      className={className}
-                      to={hrefFor(item)}
-                      onClick={interceptRowClick(item)}
-                      data-activity-layout={isGlobalFeed ? 'global' : 'squad'}
-                    >
-                      {content}
-                    </Link>
-                  )}
+                  <div className={rowClassName} data-activity-layout={isGlobalFeed ? 'global' : 'squad'}>
+                    {/* A sibling stretched anchor owns the non-interactive row area.
+                        Inline links/chips sit above it, never inside another control. */}
+                    {sourceHref &&
+                      (external ? (
+                        <a
+                          className="absolute inset-0 rounded-lg focus-visible:ring-2 focus-visible:ring-accent"
+                          href={sourceHref}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          aria-label={`Open activity source: ${item.summary}`}
+                        />
+                      ) : (
+                        <Link
+                          className="absolute inset-0 rounded-lg focus-visible:ring-2 focus-visible:ring-accent"
+                          to={sourceHref}
+                          onClick={interceptRowClick(item)}
+                          aria-label={`Open activity source: ${item.summary}`}
+                        />
+                      ))}
+                    {content}
+                  </div>
                 </li>
               )
             })
