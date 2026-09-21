@@ -3,6 +3,7 @@ import { ConversationSkeleton } from './loading/Skeleton'
 import clsx from 'clsx'
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
+import { flushSync } from 'react-dom'
 import type { MessageMetadata, MessageToolCall, ContentBlock, DeliveryMode, ExecutionStatus } from '@tau/shared'
 import { AssistantMessageContent, HumanMessageContent, ThinkingSection, ParsedTextContent } from './MessageContent'
 import { TypingIndicator } from './TypingIndicator'
@@ -103,6 +104,7 @@ interface ChatViewProps {
   readOnly?: boolean
   hideInboxMessages?: boolean
   hideComposer?: boolean
+  /** Show the manual fullscreen control. Phone composer taps can also expand embedded chats locally. */
   enableFullscreen?: boolean
   embedded?: boolean
 
@@ -557,9 +559,36 @@ export function ChatView({
       })
     },
   })
-  const { isFullscreen: _isFullscreen, toggleFullscreen } = useFullscreen({ queryParam: 'fullscreen' })
+  const fullscreen = useFullscreen({ queryParam: enableFullscreen ? 'fullscreen' : undefined })
+  // Router transitions may commit after a mobile user gesture has ended. Keep
+  // tap-to-expand synchronous and local, including inside parent-owned layouts.
+  const mobileExpansion = useFullscreen()
+  const isFullscreen = fullscreen.isFullscreen || mobileExpansion.isFullscreen
+  const toggleFullscreen = mobileExpansion.isFullscreen ? mobileExpansion.exitFullscreen : fullscreen.toggleFullscreen
 
-  const isFullscreen = enableFullscreen && _isFullscreen
+  useEffect(() => {
+    // Retained Assistant tabs stay mounted when hidden. Their portal must not
+    // outlive the visible conversation when navigation switches to another tab.
+    if (!keyboardShortcutsEnabled && mobileExpansion.isFullscreen) mobileExpansion.exitFullscreen()
+  }, [keyboardShortcutsEnabled, mobileExpansion.isFullscreen, mobileExpansion.exitFullscreen])
+
+  const expandMobileComposer = (event: React.MouseEvent<HTMLTextAreaElement>) => {
+    const textarea = event.currentTarget
+    if (isFullscreen || !window.matchMedia('(max-width: 767px)').matches || textarea.closest('.mobile-chat-modal'))
+      return
+
+    const { selectionStart, selectionEnd, selectionDirection } = textarea
+    // Commit the portal and focus its input in the same user gesture so mobile
+    // Safari can keep the keyboard open. ChatView stays mounted: drafts, files,
+    // uploads, and conversation state survive expansion.
+    flushSync(mobileExpansion.enterFullscreen)
+    const expandedTextarea = textareaRef.current
+    if (expandedTextarea) {
+      resizeTextarea(expandedTextarea)
+      expandedTextarea.focus({ preventScroll: true })
+      expandedTextarea.setSelectionRange(selectionStart, selectionEnd, selectionDirection)
+    }
+  }
 
   // ---------------------------------------------------------------------
   // focusMessageId: scroll to and briefly highlight one message on mount,
@@ -1359,7 +1388,7 @@ export function ChatView({
     </button>
   )
 
-  const fullscreenButton = enableFullscreen && (
+  const fullscreenButton = (enableFullscreen || isFullscreen) && (
     <button
       onClick={toggleFullscreen}
       className="tau-button p-1.5 rounded-md text-placeholder hover:text-secondary hover:bg-surface-hover transition-colors shrink-0"
@@ -1838,6 +1867,7 @@ export function ChatView({
 
               <textarea
                 ref={textareaRef}
+                onClick={expandMobileComposer}
                 defaultValue={inputRef.current}
                 onChange={(e) => {
                   if (isSubmittingRef.current) {
