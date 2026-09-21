@@ -1,4 +1,4 @@
-import { WORK_STREAM_PRESENTATION_CASES } from '../../../../../packages/shared/src/test-fixtures/work-stream-presentation'
+import { WORK_STREAM_PRESENTATION_CASES } from '@tau/shared/test-fixtures/work-stream-presentation'
 import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stream'
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { and, eq, like, inArray } from 'drizzle-orm'
@@ -134,7 +134,7 @@ describe('work-stream derived state', () => {
                         executionId: 'failure',
                         failureClass: null,
                         failureReason: null,
-                        endedAt: new Date().toISOString(),
+                        endedAt: new Date(),
                       },
                     ],
                   ]

@@ -10,6 +10,7 @@
     "./crypto": "./src/crypto.ts",
     "./node": "./src/node/index.ts",
     "./provider-health": "./src/provider-health.ts",
+    "./test-fixtures/work-stream-presentation": "./src/test-fixtures/work-stream-presentation.ts",
     "./testDbLock": "./src/testDbLock.ts",
     "./testDbReady": "./src/testDbReady.ts",
     "./testDbPort": "./src/testDbPort.ts",

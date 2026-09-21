@@ -5,14 +5,22 @@ import type { WorkflowRun } from '@tau/shared'
 const metadata = { codeHost: { integration: 'github', repository: 'acme/repo', changeRequest: { number: 42 } } }
 const run = (mode = 'pr-merge', followChanges = true) =>
   ({ status: 'completion-ready', definition: { completion: { mode, followChanges } } }) as WorkflowRun
-const event = (output: string, data = {}, headSha = 'a'.repeat(40), occurredAt = '2026-09-21T10:00:00Z') =>
-  ({
-    integration: 'github',
-    output,
-    version: 1,
-    occurredAt,
-    data: { repository: 'acme/repo', pullRequest: { number: 42, headSha }, ...data },
-  }) as DeliveryEvent
+const event = (
+  output: string,
+  data: Record<string, unknown> = {},
+  headSha = 'a'.repeat(40),
+  occurredAt = '2026-09-21T10:00:00Z'
+): DeliveryEvent => ({
+  integration: 'github',
+  output,
+  version: 1,
+  eventKey: `${output}:${headSha}:${occurredAt}`,
+  resourceKey: 'acme/repo#42',
+  subject: '',
+  body: '',
+  occurredAt,
+  data: { repository: 'acme/repo', pullRequest: { number: 42, headSha }, ...data },
+})
 
 test('policy, binding and tracking determine setup versus external, not PR existence alone', () => {
   expect(classifyDeliveryPresentation(run(), metadata, [])).toEqual({ kind: 'external' })
