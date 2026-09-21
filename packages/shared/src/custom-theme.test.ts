@@ -110,7 +110,7 @@ test('unknown/inactive names warn and cannot become properties, including protot
   const result = validateCustomTheme(
     JSON.stringify(doc).replace(
       '"overrides":{}',
-      '"overrides":{"__proto__":"#fff","constructor":"#000","--future":"#abc","--brand-tile":"#def","--color-primary":"#123"}'
+      '"overrides":{"__proto__":"#fff","constructor":"#000","--future":"#abc","--future-brand-tile":"#def","--color-primary":"#123"}'
     ),
     builtins
   )

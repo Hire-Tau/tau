@@ -63,7 +63,6 @@ const LEGACY_PALETTE_UTILITY_FILES: readonly string[] = [
   'components/AmtpAllowRulesEditor.tsx',
   'components/AmtpMailboxSection.tsx',
   'components/AppNav.tsx',
-  'components/AssistantConversationView.tsx',
   'components/AssistantConversations.tsx',
   'components/Chat.tsx',
   'components/ChatDrawer.tsx',
@@ -204,8 +203,6 @@ const LEGACY_LITERAL_HEX_FILES: readonly string[] = [
   'components/ActionCenterContent.tsx',
   'components/ChatView.tsx',
   'components/MessageContent.tsx',
-  'components/PullToRefresh.tsx',
-  'components/TauLogo.tsx',
   'components/WorkStreamFileCard.tsx',
   'components/settings/SystemLogsSection.tsx',
   'components/squads/SandboxLogs.tsx',
@@ -216,7 +213,6 @@ const LEGACY_LITERAL_HEX_FILES: readonly string[] = [
 const LEGACY_COLOR_FUNCTION_FILES: readonly string[] = ['components/VoiceWorkspacePage.tsx']
 
 const LEGACY_INLINE_COLOR_STYLE_FILES: readonly string[] = [
-  'components/PullToRefresh.tsx',
   'components/squads/SquadUniverse.tsx',
 ]
 
@@ -227,11 +223,8 @@ const ENTRY_REASONS: Readonly<Record<string, string>> = {
   'theme/flash.ts': 'theme definition: seven pre-CSS surface fallbacks; exact parity checked by flashScript.test.ts',
   'components/settings/StorageSection.tsx':
     'temporary: upstream error-label palette use added in initiative base 11e775485; phase 2 status token migration',
-  'components/TauLogo.tsx':
-    'PD-5: temporary pending-tokenization via the planned --brand-* family (NOT a permanent exception)',
   'components/artifacts/PresentationRenderer.tsx':
     'mixed: chart/presentation colors are content-authored (§4.3 permanent) alongside chrome palette use (phase 2+)',
-  'components/PullToRefresh.tsx': 'temporary: brand purple pending --brand-* tokens (PD-5)',
   'components/VoiceWorkspacePage.tsx': 'temporary: voice orb CSS (phase 2+ sweep)',
   'components/squads/SquadUniverse.tsx': 'token-derived: live hovered-node swatch from graph/status tokens (phase 4)',
 }

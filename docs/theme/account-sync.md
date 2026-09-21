@@ -4,7 +4,7 @@ Theme/appearance and the **custom theme document** sync together. The existing
 8 KiB custom-document cap fits a single `user_preferences.theme` JSONB field;
 there is no palette copy, new runtime dependency, or change to custom color,
 status coherence, sentinel inheritance, intrinsic-opacity or contrast rules.
-Migration `0184_same_tinkerer.sql` was generated with `bun db:generate`. It adds
+Migration `0186_charming_mentor.sql` was generated with `bun db:generate`. It adds
 one row per user, an update timestamp and a cascading user foreign key. An absent
 row is **no account choice**, not a default value to upload.
 
