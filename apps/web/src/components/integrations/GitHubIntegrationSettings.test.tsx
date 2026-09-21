@@ -94,7 +94,7 @@ test('device login displays only the public code and cancellation removes it', a
 
   expect(container.querySelector('a[href="https://github.com/login/device"]')).not.toBeNull()
   expect(JSON.parse(requests[0].body)).toEqual({
-    returnTo: '/settings?section=integrations&setting=integration-github',
+    returnTo: '/settings',
   })
   await harness.act(async () => {
     fireEvent.click(button('Cancel'))
@@ -116,6 +116,47 @@ test('read-only users cannot connect or configure an app', async () => {
   expect(container.textContent).not.toContain('Connect account')
   expect(container.querySelector('input[type="password"]')).toBeNull()
 })
+
+test.each(['local', 'platform_broker'] as const)(
+  '%s reconnect sends the selected account and a path-only return target',
+  async (authority) => {
+    let body = ''
+    globalThis.fetch = (async (_input, init) => {
+      body = String(init?.body)
+      return new Promise<Response>(() => {})
+    }) as typeof fetch
+    client.setQueryData([...integrationQueryKeys.all, 'oauth-app', 'github'], {
+      authority,
+      configured: true,
+      clientId: authority === 'local' ? TAU_GITHUB_APP_CLIENT_ID : null,
+      requiredCapabilities: [],
+    })
+    client.setQueryData(integrationQueryKeys.pool('github'), [
+      {
+        id: 'selected-account',
+        displayName: 'Example',
+        configuration: { login: 'example' },
+        enabled: true,
+        authState: 'authenticated',
+        healthState: 'healthy',
+        usage: { squadCount: 1, squads: [] },
+      },
+    ])
+    const { root, container } = harness.createRoot()
+    await harness.act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <GitHubIntegrationSettings canRead canWrite />
+        </QueryClientProvider>
+      )
+    )
+    await harness.act(async () => {
+      fireEvent.click([...container.querySelectorAll('button')].find((button) => button.textContent === 'Reconnect')!)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(JSON.parse(body)).toEqual({ returnTo: '/settings', connectionId: 'selected-account' })
+  }
+)
 
 test('Tau app users can grant repository access during onboarding and after connecting an account', async () => {
   const { root, container } = harness.createRoot()

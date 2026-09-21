@@ -53,6 +53,7 @@ export * from './workflow-usage'
 export * from './workflow-editing'
 
 export * from './integration-outputs'
+export type { GitHubRepositoryAccess } from './github-repository-access'
 export type { IntegrationAuthorizationStart, IntegrationDeviceAuthorizationStatus } from './integration-authorization'
 
 export * from './code-hosting'

@@ -55,7 +55,7 @@ test('starts Notion OAuth with the server-accepted safe return and renders lifec
     fireEvent.click(button)
     await new Promise((resolve) => setTimeout(resolve, 0))
   })
-  expect(JSON.parse(body)).toEqual({ returnTo: '/settings?section=integrations&setting=integration-notion' })
+  expect(JSON.parse(body)).toEqual({ returnTo: '/settings' })
 })
 
 test('unknown authority renders neutral loading copy without local OAuth guidance', async () => {

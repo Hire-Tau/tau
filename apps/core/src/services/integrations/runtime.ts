@@ -58,6 +58,9 @@ import {
 } from './authorization/db-device-repository'
 import { GitHubOAuthClient } from '@tau/shared/oauth-providers/github/client'
 import { resolveGitHubAppCredentials } from './authorization/github-app'
+import { resolveInstanceGitHubConnection } from './github/resolve-connection'
+import { checkGitHubRepositoryAccess } from './github/repository-access'
+import { parseGitHubConfiguration } from '@tau/shared/oauth-providers/github/config'
 import { integrationOutputRegistry } from './outputs/registry'
 import { join } from 'path'
 import { getHomeDir } from '../../lib/utils/home'
@@ -556,6 +559,12 @@ export const integrationRoutesService = Object.assign(integrationConnectionServi
     return row ? integrationConnectionService.safeView(row) : null
   },
   providerFor: (id: string) => integrationConnectionRepository.providerFor(id),
+  async githubRepositoryAccess(id: string) {
+    const resolved = await resolveInstanceGitHubConnection(id)
+    if (!resolved) return null
+    const configuration = parseGitHubConfiguration(resolved.connection.configuration)
+    return checkGitHubRepositoryAccess(resolved.credential.accessToken, configuration.login)
+  },
   serviceSettings: {
     get: (provider: string) =>
       isPushIntegration(provider)

@@ -1,5 +1,6 @@
 import { CheckIcon, ClipboardIcon } from '../icons'
 import { GitHubWebhookSettings } from './GitHubWebhookSettings'
+import { GitHubRepositoryAccess } from './GitHubRepositoryAccess'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { IntegrationAuthorizationStart } from '@tau/shared'
@@ -15,7 +16,7 @@ import {
   startIntegrationAuthorization,
 } from '../../api/integrations'
 import { integrationQueries } from '../../queryOptions'
-import { integrationSettingsPath } from '../../lib/integrationReturnPath'
+import { integrationAuthorizationReturnPath } from '../../lib/integrationReturnPath'
 import { integrationQueryKeys, onboardingQueryKeys } from '../../queryKeys'
 
 type DeviceLogin = Extract<IntegrationAuthorizationStart, { kind: 'device' }>
@@ -70,7 +71,7 @@ export function GitHubIntegrationSettings({
       return startIntegrationAuthorization('github', {
         returnTo: onboarding
           ? (import.meta.env?.BASE_URL ?? '/').replace(/\/$/, '') + '/onboarding'
-          : integrationSettingsPath('github'),
+          : integrationAuthorizationReturnPath(),
         ...(connectionId ? { connectionId } : {}),
       })
     },
@@ -261,6 +262,13 @@ export function GitHubIntegrationSettings({
                 : 'Disabled'}{' '}
               · Used by {connection.usage.squadCount} squads
             </p>
+            {connection.enabled && connection.authState === 'authenticated' && (
+              <GitHubRepositoryAccess
+                connectionId={connection.id}
+                login={connection.configuration.login ?? connection.displayName}
+                usesTauApp={usesTauApp}
+              />
+            )}
           </div>
           {canWrite && (
             <div className="flex flex-wrap gap-2">
