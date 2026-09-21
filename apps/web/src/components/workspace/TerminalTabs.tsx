@@ -181,18 +181,18 @@ export function TerminalTabs({ sandboxId, selectedShell, onSelectShell, disabled
   // Don't render until initialized to prevent premature terminal connections
   if (!initialized) {
     return (
-      <div className="flex h-full flex-col bg-[#0e0f1a]">
+      <div className="flex h-full flex-col bg-[rgb(var(--term-bg))]">
         <div className="flex h-11 items-center border-b border-panel-border bg-surface px-3">
-          <SkeletonBlock className="h-4 w-24 bg-gray-700" />
+          <SkeletonBlock className="h-4 w-24 bg-[rgb(var(--term-loading-bg))]" />
         </div>
-        <DocumentSkeleton label="Loading terminals" lines={8} className="flex-1 bg-[#0e0f1a]" />
+        <DocumentSkeleton label="Loading terminals" lines={8} className="flex-1 bg-[rgb(var(--term-bg))]" />
       </div>
     )
   }
 
   if (tabs.length === 0 && disabled) {
     return (
-      <div className="h-full flex items-center justify-center bg-[#0e0f1a] text-gray-500">
+      <div className="h-full flex items-center justify-center bg-[rgb(var(--term-bg))] text-[rgb(var(--term-muted))]">
         Task completed — terminal sessions closed
       </div>
     )
@@ -200,17 +200,17 @@ export function TerminalTabs({ sandboxId, selectedShell, onSelectShell, disabled
 
   if (tabs.length === 0) {
     return (
-      <div className="flex h-full flex-col bg-[#0e0f1a]">
+      <div className="flex h-full flex-col bg-[rgb(var(--term-bg))]">
         <div className="flex h-11 items-center border-b border-panel-border bg-surface px-3">
-          <SkeletonBlock className="h-4 w-24 bg-gray-700" />
+          <SkeletonBlock className="h-4 w-24 bg-[rgb(var(--term-loading-bg))]" />
         </div>
-        <DocumentSkeleton label="Loading terminals" lines={8} className="flex-1 bg-[#0e0f1a]" />
+        <DocumentSkeleton label="Loading terminals" lines={8} className="flex-1 bg-[rgb(var(--term-bg))]" />
       </div>
     )
   }
 
   return (
-    <div className="h-full flex flex-col bg-[#0e0f1a]">
+    <div className="h-full flex flex-col bg-[rgb(var(--term-bg))]">
       {/* Tab bar */}
       <div className="flex min-h-11 items-center gap-1 px-2 py-1 bg-surface shrink-0">
         <div className="flex-1 flex items-center overflow-x-auto">

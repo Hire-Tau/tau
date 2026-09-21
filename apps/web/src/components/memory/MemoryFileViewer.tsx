@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { syntaxTheme } from '../../theme/syntax'
 import type { FileContent } from '../../api/workspace'
 import { getSquadMemoryDownloadUrl } from '../../api/workspace'
 import { authFetch } from '../../api/client'
@@ -116,7 +116,7 @@ export function MemoryFileViewer({ squadId, filePath }: MemoryFileViewerProps) {
           <div className="flex-1 overflow-auto min-w-0 [&_code_span:not(.linenumber)]:!inline">
             <SyntaxHighlighter
               language={language}
-              style={oneDark}
+              style={syntaxTheme}
               codeTagProps={{ style: { background: 'transparent' } }}
               showLineNumbers
               customStyle={{
@@ -125,7 +125,7 @@ export function MemoryFileViewer({ squadId, filePath }: MemoryFileViewerProps) {
                 minHeight: '100%',
                 fontSize: '13px',
                 lineHeight: '1.65',
-                background: '#0e0f1a',
+                background: 'rgb(var(--syntax-memory-bg))',
                 padding: '1rem',
               }}
               lineNumberStyle={{
