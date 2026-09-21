@@ -6,6 +6,7 @@ import { activeWorkflowAttempts } from '@tau/shared'
 import { waitsForAgent, waitingAssigneeStreamIds } from './wait-scope'
 import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lt, lte, or, sql } from 'drizzle-orm'
 import { db } from '../../db'
+import { readDatabaseClock } from '../../db/clock'
 import {
   agents,
   executions,
@@ -144,10 +145,12 @@ export async function blockCurrentContinuation(
   message: string,
   condition: (cycle: typeof workStreamContinuations.$inferSelect) => boolean,
   triggerExecutionId?: string,
-  observationEndedAt = new Date(),
+  observationEndedAt?: Date,
   lastDeliveryFailureAt?: Date
 ): Promise<boolean> {
-  const now = observationEndedAt
+  // Callers pass the trigger's `endedAt`, which the database stamped; the fallback reads the same
+  // clock rather than the host's, because `now` is compared against `executions.ended_at` below.
+  const now = observationEndedAt ?? (await readDatabaseClock())
   const blockedRow = await db.transaction(async (tx) => {
     await tx.execute(sql`select id from work_streams where id = ${workStreamId} for update`)
     const [stream] = await tx.select().from(workStreams).where(eq(workStreams.id, workStreamId))
@@ -743,7 +746,12 @@ export interface WorkStreamContinuationSweepOptions {
 export async function reconcileWorkStreamContinuationsOnce(
   options: WorkStreamContinuationSweepOptions = {}
 ): Promise<void> {
-  const now = options.now ?? new Date()
+  // Every comparison this sweep makes against `now` is against a column the DATABASE stamped
+  // (`executions.ended_at`, and `cycleStartedAt`, which now follows the same clock). Taking `now`
+  // from the app host would reintroduce exactly the skew those columns were changed to remove:
+  // a host running ahead makes a fresh completion look older than the window and a delivered
+  // stream look idle. One round trip per sweep.
+  const now = options.now ?? (await readDatabaseClock())
   const allActive = await WorkStream.list({ status: 'active', squadId: options.squadId })
   // An active stream with an OPEN WAIT is waiting on something recorded
   // (review verdict, answer, dependency, manual hold) — the continuation
@@ -814,6 +822,12 @@ export async function reconcileWorkStreamContinuationsOnce(
           missing.map((s) => ({
             workStreamId: s.id,
             assigneeAgentId: s.assigneeAgentId!,
+            // KNOWN RESIDUAL (single-clock): `work_streams.updated_at` defaults to the database
+            // clock but is also written from host `new Date()` values by several stream writers,
+            // so a backfilled high-water mark can still carry host skew. Deliberately not changed
+            // here — seeding from "when the stream last changed" is the point of this backfill,
+            // and converting every `work_streams.updated_at` writer is a separate change. The
+            // exposure is one sweep for a stream that had no continuation row at all.
             cycleStartedAt: s.updatedAt,
           }))
         )

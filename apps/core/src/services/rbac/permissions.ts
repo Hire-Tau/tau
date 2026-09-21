@@ -1,6 +1,6 @@
 import { db } from '../../db'
 import { agentExtraScopes, agents, agentTypes, roleAssignments, roles, users } from '../../db/schema'
-import { eq, and, isNotNull, isNull } from 'drizzle-orm'
+import { eq, and, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm'
 import { isLiveAgentStatus, permissionMatches } from '@tau/shared'
 
 export { permissionMatches }
@@ -120,73 +120,100 @@ export async function resolveActingUser(identity: Identity | undefined): Promise
   return { type: 'user', userId: authority.ownerUserId }
 }
 
+/** One `role_assignments` × `roles` row as permission resolution sees it. */
+export interface PermissionAssignment {
+  scope: 'system' | 'squad_default' | 'squad'
+  squadId: string | null
+  permissions: string[]
+}
+
+/**
+ * The whole of the user permission rule, as a pure function of a subject's assignment rows.
+ *
+ * System-scoped roles always apply. A squad-scoped check adds exactly ONE squad tier on top:
+ * the rows assigned directly on that squad if the subject has any, otherwise the
+ * `squad_default` rows — an override REPLACES the default rather than supplementing it, so a
+ * role that deliberately withholds a permission on one squad is not undone by the default.
+ * A system `*` short-circuits the squad tier entirely: nothing it could add is not already held.
+ *
+ * Both the per-user path ({@link resolveUserPermissions}) and the all-users scan
+ * ({@link getUserIdsWithPermission}) evaluate through here, so the one-query audience and the
+ * single-subject check cannot drift apart.
+ */
+export function permissionsFromAssignments(assignments: PermissionAssignment[], squadId?: string): string[] {
+  const permissions: string[] = []
+  for (const row of assignments) {
+    if (row.scope === 'system') permissions.push(...row.permissions)
+  }
+
+  if (squadId && !permissions.includes('*')) {
+    const overrides = assignments.filter((row) => row.scope === 'squad' && row.squadId === squadId)
+    const tier = overrides.length > 0 ? overrides : assignments.filter((row) => row.scope === 'squad_default')
+    for (const row of tier) permissions.push(...row.permissions)
+  }
+
+  return [...new Set(permissions)]
+}
+
+/**
+ * `squad_id` is a uuid column, but a `squadId` ARGUMENT is not guaranteed to be one: it arrives
+ * from callers, and a value of the wrong shape handed to a uuid comparison fails the whole
+ * statement with `invalid input syntax for type uuid`.
+ */
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/**
+ * The scopes {@link permissionsFromAssignments} can consume for this check. An unscoped check
+ * reads nothing but system rows, so the squad tiers stay out of the query entirely.
+ *
+ * A squad id that is not a uuid identifies NO squad, so it gets the unscoped treatment: system
+ * rows only. It deliberately does NOT fall back to `squad_default` — a squad-scoped role that
+ * withholds a permission on one squad replaces the default tier, and honouring the default for an
+ * unidentifiable squad would hand back exactly the permission that override exists to remove.
+ * Route guards must resolve a short id to its full squad id BEFORE asking (see
+ * `middleware/require-permission.ts`); this is the fail-closed floor under that, not a substitute
+ * for it. `uuidPrefixCondition` would be wrong here: an ambiguous prefix would union the overrides
+ * of every squad it matches.
+ */
+function assignmentScopeFilter(squadId?: string): SQL {
+  if (!squadId || !UUID_SHAPE.test(squadId)) return eq(roleAssignments.scope, 'system')
+  return or(
+    inArray(roleAssignments.scope, ['system', 'squad_default']),
+    and(eq(roleAssignments.scope, 'squad'), eq(roleAssignments.squadId, squadId))
+  )!
+}
+
 async function resolveUserPermissions(
   userId: string,
   squadId?: string,
   executor: Pick<typeof db, 'select'> = db
 ): Promise<string[]> {
-  const permissions: string[] = []
-
-  // System-scoped roles
-  const systemAssignments = await executor
-    .select({ permissions: roles.permissions })
+  // One round trip for every scope this check can consume; the precedence between them is
+  // resolved in `permissionsFromAssignments`, not by issuing a second query.
+  const assignments = await executor
+    .select({
+      scope: roleAssignments.scope,
+      squadId: roleAssignments.squadId,
+      permissions: roles.permissions,
+    })
     .from(roleAssignments)
     .innerJoin(roles, eq(roles.id, roleAssignments.roleId))
     .where(
       and(
         eq(roleAssignments.subjectType, 'user'),
         eq(roleAssignments.subjectId, userId),
-        eq(roleAssignments.scope, 'system')
+        assignmentScopeFilter(squadId)
       )
     )
 
-  for (const row of systemAssignments) {
-    permissions.push(...(row.permissions as string[]))
-  }
-
-  // Squad-scoped roles (when squadId provided)
-  // Short-circuit: if system permissions already include wildcard, skip squad lookup
-  if (squadId && !permissions.includes('*')) {
-    // Check for squad-specific override first
-    const squadOverride = await executor
-      .select({ permissions: roles.permissions })
-      .from(roleAssignments)
-      .innerJoin(roles, eq(roles.id, roleAssignments.roleId))
-      .where(
-        and(
-          eq(roleAssignments.subjectType, 'user'),
-          eq(roleAssignments.subjectId, userId),
-          eq(roleAssignments.scope, 'squad'),
-          eq(roleAssignments.squadId, squadId)
-        )
-      )
-
-    if (squadOverride.length > 0) {
-      // Override completely replaces squad_default
-      for (const row of squadOverride) {
-        permissions.push(...(row.permissions as string[]))
-      }
-    } else {
-      // Fall back to squad_default
-      const squadDefault = await executor
-        .select({ permissions: roles.permissions })
-        .from(roleAssignments)
-        .innerJoin(roles, eq(roles.id, roleAssignments.roleId))
-        .where(
-          and(
-            eq(roleAssignments.subjectType, 'user'),
-            eq(roleAssignments.subjectId, userId),
-            eq(roleAssignments.scope, 'squad_default')
-          )
-        )
-
-      for (const row of squadDefault) {
-        permissions.push(...(row.permissions as string[]))
-      }
-    }
-  }
-
-  return [...new Set(permissions)]
+  return permissionsFromAssignments(
+    assignments.map((row) => ({
+      scope: row.scope as PermissionAssignment['scope'],
+      squadId: row.squadId,
+      permissions: row.permissions as string[],
+    })),
+    squadId
+  )
 }
 
 async function resolveAgentPermissions(identity: AgentIdentity, squadId?: string): Promise<string[]> {
@@ -508,16 +535,54 @@ export async function hasAnySlotCleanupPermission(
 }
 
 /**
- * Return the ids of all enabled users who hold a (system-scoped) permission. Used to fan out shared
- * system notifications (e.g. the system inbox) to the right people instead of broadcasting to all.
+ * Every enabled user holding `permission`, optionally within one squad's scope. This is the only
+ * place that scans all users; use it for content-free fan-out (realtime invalidation) and
+ * routability checks, never for push recipients — those resolve from bounded subscription rows.
+ *
+ * A constant number of queries (one), not one per user: this runs on every agent-question
+ * lifecycle event, and the per-user form turned an audience resolution into a full-table scan
+ * multiplied by the user count. The rows are grouped per user and evaluated through
+ * {@link permissionsFromAssignments} — the same function {@link hasPermission} resolves through
+ * for a single user — so the audience and the individual check agree by construction.
+ *
+ * A user with no assignment row in scope holds nothing and is simply absent; disabled accounts
+ * are excluded by the join, exactly as before (`hasPermission` itself does NOT check
+ * `disabledAt`, so this is the gate that keeps a disabled holder out of an audience).
  */
-export async function getUserIdsWithPermission(permission: string): Promise<string[]> {
-  const enabledUsers = await db.select({ id: users.id }).from(users).where(isNull(users.disabledAt))
-  const matching: string[] = []
-  for (const user of enabledUsers) {
-    if (await hasPermission({ type: 'user', userId: user.id }, permission)) matching.push(user.id)
+export async function getUserIdsWithPermission(permission: string, squadId?: string): Promise<string[]> {
+  const rows = await db
+    .select({
+      userId: roleAssignments.subjectId,
+      scope: roleAssignments.scope,
+      squadId: roleAssignments.squadId,
+      permissions: roles.permissions,
+    })
+    .from(roleAssignments)
+    .innerJoin(roles, eq(roles.id, roleAssignments.roleId))
+    // `subject_id` is text (it also holds channel ids), so the join casts the uuid side rather
+    // than the other way round: casting a channel's non-uuid subject id to uuid errors out before
+    // the subjectType filter can discard the row.
+    .innerJoin(users, sql`${users.id}::text = ${roleAssignments.subjectId}`)
+    .where(and(eq(roleAssignments.subjectType, 'user'), isNull(users.disabledAt), assignmentScopeFilter(squadId)))
+
+  const byUser = new Map<string, PermissionAssignment[]>()
+  for (const row of rows) {
+    const assignments = byUser.get(row.userId) ?? []
+    assignments.push({
+      scope: row.scope as PermissionAssignment['scope'],
+      squadId: row.squadId,
+      permissions: row.permissions as string[],
+    })
+    byUser.set(row.userId, assignments)
   }
-  return matching
+
+  const holders: string[] = []
+  for (const [userId, assignments] of byUser) {
+    const held = permissionsFromAssignments(assignments, squadId)
+    if (held.some((granted) => permissionMatches(granted, permission))) holders.push(userId)
+  }
+  // Sorted, not in row order: the SELECT is unordered, and callers diff these audiences.
+  return holders.sort()
 }
 
 export async function getAccessibleSquadIds(identity: Identity): Promise<string[] | 'all'> {

@@ -380,8 +380,8 @@ describe('NotificationService', () => {
   })
 
   describe('sendPushNotifications', () => {
-    test('uses the persisted agent question audience and per-user preferences', async () => {
-      const audienceSpy = spyOn(questionsModule, 'listAgentQuestionAttentionUserIds').mockResolvedValue([
+    test('uses the agent question notify audience and per-user preferences', async () => {
+      const audienceSpy = spyOn(questionsModule, 'listAgentQuestionNotifyUserIds').mockResolvedValue([
         'owner-user',
         'watcher-user',
         'owner-user',
@@ -516,7 +516,7 @@ describe('NotificationService', () => {
 
     test('does not fan out an agent question when preferences exclude every recipient', async () => {
       const configureSpy = spyOn(service, 'configureVapid').mockResolvedValue()
-      const audienceSpy = spyOn(questionsModule, 'listAgentQuestionAttentionUserIds').mockResolvedValue(['muted-user'])
+      const audienceSpy = spyOn(questionsModule, 'listAgentQuestionNotifyUserIds').mockResolvedValue(['muted-user'])
       const preferenceSpy = spyOn(UserNotificationPreferences, 'shouldPush').mockResolvedValue(false)
       const webSpy = spyOn(service as any, 'sendWebPush').mockImplementation(async () => {})
       const apnsSpy = spyOn(service as any, 'sendApnsPush').mockImplementation(async () => {})

@@ -83,7 +83,7 @@ export async function pauseWorkStream(workStreamId: string, input: unknown = {},
       .set({ pause, updatedAt: new Date(pausedAt) })
       .where(eq(workStreams.id, id))
       .returning()
-    await invalidateContinuationCycle(tx, id, new Date(pausedAt))
+    await invalidateContinuationCycle(tx, id)
     return { stream: updated!, live }
   })
   if (!existing.pause) eventEmitter.emit('workStream.updated', { workStreamId: id, squadId: existing.squadId })

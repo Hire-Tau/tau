@@ -332,7 +332,7 @@ export async function parkWorkStream(id: string, options: ParkWorkStreamOptions 
       .where(and(eq(workStreams.id, id), inArray(workStreams.status, WORK_STREAM_ADMITTED_STATUSES)))
       .returning()
     if (!updated) throw new WorkStreamNotParkableError(row.status)
-    await invalidateContinuationCycle(tx, id, now)
+    await invalidateContinuationCycle(tx, id)
     return { parkedRow: updated, preemptedExecution: liveExecution }
   })
 
@@ -572,7 +572,7 @@ export async function runSquadAdmissionMaintenance(
         .returning()
       if (updated) {
         parkedRows.push(updated)
-        await invalidateContinuationCycle(tx, id, now)
+        await invalidateContinuationCycle(tx, id)
       }
     }
 

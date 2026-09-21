@@ -133,6 +133,66 @@ describe('squads routes', () => {
     })
   })
 
+  describe('squad attention subscription', () => {
+    it('defaults to show/show, upserts explicit levels, and resets on delete', async () => {
+      const squad = await Squad.create({ name: `${testPrefix} Attention`, purpose: 'Testing' })
+      const get = () => app.request(`/api/squads/${squad.id}/subscription`, { headers: authHeaders(admin.token) })
+
+      expect(await (await get()).json()).toEqual({
+        subscribed: false,
+        count: 0,
+        attention: { decisions: 'show', progress: 'show' },
+      })
+
+      const watched = await app.request(`/api/squads/${squad.id}/subscribe`, {
+        method: 'POST',
+        headers: authHeaders(admin.token),
+      })
+      expect(watched.status).toBe(200)
+      expect(await watched.json()).toEqual({
+        subscribed: true,
+        count: 1,
+        attention: { decisions: 'notify', progress: 'notify' },
+      })
+
+      const tuned = await app.request(`/api/squads/${squad.id}/subscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
+        body: JSON.stringify({ attention: { decisions: 'notify', progress: 'mute' } }),
+      })
+      expect(await tuned.json()).toEqual({
+        subscribed: true,
+        count: 1,
+        attention: { decisions: 'notify', progress: 'mute' },
+      })
+      expect(await (await get()).json()).toMatchObject({ attention: { decisions: 'notify', progress: 'mute' } })
+
+      const removed = await app.request(`/api/squads/${squad.id}/subscribe`, {
+        method: 'DELETE',
+        headers: authHeaders(admin.token),
+      })
+      expect(await removed.json()).toEqual({
+        subscribed: false,
+        count: 0,
+        attention: { decisions: 'show', progress: 'show' },
+      })
+    })
+
+    it('rejects a malformed attention body without changing the row', async () => {
+      const squad = await Squad.create({ name: `${testPrefix} BadAttention`, purpose: 'Testing' })
+      for (const attention of [{ decisions: 'loud', progress: 'mute' }, { decisions: 'mute' }, 'mute']) {
+        const response = await app.request(`/api/squads/${squad.id}/subscribe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },
+          body: JSON.stringify({ attention }),
+        })
+        expect(response.status).toBe(400)
+      }
+      const current = await app.request(`/api/squads/${squad.id}/subscription`, { headers: authHeaders(admin.token) })
+      expect(await current.json()).toMatchObject({ subscribed: false })
+    })
+  })
+
   describe('squad creation options and host workspace', () => {
     let previousRuntime: string | undefined
 
@@ -516,6 +576,31 @@ describe('squads routes', () => {
       expect(res.status).toBe(200)
       const squad = await res.json()
       expect(squad.name).toBe(`${testPrefix} Test`)
+    })
+
+    /**
+     * A squad-scoped role is the only grant this user has, so the guard must ask about THIS squad.
+     * Asking about the raw route param instead made the short-prefix form a 403 (the prefix
+     * matches no `squad_id`, so the squad-scoped grant was invisible) while the full id worked.
+     */
+    it('honours a squad-scoped grant through both the full id and a short prefix', async () => {
+      const created = await Squad.create({ name: `${testPrefix} Scoped`, purpose: 'Testing' })
+      const member = await createTestUser({ prefix: testPrefix })
+      const role = await createTestRole({ prefix: testPrefix, permissions: ['squads:read'] })
+      await assignRole({ userId: member.id, roleId: role.id, scope: 'squad', squadId: created.id })
+
+      for (const id of [created.id, created.id.slice(0, 8)]) {
+        const res = await app.request(`/api/squads/${id}`, { headers: authHeaders(member.token) })
+        expect(res.status).toBe(200)
+        expect((await res.json()).id).toBe(created.id)
+      }
+
+      // The grant is scoped: another squad stays forbidden through either form.
+      const other = await Squad.create({ name: `${testPrefix} Unscoped`, purpose: 'Testing' })
+      for (const id of [other.id, other.id.slice(0, 8)]) {
+        const res = await app.request(`/api/squads/${id}`, { headers: authHeaders(member.token) })
+        expect(res.status).toBe(403)
+      }
     })
 
     it('supports short id prefix', async () => {

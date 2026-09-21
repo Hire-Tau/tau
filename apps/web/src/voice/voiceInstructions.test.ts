@@ -92,8 +92,11 @@ test('resolves the current squad slug and supplies full tool IDs', () => {
     ],
   })
   expect(instructions).toContain(`Current squad ID: ${squadId}`)
-  expect(instructions).toContain(`Current squad manager ID: ${managerId}`)
-  expect(instructions).toContain(`manager: ${managerId}`)
+  // Managers are listed by handle (first segment): shorter to copy, and the tools resolve it.
+  expect(instructions).toContain('Current squad manager ID: 22222222')
+  expect(instructions).toContain('manager: 22222222)')
+  expect(instructions).not.toContain(managerId)
+  expect(instructions).toContain('never assemble an ID from memory')
   expect(instructions).not.toContain('Current squad ID: tau')
 })
 

@@ -24,7 +24,7 @@ import { SchedulesList } from './schedules'
 import { SquadSettingsTab } from './squads/SquadSettingsTab'
 import { DeleteSquadModal } from './squads/DeleteSquadModal'
 import { SandboxStatusIndicator } from './squads/SandboxStatusIndicator'
-import { SquadWatchButton } from './SquadWatchButton'
+import { AttentionMenu } from './AttentionMenu'
 import { PullToRefresh } from './PullToRefresh'
 import { WorkspaceTab } from './workspace/WorkspaceTab'
 import { MemoryTab } from './memory'
@@ -293,7 +293,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
       {/* No wrapper: the indicator owns its own pill so the header keeps no
           empty padded box when it renders nothing (host runtime). */}
       {squad && <SandboxIndicator squadId={squad.id} />}
-      {squad && <SquadWatchButton squadId={squad.id} />}
+      {squad && <AttentionMenu target={{ kind: 'squad', id: squad.id }} />}
     </>
   )
 

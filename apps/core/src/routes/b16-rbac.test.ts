@@ -92,8 +92,9 @@ describe('B16 broad route RBAC guards', () => {
     const reader = await createTestUser({ prefix: testPrefix })
     const role = await createTestRole({ prefix: testPrefix, permissions: ['actions:read'] })
     await assignRole({ userId: reader.id, roleId: role.id, scope: 'squad', squadId: allowedSquad.id })
-    // The Action Center is per-user: items surface only for streams/squads the user watches (still
-    // gated by actions:read). Watch the allowed squad so its review appears.
+    // The Action Center is per-user: items surface for squads the user can read (actions:read)
+    // unless they muted that squad's decisions. The subscription here pins the loud end of the
+    // scale so the assertion is about RBAC, not about attention defaults.
     await subscribeToSquad(allowedSquad.id, reader.id)
 
     const res = await app.request('/api/actions/pending', { headers: authHeaders(reader.token) })

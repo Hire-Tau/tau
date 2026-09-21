@@ -1230,9 +1230,9 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         .returning()
 
       if (updated.status === 'active' && (input.assigneeAgentId !== undefined || previousStatus !== 'active')) {
-        await resetContinuationCycle(tx, this.id, updated.assigneeAgentId, now)
+        await resetContinuationCycle(tx, this.id, updated.assigneeAgentId)
       } else if (previousStatus === 'active' && updated.status !== 'active') {
-        await invalidateContinuationCycle(tx, this.id, now)
+        await invalidateContinuationCycle(tx, this.id)
       }
 
       // Keep the system-maintained dependency waits in lockstep with the
@@ -1638,7 +1638,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         // Work resumes with a fresh continuation retry budget (same as
         // send-back/unblock).
         if (updated.status === 'active' && updated.assigneeAgentId) {
-          await resetContinuationCycle(tx, this.id, updated.assigneeAgentId, now)
+          await resetContinuationCycle(tx, this.id, updated.assigneeAgentId)
         }
         if (opts.testHooks?.beforeCommit) await opts.testHooks.beforeCommit()
         return { row: updated, completed: false as const }
@@ -1669,7 +1669,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       }
       await enqueueWorktreeCleanup(tx, this.id, updated.metadata as Record<string, unknown>)
       if (locked.status === 'active') {
-        await invalidateContinuationCycle(tx, this.id, now)
+        await invalidateContinuationCycle(tx, this.id)
       }
       // Transactional with the terminal transition: dependents' dependency
       // waits close (`satisfied`) and any remaining own waits clear.
@@ -1757,7 +1757,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
       // The assignee resumes with a fresh continuation retry budget (the old
       // review -> in_progress bounce did this via the status transition).
       if (updated?.status === 'active' && updated.assigneeAgentId) {
-        await resetContinuationCycle(tx, this.id, updated.assigneeAgentId, now)
+        await resetContinuationCycle(tx, this.id, updated.assigneeAgentId)
       }
     })
     await this.reload()
@@ -1850,7 +1850,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         // Unblocking hands the assignee a fresh continuation retry budget
         // (the old blocked -> in_progress bounce did this via the transition).
         if (updated?.status === 'active' && updated.assigneeAgentId) {
-          await resetContinuationCycle(tx, this.id, updated.assigneeAgentId, now)
+          await resetContinuationCycle(tx, this.id, updated.assigneeAgentId)
         }
       }
       return rows
@@ -2002,7 +2002,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         // Clearing hands the assignee a fresh continuation retry budget
         // (same as unblock).
         if (updated?.status === 'active' && updated.assigneeAgentId) {
-          await resetContinuationCycle(tx, this.id, updated.assigneeAgentId, now)
+          await resetContinuationCycle(tx, this.id, updated.assigneeAgentId)
         }
       }
       return rows

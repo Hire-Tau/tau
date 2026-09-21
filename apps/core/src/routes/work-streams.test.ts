@@ -119,6 +119,72 @@ describe('work-streams routes', () => {
     expect((await WorkStream.mustFind(row!.id)).metadata?.codeHost).toBeUndefined()
   })
 
+  it('reports inherited squad attention, overrides it per stream, and resets to inheritance', async () => {
+    const [row] = await db.insert(workStreams).values({ squadId: testSquadId, title: 'Attention stream' }).returning()
+    const subscription = async () => (await apiFetch(`/api/workstreams/${row!.id}/subscription`)).json()
+
+    expect(await subscription()).toEqual({
+      subscribed: false,
+      count: 0,
+      attention: { decisions: 'show', progress: 'show' },
+      inherited: true,
+    })
+
+    await apiFetch(`/api/squads/${testSquadId}/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ attention: { decisions: 'notify', progress: 'notify' } }),
+    })
+    expect(await subscription()).toEqual({
+      subscribed: false,
+      count: 0,
+      attention: { decisions: 'notify', progress: 'notify' },
+      inherited: true,
+    })
+
+    const overridden = await apiFetch(`/api/workstreams/${row!.id}/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ attention: { decisions: 'mute', progress: 'mute' } }),
+    })
+    expect(await overridden.json()).toEqual({
+      subscribed: true,
+      count: 1,
+      attention: { decisions: 'mute', progress: 'mute' },
+      inherited: false,
+    })
+
+    const reset = await apiFetch(`/api/workstreams/${row!.id}/subscribe`, { method: 'DELETE' })
+    expect(await reset.json()).toEqual({
+      subscribed: false,
+      count: 0,
+      attention: { decisions: 'notify', progress: 'notify' },
+      inherited: true,
+    })
+    await apiFetch(`/api/squads/${testSquadId}/subscribe`, { method: 'DELETE' })
+  })
+
+  it('respectAttention drops progress-muted streams from the cross-squad list and refuses pagination', async () => {
+    const [visible] = await db.insert(workStreams).values({ squadId: testSquadId, title: 'Attended' }).returning()
+    const [hidden] = await db.insert(workStreams).values({ squadId: testSquadId, title: 'Progress muted' }).returning()
+    await apiFetch(`/api/workstreams/${hidden!.id}/subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ attention: { decisions: 'notify', progress: 'mute' } }),
+    })
+
+    const unfiltered = (await (await apiFetch('/api/workstreams')).json()) as Array<{ id: string }>
+    expect(unfiltered.map(({ id }) => id)).toContain(hidden!.id)
+
+    const filtered = (await (await apiFetch('/api/workstreams?respectAttention=true')).json()) as Array<{ id: string }>
+    expect(filtered.map(({ id }) => id)).toContain(visible!.id)
+    expect(filtered.map(({ id }) => id)).not.toContain(hidden!.id)
+
+    const paginated = await apiFetch('/api/workstreams?respectAttention=true&limit=50')
+    expect(paginated.status).toBe(400)
+    expect((await paginated.json()).error).toBe('respectAttention is not supported with pagination')
+  })
+
   /** Helper: POST JSON to a URL */
   function postJson(url: string, body: unknown): Promise<Response> {
     return apiFetch(url, {

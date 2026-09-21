@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { agentConversationLink } from '../../lib/assistantConversationLinks'
 import * as squads from '../../api/squads'
-import { getAgent } from '../../api/agents'
+import { getAgent, listAgents } from '../../api/agents'
+import { resolveAgentByReference } from './agentResolution'
 import { listGlobalActivity } from '../../api/activity'
 import { listPendingActions } from '../../api/actions'
 import { answerAgentQuestion, dismissAgentQuestion } from '../../api/agentQuestions'
@@ -42,6 +43,7 @@ const number = { type: 'integer', minimum: 1, maximum: 50 }
 const depsDefault = {
   squads,
   getAgent,
+  listAgents,
   listGlobalActivity,
   listPendingActions,
   answerAgentQuestion,
@@ -95,7 +97,7 @@ export function createAssistantTools(
             env.navigate(path)
             return { ok: true, drawerState: input.drawer, navigatedTo: path }
           }
-          const agent = await deps.getAgent(input.agentId!)
+          const agent = await resolveAgentByReference(input.agentId!, deps)
           const conversation = agentConversationLink(agent)
           if (input.open && env.openConversation) env.openConversation(conversation)
           return { ok: true, conversation, opened: input.open && Boolean(env.openConversation) }

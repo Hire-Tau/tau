@@ -34,6 +34,23 @@ describe('devboxHasPackages', () => {
     expect(devboxHasPackages(writeDevbox('{}'))).toBe(false)
   })
 
+  test('populated package MAP → true (devbox rewrites devbox.json into map form after `devbox add --outputs`)', () => {
+    expect(
+      devboxHasPackages(
+        writeDevbox('{"packages":{"nodejs_24":"latest","zlib":{"version":"latest","outputs":["dev"]}}}')
+      )
+    ).toBe(true)
+  })
+
+  test('empty package map → false (nothing to shellenv, same as an empty array)', () => {
+    expect(devboxHasPackages(writeDevbox('{"packages":{}}'))).toBe(false)
+  })
+
+  test('non-collection packages value → false', () => {
+    expect(devboxHasPackages(writeDevbox('{"packages":"nodejs"}'))).toBe(false)
+    expect(devboxHasPackages(writeDevbox('{"packages":null}'))).toBe(false)
+  })
+
   test('missing file or malformed JSON → false (never throws)', () => {
     expect(devboxHasPackages('/no/such/devbox.json')).toBe(false)
     expect(devboxHasPackages(writeDevbox('{ not json'))).toBe(false)
@@ -251,6 +268,37 @@ describe('prepareDevboxShellEnv readiness proof', () => {
           throw new Error('not realized')
         })
       ).toBe(false)
+    } finally {
+      if (previous === undefined) delete process.env.TAU_DEVBOX_DIR
+      else process.env.TAU_DEVBOX_DIR = previous
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test('map-form packages are a real environment: empty map is ready, populated map runs shellenv', () => {
+    const previous = process.env.TAU_DEVBOX_DIR
+    const dir = mkdtempSync(join(tmpdir(), 'devbox-prepare-map-'))
+    try {
+      process.env.TAU_DEVBOX_DIR = dir
+      writeFileSync(join(dir, 'devbox.json'), '{"packages":{}}')
+      expect(
+        prepareDevboxShellEnv(() => {
+          throw new Error('must not run')
+        })
+      ).toBe(true)
+      writeFileSync(
+        join(dir, 'devbox.json'),
+        '{"packages":{"nodejs_24":"latest","zlib":{"version":"latest","outputs":["dev"]}}}'
+      )
+      let ran = 0
+      expect(
+        prepareDevboxShellEnv(() => {
+          ran += 1
+          return 'export PATH=/nix/store/abc/bin:$PATH'
+        })
+      ).toBe(true)
+      expect(ran).toBe(1)
+      expect(getDevboxShellEnv()).toContain('/nix/store/abc/bin')
     } finally {
       if (previous === undefined) delete process.env.TAU_DEVBOX_DIR
       else process.env.TAU_DEVBOX_DIR = previous

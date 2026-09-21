@@ -54,17 +54,32 @@ const PLAN_CREDIT_COOLDOWN_MS = 30 * 60_000
 const RATE_LIMIT_COOLDOWN_MS = 60_000
 
 /**
- * The sentence the bundled codex client substitutes for EVERY 429 body.
+ * The two shapes a codex usage limit reaches Tau in. BOTH are AMBIGUOUS — a
+ * transient throttle and an exhausted weekly plan window arrive as the same
+ * wording — so the announced window is what decides (see
+ * {@link classifyCodexUsageLimit}), never the wording alone.
  *
- * `parseErrorResponse` (openai-codex-responses.js) discards the upstream
- * `usage_limit_reached` / `plan_type` / `resets_at` markers and throws
- * `new Error("You have hit your ChatGPT usage limit (<plan> plan). Try again in
- * ~N min.")`, so this wording is the only codex limit signal Tau ever sees —
- * and it is AMBIGUOUS: a transient throttle and an exhausted weekly plan window
- * arrive as the same sentence. The one thing that distinguishes them is the
- * announced window, so that is what decides (see classifyCodexUsageLimit).
+ * 1. The rewritten HTTP 429. `parseErrorResponse` (openai-codex-responses.js)
+ *    discards the upstream `usage_limit_reached` / `plan_type` / `resets_at`
+ *    markers and throws `new Error("You have hit your ChatGPT usage limit
+ *    (<plan> plan). Try again in ~N min.")`, so that prose is the only limit
+ *    signal that survives — the window has to be read back out of it.
+ * 2. The in-stream error event. The codex backend can also report the limit as
+ *    an SSE/WebSocket `error` event mid-stream; `mapCodexEvents` throws
+ *    `CodexApiError("Codex error: The usage limit has been reached")` with the
+ *    raw `code` (`usage_limit_reached`) and `payload` (the event, optionally
+ *    carrying `plan_type` / `resets_at` / `resets_in_seconds`) as OWN
+ *    ENUMERABLE fields. {@link providerErrorText} folds those into the text so
+ *    the code is matched here, and {@link parseStructuredRetryAt} reads the
+ *    window out of the payload.
  */
-const CODEX_USAGE_LIMIT_MARKER = 'chatgpt usage limit'
+const CODEX_USAGE_LIMIT_MARKERS = [
+  // 1. the SDK's friendly 429 rewrite
+  'chatgpt usage limit',
+  // 2. the in-stream error event's message and its raw upstream code
+  'usage limit has been reached',
+  'usage_limit_reached',
+]
 
 /**
  * Rules that map error substrings to an exhaustion reason + cooldown policy.
@@ -84,7 +99,10 @@ const EXHAUSTION_RULES: Array<{ substrings: string[]; reason: ExhaustionReason; 
     // classifyProviderError). The codex-specific signatures (`usage_limit_reached`,
     // `plan_type`, `credits-has-credits`, `has-credits:false`) are checked here
     // FIRST so they win over the generic 'usage limit' rate-limit substring even though both may
-    // appear in the same codex payload.
+    // appear in the same codex payload. `usage_limit_reached` is additionally
+    // claimed (and hedged on its announced window) by classifyCodexUsageLimit
+    // ahead of these rules; it stays listed here as the backstop for a payload
+    // that carries the code without any codex window at all.
     substrings: [
       'plan credit',
       'quota',
@@ -170,8 +188,16 @@ export function classifyCaughtProviderError(
 
   const structuredRetryAt = parseStructuredRetryAt(error, now)
   const retryAt = structuredRetryAt ?? (hasStructuredAbsoluteReset(error) ? undefined : legacy?.retryAt)
+  // The codex in-stream error event announces its window as structured payload
+  // fields (`resets_at` / `resets_in_seconds`) instead of prose, so the string
+  // classifier above saw no window and defaulted to plan-credit. Re-run the
+  // same hedge now that the window is parsed.
+  const hedged =
+    structuredRetryAt != null && text != null && isCodexUsageLimitText(text)
+      ? hedgeCodexUsageLimit(structuredRetryAt, now).reason
+      : kind
   return {
-    kind,
+    kind: hedged,
     ...(retryAt ? { retryAt } : {}),
     ...(status != null ? { status } : {}),
   }
@@ -279,20 +305,39 @@ function parseGenericHttpStatus(text: string | undefined): number | undefined {
   return conventional ? Number(conventional[1]) : undefined
 }
 
+/** Keys whose string values carry provider signal, and whose objects are worth descending into. */
+const PROVIDER_TEXT_KEYS = ['message', 'type', 'code', 'error', 'body', 'response', 'payload'] as const
+
+/**
+ * Flatten an error into the text the substring classifiers read.
+ *
+ * An `Error`'s `message` is not necessarily its whole signal: the codex client
+ * throws `CodexApiError("Codex error: The usage limit has been reached")` whose
+ * own enumerable `code` (`usage_limit_reached`) and `payload` (the raw event)
+ * carry the hard-limit markers, and dropping them left the bare sentence to
+ * match the generic 'usage limit' rate-limit substring for a 60s cooldown. So
+ * the message is combined with the same key walk applied to the error's OWN
+ * ENUMERABLE properties (`{ ...error }` is exactly those; `message`/`stack` are
+ * not enumerable, so nothing is duplicated).
+ */
 export function providerErrorText(error: unknown): string | undefined {
   if (typeof error === 'string') return error
-  if (error instanceof Error) return error.message
   if (!isRecord(error)) return undefined
   const values: string[] = []
   const visit = (value: unknown, depth: number) => {
     if (depth > 3 || !isRecord(value)) return
-    for (const key of ['message', 'type', 'code', 'error', 'body', 'response']) {
+    for (const key of PROVIDER_TEXT_KEYS) {
       const child = value[key]
       if (typeof child === 'string') values.push(child)
       else visit(child, depth + 1)
     }
   }
-  visit(error, 0)
+  if (error instanceof Error) {
+    values.push(error.message)
+    visit({ ...error }, 0)
+  } else {
+    visit(error, 0)
+  }
   return values.join(' ') || undefined
 }
 
@@ -305,7 +350,7 @@ function findFiniteNumber(error: unknown, keys: readonly string[]): number | und
         found = child
         return
       }
-      if (['response', 'error', 'body'].includes(key)) visit(child, depth + 1)
+      if (['response', 'error', 'body', 'payload'].includes(key)) visit(child, depth + 1)
     }
   }
   visit(error, 0)
@@ -323,7 +368,7 @@ function hasStructuredAbsoluteReset(error: unknown): boolean {
         present = Number.isFinite(numeric) || Number.isFinite(parsed)
         if (present) return
       }
-      if (['response', 'body', 'error'].includes(key)) visit(child, depth + 1)
+      if (['response', 'body', 'error', 'payload'].includes(key)) visit(child, depth + 1)
     }
   }
   visit(error, 0)
@@ -337,7 +382,9 @@ function parseStructuredRetryAt(error: unknown, now: number): number | undefined
   const collect = (value: unknown, depth: number) => {
     if (depth > 3 || !isRecord(value)) return
     nodes.push(value)
-    for (const key of ['response', 'body', 'error']) collect(value[key], depth + 1)
+    // `payload` is the codex in-stream error event's raw body (CodexApiError.payload),
+    // where that shape's `resets_at` / `resets_in_seconds` live.
+    for (const key of ['response', 'body', 'error', 'payload']) collect(value[key], depth + 1)
   }
   collect(error, 0)
 
@@ -413,22 +460,42 @@ export function classifyProviderError(error: string): ProviderErrorClassificatio
 }
 
 /**
- * Classify the codex client's rewritten 429 (see {@link CODEX_USAGE_LIMIT_MARKER}).
+ * Classify either codex usage-limit shape (see {@link CODEX_USAGE_LIMIT_MARKERS}).
  *
  * The wording alone cannot tell a transient throttle from an exhausted plan
- * window, so the announced "Try again in ~N" window decides: a window shorter
- * than the plan-credit cooldown is treated as the transient rate limit it
- * almost certainly is (and keeps its own, shorter, retryAt rather than parking
- * the account for half an hour), while a longer or ABSENT window is treated as
- * a plan limit — absent means the upstream sent no `resets_at`, which is the
+ * window, so the announced window decides: a window shorter than the
+ * plan-credit cooldown is treated as the transient rate limit it almost
+ * certainly is (and keeps its own, shorter, retryAt rather than parking the
+ * account for half an hour), while a longer or ABSENT window is treated as a
+ * plan limit — absent means the upstream sent no reset at all, which is the
  * shape a hard plan window arrives in. Checked before {@link EXHAUSTION_RULES}
  * because the bare 'usage limit' substring there would otherwise win every one
  * of these a 60s cooldown with no reset at all.
+ *
+ * The window can be prose ("Try again in ~43 min.") or a `resets_at` /
+ * `resets_in_seconds` marker, so the full {@link parseResetTimestamp} runs
+ * here. The in-stream event carries its window as STRUCTURED payload fields
+ * that never reach this string, so {@link classifyCaughtProviderError} re-runs
+ * the same hedge once it has parsed them.
  */
 function classifyCodexUsageLimit(error: string, lower: string): ProviderErrorClassification | null {
-  if (!lower.includes(CODEX_USAGE_LIMIT_MARKER)) return null
-  const retryAt = parseFriendlyRelativeResetTimestamp(error)
-  const transient = retryAt != null && retryAt - Date.now() < PLAN_CREDIT_COOLDOWN_MS
+  if (!isCodexUsageLimitText(lower)) return null
+  return hedgeCodexUsageLimit(parseResetTimestamp(error))
+}
+
+/** True when the text carries either codex usage-limit shape (already lowercased is fine). */
+function isCodexUsageLimitText(text: string): boolean {
+  const lower = text.toLowerCase()
+  return CODEX_USAGE_LIMIT_MARKERS.some((marker) => lower.includes(marker))
+}
+
+/**
+ * The codex hedge: an announced window shorter than the plan-credit cooldown is
+ * the transient throttle it almost certainly is (and keeps its own, shorter,
+ * retryAt); a longer or ABSENT window is a plan limit.
+ */
+function hedgeCodexUsageLimit(retryAt: number | undefined, now: number = Date.now()): ProviderErrorClassification {
+  const transient = retryAt != null && retryAt - now < PLAN_CREDIT_COOLDOWN_MS
   return {
     exhausted: true,
     reason: transient ? 'rate-limit' : 'plan-credit',

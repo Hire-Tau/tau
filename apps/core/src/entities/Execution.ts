@@ -1,5 +1,6 @@
-import { and, asc, desc, eq, inArray, InferSelectModel, lte, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, InferSelectModel, lte, sql, type SQL } from 'drizzle-orm'
 import { db } from '../db'
+import { databaseClockNow } from '../db/clock'
 import {
   executions,
   agents,
@@ -65,6 +66,12 @@ export interface UpdateExecutionInput {
   maintenanceGeneration?: number | null
   maintenanceQueuedAt?: Date | null
 }
+
+/**
+ * The terminal-transition form of {@link UpdateExecutionInput}: `endedAt` is written by the
+ * database clock (a SQL expression), not by the caller. See {@link databaseClockNow}.
+ */
+type ExecutionTerminalUpdate = Omit<UpdateExecutionInput, 'endedAt'> & { endedAt?: Date | SQL }
 
 export interface ListExecutionsFilters {
   agentId?: string
@@ -654,12 +661,12 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
                 exhausted
                   ? {
                       status: 'failed',
-                      endedAt: new Date(),
+                      endedAt: databaseClockNow(),
                       error: outcomeError,
                       failureClass: SANDBOX_RECOVERY_EXHAUSTED_FAILURE.failureClass,
                       failureReason: SANDBOX_RECOVERY_EXHAUSTED_FAILURE.failureReason,
                     }
-                  : { status: 'stopped', endedAt: new Date() }
+                  : { status: 'stopped', endedAt: databaseClockNow() }
               )
               .where(and(eq(executions.id, this.id), eq(executions.status, 'waiting-sandbox')))
               .returning()
@@ -717,24 +724,24 @@ export class Execution extends BaseEntity<ExecutionJson, UpdateExecutionInput> i
             await options?.afterStarted?.(tx, claimed)
             row = claimed
           } else {
-            const set: UpdateExecutionInput = (() => {
+            const set: ExecutionTerminalUpdate = (() => {
               switch (outcome.kind) {
                 case 'completed':
-                  return { status: 'completed', endedAt: new Date(), usage: outcome.usage ?? null }
+                  return { status: 'completed', endedAt: databaseClockNow(), usage: outcome.usage ?? null }
                 case 'failed':
                   return {
                     status: 'failed',
-                    endedAt: new Date(),
+                    endedAt: databaseClockNow(),
                     error: outcomeError,
                     failureClass: outcome.failure?.failureClass ?? null,
                     failureReason: outcome.failure?.failureReason ?? null,
                   }
                 case 'stopped':
-                  return { status: 'stopped', endedAt: new Date() }
+                  return { status: 'stopped', endedAt: databaseClockNow() }
                 case 'force-stopped':
-                  return { status: 'failed', endedAt: new Date(), error: forceStopReason }
+                  return { status: 'failed', endedAt: databaseClockNow(), error: forceStopReason }
                 case 'superseded':
-                  return { status: 'completed', endedAt: new Date() }
+                  return { status: 'completed', endedAt: databaseClockNow() }
                 case 'requeued':
                   return { status: 'queued', imageIds: outcome.imageIds ?? this.imageIds }
               }

@@ -55,6 +55,8 @@ Consultants are the main research, design, and brainstorming entry point. The ma
 
 Home presents a conversation entry point, active work, recent chats, and a labeled **Squad coordinator** row. The coordinator description explains its role. Keep Active and Recent chats headings on the same title gutter. Recent consultant rows retain idle dots so they read as clickable agents, even in the flat presentation.
 
+The Home active-work explorer is always a list inline; it has no list/kanban/graph toggle. Its header carries one graph icon (“Show work stream graph”) that opens a **Work Stream Graph** dialog showing only the dependency graph, with no view toggle in the dialog header. Selecting a node opens the work-stream detail; Escape closes the detail first, then the dialog, and focus returns to the icon. Only the Work tab persists a chosen view (`tau.wsView.<squadId>`); Home stores no view preference.
+
 The chat picker keeps the manager, search, and New chat action accessible. The pulse toggle starts disabled. When enabled, it limits the worker list to live/non-idle agents plus the currently viewed agent, retaining that agent’s category even if it becomes idle or completed and hiding other empty categories. Consultant recents remain available. Show **No active agents** when the filtered worker region is empty.
 
 Squad Home and the Chats panel show up to five unarchived recent consultants, ordered by the last human message or creation time, without a fixed age cutoff. The Chats panel’s Recent chats section starts expanded and can collapse independently of workers and the open conversation; search reveals matching chats. Home has no recent-chat disclosure. Browsing/search gives access to older chats. Standalone chat page pickers retain ten recents.
@@ -164,3 +166,9 @@ Use the shared `tau-field` role for text inputs, search inputs, selects, and tex
 Buttons and inset controls use 8px; catalog cards (`tau-panel` or equivalent) and modals (`tau-overlay`) use 12px. Reserve pills for compact badges, chips, and avatars. Search fields are ordinary fields, not pills.
 
 Configuration catalogs—Workflows, Agent Types, Squad Presets, and Skills—use a shared search field, individually bordered surface cards separated by a consistent gap, and explicit Edit/View actions opening a modal. This is an intentional exception to flat settings sections: each card represents an independently managed resource. Long forms use wide dialogs; the workflow co-editor uses the viewport with an interactive canvas and side conversation.
+
+### Storage inspection
+
+Settings → Storage sits beside Logs and uses `system:logs` authorization. It reports VM sandbox machine disk usage, largest-first squad totals, and expandable directory trees (including repository/worktree folders). Sizes are inclusive allocated-byte estimates, not deletion suggestions. Always retain timestamps and show partial or unavailable measurements explicitly. Scans run in the background with concurrency and time limits, share an in-process cache, and never provision or wake agents. Other runtimes show an explicit unsupported state.
+
+Interrupted scans retain disjoint child measurements under partial parents, including when GNU `du` has not emitted the home total yet. Keep every known sandbox visible: a null byte count is “Not measured,” not zero. Show machine diagnostic reasons and returned/expected home totals, and preserve folder paths in the API/CLI. Missing home totals alone do not establish timeout or stale ownership. Hardlink attribution depends on traversal order and does not predict cleanup savings. Do not combine old and new scan measurements to fill gaps.

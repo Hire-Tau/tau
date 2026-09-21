@@ -14,7 +14,7 @@ import {
 } from '../test-utils'
 import { db } from '../db'
 import { sessions, agentTokens, agents, agentTypes, localDeployments, squads } from '../db/schema'
-import { eq, like } from 'drizzle-orm'
+import { eq, inArray, like } from 'drizzle-orm'
 import { AgentType } from '../entities/AgentType'
 import { Agent } from '../entities/Agent'
 import { resetSecretStore } from '../services/secrets'
@@ -383,6 +383,49 @@ describe('requirePermission', () => {
 })
 
 describe('requireSquadPermission', () => {
+  /**
+   * `Squad.find` has no minimum prefix length, so before this the guard's unconditional 404 let any
+   * authenticated principal — including one with no permissions at all — walk the squad id space a
+   * hex digit at a time: 403 meant "that prefix resolved", 404 meant it did not. An unresolvable id
+   * now falls back to the system-scope floor, so a caller who could not have seen the squad anyway
+   * gets the same 403 either way, and short prefixes are refused before any lookup happens.
+   */
+  test('an unresolvable squad id is indistinguishable from a forbidden one for a caller with no permissions', async () => {
+    const [squad] = await db
+      .insert(squads)
+      .values({ name: `${PREFIX}-oracle`, purpose: 'Test' })
+      .returning()
+    const nobody = await createTestUser({ prefix: `${PREFIX}-oracle` })
+    const admin = await createTestAdmin({ prefix: `${PREFIX}-oracle-admin` })
+
+    const app = new Hono()
+    app.use('*', identityMiddleware)
+    app.get('/squads/:id/agents', requireSquadPermission('agents:read'), (c) => c.json({ ok: true }))
+
+    const status = async (id: string, token: string) =>
+      (await app.request(`/squads/${id}/agents`, { headers: authHeaders(token) })).status
+
+    // Every shape answers 403 for the principal who holds nothing: a real squad, an unknown full
+    // uuid, and an unknown 8-character prefix all look alike.
+    expect(await status(squad.id, nobody.token)).toBe(403)
+    expect(await status('00000000-0000-4000-8000-000000000000', nobody.token)).toBe(403)
+    expect(await status('0000000a', nobody.token)).toBe(403)
+    // Including the prefix of a squad that DOES exist — the oracle's whole signal.
+    expect(await status(squad.id.slice(0, 8), nobody.token)).toBe(403)
+
+    // Prefixes shorter than the minimum never reach a lookup at all.
+    expect(await status('0', nobody.token)).toBe(400)
+    expect(await status(squad.id.slice(0, 1), nobody.token)).toBe(400)
+
+    // A principal the floor admits still gets the informative answer.
+    expect(await status('00000000-4000-4000-8000-000000000000', admin.token)).toBe(404)
+    expect(await status(squad.id, admin.token)).toBe(200)
+
+    await cleanupTestRbac(`${PREFIX}-oracle`)
+    await cleanupTestRbac(`${PREFIX}-oracle-admin`)
+    await db.delete(squads).where(eq(squads.id, squad.id))
+  })
+
   test('checks squad-scoped permission from :id param', async () => {
     const [squad] = await db
       .insert(squads)
@@ -411,14 +454,39 @@ describe('requireSquadPermission', () => {
     })
     expect(res.status).toBe(200)
 
-    // Should fail for a different squad
-    const res2 = await app.request('/squads/00000000-0000-0000-0000-000000000000/agents', {
+    // Should fail for a different squad. It has to be a REAL one: the guard resolves its route
+    // param to a squad before authorizing, so an id that names nothing is a 404, not a verdict
+    // about a squad the caller cannot have a role on.
+    const [otherSquad] = await db
+      .insert(squads)
+      .values({ name: `${PREFIX}-squad-perm-other`, purpose: 'Test' })
+      .returning()
+    const res2 = await app.request(`/squads/${otherSquad.id}/agents`, {
       headers: authHeaders(user.token),
     })
     expect(res2.status).toBe(403)
 
+    // A short id prefix authorizes the squad it resolves to, not the raw string: a squad-scoped
+    // grant must survive the prefix form, and must not leak to another squad through it.
+    const granted = await app.request(`/squads/${squad.id.slice(0, 8)}/agents`, {
+      headers: authHeaders(user.token),
+    })
+    expect(granted.status).toBe(200)
+    const denied = await app.request(`/squads/${otherSquad.id.slice(0, 8)}/agents`, {
+      headers: authHeaders(user.token),
+    })
+    expect(denied.status).toBe(403)
+
+    // An id that resolves to no squad is 403, not 404, for THIS user: the fallback is the
+    // system-scope floor, and a squad-scoped grant does not clear it. Only a caller the floor
+    // admits is told the squad does not exist (see the enumeration test above).
+    const missing = await app.request('/squads/00000000-0000-0000-0000-000000000000/agents', {
+      headers: authHeaders(user.token),
+    })
+    expect(missing.status).toBe(403)
+
     // Cleanup
     await cleanupTestRbac(`${PREFIX}-sp`)
-    await db.delete(squads).where(eq(squads.id, squad.id))
+    await db.delete(squads).where(inArray(squads.id, [squad.id, otherSquad.id]))
   })
 })

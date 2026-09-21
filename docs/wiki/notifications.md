@@ -78,12 +78,12 @@ Logs `<event>: <summary>` through the `notify` logger. Useful for development an
 Sends browser push notifications via the [Web Push protocol](https://web.dev/push-notifications-overview/):
 
 1. Loads VAPID credentials from SecretStore, with legacy-file migration and generation fallback (see [VAPID keys](#vapid-keys)). Browser delivery requires the Web Push integration to be enabled and a valid `VAPID_SUBJECT` contact (`mailto:` or HTTPS).
-2. Resolves target users from persisted question attention recipients or explicit inbox recipients, then applies each user's master push toggle and muted-event preferences.
+2. Resolves target users from the event's notify-level attention audience (or explicit inbox recipients), then applies each user's master push toggle and muted-event preferences.
 3. Loads only those users' subscriptions and builds a payload with `title`, `body`, `url`, and relevant entity/action identifiers.
 4. Sends to each subscription via `web-push`.
 5. Removes invalid subscriptions on 410/404 responses only if the stored subscription has not changed since the send began.
 
-For `agent-question.created`, recipients come from the question's persisted owner and authorized squad-watcher attention records. Other events require recipient fields: `user` targets that user, `voice_assistant` resolves either the owner of a saved Assistant conversation (`assistant:<conversation UUID>`, nobody once the conversation is deleted) or the workspace voice user, and `system` targets users with `inbox:system`. Events without resolvable recipients do not broadcast to every browser, even when their rule includes `push`. Personal preferences apply after recipient resolution.
+For `agent-question.created`, recipients are the question's durable direct recipients and compatible personal owner, plus every user holding `actions:read` whose effective `decisions` level is `notify` for the question's squad or one of its work-stream origins. Other events require recipient fields: `user` targets that user, `voice_assistant` resolves either the owner of a saved Assistant conversation (`assistant:<conversation UUID>`, nobody once the conversation is deleted) or the workspace voice user, and `system` targets users with `inbox:system`. Events without resolvable recipients do not broadcast to every browser, even when their rule includes `push`. Personal preferences apply after recipient resolution: attention decides WHO, the per-user category mutes decide WHETHER the device rings.
 
 ### Push Notification Content
 
@@ -181,7 +181,7 @@ This is a small example; the bundled template also routes supported work-stream 
 1. **Worker:** The asynchronous `ask_human` tool creates a persisted question and attention recipients.
 2. **Worker:** `agent-question.created` fires locally and forwards to the API over the loopback event transport.
 3. **API:** The listener calls `notificationService.notify()` and the first matching rule selects `push`.
-4. **API:** The event builder loads the question; recipient resolution loads its attention records and applies personal push preferences.
+4. **API:** The event builder loads the question; recipient resolution takes its direct recipients and personal owner, adds the authorized users whose effective `decisions` level is `notify` for its squad or origins, and applies personal push preferences.
 5. **API:** Web Push and APNs delivery run in parallel for those users' registered browsers/devices.
 6. **Client:** The notification opens the relevant question when selected.
 
@@ -205,6 +205,20 @@ The `creatorAgentId` is captured from the request identity in `POST /work-stream
 - `apps/core/src/services/squad/work-stream-notifications.ts` — `notifyWorkStreamOwnerOfNewStream`
 - `apps/core/src/entities/WorkStream.ts` — `createWorkStream` stores `creatorAgentId` and calls the notification
 - `apps/core/src/routes/work-streams.ts` — threads `identity.agentId` as `creatorAgentId`
+
+## Work-stream attention (human watchers)
+
+Human recipients of a work stream's notices come from attention rows, not from a boolean watch:
+
+| Notice    | Kind that decides | Push category |
+| --------- | ----------------- | ------------- |
+| `review`  | `decisions`       | `review`      |
+| `blocked` | `decisions`       | `review`      |
+| `done`    | `progress`        | `done`        |
+
+For each notice the server loads that stream's rows and its squad's rows — a bounded candidate set — and keeps the users whose effective level for the deciding kind is `notify` (stream row first, then squad row; no row means `show`, which never notifies). Every other lifecycle event (`assigned`, `canceled`, `reopened`, `dependency_canceled`, `idle`, `unblocked`, `reviewed`, `updated`) stays agent-facing.
+
+Live Activity and the work-list widget use the same rows the other direction: a squad or work stream appears there once either kind's effective level is `notify` — the same threshold push uses.
 
 ## Debugging
 

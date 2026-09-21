@@ -131,6 +131,12 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
         icon: '🖥️',
         description: 'Runtime health, maximum active agents, maintenance, and process controls.',
       },
+      {
+        id: 'storage',
+        label: 'Storage',
+        icon: '🗄️',
+        description: 'Disk usage by squad, repositories, worktrees, and tools.',
+      },
       { id: 'system-logs', label: 'Logs', icon: '📜', description: 'Search and inspect system logs.' },
       {
         id: 'ops-insights',
@@ -168,6 +174,7 @@ const SECTION_PERMISSIONS: Partial<Record<SectionId, string>> = {
   machines: 'machines:read',
   'remote-hosts': 'remote-hosts:read',
   system: 'squads:read',
+  storage: 'system:logs',
   'system-logs': 'system:logs',
   updates: 'updates:read',
 }

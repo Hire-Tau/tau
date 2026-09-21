@@ -41,4 +41,10 @@ describe('NotificationPreferences', () => {
     expect(checkbox('Completions')).not.toContain('checked')
     expect(checkbox('Review requests')).toContain('checked')
   })
+
+  it('points at the per-squad and per-work-stream attention control', () => {
+    expect(render([])).toContain(
+      'Which squads and work streams notify you is set on each squad and work stream (Notify / Show / Mute).'
+    )
+  })
 })

@@ -9,8 +9,9 @@ import {
   unsubscribeFromWorkStream,
   isSubscribedToWorkStream,
   listWorkStreamSubscriberIds,
+  getWorkStreamAttention,
 } from './subscriptions'
-import { cleanupTestRbac, createTestUser, type TestUser } from '../../test-utils'
+import { assignRole, cleanupTestRbac, createTestRole, createTestUser, type TestUser } from '../../test-utils'
 
 const prefix = `wssub-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 
@@ -20,6 +21,9 @@ let user: TestUser
 beforeAll(async () => {
   user = await createTestUser({ prefix })
   squad = await Squad.create({ name: `${prefix} Squad`, purpose: 'work-stream subscription test' })
+  // Notices are permission-gated before attention: without a reader role the subscriber hears nothing.
+  const role = await createTestRole({ prefix, permissions: ['workstreams:read'] })
+  await assignRole({ userId: user.id, roleId: role.id, scope: 'squad', squadId: squad.id })
 })
 
 afterAll(async () => {
@@ -39,11 +43,15 @@ describe('work-stream subscriptions', () => {
     expect(await isSubscribedToWorkStream(ws.id, user.id)).toBe(true)
     expect(await listWorkStreamSubscriberIds(ws.id)).toEqual([user.id])
 
+    await subscribeToWorkStream(ws.id, user.id, { decisions: 'show', progress: 'mute' })
+    expect(await getWorkStreamAttention(ws.id, user.id)).toEqual({ decisions: 'show', progress: 'mute' })
+
     await unsubscribeFromWorkStream(ws.id, user.id)
     expect(await isSubscribedToWorkStream(ws.id, user.id)).toBe(false)
+    expect(await getWorkStreamAttention(ws.id, user.id)).toBeNull()
   })
 
-  it("delivers only high-signal lifecycle updates to a subscriber's personal inbox", async () => {
+  it("delivers decision and completion updates to a subscriber's personal inbox", async () => {
     const ws = await storedLegacyWorkStream({ squadId: squad.id, title: `${prefix} ws2` })
     await subscribeToWorkStream(ws.id, user.id)
 
@@ -60,7 +68,7 @@ describe('work-stream subscriptions', () => {
           (m.metadata as Record<string, unknown>)?.workStreamId === ws.id &&
           (m.metadata as Record<string, unknown>)?.event === 'blocked'
       )
-    ).toBe(false)
+    ).toBe(true)
     expect(
       msgs.some(
         (m) =>

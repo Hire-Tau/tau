@@ -55,7 +55,7 @@ function stream(id: string): WorkStream {
   }
 }
 
-test('opens the home list in a content-sized dialog and closes from its visible control', async () => {
+test('opens the dependency graph in a content-sized dialog with no view toggle and closes from its visible control', async () => {
   const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}` })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData(queries.squads.agents(squad.id).queryKey, [])
@@ -73,26 +73,26 @@ test('opens the home list in a content-sized dialog and closes from its visible 
       )
     )
 
-    const expand = dom.window.document.querySelector<HTMLButtonElement>(
-      'button[aria-label="Expand active work streams"]'
-    )
+    const expand = dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Show work stream graph"]')
     expect(expand).toBeTruthy()
     await dom.act(async () => expand!.click())
 
-    const dialog = dom.window.document.querySelector<HTMLElement>('[role="dialog"][aria-label="Active Work Streams"]')!
+    const dialog = dom.window.document.querySelector<HTMLElement>('[role="dialog"][aria-label="Work Stream Graph"]')!
     expect(dialog).toBeTruthy()
-    expect(dialog.textContent).toContain('Stream a')
+    expect(dialog.querySelector('svg[aria-label^="Dependency graph"]')).toBeTruthy()
+    expect(dialog.querySelector('[role="button"][aria-label^="Open Stream a,"]')).toBeTruthy()
     expect(dialog.querySelector('[data-modal-size="default"]')).toBeTruthy()
-    expect(
-      dialog.querySelector('[aria-label="Work stream view"]')?.parentElement?.querySelector('[aria-label="Close"]')
-    ).toBeTruthy()
+    expect(dialog.querySelector('[aria-label="Work stream view"]')).toBeNull()
+    expect(dialog.querySelector('[aria-label="Close"]')).toBeTruthy()
     expect([...dialog.querySelectorAll('button')].some((button) => button.textContent?.includes('Active'))).toBe(false)
-    expect(dom.window.document.querySelectorAll('button[aria-label="Expand active work streams"]')).toHaveLength(1)
-    expect(dialog.querySelectorAll('li')).toHaveLength(1)
-    expect(dom.window.document.querySelectorAll('li')).toHaveLength(2)
+    expect(dom.window.document.querySelectorAll('button[aria-label="Show work stream graph"]')).toHaveLength(1)
+    // The graph is a canvas, not rows: the inline list stays the only list on the page.
+    expect(dialog.querySelectorAll('li')).toHaveLength(0)
+    expect(dom.window.document.querySelectorAll('li')).toHaveLength(1)
 
     await dom.act(async () => dialog.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.click())
-    expect(dom.window.document.querySelector('[role="dialog"][aria-label="Active Work Streams"]')).toBeNull()
+    expect(dom.window.document.querySelector('[role="dialog"][aria-label="Work Stream Graph"]')).toBeNull()
+    expect(dom.window.document.querySelector('svg[aria-label^="Dependency graph"]')).toBeNull()
     expect(dom.window.document.body.textContent).toContain('Stream a')
     expect(dom.window.document.querySelectorAll('li')).toHaveLength(1)
   } finally {
@@ -101,7 +101,7 @@ test('opens the home list in a content-sized dialog and closes from its visible 
   }
 })
 
-test('expandable Home stays list-only until fullscreen during initial load', async () => {
+test('expandable Home stays list-only inline and shows the graph skeleton in its dialog during initial load', async () => {
   const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}` })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   queryClient.setQueryData(queries.squads.agents(squad.id).queryKey, [])
@@ -123,15 +123,14 @@ test('expandable Home stays list-only until fullscreen during initial load', asy
     )
     expect(dom.window.document.querySelector('[role="status"][aria-label="Loading active work streams"]')).toBeTruthy()
     expect(dom.window.document.querySelector('[aria-label="Work stream view"]')).toBeNull()
-    const expand = dom.window.document.querySelector<HTMLButtonElement>(
-      'button[aria-label="Expand active work streams"]'
-    )!
+    const expand = dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Show work stream graph"]')!
     expect(expand).toBeTruthy()
     await dom.act(async () => expand.click())
-    const dialog = dom.window.document.querySelector<HTMLElement>('[role="dialog"][aria-label="Active Work Streams"]')!
-    expect(dialog.querySelector('[role="status"][aria-label="Loading active work streams"]')).toBeTruthy()
-    expect(dialog.querySelector('[aria-label="Work stream view"]')).toBeTruthy()
-    expect(dialog.querySelector('button[aria-label="Expand active work streams"]')).toBeNull()
+    const dialog = dom.window.document.querySelector<HTMLElement>('[role="dialog"][aria-label="Work Stream Graph"]')!
+    expect(dialog.querySelector('[role="status"][aria-label="Loading work stream graph"]')).toBeTruthy()
+    expect(dialog.querySelector('[role="status"][aria-label="Loading active work streams"]')).toBeNull()
+    expect(dialog.querySelector('[aria-label="Work stream view"]')).toBeNull()
+    expect(dialog.querySelector('button[aria-label="Show work stream graph"]')).toBeNull()
   } finally {
     queryClient.clear()
     await dom.cleanup()
@@ -214,7 +213,7 @@ test('non-expandable work keeps its real categories and controls during initial 
     expect(dom.window.document.body.textContent).toContain('Active')
     expect(dom.window.document.body.textContent).toContain('Done')
     expect(dom.window.document.querySelector('[aria-label="Work stream view"]')).toBeTruthy()
-    expect(dom.window.document.querySelector('button[aria-label="Expand active work streams"]')).toBeNull()
+    expect(dom.window.document.querySelector('button[aria-label="Show work stream graph"]')).toBeNull()
     await dom.act(async () => rendered.root.render(render([stream('a')])))
     expect(dom.window.document.body.textContent).toContain('Stream a')
     expect(dom.window.document.querySelector('[aria-label="Work stream view"]')).toBeTruthy()
@@ -224,7 +223,7 @@ test('non-expandable work keeps its real categories and controls during initial 
   }
 })
 
-test('fullscreen list ignores the embedded Active collapse without changing it', async () => {
+test('the graph dialog ignores the embedded Active collapse without changing it', async () => {
   const dom = await acquireDomHarness({ url: `http://localhost/squads/${squad.id}` })
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData(queries.squads.agents(squad.id).queryKey, [])
@@ -248,10 +247,10 @@ test('fullscreen list ignores the embedded Active collapse without changing it',
     expect(dom.window.document.body.textContent).not.toContain('Stream a')
     expect(dom.window.document.querySelector('output')?.dataset.routerSearch).toContain('activeCollapsed=1')
     await dom.act(async () =>
-      dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Expand active work streams"]')!.click()
+      dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Show work stream graph"]')!.click()
     )
-    const dialog = dom.window.document.querySelector<HTMLElement>('[role="dialog"][aria-label="Active Work Streams"]')!
-    expect(dialog.textContent).toContain('Stream a')
+    const dialog = dom.window.document.querySelector<HTMLElement>('[role="dialog"][aria-label="Work Stream Graph"]')!
+    expect(dialog.querySelector('[role="button"][aria-label^="Open Stream a,"]')).toBeTruthy()
     expect([...dialog.querySelectorAll('button')].some((button) => button.textContent?.includes('Active'))).toBe(false)
     expect(dom.window.document.querySelector('output')?.dataset.routerSearch).toContain('activeCollapsed=1')
     await dom.act(async () => dialog.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.click())
@@ -281,23 +280,15 @@ test('Escape closes detail before fullscreen', async () => {
     )
 
     await dom.act(async () =>
-      dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Expand active work streams"]')!.click()
+      dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Show work stream graph"]')!.click()
     )
-    const dialog = dom.window.document.querySelector<HTMLElement>('[role="dialog"][aria-label="Active Work Streams"]')!
-    const viewGroup = dialog.querySelector<HTMLElement>('[aria-label="Work stream view"]')!
-    const graph = viewGroup.querySelectorAll<HTMLButtonElement>('button')[1]!
-    await dom.act(async () => graph.click())
-    expect(
-      dialog
-        .querySelector<HTMLElement>('[aria-label="Work stream view"]')!
-        .querySelectorAll<HTMLButtonElement>('button')[1]!
-        .getAttribute('aria-pressed')
-    ).toBe('true')
-
+    const dialog = dom.window.document.querySelector<HTMLElement>('[role="dialog"][aria-label="Work Stream Graph"]')!
+    expect(dialog.querySelector('[aria-label="Work stream view"]')).toBeNull()
     expect(dialog.querySelector('[data-modal-size="default"]')).toBeTruthy()
     expect(dialog.querySelector('[data-modal-size="viewport"]')).toBeNull()
     expect(dialog.querySelector('svg[aria-label^="Dependency graph"]')).toBeTruthy()
-    expect(dom.window.localStorage.getItem(`tau.wsView.home.${squad.id}`)).toBe('graph')
+    // A stale Home view preference from older builds must not leak into the dialog or the inline list.
+    expect(dom.window.localStorage.getItem(`tau.wsView.home.${squad.id}`)).toBeNull()
 
     const graphNode = dialog.querySelector<HTMLElement>('[role="button"][aria-label^="Open Stream a,"]')!
     graphNode.focus()
@@ -313,7 +304,7 @@ test('Escape closes detail before fullscreen', async () => {
     )
     expect(dom.window.document.querySelector('[role="dialog"][aria-label="Stream a"]')).toBeNull()
     const survivingDialog = dom.window.document.querySelector<HTMLElement>(
-      '[role="dialog"][aria-label="Active Work Streams"]'
+      '[role="dialog"][aria-label="Work Stream Graph"]'
     )!
     expect(survivingDialog).toBeTruthy()
     expect(survivingDialog.contains(dom.window.document.activeElement)).toBe(true)
@@ -323,10 +314,10 @@ test('Escape closes detail before fullscreen', async () => {
         new dom.window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }) as unknown as KeyboardEvent
       )
     )
-    expect(dom.window.document.querySelector('[role="dialog"][aria-label="Active Work Streams"]')).toBeNull()
+    expect(dom.window.document.querySelector('[role="dialog"][aria-label="Work Stream Graph"]')).toBeNull()
     expect(dom.window.document.querySelector('svg[aria-label^="Dependency graph"]')).toBeNull()
     expect(dom.window.document.body.textContent).toContain('Stream a')
-    expect(dom.window.document.activeElement?.getAttribute('aria-label')).toBe('Expand active work streams')
+    expect(dom.window.document.activeElement?.getAttribute('aria-label')).toBe('Show work stream graph')
   } finally {
     queryClient.clear()
     await dom.cleanup()

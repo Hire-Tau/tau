@@ -376,6 +376,92 @@ describe('seedBoxDevbox', () => {
     expect(client.markerContent(dir)).toBe(computeDevboxSeedHash('agent'))
   })
 
+  test('merges missing comfort packages into a MAP-form devbox.json without flattening it', async () => {
+    // devbox itself rewrites `packages` into map form once any package carries
+    // options (`devbox add zlib --outputs dev`). The map is the user's
+    // configuration too: keep it a map, keep every entry, append only what is
+    // missing as `name: version` pairs.
+    const client = new FakeClient()
+    const dir = DEVBOX_DIR('squad_s1')
+    client.setText(`${dir}/.seeded`, 'stale')
+    client.setText(
+      `${dir}/devbox.json`,
+      JSON.stringify({
+        packages: {
+          nodejs_24: 'latest',
+          ripgrep: '14.1.0',
+          'github:NixOS/nixpkgs/d5dfd8e6716dde34398bc14bc87c10dece9c8c68#gh': '',
+          zlib: { version: 'latest', outputs: ['dev'] },
+          'pkg-config': 'latest',
+        },
+        shell: { init_hook: ['export OWNED=1'], scripts: {} },
+      })
+    )
+
+    await seed(client, 'squad_s1', 'squad')
+
+    const merged = client.writtenDevboxJson(dir)
+    expect(Array.isArray(merged.packages)).toBe(false)
+    expect(merged.packages).toEqual({
+      nodejs_24: 'latest',
+      ripgrep: '14.1.0',
+      'github:NixOS/nixpkgs/d5dfd8e6716dde34398bc14bc87c10dece9c8c68#gh': '',
+      zlib: { version: 'latest', outputs: ['dev'] },
+      'pkg-config': 'latest',
+      bun: 'latest',
+      python3: 'latest',
+      fd: 'latest',
+      jq: 'latest',
+      tree: 'latest',
+      less: 'latest',
+      gnumake: 'latest',
+      gcc: 'latest',
+      diffutils: 'latest',
+      patch: 'latest',
+      perl: 'latest',
+      procps: 'latest',
+      tmux: 'latest',
+    })
+    expect(merged.shell).toEqual({ init_hook: ['export OWNED=1'], scripts: {} })
+    // Customized → never touches the pristine lock cache, install still runs, marker written.
+    expect(client.installCommands()).toHaveLength(1)
+    expect(client.markerContent(dir)).toBe(computeDevboxSeedHash('squad'))
+  })
+
+  test('a MAP-form devbox.json that already holds the whole comfort set is left untouched', async () => {
+    const client = new FakeClient()
+    const dir = DEVBOX_DIR('squad_s1')
+    client.setText(`${dir}/.seeded`, 'stale')
+    const packages: Record<string, unknown> = {}
+    for (const spec of SQUAD_COMFORT_PACKAGES) {
+      const at = spec.lastIndexOf('@')
+      if (at > 0) packages[spec.slice(0, at)] = spec.slice(at + 1)
+      else packages[spec] = ''
+    }
+    packages.zlib = { version: 'latest', outputs: ['dev'] }
+    const existing = JSON.stringify({ packages })
+    client.setText(`${dir}/devbox.json`, existing)
+
+    await seed(client, 'squad_s1', 'squad')
+
+    expect(client.writes.filter((w) => w.path === `${dir}/devbox.json`)).toHaveLength(0)
+    expect(client.text(`${dir}/devbox.json`)).toBe(existing)
+  })
+
+  test.each(['{"packages":{"nodejs_24":42}}', '{"packages":{"nodejs_24":null}}'])(
+    'falls back to the pristine role template for a map with non-spec entries %s',
+    async (existing) => {
+      const client = new FakeClient()
+      const dir = DEVBOX_DIR('agent_a1')
+      client.setText(`${dir}/.seeded`, 'stale')
+      client.setText(`${dir}/devbox.json`, existing)
+
+      await seed(client, 'agent_a1', 'agent')
+
+      expect(client.text(`${dir}/devbox.json`)).toBe(renderDevboxJson('agent'))
+    }
+  )
+
   test.each(['{broken', 'null', '[]', '{"packages":"invalid"}'])(
     'falls back to the pristine role template for unusable devbox JSON %s',
     async (existing) => {

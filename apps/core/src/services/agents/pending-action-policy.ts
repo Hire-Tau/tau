@@ -1,16 +1,23 @@
 import type { PendingAction, WorkStreamActionData } from '@tau/shared'
-import { and, eq, ne } from 'drizzle-orm'
+import { and, eq, inArray, ne } from 'drizzle-orm'
 import { db } from '../../db'
 import { agentQuestionRecipients, agentQuestionWorkStreamOrigins, agents } from '../../db/schema'
 import { hasPermission, type Identity } from '../rbac'
 import { activeWorkflowAttempts } from '@tau/shared'
 import { workStreamFlowRuns, workStreams } from '../../db'
 import { isWorkflowReviewer } from '../workflows/reviewers'
+import type { UserAttention } from '../attention/resolver'
 import { canAnswerAgentQuestion } from './question-authorization'
 
 export interface PendingActionAttentionContext {
-  watchedSquadIds: ReadonlySet<string>
-  watchedWorkStreamIds: ReadonlySet<string>
+  /** The viewer's resolved attention rows. Non-user identities pass EMPTY_USER_ATTENTION. */
+  attention: UserAttention
+  /**
+   * Preloaded question id -> work-stream origin ids, so a caller evaluating many actions pays one
+   * origin query instead of one per question. When present it is authoritative: a question with no
+   * entry has no origins. Omit it and each question loads its own origins on demand.
+   */
+  questionOrigins?: ReadonlyMap<string, readonly string[]>
 }
 
 export interface PendingActionPolicyDecision {
@@ -26,21 +33,66 @@ async function isDirectQuestionAttentionRecipient(questionId: string, userId: st
   return Boolean(recipient)
 }
 
-async function watchesQuestionOrigin(questionId: string, watchedIds: ReadonlySet<string>): Promise<boolean> {
-  if (watchedIds.size === 0) return false
-  const origins = await db
-    .select({ workStreamId: agentQuestionWorkStreamOrigins.workStreamId })
+/** questionId -> its work-stream origin ids, for every given question, in one query. */
+export async function loadQuestionWorkStreamOrigins(
+  questionIds: readonly string[]
+): Promise<Map<string, readonly string[]>> {
+  const byQuestion = new Map<string, string[]>()
+  if (questionIds.length === 0) return byQuestion
+  const rows = await db
+    .select({
+      questionId: agentQuestionWorkStreamOrigins.questionId,
+      workStreamId: agentQuestionWorkStreamOrigins.workStreamId,
+    })
     .from(agentQuestionWorkStreamOrigins)
-    .where(eq(agentQuestionWorkStreamOrigins.questionId, questionId))
-  return origins.some(({ workStreamId }) => watchedIds.has(workStreamId))
+    .where(inArray(agentQuestionWorkStreamOrigins.questionId, [...questionIds]))
+  for (const row of rows) {
+    const origins = byQuestion.get(row.questionId) ?? []
+    origins.push(row.workStreamId)
+    byQuestion.set(row.questionId, origins)
+  }
+  return byQuestion
 }
 
 /**
- * Action Center/push ATTENTION policy for an agent question. Direct attention recipients
- * (durable rows) and compatible squadless personal owners receive the action without any
- * subscription; authorized squad/work-stream watchers receive it with `actions:read`. This is
- * deliberately NOT chat/history readability — that follows canonical agents:read on the agent
- * (see routes/agent-questions.ts).
+ * Is this question's `decisions` attention un-muted for the viewer?
+ *
+ * ORIGIN PRECEDENCE. With work-stream origins the question IS its origins: each one resolves the
+ * normal way (stream row, else squad row, else the default) and any un-muted origin shows it — so
+ * muting a stream silences its questions inside a shown squad, and the squad row alone can never
+ * show them. With no origins the question is the squad's own, so the squad level decides. With no
+ * stream rows at all every origin would resolve to the squad level anyway, so that common case
+ * skips the origin lookup and stays a single in-memory read.
+ */
+async function decisionsUnmuted(
+  question: { id: string; squadId: string | null },
+  context: PendingActionAttentionContext
+): Promise<boolean> {
+  const squadUnmuted = context.attention.forSquad(question.squadId).decisions !== 'mute'
+  if (context.attention.workStreams.size === 0) return squadUnmuted
+  const origins = context.questionOrigins
+    ? (context.questionOrigins.get(question.id) ?? [])
+    : ((await loadQuestionWorkStreamOrigins([question.id])).get(question.id) ?? [])
+  if (origins.length === 0) return squadUnmuted
+  return origins.some(
+    (workStreamId) => context.attention.forWorkStream(workStreamId, question.squadId).decisions !== 'mute'
+  )
+}
+
+/**
+ * Action Center/push ATTENTION policy for an agent question. Direct attention recipients (durable
+ * rows) and compatible squadless personal owners receive the action with no permission or level
+ * check; everyone else needs `actions:read` AND an un-muted `decisions` level for the question's
+ * squad or one of its work-stream origins. A subscription is no longer required — the default for
+ * a user with no row at all is `show`.
+ *
+ * SQUADLESS QUESTIONS ARE NOT AN ATTENTION SURFACE. A personal agent belongs to no squad and to no
+ * work stream, so there is nothing its question could be muted or followed through; the `show`
+ * default must not turn instance-wide `actions:read` into a view of someone else's personal
+ * questions. Those stay exactly where they were: their owner and their direct recipients.
+ *
+ * This is deliberately NOT chat/history readability, which follows canonical agents:read on the
+ * agent (see routes/agent-questions.ts).
  */
 export async function canReceiveAgentQuestionAttention(
   identity: Identity,
@@ -48,14 +100,15 @@ export async function canReceiveAgentQuestionAttention(
   context: PendingActionAttentionContext
 ): Promise<boolean> {
   const userId = identity.type === 'user' ? identity.userId : null
-  // Only a squadless personal agent's owner bypasses subscriptions; a squad-bound agent's
-  // owner snapshot is metadata, not an attention entitlement.
-  const owner = Boolean(userId && question.ownerUserId === userId && !question.squadId)
-  const direct = Boolean(userId && (await isDirectQuestionAttentionRecipient(question.id, userId)))
-  const canRead = await hasPermission(identity, 'actions:read', question.squadId ?? undefined)
-  const watchedSquad = Boolean(question.squadId && context.watchedSquadIds.has(question.squadId))
-  const watchedOrigin = await watchesQuestionOrigin(question.id, context.watchedWorkStreamIds)
-  return owner || direct || (canRead && (watchedSquad || watchedOrigin || identity.type !== 'user'))
+  // Only a squadless personal agent's owner bypasses attention; a squad-bound agent's owner
+  // snapshot is metadata, not an attention entitlement.
+  if (userId && question.ownerUserId === userId && !question.squadId) return true
+  if (userId && (await isDirectQuestionAttentionRecipient(question.id, userId))) return true
+  if (!(await hasPermission(identity, 'actions:read', question.squadId ?? undefined))) return false
+  // Non-user identities (agents, system/legacy tokens) never carried attention rows.
+  if (identity.type !== 'user') return true
+  if (!question.squadId) return false
+  return decisionsUnmuted(question, context)
 }
 
 export async function evaluatePendingAction(
@@ -65,8 +118,13 @@ export async function evaluatePendingAction(
 ): Promise<PendingActionPolicyDecision> {
   const userId = identity.type === 'user' ? identity.userId : null
   const squadId = action.squadId
-  const watchedSquad = Boolean(squadId && context.watchedSquadIds.has(squadId))
   const canRead = await hasPermission(identity, 'actions:read', squadId)
+  // Non-user identities (agents, system/legacy tokens) never carried attention rows and keep
+  // permission-only visibility. For a user this is the squad's `decisions` level — and a SQUADLESS
+  // item never qualifies, because there is no squad or stream through which anyone could follow a
+  // personal agent; such items reach their owner only (see canReceiveAgentQuestionAttention).
+  const squadUnmuted =
+    identity.type !== 'user' || Boolean(squadId && context.attention.forSquad(squadId).decisions !== 'mute')
 
   if (action.type === 'agent-question') {
     const data = action.data as {
@@ -96,7 +154,7 @@ export async function evaluatePendingAction(
     const data = action.data as { ownerUserId: string | null; squadId: string | null }
     const owner = Boolean(userId && data.ownerUserId === userId)
     return {
-      visible: owner || (canRead && (watchedSquad || identity.type !== 'user')),
+      visible: owner || (canRead && squadUnmuted),
       canRespond:
         Boolean(!data.squadId && owner) ||
         Boolean(data.squadId && (await hasPermission(identity, 'agents:run', data.squadId))),
@@ -112,9 +170,9 @@ export async function evaluatePendingAction(
     const currentSquadId = target?.squadId ?? null
     if (!currentSquadId) return { visible: false, canRespond: false }
     const currentCanRead = await hasPermission(identity, 'actions:read', currentSquadId)
-    const currentWatched = context.watchedSquadIds.has(currentSquadId)
+    const currentUnmuted = identity.type !== 'user' || context.attention.forSquad(currentSquadId).decisions !== 'mute'
     return {
-      visible: currentCanRead && (currentWatched || identity.type !== 'user'),
+      visible: currentCanRead && currentUnmuted,
       canRespond: await hasPermission(identity, 'agents:run', currentSquadId),
     }
   }
@@ -141,12 +199,16 @@ export async function evaluatePendingAction(
       else canRespond = await hasPermission(identity, 'workstreams:revise-flow', squadId)
     }
     return {
-      visible: canRead && (identity.type !== 'user' || watchedSquad || context.watchedWorkStreamIds.has(workStreamId)),
+      visible:
+        canRead &&
+        (identity.type !== 'user' || context.attention.forWorkStream(workStreamId, squadId).decisions !== 'mute'),
       canRespond,
     }
   }
   return {
-    visible: canRead && (identity.type !== 'user' || watchedSquad || context.watchedWorkStreamIds.has(workStreamId)),
+    visible:
+      canRead &&
+      (identity.type !== 'user' || context.attention.forWorkStream(workStreamId, squadId).decisions !== 'mute'),
     canRespond: Boolean(
       squadId &&
       ((await hasPermission(identity, 'workstreams:respond', squadId)) ||

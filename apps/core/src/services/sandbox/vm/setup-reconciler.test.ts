@@ -21,6 +21,39 @@ function state(overrides: Partial<VmSetupState> = {}): VmSetupState {
 }
 
 describe('reconcileVmSetup', () => {
+  test('logs one bounded line naming the failed component — the durable row only keeps the reason code', async () => {
+    const client = { cancelBashInvocation: async () => {} } as unknown as SandboxClient
+    const warnings: string[] = []
+    const deps: VmSetupReconcilerDeps = {
+      withLease: async (_id, fn) => fn(),
+      ensureFingerprint: async () => state(),
+      markReconciling: async () => true,
+      setPendingInvocation: async () => true,
+      clearPendingInvocation: async () => true,
+      markDegraded: async (input) => state({ readiness: 'ready_degraded', reasons: input.reasons, attemptCount: 1 }),
+      markReady: async () => true,
+      getClient: () => client,
+      recoverClient: async () => client,
+      seedDevbox: async () => {},
+      signalDevboxReady: async () => {
+        throw new Error('Devbox shell environment is not live')
+      },
+      writeBashrc: async () => {},
+      configureGit: async () => {},
+      sleep: async () => {},
+      now: () => new Date(0),
+      log: { warn: (message) => warnings.push(message) },
+    }
+
+    const result = await reconcileVmSetup(
+      { sandboxId: 'squad_s1', fingerprint: 'fingerprint', devboxInvocationId: 'devbox-1', configureGit: false },
+      deps
+    )
+
+    expect(result.reasons).toEqual(['devbox_unavailable'])
+    expect(warnings).toEqual(['VM setup devbox step failed for squad_s1: Error: Devbox shell environment is not live'])
+  })
+
   test('recovers after ambiguous Devbox loss, proves cleanup, and runs later components on the fresh client', async () => {
     const oldClient = {
       cancelBashInvocation: async () => {

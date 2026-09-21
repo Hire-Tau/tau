@@ -14,7 +14,7 @@ import { getModelCatalog } from './api/modelCatalog'
 import { modelCatalogQueryKeys } from './queryKeys'
 import { infiniteQueryOptions, keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { queryKeys, onboardingQueryKeys, integrationQueryKeys } from './queryKeys'
-import { getSystemPause, getSystemPauseDetails } from './api/system'
+import { getStorage, getSystemPause, getSystemPauseDetails } from './api/system'
 import { getGlobalActivityPresence, listGlobalActivity } from './api/activity'
 
 // API functions
@@ -101,6 +101,7 @@ import {
   listWorkStreams,
   listAllWorkStreams,
   listActiveWorkStreams,
+  listAttentionWorkStreams,
   getWorkStream,
   getWorkStreamMetrics,
   getWorkStreamTracked,
@@ -440,6 +441,11 @@ export const queries = {
         queryKey: queryKeys.squads.activeWorkStreams(squadId),
         queryFn: () => listActiveWorkStreams(squadId),
       }),
+    attentionWorkStreams: () =>
+      queryOptions({
+        queryKey: queryKeys.squads.attentionWorkStreams(),
+        queryFn: () => listAttentionWorkStreams(),
+      }),
     workStreamDetail: (id: string) =>
       queryOptions({
         queryKey: queryKeys.squads.workStreamDetail(id),
@@ -727,6 +733,12 @@ export const queries = {
       }),
   },
   system: {
+    storage: () =>
+      queryOptions({
+        queryKey: queryKeys.system.storage(),
+        queryFn: getStorage,
+        refetchInterval: (query) => (query.state.data?.scanning ? 2000 : 300000),
+      }),
     pause: () =>
       queryOptions({
         queryKey: queryKeys.system.pause(),

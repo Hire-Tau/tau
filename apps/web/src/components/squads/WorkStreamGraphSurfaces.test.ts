@@ -20,7 +20,15 @@ describe('shared squad work-stream graph surfaces', () => {
     expect(shared.match(/<WorkStreamGraph/g)).toHaveLength(1)
     expect(shared).toContain('<WorkStreamViewToggle squadId={squadId} surface={surface} modes={modes}')
     expect(shared).toContain("const WORK_VIEW_MODES = ['list', 'kanban', 'graph']")
-    expect(shared).toContain("const HOME_VIEW_MODES = ['list', 'graph']")
     expect(shared).toContain('<WorkStreamDetailModal')
+  })
+
+  test('the compact Home explorer is a list inline and the dependency graph in its dialog, with no toggle', () => {
+    expect(shared).not.toContain('HOME_VIEW_MODES')
+    expect(shared).toContain("const viewMode = compact ? 'list' : workViewMode")
+    expect(shared.match(/compact && inFullscreen \? 'graph' : viewMode/g)).toHaveLength(2)
+    expect(shared).toContain('title="Work Stream Graph"')
+    expect(shared).not.toContain('headerActions={<WorkStreamViewToggle')
+    expect(shared).toContain('aria-label="Show work stream graph"')
   })
 })

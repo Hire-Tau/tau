@@ -11,6 +11,8 @@ import {
   reorderSquadsSchema,
   squadToolchainSchema,
   SQUAD_ACTIVITY_KINDS,
+  attentionSchema,
+  DEFAULT_ATTENTION,
   type SquadActivityKind,
 } from '@tau/shared'
 import { requirePermission, requireSquadPermission } from '../middleware'
@@ -20,7 +22,7 @@ import { filterToAccessibleSquads } from '../middleware/require-entity-permissio
 import {
   subscribeToSquad,
   unsubscribeFromSquad,
-  isSubscribedToSquad,
+  getSquadAttention,
   countSquadSubscribers,
 } from '../services/squad/subscriptions'
 import { Squad } from '../entities/Squad'
@@ -316,27 +318,40 @@ export const squadsRouter = new Hono()
 
     return c.json({ ...squad.toJson(), defaultWorkflow })
   })
-  // --- Squad-level watch (subscribe to all of a squad's work-stream updates + manager questions) ---
+  // --- Squad attention (levels for the squad's decisions and progress; see @tau/shared/attention) ---
   .get('/:id/subscription', requireSquadPermission('squads:read'), async (c) => {
     const squadId = c.req.param('id')
     const identity = await resolveActingUser(c.get('identity'))
-    const subscribed = identity?.type === 'user' ? await isSubscribedToSquad(squadId, identity.userId) : false
-    return c.json({ subscribed, count: await countSquadSubscribers(squadId) })
+    const row = identity?.type === 'user' ? await getSquadAttention(squadId, identity.userId) : null
+    return c.json({
+      subscribed: Boolean(row),
+      count: await countSquadSubscribers(squadId),
+      attention: row ?? DEFAULT_ATTENTION,
+    })
   })
   .post('/:id/subscribe', requireSquadPermission('squads:read'), async (c) => {
     const squadId = c.req.param('id')
     const identity = await resolveActingUser(c.get('identity'))
     if (identity?.type !== 'user') return c.json({ error: 'Only users can subscribe' }, 403)
     if (!(await Squad.find(squadId))) return c.json({ error: 'Squad not found' }, 404)
-    await subscribeToSquad(squadId, identity.userId)
-    return c.json({ subscribed: true, count: await countSquadSubscribers(squadId) })
+    const body = await parseOptionalJsonObjectBody(c, {} as Record<string, unknown>)
+    // Omitted attention means "watch, but never reset levels I already chose".
+    const requested = body.attention === undefined ? undefined : attentionSchema.safeParse(body.attention)
+    if (requested && !requested.success) return c.json({ error: 'Invalid attention levels' }, 400)
+    await subscribeToSquad(squadId, identity.userId, requested?.data)
+    const row = await getSquadAttention(squadId, identity.userId)
+    return c.json({
+      subscribed: Boolean(row),
+      count: await countSquadSubscribers(squadId),
+      attention: row ?? DEFAULT_ATTENTION,
+    })
   })
   .delete('/:id/subscribe', requireSquadPermission('squads:read'), async (c) => {
     const squadId = c.req.param('id')
     const identity = await resolveActingUser(c.get('identity'))
     if (identity?.type !== 'user') return c.json({ error: 'Only users can unsubscribe' }, 403)
     await unsubscribeFromSquad(squadId, identity.userId)
-    return c.json({ subscribed: false, count: await countSquadSubscribers(squadId) })
+    return c.json({ subscribed: false, count: await countSquadSubscribers(squadId), attention: DEFAULT_ATTENTION })
   })
   .patch('/:id', requireSquadPermission('squads:update'), zValidator('json', updateSquadSchema), async (c) => {
     const squad = await Squad.find(c.req.param('id'))

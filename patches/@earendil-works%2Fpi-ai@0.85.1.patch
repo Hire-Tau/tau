@@ -1,5 +1,5 @@
 diff --git a/dist/api/openai-codex-responses.js b/dist/api/openai-codex-responses.js
-index bf979d439f531c62494291050722f7e93435280d..d317e7d520328a94aa14af68f864c8de4a4d0a2d 100644
+index bf979d439f531c62494291050722f7e93435280d..d565d1cc4b60b3f2517cb4b1693ee731721eb1b5 100644
 --- a/dist/api/openai-codex-responses.js
 +++ b/dist/api/openai-codex-responses.js
 @@ -49,7 +49,7 @@ function assertSuccessfulOutput(output) {
@@ -7,25 +7,27 @@ index bf979d439f531c62494291050722f7e93435280d..d317e7d520328a94aa14af68f864c8de
  // ============================================================================
  function isTerminalRateLimitError(errorText) {
 -    return /GoUsageLimitError|FreeUsageLimitError|Monthly usage limit reached|available balance|insufficient_quota|out of budget|quota exceeded|billing/i.test(errorText);
-+    return /GoUsageLimitError|FreeUsageLimitError|Monthly usage limit reached|available balance|insufficient_quota|out of budget|quota exceeded|billing|limit exhausted|limit will reset|usage_limit_reached|hit your ChatGPT usage limit/i.test(errorText);
++    return /GoUsageLimitError|FreeUsageLimitError|Monthly usage limit reached|available balance|insufficient_quota|out of budget|quota exceeded|billing|limit exhausted|limit will reset|usage_limit_reached|hit your ChatGPT usage limit|usage limit has been reached/i.test(errorText);
  }
  function isRetryableError(status, errorText) {
      if (status === 429 && isTerminalRateLimitError(errorText)) {
 diff --git a/dist/utils/retry.js b/dist/utils/retry.js
-index ce8c4cbc3bdbbfa2e8e59070cdcdee12a6bb7177..9d997e3261ff14204d506651f85fb57828db8613 100644
+index ce8c4cbc3bdbbfa2e8e59070cdcdee12a6bb7177..f50448faa568ab5726c210dd1715e4be2b800fc3 100644
 --- a/dist/utils/retry.js
 +++ b/dist/utils/retry.js
-@@ -16,6 +16,13 @@ const NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN = buildProviderErrorPattern([
+@@ -16,6 +16,15 @@ const NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN = buildProviderErrorPattern([
      "out of budget",
      "quota exceeded",
      "billing",
 +    // Tau: exhausted plan windows must fail over without transient retries.
 +    "limit exhausted",
 +    "limit will reset",
-+    // Tau: codex plan-window exhaustion. The raw `usage_limit_reached` code and
-+    // the friendly string this client rewrites it into are both hard limits.
++    // Tau: codex plan-window exhaustion. The raw `usage_limit_reached` code, the
++    // friendly string this client rewrites a 429 into, and the message the
++    // in-stream `error` event carries are all hard limits.
 +    "usage_limit_reached",
 +    "hit your ChatGPT usage limit",
++    "usage limit has been reached",
  ]);
  const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
      // Generic provider load, HTTP status, and server-side transient failures.

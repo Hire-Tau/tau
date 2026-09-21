@@ -5,7 +5,7 @@ let releaseMaintenanceIsolation: (() => Promise<void>) | undefined
 maintenanceBeforeAll(async () => (releaseMaintenanceIsolation = await acquireMaintenanceTestIsolation()))
 maintenanceAfterAll(() => releaseMaintenanceIsolation?.())
 
-import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test'
+import { describe, it, expect, beforeEach, afterEach, setSystemTime, spyOn } from 'bun:test'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { AgentStatus } from '@tau/shared'
 import { db } from '../db'
@@ -293,6 +293,46 @@ describe('Execution.transitionTo', () => {
 
       await testAgent.reload()
       expect(testAgent.status).toBe('idle')
+    })
+
+    /**
+     * `executions.started_at` and `run_started_at` are written by Postgres, and the continuation
+     * watchdog compares `run_started_at` against a trigger's `ended_at` to decide whether an agent
+     * already recovered. While `ended_at` was written from the app host's `new Date()`, that
+     * comparison spanned two clocks: a Core host running ahead of Postgres by more than the real
+     * gap between a failure and its recovery made the watchdog miss the recovery and open a
+     * spurious "continuation exhausted" wait, parking a healthy work stream until a human cleared
+     * it. `setSystemTime` moves only the JS clock — Postgres is untouched — which is exactly that
+     * production shape.
+     */
+    it('stamps endedAt from the database clock, so a host running ahead cannot invert the ordering', async () => {
+      const HOST_SKEW_MS = 5_000
+      const execution = await testAgent.queueExecution({ message: 'clock-skew' })
+      await execution.start()
+
+      setSystemTime(new Date(Date.now() + HOST_SKEW_MS))
+      try {
+        expect(await execution.transitionTo({ kind: 'completed' })).toBe(true)
+      } finally {
+        setSystemTime()
+      }
+
+      const [{ databaseNow }] = await db.execute<{ databaseNow: Date }>(sql`select clock_timestamp() as "databaseNow"`)
+      const skewMs = execution.endedAt!.getTime() - new Date(databaseNow).getTime()
+      // Written from the host, this lands ~5s in the DATABASE's future; written from the database
+      // it lands at (just before) the database's now.
+      expect(skewMs).toBeLessThan(HOST_SKEW_MS / 2)
+
+      // The ordering the watchdog actually reads: an execution that started before it ended.
+      const [row] = await db
+        .select({ runStartedAt: executions.runStartedAt, endedAt: executions.endedAt })
+        .from(executions)
+        .where(eq(executions.id, execution.id))
+      expect(row.runStartedAt!.getTime()).toBeLessThanOrEqual(row.endedAt!.getTime())
+
+      // The transition returns the written row, so the in-memory entity carries the DATABASE's
+      // value rather than a host timestamp that was never stored.
+      expect(execution.endedAt!.getTime()).toBe(row.endedAt!.getTime())
     })
 
     it('completed (custom disposition): agent takes the carried status + questionData', async () => {

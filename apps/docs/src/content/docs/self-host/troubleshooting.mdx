@@ -109,3 +109,21 @@ Run `tau update status --offline` from the local checkout and inspect recent ser
 Use `tau server update` for the local installation when the API is down. An authentication failure against a remote backend is a separate problem; it does not authorize an offline update on your laptop.
 
 If you need help, include the command, error text, OS, runtime, local status and relevant log excerpt. Remove credentials, first-run links, `.env` contents and private workspace material before sharing.
+
+## Find what is using disk space
+
+On Tau Cloud, or a self-hosted instance using VM sandbox machines, open **Settings → Storage**. This view requires the same system permission as **Logs**.
+
+Each machine shows its used and total disk space. Squads are listed largest first; expand a squad and its folders to find repositories, worktrees, caches, and agent files. Folder sizes include their contents, so do not add a parent folder's size to its children.
+
+You or the User Assistant can also use `tau system storage --json` to read the breakdown and scan state, or `tau system storage --refresh --json` to request a background scan. Both return immediately; read again after a few seconds while `scanning` is true. See the [CLI reference](/reference/cli/#inspect-disk-usage).
+
+The page refreshes about every five minutes while open. **Refresh** requests a new scan; manual scans are limited to once a minute. A scan can take several seconds, and existing results stay visible with their previous timestamp until it finishes. Offline or parked machines show as unavailable. Partial scans are marked rather than presented as empty disks.
+
+If a scan reaches its 45-second limit, measured child folders remain visible even when their parent totals were not returned. These sizes are labeled **Partial**; sandboxes with no measurements show **Not measured**. The page reports known scan failures and how many sandbox home totals were returned. A missing total does not prove a sandbox is empty or deleted. Large homes can still exceed the scan budget; repeated refreshes do not guarantee a complete result.
+
+**Other disk usage** includes shared tools, system files, and files outside known squad directories. This is an approximate breakdown of the sandbox machine's filesystem, not an inventory of separate database or backup services. Shared files and files changing during a scan can affect attribution. Other sandbox runtimes do not yet provide this breakdown.
+
+Hardlinked files count once per scan and may appear under whichever folder was visited first. Removing one link does not necessarily free the file's storage, so folder totals are not estimates of reclaimable space. Compare filesystem usage before and after an approved cleanup to verify actual recovery.
+
+Scans run at low CPU and idle I/O priority, but traversing a large directory tree can still generate disk activity. Inspection does not delete files or start agents. Worktree cleanup after work completes helps keep usage down, but the storage view itself only measures usage; do not manually remove a worktree that is still in use.

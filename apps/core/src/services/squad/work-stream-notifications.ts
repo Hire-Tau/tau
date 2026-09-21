@@ -1,4 +1,10 @@
-import { parseInboxPushPresentation, workStreamRef, workStreamTitle, type InboxPushPresentation } from '@tau/shared'
+import {
+  parseInboxPushPresentation,
+  workStreamRef,
+  workStreamTitle,
+  type AttentionKind,
+  type InboxPushPresentation,
+} from '@tau/shared'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { agents, inbox, squads } from '../../db/schema'
@@ -7,8 +13,9 @@ import { InboxMessage, type SendInboxMessageInput } from '../../entities/InboxMe
 import { Squad } from '../../entities/Squad'
 import { User } from '../../entities/User'
 import type { WorkStream } from '../../entities/WorkStream'
-import { listWorkStreamSubscriberIds } from '../work-streams/subscriptions'
-import { listSquadSubscriberIds } from './subscriptions'
+import { listWorkStreamNotifyUserIds } from '../attention/resolver'
+import { filterUserIdsWithPermission } from '../rbac/permitted-users'
+import { listEnabledUserIds } from '../users/enabled'
 import { createLogger } from '../../lib/infra/logger'
 import { createHash } from 'node:crypto'
 
@@ -233,10 +240,21 @@ function getWorkStreamNextSteps(workStream: WorkStream): string | undefined {
   return typeof value === 'string' && value.trim().length > 0 ? value : undefined
 }
 
-const HUMAN_SUBSCRIBER_EVENTS: ReadonlySet<WorkStreamInboxEvent> = new Set(['review', 'done'])
+// Human-facing lifecycle events. `blocked` is here because a manual wait is a DECISION waiting on a
+// person — the same class of interruption as a review — and a stream can sit blocked for hours
+// while everyone assumes an agent is working.
+const HUMAN_SUBSCRIBER_EVENTS: ReadonlySet<WorkStreamInboxEvent> = new Set(['review', 'blocked', 'done'])
+
+/** Which attention kind decides who hears about an event. */
+const EVENT_ATTENTION_KIND: Record<'review' | 'blocked' | 'done', AttentionKind> = {
+  review: 'decisions',
+  blocked: 'decisions',
+  done: 'progress',
+}
+
 const TERMINAL_REQUESTER_CONTEXT_EVENTS: ReadonlySet<WorkStreamInboxEvent> = new Set(['done', 'canceled'])
 
-// Notify human watchers only for review action and completion. Each persisted user inbox message
+// Notify human watchers only about decisions and completions. Each persisted user inbox message
 // flows through the per-user push pipeline (respecting their notification preferences).
 /**
  * The agent whose action produced a lifecycle event, when one is known.
@@ -263,10 +281,11 @@ function isSelfNotification(recipientAgentId: string, actorAgentId: WorkStreamAc
 }
 
 const PUSH_COPY: Record<
-  'review' | 'done',
+  'review' | 'blocked' | 'done',
   { label: string; fallbackBody: string; interruptionLevel: InboxPushPresentation['interruptionLevel'] }
 > = {
   review: { label: 'Ready for review', fallbackBody: 'Awaiting your review.', interruptionLevel: 'active' },
+  blocked: { label: 'Blocked', fallbackBody: 'Needs your input to continue.', interruptionLevel: 'active' },
   done: { label: 'Completed', fallbackBody: 'Completed without notes.', interruptionLevel: 'passive' },
 }
 
@@ -285,7 +304,7 @@ function clip(text: string, max: number): string {
  */
 function buildWatcherPush(
   workStream: WorkStream,
-  event: 'review' | 'done',
+  event: 'review' | 'blocked' | 'done',
   detail: string | undefined
 ): InboxPushPresentation | undefined {
   const copy = PUSH_COPY[event]
@@ -309,35 +328,56 @@ async function notifyWorkStreamSubscribers(
 
   try {
     const nextSteps = event === 'done' ? getWorkStreamNextSteps(workStream) : undefined
-    // Recipients = explicit work-stream watchers ∪ squad-level watchers of the stream's squad.
-    const [streamWatchers, squadWatchers] = await Promise.all([
-      listWorkStreamSubscriberIds(workStream.id),
-      listSquadSubscriberIds(workStream.squadId),
-    ])
-    const subscriberIds = [...new Set([...streamWatchers, ...squadWatchers])]
+    const kind = EVENT_ATTENTION_KIND[event as 'review' | 'blocked' | 'done']
+    // One bounded query per event: the stream's rows ∪ its squad's rows, precedence resolved per
+    // candidate. Users with no row anywhere default to `show`, which never notifies.
+    const notifyIds = await listWorkStreamNotifyUserIds(workStream.id, workStream.squadId, kind)
+    if (notifyIds.length === 0) return
+    // A notify row outlives the account: a disabled user cannot read the inbox it would land in.
+    const candidateIds = await listEnabledUserIds(notifyIds)
+    if (candidateIds.length === 0) return
+    // Permission first, attention second: a notify row is a preference, never an entitlement. A
+    // subscription that outlived the user's role on the squad must not deliver stream content.
+    // Failure isolation and the fail-closed rule live in the shared helper.
+    const subscriberIds = await filterUserIdsWithPermission(
+      candidateIds,
+      'workstreams:read',
+      workStream.squadId,
+      ({ failed, total, reason }) =>
+        log.error(
+          `Failed to resolve ${failed} of ${total} watcher permission checks for work stream ${workStream.id} (${event}); treating them as not permitted:`,
+          reason
+        )
+    )
     if (subscriberIds.length === 0) return
     const description = workStream.description?.trim() ? workStream.description.slice(0, 200) : undefined
     const detail = event === 'done' ? pushDetail || nextSteps || description : workStream.handoffMessage || description
-    const push = buildWatcherPush(workStream, event as 'review' | 'done', detail ?? undefined)
+    const push = buildWatcherPush(workStream, event as 'review' | 'blocked' | 'done', detail ?? undefined)
     for (const userId of subscriberIds) {
-      await sendDeduped({
-        recipientType: 'user',
-        recipientId: userId,
-        senderType: 'system',
-        wakeEligible: false,
-        subject: `Work Stream ${event}: ${workStreamTitle(workStream)}`,
-        content: message,
-        metadata: {
-          workStreamNumber: workStream.number,
-          workStreamId: workStream.id,
-          squadId: workStream.squadId,
-          event,
-          transitionAt: transitionAt(workStream),
-          ...(target ?? {}),
-          ...(nextSteps ? { nextSteps } : {}),
-          ...(push ? { push } : {}),
-        },
-      })
+      // Per recipient, not per batch: a send that throws (a unique-key race, a transient write
+      // failure) used to abandon every watcher after it in the list, silently and by list order.
+      try {
+        await sendDeduped({
+          recipientType: 'user',
+          recipientId: userId,
+          senderType: 'system',
+          wakeEligible: false,
+          subject: `Work Stream ${event}: ${workStreamTitle(workStream)}`,
+          content: message,
+          metadata: {
+            workStreamNumber: workStream.number,
+            workStreamId: workStream.id,
+            squadId: workStream.squadId,
+            event,
+            transitionAt: transitionAt(workStream),
+            ...(target ?? {}),
+            ...(nextSteps ? { nextSteps } : {}),
+            ...(push ? { push } : {}),
+          },
+        })
+      } catch (error) {
+        log.error(`Failed to notify work stream subscriber ${userId} of ${event}:`, error)
+      }
     }
   } catch (error) {
     log.error(`Failed to notify work stream subscribers of ${event}:`, error)

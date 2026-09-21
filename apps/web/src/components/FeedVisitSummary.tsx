@@ -40,7 +40,7 @@ export function AccountFeedVisit({
   // never as a Needs-you action. Opening the row does not mark anything seen.
   const activity = useActivity()
   const unreadConversations = (activity.activity?.conversations ?? []).filter((row) => row.unreadUpdates > 0)
-  const work = useQuery(queries.squads.activeWorkStreams())
+  const work = useQuery(queries.squads.attentionWorkStreams())
   const [snapshot, setSnapshot] = useState<FeedVisit | null>(null)
   const [dismissed, setDismissed] = useState(false)
   const acknowledged = useRef(false)

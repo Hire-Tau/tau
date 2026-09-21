@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, describe, expect, mock, test } from 'bun:test'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { db, roleAssignments, roles, squads, users } from '../db'
@@ -127,10 +127,26 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
 }
 
 describe('integration routes', () => {
+  // The squad guards resolve their route param, so these need a real squad: a placeholder shorter
+  // than a full id is rejected before the scopes are ever consulted.
+  let squadId: string
+
+  beforeAll(async () => {
+    const [squad] = await db
+      .insert(squads)
+      .values({ name: `integrations-routes-${crypto.randomUUID()}`, purpose: 'route guard fixture' })
+      .returning()
+    squadId = squad.id
+  })
+
+  afterAll(async () => {
+    if (squadId) await db.delete(squads).where(eq(squads.id, squadId))
+  })
+
   test('execution credentials require use permission and never enter cacheable read responses', async () => {
     for (const scope of ['integrations:read', 'integrations:use']) {
       const { app, calls } = createApp({ type: 'system', systemTokenId: 'exec-test', name: 'test', scopes: [scope] })
-      const response = await app.request('/api/squads/squad/integrations/github/execute-environment', {
+      const response = await app.request(`/api/squads/${squadId}/integrations/github/execute-environment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectionId: summary.id }),
@@ -141,7 +157,7 @@ describe('integration routes', () => {
       } else {
         expect(response.status).toBe(200)
         expect(response.headers.get('cache-control')).toBe('no-store')
-        expect(calls.executionEnvironment).toHaveBeenCalledWith('squad', 'github', summary.id)
+        expect(calls.executionEnvironment).toHaveBeenCalledWith(squadId, 'github', summary.id)
         expect(await response.json()).toEqual({ environment: { GH_TOKEN: 'execution-only-token' } })
       }
     }
@@ -155,7 +171,7 @@ describe('integration routes', () => {
       scopes: ['integrations:use'],
     })
     calls.executionEnvironment.mockImplementation(async () => null as never)
-    const response = await app.request('/api/squads/squad/integrations/github/execute-environment', {
+    const response = await app.request(`/api/squads/${squadId}/integrations/github/execute-environment`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: '{}',
@@ -236,7 +252,7 @@ describe('integration routes', () => {
   test('deny before invoking services without an identity', async () => {
     const { app, calls } = createApp()
     expect((await app.request('/api/integrations/connections?provider=bigbrain')).status).toBe(401)
-    expect((await app.request('/api/squads/squad/integrations/bigbrain')).status).toBe(401)
+    expect((await app.request(`/api/squads/${squadId}/integrations/bigbrain`)).status).toBe(401)
     expect(calls.list).not.toHaveBeenCalled()
     expect(calls.selection).not.toHaveBeenCalled()
   })
@@ -513,7 +529,7 @@ describe('integration routes', () => {
       name: 'test',
       scopes: ['integrations:read'],
     })
-    const response = await app.request('/api/squads/squad/integrations/bigbrain')
+    const response = await app.request(`/api/squads/${squadId}/integrations/bigbrain`)
     expect(response.status).toBe(200)
     const text = await response.text()
     expect(JSON.parse(text)).toEqual({

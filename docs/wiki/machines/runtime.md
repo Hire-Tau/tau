@@ -1250,6 +1250,17 @@ box's own `/write` + `/bash`, never root):
   entirely; a changed comfort set (different hash) forces a fresh install. The
   marker is written ONLY after success, so a failed install retries next ensure —
   the same sync-on-every-ensure lesson applied to a minutes-long step.
+- **Both devbox shapes are the user's config.** devbox rewrites `packages` from
+  the seeded list form into its map form (`{"zlib": {"version": "latest",
+  "outputs": ["dev"]}}`) as soon as an agent runs `devbox add … --outputs`. The
+  seeder merges missing comfort packages into whichever shape it finds (a map
+  stays a map — flattening would drop the options) and the box server's
+  `devboxHasPackages` / `prepareDevboxShellEnv` count either shape, so a
+  customized box still reports `devboxReady`. Before this, a map-form file left
+  the box permanently `ready_degraded (devbox_unavailable)` with the marker
+  suppressing every reseed. Each failed setup component now logs one bounded
+  `vm-setup` WARN naming the step and error class — the durable row only keeps
+  the reason code.
 - **Non-fatal.** Unlike file-sync (FATAL — a box missing its CLI/skills/identity is
   broken), seeding is NON-FATAL: a box without the comfort set still works with a
   degraded shell, so a failure logs WARN and the ensure proceeds. `bootstrap.sh`

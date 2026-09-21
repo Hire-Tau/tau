@@ -56,6 +56,7 @@ export const SETTINGS_SECTION_ICONS = {
   machines: CloudIcon,
   'remote-hosts': TerminalIcon,
   system: ActivityIcon,
+  storage: FolderIcon,
   'system-logs': LogsIcon,
   'ops-insights': LightningIcon,
   updates: DownloadIcon,

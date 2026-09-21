@@ -28,9 +28,8 @@ import { listActionableAgentQuestions } from './questions'
 import { listErrorHaltedAgents, errorHaltReason, ERROR_HALT_QUESTION_IDS } from './resume'
 import { WorkStream } from '../../entities/WorkStream'
 import type { Identity } from '../rbac'
-import { listUserWatchedWorkStreamIds } from '../work-streams/subscriptions'
-import { listUserWatchedSquadIds } from '../squad/subscriptions'
-import { evaluatePendingAction } from './pending-action-policy'
+import { EMPTY_USER_ATTENTION, loadUserAttention } from '../attention/resolver'
+import { evaluatePendingAction, loadQuestionWorkStreamOrigins } from './pending-action-policy'
 import { toWaitJson } from '../work-streams/waits'
 
 // Priority: lower number = higher priority
@@ -306,15 +305,22 @@ export async function listPendingActions(): Promise<PendingAction[]> {
 export async function listPendingActionsForIdentity(identity: Identity): Promise<PendingAction[]> {
   identity = (await resolveActingUser(identity)) ?? identity
   const userId = identity.type === 'user' ? identity.userId : null
-  const [watchedWorkStreamIds, watchedSquadIds] = userId
-    ? await Promise.all([listUserWatchedWorkStreamIds(userId), listUserWatchedSquadIds(userId)])
-    : [[], []]
-  const context = {
-    watchedWorkStreamIds: new Set(watchedWorkStreamIds),
-    watchedSquadIds: new Set(watchedSquadIds),
-  }
+  // One attention load per request; every action below resolves precedence against it in memory.
+  const attention = userId ? await loadUserAttention(userId) : EMPTY_USER_ATTENTION
+  const actions = await listPendingActions()
+  // With no work-stream rows every origin resolves to its squad's level, so the policy never asks
+  // for origins and loading them would be pure cost.
+  const questionOrigins =
+    attention.workStreams.size === 0
+      ? undefined
+      : await loadQuestionWorkStreamOrigins(
+          actions
+            .filter((action) => action.type === 'agent-question')
+            .map((action) => (action.data as AgentQuestionActionData).questionId)
+        )
+  const context = { attention, questionOrigins }
   const visible: PendingAction[] = []
-  for (const action of await listPendingActions()) {
+  for (const action of actions) {
     const decision = await evaluatePendingAction(identity, action, context)
     if (decision.visible) {
       if (action.type === 'agent-question') {
