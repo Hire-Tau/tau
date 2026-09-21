@@ -1,3 +1,4 @@
+import { waitFor } from '@testing-library/dom'
 import { expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { acquireDomHarness } from '../test/domHarness'
@@ -224,7 +225,9 @@ for (const status of [403, 404, 409]) {
         )
       })
       await dom.act(async () => {
-        await Bun.sleep(30)
+        await waitFor(() =>
+          expect(dom.window.document.body.textContent).toContain('ambiguous, unavailable, or inaccessible')
+        )
       })
       expect(dom.window.document.body.textContent).toContain('ambiguous, unavailable, or inaccessible')
       expect(dom.window.document.body.textContent).not.toContain('private agent detail')

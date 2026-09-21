@@ -64,6 +64,11 @@ links use `noopener noreferrer`. Clicking an inline control does not activate th
 - Parsing accepts at most 65,536 UTF-16 code units. Larger inputs use complete lines
   inside that prefix, add an ellipsis, and suppress links so an incomplete destination
   cannot become a fabricated URL. A single oversized line may yield only an ellipsis.
+- Token traversal stops at 64 levels or 8,192 visited tokens. If the lexer rejects
+  source (including recursive Markdown below the input cap), or traversal exceeds
+  either budget, discard all partial rich output and emit only bounded literal text
+  from the original source with its literal structural prefix. This path never reads
+  stored summaries and never produces links.
 - Individual destinations are limited to 8,192 UTF-16 code units, with an aggregate
   32,768-unit destination budget per row. Excess destinations become plain labels,
   never partial links. The visible budget also bounds the number of nonempty spans.

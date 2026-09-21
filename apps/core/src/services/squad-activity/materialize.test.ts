@@ -28,6 +28,49 @@ afterEach(async () => {
   }
 })
 describe('Activity materialization', () => {
+  test('deeply nested original source still materializes and repairs idempotently', async () => {
+    const [squad] = await db
+      .insert(squads)
+      .values({ name: `activity-parser-bound-${crypto.randomUUID()}`, purpose: 'test' })
+      .returning()
+    createdSquads.push(squad.id)
+    const [agent] = await db.insert(agents).values({ squadId: squad.id, agentTypeId: 'engineer' }).returning()
+    const [execution] = await db
+      .insert(executions)
+      .values({ agentId: agent.id, status: 'completed', runStartedAt: new Date() })
+      .returning()
+    const [message] = await db
+      .insert(messages)
+      .values({
+        agentId: agent.id,
+        role: 'assistant',
+        content: '>'.repeat(12_000) + 'hello',
+        metadata: { executionId: execution.id },
+      })
+      .returning()
+    const key = { family: 'chat' as const, groupId: execution.id }
+    const result = await materializeSourceGroup(key)
+    expect(result.upserted).toHaveLength(1)
+    const expected = result.upserted[0]
+    expect(expected.summary).toBe(`${'>'.repeat(159)}…`)
+    expect([...expected.summary]).toHaveLength(160)
+    expect(expected.preview.every((span) => !span.href)).toBe(true)
+    await db
+      .update(squadActivity)
+      .set({ preview: [], summary: 'damaged stored summary', payloadHash: 'old' })
+      .where(eq(squadActivity.squadId, squad.id))
+    const repairWindow = {
+      from: new Date(message.createdAt.getTime() - 1000),
+      to: new Date(message.createdAt.getTime() + 1000),
+      projectionPass: false,
+    }
+    expect((await repairSquadActivity(repairWindow)).errors).toBe(0)
+    const [row] = await db.select().from(squadActivity).where(eq(squadActivity.squadId, squad.id))
+    expect(row.preview).toEqual(expected.preview)
+    expect(row.summary).toBe(expected.summary)
+    expect((await materializeSourceGroup(key)).upserted).toEqual([])
+  })
+
   test('rejects wrong and expired maintenance fences inside the projection transaction', async () => {
     const [squad] = await db
       .insert(squads)

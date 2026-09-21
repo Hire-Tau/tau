@@ -6,6 +6,8 @@ import { parseEntityReference, type ActivityPreviewSpan } from '@tau/shared'
 // destination degrades to its authored label, never to a partial URL.
 const MAX_SOURCE = 65_536
 const MAX_DESTINATION = 8_192
+const MAX_DEPTH = 64
+const MAX_TOKENS = 8_192
 
 function safeHref(href: string): string | undefined {
   if (href.length > MAX_DESTINATION) return
@@ -45,8 +47,11 @@ export function activityPreview(
       last.text += text
     else spans.push({ text, ...style })
   }
-  const walk = (tokens: Token[] = [], style: Omit<ActivityPreviewSpan, 'text'> = {}) => {
+  let visited = 0
+  const walk = (tokens: Token[] = [], style: Omit<ActivityPreviewSpan, 'text'> = {}, depth = 0) => {
+    if (depth > MAX_DEPTH) throw new RangeError('Activity preview nesting limit')
     for (const token of tokens) {
+      if (++visited > MAX_TOKENS) throw new RangeError('Activity preview token limit')
       switch (token.type) {
         case 'html':
           break
@@ -56,10 +61,10 @@ export function activityPreview(
           add(' ')
           break
         case 'strong':
-          walk(token.tokens, { ...style, bold: true })
+          walk(token.tokens, { ...style, bold: true }, depth + 1)
           break
         case 'em':
-          walk(token.tokens, { ...style, italic: true })
+          walk(token.tokens, { ...style, italic: true }, depth + 1)
           break
         case 'codespan':
         case 'code':
@@ -67,7 +72,7 @@ export function activityPreview(
           break
         case 'link': {
           const href = value.length <= MAX_SOURCE ? safeHref(decodeHTML(token.href)) : undefined
-          walk(token.tokens, { ...style, ...(href ? { href } : {}) })
+          walk(token.tokens, { ...style, ...(href ? { href } : {}) }, depth + 1)
           break
         }
         case 'image':
@@ -75,19 +80,19 @@ export function activityPreview(
           break
         case 'list':
           for (const item of token.items) {
-            walk(item.tokens, style)
+            walk(item.tokens, style, depth + 1)
             add(' ')
           }
           break
         case 'table':
           for (const row of [token.header, ...token.rows])
             for (const cell of row) {
-              walk(cell.tokens, style)
+              walk(cell.tokens, style, depth + 1)
               add(' ')
             }
           break
         default:
-          if ('tokens' in token && token.tokens) walk(token.tokens as Token[], style)
+          if ('tokens' in token && token.tokens) walk(token.tokens as Token[], style, depth + 1)
           else if ('text' in token) add(token.text as string, style)
       }
       if (['paragraph', 'heading', 'blockquote', 'code', 'list', 'table'].includes(token.type)) add(' ')
@@ -97,7 +102,15 @@ export function activityPreview(
   const bounded = value.slice(0, MAX_SOURCE)
   // Never lex an incomplete source boundary into a fabricated partial URL.
   const source = value.length > MAX_SOURCE ? bounded.slice(0, Math.max(0, bounded.lastIndexOf('\n'))) : bounded
-  walk(marked.lexer(source, { gfm: true }))
+  try {
+    walk(marked.lexer(source, { gfm: true }))
+  } catch {
+    // The lexer may reject adversarial nesting even below MAX_SOURCE. Discard
+    // partial rich output: only literal original-source text survives, with no
+    // URLs or markup interpretation. This is not a stored-summary fallback.
+    spans.length = 0
+    spans.push({ text: `${prefix ? `${prefix} ` : ''}${bounded}`.replace(/\s+/g, ' ').trim() })
+  }
   while (spans.length && !spans.at(-1)!.text.trimEnd()) spans.pop()
   if (spans.length) spans.at(-1)!.text = spans.at(-1)!.text.trimEnd()
   const length = spans.reduce((sum, span) => sum + [...span.text].length, 0)

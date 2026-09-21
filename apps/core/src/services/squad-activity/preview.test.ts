@@ -128,3 +128,42 @@ test('an input safety cutoff never turns a partial multiline destination into a 
   const result = activityPreview(`[label](https://example.com/part\n${'x'.repeat(70_000)})`)
   expect(result.preview.every((span) => !span.href)).toBe(true)
 })
+
+test('deep blockquote parser rejection remains bounded literal source text', () => {
+  const source = '>'.repeat(12_000) + 'hello'
+  const result = activityPreview(source, 160, '[#241 created]')
+  expect(result.summary).toBe(`[#241 created] ${'>'.repeat(144)}…`)
+  expect([...result.summary]).toHaveLength(160)
+  expect(result.preview.every((span) => !span.href && !span.bold && !span.italic && !span.code)).toBe(true)
+})
+
+test('token traversal depth is bounded even when the lexer accepts nested blocks', () => {
+  const source = '> '.repeat(100) + '[label](https://example.com)'
+  const result = activityPreview(source, 512, '[#241 created]')
+  expect(result.summary).toBe(`[#241 created] ${source}`)
+  expect(result.preview.every((span) => !span.href)).toBe(true)
+  expect(activityPreview('[label](https://example.com)').preview).toEqual([
+    { text: 'label', href: 'https://example.com' },
+  ])
+})
+
+test('parser rejection does not prevent chat extraction', async () => {
+  const { extractChatExecution } = await import('./extractors')
+  const [row] = extractChatExecution({
+    squadId: 's',
+    executionId: 'e',
+    agentId: 'a',
+    agentTypeId: 'engineer',
+    messages: [{ id: 'm', role: 'assistant', content: '>'.repeat(12_000) + 'hello', createdAt: new Date() }],
+  })
+  expect(row!.summary).toBe(`${'>'.repeat(159)}…`)
+  expect(row!.preview.every((span) => !span.href)).toBe(true)
+})
+
+test('token traversal budget discards partial rich output rather than emitting partial links', () => {
+  const source = '[first](https://example.com) ' + '*a* '.repeat(4500)
+  const result = activityPreview(source, 160)
+  expect(result.summary.startsWith('[first](https://example.com) *a*')).toBe(true)
+  expect([...result.summary]).toHaveLength(160)
+  expect(result.preview.every((span) => !span.href && !span.italic)).toBe(true)
+})

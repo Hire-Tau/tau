@@ -1,3 +1,4 @@
+import { waitFor } from '@testing-library/dom'
 import { describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -845,7 +846,9 @@ for (const reference of ['abc12345-1234-1234-1234-123456789abc', 'abc12345']) {
       scroller.scrollTop = 400
       await dom.act(async () => {
         ;[...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Review agent')!.click()
-        await Bun.sleep(20)
+      })
+      await dom.act(async () => {
+        await waitFor(() => expect(view.container.textContent).toContain('Close referenced agent'))
       })
       expect(view.container.querySelector('[data-location]')?.textContent).toBe('/squads/tau/activity')
       expect(opened).toContain(`${target.id}:${target.squadId}`)
