@@ -73,3 +73,4 @@ export { workStreamRef, workStreamLabel, workStreamTitle } from './work-stream-r
 export type { StorageFolder, StorageSquad, StorageMachine, StorageSnapshot } from './storage'
 
 export * from './custom-theme'
+export * from './theme-preferences'

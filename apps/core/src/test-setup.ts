@@ -714,6 +714,12 @@ if (schemaCache?.matches()) {
   // Apply them manually so cascade delete/set-null behavior works in tests.
   {
     const fkStatements = [
+      // Match the generated account-preference cascade in schema-push test databases.
+      `DO $$ BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'user_preferences_user_id_users_id_fk') THEN
+        ALTER TABLE "user_preferences" ADD CONSTRAINT "user_preferences_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE cascade;
+      END IF;
+      END $$;`,
       `DO $$ BEGIN
       IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'auth_settings_default_signup_role_id_roles_id_fk') THEN
         ALTER TABLE "auth_settings" ADD CONSTRAINT "auth_settings_default_signup_role_id_roles_id_fk" FOREIGN KEY ("default_signup_role_id") REFERENCES "roles"("id") ON DELETE set null;
