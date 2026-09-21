@@ -308,3 +308,63 @@ test('another tab setting a device override invalidates slow reads without echo 
   expect(remote.writes).toHaveLength(0)
   store.disconnect()
 })
+
+test('failed in-flight PUT cannot resurrect a write invalidated by a newer storage choice', async () => {
+  const local = storage()
+  const store = new ThemeSyncStore(local)
+  const failed = deferred<MyThemePreferences>()
+  const remote = server()
+  const writes: ThemePreference[] = []
+  store.connect({
+    ...remote.api,
+    updateMine: async (input) => {
+      writes.push(input.theme)
+      if (writes.length === 1) return failed.promise
+      return remote.api.updateMine(input)
+    },
+  })
+  await store.refresh()
+  store.change(ember)
+  expect(writes).toEqual([ember])
+
+  // Another tab has published Harbor and persisted its deliberate device choice.
+  remote.set(harbor)
+  local.setItem(LOCAL_OVERRIDE_KEY, '1')
+  local.setItem('tau-theme-id', 'harbor')
+  local.setItem('tau-appearance', 'dark')
+  store.reloadFromStorage()
+  const refresh = store.refresh()
+  failed.reject(new Error('old Ember request failed'))
+  await refresh
+  await store.refresh()
+
+  expect(writes).toEqual([ember])
+  expect(store.getSnapshot().selection).toEqual({ themeId: 'harbor', appearance: 'dark' })
+  expect(store.getSnapshot().localOverride).toBe(true)
+  expect((await remote.api.getMine()).theme).toEqual(harbor)
+  store.disconnect()
+})
+
+test('failed in-flight PUT retries on reconnect when the deliberate intent is still current', async () => {
+  const store = new ThemeSyncStore(storage())
+  const failed = deferred<MyThemePreferences>()
+  const remote = server()
+  const writes: ThemePreference[] = []
+  store.connect({
+    ...remote.api,
+    updateMine: async (input) => {
+      writes.push(input.theme)
+      if (writes.length === 1) return failed.promise
+      return remote.api.updateMine(input)
+    },
+  })
+  await store.refresh()
+  store.change(ember)
+  const reconnect = store.refresh()
+  failed.reject(new Error('connection dropped'))
+  await reconnect
+  expect(writes).toEqual([ember, ember])
+  expect((await remote.api.getMine()).theme).toEqual(ember)
+  expect(store.getSnapshot().selection).toEqual({ themeId: 'ember', appearance: 'system' })
+  store.disconnect()
+})

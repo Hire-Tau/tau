@@ -138,13 +138,17 @@ export class ThemeSyncStore {
     session.writing = (async () => {
       while (this.alive(session) && session.pending) {
         const theme = session.pending
+        const revision = this.revision
         session.pending = null
         try {
           await api.updateMine({ expectedUserId: session.userId!, theme }, session.abort.signal)
         } catch {
           // Keep only the latest unsent choice, within this session. Reconnect/focus
           // retries it; neither login nor reload uploads an old device/account cache.
-          if (this.alive(session) && this.state.localOverride) session.pending ??= theme
+          // Storage replacement/adoption cancels the original intent even when
+          // the replacement is itself an override. Never resurrect that old PUT;
+          // a newer same-tab choice is already in pending and stays there.
+          if (this.alive(session) && this.state.localOverride && revision === this.revision) session.pending ??= theme
           break
         }
       }

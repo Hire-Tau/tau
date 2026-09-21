@@ -36,7 +36,9 @@ row is **no account choice**, not a default value to upload.
   session only**. Login/reload never uploads an old local cache automatically.
   Across devices the last successful whole-preference write wins on the account;
   each device with an override keeps its own choice. Storage events also honor
-  a deliberate choice made in another tab, without echoing an upload.
+  a deliberate choice made in another tab, without echoing an upload. A failed
+  in-flight write may retry only while its captured choice revision is current;
+  it cannot revive an intent canceled by another tab or the adopt action.
 - Logout/account transitions abort requests and discard remote state and queued
   writes. Old responses cannot apply to the next session. A theme inherited during
   that session is cleared on logout; an explicit device override remains, including
