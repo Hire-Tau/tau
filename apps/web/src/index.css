@@ -89,6 +89,145 @@
     /* iOS PWA status bar scrim: the strip is simply the header surface; the
        OS picks status-text contrast from color-scheme/theme-color. */
     --color-status-bar-scrim: var(--color-bg-surface);
+    /* Semantic status roles: legacy presentation and distinct badge shades. */
+    --status-progress-fg: 29 78 216;
+    --status-progress-solid: 59 130 246;
+    --status-progress-surface: 239 246 255;
+    --opacity-status-progress-surface: 1;
+    --status-progress-border: 191 219 254;
+    --status-progress-badge-fg: 30 64 175;
+    --status-progress-badge-surface: 219 234 254;
+    --opacity-status-progress-badge-surface: 1;
+    --status-progress-badge-hover: 191 219 254;
+    --opacity-status-progress-badge-hover: 1;
+    --status-queue-fg: 14 116 144;
+    --status-queue-solid: 6 182 212;
+    --status-queue-surface: 236 254 255;
+    --opacity-status-queue-surface: 1;
+    --status-queue-border: 165 243 252;
+    --status-queue-badge-fg: 21 94 117;
+    --status-queue-badge-surface: 207 250 254;
+    --opacity-status-queue-badge-surface: 1;
+    --status-queue-badge-hover: 165 243 252;
+    --opacity-status-queue-badge-hover: 1;
+    --status-review-fg: 161 98 7;
+    --status-review-solid: 234 179 8;
+    --status-review-surface: 254 252 232;
+    --opacity-status-review-surface: 1;
+    --status-review-border: 254 240 138;
+    --status-review-badge-fg: 133 77 14;
+    --status-review-badge-surface: 254 249 195;
+    --opacity-status-review-badge-surface: 1;
+    --status-review-badge-hover: 254 240 138;
+    --opacity-status-review-badge-hover: 1;
+    --status-human-wait-fg: 126 34 206;
+    --status-human-wait-solid: 168 85 247;
+    --status-human-wait-surface: 250 245 255;
+    --opacity-status-human-wait-surface: 1;
+    --status-human-wait-border: 233 213 255;
+    --status-human-wait-badge-fg: 107 33 168;
+    --status-human-wait-badge-surface: 243 232 255;
+    --opacity-status-human-wait-badge-surface: 1;
+    --status-human-wait-badge-hover: 233 213 255;
+    --opacity-status-human-wait-badge-hover: 1;
+    --status-external-wait-fg: 194 65 12;
+    --status-external-wait-solid: 249 115 22;
+    --status-external-wait-surface: 255 247 237;
+    --opacity-status-external-wait-surface: 1;
+    --status-external-wait-border: 254 215 170;
+    --status-external-wait-badge-fg: 154 52 18;
+    --status-external-wait-badge-surface: 255 237 213;
+    --opacity-status-external-wait-badge-surface: 1;
+    --status-external-wait-badge-hover: 254 215 170;
+    --opacity-status-external-wait-badge-hover: 1;
+    --status-attention-fg: 180 83 9;
+    --status-attention-solid: 245 158 11;
+    --status-attention-surface: 255 251 235;
+    --opacity-status-attention-surface: 1;
+    --status-attention-border: 253 230 138;
+    --status-attention-badge-fg: 146 64 14;
+    --status-attention-badge-surface: 254 243 199;
+    --opacity-status-attention-badge-surface: 1;
+    --status-attention-badge-hover: 253 230 138;
+    --opacity-status-attention-badge-hover: 1;
+    --status-danger-fg: 185 28 28;
+    --status-danger-solid: 239 68 68;
+    --status-danger-surface: 254 242 242;
+    --opacity-status-danger-surface: 1;
+    --status-danger-border: 254 202 202;
+    --status-danger-badge-fg: 153 27 27;
+    --status-danger-badge-surface: 254 226 226;
+    --opacity-status-danger-badge-surface: 1;
+    --status-danger-badge-hover: 254 202 202;
+    --opacity-status-danger-badge-hover: 1;
+    --status-success-fg: 21 128 61;
+    --status-success-solid: 34 197 94;
+    --status-success-surface: 240 253 244;
+    --opacity-status-success-surface: 1;
+    --status-success-border: 187 247 208;
+    --status-success-badge-fg: 22 101 52;
+    --status-success-badge-surface: 220 252 231;
+    --opacity-status-success-badge-surface: 1;
+    --status-success-badge-hover: 187 247 208;
+    --opacity-status-success-badge-hover: 1;
+    --status-neutral-fg: 55 65 81;
+    --status-neutral-solid: 107 114 128;
+    --status-neutral-surface: 249 250 251;
+    --opacity-status-neutral-surface: 1;
+    --status-neutral-border: 229 231 235;
+    --status-neutral-badge-fg: 31 41 55;
+    --status-neutral-badge-surface: 243 244 246;
+    --opacity-status-neutral-badge-surface: 1;
+    --status-neutral-badge-hover: 229 231 235;
+    --opacity-status-neutral-badge-hover: 1;
+
+    /* Used decorative badges: identity/mode, not status. */
+    --badge-accent-1-fg: 107 33 168;
+    --badge-accent-1-surface: 243 232 255;
+    --opacity-badge-accent-1-surface: 1;
+    --badge-accent-1-hover: 233 213 255;
+    --opacity-badge-accent-1-hover: 1;
+    --badge-accent-2-fg: 30 64 175;
+    --badge-accent-2-surface: 219 234 254;
+    --opacity-badge-accent-2-surface: 1;
+    --badge-accent-2-hover: 191 219 254;
+    --opacity-badge-accent-2-hover: 1;
+    --badge-accent-3-fg: 22 101 52;
+    --badge-accent-3-surface: 220 252 231;
+    --opacity-badge-accent-3-surface: 1;
+    --badge-accent-3-hover: 187 247 208;
+    --opacity-badge-accent-3-hover: 1;
+    --badge-accent-4-fg: 91 33 182;
+    --badge-accent-4-surface: 237 233 254;
+    --opacity-badge-accent-4-surface: 1;
+    --badge-accent-4-hover: 221 214 254;
+    --opacity-badge-accent-4-hover: 1;
+    --badge-accent-5-fg: 154 52 18;
+    --badge-accent-5-surface: 255 237 213;
+    --opacity-badge-accent-5-surface: 1;
+    --badge-accent-5-hover: 254 215 170;
+    --opacity-badge-accent-5-hover: 1;
+    --badge-accent-6-fg: 146 64 14;
+    --badge-accent-6-surface: 254 243 199;
+    --opacity-badge-accent-6-surface: 1;
+    --badge-accent-6-hover: 253 230 138;
+    --opacity-badge-accent-6-hover: 1;
+    --badge-accent-7-fg: 21 94 117;
+    --badge-accent-7-surface: 207 250 254;
+    --opacity-badge-accent-7-surface: 1;
+    --badge-accent-7-hover: 165 243 252;
+    --opacity-badge-accent-7-hover: 1;
+
+    /* Agent-type identity and miscellaneous chrome. */
+    --agent-type-1-fg: 109 40 217;
+    --agent-type-2-fg: 29 78 216;
+    --agent-type-3-fg: 4 120 87;
+    --agent-type-4-fg: 146 64 14;
+    --agent-type-5-fg: 190 18 60;
+    --agent-type-6-fg: 21 94 117;
+    --scrollbar-thumb: 156 163 175 / 0.5;
+    --on-accent-fg: 255 255 255;
+    --checkbox-check: 255 255 255;
   }
 
   .dark {
@@ -142,6 +281,145 @@
     /* The scrim IS the header surface, so the translucent iOS status bar
        region blends seamlessly with the header (no seam, no color drift). */
     --color-status-bar-scrim: var(--color-bg-surface);
+    /* Semantic status roles: legacy presentation and distinct badge shades. */
+    --status-progress-fg: 96 165 250;
+    --status-progress-solid: 59 130 246;
+    --status-progress-surface: 30 58 138;
+    --opacity-status-progress-surface: 0.2;
+    --status-progress-border: 30 64 175;
+    --status-progress-badge-fg: 191 219 254;
+    --status-progress-badge-surface: 30 58 138;
+    --opacity-status-progress-badge-surface: 0.3;
+    --status-progress-badge-hover: 30 58 138;
+    --opacity-status-progress-badge-hover: 0.7;
+    --status-queue-fg: 34 211 238;
+    --status-queue-solid: 6 182 212;
+    --status-queue-surface: 22 78 99;
+    --opacity-status-queue-surface: 0.2;
+    --status-queue-border: 21 94 117;
+    --status-queue-badge-fg: 165 243 252;
+    --status-queue-badge-surface: 22 78 99;
+    --opacity-status-queue-badge-surface: 0.3;
+    --status-queue-badge-hover: 22 78 99;
+    --opacity-status-queue-badge-hover: 0.7;
+    --status-review-fg: 250 204 21;
+    --status-review-solid: 234 179 8;
+    --status-review-surface: 113 63 18;
+    --opacity-status-review-surface: 0.2;
+    --status-review-border: 133 77 14;
+    --status-review-badge-fg: 254 240 138;
+    --status-review-badge-surface: 113 63 18;
+    --opacity-status-review-badge-surface: 0.3;
+    --status-review-badge-hover: 113 63 18;
+    --opacity-status-review-badge-hover: 0.7;
+    --status-human-wait-fg: 192 132 252;
+    --status-human-wait-solid: 168 85 247;
+    --status-human-wait-surface: 88 28 135;
+    --opacity-status-human-wait-surface: 0.2;
+    --status-human-wait-border: 107 33 168;
+    --status-human-wait-badge-fg: 233 213 255;
+    --status-human-wait-badge-surface: 88 28 135;
+    --opacity-status-human-wait-badge-surface: 0.3;
+    --status-human-wait-badge-hover: 88 28 135;
+    --opacity-status-human-wait-badge-hover: 0.7;
+    --status-external-wait-fg: 251 146 60;
+    --status-external-wait-solid: 249 115 22;
+    --status-external-wait-surface: 124 45 18;
+    --opacity-status-external-wait-surface: 0.2;
+    --status-external-wait-border: 154 52 18;
+    --status-external-wait-badge-fg: 254 215 170;
+    --status-external-wait-badge-surface: 124 45 18;
+    --opacity-status-external-wait-badge-surface: 0.3;
+    --status-external-wait-badge-hover: 124 45 18;
+    --opacity-status-external-wait-badge-hover: 0.7;
+    --status-attention-fg: 251 191 36;
+    --status-attention-solid: 245 158 11;
+    --status-attention-surface: 120 53 15;
+    --opacity-status-attention-surface: 0.2;
+    --status-attention-border: 146 64 14;
+    --status-attention-badge-fg: 253 230 138;
+    --status-attention-badge-surface: 120 53 15;
+    --opacity-status-attention-badge-surface: 0.3;
+    --status-attention-badge-hover: 120 53 15;
+    --opacity-status-attention-badge-hover: 0.7;
+    --status-danger-fg: 248 113 113;
+    --status-danger-solid: 239 68 68;
+    --status-danger-surface: 127 29 29;
+    --opacity-status-danger-surface: 0.2;
+    --status-danger-border: 153 27 27;
+    --status-danger-badge-fg: 254 202 202;
+    --status-danger-badge-surface: 127 29 29;
+    --opacity-status-danger-badge-surface: 0.3;
+    --status-danger-badge-hover: 127 29 29;
+    --opacity-status-danger-badge-hover: 0.7;
+    --status-success-fg: 74 222 128;
+    --status-success-solid: 34 197 94;
+    --status-success-surface: 20 83 45;
+    --opacity-status-success-surface: 0.2;
+    --status-success-border: 22 101 52;
+    --status-success-badge-fg: 187 247 208;
+    --status-success-badge-surface: 20 83 45;
+    --opacity-status-success-badge-surface: 0.3;
+    --status-success-badge-hover: 20 83 45;
+    --opacity-status-success-badge-hover: 0.7;
+    --status-neutral-fg: 156 163 175;
+    --status-neutral-solid: 107 114 128;
+    --status-neutral-surface: 17 24 39;
+    --opacity-status-neutral-surface: 0.2;
+    --status-neutral-border: 31 41 55;
+    --status-neutral-badge-fg: 229 231 235;
+    --status-neutral-badge-surface: 31 41 55;
+    --opacity-status-neutral-badge-surface: 1;
+    --status-neutral-badge-hover: 55 65 81;
+    --opacity-status-neutral-badge-hover: 1;
+
+    /* Used decorative badges: identity/mode, not status. */
+    --badge-accent-1-fg: 233 213 255;
+    --badge-accent-1-surface: 88 28 135;
+    --opacity-badge-accent-1-surface: 0.3;
+    --badge-accent-1-hover: 88 28 135;
+    --opacity-badge-accent-1-hover: 0.7;
+    --badge-accent-2-fg: 191 219 254;
+    --badge-accent-2-surface: 30 58 138;
+    --opacity-badge-accent-2-surface: 0.3;
+    --badge-accent-2-hover: 30 58 138;
+    --opacity-badge-accent-2-hover: 0.7;
+    --badge-accent-3-fg: 187 247 208;
+    --badge-accent-3-surface: 20 83 45;
+    --opacity-badge-accent-3-surface: 0.3;
+    --badge-accent-3-hover: 20 83 45;
+    --opacity-badge-accent-3-hover: 0.7;
+    --badge-accent-4-fg: 221 214 254;
+    --badge-accent-4-surface: 76 29 149;
+    --opacity-badge-accent-4-surface: 0.3;
+    --badge-accent-4-hover: 76 29 149;
+    --opacity-badge-accent-4-hover: 0.7;
+    --badge-accent-5-fg: 254 215 170;
+    --badge-accent-5-surface: 124 45 18;
+    --opacity-badge-accent-5-surface: 0.3;
+    --badge-accent-5-hover: 124 45 18;
+    --opacity-badge-accent-5-hover: 0.7;
+    --badge-accent-6-fg: 253 230 138;
+    --badge-accent-6-surface: 120 53 15;
+    --opacity-badge-accent-6-surface: 0.3;
+    --badge-accent-6-hover: 120 53 15;
+    --opacity-badge-accent-6-hover: 0.7;
+    --badge-accent-7-fg: 165 243 252;
+    --badge-accent-7-surface: 22 78 99;
+    --opacity-badge-accent-7-surface: 0.3;
+    --badge-accent-7-hover: 22 78 99;
+    --opacity-badge-accent-7-hover: 0.7;
+
+    /* Agent-type identity and miscellaneous chrome. */
+    --agent-type-1-fg: 196 181 253;
+    --agent-type-2-fg: 147 197 253;
+    --agent-type-3-fg: 110 231 183;
+    --agent-type-4-fg: 252 211 77;
+    --agent-type-5-fg: 253 164 175;
+    --agent-type-6-fg: 103 232 249;
+    --scrollbar-thumb: 156 163 175 / 0.5;
+    --on-accent-fg: 255 255 255;
+    --checkbox-check: 255 255 255;
   }
 }
 
@@ -180,6 +458,14 @@
       min-height: 1.5rem;
     }
   }
+}
+
+/* Selection uses the existing soft interaction surface and readable primary text.
+   The selection-border token remains for bordered selection UI: ::selection does
+   not support borders. This intentionally replaces the browser's default look. */
+::selection {
+  background-color: rgb(var(--color-selection-bg));
+  color: rgb(var(--color-text-primary));
 }
 
 /* A shared visible focus treatment for keyboard navigation. */
@@ -240,7 +526,7 @@
     top: 1px;
     width: 5px;
     height: 9px;
-    border: solid white;
+    border: solid rgb(var(--checkbox-check));
     border-width: 0 2px 2px 0;
     transform: rotate(45deg);
   }
@@ -271,7 +557,7 @@
   }
 
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: rgba(156, 163, 175, 0.5);
+    background-color: rgb(var(--scrollbar-thumb));
     border-radius: 3px;
   }
 }

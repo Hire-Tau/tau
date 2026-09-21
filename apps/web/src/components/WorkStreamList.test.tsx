@@ -686,7 +686,7 @@ describe('WorkStreamList', () => {
 
     expect(html).toContain('>Engineer</a>')
     expect(html).toContain('href="/squads/squad-1/agents?agent=agent-1"')
-    expect(html).toContain('bg-purple-100')
+    expect(html).toContain('bg-badge-accent-1-surface')
     expect(html).toContain('data-testid="work-stream-mobile-metadata"')
     expect(html).toContain('>Engineer</span>')
     expect(html).toContain('>In Progress</span>')
@@ -715,8 +715,8 @@ describe('WorkStreamList', () => {
     expect(html).toContain('agent=agent-2')
     expect(html.match(/aria-label="Agent activity: Idle"/g)).toHaveLength(1)
     expect(html.match(/aria-label="Agent activity: Working"/g)).toHaveLength(1)
-    expect(html).toContain('bg-gray-500')
-    expect(html).toContain('bg-blue-500')
+    expect(html).toContain('bg-status-neutral-solid')
+    expect(html).toContain('bg-status-progress-solid')
   })
 
   test('renders squad badge as a link to the squad detail page', () => {
@@ -774,9 +774,9 @@ describe('WorkStreamList', () => {
 
     expect(html).toContain('Boosted work')
     const boostedBadge = html.match(/<span[^>]*title="low \(effective high via Ship it\)"[^>]*>/)?.[0]
-    expect(boostedBadge).toContain('bg-orange-100')
+    expect(boostedBadge).toContain('bg-status-external-wait-badge-surface')
     expect(boostedBadge).not.toContain('opacity-60')
-    expect(boostedBadge).not.toContain('bg-gray-100')
+    expect(boostedBadge).not.toContain('bg-status-neutral-badge-surface')
     expect(html).toContain('>↑ high</span>')
   })
 
@@ -798,8 +798,8 @@ describe('WorkStreamList', () => {
 
     const badge = html.match(/<span[^>]*title="In Review"[^>]*>In Review<\/span>/)?.[0]
     expect(badge).toBeDefined()
-    expect(badge).toContain('bg-yellow-100')
-    expect(badge).not.toContain('bg-blue-100')
+    expect(badge).toContain('bg-status-review-badge-surface')
+    expect(badge).not.toContain('bg-status-progress-badge-surface')
     expect(html).not.toContain('title="Active"')
   })
 
@@ -809,8 +809,8 @@ describe('WorkStreamList', () => {
     ])
 
     expect(html).toContain('title="Active"')
-    expect(html).toContain('bg-blue-100')
-    expect(html).toContain('text-blue-700')
+    expect(html).toContain('bg-status-progress-badge-surface')
+    expect(html).toContain('text-status-progress-fg')
     expect(html).toContain('>●</span>')
     expect(html).not.toContain('title="Active">○')
     expect(html).not.toContain('bg-placeholder')
@@ -1108,7 +1108,7 @@ describe('WorkStreamDetailModal', async () => {
 
     expect(html).toContain('aria-label="Open dependency Blocking stream"')
     expect(html).toContain('aria-label="Blocked status"')
-    expect(html).toContain('bg-red-500')
+    expect(html).toContain('bg-status-danger-solid')
     expect(html).not.toContain('aria-label="Active status"')
     expect(html).toContain('>Blocking stream</button>')
   })

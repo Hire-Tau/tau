@@ -272,8 +272,8 @@ describe('ChatPage scope filter', () => {
 
     const html = renderChatIndexPage()
 
-    expect(html).toMatch(/class="[^"]*bg-accent text-white[^"]*">All<\/button>/)
-    expect(html).not.toMatch(/class="[^"]*bg-accent text-white[^"]*">System<\/button>/)
+    expect(html).toMatch(/class="[^"]*bg-accent text-on-accent[^"]*">All<\/button>/)
+    expect(html).not.toMatch(/class="[^"]*bg-accent text-on-accent[^"]*">System<\/button>/)
   })
 
   test('respects an explicit System scope query param', () => {
@@ -285,7 +285,7 @@ describe('ChatPage scope filter', () => {
 
     const html = renderChatIndexPage('?scope=system-manager')
 
-    expect(html).toMatch(/class="[^"]*bg-accent text-white[^"]*">System<\/button>/)
+    expect(html).toMatch(/class="[^"]*bg-accent text-on-accent[^"]*">System<\/button>/)
   })
 })
 

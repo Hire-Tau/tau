@@ -52,7 +52,7 @@ export function PairingCode({
       {IS_MOBILE && (
         <a
           href={pairing.deepLink}
-          className="px-3 py-1.5 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-hover"
+          className="px-3 py-1.5 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover"
         >
           Open in the Tau app
         </a>

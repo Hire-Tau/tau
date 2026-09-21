@@ -78,7 +78,7 @@ export function UsersSection() {
         </div>
         <button
           onClick={() => setShowInvite(!showInvite)}
-          className="tau-button tau-button-primary px-4 py-2 bg-accent text-white rounded-md text-sm font-medium hover:bg-accent-hover"
+          className="tau-button tau-button-primary px-4 py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover"
         >
           Invite User
         </button>
@@ -399,7 +399,7 @@ function UserRow({
                 <button
                   onClick={() => assignMutation.mutate()}
                   disabled={!assignRoleId || assignMutation.isPending || (assignScope === 'squad' && !assignSquadId)}
-                  className="tau-button tau-button-primary text-xs bg-accent text-white px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+                  className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
                 >
                   {assignMutation.isPending ? 'Assigning...' : 'Assign'}
                 </button>

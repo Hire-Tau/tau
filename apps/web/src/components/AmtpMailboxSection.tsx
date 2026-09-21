@@ -124,7 +124,7 @@ export function AmtpMailboxSection({ agentId, squadId }: AmtpMailboxSectionProps
                   <button
                     type="submit"
                     disabled={!handle || isBusy}
-                    className="tau-button tau-button-primary rounded bg-accent px-2 py-0.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+                    className="tau-button tau-button-primary rounded bg-accent px-2 py-0.5 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50"
                   >
                     Register
                   </button>

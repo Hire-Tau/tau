@@ -6,7 +6,7 @@
  * PD-4/PD-5/PD-6 in `artifacts/color-theme-investigation/decisions.md`).
  *
  * This module is the single source of truth for:
- * - the names of every themeable color token (active chrome tokens today, plus
+ * - the names of every themeable color token (active chrome and semantic tokens today, plus
  *   reserved name-only entries for the families later phases activate), and
  * - the theme model: a registry of themes with `kind: 'dual' | 'unified'`,
  *   resolution of (themeId, appearance) to a concrete variant, and the
@@ -15,7 +15,7 @@
  * It is deliberately platform-neutral and dependency-free: `packages/shared`
  * is imported by the browser bundle, so nothing here may touch node builtins.
  * Status *semantics* stay in `status-presentation.ts`; this file only adds the
- * color-token vocabulary those roles will resolve to in later phases.
+ * color-token vocabulary used by platform adapters.
  */
 
 // ---------------------------------------------------------------------------
@@ -142,12 +142,16 @@ const STATUS_ROLES: readonly string[] = [
   'neutral',
 ]
 
-/** Role × slot grid for the planned status token family (report §4.2). */
-const STATUS_TOKENS: readonly string[] = STATUS_ROLES.flatMap((role) => [
+/** Role × slot grid for the status token family (report §4.2). */
+export const STATUS_TOKENS: readonly string[] = STATUS_ROLES.flatMap((role) => [
   `--status-${role}-fg`,
   `--status-${role}-solid`,
   `--status-${role}-surface`,
   `--status-${role}-border`,
+  // Badges historically use distinct shades, retained for exact visual parity.
+  `--status-${role}-badge-fg`,
+  `--status-${role}-badge-surface`,
+  `--status-${role}-badge-hover`,
 ])
 
 /** Terminal 16-color ANSI slots shared by the terminal and ANSI families. */
@@ -162,15 +166,14 @@ export const THEME_TOKEN_FAMILIES: readonly TokenFamilyDefinition[] = [
   },
   {
     family: 'status',
-    description:
-      'Planned (phase 2): one fg/solid/surface/border set per status role; themes restyle roles only as a complete set.',
-    status: 'planned',
+    description: 'One complete fg/solid/surface/border and badge-fg/surface/hover set per status role.',
+    status: 'active',
     tokens: STATUS_TOKENS,
   },
   {
     family: 'agent-type',
-    description: 'Planned (phase 2): agent-type identity palette, per theme variant.',
-    status: 'planned',
+    description: 'Agent-type identity palette, per theme variant.',
+    status: 'active',
     tokens: [
       '--agent-type-1-fg',
       '--agent-type-2-fg',
@@ -179,6 +182,14 @@ export const THEME_TOKEN_FAMILIES: readonly TokenFamilyDefinition[] = [
       '--agent-type-5-fg',
       '--agent-type-6-fg',
     ],
+  },
+  {
+    family: 'badge-decoration',
+    description: 'Seven used decorative accent palettes, independent of status meaning (appearance compatibility).',
+    status: 'active',
+    tokens: Array.from({ length: 7 }, (_, i) =>
+      ['fg', 'surface', 'hover'].map((slot) => `--badge-accent-${i + 1}-${slot}`)
+    ).flat(),
   },
   {
     family: 'syntax',
@@ -248,8 +259,8 @@ export const THEME_TOKEN_FAMILIES: readonly TokenFamilyDefinition[] = [
   },
   {
     family: 'misc-chrome',
-    description: 'Planned (phase 2): scrollbar thumb, text on accent fills, checkbox check glyph.',
-    status: 'planned',
+    description: 'Scrollbar thumb, text on accent fills, checkbox check glyph.',
+    status: 'active',
     tokens: ['--scrollbar-thumb', '--on-accent-fg', '--checkbox-check'],
   },
   {
@@ -305,6 +316,19 @@ export function validateThemeTokenSet(defined: Iterable<string>): TokenSetValida
   const definedSet = new Set(defined)
   const missing = [...required].filter((name) => !definedSet.has(name))
   const unexpected = [...definedSet].filter((name) => !required.has(name))
+  return { ok: missing.length === 0 && unexpected.length === 0, missing, unexpected }
+}
+
+/**
+ * Partial custom overrides may inherit other families, but status is atomic:
+ * touching any role requires the entire role/slot grid, including badge shades.
+ * This is a name/completeness check; color-value validation belongs to the importer.
+ */
+export function validateThemeTokenOverrides(defined: Iterable<string>): TokenSetValidation {
+  const names = new Set(defined)
+  const active = new Set(ACTIVE_THEME_TOKENS)
+  const missing = STATUS_TOKENS.some((name) => names.has(name)) ? STATUS_TOKENS.filter((name) => !names.has(name)) : []
+  const unexpected = [...names].filter((name) => !active.has(name))
   return { ok: missing.length === 0 && unexpected.length === 0, missing, unexpected }
 }
 

@@ -221,7 +221,7 @@ export function NotionIntegrationSettings({
       {canWrite && settings?.configured && (
         <button
           type="button"
-          className="tau-button tau-button-primary mt-3 rounded bg-accent px-3 py-2 text-sm text-white"
+          className="tau-button tau-button-primary mt-3 rounded bg-accent px-3 py-2 text-sm text-on-accent"
           disabled={authorize.isPending}
           onClick={() => authorize.mutate(undefined)}
         >

@@ -37,7 +37,7 @@ export function WorkStreamStatusBadges({
       )}
       {parked && (
         <Badge
-          color="gray"
+          color="neutral"
           title="This work stream has released its squad concurrency slot. It can run again once its blockers or pause are cleared and capacity is available."
         >
           Parked

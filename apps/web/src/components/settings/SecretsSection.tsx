@@ -454,7 +454,7 @@ function SecretRow({
             <button
               onClick={() => handleSave()}
               disabled={!value || saveMutation.isPending}
-              className="tau-button tau-button-primary inline-flex items-center gap-1.5 text-xs bg-accent text-white px-3 py-1 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+              className="tau-button tau-button-primary inline-flex items-center gap-1.5 text-xs bg-accent text-on-accent px-3 py-1 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
             >
               {saveMutation.isPending && validated && (
                 <span className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full" />
