@@ -181,6 +181,43 @@
     --status-neutral-badge-hover: 229 231 235;
     --opacity-status-neutral-badge-hover: 1;
 
+    /* Graph scenes stay dark in both Tau appearances. Links are contrast-corrected
+       (see docs/theme/graph-colors.md); all other graph/chart colors retain parity. */
+    --graph-bg: 17 24 39;
+    --graph-loading-bg: 15 23 42;
+    --graph-label: 255 255 255;
+    --graph-label-muted: 255 255 255 / 0.5;
+    --graph-node-border: 255 255 255 / 0.35;
+    --graph-node-selected: 99 102 241;
+    --graph-node-selected-3d: 255 255 255;
+    --graph-node-active: var(--status-success-solid);
+    --graph-node-paused: var(--status-attention-solid);
+    --graph-node-archived: var(--status-neutral-solid);
+    --graph-link-1: var(--status-neutral-solid);
+    --graph-link-2: var(--status-progress-solid);
+    --graph-link-3: 16 185 129;
+    --graph-link-4: 255 255 255 / 0.4;
+    --graph-link-5: 255 255 255 / 0.4;
+    --graph-link-6: var(--status-human-wait-solid);
+    --graph-legend-idle: 156 163 175;
+    --graph-legend-paused: var(--status-review-solid);
+    /* Vega / Vega-Lite's legacy defaults (authored specs always win). */
+    --graph-chart-bg: 255 255 255;
+    --graph-chart-fg: 0 0 0;
+    --graph-chart-mark: 76 120 168;
+    --graph-chart-axis: 136 136 136;
+    --graph-chart-grid: 221 221 221;
+    --graph-chart-category-1: 76 120 168;
+    --graph-chart-category-2: 245 133 24;
+    --graph-chart-category-3: 228 87 86;
+    --graph-chart-category-4: 114 183 178;
+    --graph-chart-category-5: 84 162 75;
+    --graph-chart-category-6: 238 202 59;
+    --graph-chart-category-7: 178 121 162;
+    --graph-chart-category-8: 255 157 166;
+    --graph-chart-category-9: 157 117 93;
+    --graph-chart-category-10: 186 176 172;
+
     /* Used decorative badges: identity/mode, not status. */
     --badge-accent-1-fg: 107 33 168;
     --badge-accent-1-surface: 243 232 255;
@@ -462,6 +499,43 @@
     --opacity-status-neutral-badge-surface: 1;
     --status-neutral-badge-hover: 55 65 81;
     --opacity-status-neutral-badge-hover: 1;
+
+    /* Graph scenes stay dark in both Tau appearances. Links are contrast-corrected
+       (see docs/theme/graph-colors.md); all other graph/chart colors retain parity. */
+    --graph-bg: 17 24 39;
+    --graph-loading-bg: 15 23 42;
+    --graph-label: 255 255 255;
+    --graph-label-muted: 255 255 255 / 0.5;
+    --graph-node-border: 255 255 255 / 0.35;
+    --graph-node-selected: 99 102 241;
+    --graph-node-selected-3d: 255 255 255;
+    --graph-node-active: var(--status-success-solid);
+    --graph-node-paused: var(--status-attention-solid);
+    --graph-node-archived: var(--status-neutral-solid);
+    --graph-link-1: var(--status-neutral-solid);
+    --graph-link-2: var(--status-progress-solid);
+    --graph-link-3: 16 185 129;
+    --graph-link-4: 255 255 255 / 0.4;
+    --graph-link-5: 255 255 255 / 0.4;
+    --graph-link-6: var(--status-human-wait-solid);
+    --graph-legend-idle: 156 163 175;
+    --graph-legend-paused: var(--status-review-solid);
+    /* Vega / Vega-Lite's legacy defaults (authored specs always win). */
+    --graph-chart-bg: 255 255 255;
+    --graph-chart-fg: 0 0 0;
+    --graph-chart-mark: 76 120 168;
+    --graph-chart-axis: 136 136 136;
+    --graph-chart-grid: 221 221 221;
+    --graph-chart-category-1: 76 120 168;
+    --graph-chart-category-2: 245 133 24;
+    --graph-chart-category-3: 228 87 86;
+    --graph-chart-category-4: 114 183 178;
+    --graph-chart-category-5: 84 162 75;
+    --graph-chart-category-6: 238 202 59;
+    --graph-chart-category-7: 178 121 162;
+    --graph-chart-category-8: 255 157 166;
+    --graph-chart-category-9: 157 117 93;
+    --graph-chart-category-10: 186 176 172;
 
     /* Used decorative badges: identity/mode, not status. */
     --badge-accent-1-fg: 233 213 255;
