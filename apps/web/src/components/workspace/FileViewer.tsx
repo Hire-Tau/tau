@@ -9,7 +9,7 @@ import { queries } from '../../queryOptions'
 import type { FileContent } from '../../api/workspace'
 import { getSquadWorkspaceDownloadUrl } from '../../api/workspace'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { syntaxTheme } from '../../theme/syntax'
 import { authFetch } from '../../api/client'
 import { DownloadIcon } from '../icons'
 import { SquadWorkspaceImageViewer } from '../SquadWorkspaceImageViewer'
@@ -164,7 +164,7 @@ export function FileViewer({ squadId, filePath }: FileViewerProps) {
 
   if (isError) {
     return (
-      <div className="h-full flex items-center justify-center text-red-500">
+      <div className="h-full flex items-center justify-center text-[rgb(var(--syntax-error-fg))]">
         Failed to load file: {error instanceof Error ? error.message : 'Unknown error'}
       </div>
     )
@@ -189,7 +189,7 @@ export function FileViewer({ squadId, filePath }: FileViewerProps) {
     return (
       <div className="h-full flex flex-col">
         <FileHeader path={filePath} size={file.size} squadId={squadId} />
-        <div className="flex-1 overflow-auto flex items-center justify-center p-4 bg-[#1e1e1e]">
+        <div className="flex-1 overflow-auto flex items-center justify-center p-4 bg-[rgb(var(--syntax-image-bg))]">
           <SquadWorkspaceImageViewer squadId={squadId} filePath={filePath} />
         </div>
       </div>
@@ -218,7 +218,7 @@ export function FileViewer({ squadId, filePath }: FileViewerProps) {
       <div className="flex-1 overflow-auto min-w-0 [&_code_span:not(.linenumber)]:!inline">
         <SyntaxHighlighter
           language={language}
-          style={oneDark}
+          style={syntaxTheme}
           showLineNumbers
           customStyle={{
             margin: 0,
