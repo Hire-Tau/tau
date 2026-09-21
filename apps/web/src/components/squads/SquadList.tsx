@@ -32,9 +32,9 @@ import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonBlock, SkeletonCard, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
 
 const STATUS_BADGE_COLORS: Record<string, BadgeColor> = {
-  active: 'green',
-  paused: 'yellow',
-  archived: 'gray',
+  active: 'success',
+  paused: 'review',
+  archived: 'neutral',
 }
 
 // Detect if we're on a touch device (mobile/tablet)
@@ -244,7 +244,7 @@ function SquadCardContent({
           )}
         </div>
         {squad.status !== 'active' && (
-          <Badge color={STATUS_BADGE_COLORS[squad.status] || 'green'}>{squad.status}</Badge>
+          <Badge color={STATUS_BADGE_COLORS[squad.status] || 'success'}>{squad.status}</Badge>
         )}
       </div>
       <p className="text-sm text-secondary line-clamp-2 mb-3">{squad.purpose}</p>

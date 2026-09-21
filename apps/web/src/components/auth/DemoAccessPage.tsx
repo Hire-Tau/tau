@@ -93,7 +93,7 @@ export function DemoAccessPage({ enabled }: { enabled: boolean }) {
             <button
               type="submit"
               disabled={loading || !secret}
-              className="tau-button tau-button-primary w-full mt-3 px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-white font-medium text-sm disabled:opacity-50"
+              className="tau-button tau-button-primary w-full mt-3 px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
             >
               {loading ? 'Generating…' : 'Generate pairing code'}
             </button>

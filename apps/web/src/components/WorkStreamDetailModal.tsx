@@ -98,10 +98,10 @@ const WAIT_TYPE_LABELS: Record<WorkStreamWaitType, string> = {
 }
 
 const WAIT_TYPE_BADGE_COLORS: Record<WorkStreamWaitType, BadgeColor> = {
-  dependency: 'orange',
-  question: 'purple',
-  review: 'yellow',
-  manual: 'red',
+  dependency: 'externalWait',
+  question: 'humanWait',
+  review: 'review',
+  manual: 'danger',
 }
 
 /** Friendly labels for a closed wait's resolution, shown in the audit history. */
@@ -115,18 +115,18 @@ const WAIT_RESOLUTION_LABELS: Record<string, string> = {
 }
 
 export const WS_PRIORITY_BADGE_COLORS: Record<WorkStreamPriority, BadgeColor> = {
-  critical: 'red',
-  high: 'orange',
-  normal: 'gray',
-  low: 'gray',
+  critical: 'danger',
+  high: 'externalWait',
+  normal: 'neutral',
+  low: 'neutral',
 }
 
 export const WS_COMPLETION_MODE_BADGE_COLORS: Record<WorkStream['completionMode'], BadgeColor> = {
-  'pr-merge': 'blue',
-  'pr-auto-merge': 'green',
-  'review-approval': 'violet',
-  'direct-merge': 'orange',
-  deliverable: 'gray',
+  'pr-merge': 'accent-2',
+  'pr-auto-merge': 'accent-3',
+  'review-approval': 'accent-4',
+  'direct-merge': 'accent-5',
+  deliverable: 'neutral',
 }
 
 export const WS_COMPLETION_MODE_LABELS: Record<WorkStream['completionMode'], string> = {
@@ -314,7 +314,7 @@ export function WorkStreamDetailModal({
         {needsResponse && (
           <div className="p-4 rounded-xl bg-surface-secondary">
             <div className="flex items-center gap-2 mb-1.5">
-              <Badge color={reviewWait ? 'yellow' : 'red'}>{reviewWait ? 'Review' : 'Manual'}</Badge>
+              <Badge color={reviewWait ? 'review' : 'danger'}>{reviewWait ? 'Review' : 'Manual'}</Badge>
               {reviewWait && workStream.reviewRounds != null && (
                 <span className="text-xs text-muted">Round {workStream.reviewRounds + 1}</span>
               )}
@@ -351,7 +351,7 @@ export function WorkStreamDetailModal({
                   <button
                     onClick={handleSubmit}
                     disabled={respondMutation.isPending || !canRespondToWait || !response.trim()}
-                    className="tau-button tau-button-primary px-2 py-1 text-xs font-medium text-white bg-accent rounded hover:bg-accent-hover disabled:opacity-50"
+                    className="tau-button tau-button-primary px-2 py-1 text-xs font-medium text-on-accent bg-accent rounded hover:bg-accent-hover disabled:opacity-50"
                     title={
                       canRespondToWait ? 'Submit response' : 'You do not have permission to respond to this work stream'
                     }
@@ -371,7 +371,7 @@ export function WorkStreamDetailModal({
                 <button
                   onClick={() => setShowApprovalConfirmation(true)}
                   disabled={respondMutation.isPending || !canRespondToWait}
-                  className="tau-button px-2 py-1 text-xs font-medium text-white bg-accent rounded-lg hover:bg-accent-hover disabled:opacity-50"
+                  className="tau-button px-2 py-1 text-xs font-medium text-on-accent bg-accent rounded-lg hover:bg-accent-hover disabled:opacity-50"
                   title={
                     canRespondToWait ? 'Approve review' : 'You do not have permission to respond to this work stream'
                   }
@@ -396,7 +396,7 @@ export function WorkStreamDetailModal({
               <button
                 onClick={() => setIsResponding(true)}
                 disabled={!canRespondToWait}
-                className="tau-button mt-2 px-2 py-1 text-xs font-medium text-white bg-accent rounded-lg hover:bg-accent-hover disabled:opacity-50"
+                className="tau-button mt-2 px-2 py-1 text-xs font-medium text-on-accent bg-accent rounded-lg hover:bg-accent-hover disabled:opacity-50"
                 title={canRespondToWait ? 'Respond' : 'You do not have permission to respond to this work stream'}
               >
                 Respond

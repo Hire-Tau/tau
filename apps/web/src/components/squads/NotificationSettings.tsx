@@ -154,7 +154,7 @@ export function NotificationSettings({ squadId }: Props) {
               'px-3 py-1.5 text-sm rounded-md',
               hasValidationErrors
                 ? 'bg-surface-secondary text-muted cursor-not-allowed'
-                : 'bg-accent text-white hover:bg-accent/90'
+                : 'bg-accent text-on-accent hover:bg-accent/90'
             )}
           >
             {updateMutation.isPending ? 'Saving...' : 'Save Changes'}

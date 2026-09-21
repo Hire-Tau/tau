@@ -65,7 +65,6 @@ const LEGACY_PALETTE_UTILITY_FILES: readonly string[] = [
   'components/AppNav.tsx',
   'components/AssistantConversationView.tsx',
   'components/AssistantConversations.tsx',
-  'components/Badge.tsx',
   'components/Chat.tsx',
   'components/ChatDrawer.tsx',
   'components/ChatPage.tsx',
@@ -201,8 +200,6 @@ const LEGACY_PALETTE_UTILITY_FILES: readonly string[] = [
   'components/workspace/FileUpload.tsx',
   'components/workspace/FileViewer.tsx',
   'components/workspace/TerminalTabs.tsx',
-  'lib/agentTypeColor.ts',
-  'lib/statusPresentation.ts',
   'lib/tool-renderers.tsx',
   'voice/VoiceCompanionWidget.tsx',
   'voice/VoiceTranscriptInspector.tsx',
@@ -226,8 +223,6 @@ const LEGACY_LITERAL_HEX_FILES: readonly string[] = [
   'components/workspace/Terminal.tsx',
   'components/workspace/TerminalTabs.tsx',
   'index.css',
-  'lib/agentTypeColor.ts',
-  'lib/statusPresentation.ts',
   'voice/VoiceTranscriptInspector.tsx',
 ]
 
@@ -236,8 +231,6 @@ const LEGACY_COLOR_FUNCTION_FILES: readonly string[] = [
   'components/squads/AgentVisualization.tsx',
   'components/squads/OrgGraph.tsx',
   'components/squads/SquadUniverse.tsx',
-  'design-system.css',
-  'index.css',
 ]
 
 const LEGACY_INLINE_COLOR_STYLE_FILES: readonly string[] = [
@@ -255,15 +248,12 @@ const ENTRY_REASONS: Readonly<Record<string, string>> = {
   'components/workspace/TerminalTabs.tsx': 'temporary: planned terminal token family (phase 3)',
   'components/artifacts/PresentationRenderer.tsx':
     'mixed: chart/presentation colors are content-authored (§4.3 permanent) alongside chrome palette use (phase 2+)',
-  'index.css': 'temporary: ANSI palette (phase 3) and scrollbar thumb (phase 2); chrome tokens are channel-form now',
-  'lib/statusPresentation.ts': 'temporary: status-role token family (phase 2)',
-  'lib/agentTypeColor.ts': 'temporary: agent-type token family (phase 2); WCAG pair test stays authoritative',
+  'index.css': 'temporary: ANSI palette (phase 3); chrome/status/identity/misc tokens are channel-form now',
   'components/PullToRefresh.tsx': 'temporary: brand purple pending --brand-* tokens (PD-5)',
   'components/VoiceWorkspacePage.tsx': 'temporary: voice orb CSS (phase 2+ sweep)',
   'components/squads/AgentVisualization.tsx': 'temporary: graph/canvas token bridge (phase 4)',
   'components/squads/SquadUniverse.tsx': 'temporary: graph/canvas token bridge (phase 4)',
   'components/squads/OrgGraph.tsx': 'temporary: graph/canvas token bridge (phase 4)',
-  'design-system.css': 'one literal inset highlight; otherwise fully tokenized (phase 2)',
 }
 
 const ALLOWLIST: Readonly<Record<RawCategoryType, readonly string[]>> = {

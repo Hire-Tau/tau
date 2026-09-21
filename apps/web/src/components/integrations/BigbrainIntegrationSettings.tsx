@@ -413,7 +413,7 @@ export function BigbrainIntegrationSettings({
                     <button
                       type="submit"
                       disabled={pending}
-                      className="tau-button tau-button-primary rounded-md bg-accent px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      className="tau-button tau-button-primary rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
                     >
                       {replacePending ? 'Replacing…' : 'Save credential'}
                     </button>
@@ -513,7 +513,7 @@ export function BigbrainIntegrationSettings({
           </label>
           <button
             type="submit"
-            className="tau-button tau-button-primary rounded-md bg-accent px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="tau-button tau-button-primary rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
             disabled={create.isPending}
           >
             {create.isPending ? 'Creating and validating…' : 'Create and validate'}

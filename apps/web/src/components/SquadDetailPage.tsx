@@ -36,9 +36,9 @@ import { countableSquadAgents } from '../lib/agentDisplay'
 import { LoadingContent, SkeletonBlock, SkeletonText } from './loading/Skeleton'
 
 const STATUS_BADGE_COLORS: Record<string, BadgeColor> = {
-  active: 'green',
-  paused: 'yellow',
-  archived: 'gray',
+  active: 'success',
+  paused: 'review',
+  archived: 'neutral',
 }
 
 const TAB_PATHS = TABS.map((t) => t.path)
@@ -316,7 +316,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
                 </LoadingContent>
               </h1>
               {squad && squad.status !== 'active' && (
-                <Badge color={STATUS_BADGE_COLORS[squad.status] || 'green'}>{squad.status}</Badge>
+                <Badge color={STATUS_BADGE_COLORS[squad.status] || 'success'}>{squad.status}</Badge>
               )}
             </div>
             {(!squad || squad.purpose) && (
@@ -395,7 +395,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
                   </LoadingContent>
                 </h1>
                 {squad && squad.status !== 'active' && (
-                  <Badge color={STATUS_BADGE_COLORS[squad.status] || 'green'}>{squad.status}</Badge>
+                  <Badge color={STATUS_BADGE_COLORS[squad.status] || 'success'}>{squad.status}</Badge>
                 )}
               </div>
               {(!squad || squad.purpose) && (

@@ -54,7 +54,7 @@ export function SquadChatActions({
           onClick={onNewChat}
           aria-label="New consultant chat"
           title="New consultant chat"
-          className="tau-button tau-button-primary flex h-[26px] items-center gap-1 rounded-md bg-accent px-2 text-xs font-medium text-white hover:bg-accent-hover"
+          className="tau-button tau-button-primary flex h-[26px] items-center gap-1 rounded-md bg-accent px-2 text-xs font-medium text-on-accent hover:bg-accent-hover"
         >
           <PlusIcon className="h-3.5 w-3.5" />
           New chat

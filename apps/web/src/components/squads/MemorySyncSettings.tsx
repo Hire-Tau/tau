@@ -233,7 +233,7 @@ export function MemorySyncSettings({ squadId }: Props) {
         {!showAddProvider && editingIndex === null && canWriteMemory && (
           <button
             onClick={() => setShowAddProvider(true)}
-            className="tau-button tau-button-primary px-3 py-1.5 text-sm rounded-md font-medium bg-accent text-white hover:bg-accent/90 transition-colors"
+            className="tau-button tau-button-primary px-3 py-1.5 text-sm rounded-md font-medium bg-accent text-on-accent hover:bg-accent/90 transition-colors"
           >
             Add Provider
           </button>
@@ -344,7 +344,9 @@ export function MemorySyncSettings({ squadId }: Props) {
                 className={clsx(
                   'tau-button',
                   'px-3 py-1.5 text-sm rounded-md font-medium transition-colors',
-                  providerType === 'git' ? 'bg-accent text-white' : 'bg-surface text-secondary hover:bg-surface-hover'
+                  providerType === 'git'
+                    ? 'bg-accent text-on-accent'
+                    : 'bg-surface text-secondary hover:bg-surface-hover'
                 )}
               >
                 Git
@@ -354,7 +356,9 @@ export function MemorySyncSettings({ squadId }: Props) {
                 className={clsx(
                   'tau-button',
                   'px-3 py-1.5 text-sm rounded-md font-medium transition-colors',
-                  providerType === 's3' ? 'bg-accent text-white' : 'bg-surface text-secondary hover:bg-surface-hover'
+                  providerType === 's3'
+                    ? 'bg-accent text-on-accent'
+                    : 'bg-surface text-secondary hover:bg-surface-hover'
                 )}
               >
                 S3
@@ -457,7 +461,7 @@ export function MemorySyncSettings({ squadId }: Props) {
                     'tau-button',
                     'px-4 py-1.5 text-sm rounded-md font-medium transition-colors',
                     gitRepoUrl && gitSshKeyName && canWriteMemory
-                      ? 'bg-accent text-white hover:bg-accent/90'
+                      ? 'bg-accent text-on-accent hover:bg-accent/90'
                       : 'bg-surface-secondary text-muted cursor-not-allowed'
                   )}
                 >

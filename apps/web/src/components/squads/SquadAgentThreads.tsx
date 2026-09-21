@@ -1106,7 +1106,7 @@ export function SquadAgentThreads({
                 <button
                   type="button"
                   onClick={() => setShowMobilePicker(true)}
-                  className="tau-button tau-button-primary md:hidden mt-1 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white"
+                  className="tau-button tau-button-primary md:hidden mt-1 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent"
                 >
                   Choose agent
                 </button>

@@ -66,7 +66,7 @@ export function SpawnAgentModal({ squadId, onClose, onSpawned }: SpawnAgentModal
               <button
                 type="button"
                 disabled
-                className="tau-button tau-button-primary rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white opacity-50"
+                className="tau-button tau-button-primary rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent opacity-50"
               >
                 Spawn
               </button>
@@ -114,7 +114,7 @@ export function SpawnAgentModal({ squadId, onClose, onSpawned }: SpawnAgentModal
               <button
                 onClick={handleSpawn}
                 disabled={!selectedTypeId || spawnMutation.isPending}
-                className="tau-button tau-button-primary px-3 py-1.5 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
+                className="tau-button tau-button-primary px-3 py-1.5 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
               >
                 {spawnMutation.isPending && <SpinnerIcon className="w-4 h-4 animate-spin" />}
                 Spawn

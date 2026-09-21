@@ -25,12 +25,12 @@ interface LocalDeploymentsPanelProps {
 type LocalDeploymentStatusFilter = 'all' | LocalDeploymentStatus
 
 const STATUS_COLORS: Record<LocalDeployment['status'], BadgeColor> = {
-  starting: 'yellow',
-  running: 'green',
-  restarting: 'blue',
-  unhealthy: 'orange',
-  crashed: 'red',
-  stopped: 'gray',
+  starting: 'review',
+  running: 'success',
+  restarting: 'progress',
+  unhealthy: 'externalWait',
+  crashed: 'danger',
+  stopped: 'neutral',
 }
 
 const STATUS_FILTERS: LocalDeploymentStatusFilter[] = [
@@ -147,7 +147,7 @@ export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
         {STATUS_FILTERS.map((filter) => (
           <Badge
             key={filter}
-            color={filter === 'all' ? 'gray' : STATUS_COLORS[filter]}
+            color={filter === 'all' ? 'neutral' : STATUS_COLORS[filter]}
             onClick={() => setStatusFilter(filter)}
             className={clsx(
               'capitalize cursor-pointer border',

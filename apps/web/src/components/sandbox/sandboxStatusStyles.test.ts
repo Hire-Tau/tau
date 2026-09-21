@@ -69,7 +69,7 @@ describe('toolchain status styles', () => {
 describe('semantic sandbox styling', () => {
   test('uses attention amber for transition and degraded states', () => {
     expect(resolveSandboxStyle({ status: 'starting' } as any).config).toEqual(
-      expect.objectContaining({ color: expect.stringContaining('amber'), dotColor: 'bg-amber-500' })
+      expect.objectContaining({ color: expect.stringContaining('attention'), dotColor: 'bg-status-attention-solid' })
     )
     const degraded = resolveSandboxStyle({
       status: 'running',
@@ -78,26 +78,28 @@ describe('semantic sandbox styling', () => {
       degradation: { reasons: ['bashrc_unavailable'], attemptCount: 2 },
     })
     expect(degraded.config.label).toBe('Running — degraded')
-    expect(degraded.config.color).toContain('amber')
-    expect(degraded.config.dotColor).toBe('bg-amber-500')
+    expect(degraded.config.color).toContain('attention')
+    expect(degraded.config.dotColor).toBe('bg-status-attention-solid')
   })
 
   test('uses progress, success, and danger roles for setup, healthy, and failed states', () => {
     expect(
       resolveSandboxStyle({ status: 'running', toolchain: { status: 'installing', desiredFingerprint: 'x' } }).config
         .dotColor
-    ).toBe('bg-blue-500')
+    ).toBe('bg-status-progress-solid')
     expect(
       resolveSandboxStyle({ status: 'running', toolchain: { status: 'running_setup', desiredFingerprint: 'x' } }).config
         .dotColor
-    ).toBe('bg-blue-500')
-    expect(resolveSandboxStyle({ status: 'running', devboxReady: true } as any).config.dotColor).toBe('bg-green-500')
-    expect(resolveSandboxStyle({ status: 'failed' } as any).config.dotColor).toBe('bg-red-500')
+    ).toBe('bg-status-progress-solid')
+    expect(resolveSandboxStyle({ status: 'running', devboxReady: true } as any).config.dotColor).toBe(
+      'bg-status-success-solid'
+    )
+    expect(resolveSandboxStyle({ status: 'failed' } as any).config.dotColor).toBe('bg-status-danger-solid')
   })
 
   test('uses the accepted solid neutral marker for non-running states', () => {
-    expect(resolveSandboxStyle({ status: 'not_found' } as any).config.dotColor).toBe('bg-gray-500')
-    expect(resolveSandboxStyle({ status: 'succeeded' } as any).config.dotColor).toBe('bg-gray-500')
-    expect(resolveSandboxStyle({ status: 'unknown' } as any).config.dotColor).toBe('bg-gray-500')
+    expect(resolveSandboxStyle({ status: 'not_found' } as any).config.dotColor).toBe('bg-status-neutral-solid')
+    expect(resolveSandboxStyle({ status: 'succeeded' } as any).config.dotColor).toBe('bg-status-neutral-solid')
+    expect(resolveSandboxStyle({ status: 'unknown' } as any).config.dotColor).toBe('bg-status-neutral-solid')
   })
 })
