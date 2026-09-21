@@ -61,3 +61,13 @@ black/comment colors; it does not claim a new accessibility certification.
 - Existing token completeness, opacity-substitution and initial-flash suites
   remain authoritative. No persistence or flash script change is needed: these
   colors are available synchronously in the existing resolved CSS scopes.
+
+## Graph/canvas bridge
+
+`tokenReader.ts` / `useThemeColors.ts` provide memoized concrete colors for
+canvas/WebGL and chart consumers. Read the [graph adapter contract and contrast
+matrix](../../../../docs/theme/graph-colors.md) before adding themes or custom
+overrides. Graph node state aliases share semantic status tokens; chart defaults
+use their own legacy palette and never rewrite authored colors. Attribute-driven
+invalidation, fractional channels and intrinsic alpha apply to these consumers
+as well. Quantitative library chart schemes remain library defaults.
