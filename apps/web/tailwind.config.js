@@ -1,3 +1,12 @@
+// Custom documents keep complete channel colors for direct CSS/JS consumers.
+// Utilities use split channels so modifier × custom alpha × intrinsic alpha
+// never produces an invalid double slash. The helpers are compiler-owned only.
+const themeColor = (token, intrinsic) => {
+  const suffix = token.slice(2)
+  const alpha = `var(--custom-alpha-${suffix}, 1) * ${intrinsic ? `var(${intrinsic}) * ` : ''}<alpha-value>`
+  return `rgb(var(--custom-rgb-${suffix}, var(${token})) / calc(${alpha}))`
+}
+
 /** @type {import('tailwindcss').Config} */
 export default {
   darkMode: 'class',
@@ -6,174 +15,181 @@ export default {
     extend: {
       colors: {
         // Status, decorative badge and identity colors preserve intrinsic opacity.
-        'status-progress-fg': 'rgb(var(--status-progress-fg) / <alpha-value>)',
-        'status-progress-solid': 'rgb(var(--status-progress-solid) / <alpha-value>)',
-        'status-progress-surface':
-          'rgb(var(--status-progress-surface) / calc(var(--opacity-status-progress-surface) * <alpha-value>))',
-        'status-progress-border': 'rgb(var(--status-progress-border) / <alpha-value>)',
-        'status-progress-badge-fg': 'rgb(var(--status-progress-badge-fg) / <alpha-value>)',
-        'status-progress-badge-surface':
-          'rgb(var(--status-progress-badge-surface) / calc(var(--opacity-status-progress-badge-surface) * <alpha-value>))',
-        'status-progress-badge-hover':
-          'rgb(var(--status-progress-badge-hover) / calc(var(--opacity-status-progress-badge-hover) * <alpha-value>))',
-        'status-queue-fg': 'rgb(var(--status-queue-fg) / <alpha-value>)',
-        'status-queue-solid': 'rgb(var(--status-queue-solid) / <alpha-value>)',
-        'status-queue-surface':
-          'rgb(var(--status-queue-surface) / calc(var(--opacity-status-queue-surface) * <alpha-value>))',
-        'status-queue-border': 'rgb(var(--status-queue-border) / <alpha-value>)',
-        'status-queue-badge-fg': 'rgb(var(--status-queue-badge-fg) / <alpha-value>)',
-        'status-queue-badge-surface':
-          'rgb(var(--status-queue-badge-surface) / calc(var(--opacity-status-queue-badge-surface) * <alpha-value>))',
-        'status-queue-badge-hover':
-          'rgb(var(--status-queue-badge-hover) / calc(var(--opacity-status-queue-badge-hover) * <alpha-value>))',
-        'status-review-fg': 'rgb(var(--status-review-fg) / <alpha-value>)',
-        'status-review-solid': 'rgb(var(--status-review-solid) / <alpha-value>)',
-        'status-review-surface':
-          'rgb(var(--status-review-surface) / calc(var(--opacity-status-review-surface) * <alpha-value>))',
-        'status-review-border': 'rgb(var(--status-review-border) / <alpha-value>)',
-        'status-review-badge-fg': 'rgb(var(--status-review-badge-fg) / <alpha-value>)',
-        'status-review-badge-surface':
-          'rgb(var(--status-review-badge-surface) / calc(var(--opacity-status-review-badge-surface) * <alpha-value>))',
-        'status-review-badge-hover':
-          'rgb(var(--status-review-badge-hover) / calc(var(--opacity-status-review-badge-hover) * <alpha-value>))',
-        'status-human-wait-fg': 'rgb(var(--status-human-wait-fg) / <alpha-value>)',
-        'status-human-wait-solid': 'rgb(var(--status-human-wait-solid) / <alpha-value>)',
-        'status-human-wait-surface':
-          'rgb(var(--status-human-wait-surface) / calc(var(--opacity-status-human-wait-surface) * <alpha-value>))',
-        'status-human-wait-border': 'rgb(var(--status-human-wait-border) / <alpha-value>)',
-        'status-human-wait-badge-fg': 'rgb(var(--status-human-wait-badge-fg) / <alpha-value>)',
-        'status-human-wait-badge-surface':
-          'rgb(var(--status-human-wait-badge-surface) / calc(var(--opacity-status-human-wait-badge-surface) * <alpha-value>))',
-        'status-human-wait-badge-hover':
-          'rgb(var(--status-human-wait-badge-hover) / calc(var(--opacity-status-human-wait-badge-hover) * <alpha-value>))',
-        'status-external-wait-fg': 'rgb(var(--status-external-wait-fg) / <alpha-value>)',
-        'status-external-wait-solid': 'rgb(var(--status-external-wait-solid) / <alpha-value>)',
-        'status-external-wait-surface':
-          'rgb(var(--status-external-wait-surface) / calc(var(--opacity-status-external-wait-surface) * <alpha-value>))',
-        'status-external-wait-border': 'rgb(var(--status-external-wait-border) / <alpha-value>)',
-        'status-external-wait-badge-fg': 'rgb(var(--status-external-wait-badge-fg) / <alpha-value>)',
-        'status-external-wait-badge-surface':
-          'rgb(var(--status-external-wait-badge-surface) / calc(var(--opacity-status-external-wait-badge-surface) * <alpha-value>))',
-        'status-external-wait-badge-hover':
-          'rgb(var(--status-external-wait-badge-hover) / calc(var(--opacity-status-external-wait-badge-hover) * <alpha-value>))',
-        'status-attention-fg': 'rgb(var(--status-attention-fg) / <alpha-value>)',
-        'status-attention-solid': 'rgb(var(--status-attention-solid) / <alpha-value>)',
-        'status-attention-surface':
-          'rgb(var(--status-attention-surface) / calc(var(--opacity-status-attention-surface) * <alpha-value>))',
-        'status-attention-border': 'rgb(var(--status-attention-border) / <alpha-value>)',
-        'status-attention-badge-fg': 'rgb(var(--status-attention-badge-fg) / <alpha-value>)',
-        'status-attention-badge-surface':
-          'rgb(var(--status-attention-badge-surface) / calc(var(--opacity-status-attention-badge-surface) * <alpha-value>))',
-        'status-attention-badge-hover':
-          'rgb(var(--status-attention-badge-hover) / calc(var(--opacity-status-attention-badge-hover) * <alpha-value>))',
-        'status-danger-fg': 'rgb(var(--status-danger-fg) / <alpha-value>)',
-        'status-danger-solid': 'rgb(var(--status-danger-solid) / <alpha-value>)',
-        'status-danger-surface':
-          'rgb(var(--status-danger-surface) / calc(var(--opacity-status-danger-surface) * <alpha-value>))',
-        'status-danger-border': 'rgb(var(--status-danger-border) / <alpha-value>)',
-        'status-danger-badge-fg': 'rgb(var(--status-danger-badge-fg) / <alpha-value>)',
-        'status-danger-badge-surface':
-          'rgb(var(--status-danger-badge-surface) / calc(var(--opacity-status-danger-badge-surface) * <alpha-value>))',
-        'status-danger-badge-hover':
-          'rgb(var(--status-danger-badge-hover) / calc(var(--opacity-status-danger-badge-hover) * <alpha-value>))',
-        'status-success-fg': 'rgb(var(--status-success-fg) / <alpha-value>)',
-        'status-success-solid': 'rgb(var(--status-success-solid) / <alpha-value>)',
-        'status-success-surface':
-          'rgb(var(--status-success-surface) / calc(var(--opacity-status-success-surface) * <alpha-value>))',
-        'status-success-border': 'rgb(var(--status-success-border) / <alpha-value>)',
-        'status-success-badge-fg': 'rgb(var(--status-success-badge-fg) / <alpha-value>)',
-        'status-success-badge-surface':
-          'rgb(var(--status-success-badge-surface) / calc(var(--opacity-status-success-badge-surface) * <alpha-value>))',
-        'status-success-badge-hover':
-          'rgb(var(--status-success-badge-hover) / calc(var(--opacity-status-success-badge-hover) * <alpha-value>))',
-        'status-neutral-fg': 'rgb(var(--status-neutral-fg) / <alpha-value>)',
-        'status-neutral-solid': 'rgb(var(--status-neutral-solid) / <alpha-value>)',
-        'status-neutral-surface':
-          'rgb(var(--status-neutral-surface) / calc(var(--opacity-status-neutral-surface) * <alpha-value>))',
-        'status-neutral-border': 'rgb(var(--status-neutral-border) / <alpha-value>)',
-        'status-neutral-badge-fg': 'rgb(var(--status-neutral-badge-fg) / <alpha-value>)',
-        'status-neutral-badge-surface':
-          'rgb(var(--status-neutral-badge-surface) / calc(var(--opacity-status-neutral-badge-surface) * <alpha-value>))',
-        'status-neutral-badge-hover':
-          'rgb(var(--status-neutral-badge-hover) / calc(var(--opacity-status-neutral-badge-hover) * <alpha-value>))',
-        'badge-accent-1-fg': 'rgb(var(--badge-accent-1-fg) / <alpha-value>)',
-        'badge-accent-1-surface':
-          'rgb(var(--badge-accent-1-surface) / calc(var(--opacity-badge-accent-1-surface) * <alpha-value>))',
-        'badge-accent-1-hover':
-          'rgb(var(--badge-accent-1-hover) / calc(var(--opacity-badge-accent-1-hover) * <alpha-value>))',
-        'badge-accent-2-fg': 'rgb(var(--badge-accent-2-fg) / <alpha-value>)',
-        'badge-accent-2-surface':
-          'rgb(var(--badge-accent-2-surface) / calc(var(--opacity-badge-accent-2-surface) * <alpha-value>))',
-        'badge-accent-2-hover':
-          'rgb(var(--badge-accent-2-hover) / calc(var(--opacity-badge-accent-2-hover) * <alpha-value>))',
-        'badge-accent-3-fg': 'rgb(var(--badge-accent-3-fg) / <alpha-value>)',
-        'badge-accent-3-surface':
-          'rgb(var(--badge-accent-3-surface) / calc(var(--opacity-badge-accent-3-surface) * <alpha-value>))',
-        'badge-accent-3-hover':
-          'rgb(var(--badge-accent-3-hover) / calc(var(--opacity-badge-accent-3-hover) * <alpha-value>))',
-        'badge-accent-4-fg': 'rgb(var(--badge-accent-4-fg) / <alpha-value>)',
-        'badge-accent-4-surface':
-          'rgb(var(--badge-accent-4-surface) / calc(var(--opacity-badge-accent-4-surface) * <alpha-value>))',
-        'badge-accent-4-hover':
-          'rgb(var(--badge-accent-4-hover) / calc(var(--opacity-badge-accent-4-hover) * <alpha-value>))',
-        'badge-accent-5-fg': 'rgb(var(--badge-accent-5-fg) / <alpha-value>)',
-        'badge-accent-5-surface':
-          'rgb(var(--badge-accent-5-surface) / calc(var(--opacity-badge-accent-5-surface) * <alpha-value>))',
-        'badge-accent-5-hover':
-          'rgb(var(--badge-accent-5-hover) / calc(var(--opacity-badge-accent-5-hover) * <alpha-value>))',
-        'badge-accent-6-fg': 'rgb(var(--badge-accent-6-fg) / <alpha-value>)',
-        'badge-accent-6-surface':
-          'rgb(var(--badge-accent-6-surface) / calc(var(--opacity-badge-accent-6-surface) * <alpha-value>))',
-        'badge-accent-6-hover':
-          'rgb(var(--badge-accent-6-hover) / calc(var(--opacity-badge-accent-6-hover) * <alpha-value>))',
-        'badge-accent-7-fg': 'rgb(var(--badge-accent-7-fg) / <alpha-value>)',
-        'badge-accent-7-surface':
-          'rgb(var(--badge-accent-7-surface) / calc(var(--opacity-badge-accent-7-surface) * <alpha-value>))',
-        'badge-accent-7-hover':
-          'rgb(var(--badge-accent-7-hover) / calc(var(--opacity-badge-accent-7-hover) * <alpha-value>))',
-        'agent-type-1': 'rgb(var(--agent-type-1-fg) / <alpha-value>)',
-        'agent-type-2': 'rgb(var(--agent-type-2-fg) / <alpha-value>)',
-        'agent-type-3': 'rgb(var(--agent-type-3-fg) / <alpha-value>)',
-        'agent-type-4': 'rgb(var(--agent-type-4-fg) / <alpha-value>)',
-        'agent-type-5': 'rgb(var(--agent-type-5-fg) / <alpha-value>)',
-        'agent-type-6': 'rgb(var(--agent-type-6-fg) / <alpha-value>)',
-        'on-accent': 'rgb(var(--on-accent-fg) / <alpha-value>)',
+        'status-progress-fg': themeColor('--status-progress-fg'),
+        'status-progress-solid': themeColor('--status-progress-solid'),
+        'status-progress-surface': themeColor('--status-progress-surface', '--opacity-status-progress-surface'),
+        'status-progress-border': themeColor('--status-progress-border'),
+        'status-progress-badge-fg': themeColor('--status-progress-badge-fg'),
+        'status-progress-badge-surface': themeColor(
+          '--status-progress-badge-surface',
+          '--opacity-status-progress-badge-surface'
+        ),
+        'status-progress-badge-hover': themeColor(
+          '--status-progress-badge-hover',
+          '--opacity-status-progress-badge-hover'
+        ),
+        'status-queue-fg': themeColor('--status-queue-fg'),
+        'status-queue-solid': themeColor('--status-queue-solid'),
+        'status-queue-surface': themeColor('--status-queue-surface', '--opacity-status-queue-surface'),
+        'status-queue-border': themeColor('--status-queue-border'),
+        'status-queue-badge-fg': themeColor('--status-queue-badge-fg'),
+        'status-queue-badge-surface': themeColor(
+          '--status-queue-badge-surface',
+          '--opacity-status-queue-badge-surface'
+        ),
+        'status-queue-badge-hover': themeColor('--status-queue-badge-hover', '--opacity-status-queue-badge-hover'),
+        'status-review-fg': themeColor('--status-review-fg'),
+        'status-review-solid': themeColor('--status-review-solid'),
+        'status-review-surface': themeColor('--status-review-surface', '--opacity-status-review-surface'),
+        'status-review-border': themeColor('--status-review-border'),
+        'status-review-badge-fg': themeColor('--status-review-badge-fg'),
+        'status-review-badge-surface': themeColor(
+          '--status-review-badge-surface',
+          '--opacity-status-review-badge-surface'
+        ),
+        'status-review-badge-hover': themeColor('--status-review-badge-hover', '--opacity-status-review-badge-hover'),
+        'status-human-wait-fg': themeColor('--status-human-wait-fg'),
+        'status-human-wait-solid': themeColor('--status-human-wait-solid'),
+        'status-human-wait-surface': themeColor('--status-human-wait-surface', '--opacity-status-human-wait-surface'),
+        'status-human-wait-border': themeColor('--status-human-wait-border'),
+        'status-human-wait-badge-fg': themeColor('--status-human-wait-badge-fg'),
+        'status-human-wait-badge-surface': themeColor(
+          '--status-human-wait-badge-surface',
+          '--opacity-status-human-wait-badge-surface'
+        ),
+        'status-human-wait-badge-hover': themeColor(
+          '--status-human-wait-badge-hover',
+          '--opacity-status-human-wait-badge-hover'
+        ),
+        'status-external-wait-fg': themeColor('--status-external-wait-fg'),
+        'status-external-wait-solid': themeColor('--status-external-wait-solid'),
+        'status-external-wait-surface': themeColor(
+          '--status-external-wait-surface',
+          '--opacity-status-external-wait-surface'
+        ),
+        'status-external-wait-border': themeColor('--status-external-wait-border'),
+        'status-external-wait-badge-fg': themeColor('--status-external-wait-badge-fg'),
+        'status-external-wait-badge-surface': themeColor(
+          '--status-external-wait-badge-surface',
+          '--opacity-status-external-wait-badge-surface'
+        ),
+        'status-external-wait-badge-hover': themeColor(
+          '--status-external-wait-badge-hover',
+          '--opacity-status-external-wait-badge-hover'
+        ),
+        'status-attention-fg': themeColor('--status-attention-fg'),
+        'status-attention-solid': themeColor('--status-attention-solid'),
+        'status-attention-surface': themeColor('--status-attention-surface', '--opacity-status-attention-surface'),
+        'status-attention-border': themeColor('--status-attention-border'),
+        'status-attention-badge-fg': themeColor('--status-attention-badge-fg'),
+        'status-attention-badge-surface': themeColor(
+          '--status-attention-badge-surface',
+          '--opacity-status-attention-badge-surface'
+        ),
+        'status-attention-badge-hover': themeColor(
+          '--status-attention-badge-hover',
+          '--opacity-status-attention-badge-hover'
+        ),
+        'status-danger-fg': themeColor('--status-danger-fg'),
+        'status-danger-solid': themeColor('--status-danger-solid'),
+        'status-danger-surface': themeColor('--status-danger-surface', '--opacity-status-danger-surface'),
+        'status-danger-border': themeColor('--status-danger-border'),
+        'status-danger-badge-fg': themeColor('--status-danger-badge-fg'),
+        'status-danger-badge-surface': themeColor(
+          '--status-danger-badge-surface',
+          '--opacity-status-danger-badge-surface'
+        ),
+        'status-danger-badge-hover': themeColor('--status-danger-badge-hover', '--opacity-status-danger-badge-hover'),
+        'status-success-fg': themeColor('--status-success-fg'),
+        'status-success-solid': themeColor('--status-success-solid'),
+        'status-success-surface': themeColor('--status-success-surface', '--opacity-status-success-surface'),
+        'status-success-border': themeColor('--status-success-border'),
+        'status-success-badge-fg': themeColor('--status-success-badge-fg'),
+        'status-success-badge-surface': themeColor(
+          '--status-success-badge-surface',
+          '--opacity-status-success-badge-surface'
+        ),
+        'status-success-badge-hover': themeColor(
+          '--status-success-badge-hover',
+          '--opacity-status-success-badge-hover'
+        ),
+        'status-neutral-fg': themeColor('--status-neutral-fg'),
+        'status-neutral-solid': themeColor('--status-neutral-solid'),
+        'status-neutral-surface': themeColor('--status-neutral-surface', '--opacity-status-neutral-surface'),
+        'status-neutral-border': themeColor('--status-neutral-border'),
+        'status-neutral-badge-fg': themeColor('--status-neutral-badge-fg'),
+        'status-neutral-badge-surface': themeColor(
+          '--status-neutral-badge-surface',
+          '--opacity-status-neutral-badge-surface'
+        ),
+        'status-neutral-badge-hover': themeColor(
+          '--status-neutral-badge-hover',
+          '--opacity-status-neutral-badge-hover'
+        ),
+        'badge-accent-1-fg': themeColor('--badge-accent-1-fg'),
+        'badge-accent-1-surface': themeColor('--badge-accent-1-surface', '--opacity-badge-accent-1-surface'),
+        'badge-accent-1-hover': themeColor('--badge-accent-1-hover', '--opacity-badge-accent-1-hover'),
+        'badge-accent-2-fg': themeColor('--badge-accent-2-fg'),
+        'badge-accent-2-surface': themeColor('--badge-accent-2-surface', '--opacity-badge-accent-2-surface'),
+        'badge-accent-2-hover': themeColor('--badge-accent-2-hover', '--opacity-badge-accent-2-hover'),
+        'badge-accent-3-fg': themeColor('--badge-accent-3-fg'),
+        'badge-accent-3-surface': themeColor('--badge-accent-3-surface', '--opacity-badge-accent-3-surface'),
+        'badge-accent-3-hover': themeColor('--badge-accent-3-hover', '--opacity-badge-accent-3-hover'),
+        'badge-accent-4-fg': themeColor('--badge-accent-4-fg'),
+        'badge-accent-4-surface': themeColor('--badge-accent-4-surface', '--opacity-badge-accent-4-surface'),
+        'badge-accent-4-hover': themeColor('--badge-accent-4-hover', '--opacity-badge-accent-4-hover'),
+        'badge-accent-5-fg': themeColor('--badge-accent-5-fg'),
+        'badge-accent-5-surface': themeColor('--badge-accent-5-surface', '--opacity-badge-accent-5-surface'),
+        'badge-accent-5-hover': themeColor('--badge-accent-5-hover', '--opacity-badge-accent-5-hover'),
+        'badge-accent-6-fg': themeColor('--badge-accent-6-fg'),
+        'badge-accent-6-surface': themeColor('--badge-accent-6-surface', '--opacity-badge-accent-6-surface'),
+        'badge-accent-6-hover': themeColor('--badge-accent-6-hover', '--opacity-badge-accent-6-hover'),
+        'badge-accent-7-fg': themeColor('--badge-accent-7-fg'),
+        'badge-accent-7-surface': themeColor('--badge-accent-7-surface', '--opacity-badge-accent-7-surface'),
+        'badge-accent-7-hover': themeColor('--badge-accent-7-hover', '--opacity-badge-accent-7-hover'),
+        'agent-type-1': themeColor('--agent-type-1-fg'),
+        'agent-type-2': themeColor('--agent-type-2-fg'),
+        'agent-type-3': themeColor('--agent-type-3-fg'),
+        'agent-type-4': themeColor('--agent-type-4-fg'),
+        'agent-type-5': themeColor('--agent-type-5-fg'),
+        'agent-type-6': themeColor('--agent-type-6-fg'),
+        'on-accent': themeColor('--on-accent-fg'),
         // Semantic theme colors. Token values in src/index.css are RGB channel
         // triplets and every entry uses the <alpha-value> channel form, so
         // opacity modifiers (bg-surface/50) compile to real rules instead of
         // silently producing none. Guarded by src/theme-color-opacity.test.ts.
-        page: 'rgb(var(--color-bg-page) / <alpha-value>)',
+        page: themeColor('--color-bg-page'),
         surface: {
-          DEFAULT: 'rgb(var(--color-bg-surface) / <alpha-value>)',
-          secondary: 'rgb(var(--color-bg-surface-secondary) / <alpha-value>)',
-          hover: 'rgb(var(--color-bg-surface-hover) / <alpha-value>)',
+          DEFAULT: themeColor('--color-bg-surface'),
+          secondary: themeColor('--color-bg-surface-secondary'),
+          hover: themeColor('--color-bg-surface-hover'),
         },
-        inset: 'rgb(var(--color-bg-inset) / <alpha-value>)',
-        pill: 'rgb(var(--color-bg-pill) / <alpha-value>)',
-        primary: 'rgb(var(--color-text-primary) / <alpha-value>)',
-        secondary: 'rgb(var(--color-text-secondary) / <alpha-value>)',
-        muted: 'rgb(var(--color-text-muted) / <alpha-value>)',
-        placeholder: 'rgb(var(--color-text-placeholder) / <alpha-value>)',
-        'th-border': 'rgb(var(--color-border) / <alpha-value>)',
-        'th-border-hover': 'rgb(var(--color-border-hover) / <alpha-value>)',
+        inset: themeColor('--color-bg-inset'),
+        pill: themeColor('--color-bg-pill'),
+        primary: themeColor('--color-text-primary'),
+        secondary: themeColor('--color-text-secondary'),
+        muted: themeColor('--color-text-muted'),
+        placeholder: themeColor('--color-text-placeholder'),
+        'th-border': themeColor('--color-border'),
+        'th-border-hover': themeColor('--color-border-hover'),
         selection: {
-          DEFAULT: 'rgb(var(--color-selection-bg) / <alpha-value>)',
-          border: 'rgb(var(--color-selection-border) / <alpha-value>)',
+          DEFAULT: themeColor('--color-selection-bg'),
+          border: themeColor('--color-selection-border'),
         },
-        overlay: 'rgb(var(--color-overlay) / <alpha-value>)',
-        focus: 'rgb(var(--color-focus) / <alpha-value>)',
+        overlay: themeColor('--color-overlay'),
+        focus: themeColor('--color-focus'),
         // Multiply intrinsic alpha (shared with direct CSS consumers) by the
         // requested opacity: /25 means 25% of the original translucent color.
-        'panel-border': 'rgb(var(--color-panel-border) / calc(var(--opacity-panel-border) * <alpha-value>))',
-        'input-bg': 'rgb(var(--color-input-bg) / <alpha-value>)',
-        'input-border': 'rgb(var(--color-input-border) / calc(var(--opacity-input-border) * <alpha-value>))',
-        'code-bg': 'rgb(var(--color-code-bg) / <alpha-value>)',
-        'code-text': 'rgb(var(--color-code-text) / <alpha-value>)',
+        'panel-border': themeColor('--color-panel-border', '--opacity-panel-border'),
+        'input-bg': themeColor('--color-input-bg'),
+        'input-border': themeColor('--color-input-border', '--opacity-input-border'),
+        'code-bg': themeColor('--color-code-bg'),
+        'code-text': themeColor('--color-code-text'),
         accent: {
-          DEFAULT: 'rgb(var(--color-primary) / <alpha-value>)',
-          hover: 'rgb(var(--color-primary-hover) / <alpha-value>)',
-          active: 'rgb(var(--color-primary-active) / <alpha-value>)',
-          light: 'rgb(var(--color-primary-light) / <alpha-value>)',
+          DEFAULT: themeColor('--color-primary'),
+          hover: themeColor('--color-primary-hover'),
+          active: themeColor('--color-primary-active'),
+          light: themeColor('--color-primary-light'),
         },
       },
       borderRadius: { DEFAULT: '0.5rem', md: '0.5rem', lg: '0.75rem', xl: '1rem' },

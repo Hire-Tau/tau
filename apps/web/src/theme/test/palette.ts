@@ -9,7 +9,8 @@ for (const [variant, selector] of [
   ['light', ':root'],
   ['dark', '.dark'],
 ] as const) {
-  css.walkRules(selector, (rule) => {
+  css.walkRules((rule) => {
+    if (!rule.selectors.includes(selector)) return
     rule.walkDecls((decl) => {
       variants[variant][decl.prop] = decl.value
     })

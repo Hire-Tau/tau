@@ -83,3 +83,4 @@ export type {
 
 export * from './assistant-agent-types'
 export * from './entity-reference'
+export * from './custom-theme'
