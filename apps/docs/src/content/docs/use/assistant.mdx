@@ -54,12 +54,20 @@ Typed messages request text responses. Spoken turns can produce spoken replies, 
 
 Collapse the live Assistant to keep it beside the page, and expand it to return to the transcript. Drag the header of the expanded window, or the available surface of the compact window, to move it. The position control also offers preset locations.
 
-If Realtime is not configured or your account lacks voice access, Tau uses the **User assistant · text only** path. A temporary connection error on a configured Realtime conversation does not silently switch you to another assistant: the pending message remains queued while it reconnects. If automatic reconnection stops, use **Reconnect** or **Retry** as shown. See [troubleshooting](/self-host/troubleshooting/).
+Typing uses the same saved conversation whether or not Realtime is configured. Voice transcriptions are sent to that conversation too; audio reads the completed reply. If voice disconnects, text and background tasks keep working. Use **Reconnect** to restore audio. A queued execution remains queued until Tau can run it; a network connection closing is not a completed answer. See [troubleshooting](/self-host/troubleshooting/).
 
 ## Understand background work and saved history
 
-The Assistant can look up information and use its own tools. Longer tasks can run through a User Assistant or a squad agent in the background. A “waiting for an agent reply” indicator means the reply has not arrived yet; an initial acknowledgment is not a finished result.
+The Assistant performs quick lookups with your current permissions. Longer tasks run with a general Assistant worker or a squad consultant. Creating a squad consultant requires the same access as creating one from the squad page; it then works with the normal consultant authority. Independent tasks can run alongside one another. An accepted delegation is not a finished result.
 
 You can continue the live conversation while background work runs. Replies and updates return through the Assistant's messaging path. A task already started by an agent is separate from the live microphone connection; ending voice is not the way to pause that work. [Pause the work stream](/use/review-and-intervene/#pause-and-resume-work) when you need work to stop.
 
-End live voice before switching Assistant conversations or starting a new one. Use **Recent chats** in the Assistant conversation or **Assistant conversations** from search to resume a saved Assistant conversation. Squad consultant conversations appear in their squad preview and Chats page. If Tau reports that history could not be saved, use **Retry saving history** before leaving the page.
+End live voice before switching Assistant conversations or starting a new one. Use **Recent chats** in the Assistant conversation or **Assistant conversations** from search to resume a saved Assistant conversation. Squad consultant conversations appear in their squad preview and Chats page. Failed sends remain in the conversation with a retry control. Older conversations retain their previous transcript under **Earlier conversation**; new turns use the durable agent history.
+
+## Answer questions and inspect task updates
+
+Questions appear directly in the Assistant, including questions from its background workers. Fill in the question form and submit it there. **Answer in Assistant** in the Feed opens the corresponding conversation and task. Failed answers keep your draft so you can retry.
+
+Task reports wake the Assistant even when the panel is closed. Expand **Task updates** below a summary to read its original reports. Reading, forwarding, and summarizing are separate: use **Mark read** when you have read a report. The Updates section also lists older reports and pending questions.
+
+You can ask the Assistant to continue, retry, or cancel a particular task. These operations target that task's current request; cancelling one task does not stop unrelated work on a shared worker and cannot undo an external action already in progress. Stopping speech only stops audio. Use the conversation's stop control to stop its current execution.

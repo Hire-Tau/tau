@@ -15,9 +15,9 @@ export interface PageEditorBridge {
 export interface AssistantConversationBridge {
   openConversation?: AssistantToolEnvironment['openConversation']
   pageEditor?: PageEditorBridge
-  prepareHistory: () => Promise<VoiceTranscriptEntry[]>
-  delegateTask: NonNullable<VoiceToolExecutor['delegateTask']>
-  messageAgent: NonNullable<AssistantToolEnvironment['messageAgent']>
+  prepareHistory?: () => Promise<VoiceTranscriptEntry[]>
+  delegateTask?: NonNullable<VoiceToolExecutor['delegateTask']>
+  messageAgent?: NonNullable<AssistantToolEnvironment['messageAgent']>
 }
 export const AssistantConversationContext = createContext<AssistantConversationBridge | null>(null)
 export const useAssistantConversationBridge = () => useContext(AssistantConversationContext)

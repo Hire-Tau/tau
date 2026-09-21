@@ -1,3 +1,4 @@
+import { useToolRenderers } from '../lib/ToolRenderersContext'
 import clsx from 'clsx'
 import { ToolInlineActions } from './ToolInlineActions'
 import type { ToolInlineAction } from '../lib/tool-inline-actions'
@@ -12,7 +13,7 @@ import {
   type ContentBlock,
   type MonitorMessageKind,
 } from '@tau/shared'
-import { agentToolRenderers, ToolSummary, ToolArgsView, ToolResultView } from '../lib/tool-renderers'
+import { ToolSummary, ToolArgsView, ToolResultView } from '../lib/tool-renderers'
 import { ChevronRightIcon, MailIcon, WorkStreamIcon } from './icons'
 import { WorkStreamViewModal } from './WorkStreamViewModal'
 import { useImageSrcs } from '../hooks/useImageSrcs'
@@ -588,6 +589,7 @@ export function SingleToolCallSection({
   onToolInlineAction?: (action: ToolInlineAction) => void
 }) {
   const [expanded, setExpanded] = useState(false)
+  const toolRenderers = useToolRenderers()
   const isIncomplete = !toolCall.result && !toolCall.isError
   const isError = toolCall.isError || isIncomplete
   const result = toolCall.result || (isIncomplete ? 'Command aborted' : '')
@@ -605,7 +607,7 @@ export function SingleToolCallSection({
           <span className="text-green-600 dark:text-green-400 shrink-0 inline-block w-3 text-center">&#10003;</span>
         )}
         <span className="font-medium shrink-0">{toolCall.toolName}</span>
-        <ToolSummary renderers={agentToolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
+        <ToolSummary renderers={toolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
         {isError && <span className="text-red-500 dark:text-red-400 text-[10px] font-medium shrink-0">ERROR</span>}
         <ChevronRightIcon
           className={clsx('w-3 h-3 shrink-0 text-muted transition-transform', expanded && 'rotate-90')}
@@ -619,15 +621,10 @@ export function SingleToolCallSection({
       {expanded && (
         <div className="mt-1 ml-1.5 border-l-2 border-th-border pl-3 py-0.5 space-y-1">
           {toolCall.args && (
-            <ToolArgsView renderers={agentToolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
+            <ToolArgsView renderers={toolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
           )}
           {result && (
-            <ToolResultView
-              renderers={agentToolRenderers}
-              toolName={toolCall.toolName}
-              result={result}
-              isError={isError}
-            />
+            <ToolResultView renderers={toolRenderers} toolName={toolCall.toolName} result={result} isError={isError} />
           )}
         </div>
       )}
