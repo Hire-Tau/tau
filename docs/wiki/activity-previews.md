@@ -43,7 +43,7 @@ prefixes, and `tau:agent:` UUIDs/prefixes. Parsing does not establish access or 
 ambiguity: clients must use the existing authorized resolvers and generic error UI.
 Bare `#241` is text, never inferred as a reference. Authored link labels are retained.
 HTTP(S) links (including bare URLs recognized by GFM) open with safe external behavior;
-unknown/unsafe schemes render only their labels. Code spans must not activate links.
+unknown/unsafe schemes render only their labels. Never infer links from code text; a code span is linked only when its authored parent was an explicit Markdown link.
 
 The web reuses the existing entity modal/preview resolver and retains the feed behind
 it. Visibility alone does not preload reference data; hover/focus/touch/click indicate

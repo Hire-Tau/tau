@@ -92,3 +92,26 @@ test('activity references do not fetch entity sources merely by scrolling into v
     globalThis.IntersectionObserver = original
   }
 })
+
+test('explicitly linked code labels stay clickable while unlinked code is literal', async () => {
+  const { ActivityPreview } = await import('./ActivityPreview')
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  try {
+    const view = dom.createRoot()
+    await dom.act(() =>
+      view.root.render(
+        <ActivityPreview
+          spans={[
+            { text: 'API', code: true, href: 'https://example.com' },
+            { text: '[literal](https://example.com)', code: true },
+          ]}
+        />
+      )
+    )
+    expect(view.container.querySelectorAll('a')).toHaveLength(1)
+    expect(view.container.querySelector('a code')?.textContent).toBe('API')
+    expect(view.container.querySelectorAll('code')).toHaveLength(2)
+  } finally {
+    await dom.cleanup()
+  }
+})

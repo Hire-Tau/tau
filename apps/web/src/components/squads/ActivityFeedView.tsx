@@ -1,4 +1,4 @@
-import { ActivityPreview, activityExternalHref } from './ActivityPreview'
+import { ActivityPreview } from './ActivityPreview'
 import clsx from 'clsx'
 import { useEffect, useRef } from 'react'
 import type { Dispatch, MouseEvent as ReactMouseEvent, SetStateAction } from 'react'
@@ -9,6 +9,7 @@ import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { agentTypeColor } from '../../lib/agentTypeColor'
 import { LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonText, SkeletonRows } from '../loading/Skeleton'
 import {
+  activityExternalHref,
   ACTIVITY_SMALL_TEXT_CLASS,
   activityAgentLabel,
   FILTER_GROUPS,
