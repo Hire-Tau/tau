@@ -97,6 +97,14 @@ If a repository cannot be read, check the App installation, the account's
 repository permissions, and the squad assignment. If the card shows **Reconnect
 required**, choose **Reconnect** and authorize the intended account again.
 
+If a push to your own fork is rejected, check that the App is installed on the
+fork as well as any upstream repository. Your account owning the fork does not
+automatically grant the App access. Pushes need **Contents: write**; changes to
+`.github/workflows` also need **Workflows: write**, which is separate from
+**Actions: write**. In GitHub's installation settings, approve any pending App
+permission updates. Reconnecting in Tau does not replace that approval or add
+repositories to the installation.
+
 Disabling GitHub preserves saved accounts and assignments while stopping new
 use. Disconnecting removes access through Tau. Removing a default account does
 not silently choose another identity; select a new default explicitly. For full

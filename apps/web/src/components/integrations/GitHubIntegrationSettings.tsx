@@ -15,7 +15,7 @@ import {
   startIntegrationAuthorization,
 } from '../../api/integrations'
 import { integrationQueries } from '../../queryOptions'
-import { integrationSettingsPath } from '../../lib/integrationReturnPath'
+import { integrationAuthorizationReturnPath } from '../../lib/integrationReturnPath'
 import { integrationQueryKeys, onboardingQueryKeys } from '../../queryKeys'
 
 type DeviceLogin = Extract<IntegrationAuthorizationStart, { kind: 'device' }>
@@ -70,7 +70,7 @@ export function GitHubIntegrationSettings({
       return startIntegrationAuthorization('github', {
         returnTo: onboarding
           ? (import.meta.env?.BASE_URL ?? '/').replace(/\/$/, '') + '/onboarding'
-          : integrationSettingsPath('github'),
+          : integrationAuthorizationReturnPath(),
         ...(connectionId ? { connectionId } : {}),
       })
     },

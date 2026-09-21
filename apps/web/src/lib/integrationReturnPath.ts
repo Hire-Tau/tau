@@ -1,7 +1,12 @@
 type OAuthProvider = 'github' | 'notion'
 
+/** Authorization accepts paths only. The callback restores the integration query parameters. */
+export function integrationAuthorizationReturnPath(baseUrl = import.meta.env?.BASE_URL ?? '/') {
+  return `${baseUrl.replace(/\/$/, '')}/settings`
+}
+
 export function integrationSettingsPath(provider: OAuthProvider, baseUrl = import.meta.env?.BASE_URL ?? '/') {
-  return `${baseUrl.replace(/\/$/, '')}/settings?section=integrations&setting=integration-${provider}`
+  return `${integrationAuthorizationReturnPath(baseUrl)}?section=integrations&setting=integration-${provider}`
 }
 
 /** Older authorization flows saved only /settings, which opens the personal account page. */

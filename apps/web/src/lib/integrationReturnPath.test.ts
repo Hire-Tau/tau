@@ -1,10 +1,17 @@
 import { expect, test } from 'bun:test'
-import { integrationReturnPath, integrationSettingsPath } from './integrationReturnPath'
+import {
+  integrationAuthorizationReturnPath,
+  integrationReturnPath,
+  integrationSettingsPath,
+} from './integrationReturnPath'
 
 for (const provider of ['github', 'notion'] as const) {
   test(`${provider} authorization opens its integration card at root and mounted deployments`, () => {
     for (const base of ['/', '/tau-gh-smoke/']) {
       const destination = `${base}settings?section=integrations&setting=integration-${provider}`
+      const returnTo = integrationAuthorizationReturnPath(base)
+      expect(returnTo).toBe(`${base}settings`)
+      expect(integrationReturnPath(returnTo, provider, base)).toBe(destination)
       expect(integrationSettingsPath(provider, base)).toBe(destination)
       expect(integrationReturnPath('/settings', provider, base)).toBe(destination)
       expect(integrationReturnPath(`${base}settings/`, provider, base)).toBe(destination)

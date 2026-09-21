@@ -8,7 +8,7 @@ import {
   startIntegrationAuthorization,
 } from '../../api/integrations'
 import { integrationQueries } from '../../queryOptions'
-import { integrationSettingsPath } from '../../lib/integrationReturnPath'
+import { integrationAuthorizationReturnPath } from '../../lib/integrationReturnPath'
 import { integrationQueryKeys } from '../../queryKeys'
 
 export function NotionIntegrationSettings({
@@ -48,7 +48,7 @@ export function NotionIntegrationSettings({
   const authorize = useMutation({
     mutationFn: (connectionId?: string) =>
       startIntegrationAuthorization('notion', {
-        returnTo: integrationSettingsPath('notion'),
+        returnTo: integrationAuthorizationReturnPath(),
         ...(connectionId ? { connectionId } : {}),
       }),
     onSuccess: (result) => {
