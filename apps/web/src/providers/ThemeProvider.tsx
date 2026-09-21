@@ -1,8 +1,17 @@
 import { createContext, useContext, useState, useEffect, useLayoutEffect, useCallback, type ReactNode } from 'react'
-import type { AppearanceSetting } from '@tau/shared'
-import { findWebTheme, resolveWebTheme } from '../theme/registry'
+import { validateCustomTheme, type CustomThemeDocument, type AppearanceSetting } from '@tau/shared'
+import { BUILT_IN_THEMES, findWebTheme, resolveWebTheme } from '../theme/registry'
 import { applyResolvedTheme } from '../theme/apply'
-import { getThemeStorage, persistSurfaceSnapshot, persistThemeSelection, readThemeSelection } from '../theme/storage'
+import { getThemeStorage, persistSurfaceSnapshot, persistThemeSelection } from '../theme/storage'
+
+import {
+  applyCustomTheme,
+  clearCustomTheme,
+  customSelection,
+  loadCustomTheme,
+  persistCustomTheme,
+  removeCustomProperties,
+} from '../theme/custom'
 
 /**
  * The resolved appearance (light/dark). Kept as `theme` for the existing
@@ -13,6 +22,10 @@ type Theme = 'light' | 'dark'
 
 interface ThemeContextValue {
   /** The registered theme id currently applied (e.g. 'tau'). */
+  customTheme: CustomThemeDocument | null
+  customThemeError: string | null
+  applyCustom: (doc: CustomThemeDocument) => void
+  resetTheme: () => void
   themeId: string
   /** The user's appearance setting: 'light' | 'dark' | 'system'. */
   appearance: AppearanceSetting
@@ -46,7 +59,8 @@ function readSystemPrefersDark(): boolean {
 export function ThemeProvider({ children }: { children: ReactNode }) {
   // The stored selection is read once, synchronously: legacy 'tau-theme'
   // values migrate here, unreadable values fall back to the defaults.
-  const [selection, setSelection] = useState(() => readThemeSelection(getThemeStorage()))
+  const [state, setState] = useState(() => loadCustomTheme(getThemeStorage()))
+  const { selection, custom, error } = state
   const [systemPrefersDark, setSystemPrefersDark] = useState(readSystemPrefersDark)
 
   // Live system-preference tracking: a 'system' appearance follows OS scheme
@@ -69,7 +83,17 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useLayoutEffect(() => {
     const root = document.documentElement
+    removeCustomProperties(root)
     applyResolvedTheme(root, resolvedThemeDefinition, resolvedAppearance)
+    if (custom) {
+      try {
+        applyCustomTheme(root, custom)
+      } catch {
+        clearCustomTheme(getThemeStorage())
+        setState((s) => ({ ...s, custom: null, error: 'Custom theme could not be applied. Restored its base theme.' }))
+        return
+      }
+    }
     persistThemeSelection(getThemeStorage(), selection)
 
     // Store the resolved surface color so the flash-prevention script can use
@@ -91,23 +115,45 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       }
       meta.content = surface
     }
-  }, [resolvedThemeDefinition, resolvedAppearance, selection])
+  }, [resolvedThemeDefinition, resolvedAppearance, selection, custom])
 
-  const setThemeId = useCallback(
-    (themeId: string) => setSelection((s) => ({ ...s, themeId: findWebTheme(themeId).id })),
-    []
-  )
-  const setAppearance = useCallback((appearance: AppearanceSetting) => setSelection((s) => ({ ...s, appearance })), [])
+  const setThemeId = useCallback((themeId: string) => {
+    clearCustomTheme(getThemeStorage())
+    setState((s) => ({ selection: { ...s.selection, themeId: findWebTheme(themeId).id }, custom: null, error: null }))
+  }, [])
+  const setAppearance = useCallback((appearance: AppearanceSetting) => {
+    clearCustomTheme(getThemeStorage())
+    setState((s) => ({ selection: { ...s.selection, appearance }, custom: null, error: null }))
+  }, [])
   const setTheme = useCallback((theme: Theme) => setAppearance(theme), [setAppearance])
   const toggleTheme = useCallback(() => {
-    setSelection((s) => {
-      const current = resolveWebTheme(s.themeId, s.appearance, systemPrefersDark)
+    clearCustomTheme(getThemeStorage())
+    setState((s) => {
+      const current = resolveWebTheme(s.selection.themeId, s.selection.appearance, systemPrefersDark)
       const next: Theme = current.appearance === 'dark' ? 'light' : 'dark'
-      return { ...s, appearance: next }
+      return { selection: { ...s.selection, appearance: next }, custom: null, error: null }
     })
   }, [systemPrefersDark])
+  const applyCustom = useCallback((doc: CustomThemeDocument) => {
+    const result = validateCustomTheme(JSON.stringify(doc), BUILT_IN_THEMES)
+    if (!result.ok) throw new Error(result.error)
+    const saved = persistCustomTheme(getThemeStorage(), result.document)
+    setState((s) => ({
+      selection: customSelection(result.document, s.selection),
+      custom: result.document,
+      error: saved ? null : 'Theme applied for this session only: device storage is unavailable.',
+    }))
+  }, [])
+  const resetTheme = useCallback(() => {
+    clearCustomTheme(getThemeStorage())
+    setState({ selection: { themeId: 'tau', appearance: 'light' }, custom: null, error: null })
+  }, [])
 
   const contextValue: ThemeContextValue = {
+    customTheme: custom,
+    customThemeError: error,
+    applyCustom,
+    resetTheme,
     themeId: resolvedThemeDefinition.id,
     appearance: selection.appearance,
     theme: resolvedTheme,
