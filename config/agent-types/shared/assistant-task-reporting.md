@@ -7,8 +7,8 @@ not completion. Continue through normal inbox delivery and existing waits.
 Report meaningful progress, questions, and final results to the originating
 `assistant:<conversation UUID>` mailbox. Ordinary chat output is not forwarded.
 
-The simplest way is the task command, which needs only the task ID shown with
-the request: `tau assistant-task status <taskId> --status <status> -m "<update>"`,
+The simplest way is the task command, using the task ID and request ID shown with
+the request: `tau assistant-task status <taskId> --request-id <requestId> --status <status> -m "<update>"`,
 with `--status` one of `working`, `waiting`, `needs-input`, `completed`, `failed`,
 or `cancelled` (`tau assistant-task get <taskId>` shows the tracked state). The
 equivalent inbox form is `tau inbox send assistant:<conversation UUID> "<update>"
@@ -18,7 +18,13 @@ but does not change the task's tracked state.
 
 Use `needs-input` when the user must answer and stop dependent work. Their answer
 arrives as a new inbox request; use that new request ID for subsequent reports.
-A late report against a superseded request is shown but cannot change the task.
+The task command rejects a superseded request; the equivalent inbox reply stays
+visible as historical context but cannot change the task. Never substitute a newer
+request ID for work you performed on an older request.
+
+Several independent tasks may share your conversation. A cancellation applies
+only to its task: stop that scope, preserve unrelated work, and report any work
+already performed or still stopping with status `cancelled`.
 
 Do not repeat these reporting instructions in your updates. Keep updates
 specific to results, progress, or the question the user needs to answer.
