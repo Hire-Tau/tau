@@ -38,6 +38,7 @@ test('global and squad previews keep links separate from the source anchor', asy
               workingAgentIds={new Set()}
               agentDetailFor={() => undefined}
               hrefFor={() => '/source'}
+              onOpenAgentReference={() => {}}
               onOpen={() => {
                 opened++
               }}

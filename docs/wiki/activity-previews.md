@@ -45,8 +45,13 @@ Bare `#241` is text, never inferred as a reference. Authored link labels are ret
 HTTP(S) links (including bare URLs recognized by GFM) open with safe external behavior;
 unknown/unsafe schemes render only their labels. Never infer links from code text; a code span is linked only when its authored parent was an explicit Markdown link.
 
-The web reuses the existing entity modal/preview resolver and retains the feed behind
-it. Visibility alone does not preload reference data; hover/focus/touch/click indicate
+The web reuses the existing authorized entity resolver. Activity supplies a narrow
+agent-opening callback: resolved agents open in the feed's existing in-place agent view
+(using the resolved agent's own squad, not the source row's squad). Standalone agents
+use an embedded conversation modal. The callback also handles plain activation of agent
+quick links in reference hover cards. Ordinary chat-reference navigation remains unchanged.
+Opening and closing the Activity view keeps the mounted feed, selected filters and scroll;
+it does not push a routed agent page that would reconstruct Activity on Back. Visibility alone does not preload reference data; hover/focus/touch/click indicate
 intent. The source-row anchor and inline controls are siblings, not nested interactive
 HTML. Source navigation supports keyboard activation and modified clicks; external
 links use `noopener noreferrer`. Clicking an inline control does not activate the row.

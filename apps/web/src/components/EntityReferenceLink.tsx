@@ -1,3 +1,4 @@
+import type { Agent } from '@tau/shared'
 import { QueryClientContext } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { lazy, Suspense, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
@@ -14,11 +15,14 @@ export function EntityReferenceLink({
   reference,
   children,
   preloadOnVisible = true,
+  onOpenAgent,
 }: {
   reference: EntityReference
   children: ReactNode
   /** Compact feeds already materialize their content; resolve only on intent. */
   preloadOnVisible?: boolean
+  /** Override agent navigation only after authorized reference resolution. */
+  onOpenAgent?: (agent: Agent) => void
 }) {
   const client = useContext(QueryClientContext)
   const button = useRef<HTMLButtonElement>(null)
@@ -152,6 +156,7 @@ export function EntityReferenceLink({
               leave()
             }}
             onDismiss={dismiss}
+            onOpenAgent={onOpenAgent}
           />
         </Suspense>
       )}
@@ -159,6 +164,7 @@ export function EntityReferenceLink({
         <Suspense fallback={null}>
           <EntityReferenceModal
             reference={reference}
+            onOpenAgent={onOpenAgent}
             onResolved={() => setLoading(false)}
             onClose={() => {
               setOpen(false)

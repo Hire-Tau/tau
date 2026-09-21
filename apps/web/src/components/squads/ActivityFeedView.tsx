@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import { useEffect, useRef } from 'react'
 import type { Dispatch, MouseEvent as ReactMouseEvent, SetStateAction } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import type { SquadActivityItem, SquadActivityKind } from '@tau/shared'
+import type { Agent, SquadActivityItem, SquadActivityKind } from '@tau/shared'
 import { useStableRef } from '../../hooks/useStableRef'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { agentTypeColor } from '../../lib/agentTypeColor'
@@ -38,6 +38,8 @@ export interface ActivityFeedViewProps<T extends SquadActivityItem = SquadActivi
   squadChipFor?: (item: T) => { label: string; href: string } | null
   /** Called for a plain (unmodified) click on a non-PR row; modified clicks keep navigation. */
   onOpen: (item: T) => void
+  /** Keep resolved inline agent references in the owning feed, not a routed chat. */
+  onOpenAgentReference: (agent: Agent) => void
   hasNextPage: boolean | undefined
   isFetchingNextPage: boolean
   onLoadMore: () => void
@@ -68,6 +70,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
   hrefFor,
   squadChipFor,
   onOpen,
+  onOpenAgentReference,
   hasNextPage,
   isFetchingNextPage,
   onLoadMore,
@@ -344,7 +347,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
                     )}
                     data-activity-column="summary"
                   >
-                    <ActivityPreview spans={item.preview} />
+                    <ActivityPreview spans={item.preview} onOpenAgent={onOpenAgentReference} />
                     {workStreamChip && (
                       <button
                         type="button"

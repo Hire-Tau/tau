@@ -192,3 +192,48 @@ test('agent prefixes navigate to squad Chats with the full ID and preserve Back 
     client.clear()
   }
 })
+
+for (const status of [403, 404, 409]) {
+  test(`agent resolution ${status} never invokes Activity's opener or leaks response details`, async () => {
+    const { MemoryRouter } = await import('react-router-dom')
+    const dom = await acquireDomHarness({
+      configureWindow(window) {
+        window.fetch = async () => new window.Response(JSON.stringify({ error: 'private agent detail' }), { status })
+      },
+    })
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    let opened = false
+    let closed = false
+    try {
+      const { root } = dom.createRoot()
+      await dom.act(async () => {
+        root.render(
+          <MemoryRouter>
+            <QueryClientProvider client={client}>
+              <EntityReferenceModal
+                reference={{ kind: 'agent', id: 'abc12345' }}
+                onOpenAgent={() => {
+                  opened = true
+                }}
+                onClose={() => {
+                  closed = true
+                }}
+              />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      })
+      await dom.act(async () => {
+        await Bun.sleep(30)
+      })
+      expect(dom.window.document.body.textContent).toContain('ambiguous, unavailable, or inaccessible')
+      expect(dom.window.document.body.textContent).not.toContain('private agent detail')
+      expect(opened).toBe(false)
+      await dom.act(() => dom.window.document.querySelector<HTMLButtonElement>('button[aria-label="Close"]')!.click())
+      expect(closed).toBe(true)
+    } finally {
+      client.clear()
+      await dom.cleanup()
+    }
+  })
+}

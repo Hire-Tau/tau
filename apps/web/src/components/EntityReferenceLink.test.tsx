@@ -9,7 +9,7 @@ import type { EntityReference } from '../lib/entityReference'
 const agentId = 'abc12345-1234-1234-1234-123456789012'
 const workId = 'def12345-1234-1234-1234-123456789012'
 
-async function fixture(reference: EntityReference) {
+async function fixture(reference: EntityReference, onOpenAgent?: (agent: import('@tau/shared').Agent) => void) {
   // Load lazy modules before installing the DOM's constructor globals.
   await Promise.all([import('./EntityReferencePreview'), import('./EntityReferenceModal')])
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
@@ -87,7 +87,9 @@ async function fixture(reference: EntityReference) {
     root.render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <EntityReferenceLink reference={reference}>Reference</EntityReferenceLink>
+          <EntityReferenceLink reference={reference} onOpenAgent={onOpenAgent}>
+            Reference
+          </EntityReferenceLink>
           <EntityReferenceLink reference={{ kind: 'ws', id: '42' }}>Another reference</EntityReferenceLink>
           <Location />
         </MemoryRouter>
@@ -301,3 +303,24 @@ test('opening another reference replaces the existing preview', async () => {
     await f.cleanup()
   }
 })
+
+for (const reference of [
+  { kind: 'agent', id: 'abc12345' },
+  { kind: 'ws', id: '42' },
+] as const) {
+  test(`Activity override retains context for ${reference.kind} preview agent quick links`, async () => {
+    const opened: string[] = []
+    const f = await fixture(reference, (agent) => opened.push(agent.id))
+    try {
+      await f.hover()
+      await f.advance(250)
+      const link = f.tooltip()!.querySelector<HTMLAnchorElement>('a[href*="agents"]')!
+      await f.dom.act(async () => link.click())
+      expect(opened).toEqual([agentId])
+      expect(f.container.querySelector('output')?.textContent).toBe('/')
+      expect(f.tooltip()).toBeNull()
+    } finally {
+      await f.cleanup()
+    }
+  })
+}

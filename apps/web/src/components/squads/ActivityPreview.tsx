@@ -1,11 +1,17 @@
 import { activityExternalHref } from './squadActivityView'
-import type { ActivityPreviewSpan } from '@tau/shared'
+import type { ActivityPreviewSpan, Agent } from '@tau/shared'
 import type { ReactNode } from 'react'
 import { parseEntityReference } from '../../lib/entityReference'
 import { EntityReferenceLink } from '../EntityReferenceLink'
 
 /** Only inline elements: never parse Markdown or mount the document renderer. */
-export function ActivityPreview({ spans }: { spans: ActivityPreviewSpan[] }) {
+export function ActivityPreview({
+  spans,
+  onOpenAgent,
+}: {
+  spans: ActivityPreviewSpan[]
+  onOpenAgent?: (agent: Agent) => void
+}) {
   return (
     <>
       {spans.map((span, index) => {
@@ -17,7 +23,7 @@ export function ActivityPreview({ spans }: { spans: ActivityPreviewSpan[] }) {
         const external = span.href && activityExternalHref(span.href)
         if (reference)
           content = (
-            <EntityReferenceLink reference={reference} preloadOnVisible={false}>
+            <EntityReferenceLink reference={reference} preloadOnVisible={false} onOpenAgent={onOpenAgent}>
               {content}
             </EntityReferenceLink>
           )
