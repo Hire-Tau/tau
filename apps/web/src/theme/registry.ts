@@ -7,15 +7,8 @@ import {
   type ThemeKind,
 } from '@tau/shared'
 
-/**
- * Web theme registry (phase 0). Exactly one built-in ships today: the `tau`
- * theme, whose two variants are byte-identical to today's light/dark scopes in
- * `src/index.css`. Its token values live in CSS (`:root` / `.dark`); this
- * registry only describes *how a resolved variant is applied to the document*,
- * so there is exactly one source of truth for color values.
- *
- * New built-in themes (phase 5) add entries here; unified themes (PD-6) use
- * `kind: 'unified'` with a single `constant` scope.
+/** Built-in values live in CSS, never in a second runtime JS palette.
+ * Tau is the existing pair; additional complete scopes live in builtins.css.
  */
 export interface WebThemeDefinition extends ThemeDescriptor {
   readonly id: string
@@ -30,7 +23,7 @@ export interface WebThemeDefinition extends ThemeDescriptor {
   readonly variantClass: Partial<Record<EffectiveAppearance, string | null>>
 }
 
-/** The default dual-variant theme: today's light/dark look, unchanged. */
+/** The original default pair, with the narrow phase-5 contrast corrections. */
 export const TAU_THEME: WebThemeDefinition = {
   id: 'tau',
   label: 'Tau',
@@ -39,7 +32,19 @@ export const TAU_THEME: WebThemeDefinition = {
 }
 
 /** Built-in themes available without any custom-theme machinery. */
-export const BUILT_IN_THEMES: readonly WebThemeDefinition[] = [TAU_THEME]
+export const BUILT_IN_THEMES: readonly WebThemeDefinition[] = [
+  TAU_THEME,
+  // Cool slate surfaces and a restrained teal accent; familiar Tau geometry.
+  { id: 'harbor', label: 'Harbor', kind: 'dual', variantClass: { light: null, dark: 'dark' } },
+  // Warm paper/charcoal surfaces with a terracotta accent, not a semantic recolor.
+  { id: 'ember', label: 'Ember', kind: 'dual', variantClass: { light: null, dark: 'dark' } },
+  // Constant light scheme: stark ink/paper, strong outlines and dark code panels.
+  { id: 'high-contrast', label: 'High contrast', kind: 'unified', variantClass: { constant: null } },
+]
+
+/** Release gate passed: all built-in contrast and pre-paint matrices (phase 5).
+ * Keep the switch for a quick picker rollback without losing stored choices. */
+export const THEME_PICKER_ENABLED = true
 
 export function findWebTheme(themeId: string | null | undefined): WebThemeDefinition {
   return (

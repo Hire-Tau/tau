@@ -80,7 +80,7 @@ export function persistThemeSelection(storage: ThemeStorage | null, selection: S
 export interface SurfaceSnapshot {
   readonly theme: string
   /** The resolved appearance the surface was captured under. */
-  readonly appearance: Exclude<EffectiveAppearance, 'constant'>
+  readonly appearance: EffectiveAppearance
   readonly surface: string
 }
 
@@ -88,7 +88,7 @@ export interface SurfaceSnapshot {
 export function persistSurfaceSnapshot(
   storage: ThemeStorage | null,
   themeId: string,
-  resolvedAppearance: Exclude<EffectiveAppearance, 'constant'>,
+  resolvedAppearance: EffectiveAppearance,
   surface: string
 ): void {
   if (!storage) return
@@ -113,7 +113,7 @@ export function persistSurfaceSnapshot(
 export function readSurfaceSnapshot(
   storage: ThemeStorage | null,
   themeId: string,
-  resolvedAppearance: Exclude<EffectiveAppearance, 'constant'>
+  resolvedAppearance: EffectiveAppearance
 ): string | null {
   if (!storage) return null
   try {

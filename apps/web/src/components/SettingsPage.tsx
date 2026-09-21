@@ -11,6 +11,7 @@ import { useOfflineCache } from '../hooks/useOfflineCache'
 import { usePushNotifications } from '../hooks/usePushNotifications'
 import { usePWA } from '../hooks/usePWA'
 import { useAuth } from '../providers/AuthProvider'
+import { ThemeControl } from './settings/ThemeControl'
 import { useTheme } from '../providers/ThemeProvider'
 import { usePermissions } from '../hooks/usePermissions'
 import { useOnboarding } from '../hooks/useOnboarding'
@@ -29,7 +30,7 @@ import { setAdminPause } from '../api/system'
 import { integrationQueries, queries } from '../queryOptions'
 import { queryKeys } from '../queryKeys'
 import { maintenanceControlDisabled, maintenanceStatusText } from './maintenance-status'
-import { CheckIcon, ShareIcon, WifiOffIcon, SunIcon, MoonIcon } from './icons'
+import { CheckIcon, ShareIcon, WifiOffIcon } from './icons'
 import { ConfirmButton } from './ConfirmButton'
 import { SecretsSection } from './settings/SecretsSection'
 import { ProviderAuthSection } from './settings/ProviderAuthSection'
@@ -202,49 +203,6 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
 }
 
 // =============================================================================
-// Theme control
-// =============================================================================
-
-function ThemeControl({ dependencies }: { dependencies: SettingsPageDependencies }) {
-  const { theme, toggleTheme } = dependencies.useTheme()
-
-  return (
-    <section data-setting-target="appearance" aria-label="Theme" className="tau-section py-5">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <p data-setting-target="dark-mode" className="font-medium text-primary">
-            Theme
-          </p>
-          <p className="text-sm text-muted">{theme === 'dark' ? 'Dark theme is active.' : 'Light theme is active.'}</p>
-        </div>
-        <button
-          onClick={toggleTheme}
-          className={clsx(
-            'tau-button',
-            'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0 flex items-center gap-2',
-            theme === 'dark'
-              ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 hover:bg-amber-200 dark:hover:bg-amber-900/50'
-              : 'bg-slate-800 text-white hover:bg-slate-900'
-          )}
-        >
-          {theme === 'dark' ? (
-            <>
-              <SunIcon className="w-4 h-4" />
-              Light Mode
-            </>
-          ) : (
-            <>
-              <MoonIcon className="w-4 h-4" />
-              Dark Mode
-            </>
-          )}
-        </button>
-      </div>
-    </section>
-  )
-}
-
-// =============================================================================
 // Notifications Section
 // =============================================================================
 
@@ -385,6 +343,7 @@ function NotificationsSection({ dependencies }: { dependencies: SettingsPageDepe
 
 function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }) {
   const pwa = dependencies.usePWA()
+  const theme = dependencies.useTheme()
   const { cacheStats, clearCache } = dependencies.useOfflineCache()
   const [isClearing, setIsClearing] = useState(false)
 
@@ -400,7 +359,7 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
         <h3 className="text-lg font-semibold text-primary">App & Appearance</h3>
       </div>
 
-      <ThemeControl dependencies={dependencies} />
+      <ThemeControl value={theme} />
 
       {/* PWA Installation */}
       <div className="tau-section py-5">
