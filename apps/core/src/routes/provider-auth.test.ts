@@ -106,6 +106,12 @@ const OPENROUTER_ROUTING_TEST_TIERS = [
 ]
 
 describe('provider-auth routes', () => {
+  test('OpenAI-compatible account creation reaches its dedicated route rather than generic API-key creation', async () => {
+    const response = await app.request('/openai-compatible/accounts', jsonReq('POST', {}))
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({ error: 'baseUrl, model, and providerId are required' })
+  })
+
   const testKey = randomBytes(32).toString('hex')
   let originalEncryptionKey: string | undefined
   let providerHealthState: ProviderHealthTestSnapshot
