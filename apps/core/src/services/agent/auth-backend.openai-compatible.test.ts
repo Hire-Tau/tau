@@ -137,3 +137,38 @@ test('a worker catalog follows added, changed and disabled accounts without rebu
   expect(configs.has('local')).toBe(false)
   expect(configs.has('external')).toBe(true)
 })
+
+test('a session-scoped runtime can authenticate a registered compatible model', async () => {
+  const { ModelRuntime } = await import('@earendil-works/pi-coding-agent')
+  const key = { type: 'api_key' as const, key: 'fixture-only' }
+  const runtime = await ModelRuntime.create({
+    modelsPath: null,
+    allowModelNetwork: false,
+    credentials: {
+      read: async (provider) => (provider === 'local-fixture' ? key : undefined),
+      list: async () => [{ providerId: 'local-fixture', type: 'api_key' as const }],
+      modify: async () => key,
+      delete: async () => {},
+    },
+  })
+  expect(await runtime.checkAuth('local-fixture')).toBeUndefined()
+  registerOpenAICompatibleAccounts(runtime, {
+    version: 1,
+    accounts: {
+      'local-fixture': [
+        {
+          id: 'local-account',
+          enabled: true,
+          credential: key,
+          kind: 'openai-compatible',
+          baseUrl: 'http://localhost:8080/v1',
+          model: 'qwen',
+          capabilities,
+        },
+      ],
+    },
+  })
+  expect(runtime.getModel('local-fixture', 'qwen')?.baseUrl).toBe('http://localhost:8080/v1')
+  expect(await runtime.checkAuth('local-fixture')).toBeDefined()
+  expect((await runtime.getAuth('local-fixture'))?.auth.apiKey).toBe(key.key)
+})

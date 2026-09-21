@@ -272,7 +272,6 @@ export function getModelRuntime(): Promise<ModelRuntime> {
 export function refreshModelRuntime(): Promise<void> {
   if (!modelRuntimeInstance) return Promise.resolve()
   registerOpenAICompatibleAccounts(modelRuntimeInstance)
-  if (modelRuntimeInstance) registerOpenAICompatibleAccounts(modelRuntimeInstance)
   return modelRuntimeInstance
     .refresh({ allowNetwork: false })
     .then(() => undefined)
