@@ -25,3 +25,5 @@ export * from './resources/notificationConfig'
 export type { WorkflowCatalogEntry, WorkflowRunDetail } from './resources/workflows'
 
 export * from './resources/workStreams'
+
+export * from './resources/userPreferences'
