@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { addAccount, type AccountStoreV1 } from './account-store'
 import { inspectTierCapabilities } from '../model-selection/tier-capability-policy'
 import { selectModelSpec } from '../model-selection/select-model'
-import { openAICompatibleRegistrations } from './auth-backend'
+import { openAICompatibleRegistrations, registerOpenAICompatibleAccounts } from './auth-backend'
 const credential = { type: 'api_key' as const, key: '' }
 const capabilities = { tools: true, probedAt: '2026-01-01T00:00:00Z' }
 describe('compatible runtime registrations', () => {
@@ -98,4 +98,42 @@ describe('compatible runtime registrations', () => {
       }).selected
     ).toBe('fallback-local:qwen:latest')
   })
+})
+
+test('a worker catalog follows added, changed and disabled accounts without rebuilding on credential updates', () => {
+  const configs = new Map<string, any>([['external', { name: 'External test provider' }]])
+  let writes = 0
+  const runtime = {
+    getRegisteredProviderIds: () => [...configs.keys()],
+    getRegisteredProviderConfig: (id: string) => configs.get(id),
+    registerProvider: (id: string, config: any) => {
+      writes++
+      configs.set(id, config)
+    },
+    unregisterProvider: (id: string) => {
+      configs.delete(id)
+    },
+  }
+  const store: AccountStoreV1 = { version: 1, accounts: {} }
+  registerOpenAICompatibleAccounts(runtime, store)
+  const account = addAccount(store, 'local', credential, 'Local')
+  Object.assign(account, {
+    kind: 'openai-compatible',
+    baseUrl: 'http://localhost:8080/v1',
+    model: 'qwen',
+    capabilities,
+  })
+  registerOpenAICompatibleAccounts(runtime, store)
+  expect(configs.get('local').models[0].id).toBe('qwen')
+  account.lastUsedAt = 100
+  account.credential = { type: 'api_key', key: 'fixture-rotation' }
+  registerOpenAICompatibleAccounts(runtime, store)
+  expect(writes).toBe(1)
+  account.model = 'new-model'
+  registerOpenAICompatibleAccounts(runtime, store)
+  expect(configs.get('local').models[0].id).toBe('new-model')
+  account.enabled = false
+  registerOpenAICompatibleAccounts(runtime, store)
+  expect(configs.has('local')).toBe(false)
+  expect(configs.has('external')).toBe(true)
 })
