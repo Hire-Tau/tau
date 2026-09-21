@@ -86,8 +86,8 @@
 
   .tau-button-primary {
     background: rgb(var(--color-primary));
-    color: white;
-    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+    color: rgb(var(--on-accent-fg));
+    box-shadow: inset 0 0 0 1px rgb(var(--on-accent-fg) / 0.08);
   }
 
   .tau-button-primary:hover:not(:disabled) {

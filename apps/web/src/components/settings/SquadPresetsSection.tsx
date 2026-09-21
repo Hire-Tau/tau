@@ -81,7 +81,7 @@ export function SquadPresetsSection() {
           <button
             onClick={() => setIsAdding(true)}
             disabled={isAdding}
-            className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-white rounded-md hover:bg-accent/90 disabled:opacity-50 shrink-0"
+            className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md hover:bg-accent/90 disabled:opacity-50 shrink-0"
           >
             New squad preset
           </button>
@@ -241,7 +241,7 @@ function AddSquadPresetForm({ onClose, onCreated }: { onClose: () => void; onCre
         <button
           onClick={handleCreate}
           disabled={createMutation.isPending}
-          className="tau-button tau-button-primary text-sm bg-accent text-white px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="tau-button tau-button-primary text-sm bg-accent text-on-accent px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
         >
           {createMutation.isPending ? 'Creating…' : 'Create'}
         </button>
@@ -497,7 +497,7 @@ function SquadPresetRow({
                 <button
                   onClick={handleSave}
                   disabled={!canUpdate || updateMutation.isPending}
-                  className="tau-button tau-button-primary text-sm bg-accent text-white px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+                  className="tau-button tau-button-primary text-sm bg-accent text-on-accent px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
                 >
                   {updateMutation.isPending ? 'Saving…' : 'Save'}
                 </button>

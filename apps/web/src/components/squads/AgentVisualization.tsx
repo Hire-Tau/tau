@@ -72,7 +72,7 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
       name: getAgentPrimaryLabel(agent),
       type: agent.agentTypeId,
       status: agent.status,
-      color: webStatus(AGENT_STATUS_ROLE[agent.status]).markerHex,
+      color: webStatus(AGENT_STATUS_ROLE[agent.status]).markerColor,
       val: agent.status === 'active' ? 12 : 8,
     }))
 
@@ -111,7 +111,7 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
         const pulseRadius = radius + 4 + Math.sin(Date.now() / 200) * 2
         ctx.beginPath()
         ctx.arc(x, y, pulseRadius, 0, 2 * Math.PI)
-        ctx.strokeStyle = webStatus(AGENT_STATUS_ROLE.active).markerHex
+        ctx.strokeStyle = webStatus(AGENT_STATUS_ROLE.active).markerColor
         ctx.lineWidth = 2 / globalScale
         ctx.stroke()
       }
@@ -121,7 +121,7 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
         const pulseRadius = radius + 4 + Math.sin(Date.now() / 400) * 3
         ctx.beginPath()
         ctx.arc(x, y, pulseRadius, 0, 2 * Math.PI)
-        ctx.strokeStyle = webStatus(AGENT_STATUS_ROLE['waiting-input']).markerHex
+        ctx.strokeStyle = webStatus(AGENT_STATUS_ROLE['waiting-input']).markerColor
         ctx.lineWidth = 2 / globalScale
         ctx.stroke()
       }
@@ -233,7 +233,7 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
               onClick={() => setIs3D(false)}
               className={clsx(
                 'tau-button',
-                `px-3 py-1 text-sm rounded ${!is3D ? 'bg-accent text-white' : 'text-muted hover:text-primary'}`
+                `px-3 py-1 text-sm rounded ${!is3D ? 'bg-accent text-on-accent' : 'text-muted hover:text-primary'}`
               )}
             >
               2D
@@ -242,7 +242,7 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
               onClick={() => setIs3D(true)}
               className={clsx(
                 'tau-button',
-                `px-3 py-1 text-sm rounded ${is3D ? 'bg-accent text-white' : 'text-muted hover:text-primary'}`
+                `px-3 py-1 text-sm rounded ${is3D ? 'bg-accent text-on-accent' : 'text-muted hover:text-primary'}`
               )}
             >
               3D
@@ -363,7 +363,7 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
           <div className="mt-4 space-y-2">
             <button
               onClick={() => setShowInbox(true)}
-              className="tau-button tau-button-primary w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-hover"
+              className="tau-button tau-button-primary w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover"
             >
               <InboxIcon className="w-4 h-4" />
               View Inbox

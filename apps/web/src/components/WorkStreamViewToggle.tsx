@@ -89,7 +89,7 @@ export function WorkStreamViewToggle({
             'tau-button',
             'px-2.5 py-1.5 text-xs font-medium capitalize transition-colors',
             option !== modes[0] && 'border-l border-th-border',
-            view === option ? 'bg-accent text-white' : 'bg-surface text-secondary hover:bg-surface-hover'
+            view === option ? 'bg-accent text-on-accent' : 'bg-surface text-secondary hover:bg-surface-hover'
           )}
         >
           {option}

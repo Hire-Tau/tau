@@ -400,7 +400,7 @@ export function SquadGeneralSettings({
             'tau-button',
             'px-4 py-1.5 text-sm rounded-md font-medium transition-colors',
             dirty && isValid && canUpdateSquad
-              ? 'bg-accent text-white hover:bg-accent/90'
+              ? 'bg-accent text-on-accent hover:bg-accent/90'
               : 'bg-surface-secondary text-muted cursor-not-allowed'
           )}
         >

@@ -118,7 +118,7 @@ export function SystemTokensSection() {
         <button
           onClick={() => createMutation.mutate()}
           disabled={createMutation.isPending}
-          className="tau-button tau-button-primary px-3 py-1.5 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+          className="tau-button tau-button-primary px-3 py-1.5 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
         >
           {createMutation.isPending ? 'Creating…' : 'Create token'}
         </button>

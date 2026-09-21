@@ -983,9 +983,9 @@ describe('AgentChat', () => {
       () => {
         const after = window.document.querySelector('[data-testid="after-messages"]')
         expect(after?.textContent).toContain('Compacting context')
-        const banner = after?.querySelector('.border-amber-200')
-        expect(banner?.className).toContain('bg-amber-50')
-        expect(banner?.className).toContain('text-amber-700')
+        const banner = after?.querySelector('.border-status-attention-border')
+        expect(banner?.className).toContain('bg-status-attention-surface')
+        expect(banner?.className).toContain('text-status-attention-fg')
         expect(banner?.className).not.toContain('blue')
       },
       { timeout: 3000 }

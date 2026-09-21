@@ -231,7 +231,7 @@ describe('AgentConversation status badge', () => {
     for (const status of ['compacting', 'resetting']) {
       _agentStatus = status
       const html = render({ agentId: 'a1' })
-      expect(html).toContain('text-amber-700')
+      expect(html).toContain('text-status-attention-fg')
       expect(html).not.toContain('text-blue-600')
       expect(html).not.toContain('text-orange-600')
     }

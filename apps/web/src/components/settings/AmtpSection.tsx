@@ -145,7 +145,7 @@ export function AmtpSection() {
                   <button
                     type="submit"
                     disabled={edit.isPending}
-                    className="tau-button tau-button-primary rounded bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+                    className="tau-button tau-button-primary rounded bg-accent px-3 py-1 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50"
                   >
                     {edit.isPending ? 'Saving…' : 'Save'}
                   </button>
@@ -256,7 +256,7 @@ export function AmtpSection() {
             <button
               type="submit"
               disabled={add.isPending || !form.localAlias || !form.instanceId || !form.baseUrl || !form.publicKeyPem}
-              className="tau-button tau-button-primary rounded bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+              className="tau-button tau-button-primary rounded bg-accent px-3 py-1 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
               {add.isPending ? 'Adding…' : 'Add Peer'}
             </button>

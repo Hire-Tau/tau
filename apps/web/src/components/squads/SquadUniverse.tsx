@@ -141,7 +141,7 @@ export function SquadUniverse({ squads, relationships }: Props) {
         status: agent.status,
         squadId,
         agentTypeId: agent.agentTypeId,
-        color: webStatus(AGENT_STATUS_ROLE[agent.status]).markerHex,
+        color: webStatus(AGENT_STATUS_ROLE[agent.status]).markerColor,
         val: agent.status === 'active' ? 8 : 5,
       })
 

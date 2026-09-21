@@ -374,7 +374,7 @@ function RegisterRemoteHostForm({ squads }: { squads: Squad[] }) {
           <button
             onClick={() => registerMutation.mutate()}
             disabled={!canSubmit}
-            className="tau-button tau-button-primary text-xs bg-accent text-white px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+            className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
           >
             {registerMutation.isPending ? 'Registering…' : 'Register'}
           </button>

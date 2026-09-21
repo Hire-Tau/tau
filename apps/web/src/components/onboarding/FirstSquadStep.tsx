@@ -187,7 +187,7 @@ export function FirstSquadStep({ meta, item, embedded, onSquadCreated }: ItemRow
               <button
                 type="submit"
                 disabled={kickoffMutation.isPending}
-                className="tau-button tau-button-primary px-4 py-2 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+                className="tau-button tau-button-primary px-4 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
               >
                 {kickoffMutation.isPending ? 'Sending…' : 'Send'}
               </button>
@@ -291,7 +291,7 @@ export function FirstSquadStep({ meta, item, embedded, onSquadCreated }: ItemRow
                 !name.trim() ||
                 createHostWorkspacePathError(hostWorkspacePath.trim()) !== null
               }
-              className="tau-button tau-button-primary px-4 py-2 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+              className="tau-button tau-button-primary px-4 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
             >
               {createMutation.isPending ? 'Creating…' : 'Create squad & send kickoff'}
             </button>

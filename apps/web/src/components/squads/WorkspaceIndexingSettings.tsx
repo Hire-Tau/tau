@@ -276,7 +276,7 @@ export function WorkspaceIndexingSettings({ squadId }: Props) {
             <button
               onClick={handleSave}
               disabled={updateMutation.isPending}
-              className="tau-button tau-button-primary px-3 py-1.5 text-sm rounded-md bg-accent text-white hover:bg-accent/90"
+              className="tau-button tau-button-primary px-3 py-1.5 text-sm rounded-md bg-accent text-on-accent hover:bg-accent/90"
             >
               {updateMutation.isPending ? 'Saving...' : 'Save'}
             </button>

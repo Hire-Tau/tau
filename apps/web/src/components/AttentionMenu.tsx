@@ -177,7 +177,7 @@ export function AttentionMenu({
                   className={clsx(
                     'flex-1 cursor-pointer rounded border border-th-border px-2 py-1 text-center text-xs',
                     LABEL_FOCUS_RING,
-                    attention[kind] === level ? 'bg-accent text-white' : 'text-secondary hover:bg-surface-hover'
+                    attention[kind] === level ? 'bg-accent text-on-accent' : 'text-secondary hover:bg-surface-hover'
                   )}
                 >
                   <input

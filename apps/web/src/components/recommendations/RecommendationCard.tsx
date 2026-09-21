@@ -2,9 +2,9 @@ import type { OperationsRecommendationSummary } from '@tau/shared'
 import { Badge, type BadgeColor } from '../Badge'
 
 const CONFIDENCE_COLORS: Record<string, BadgeColor> = {
-  high: 'red',
-  medium: 'amber',
-  low: 'gray',
+  high: 'danger',
+  medium: 'attention',
+  low: 'neutral',
 }
 
 export function RecommendationCard({ item, onOpen }: { item: OperationsRecommendationSummary; onOpen: () => void }) {
@@ -15,7 +15,7 @@ export function RecommendationCard({ item, onOpen }: { item: OperationsRecommend
     >
       <div className="flex items-start justify-between gap-3">
         <h3 className="font-medium text-primary">{item.title}</h3>
-        <Badge color={CONFIDENCE_COLORS[item.confidence] ?? 'gray'} className="shrink-0 capitalize">
+        <Badge color={CONFIDENCE_COLORS[item.confidence] ?? 'neutral'} className="shrink-0 capitalize">
           {item.confidence}
         </Badge>
       </div>

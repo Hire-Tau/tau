@@ -3,14 +3,14 @@ import type { ExecutionStatus } from '@tau/shared'
 import { executionStatusBadgeColors, executionStatusTextColors } from './execution-status'
 
 const cases: Array<[ExecutionStatus, string, string]> = [
-  ['queued', 'cyan', 'text-cyan-700'],
-  ['waiting-maintenance', 'orange', 'text-orange-700'],
-  ['waiting-sandbox', 'orange', 'text-orange-700'],
-  ['running', 'blue', 'text-blue-700'],
-  ['stopping', 'amber', 'text-amber-700'],
-  ['stopped', 'gray', 'text-gray-700'],
-  ['completed', 'green', 'text-green-700'],
-  ['failed', 'red', 'text-red-700'],
+  ['queued', 'queue', 'text-status-queue-fg'],
+  ['waiting-maintenance', 'externalWait', 'text-status-external-wait-fg'],
+  ['waiting-sandbox', 'externalWait', 'text-status-external-wait-fg'],
+  ['running', 'progress', 'text-status-progress-fg'],
+  ['stopping', 'attention', 'text-status-attention-fg'],
+  ['stopped', 'neutral', 'text-status-neutral-fg'],
+  ['completed', 'success', 'text-status-success-fg'],
+  ['failed', 'danger', 'text-status-danger-fg'],
 ]
 
 describe('execution status presentation', () => {

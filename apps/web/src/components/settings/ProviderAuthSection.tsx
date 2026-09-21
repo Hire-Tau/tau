@@ -1055,7 +1055,7 @@ function ApiKeyForm({
       <button
         onClick={() => mutation.mutate(value)}
         disabled={!value || mutation.isPending}
-        className="tau-button tau-button-primary text-xs bg-accent text-white px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+        className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
       >
         {mutation.isPending ? 'Saving...' : 'Save'}
       </button>
@@ -1268,7 +1268,7 @@ export function SelectStep({
         <button
           onClick={() => onSelect(deviceOption.id)}
           disabled={isPending}
-          className="tau-button tau-button-primary text-xs bg-accent text-white px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
         >
           Device code login (recommended)
         </button>
@@ -1304,7 +1304,7 @@ export function SelectStep({
             key={option.id}
             onClick={() => onSelect(option.id)}
             disabled={isPending}
-            className="tau-button tau-button-primary text-xs bg-accent text-white px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+            className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
           >
             {option.label}
           </button>
@@ -1366,7 +1366,7 @@ export function CodeStep({
         <button
           onClick={onSubmit}
           disabled={!code.trim() || isSubmitting}
-          className="tau-button tau-button-primary text-xs bg-accent text-white px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
         >
           {isSubmitting ? 'Submitting...' : 'Submit'}
         </button>
@@ -1686,7 +1686,7 @@ export function CompatibleProviderSetup({ canWrite }: { canWrite: boolean }) {
         <button
           disabled={!baseUrl || !providerId || !model || !canWrite}
           onClick={verify}
-          className="tau-button tau-button-primary rounded bg-accent px-3 py-2 text-sm text-white disabled:opacity-50"
+          className="tau-button tau-button-primary rounded bg-accent px-3 py-2 text-sm text-on-accent disabled:opacity-50"
         >
           Verify capabilities
         </button>
@@ -1751,7 +1751,7 @@ export function CompatibleProviderSetup({ canWrite }: { canWrite: boolean }) {
           <button
             onClick={save}
             disabled={!selectedTiers.length || !canWrite}
-            className="tau-button tau-button-primary rounded bg-accent px-3 py-2 text-white disabled:opacity-50"
+            className="tau-button tau-button-primary rounded bg-accent px-3 py-2 text-on-accent disabled:opacity-50"
           >
             Add provider and assign tiers
           </button>

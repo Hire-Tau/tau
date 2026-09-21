@@ -92,6 +92,12 @@ function numericRgb(value: string) {
 }
 
 function intrinsicAlpha(name: string, appearance: 'light' | 'dark') {
+  if (appearance === 'dark') {
+    if (/^status-.*-badge-(surface|hover)$/.test(name) && !name.startsWith('status-neutral-'))
+      return name.endsWith('-hover') ? 0.7 : 0.3
+    if (/^status-.*-surface$/.test(name) && !name.includes('-badge-')) return 0.2
+    if (/^badge-accent-\d+-(surface|hover)$/.test(name)) return name.endsWith('-hover') ? 0.7 : 0.3
+  }
   if (name === 'panel-border') return 0.12
   if (name === 'input-border' && appearance === 'dark') return 0.16
   return 1
@@ -102,8 +108,8 @@ describe('tailwind theme color opacity after variable substitution', () => {
     expect(colors.length).toBeGreaterThan(20)
     for (const [, mapping] of colors) {
       expect(mapping).toContain('<alpha-value>')
-      expect(mapping).toMatch(/^rgb\(var\(--color-[a-z-]+\) \/ /)
-      const token = /var\((--color-[a-z-]+)\)/.exec(mapping)![1]!
+      expect(mapping).toMatch(/^rgb\(var\(--[a-z0-9-]+\) \/ /)
+      const token = /var\((--[a-z0-9-]+)\)/.exec(mapping)![1]!
       // Audit ALL mappings: none may embed an alpha before the adapter adds it.
       for (const variables of Object.values(scopes)) {
         expect(variables[token]).toMatch(/^\d+ \d+ \d+$/)
@@ -142,7 +148,7 @@ describe('tailwind theme color opacity after variable substitution', () => {
 
     for (const [appearance, variables] of Object.entries(scopes) as Array<['light' | 'dark', Record<string, string>]>) {
       for (const [name, mapping] of colors) {
-        const token = /var\((--color-[a-z-]+)\)/.exec(mapping)![1]!
+        const token = /var\((--[a-z0-9-]+)\)/.exec(mapping)![1]!
         for (const modifier of modifiers) {
           const rule = rules.get(`border-${name}${modifier}`)!
           const declared = declarations(rule)

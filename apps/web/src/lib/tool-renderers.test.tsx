@@ -54,9 +54,9 @@ describe('ask_human renderer', () => {
     const result = renderToStaticMarkup(
       <ToolResultView renderers={agentToolRenderers} toolName="ask_human" result="Answer received" isError={false} />
     )
-    expect(args).toContain('border-purple-200')
-    expect(args).toContain('text-purple-700')
-    expect(result).toContain('text-purple-700')
+    expect(args).toContain('border-status-human-wait-border')
+    expect(args).toContain('text-status-human-wait-fg')
+    expect(result).toContain('text-status-human-wait-fg')
     expect(args).not.toContain('orange')
     expect(result).not.toContain('orange')
   })
@@ -118,7 +118,7 @@ describe('dispatch renderer', () => {
     expect(html.toLowerCase()).toContain('queued')
     expect(html).toContain('sa-1')
     expect(html).toContain('subagent=sa-1')
-    expect(html).toContain('bg-cyan-50')
+    expect(html).toContain('bg-status-queue-surface')
   })
 
   it('result links preserve the selected parent agent query param', () => {
@@ -189,7 +189,7 @@ describe('check_subagents renderer', () => {
       },
     })
     const html = renderToolResult('check_subagents', result)
-    expect(html).toContain('bg-gray-50')
+    expect(html).toContain('bg-status-neutral-surface')
     expect(html).not.toContain('yellow')
   })
 
@@ -221,7 +221,7 @@ describe('stop_subagent renderer', () => {
       <ToolResultView renderers={agentToolRenderers} toolName="stop_subagent" result={stopped} isError={false} />
     )
     expect(stoppedHtml).toContain('Stopped')
-    expect(stoppedHtml).toContain('text-gray-700')
+    expect(stoppedHtml).toContain('text-status-neutral-fg')
     expect(stoppedHtml).not.toContain('yellow')
     expect(
       renderToStaticMarkup(
