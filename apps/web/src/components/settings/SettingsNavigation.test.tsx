@@ -140,6 +140,7 @@ test('matches punctuation-insensitive multiword queries and retains page-title m
 test('every indexed destination has a stable source anchor', () => {
   const sources = [
     join(import.meta.dir, '..', 'SettingsPage.tsx'),
+    join(import.meta.dir, 'ThemeControl.tsx'),
     ...readdirSync(import.meta.dir)
       .filter((name) => name.endsWith('Section.tsx'))
       .map((name) => join(import.meta.dir, name)),

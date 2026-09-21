@@ -1,6 +1,6 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useLayoutEffect, useCallback, type ReactNode } from 'react'
 import type { AppearanceSetting } from '@tau/shared'
-import { resolveWebTheme } from '../theme/registry'
+import { findWebTheme, resolveWebTheme } from '../theme/registry'
 import { applyResolvedTheme } from '../theme/apply'
 import { getThemeStorage, persistSurfaceSnapshot, persistThemeSelection, readThemeSelection } from '../theme/storage'
 
@@ -20,6 +20,7 @@ interface ThemeContextValue {
   theme: Theme
   toggleTheme: () => void
   setTheme: (theme: Theme) => void
+  setThemeId: (themeId: string) => void
   setAppearance: (appearance: AppearanceSetting) => void
 }
 
@@ -66,7 +67,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const { theme: resolvedThemeDefinition, appearance: resolvedAppearance } = resolved
   const resolvedTheme: Theme = resolvedAppearance === 'dark' ? 'dark' : 'light'
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = document.documentElement
     applyResolvedTheme(root, resolvedThemeDefinition, resolvedAppearance)
     persistThemeSelection(getThemeStorage(), selection)
@@ -77,9 +78,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const channels = window.getComputedStyle(root).getPropertyValue('--color-bg-surface').trim()
     if (channels) {
       const surface = /^[\d\s./%]+$/.test(channels) ? `rgb(${channels})` : channels
-      if (resolvedAppearance !== 'constant') {
-        persistSurfaceSnapshot(getThemeStorage(), resolvedThemeDefinition.id, resolvedAppearance, surface)
-      }
+      persistSurfaceSnapshot(getThemeStorage(), resolvedThemeDefinition.id, resolvedAppearance, surface)
       root.style.backgroundColor = surface
 
       // Keep the theme-color meta in sync: Safari/iOS tints its chrome (tab
@@ -94,6 +93,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
   }, [resolvedThemeDefinition, resolvedAppearance, selection])
 
+  const setThemeId = useCallback(
+    (themeId: string) => setSelection((s) => ({ ...s, themeId: findWebTheme(themeId).id })),
+    []
+  )
   const setAppearance = useCallback((appearance: AppearanceSetting) => setSelection((s) => ({ ...s, appearance })), [])
   const setTheme = useCallback((theme: Theme) => setAppearance(theme), [setAppearance])
   const toggleTheme = useCallback(() => {
@@ -111,6 +114,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     toggleTheme,
     setTheme,
     setAppearance,
+    setThemeId,
   }
 
   return <ThemeContext.Provider value={contextValue}>{children}</ThemeContext.Provider>
