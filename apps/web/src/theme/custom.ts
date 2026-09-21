@@ -1,11 +1,10 @@
+import { ACTIVE_THEME_TOKENS, type StoredThemeSelection } from '@tau/shared/theme-schema'
 import {
-  ACTIVE_THEME_TOKENS,
   CUSTOM_THEME_MAX_BYTES,
   compileCustomTheme,
   validateCustomTheme,
   type CustomThemeDocument,
-  type StoredThemeSelection,
-} from '@tau/shared'
+} from '@tau/shared/custom-theme'
 import { applyResolvedTheme } from './apply'
 import { BUILT_IN_THEMES, findWebTheme } from './registry'
 import {

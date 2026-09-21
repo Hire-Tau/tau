@@ -43,7 +43,11 @@
        packages/shared/src/theme-schema.ts. */
 
     /* Backgrounds */
-    --color-bg-page: 250 249 252;
+    --brand-gradient-from: 168 85 247;
+  --brand-gradient-to: 124 58 237;
+  --brand-tile: 124 58 237;
+  --brand-ink: 255 255 255;
+  --color-bg-page: 250 249 252;
     --color-bg-surface: 255 255 255;
     --color-bg-surface-secondary: 247 246 250;
     --color-bg-pill: 241 240 245;
@@ -365,7 +369,11 @@
     color-scheme: dark;
 
     /* Backgrounds - from splash.html */
-    --color-bg-page: 9 10 18;
+    --brand-gradient-from: 168 85 247;
+  --brand-gradient-to: 124 58 237;
+  --brand-tile: 124 58 237;
+  --brand-ink: 255 255 255;
+  --color-bg-page: 9 10 18;
     --color-bg-surface: 16 17 28;
     --color-bg-surface-secondary: 22 23 35;
     --color-bg-pill: 30 32 51;
