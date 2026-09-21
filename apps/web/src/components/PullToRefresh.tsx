@@ -5,7 +5,6 @@ import { SpinnerIcon } from './icons'
 
 const PULL_THRESHOLD_PX = 72
 const MAX_PULL_DISTANCE_PX = 96
-const BRAND_PURPLE = '#7c3aed'
 
 interface PullToRefreshProps extends HTMLAttributes<HTMLDivElement> {
   onRefresh: () => Promise<void> | void
@@ -143,7 +142,7 @@ export function PullToRefresh({ onRefresh, label, children, className, style, ..
         style={{ transform: `translateY(${Math.max(0, pullDistance - PULL_THRESHOLD_PX) / 4}px)` }}
       >
         <div className="tau-panel flex items-center gap-2 rounded-full bg-surface px-3 py-2">
-          <span style={{ color: BRAND_PURPLE }}>
+          <span className="text-[rgb(var(--brand-gradient-to))]">
             <SpinnerIcon
               className={clsx('h-4 w-4', isRefreshing ? 'animate-spin' : readyToRefresh ? 'rotate-180' : '')}
             />

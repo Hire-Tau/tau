@@ -5,7 +5,11 @@
   :root[data-theme='harbor'][data-appearance='light'],
   [data-theme-scope][data-theme='harbor'][data-appearance='light'] {
     color-scheme: light;
-    --color-bg-page: 244 249 250;
+    --brand-gradient-from: 168 85 247;
+  --brand-gradient-to: 124 58 237;
+  --brand-tile: 124 58 237;
+  --brand-ink: 255 255 255;
+  --color-bg-page: 244 249 250;
     --color-bg-surface: 255 255 255;
     --color-bg-surface-secondary: 236 245 247;
     --color-bg-pill: 228 239 242;
@@ -294,7 +298,11 @@
   :root[data-theme='harbor'][data-appearance='dark'],
   [data-theme-scope][data-theme='harbor'][data-appearance='dark'] {
     color-scheme: dark;
-    --color-bg-page: 11 22 30;
+    --brand-gradient-from: 168 85 247;
+  --brand-gradient-to: 124 58 237;
+  --brand-tile: 124 58 237;
+  --brand-ink: 255 255 255;
+  --color-bg-page: 11 22 30;
     --color-bg-surface: 15 30 40;
     --color-bg-surface-secondary: 21 40 51;
     --color-bg-pill: 26 49 61;
@@ -583,7 +591,11 @@
   :root[data-theme='ember'][data-appearance='light'],
   [data-theme-scope][data-theme='ember'][data-appearance='light'] {
     color-scheme: light;
-    --color-bg-page: 252 248 243;
+    --brand-gradient-from: 168 85 247;
+  --brand-gradient-to: 124 58 237;
+  --brand-tile: 124 58 237;
+  --brand-ink: 255 255 255;
+  --color-bg-page: 252 248 243;
     --color-bg-surface: 255 253 249;
     --color-bg-surface-secondary: 247 239 230;
     --color-bg-pill: 241 230 219;
@@ -872,7 +884,11 @@
   :root[data-theme='ember'][data-appearance='dark'],
   [data-theme-scope][data-theme='ember'][data-appearance='dark'] {
     color-scheme: dark;
-    --color-bg-page: 27 20 18;
+    --brand-gradient-from: 168 85 247;
+  --brand-gradient-to: 124 58 237;
+  --brand-tile: 124 58 237;
+  --brand-ink: 255 255 255;
+  --color-bg-page: 27 20 18;
     --color-bg-surface: 35 26 23;
     --color-bg-surface-secondary: 45 34 29;
     --color-bg-pill: 55 41 34;
@@ -1161,7 +1177,11 @@
   :root[data-theme='high-contrast'],
   [data-theme-scope][data-theme='high-contrast'] {
     color-scheme: light;
-    --color-bg-page: 255 255 255;
+    --brand-gradient-from: 168 85 247;
+  --brand-gradient-to: 124 58 237;
+  --brand-tile: 124 58 237;
+  --brand-ink: 255 255 255;
+  --color-bg-page: 255 255 255;
     --color-bg-surface: 255 255 255;
     --color-bg-surface-secondary: 255 255 255;
     --color-bg-pill: 255 255 255;
