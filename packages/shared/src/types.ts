@@ -127,6 +127,9 @@ export type DeliveryMode = 'steer' | 'follow-up'
 export type MonitorMessageKind = 'lines' | 'exited' | 'canceled' | 'timed-out' | 'overload' | 'failed'
 
 export interface MessageMetadata {
+  /** Original task updates consumed in this exact response group. */
+  assistantUpdateIds?: string[]
+  assistantTaskIds?: string[]
   /** Append-only delegated conversation context; never direct human authorization. */
   assistantContext?: string
   /** Client-provided navigation context, separate from visible message content. */

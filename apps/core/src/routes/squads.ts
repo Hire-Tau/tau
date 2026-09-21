@@ -1,3 +1,4 @@
+import { getSquadClient } from '../services/squad/client'
 import { WorkflowError } from '../services/workflows/catalog'
 import { resolveActingUser } from '../services/rbac'
 import { Hono } from 'hono'
@@ -46,7 +47,7 @@ import {
   type PreparedHostWorkspacePath,
 } from '../services/sandbox/host/workspace-path'
 import { HOST_NO_TOOLCHAIN_ERROR, hostRuntimeGuard } from './host-runtime-guard'
-import { SandboxHttpError, type K8sSandboxManager, type SandboxClient } from '../services/sandbox/k8s'
+import { SandboxHttpError, type K8sSandboxManager } from '../services/sandbox/k8s'
 import * as fs from 'fs'
 import * as path from 'path'
 import { createDownloadResponse, createSandboxFileResponse } from '../lib/utils'
@@ -105,24 +106,6 @@ function archivedGuard(c: Context, squad: SquadEntity) {
  * Does NOT wait for devbox — file ops only need the HTTP server running.
  * Call ensureSquadSandbox first if the pod might not exist yet.
  */
-async function getSquadClient(squadId: string): Promise<SandboxClient | null> {
-  // Both remote runtimes (k8s + vm) expose a cached SandboxClient via getClient.
-  if (!isRemoteSandboxRuntime()) return null
-  const sandboxId = Squad.getSandboxId(squadId)
-  const manager = getSandboxManager() as K8sSandboxManager
-
-  // If cached, return immediately (client is ready even if devbox isn't)
-  const cached = manager.getClient(sandboxId)
-  if (cached) return cached
-
-  // Await the manager's bounded shared ensure instead of retaining one polling timer per request.
-  const { ensureSquadSandbox } = await import('../services/sandbox/ensure')
-  const ensure = ensureSquadSandbox(squadId)
-  const clientReady = manager.waitForClientReady?.(sandboxId)
-  if (clientReady) return Promise.race([clientReady, ensure.then(() => manager.getClient(sandboxId))])
-  await ensure
-  return manager.getClient(sandboxId)
-}
 
 const SKIP_DIRS = new Set(['node_modules', '.tmp', '.cache', '__pycache__', '.venv', 'venv'])
 

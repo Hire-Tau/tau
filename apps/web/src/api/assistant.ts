@@ -10,6 +10,12 @@ import type {
 } from '@tau/shared'
 import { webTransport as t } from './transport'
 export const assistantApi = {
+  readUpdates: (id: string, messageIds: string[]) =>
+    t.request<Array<{ messageId: string; taskId: string | null; content: string; seenAt: string | null }>>(
+      `/assistant/${id}/updates/read`,
+      { method: 'POST', body: { messageIds } }
+    ),
+  ensureAgent: (id: string) => t.request<{ agentId: string }>(`/assistant/${id}/agent`, { method: 'POST', body: {} }),
   editor: (id: string) => t.request<import('@tau/shared').AssistantEditorReadState>(`/assistant/${id}/editor`),
   syncEditor: (id: string, value: AssistantEditorSync) =>
     t.request<AssistantEditorState>(`/assistant/${id}/editor`, { method: 'PUT', body: value }),

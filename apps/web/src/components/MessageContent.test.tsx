@@ -1,3 +1,5 @@
+import { ToolRenderersContext } from '../lib/ToolRenderersContext'
+import { SingleToolCallSection } from './MessageContent'
 import { describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { MessageMetadata } from '@tau/shared'
@@ -144,4 +146,17 @@ describe('agent file reference rendering', () => {
     expect(html).toContain(reference)
     expect(html).not.toContain('/api/agents/agent-1/files/')
   })
+})
+
+test('persisted tool rows use the active Assistant or editor renderer', () => {
+  const html = renderToStaticMarkup(
+    <ToolRenderersContext.Provider
+      value={{ edit: { summary: () => 'Editor proposal', ArgsView: () => null, ResultView: () => null } }}
+    >
+      <SingleToolCallSection
+        toolCall={{ toolCallId: 'edit-1', toolName: 'edit', args: '{}', result: '{}', isError: false }}
+      />
+    </ToolRenderersContext.Provider>
+  )
+  expect(html).toContain('Editor proposal')
 })

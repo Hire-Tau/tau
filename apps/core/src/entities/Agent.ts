@@ -1,3 +1,4 @@
+import { isUserAssistantAgentType } from '@tau/shared'
 import { consultantSandboxId } from '../services/sandbox/consultant-sandbox'
 import { lockFlowInboxDelivery } from '../services/work-streams/wait-scope'
 import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm'
@@ -652,7 +653,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     if (this.parentAgentId != null) {
       return SUBAGENT_RUNNER_TYPE
     }
-    if (this.agentTypeId === 'system-manager') {
+    if (isUserAssistantAgentType(this.agentTypeId)) {
       return 'system-manager'
     }
     if (this.agentTypeId === ARTIFACT_BUILDER_AGENT_TYPE_ID) {
@@ -764,7 +765,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
     if (owner.agentTypeId === 'consultant' && owner.squadId) return consultantSandboxId(owner.squadId)
     // A user's system-managers share one light sandbox + /private, scoped per
     // owning user (fall back to the per-agent box if owner is somehow unset).
-    if (owner.agentTypeId === 'system-manager' && owner.ownerUserId) {
+    if (isUserAssistantAgentType(owner.agentTypeId) && owner.ownerUserId) {
       return systemManagerSandboxId(owner.ownerUserId)
     }
     return owner.getAgentWorkspaceSandboxId()
@@ -778,7 +779,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
    */
   getPersonalSandboxIdForCleanup(): string | null {
     if (this.parentAgentId) return null
-    if (this.agentTypeId === 'system-manager' && this.ownerUserId) return null
+    if (isUserAssistantAgentType(this.agentTypeId) && this.ownerUserId) return null
     // Consultants may still have an old personal sandbox to collect; this
     // never returns their squad's shared consultant runtime.
     return this.getAgentWorkspaceSandboxId()
@@ -792,6 +793,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
 
   /** Every sandbox whose migration fence must serialize with execution pickup. */
   async getExecutionSandboxIds(): Promise<string[]> {
+    if (this.agentTypeId === 'assistant') return []
     const sandboxIds = [await this.getSandboxId()]
     if (this.hasSquadSandboxAccessForExecution()) sandboxIds.push(`squad_${this.squadId}`)
     return [...new Set(sandboxIds)].sort()

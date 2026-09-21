@@ -1,5 +1,11 @@
-import { requireConsultantCreationAccess } from '../services/chat/consultant-access'
-import { assistantEditorContext } from '@tau/shared'
+import { listedAssistantConversation } from '../services/assistant-conversation-query'
+import { ensureAssistantConversationAgent } from '../services/assistant-conversation-agent'
+import {
+  assistantMessageSchema,
+  sendAssistantTaskRequest,
+  assistantTaskCommandSchema,
+  changeAssistantTask,
+} from '../services/assistant-task-requests'
 import {
   syncAssistantEditor,
   readAssistantEditor,
@@ -16,29 +22,13 @@ import { and, asc, desc, eq, ilike, isNull, notInArray, sql } from 'drizzle-orm'
 import {
   ASSISTANT_CONVERSATION_KINDS,
   assistantEntrySchema,
-  assistantInboxRecipientId,
-  chatPagePathSchema,
   type AssistantEntry,
   type AssistantMailbox,
-  type AssistantMessageReceipt,
 } from '@tau/shared'
-import {
-  assistantConversationAgents,
-  assistantConversations,
-  assistantEntries,
-  assistantTasks,
-  assistantUpdates,
-  db,
-  inbox,
-  agents,
-} from '../db'
-import { ASSISTANT_DELEGATION_KEY, ASSISTANT_TASK_ID_KEY } from '../services/assistant-activity/project'
+import { assistantConversations, assistantEntries, assistantTasks, assistantUpdates, db, inbox, agents } from '../db'
 import { assistantActivityRouter } from './assistant-activity'
 import { markAssistantUpdatesProcessed } from '../services/assistant-activity/acknowledge'
-import { Agent } from '../entities/Agent'
-import { InboxMessage } from '../entities/InboxMessage'
-import { resolveOwnedAgent } from '../services/assistant-agents'
-import { resolveActingUser, hasAgentResourcePermission } from '../services/rbac'
+import { resolveActingUser } from '../services/rbac'
 import { requirePermission } from '../middleware/require-permission'
 
 const uuid = z.string().uuid()
@@ -48,19 +38,6 @@ const createSchema = z.object({
   kind: z.enum(ASSISTANT_CONVERSATION_KINDS).default('assistant'),
 })
 const appendSchema = z.object({ entries: z.array(assistantEntrySchema).min(1).max(50) })
-const messageSchema = z
-  .object({
-    clientId: uuid,
-    request: z.string().trim().min(1).max(20_000),
-    pagePath: chatPagePathSchema.optional(),
-    agentId: uuid.optional(),
-    squadId: uuid.optional(),
-    label: z.string().trim().min(1).max(80).optional(),
-    inReplyTo: uuid.optional(),
-    mode: z.enum(['steer', 'follow-up']).default('steer'),
-  })
-  .refine((input) => !(input.agentId && input.squadId), { message: 'agentId and squadId are mutually exclusive' })
-
 // Every lookup includes the current human owner, including when called by their system manager.
 async function owned(id: string, userId: string) {
   if (!uuid.safeParse(id).success) return null
@@ -99,9 +76,7 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
             query ? ilike(assistantConversations.title, `%${query.replace(/[\\%_]/g, '\\$&')}%`) : undefined,
             // Page-editor conversations belong to their page, not the app-wide Assistant, and empty
             // shells (unused drafts) are not conversations yet.
-            eq(assistantConversations.kind, 'assistant'),
-            sql`(EXISTS (SELECT 1 FROM ${assistantEntries} WHERE ${assistantEntries.conversationId} = ${assistantConversations.id})
-              OR EXISTS (SELECT 1 FROM ${assistantTasks} WHERE ${assistantTasks.conversationId} = ${assistantConversations.id}))`
+            listedAssistantConversation()
           )
         )
         .orderBy(desc(assistantConversations.updatedAt), desc(assistantConversations.id))
@@ -230,141 +205,19 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
     })
     return c.json({ success: true })
   })
-  .post('/:id/messages', zValidator('json', messageSchema), async (c) => {
-    const conversation = await owned(c.req.param('id'), c.get('assistantOwner'))
-    if (!conversation) return c.json({ error: 'Conversation not found' }, 404)
-    const input = c.req.valid('json')
-    const address = assistantInboxRecipientId(conversation.id)
-    const requestContent =
-      conversation.editor && !conversation.editor.closed
-        ? `${input.request}\n\n${assistantEditorContext(conversation.editor)}\n\n[Page editor conversation: brainstorm or edit the draft using read and edit. Read the latest draft before edits. Do not modify or publish saved presets via CLI or other tools; valid edits apply automatically and can be undone; the user saves to publish.]`
-        : input.request
-    // Validate replies before resolving or creating a helper. A reply always addresses its actual
-    // sender, even if that helper has since become dormant or its scope has been replaced.
-    const [reply] = input.inReplyTo
-      ? await db
-          .select({ senderId: inbox.senderId })
-          .from(inbox)
-          .where(
-            and(
-              eq(inbox.id, input.inReplyTo),
-              eq(inbox.recipientType, 'voice_assistant'),
-              eq(inbox.recipientId, address),
-              eq(inbox.senderType, 'agent')
-            )
-          )
-      : []
-    const replyAgentId = reply?.senderId
-    if (input.inReplyTo && (!replyAgentId || (input.agentId && replyAgentId !== input.agentId)))
-      return c.json({ error: 'Reply not found in this conversation' }, 404)
-    let agent: Agent | null
-    let kind: AssistantMessageReceipt['kind']
-    let targetSquadId: string | null = null
-    if (input.agentId) {
-      agent = await Agent.find(input.agentId)
-      if (!agent || !(await hasAgentResourcePermission(c.get('identity'), agent, 'chat:send')))
-        return c.json({ error: 'Agent not found' }, 404)
-      kind = 'agent'
-    } else {
-      let squadId = input.squadId ?? null
-      if (replyAgentId) {
-        const [ownedAgent] = await db
-          .select({ squadId: assistantConversationAgents.squadId })
-          .from(assistantConversationAgents)
-          .where(
-            and(
-              eq(assistantConversationAgents.conversationId, conversation.id),
-              eq(assistantConversationAgents.agentId, replyAgentId)
-            )
-          )
-        if (!ownedAgent)
-          return c.json({ error: 'This task helper is no longer attached. Start a new task without inReplyTo.' }, 409)
-        if (input.squadId && input.squadId !== ownedAgent.squadId)
-          return c.json({ error: 'Reply not found in this conversation' }, 404)
-        squadId = ownedAgent.squadId
-      }
-      // Explicit scopes and reply-inferred scopes pass through the same current authorization check.
-      if (squadId) {
-        await requireConsultantCreationAccess(c.get('identity'), squadId)
-      }
-      targetSquadId = squadId
-      const afterCommit: Array<() => void> = []
-      agent = replyAgentId
-        ? await Agent.find(replyAgentId)
-        : await db.transaction(async (tx) => {
-            await tx
-              .select({ id: assistantConversations.id })
-              .from(assistantConversations)
-              .where(eq(assistantConversations.id, conversation.id))
-              .for('update')
-            return resolveOwnedAgent(tx, conversation, { squadId }, afterCommit)
-          })
-      for (const emit of afterCommit) emit()
-      kind = squadId ? 'squad' : 'background'
-    }
-    if (!agent) return c.json({ error: 'Agent not found' }, 404)
-    if (replyAgentId && agent.status === 'terminated')
-      return c.json({ error: 'This task helper was terminated. Start a new task without inReplyTo.' }, 409)
-    const agentId = agent.id
-    const history = await db
-      .select()
-      .from(assistantEntries)
-      .where(eq(assistantEntries.conversationId, conversation.id))
-      .orderBy(desc(assistantEntries.position))
-      .limit(24)
-    const [previous] = await db
-      .select({ pagePath: sql<string>`${inbox.metadata}->>'pagePath'` })
-      .from(inbox)
-      .where(
-        and(
-          eq(inbox.senderType, 'voice_assistant'),
-          eq(inbox.senderId, address),
-          eq(inbox.recipientId, agentId),
-          sql`${inbox.metadata}->>'pagePath' IS NOT NULL`
-        )
+  .post('/:id/agent', async (c) => c.json(await ensureAssistantConversationAgent(c.get('identity'), c.req.param('id'))))
+  .post('/:id/messages', zValidator('json', assistantMessageSchema), async (c) =>
+    c.json(await sendAssistantTaskRequest(c.get('identity'), c.req.param('id'), c.req.valid('json')))
+  )
+  .post('/:id/tasks/:taskId/commands', zValidator('json', assistantTaskCommandSchema), async (c) => {
+    try {
+      return c.json(
+        await changeAssistantTask(c.get('identity'), c.req.param('id'), c.req.param('taskId'), c.req.valid('json'))
       )
-      .orderBy(desc(inbox.createdAt))
-      .limit(1)
-    const { message } = await InboxMessage.sendOnce(
-      {
-        recipientType: 'agent',
-        recipientId: agentId,
-        senderType: 'voice_assistant',
-        senderId: address,
-        content: requestContent,
-        deliveryMode: input.mode,
-        metadata: {
-          source: 'assistant_inbox',
-          inReplyTo: input.inReplyTo,
-          [ASSISTANT_DELEGATION_KEY]: { kind, squadId: targetSquadId, ...(input.label ? { label: input.label } : {}) },
-          ...(input.pagePath && previous?.pagePath !== input.pagePath ? { pagePath: input.pagePath } : {}),
-          assistantContext: history.reverse().map(({ entry }) => ({
-            role: (entry as AssistantEntry).role,
-            text: (entry as AssistantEntry).text.slice(-3000),
-          })),
-        },
-      },
-      `${address}:${input.clientId}`
-    )
-    if (
-      message.content !== requestContent ||
-      message.recipientId !== agentId ||
-      message.deliveryMode !== input.mode ||
-      (message.metadata?.inReplyTo ?? undefined) !== input.inReplyTo
-    )
-      return c.json({ error: 'Message receipt conflicts with this request' }, 409)
-    if (input.label && kind !== 'agent') await agent.update({ purpose: `Assistant task: ${input.label}` })
-    const taskId = message.metadata[ASSISTANT_TASK_ID_KEY]
-    if (typeof taskId !== 'string') return c.json({ error: 'Task receipt unavailable' }, 500)
-    const receipt: AssistantMessageReceipt = {
-      id: message.id,
-      taskId,
-      agentId,
-      delivered: Boolean(message.deliveredAt),
-      kind,
-      ...(kind === 'squad' && targetSquadId ? { squadId: targetSquadId } : {}),
+    } catch (error) {
+      if (error instanceof HTTPException) return c.json({ error: error.message }, error.status)
+      throw error
     }
-    return c.json(receipt)
   })
   .post('/:id/inbox', zValidator('json', z.object({ consumerId: uuid })), async (c) => {
     const conversation = await owned(c.req.param('id'), c.get('assistantOwner'))

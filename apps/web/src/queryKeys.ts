@@ -39,6 +39,8 @@ export const modelCatalogQueryKeys = {
 }
 
 export const assistantQueryKeys = {
+  updates: (ownerId: string, id: string, ids: string[]) =>
+    ['assistant-conversations', 'activity', ownerId, 'updates', id, [...ids].sort()] as const,
   editor: (id: string) => ['assistant', 'editor', id] as const,
   all: ['assistant-conversations'] as const,
   list: (q = '', offset = 0) => ['assistant-conversations', 'list', q, offset] as const,

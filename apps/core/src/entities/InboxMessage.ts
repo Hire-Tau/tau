@@ -1,3 +1,4 @@
+import { isUserAssistantAgentType } from '@tau/shared'
 import { eq, and, isNull, isNotNull, desc, sql, inArray, or, ilike, type SQL } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { db, uuidPrefixCondition, varcharPrefixCondition, AmbiguousPrefixError } from '../db'
@@ -18,6 +19,10 @@ import {
 } from '@tau/shared'
 import { validateAssistantInboxReply } from '../services/assistant-inbox'
 import {
+  ASSISTANT_REQUEST_KEY,
+  ASSISTANT_TASK_MUTATION_KEY,
+  assistantTaskMutationSchema,
+  type AssistantTaskMutation,
   ASSISTANT_TASK_ID_KEY,
   ASSISTANT_TASK_STATUS_KEY,
   projectAssistantInboxMessage,
@@ -66,6 +71,10 @@ export interface SendInboxMessageInput {
    * request chain and persisted under server-controlled metadata; generic metadata cannot set it.
    */
   assistantTaskStatus?: ReportableAssistantTaskStatus
+  /** Normalized request supplied by the authorized Assistant service, never by generic metadata. */
+  assistantRequest?: Record<string, unknown>
+  /** Authorized task-scoped lifecycle command; never accepted through generic inbox metadata. */
+  assistantTaskMutation?: AssistantTaskMutation
   /**
    * When true, insert the row and derive metadata as normal but SKIP the
    * deliverInboxMessagesToAgent wake call. The caller is responsible for
@@ -284,6 +293,20 @@ export class InboxMessage
     // recipientType must be explicit for user/system/voice recipients; only agent is inferred.
     const recipientType = input.recipientType ?? 'agent'
 
+    const mutation = input.assistantTaskMutation
+      ? assistantTaskMutationSchema.parse(input.assistantTaskMutation)
+      : undefined
+    if (
+      mutation &&
+      !(
+        input.senderType === 'voice_assistant' &&
+        recipientType === 'agent' &&
+        parseAssistantInboxConversationId(input.senderId)
+      )
+    )
+      throw new Error('assistantTaskMutation applies only to outgoing saved Assistant requests')
+    const cancellingTask = mutation?.operation === 'cancel'
+
     // Validate sender exists if it's an agent
     let fromAgent: Agent | null = null
     if (input.senderType === 'agent' && input.senderId) {
@@ -299,11 +322,11 @@ export class InboxMessage
     let toAgent: Agent | null = null
     if (recipientType === 'agent') {
       toAgent = await Agent.find(input.recipientId)
-      if (!toAgent) {
+      if (!toAgent && !cancellingTask) {
         throw new Error('Recipient agent not found')
       }
       // Make sure we resolve prefixed to full UUID
-      input.recipientId = toAgent.id
+      if (toAgent) input.recipientId = toAgent.id
     }
 
     // Validate recipient exists if it's a user
@@ -315,8 +338,25 @@ export class InboxMessage
       }
     }
 
-    if (input.metadata && (ASSISTANT_TASK_STATUS_KEY in input.metadata || ASSISTANT_TASK_ID_KEY in input.metadata))
-      throw new Error(`metadata.${ASSISTANT_TASK_STATUS_KEY} and metadata.${ASSISTANT_TASK_ID_KEY} are server-owned`)
+    if (
+      input.metadata &&
+      (ASSISTANT_TASK_STATUS_KEY in input.metadata ||
+        ASSISTANT_TASK_ID_KEY in input.metadata ||
+        ASSISTANT_REQUEST_KEY in input.metadata ||
+        ASSISTANT_TASK_MUTATION_KEY in input.metadata)
+    )
+      throw new Error(
+        `metadata.${ASSISTANT_TASK_STATUS_KEY}, metadata.${ASSISTANT_TASK_ID_KEY} and metadata.${ASSISTANT_REQUEST_KEY} are server-owned`
+      )
+    if (
+      input.assistantRequest &&
+      !(
+        input.senderType === 'voice_assistant' &&
+        recipientType === 'agent' &&
+        parseAssistantInboxConversationId(input.senderId)
+      )
+    )
+      throw new Error('assistantRequest applies only to outgoing saved Assistant requests')
     const assistantMailbox = recipientType === 'voice_assistant' && input.recipientId.startsWith('assistant:')
     if (assistantMailbox) {
       await validateAssistantInboxReply(
@@ -343,13 +383,15 @@ export class InboxMessage
     ) {
       throw new Error('Only a subagent parent may message that subagent')
     }
-    if (toAgent?.status === 'terminated') throw new AgentTerminatedError(toAgent.id)
+    if (toAgent?.status === 'terminated' && !cancellingTask) throw new AgentTerminatedError(toAgent.id)
 
     // Derive metadata.sender from senderId. wakeEligible is server-owned so a
     // nested metadata field can never forge the delivery policy.
     const metadata: Record<string, unknown> = {
       ...input.metadata,
-      wakeEligible: input.wakeEligible ?? input.senderType !== 'system',
+      ...(mutation ? { [ASSISTANT_TASK_MUTATION_KEY]: mutation } : {}),
+      ...(input.assistantRequest ? { [ASSISTANT_REQUEST_KEY]: input.assistantRequest } : {}),
+      wakeEligible: cancellingTask ? false : (input.wakeEligible ?? input.senderType !== 'system'),
       ...(input.assistantTaskStatus !== undefined ? { [ASSISTANT_TASK_STATUS_KEY]: input.assistantTaskStatus } : {}),
     }
 
@@ -419,9 +461,11 @@ export class InboxMessage
           .from(agents)
           .where(eq(agents.id, toAgent.id))
           .for('update')
-        if (!recipient) throw new Error('Recipient agent not found')
-        if (recipient.status === 'terminated') throw new AgentTerminatedError(toAgent.id)
-        if (recipient.pendingDormancyAt) throw new AgentTargetUnavailableError(toAgent.id)
+        if (!cancellingTask) {
+          if (!recipient) throw new Error('Recipient agent not found')
+          if (recipient.status === 'terminated') throw new AgentTerminatedError(toAgent.id)
+          if (recipient.pendingDormancyAt) throw new AgentTargetUnavailableError(toAgent.id)
+        }
       }
       const [created] = idempotencyKey
         ? await tx.insert(inbox).values(values).onConflictDoNothing({ target: inbox.idempotencyKey }).returning()
@@ -470,7 +514,7 @@ export class InboxMessage
     // When deferDelivery is true the caller takes responsibility for waking the
     // agent (e.g. after linking attachments) so the agent never sees a message
     // with missing blobs.
-    if (toAgent && !input.deferDelivery) {
+    if (toAgent && !input.deferDelivery && (!cancellingTask || !['terminated', 'dormant'].includes(toAgent.status))) {
       try {
         const { deliverInboxMessagesToAgent } = await import('../services/inbox/inboxDelivery')
         await deliverInboxMessagesToAgent(toAgent.id)
@@ -507,8 +551,10 @@ export class InboxMessage
     if (!sameSquad) {
       // Allow the platform system-manager (a squad-less router) and squad managers to message each
       // other, so the system-manager can route work to a squad and the manager can report back.
-      const isSystemManagerToManager = fromAgent.agentTypeId === 'system-manager' && toAgent.agentTypeId === 'manager'
-      const isManagerToSystemManager = fromAgent.agentTypeId === 'manager' && toAgent.agentTypeId === 'system-manager'
+      const isSystemManagerToManager =
+        isUserAssistantAgentType(fromAgent.agentTypeId) && toAgent.agentTypeId === 'manager'
+      const isManagerToSystemManager =
+        fromAgent.agentTypeId === 'manager' && isUserAssistantAgentType(toAgent.agentTypeId)
       if (isSystemManagerToManager || isManagerToSystemManager) {
         return
       }
@@ -1099,7 +1145,7 @@ export function formatInboxMessages(messages: InboxMessage[]): string {
       const msgId = m.id
       const assistantReply =
         m.senderType === 'voice_assistant' && parseAssistantInboxConversationId(m.senderId)
-          ? `\n\nThis request came from a saved Assistant conversation. Ordinary chat output is not forwarded: report progress, questions, and results with tau assistant-task status ${typeof m.metadata?.assistantTaskId === 'string' ? m.metadata.assistantTaskId : '<taskId>'} --status <working|waiting|needs-input|completed|failed|cancelled> -m "<update>" (or tau inbox send ${m.senderId} "<update>" --recipient-type voice_assistant --in-reply-to ${m.id} --assistant-task-status <status>). You own this task until it is complete; see Assistant task reporting.\n`
+          ? `\n\nThis request came from a saved Assistant conversation. Ordinary chat output is not forwarded: report progress, questions, and results with tau assistant-task status ${typeof m.metadata?.assistantTaskId === 'string' ? m.metadata.assistantTaskId : '<taskId>'} --request-id ${m.id} --status <working|waiting|needs-input|completed|failed|cancelled> -m "<update>" (or tau inbox send ${m.senderId} "<update>" --recipient-type voice_assistant --in-reply-to ${m.id} --assistant-task-status <status>). ${(m.metadata?.[ASSISTANT_TASK_MUTATION_KEY] as AssistantTaskMutation | undefined)?.operation === 'cancel' ? 'This task is cancelled. Stop only its work and leave unrelated tasks running; report any work already performed or still stopping with status cancelled.' : 'You own this task until it is complete; see Assistant task reporting.'}\n`
           : ''
       return `### Message ${msgId}
 

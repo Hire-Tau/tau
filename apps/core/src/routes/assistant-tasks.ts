@@ -15,6 +15,7 @@ import type { Identity } from '../services/rbac'
 const uuid = z.string().uuid()
 const statusSchema = z.object({
   status: reportableAssistantTaskStatusSchema,
+  requestId: uuid.optional(),
   message: z.string().trim().min(1).max(20_000).optional(),
 })
 
@@ -50,8 +51,8 @@ function summarize(row: NonNullable<Awaited<ReturnType<typeof ownedTask>>>): Ass
 /**
  * Direct task status reporting for the delegated agent. `POST /:taskId/status` is sugar over an
  * inbox reply on the task's current request, so it goes through the same validation, projection,
- * activity events, and push policy as `tau inbox send --assistant-task-status`; the agent does
- * not need to track request IDs to keep the tracked status honest.
+ * activity events, and push policy as `tau inbox send --assistant-task-status`; the agent
+ * supplies the request generation it is reporting, so a late report cannot finish newer work.
  */
 export const assistantTasksRouter = new Hono()
   .get('/:taskId', async (c) => {
@@ -66,6 +67,17 @@ export const assistantTasksRouter = new Hono()
     if (!row || identity?.type !== 'agent') return c.json({ error: 'Task not found' }, 404)
     c.set('authzChecked', true)
     const input = c.req.valid('json')
+    // Older delegates may omit the ID for the original request only. After any continuation,
+    // require the generation delivered with that request rather than silently selecting the latest.
+    const requestId = input.requestId ?? row.task.id
+    if (requestId !== row.task.currentRequestId)
+      return c.json(
+        {
+          error: 'Request generation changed. Report with --request-id from the request you processed.',
+          task: summarize(row),
+        },
+        409
+      )
     // A finished task never reopens through a report; say so instead of recording a no-op update.
     // Only a new user follow-up in the conversation reopens it.
     if (isTerminalAssistantTaskStatus(row.task.status) && input.status !== row.task.status)
@@ -82,7 +94,7 @@ export const assistantTasksRouter = new Hono()
       senderType: 'agent',
       senderId: identity.agentId,
       content: input.message ?? `Task status: ${input.status}`,
-      metadata: { inReplyTo: row.task.currentRequestId },
+      metadata: { inReplyTo: requestId },
       assistantTaskStatus: input.status,
     })
     const updated = await ownedTask(row.task.id, identity)

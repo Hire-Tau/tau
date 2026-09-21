@@ -1,5 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm'
 import { z } from 'zod'
+import { HTTPException } from 'hono/http-exception'
 import {
   applyAssistantTaskStatus,
   assistantTaskStatusSchema,
@@ -12,9 +13,17 @@ import { assistantConversations, assistantTasks, assistantUpdates, inbox } from 
 
 export type AssistantActivityTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
-/** Server-controlled inbox metadata keys. Callers never supply these; the projection writes them. */
+/** Server-controlled metadata. Generic inbox callers cannot supply these keys. */
 export const ASSISTANT_TASK_ID_KEY = 'assistantTaskId'
 export const ASSISTANT_TASK_STATUS_KEY = 'assistantTaskStatus'
+export const ASSISTANT_REQUEST_KEY = 'assistantRequest'
+export const ASSISTANT_TASK_MUTATION_KEY = 'assistantTaskMutation'
+export const assistantTaskMutationSchema = z.object({
+  operation: z.enum(['continue', 'retry', 'cancel']),
+  taskId: z.string().uuid(),
+  expectedRequestId: z.string().uuid(),
+})
+export type AssistantTaskMutation = z.infer<typeof assistantTaskMutationSchema>
 /** Route-supplied delegation facts recorded on an outgoing Assistant request. */
 export const ASSISTANT_DELEGATION_KEY = 'assistantDelegation'
 
@@ -89,26 +98,64 @@ export async function projectAssistantInboxMessage(
 
 async function projectOutgoingRequest(tx: AssistantActivityTransaction, message: InboxRow, conversationId: string) {
   await lockConversation(tx, conversationId)
+  const mutation = assistantTaskMutationSchema.safeParse(message.metadata[ASSISTANT_TASK_MUTATION_KEY])
+  if (mutation.success) {
+    const command = mutation.data
+    const [task] = await tx
+      .select()
+      .from(assistantTasks)
+      .where(and(eq(assistantTasks.id, command.taskId), eq(assistantTasks.conversationId, conversationId)))
+      .for('update')
+    if (!task || task.currentRequestId !== command.expectedRequestId)
+      throw new HTTPException(409, { message: 'This task has a newer request. Refresh before continuing.' })
+    const [request] = await tx.select().from(inbox).where(eq(inbox.id, command.expectedRequestId))
+    if (!request || (command.operation !== 'retry' && request.recipientId !== message.recipientId))
+      throw new HTTPException(409, { message: 'Task delegate changed. Refresh before continuing.' })
+    await tx
+      .update(assistantTasks)
+      .set({
+        currentRequestId: message.id,
+        ...(command.operation === 'cancel' ? {} : { agentId: message.recipientId }),
+        status: command.operation === 'cancel' ? 'cancelled' : 'working',
+        updatedAt: sql`now()`,
+      })
+      .where(eq(assistantTasks.id, task.id))
+    const row = await setMetadata(tx, message.id, { [ASSISTANT_TASK_ID_KEY]: task.id })
+    await tx
+      .update(assistantConversations)
+      .set({ updatedAt: sql`now()` })
+      .where(eq(assistantConversations.id, conversationId))
+    return { row, invalidation: { conversationId, recipientId: message.senderId! } }
+  }
   const agentId = uuid.safeParse(message.recipientId).success ? message.recipientId : null
   const delegation = assistantDelegationSchema.safeParse(message.metadata[ASSISTANT_DELEGATION_KEY])
   const kind: AssistantMessageTargetKind = delegation.success ? delegation.data.kind : 'background'
   const inReplyTo = uuid.safeParse(message.metadata.inReplyTo)
   let taskId: string | null = null
+  let expectedRequestId: string | null = null
   if (inReplyTo.success) {
     // A user answer stays on the task whose update it answers; only same-conversation updates count.
     const [referenced] = await tx
-      .select({ taskId: assistantUpdates.taskId })
+      .select({ taskId: assistantUpdates.taskId, requestId: assistantUpdates.requestId })
       .from(assistantUpdates)
       .where(and(eq(assistantUpdates.messageId, inReplyTo.data), eq(assistantUpdates.conversationId, conversationId)))
     taskId = referenced?.taskId ?? null
+    expectedRequestId = referenced?.requestId ?? null
   }
   if (taskId) {
     const [advanced] = await tx
       .update(assistantTasks)
       .set({ currentRequestId: message.id, agentId, status: 'working', updatedAt: sql`now()` })
-      .where(and(eq(assistantTasks.id, taskId), eq(assistantTasks.conversationId, conversationId)))
+      .where(
+        and(
+          eq(assistantTasks.id, taskId),
+          eq(assistantTasks.conversationId, conversationId),
+          expectedRequestId ? eq(assistantTasks.currentRequestId, expectedRequestId) : sql`false`
+        )
+      )
       .returning({ id: assistantTasks.id })
-    if (!advanced) taskId = null
+    if (!advanced)
+      throw new HTTPException(409, { message: 'This task has a newer request. Refresh before continuing.' })
   }
   if (!taskId) {
     taskId = message.id
@@ -123,6 +170,10 @@ async function projectOutgoingRequest(tx: AssistantActivityTransaction, message:
       status: 'working',
     })
   }
+  await tx
+    .update(assistantConversations)
+    .set({ updatedAt: sql`now()` })
+    .where(eq(assistantConversations.id, conversationId))
   const row = await setMetadata(tx, message.id, { [ASSISTANT_TASK_ID_KEY]: taskId })
   return { row, invalidation: { conversationId, recipientId: message.senderId! } }
 }
