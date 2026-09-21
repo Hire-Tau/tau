@@ -29,7 +29,7 @@ A document defines **one concrete appearance**, not an automatic light/dark pair
 
 ## Contrast and recovery
 
-The editor reuses the built-in contrast computation and critical-pair inventory, including fractional channels and intrinsic opacity. Failing pairs show informational ratios and a **Use safe value** action choosing opaque black or white foreground against the composited surface. Warnings never block Apply. A safe value improves the named pair, not a certification of every use of that token; other warnings may remain. Arbitrary ANSI combinations, authored content and legacy palette islands are not certified.
+The editor reuses the built-in contrast computation and critical-pair inventory, including fractional channels and intrinsic opacity. Failing pairs show informational ratios and a **Use safe value** action choosing opaque black or white foreground against the completely composited surface. The preview renders a page backdrop around its surface; other surfaces and islands are checked over that surface, then the page, with explicit status/badge under-surfaces resolved recursively. An opaque layer ends the chain. A translucent page with no known opaque foundation is reported as **Contrast unknown**, with no safe-value recommendation for that pair. Ratios and suggested values use the same resolved backdrop; tiny alpha values retain scientific notation numerically. Warnings never block Apply. A safe value improves the named pair, not a certification of every use of that token; other warnings may remain. Arbitrary ANSI combinations, authored content and legacy palette islands are not certified.
 
 The saved key is `tau-custom-theme`. Invalid saved documents are removed with stale surface snapshots, and the declared known base is restored (otherwise the last safe built-in selection). Application failure removes partial overrides and restores the base without reloading. Denied storage is best-effort: the in-memory theme works, and the UI explains when persistence is unavailable.
 
@@ -58,3 +58,11 @@ The full web and deterministic mixed/reversed DOM-order gates passed (2,395 test
 Chromium real-renderer fixture: 14 custom pre-paint/recovery cases (all seven concrete built-ins, valid/invalid documents, React module blocked), plus file import, isolated preview, alpha-modified utilities, apply/reset, export download, contrast warning/safe-value, 390px layout and forced-colors checks. The real xterm instance retained its scrollback across apply/reset; the graph token bridge changed synchronously. No uncaught browser errors. These use synthetic local data, not an authenticated account or a remote terminal session.
 
 [Editor screenshot](screenshots/custom-theme-editor.png) shows a deliberately low-contrast imported theme after repairing one foreground pair; remaining warnings are expected and Apply stays available.
+
+### Contrast review corrections
+
+The transparent-surface regression now resolves white text over a transparent white surface to its dark page (`9 10 18`), approximately **19.74:1**, rather than falsely treating the hidden white channels as the backdrop. Black text on that stack is correctly warned at **1.06:1**, and its safe-value action restores white. [Repaired preview](screenshots/transparent-surface-repaired.png).
+
+Chromium checks covered the actual preview and safe-value actions at surface alpha 0, 0.25, 0.5 and 0.75; a partially transparent terminal island over a partially transparent surface; unknown backing with no safe-value claim; and a `0.0000001` foreground-alpha warning/action. No uncaught browser errors. Seven new unit/component cases cover backdrop composition, uncertainty and the validator → compiler → contrast tiny-alpha path.
+
+After these corrections, the full web gate passed **2,404 tests** and web typecheck passed. The complete recorded DOM-order gate also passed on recheck without code or timeout changes. Its first attempt timed out in the unchanged light/dark syntax-render parity cases (82s/63s); that unsuccessful run is not counted as passing, and its cause was not established.

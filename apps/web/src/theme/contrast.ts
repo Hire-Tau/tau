@@ -9,9 +9,15 @@ export function resolveToken(tokens: Record<string, string>, token: string, seen
 export function tokenRgba(tokens: Record<string, string>, token: string): number[] {
   const value = readTokenColor({ getPropertyValue: (name) => (tokens[name] ? resolveToken(tokens, name) : '') }, token)
   if (!value) throw new Error(`Not a color: ${token}`)
-  return value.match(/[\d.]+/g)!.map(Number)
+  // readTokenColor emits comma-form RGB(A). Number parses scientific notation
+  // produced by tiny valid alpha values without splitting e.g. 1e-7 into 1, 7.
+  const components = /^rgba?\(([^)]+)\)$/.exec(value)?.[1]?.split(',').map(Number)
+  if (!components || ![3, 4].includes(components.length) || components.some((v) => !Number.isFinite(v)))
+    throw new Error(`Not a numeric color: ${token}`)
+  return components
 }
 export function composite(fg: number[], bg: number[]): number[] {
+  if ((bg[3] ?? 1) !== 1) throw new Error('Compositing requires a resolved opaque backdrop.')
   const alpha = fg[3] ?? 1
   return fg.slice(0, 3).map((v, i) => v * alpha + bg[i]! * (1 - alpha))
 }
@@ -91,7 +97,29 @@ add('--graph-label', '--graph-bg')
 add('--graph-label-muted', '--graph-bg')
 for (let i = 1; i <= 6; i++) add(`--graph-link-${i}`, '--graph-bg', 3)
 
+/** Resolve the documented surface stack from an opaque foundation upward.
+ * A surface is never composited over itself. Other surfaces/islands sit on the
+ * primary surface, and that surface sits on the page. Status/badge pairs can
+ * name a more specific under-surface. A translucent page has an unknown external
+ * backdrop: do not invent a white/black canvas or claim a safe foreground.
+ */
+export function pairBackground(tokens: Record<string, string>, pair: ContrastPair): number[] | null {
+  const resolve = (token: string, seen: string[], under?: string): number[] | null => {
+    if (seen.includes(token) || !tokens[token]) return null
+    const color = tokenRgba(tokens, token)
+    if ((color[3] ?? 1) === 1) return color.slice(0, 3)
+    const next =
+      under ??
+      (token === '--color-bg-page' ? null : token === '--color-bg-surface' ? '--color-bg-page' : '--color-bg-surface')
+    if (!next) return null
+    const backdrop = resolve(next, [...seen, token])
+    return backdrop ? composite(color, backdrop) : null
+  }
+  return resolve(pair.bg, [], pair.under)
+}
+
 export function pairRatio(tokens: Record<string, string>, pair: ContrastPair): number {
-  const bg = composite(tokenRgba(tokens, pair.bg), tokenRgba(tokens, pair.under ?? '--color-bg-surface'))
+  const bg = pairBackground(tokens, pair)
+  if (!bg) throw new Error('Contrast is unknown without an opaque page or under-surface.')
   return contrast(tokenRgba(tokens, pair.fg), bg)
 }
