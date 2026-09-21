@@ -91,9 +91,16 @@
           } catch (e) {
             /* unreadable storage behaves as empty: defaults apply */
           }
-          // Registered theme ids today: 'tau'. Unknown or missing ids resolve
-          // to it (shared fallback rule: unknown theme id -> default pair).
-          var themeId = stored.themeId === 'tau' ? stored.themeId : 'tau'
+          // Minimal pre-CSS surface map, checked against the registry and CSS by
+          // the cold-load matrix. It also covers missing/corrupt/stale snapshots
+          // and an OS preference change between sessions (no default-white flash).
+          var surfaces = {
+            tau: { light: 'rgb(255 255 255)', dark: 'rgb(16 17 28)' },
+            harbor: { light: 'rgb(255 255 255)', dark: 'rgb(15 30 40)' },
+            ember: { light: 'rgb(255 253 249)', dark: 'rgb(35 26 23)' },
+            'high-contrast': { constant: 'rgb(255 255 255)' },
+          }
+          var themeId = Object.prototype.hasOwnProperty.call(surfaces, stored.themeId) ? stored.themeId : 'tau'
           var appearance = stored.appearance
           if (appearance !== 'light' && appearance !== 'dark' && appearance !== 'system') {
             appearance = stored.legacyTheme === 'dark' ? 'dark' : 'light'
@@ -101,13 +108,16 @@
           var resolved = appearance
           if (appearance === 'system') {
             try {
-              resolved = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+              resolved =
+                window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
             } catch (e) {
               resolved = 'light'
             }
           }
+          if (surfaces[themeId].constant) resolved = 'constant'
           root.setAttribute('data-theme', themeId)
-          root.setAttribute('data-appearance', resolved)
+          if (resolved === 'constant') root.removeAttribute('data-appearance')
+          else root.setAttribute('data-appearance', resolved)
           if (resolved === 'dark') {
             root.classList.add('dark')
           } else {
@@ -148,6 +158,7 @@
               surface = null
             }
           }
+          if (!surface) surface = surfaces[themeId][resolved]
           if (surface) {
             root.style.backgroundColor = surface
             var meta = document.querySelector("meta[name='theme-color']")
