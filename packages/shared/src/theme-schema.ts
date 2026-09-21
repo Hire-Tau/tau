@@ -154,7 +154,7 @@ export const STATUS_TOKENS: readonly string[] = STATUS_ROLES.flatMap((role) => [
   `--status-${role}-badge-hover`,
 ])
 
-/** Terminal 16-color ANSI slots shared by the terminal and ANSI families. */
+/** ANSI slot names shared by terminal and streamed-output palettes (values may differ). */
 const ANSI_SLOTS: readonly string[] = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white']
 
 export const THEME_TOKEN_FAMILIES: readonly TokenFamilyDefinition[] = [
@@ -193,8 +193,8 @@ export const THEME_TOKEN_FAMILIES: readonly TokenFamilyDefinition[] = [
   },
   {
     family: 'syntax',
-    description: 'Planned (phase 3): app-owned code-highlighting palette replacing the fixed oneDark import.',
-    status: 'planned',
+    description: 'App-owned code-highlighting palette replacing the fixed oneDark import.',
+    status: 'active',
     tokens: [
       '--syntax-bg',
       '--syntax-fg',
@@ -206,36 +206,50 @@ export const THEME_TOKEN_FAMILIES: readonly TokenFamilyDefinition[] = [
       '--syntax-punctuation',
       '--syntax-operator',
       '--syntax-variable',
+      '--syntax-property',
+      '--syntax-url',
+      '--syntax-shadow',
+      '--syntax-memory-bg',
+      '--syntax-image-bg',
+      '--syntax-error-fg',
+      '--syntax-human-link',
+      '--syntax-human-code-fg',
+      '--syntax-human-code-bg',
     ],
   },
   {
     family: 'terminal',
-    description:
-      'Planned (phase 3): xterm ITheme surface (background/foreground/cursor/selection/scrollbar + 16 ANSI slots).',
-    status: 'planned',
+    description: 'xterm ITheme surface (background/foreground/cursor/selection/scrollbar + 16 ANSI slots).',
+    status: 'active',
     tokens: [
       '--term-bg',
       '--term-fg',
       '--term-cursor',
       '--term-cursor-accent',
       '--term-selection-background',
+      // `none` preserves each selected cell's ANSI ink; otherwise RGB channels.
       '--term-selection-foreground',
+      // `auto` preserves native scrollbars; otherwise themes supply RGB channels.
       '--term-scrollbar-thumb',
       '--term-scrollbar-thumb-hover',
       '--term-scrollbar-thumb-active',
+      '--term-loading-bg',
+      '--term-muted',
       ...ANSI_SLOTS.map((slot) => `--term-${slot}`),
       ...ANSI_SLOTS.map((slot) => `--term-bright-${slot}`),
     ],
   },
   {
     family: 'ansi',
-    description: 'Planned (phase 3): the 32 ANSI escape render classes in index.css become variables.',
-    status: 'planned',
+    description: 'Streamed ANSI foreground/background slots and their contrasting text colors.',
+    status: 'active',
     tokens: [
       ...ANSI_SLOTS.map((slot) => `--ansi-${slot}`),
       ...ANSI_SLOTS.map((slot) => `--ansi-bright-${slot}`),
       ...ANSI_SLOTS.map((slot) => `--ansi-bg-${slot}`),
       ...ANSI_SLOTS.map((slot) => `--ansi-bg-bright-${slot}`),
+      ...ANSI_SLOTS.map((slot) => `--ansi-on-${slot}`),
+      '--ansi-on-bright-white',
     ],
   },
   {

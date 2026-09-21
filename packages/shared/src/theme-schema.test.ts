@@ -39,7 +39,16 @@ describe('theme token registry', () => {
   })
 
   test('chrome and semantic families are active', () => {
-    for (const family of ['chrome', 'status', 'agent-type', 'misc-chrome', 'badge-decoration']) {
+    for (const family of [
+      'chrome',
+      'status',
+      'agent-type',
+      'misc-chrome',
+      'badge-decoration',
+      'syntax',
+      'terminal',
+      'ansi',
+    ]) {
       expect(THEME_TOKEN_FAMILIES.find((entry) => entry.family === family)?.status).toBe('active')
     }
     expect(ACTIVE_THEME_TOKENS).toContain('--color-bg-page')
@@ -58,7 +67,7 @@ describe('theme token registry', () => {
     const terminal = THEME_TOKEN_FAMILIES.find((f) => f.family === 'terminal')!
     const ansi = THEME_TOKEN_FAMILIES.find((f) => f.family === 'ansi')!
     expect(terminal.tokens).toContain('--term-bright-white')
-    expect(ansi.tokens).toHaveLength(32)
+    expect(ansi.tokens.filter((token) => !token.startsWith('--ansi-on-'))).toHaveLength(32)
     expect(ansi.tokens).toContain('--ansi-bg-bright-black')
   })
 
