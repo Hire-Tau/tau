@@ -2806,3 +2806,46 @@ test('a Linear rule records the issue it observed, and a replay reuses that work
     ).toEqual([trackedSubscriptionId(metadata.tracked[0], 'comment')])
   }, 'linear')
 })
+
+test('new delivery presentation evidence invalidates watchers once without changing flow or waits', async () => {
+  const number = 24201
+  const id = await create(number, { codeHost: true })
+  const run = (await getFlow(id))!
+  await advanceFlow(
+    id,
+    { action: 'complete', expectedVersion: run.version, attemptId: 1, outcome: 'completed', evidence: 'Ready' },
+    randomUUID(),
+    { type: 'legacy' }
+  )
+  const stored = (await getFlow(id))!
+  stored.state.definition.completion.mode = 'pr-merge'
+  const { workStreamFlowRuns } = await import('../../../db')
+  await db.update(workStreamFlowRuns).set({ state: stored.state }).where(eq(workStreamFlowRuns.workStreamId, id))
+  const { eventEmitter } = await import('../../../lib/infra/event-emitter')
+  const events: Array<{ workStreamId: string; squadId: string }> = []
+  const stop = eventEmitter.on('workStream.updated', (payload) => events.push(payload))
+  try {
+    const review = fact(number, {
+      output: 'pull_request.review_requested',
+      data: {
+        repository: `${prefix}/repo`,
+        pullRequest: { number, headSha: 'a'.repeat(40) },
+        requestedReviewer: 'human',
+        requestedReviewerType: 'User',
+      },
+    })
+    await publish(review)
+    await publish(review)
+    expect(events.filter((event) => event.workStreamId === id)).toEqual([{ workStreamId: id, squadId }])
+    const after = (await getFlow(id))!
+    expect(after.version).toBe(stored.version)
+    expect(after.state.status).toBe('completion-ready')
+    const { computeDerivedStates } = await import('../../work-streams/derived-state')
+    expect((await computeDerivedStates([await WorkStream.mustFind(id)])).get(id)).toMatchObject({
+      delivery: { kind: 'review' },
+      openWaits: [],
+    })
+  } finally {
+    stop()
+  }
+})

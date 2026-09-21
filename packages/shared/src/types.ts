@@ -1292,6 +1292,7 @@ export interface WorktreeCleanupSummary {
 }
 
 export interface WorkStream {
+  delivery?: import('./status-presentation').WorkStreamDeliveryPresentation
   /** Durable platform cleanup state, when an intent exists. */
   worktreeCleanup?: WorktreeCleanupSummary | null
   /** Effective retention setting. Older servers omit this field (retain). */

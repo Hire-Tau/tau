@@ -1,3 +1,4 @@
+import { githubDeliverySnapshot, type GitHubDeliverySnapshot } from './delivery-presentation'
 import { createHash } from 'node:crypto'
 import type { EventPollingCapability, EventPollingSignal, RuntimeConnection, VerifiedIngressEvent } from '../types'
 
@@ -7,6 +8,8 @@ const API_VERSION = '2022-11-28'
 type NativeObject = Record<string, unknown>
 
 export interface GitHubPrPollingConfig {
+  /** Extra bounded aggregate query for designated delivery PRs only. */
+  deliveryPresentation?: boolean
   owner: string
   repo: string
   number: number
@@ -47,6 +50,7 @@ interface PendingGitHubScan {
 }
 
 export interface GitHubPollingCursor extends Record<string, unknown> {
+  deliveryPresentation?: GitHubDeliverySnapshot
   etags: Record<string, string>
   pr: { headSha: string | null; state: string | null; merged: boolean }
   issue: NativeObject
@@ -306,6 +310,7 @@ export class GitHubPrEventPoller implements EventPollingCapability<GitHubPrPolli
       return result
     }
 
+    let deliveryPresentation: GitHubDeliverySnapshot | undefined
     const deliveryToBaseline = replayBaselineDelivery(cursor, connection.configuration.lastVerifiedWebhookDeliveryAt)
     let scan = cursor?.pendingScan
     if (scan && deliveryToBaseline && scan.baselineDeliveryAt !== deliveryToBaseline) {
@@ -332,6 +337,11 @@ export class GitHubPrEventPoller implements EventPollingCapability<GitHubPrPolli
       const issueResult = await request('issue', `${root}/issues/${number}`)
       const pullRequest = (prResult.changed ? prResult.body : cursor?.pullRequest) as NativeObject | undefined
       if (!pullRequest) throw new Error('GitHub pull request response was empty')
+      // A 304 validates activity context, not GitHub's asynchronously computed
+      // merge/review fields. Never extend a readiness proof from that old body.
+      if (connection.configuration.deliveryPresentation && prResult.changed) {
+        deliveryPresentation = githubDeliverySnapshot(connection, pullRequest, new Date().toISOString())
+      }
       scan = {
         baseline: cursor === null || Boolean(deliveryToBaseline),
         ...(deliveryToBaseline ? { baselineDeliveryAt: deliveryToBaseline } : {}),
@@ -342,6 +352,13 @@ export class GitHubPrEventPoller implements EventPollingCapability<GitHubPrPolli
         ),
         collections: {},
       }
+    }
+
+    if (connection.configuration.deliveryPresentation) {
+      requestsConsumed++
+      // Read the policy/check aggregate after REST context. It can observe a
+      // newer head than an in-progress activity scan and remains independent.
+      deliveryPresentation = (await this.#deliveryPresentation(connection, credential, signal)) ?? deliveryPresentation
     }
 
     const issueCommentQuery = new URLSearchParams({ per_page: '100' })
@@ -390,6 +407,9 @@ export class GitHubPrEventPoller implements EventPollingCapability<GitHubPrPolli
             pr: cursor?.pr ?? currentPr,
             issue: cursor?.issue ?? scan.issue,
             pullRequest: cursor?.pullRequest ?? scan.pullRequest,
+            deliveryPresentation: connection.configuration.deliveryPresentation
+              ? deliveryPresentation
+              : cursor?.deliveryPresentation,
             issueComments: cursor?.issueComments ?? {},
             reviews: cursor?.reviews ?? {},
             reviewComments: cursor?.reviewComments ?? {},
@@ -517,6 +537,9 @@ export class GitHubPrEventPoller implements EventPollingCapability<GitHubPrPolli
       pr: currentPr,
       issue: nextIssue,
       pullRequest: nextPr,
+      deliveryPresentation: connection.configuration.deliveryPresentation
+        ? deliveryPresentation
+        : cursor?.deliveryPresentation,
       issueComments: nextIssueComments,
       reviews: nextReviews,
       reviewComments: nextReviewComments,
@@ -655,6 +678,43 @@ export class GitHubPrEventPoller implements EventPollingCapability<GitHubPrPolli
         return { state: scanState(page + 1, true), requestsConsumed }
       }
       page++
+    }
+  }
+
+  async #deliveryPresentation(
+    connection: RuntimeConnection<GitHubPrPollingConfig>,
+    credential: string,
+    signal?: EventPollingSignal
+  ): Promise<GitHubDeliverySnapshot | undefined> {
+    signal?.reserveRequest()
+    try {
+      const response = await this.#fetch(`${this.#apiBase}/graphql`, {
+        method: 'POST',
+        signal,
+        headers: { authorization: `Bearer ${credential}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          query:
+            'query DeliveryPresentation($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){headRefOid headRefName baseRefName state isDraft mergeStateStatus reviewDecision reviewRequests(first:100){nodes{requestedReviewer{__typename}}} commits(last:1){nodes{commit{statusCheckRollup{state}}}}}}}',
+          variables: {
+            owner: connection.configuration.owner,
+            repo: connection.configuration.repo,
+            number: connection.configuration.number,
+          },
+        }),
+      })
+      if (!response.ok) return undefined
+      const body = (await response.json()) as {
+        errors?: unknown
+        data?: { repository?: { pullRequest?: Record<string, unknown> } }
+      }
+      const pr = body.data?.repository?.pullRequest
+      if (body.errors || !pr) return undefined
+      return githubDeliverySnapshot(connection, pr, new Date().toISOString(), true)
+    } catch (error) {
+      if (signal?.aborted) throw error
+      // Missing GraphQL permission never invents an approval requirement. The
+      // ordinary REST poll can still provide a weaker, current PR snapshot.
+      return undefined
     }
   }
 

@@ -31,6 +31,7 @@ export async function projectGlobalActivityPresence(identity: Identity): Promise
             id: workStreams.id,
             squadId: workStreams.squadId,
             status: workStreams.status,
+            pause: workStreams.pause,
             assigneeAgentId: workStreams.assigneeAgentId,
             agentIds: workStreams.agentIds,
           })
@@ -50,6 +51,8 @@ export async function projectGlobalActivityPresence(identity: Identity): Promise
     const presentation = derived.get(stream.id)
     return workStreamNeedsHumanAttention({
       status: stream.status,
+      pause: stream.pause,
+      delivery: presentation?.delivery,
       derivedState: presentation?.derivedState,
       openWaits: presentation?.openWaits,
     })

@@ -156,3 +156,14 @@ describe('sortCanonicalWorkStreams', () => {
     ).toEqual(['terminal', 'malformed'])
   })
 })
+
+test('delivery review ranks with review and paused waits do not acquire urgency', () => {
+  expect(
+    ids([
+      ws('a-paused', { pause: {}, openWaits: [openWait('review')] }),
+      ws('b-running', { derivedState: 'in_progress', openWaits: [] }),
+      ws('c-external', { delivery: { kind: 'external' }, openWaits: [] }),
+      ws('d-merge', { delivery: { kind: 'merge' }, openWaits: [] }),
+    ])
+  ).toEqual(['d-merge', 'c-external', 'b-running', 'a-paused'])
+})

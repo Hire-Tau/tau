@@ -1294,3 +1294,103 @@ describe('GitHubPrEventPoller', () => {
     })
   })
 })
+
+test('delivery baseline and same-head polls cache aggregate checks/review policy without replaying activity', async () => {
+  let required = true
+  const head = 'a'.repeat(40)
+  const poller = new GitHubPrEventPoller({
+    resolveCredential: async () => 'token',
+    fetch: async (input) => {
+      const path = new URL(input).pathname
+      if (path === '/graphql')
+        return response(
+          {
+            data: {
+              repository: {
+                pullRequest: {
+                  headRefOid: head,
+                  headRefName: 'work',
+                  baseRefName: 'main',
+                  state: 'OPEN',
+                  isDraft: false,
+                  mergeStateStatus: required ? 'BLOCKED' : 'CLEAN',
+                  reviewDecision: required ? 'REVIEW_REQUIRED' : 'APPROVED',
+                  commits: { nodes: [{ commit: { statusCheckRollup: { state: 'SUCCESS' } } }] },
+                },
+              },
+            },
+          },
+          'graphql',
+          new Date().toUTCString()
+        )
+      if (path.endsWith('/pulls/7'))
+        return response(
+          { ...pullRequest, head: { sha: head }, mergeable_state: required ? 'blocked' : 'clean' },
+          'pr',
+          new Date().toUTCString()
+        )
+      if (path.endsWith('/issues/7')) return response(issue, 'issue')
+      return response([], 'empty')
+    },
+  })
+  const watch = { ...connection(), configuration: { ...connection().configuration, deliveryPresentation: true } }
+  const baseline = await poller.poll(watch, null)
+  expect(baseline.events).toEqual([])
+  expect(baseline.budgetUnitsConsumed).toBe(6)
+  expect(baseline.nextCursor.deliveryPresentation).toMatchObject({
+    headSha: head,
+    reviewDecision: 'required',
+    checksState: 'success',
+  })
+  required = false
+  const next = await poller.poll(watch, baseline.nextCursor)
+  expect(next.events).toEqual([])
+  expect(next.nextCursor.deliveryPresentation).toMatchObject({
+    headSha: head,
+    mergeState: 'clean',
+    reviewDecision: 'approved',
+  })
+})
+
+test('an unavailable aggregate cannot renew a dynamic merge state from an unchanged REST cache', async () => {
+  let baseline = true
+  const head = 'a'.repeat(40)
+  const poller = new GitHubPrEventPoller({
+    resolveCredential: async () => 'token',
+    fetch: async (input) => {
+      const path = new URL(input).pathname
+      if (path === '/graphql')
+        return baseline
+          ? response(
+              {
+                data: {
+                  repository: {
+                    pullRequest: {
+                      headRefOid: head,
+                      state: 'OPEN',
+                      isDraft: false,
+                      mergeStateStatus: 'CLEAN',
+                      reviewDecision: 'APPROVED',
+                    },
+                  },
+                },
+              },
+              'graph'
+            )
+          : new Response('{}', { status: 403 })
+      if (path.endsWith('/pulls/7'))
+        return baseline
+          ? response({ ...pullRequest, head: { sha: head }, mergeable_state: 'clean' }, 'pr')
+          : new Response(null, { status: 304 })
+      if (path.endsWith('/issues/7')) return baseline ? response(issue, 'issue') : new Response(null, { status: 304 })
+      return response([], 'empty')
+    },
+  })
+  const watch = { ...connection(), configuration: { ...connection().configuration, deliveryPresentation: true } }
+  const initial = await poller.poll(watch, null)
+  expect(initial.nextCursor.deliveryPresentation).toMatchObject({ mergeState: 'clean' })
+  baseline = false
+  const next = await poller.poll(watch, initial.nextCursor)
+  expect(next.events).toEqual([])
+  expect(next.nextCursor.deliveryPresentation).toBeUndefined()
+})

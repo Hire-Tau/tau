@@ -64,6 +64,12 @@ const FEED_METADATA_LINK_CLASS =
   'relative z-10 inline-flex items-center rounded-sm text-muted hover:text-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent'
 
 const WS_STATUS_ICONS: Record<WorkStreamPresentationState, string> = {
+  delivery_approval: '◎',
+  delivery_review: '◎',
+  delivery_merge: '◎',
+  delivery_external: '⧗',
+  delivery_setup: '⊘',
+  delivery_failure: '✖',
   active: '●',
   in_progress: '●',
   in_review: '◎',
@@ -139,8 +145,8 @@ function toggleFilter<T>(values: T[], value: T): T[] {
 }
 
 /** Display state used for filtering/rendering: prefer the server-derived state, fall back to stored status. */
-function wsFilterState(ws: WorkStream): WorkStreamDerivedState | WorkStreamStatus {
-  return getWsDisplayState(ws) as WorkStreamDerivedState | WorkStreamStatus
+function wsFilterState(ws: WorkStream): WorkStreamPresentationState {
+  return getWsDisplayState(ws)
 }
 
 // --- Helper functions ---
@@ -835,8 +841,12 @@ export function WorkStreamList({
       if (!activeOnly) {
         const matchesStatus = statusFilters.some((statusFilter) => {
           if (statusFilter === 'active') return WS_ACTIVE_STATUSES.includes(ws.status)
+          if (statusFilter === 'in_review') return WORK_STREAM_STATUS_ROLE[wsFilterState(ws)] === 'review'
           if (statusFilter === 'waiting')
-            return WS_WAITING_DERIVED_STATES.includes(wsFilterState(ws) as WorkStreamDerivedState)
+            return (
+              WS_WAITING_DERIVED_STATES.includes(wsFilterState(ws) as WorkStreamDerivedState) ||
+              ['delivery_external', 'delivery_setup', 'delivery_failure'].includes(wsFilterState(ws))
+            )
           return wsFilterState(ws) === statusFilter
         })
         if (statusFilters.length > 0 && !matchesStatus) return false
