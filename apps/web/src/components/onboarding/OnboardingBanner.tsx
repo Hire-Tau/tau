@@ -24,7 +24,7 @@ export function OnboardingBanner() {
   return (
     <Link
       to="/onboarding"
-      className="shrink-0 bg-accent text-white px-4 py-2 flex items-center justify-between gap-4 text-sm font-medium hover:bg-accent-hover transition-colors"
+      className="shrink-0 bg-accent text-on-accent px-4 py-2 flex items-center justify-between gap-4 text-sm font-medium hover:bg-accent-hover transition-colors"
     >
       <span>
         Setup {resolvedCount}/{status.items.length} — finish setting up Tau

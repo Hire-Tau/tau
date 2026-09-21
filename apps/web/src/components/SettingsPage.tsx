@@ -299,7 +299,7 @@ function NotificationsSection({ dependencies }: { dependencies: SettingsPageDepe
                     ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50 active:bg-red-300'
                     : permission === 'denied'
                       ? 'bg-surface-secondary text-placeholder cursor-not-allowed'
-                      : 'bg-accent text-white hover:bg-accent-hover active:bg-accent-active'
+                      : 'bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-active'
                 )}
               >
                 {isSubscribed ? 'Disable' : 'Enable'}
@@ -368,7 +368,7 @@ function NotificationsSection({ dependencies }: { dependencies: SettingsPageDepe
               'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
               notificationSound.enabled
                 ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50 active:bg-red-300'
-                : 'bg-accent text-white hover:bg-accent-hover active:bg-accent-active'
+                : 'bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-active'
             )}
           >
             {notificationSound.enabled ? 'Disable' : 'Enable'}
@@ -421,7 +421,7 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
               </div>
               <button
                 onClick={pwa.promptInstall}
-                className="tau-button tau-button-primary px-4 py-2.5 md:py-2 bg-accent text-white rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0"
+                className="tau-button tau-button-primary px-4 py-2.5 md:py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0"
               >
                 Install
               </button>
@@ -450,7 +450,7 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
               </div>
               <button
                 onClick={pwa.applyUpdate}
-                className="tau-button tau-button-primary px-4 py-2.5 md:py-2 bg-accent text-white rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0"
+                className="tau-button tau-button-primary px-4 py-2.5 md:py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0"
               >
                 Update Now
               </button>
@@ -668,7 +668,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
                 <button
                   type="submit"
                   disabled={profileMutation.isPending}
-                  className="tau-button tau-button-primary px-4 py-2.5 md:py-2 bg-accent text-white rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="tau-button tau-button-primary px-4 py-2.5 md:py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {profileMutation.isPending ? 'Saving...' : 'Save display name'}
                 </button>
@@ -721,7 +721,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
                           <button
                             type="submit"
                             disabled={renameMutation.isPending}
-                            className="tau-button tau-button-primary px-3 py-1.5 bg-accent text-white rounded-md text-xs font-medium hover:bg-accent-hover disabled:opacity-50"
+                            className="tau-button tau-button-primary px-3 py-1.5 bg-accent text-on-accent rounded-md text-xs font-medium hover:bg-accent-hover disabled:opacity-50"
                           >
                             {renameMutation.isPending ? 'Saving…' : 'Save'}
                           </button>
@@ -803,7 +803,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
               <button
                 onClick={handleAddPasskey}
                 disabled={isAdding}
-                className="tau-button tau-button-primary px-4 py-2.5 md:py-2 bg-accent text-white rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="tau-button tau-button-primary px-4 py-2.5 md:py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isAdding ? 'Adding…' : 'Add Passkey'}
               </button>

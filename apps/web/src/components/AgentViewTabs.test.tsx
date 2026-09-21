@@ -26,7 +26,7 @@ describe('AgentViewTabs', () => {
     expect(html).toContain('Chat')
     expect(html).toContain('Inbox')
     expect(html).toContain('Context')
-    expect(html).toContain('bg-accent text-white')
+    expect(html).toContain('bg-accent text-on-accent')
     expect(html).toContain('aria-pressed="true"')
     expect(html).toContain('border-l border-th-border')
     expect(html).toContain('hidden lg:flex')

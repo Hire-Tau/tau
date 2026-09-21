@@ -183,7 +183,7 @@ export function InviteUserForm({
         <button
           type="submit"
           disabled={!inviteEmail || inviteMutation.isPending}
-          className="tau-button tau-button-primary px-4 py-2 bg-accent text-white rounded-md text-sm font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="tau-button tau-button-primary px-4 py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover disabled:opacity-50"
         >
           {inviteMutation.isPending ? 'Inviting...' : 'Send Invite'}
         </button>

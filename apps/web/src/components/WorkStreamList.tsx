@@ -602,7 +602,7 @@ function WorkStreamRow({
             className="shrink-0"
             title={`Open PR #${github.prNumber}`}
           >
-            <Badge color="blue" className="gap-1">
+            <Badge color="accent-2" className="gap-1">
               <PullRequestIcon className="w-3.5 h-3.5" />#{github.prNumber}
             </Badge>
           </a>
@@ -613,7 +613,7 @@ function WorkStreamRow({
           </Badge>
           {assignee && (
             <Badge
-              color="purple"
+              color="accent-1"
               className="gap-1"
               to={assigneeTarget!}
               onClick={(event) => {
@@ -636,14 +636,14 @@ function WorkStreamRow({
             </Badge>
           )}
           {queuePositionText && (
-            <Badge color="gray" title="Position in the squad's admission queue">
+            <Badge color="neutral" title="Position in the squad's admission queue">
               {queuePositionText}
             </Badge>
           )}
           {state !== 'done' && <WorkStreamStatusBadges workStream={workStream} />}
           {showSquadBadge && squad && (
             <Badge
-              color="purple"
+              color="accent-1"
               to={`/squads/${slugFor(squad.id)}`}
               onClick={(e) => e.stopPropagation()}
               title={`Open ${squad.name} squad`}
@@ -674,7 +674,7 @@ function WorkStreamRow({
               className="shrink-0"
               title={`Open PR #${github.prNumber}`}
             >
-              <Badge color="blue" className="gap-1">
+              <Badge color="accent-2" className="gap-1">
                 <PullRequestIcon className="w-3.5 h-3.5" />#{github.prNumber}
               </Badge>
             </a>

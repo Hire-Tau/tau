@@ -2213,7 +2213,8 @@ export function ChatView({
                       }
                       className={clsx(
                         'tau-button',
-                        'px-3 py-2 md:py-1.5 rounded-md text-white text-sm disabled:opacity-50 font-medium min-h-[44px] md:min-h-0',
+                        'px-3 py-2 md:py-1.5 rounded-md text-sm disabled:opacity-50 font-medium min-h-[44px] md:min-h-0',
+                        sendButtonClassName ? 'text-white' : 'text-on-accent',
                         sendButtonClassName ?? 'bg-accent hover:bg-accent-hover active:bg-accent-active'
                       )}
                     >

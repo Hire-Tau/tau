@@ -212,7 +212,7 @@ export function OrgGraph({ squads, relationships }: Props) {
           onClick={() => setIs3D(false)}
           className={clsx(
             'tau-button',
-            `px-3 py-1 text-sm rounded ${!is3D ? 'bg-accent text-white' : 'text-muted hover:text-primary'}`
+            `px-3 py-1 text-sm rounded ${!is3D ? 'bg-accent text-on-accent' : 'text-muted hover:text-primary'}`
           )}
         >
           2D
@@ -221,7 +221,7 @@ export function OrgGraph({ squads, relationships }: Props) {
           onClick={() => setIs3D(true)}
           className={clsx(
             'tau-button',
-            `px-3 py-1 text-sm rounded ${is3D ? 'bg-accent text-white' : 'text-muted hover:text-primary'}`
+            `px-3 py-1 text-sm rounded ${is3D ? 'bg-accent text-on-accent' : 'text-muted hover:text-primary'}`
           )}
         >
           3D

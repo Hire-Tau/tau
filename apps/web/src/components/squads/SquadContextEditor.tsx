@@ -79,7 +79,7 @@ export function SquadContextEditor({ squadId, context }: Props) {
           className={clsx(
             'tau-button',
             'px-4 py-1.5 text-sm rounded-md font-medium transition-colors',
-            dirty ? 'bg-accent text-white hover:bg-accent/90' : 'bg-surface-secondary text-muted cursor-not-allowed'
+            dirty ? 'bg-accent text-on-accent hover:bg-accent/90' : 'bg-surface-secondary text-muted cursor-not-allowed'
           )}
         >
           {mutation.isPending ? 'Saving...' : 'Save'}

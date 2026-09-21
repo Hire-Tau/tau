@@ -220,7 +220,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
           <div className="flex justify-end pt-2">
             <button
               onClick={onClose}
-              className="tau-button tau-button-primary px-4 py-2 bg-accent text-white rounded hover:bg-accent-hover transition-colors"
+              className="tau-button tau-button-primary px-4 py-2 bg-accent text-on-accent rounded hover:bg-accent-hover transition-colors"
             >
               Done
             </button>
@@ -539,7 +539,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
           <button
             type="submit"
             disabled={createMutation.isPending}
-            className="tau-button tau-button-primary px-4 py-2 bg-accent text-white rounded hover:bg-accent-hover disabled:opacity-50 transition-colors"
+            className="tau-button tau-button-primary px-4 py-2 bg-accent text-on-accent rounded hover:bg-accent-hover disabled:opacity-50 transition-colors"
           >
             {createMutation.isPending ? 'Creating...' : 'Create Schedule'}
           </button>

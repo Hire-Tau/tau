@@ -126,7 +126,7 @@ export function DevicesSection() {
           <button
             onClick={() => startMutation.mutate()}
             disabled={startMutation.isPending}
-            className="tau-button tau-button-primary px-3 py-1.5 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+            className="tau-button tau-button-primary px-3 py-1.5 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
           >
             {startMutation.isPending ? 'Generating…' : 'Generate pairing QR'}
           </button>

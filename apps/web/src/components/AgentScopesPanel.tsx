@@ -115,7 +115,7 @@ function AgentScopesPanelContent({ agentId }: Props) {
                 'rounded-md px-3 py-1.5 text-sm font-medium',
                 grantableSelections.length === 0 || isMutating
                   ? 'cursor-not-allowed bg-surface text-muted'
-                  : 'bg-accent text-white hover:bg-accent-hover'
+                  : 'bg-accent text-on-accent hover:bg-accent-hover'
               )}
               disabled={grantableSelections.length === 0 || isMutating}
               onClick={() => void grantSelected()}

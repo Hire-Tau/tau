@@ -122,7 +122,7 @@ export function RebalancePanel({ machines }: { machines: Machine[] }) {
         <button
           onClick={() => dryRun.mutate()}
           disabled={busy}
-          className="tau-button tau-button-primary shrink-0 text-xs bg-accent text-white px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="tau-button tau-button-primary shrink-0 text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
         >
           {dryRun.isPending ? 'Planning…' : 'Rebalance'}
         </button>
@@ -142,7 +142,7 @@ export function RebalancePanel({ machines }: { machines: Machine[] }) {
               <button
                 onClick={() => apply.mutate()}
                 disabled={busy}
-                className="tau-button tau-button-primary text-xs bg-accent text-white px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+                className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
               >
                 {apply.isPending ? 'Applying…' : 'Confirm'}
               </button>

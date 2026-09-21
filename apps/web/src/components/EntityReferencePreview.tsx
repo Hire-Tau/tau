@@ -237,7 +237,7 @@ function AgentSummary({ agent, onNavigate, onOpenAgent }: { agent: Agent } & Age
         <p className="line-clamp-2 break-words font-semibold">{getAgentPrimaryLabel(data)}</p>
       </div>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <Badge color="purple">{type}</Badge>
+        <Badge color="accent-1">{type}</Badge>
         <span className="inline-flex items-center gap-1.5 text-xs text-muted">
           <AgentActivityDot status={data.status} />
           {AGENT_STATUS_LABELS[data.status]}
