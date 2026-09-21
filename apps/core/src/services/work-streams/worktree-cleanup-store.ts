@@ -183,6 +183,31 @@ export async function assertWorktreeCleanupMutable(tx: Store, id: string, reopen
     )
 }
 
+/** Requires the squad and stream lifecycle locks held by WorkStream.update.
+ * Metadata edits cannot transfer creation ownership to another checkout. Existing
+ * divergent records remain inspectable and retainable through unrelated updates. */
+export async function assertOwnedWorktreeBindingUnchanged(
+  tx: Store,
+  id: string,
+  before: Record<string, unknown>,
+  after: Record<string, unknown>
+): Promise<void> {
+  const binding = (metadata: Record<string, unknown>) => {
+    const git = metadata.git as Record<string, unknown> | null | undefined
+    return { repository: git?.repository, worktree: git?.worktree, branch: git?.branch }
+  }
+  if (isDeepStrictEqual(binding(before), binding(after))) return
+  const [registered] = await tx.select().from(workStreamWorktrees).where(eq(workStreamWorktrees.workStreamId, id))
+  if (registered)
+    throw new WorktreeCleanupConflictError(
+      'Cannot change a platform-owned repository, worktree or branch through metadata edits. ' +
+        'Read metadata.git (not top-level git), then use tau workstream cleanup inspect ' +
+        id +
+        ' to inspect original ownership. Use the configured worktree or create a new work stream for different work. ' +
+        'For an existing mismatch, cleanup retain stops automatic cleanup when no removal is in flight; it does not rewrite ownership.'
+    )
+}
+
 /** Read under the same agent queue lock used by final cleanup claim and pickup.
  * The SELECT deliberately does not lock a stream row (avoids inverted lock order). */
 export async function cleanupWorktreeForAgent(agentId: string, tx: Store = db): Promise<string | null> {

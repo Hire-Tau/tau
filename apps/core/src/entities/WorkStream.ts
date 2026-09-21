@@ -1,6 +1,7 @@
 import { worktreeAttachmentPaths } from '../services/work-streams/worktree-cleanup-attachments'
 import {
   assertWorktreeCleanupMutable,
+  assertOwnedWorktreeBindingUnchanged,
   assertWorktreeAttachmentsAvailable,
   prepareWorktreeAttachmentCheck,
   enqueueWorktreeCleanup,
@@ -1177,6 +1178,9 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
         if (input.metadata && Object.prototype.hasOwnProperty.call(input.metadata, 'tracked'))
           parseTrackedMetadata(mergedMetadata)
       }
+      // A new provisioning receipt was inserted above; only existing ownership is immutable.
+      if (!preparedOwnership)
+        await assertOwnedWorktreeBindingUnchanged(tx, this.id, currentMetadata, mergedMetadata ?? currentMetadata)
       await assertWorktreeAttachmentsAvailable(tx, {
         id: this.id,
         squadId: this.squadId,

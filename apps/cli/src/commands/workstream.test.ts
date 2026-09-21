@@ -50,6 +50,27 @@ describe('workstream CLI commands', () => {
     await program.parseAsync(['--quiet', ...args], { from: 'user' })
   }
 
+  it('inspects cleanup ownership and retains through the guarded lifecycle API', async () => {
+    const inspection = {
+      workStreamId: 'stream-1',
+      owned: { worktree: '/original', branch: 'original', repository: '/repo' },
+      current: { worktree: '/manual', branch: 'manual', repository: '/repo' },
+      bindingsMatch: false,
+      cleanup: null,
+      recovery: 'retain',
+    }
+    ;(apiGet as ReturnType<typeof mock>).mockResolvedValue(inspection)
+    ;(isJsonMode as ReturnType<typeof mock>).mockReturnValue(true)
+    await run(['workstream', 'cleanup', 'inspect', '#228'])
+    expect(apiGet).toHaveBeenLastCalledWith('/api/workstreams/%23228/worktree-cleanup')
+    expect(output).toHaveBeenLastCalledWith(inspection)
+    await run(['workstream', 'cleanup', 'retain', '#228'])
+    expect(apiPatch).toHaveBeenLastCalledWith('/api/workstreams/%23228', { autoCleanupWorktree: false })
+    ;(apiPatch as ReturnType<typeof mock>).mockRejectedValueOnce(new Error('Removal pending terminal proof'))
+    await run(['workstream', 'cleanup', 'retain', '#228'])
+    expect(outputError).toHaveBeenLastCalledWith(expect.objectContaining({ message: 'Removal pending terminal proof' }))
+  })
+
   it('preserves cleanup opt-out and opt-in in create and update requests', async () => {
     for (const value of ['false', 'true']) {
       await run(['workstream', 'create', 'Cleanup test', '--squad', 'squad-1', '--auto-cleanup-worktree', value])

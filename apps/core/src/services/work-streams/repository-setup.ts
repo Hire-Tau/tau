@@ -1,5 +1,5 @@
 import { posix as path } from 'node:path'
-import type { CreateWorkStreamInput } from '@tau/shared'
+import type { CreateWorkStreamInput, WorktreeOwnership } from '@tau/shared'
 
 export class RepositorySetupError extends Error {}
 
@@ -9,16 +9,7 @@ export type RepositorySetupInput = Pick<
 >
 export type RepositoryExec = (args: string[]) => Promise<string>
 
-/** Server-observed creation receipt; accepting an existing checkout confers no ownership. */
-export interface WorktreeOwnership {
-  workspace: string
-  repository: string
-  commonDirectory: string
-  gitDirectory: string
-  worktree: string
-  directoryIdentity: string
-  branch: string
-}
+export type { WorktreeOwnership } from '@tau/shared'
 
 type RecordOwnership = (ownership: WorktreeOwnership) => unknown
 

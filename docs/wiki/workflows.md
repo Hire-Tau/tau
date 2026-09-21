@@ -281,8 +281,8 @@ Editor tool revisions increase after every graph edit, including Undo and Redo. 
 New work streams default to `autoCleanupWorktree: true`. The API accepts only a
 boolean; CLI create/update accept `--auto-cleanup-worktree true|false`. The web
 stream detail shows the effective setting and cleanup status, with changes
-restricted to users who can update the stream. Set false **before delivery** to
-retain the worktree for any reason. No-worktree streams are harmless no-ops.
+restricted to users who can update the stream. Set false to retain the worktree,
+including after delivery while no removal is in flight. No-worktree streams are harmless no-ops.
 Historical rows default false; explicit later opt-in does not invent ownership
 or missing delivery proof.
 
@@ -328,3 +328,38 @@ remain available after reclamation. Reopening before removal invalidates old cle
 decisions; a fresh delivered transition captures fresh proof and re-arms the intent.
 Retention changes also invalidate stale reconciliation snapshots. No reclaimed-byte estimate is reported,
 because hardlinked dependencies can make summed sizes misleading.
+
+
+### Inspecting and recovering mismatched worktrees
+
+`tau workstream cleanup inspect <id> --json` (GET
+`/api/workstreams/:id/worktree-cleanup`, requiring squad `workstreams:read`)
+returns the original `owned` creation receipt, `current` Git bindings,
+`bindingsMatch`, cleanup status, and a snapshot `recovery` state. It performs
+only database reads; it does not start a sandbox. `owned: null` means no
+platform-created ownership was recorded. `cleanup: null` only means no cleanup
+job exists yet. Work stream JSON stores Git configuration under `metadata.git`,
+not a top-level `git` field.
+
+Normal updates reject changes to a platform-owned repository, worktree or branch,
+including `set-meta` writes. Unrelated metadata and retention updates still work
+for historical mismatches. New work needing another checkout belongs in a new
+work stream; the original ownership receipt is never silently transferred.
+
+For a historical duplicate-folder mismatch:
+
+1. Inspect original ownership and current bindings for each affected stream.
+2. Run `tau workstream cleanup retain <id>`. This uses the existing permission-checked
+   PATCH with `autoCleanupWorktree: false`. The lifecycle transaction invalidates
+   stale cleanup claims, including after delivery. If removal already started, it
+   returns a conflict instead; never clear that operation's markers manually.
+3. Verify the response and inspect again. `retained` means automation is disabled,
+   not that the folders are disposable. Keep automation disabled during manual work.
+4. An authorized operator may remove only exact unused paths after fresh checks for
+   live users, registered sharing, tracked/untracked/ignored data, and recoverable
+   commits. Retain active/open-PR working trees and branches. Keep any uncertain data.
+
+No ownership or delivery records need to be rewritten to stop automatic cleanup.
+Retention itself deletes nothing. It cannot undo successful reclamation or make
+an uncertain removal safe. Do not re-enable automatic cleanup for a divergent or
+manually removed tree: its original identity and delivered-head checks still apply.

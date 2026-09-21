@@ -302,3 +302,57 @@ test('retention-only changes remain available offline despite unrelated reclaime
     unavailable.mockRestore()
   }
 })
+
+for (const input of [
+  { worktree: '/workspace/duplicate' },
+  { branch: 'duplicate' },
+  { metadata: { git: { repository: '/workspace/other' } } },
+  { metadata: { git: { worktree: '/workspace/duplicate', branch: 'duplicate' } } },
+  { metadata: { git: null } },
+]) {
+  test(`owned bindings cannot be silently overwritten: ${JSON.stringify(input)}`, async () => {
+    const { WorkStream } = await import('../../entities/WorkStream')
+    await expect((await WorkStream.mustFind(streamId)).update(input)).rejects.toThrow('platform-owned')
+    expect((await WorkStream.mustFind(streamId)).metadata).toEqual(metadata)
+  })
+}
+
+test('historical mismatches can be retained after delivery without rewriting ownership or delivery evidence', async () => {
+  const { WorkStream } = await import('../../entities/WorkStream')
+  const divergent = { ...metadata, git: { ...metadata.git, worktree: '/workspace/manual', branch: 'manual' } }
+  await db.update(workStreams).set({ metadata: divergent }).where(eq(workStreams.id, streamId))
+  await db.update(worktreeCleanupJobs).set({ status: 'deferred' }).where(eq(worktreeCleanupJobs.workStreamId, streamId))
+  const before = await db.select().from(workStreamWorktrees).where(eq(workStreamWorktrees.workStreamId, streamId))
+  const oldJob = (await db.select().from(worktreeCleanupJobs).where(eq(worktreeCleanupJobs.workStreamId, streamId)))[0]!
+  const stream = await WorkStream.mustFind(streamId)
+  await stream.update({ autoCleanupWorktree: false })
+  expect(stream.status).toBe('done')
+  expect(stream.metadata).toMatchObject(divergent)
+  const job = (await db.select().from(worktreeCleanupJobs).where(eq(worktreeCleanupJobs.workStreamId, streamId)))[0]!
+  expect(job).toMatchObject({ status: 'skipped', operationId: null, deliveryMetadata: oldJob.deliveryMetadata })
+  expect(job.generation).not.toBe(oldJob.generation)
+  expect(await db.select().from(workStreamWorktrees).where(eq(workStreamWorktrees.workStreamId, streamId))).toEqual(
+    before
+  )
+  expect(
+    await store.claimWorktreeCleanup(streamId, { generation: oldJob.generation, ownership, head, metadata })
+  ).toBeNull()
+  await stream.update({ metadata: { audit: 'Retained for manual inspection' } })
+  expect(stream.metadata.git).toEqual(divergent.git)
+})
+
+test('retain and cleanup claim serialize: no successful retain can leave an in-flight removal', async () => {
+  const { WorkStream } = await import('../../entities/WorkStream')
+  const stream = await WorkStream.mustFind(streamId)
+  const [retention, removal] = await Promise.allSettled([stream.update({ autoCleanupWorktree: false }), claim()])
+  const job = (await db.select().from(worktreeCleanupJobs).where(eq(worktreeCleanupJobs.workStreamId, streamId)))[0]!
+  if (retention.status === 'fulfilled') {
+    expect(job.status).toBe('skipped')
+    expect(job.operationId).toBeNull()
+    expect(removal).toMatchObject({ status: 'fulfilled', value: null })
+  } else {
+    expect(String(retention.reason)).toContain('pending terminal proof')
+    expect(job.status).toBe('removing')
+    expect(removal.status === 'fulfilled' && removal.value).toBeTruthy()
+  }
+})
