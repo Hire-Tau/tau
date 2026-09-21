@@ -1,3 +1,4 @@
+import { RuntimeReadiness } from './lib/infra/readiness'
 import { forwardAssistantUpdates, reconcileAssistantSummaries } from './services/assistant-conversation-updates'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
@@ -95,6 +96,8 @@ setStreamBufferFactory((id: string) => {
 // --- Stream HTTP Server ---
 
 export const workerApp = new Hono()
+const readiness = new RuntimeReadiness('worker', process.env.TAU_RUNTIME_INSTANCE_ID)
+workerApp.get('/ready', () => readiness.response())
 
 workerApp.get('/health', (c) => {
   return c.json({
@@ -1118,6 +1121,7 @@ async function startup(): Promise<void> {
  * worker back.
  */
 async function shutdownWorker(reason: string): Promise<void> {
+  readiness.markStopping()
   log.info(`Received ${reason}, shutting down...`)
 
   // Abort all active sessions — saves partial messages to DB via agent_end
@@ -1188,6 +1192,7 @@ async function exitAfterWorkerShutdown(reason: string, exitCode: number): Promis
 }
 
 async function gracefulShutdown(signal: string): Promise<void> {
+  readiness.markStopping()
   await exitAfterWorkerShutdown(signal, 0)
 }
 
@@ -1229,10 +1234,12 @@ if (import.meta.main) {
   const eventServer = startWorkerEventServer()
   log.info(`Internal event listener on http://${eventServer.hostname}:${eventServer.port}`)
 
-  startup().catch((error) => {
-    log.error('Startup failed:', error)
-    process.exit(1)
-  })
+  startup()
+    .then(() => readiness.markReady())
+    .catch((error) => {
+      log.error('Startup failed:', error)
+      process.exit(1)
+    })
 
   if (beyondLoopback(workerHost)) {
     log.warn(

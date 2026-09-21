@@ -1,3 +1,4 @@
+import { RuntimeReadiness } from './lib/infra/readiness'
 import { mountCoreDocs } from './lib/docs-serve'
 import {
   getOpenAIServiceKey,
@@ -235,6 +236,8 @@ app.use(
   })
 )
 
+const readiness = new RuntimeReadiness('api', process.env.TAU_RUNTIME_INSTANCE_ID)
+app.get('/ready', () => readiness.response())
 app.get('/health', (c) => c.json({ status: 'ok' }))
 
 // Cross-process events from tau-worker (see lib/infra/local-events.ts). Not
@@ -1001,6 +1004,7 @@ if (import.meta.main) {
         }
       }
     })
+    .then(() => readiness.markReady())
     .catch((error) => {
       log.error('Failed to initialize:', error)
       process.exit(1)
@@ -1013,6 +1017,7 @@ if (import.meta.main) {
 
   // Add graceful shutdown handling
   const gracefulShutdown = async (signal: string) => {
+    readiness.markStopping()
     log.info(`Received ${signal}, shutting down...`)
     await stopSubsystems(subsystems, log)
     terminalManager.cleanup()

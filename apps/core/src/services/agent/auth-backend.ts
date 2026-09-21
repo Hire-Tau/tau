@@ -251,7 +251,10 @@ export function getModelRuntime(): Promise<ModelRuntime> {
       throw err
     })
   }
-  return modelRuntimePromise
+  return modelRuntimePromise.then((runtime) => {
+    registerOpenAICompatibleAccounts(runtime)
+    return runtime
+  })
 }
 
 /**
@@ -285,12 +288,33 @@ export function openAICompatibleRegistrations(store: AccountStoreV1) {
     return [{ providerId: account.providerId || storedProviderId, account }]
   })
 }
-export function registerOpenAICompatibleAccounts(runtime: ModelRuntime): void {
+type CustomProviderRegistry = Pick<
+  ModelRuntime,
+  'getRegisteredProviderIds' | 'getRegisteredProviderConfig' | 'registerProvider' | 'unregisterProvider'
+>
+const registrationSnapshots = new WeakMap<CustomProviderRegistry, string>()
+export function registerOpenAICompatibleAccounts(
+  runtime: CustomProviderRegistry,
+  store: AccountStoreV1 = readAccountStore()
+): void {
+  const registrations = openAICompatibleRegistrations(store)
+  // Cross-process secret refreshes update the account store, not this catalog.
+  // Compare only model configuration; token rotation/lastUsedAt must not rebuild it.
+  const snapshot = JSON.stringify(
+    registrations.map(({ providerId, account }) => ({
+      providerId,
+      label: account.label,
+      baseUrl: account.baseUrl,
+      model: account.model,
+      contextWindow: account.capabilities?.contextWindow ?? 32768,
+    }))
+  )
+  if (registrationSnapshots.get(runtime) === snapshot) return
   for (const providerId of runtime.getRegisteredProviderIds()) {
     if (runtime.getRegisteredProviderConfig(providerId)?.name?.startsWith('OpenAI Compatible:'))
       runtime.unregisterProvider(providerId)
   }
-  for (const { providerId, account } of openAICompatibleRegistrations(readAccountStore())) {
+  for (const { providerId, account } of registrations) {
     runtime.registerProvider(providerId, {
       name: `OpenAI Compatible: ${account.label || providerId}`,
       api: 'openai-completions',
@@ -310,6 +334,7 @@ export function registerOpenAICompatibleAccounts(runtime: ModelRuntime): void {
       ],
     })
   }
+  registrationSnapshots.set(runtime, snapshot)
 }
 
 /**
@@ -326,6 +351,7 @@ export function tryGetModelRuntime(): ModelRuntime | undefined {
   // Returns the resolved singleton if the eager warmup has completed. A pending
   // warmup yields undefined, which sync callers (model-selection) treat as
   // "not yet configured" and fall back to account-store-only checks.
+  if (modelRuntimeInstance) registerOpenAICompatibleAccounts(modelRuntimeInstance)
   return modelRuntimeInstance
 }
 
