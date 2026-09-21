@@ -331,3 +331,20 @@ test('new delivery intent never resets removing, uncertain, or succeeded resourc
     expect(await job()).toEqual(before)
   }
 })
+
+test('binding mismatches defer before provider or sandbox calls and report recovery commands', async () => {
+  await db
+    .update(workStreams)
+    .set({ metadata: { ...metadata, git: { ...(metadata.git as object), worktree: '/manual' } } })
+    .where(eq(workStreams.id, streamId))
+  let calls = 0
+  await processJob({
+    execForSquad: async () => {
+      calls++
+      throw Error('must not start runtime')
+    },
+  })
+  expect(calls).toBe(0)
+  expect(await job()).toMatchObject({ status: 'deferred', operationId: null })
+  expect((await job()).reason).toContain('cleanup inspect')
+})

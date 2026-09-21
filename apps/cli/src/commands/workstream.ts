@@ -1,3 +1,4 @@
+import { registerWorkstreamCleanupCommands } from './workstream-cleanup'
 import {
   workStreamLabel,
   workStreamRef,
@@ -354,6 +355,7 @@ export function formatWorkStreamAgents(
 export function registerWorkstreamCommands(program: Command, flowDependencies?: WorkstreamFlowDependencies) {
   const ws = program.command('workstream').alias('ws').description('Manage work streams')
   registerWorkstreamFlowCommands(ws, flowDependencies)
+  registerWorkstreamCleanupCommands(ws)
 
   // tau workstream list [--squad <id>] [--task <id>] [--status <status>]
   ws.command('list')
@@ -426,7 +428,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .option('--repository <path>', 'Create or validate a worktree from this repository in the squad workspace')
     .option(
       '--auto-cleanup-worktree <true|false>',
-      'Reclaim an owned worktree after delivery (new streams: true); set false before finish to retain'
+      'Reclaim an owned worktree after delivery (new streams: true); set false to retain unless removal is already in flight'
     )
     .option('--git-remote <name>', 'Remote for code-host detection and default base (default: origin)')
     .option('--branch <name>', 'Git branch for this work stream (stored at git.branch metadata)')
@@ -625,7 +627,7 @@ export function registerWorkstreamCommands(program: Command, flowDependencies?: 
     .option('--repository <path>', 'Create or validate a worktree from this repository in the squad workspace')
     .option(
       '--auto-cleanup-worktree <true|false>',
-      'Reclaim an owned worktree after delivery (new streams: true); set false before finish to retain'
+      'Reclaim an owned worktree after delivery (new streams: true); set false to retain unless removal is already in flight'
     )
     .option('--git-remote <name>', 'Remote for code-host detection and default base (default: origin)')
     .option('--branch <name>', 'Git branch for this work stream')

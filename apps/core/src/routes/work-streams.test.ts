@@ -12,6 +12,7 @@ import { db } from '../db'
 import {
   workStreams,
   worktreeCleanupJobs,
+  workStreamWorktrees,
   workStreamOrderSnapshots,
   workStreamOrderSnapshotItems,
   squads,
@@ -234,6 +235,66 @@ describe('work-streams routes', () => {
       expect((await response.json()).code).toBe('worktree_cleanup_conflict')
     }
     expect((await WorkStream.mustFind(stream.id)).status).toBe('done')
+  })
+
+  it('inspects original ownership separately from current metadata and enforces squad read access', async () => {
+    const stream = await storedLegacyWorkStream({ squadId: testSquadId, title: 'Divergent ownership' })
+    const ownership = {
+      workspace: '/workspace',
+      repository: '/workspace/repo',
+      commonDirectory: '/workspace/repo/.git',
+      gitDirectory: '/workspace/repo/.git/worktrees/original',
+      worktree: '/workspace/original',
+      branch: 'original',
+      directoryIdentity: '1:2',
+    }
+    await db.insert(workStreamWorktrees).values({ workStreamId: stream.id, squadId: testSquadId, ownership })
+    await db
+      .update(workStreams)
+      .set({
+        autoCleanupWorktree: true,
+        metadata: { git: { repository: ownership.repository, worktree: '/workspace/manual', branch: 'manual' } },
+      })
+      .where(eq(workStreams.id, stream.id))
+    const response = await apiFetch(`/api/workstreams/${stream.id}/worktree-cleanup`)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      owned: ownership,
+      current: { worktree: '/workspace/manual' },
+      bindingsMatch: false,
+      recovery: 'retain',
+      cleanup: null,
+    })
+    const stranger = await createTestUser({ prefix: testPrefix })
+    const forbidden = await app.fetch(
+      new Request(`http://localhost/api/workstreams/${stream.id}/worktree-cleanup`, {
+        headers: authHeaders(stranger.token),
+      })
+    )
+    expect(forbidden.status).toBe(403)
+    await db
+      .insert(worktreeCleanupJobs)
+      .values({ workStreamId: stream.id, status: 'removing', operationId: crypto.randomUUID() })
+    expect(await (await apiFetch(`/api/workstreams/${stream.id}/worktree-cleanup`)).json()).toMatchObject({
+      recovery: 'in-flight',
+    })
+    await db
+      .update(worktreeCleanupJobs)
+      .set({ status: 'succeeded' })
+      .where(eq(worktreeCleanupJobs.workStreamId, stream.id))
+    expect(await (await apiFetch(`/api/workstreams/${stream.id}/worktree-cleanup`)).json()).toMatchObject({
+      recovery: 'reclaimed',
+    })
+    await db.delete(worktreeCleanupJobs).where(eq(worktreeCleanupJobs.workStreamId, stream.id))
+    // No new ownership was adopted, and GET cannot create a cleanup job.
+    expect(
+      await db.select().from(worktreeCleanupJobs).where(eq(worktreeCleanupJobs.workStreamId, stream.id))
+    ).toHaveLength(0)
+    for (const body of [{ worktree: '/workspace/third' }, { metadata: { git: { branch: 'third' } } }]) {
+      const blocked = await patchJson(`/api/workstreams/${stream.id}`, body)
+      expect(blocked.status).toBe(409)
+      expect((await blocked.json()).code).toBe('worktree_cleanup_conflict')
+    }
   })
 
   it('cleanup API preserves false, rejects non-booleans, and exposes only public status', async () => {

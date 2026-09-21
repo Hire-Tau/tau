@@ -136,7 +136,14 @@ this is already done.
    ```
    tau workstream get <workstream-id> --json
    ```
-2. Confirm the JSON includes `git.worktree` and `git.branch`.
+2. Read `.metadata.git.worktree` and `.metadata.git.branch` (or the top-level
+   `.worktree` and `.branch` convenience fields). There is **no top-level `.git`**:
+   `jq '.git'` returning null does not mean setup is missing.
+   ```
+   tau workstream get <workstream-id> --json | jq '{git: .metadata.git, worktreeCleanup}'
+   ```
+   A dispatched flow assignment also includes the configured worktree. Use that
+   existing tree; do not create a replacement or overwrite its bindings.
 3. Verify the worktree directory exists and is on the correct branch, then
    `cd` into it for all your work (you won't normally start inside it):
    ```
@@ -180,8 +187,21 @@ interfere with a cleanup-owned path. Unrelated workspace executions continue.
 Registered sharing/dependencies block cleanup; undeclared cross-stream shell
 access is not protected, so attach shared use before accessing another tree.
 
-To retain a worktree for any reason, set `--auto-cleanup-worktree false` through
-`tau workstream update` **before finishing** (or use the web stream setting).
+To retain a worktree, use `tau workstream cleanup retain <workstream-id>` (or
+`tau workstream update <workstream-id> --auto-cleanup-worktree false`). This works
+before or after delivery **if no removal is in flight**. The server serializes it
+with cleanup claims and rejects unsafe changes. Retention stops automatic cleanup;
+it does not delete files, adopt a replacement tree, or erase ownership history.
+
+For duplicate folders or binding mismatches, run
+`tau workstream cleanup inspect <workstream-id> --json`. Compare `owned` (the
+original server-observed creation receipt) with `current` (metadata.git). A null
+`worktreeCleanup` means no cleanup job exists, not that no worktree is owned.
+Do not fix a mismatch by rewriting bindings or ownership. Retain first; after
+successful retention, an authorized operator can manually remove only confirmed
+unused trees after fresh live-use, dirty/ignored-file and commit-recovery checks.
+Keep open-PR working trees and recoverable branches. Disabling cleanup is not proof
+that any particular folder is disposable. No database edits are required to retain.
 Inspect effective configuration and `worktreeCleanup` with `tau workstream get`.
 An uncertain removal blocks reuse even if the directory appears missing; do not
 clear operation markers. After successful cleanup, provision a new stream for
