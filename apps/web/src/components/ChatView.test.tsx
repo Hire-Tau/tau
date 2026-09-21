@@ -240,6 +240,40 @@ async function attachImageAndSend(
 }
 
 describe('ChatView image upload targeting and recovery', () => {
+  test('mobile expansion keeps staged images attached to the draft and sends them once', async () => {
+    const upload = mock(async () => ['image-mobile'])
+    const onSend = mock(async () => undefined)
+    const { dom, window } = await renderChatView(
+      <ChatView items={[]} agentId="agent-1" onSend={onSend} dependencies={{ uploadImages: upload }} />
+    )
+    window.innerWidth = 390
+    const textarea = window.document.querySelector('textarea') as HTMLTextAreaElement
+    await dom.act(async () => fireEvent.input(textarea, { target: { value: 'Look at this image' } }))
+    const input = window.document.querySelector('input[type="file"][accept^="image/png"]') as HTMLInputElement
+    Object.defineProperty(input, 'files', {
+      configurable: true,
+      value: [new window.File(['png bytes'], 'mobile.png', { type: 'image/png' })],
+    })
+    await dom.act(async () => {
+      input.dispatchEvent(new window.Event('change', { bubbles: true }))
+      const deadline = Date.now() + 1000
+      while (!window.document.querySelector('img') && Date.now() < deadline) await flushReact()
+    })
+    expect(window.document.querySelector('img')).not.toBeNull()
+    await dom.act(async () => textarea.click())
+    const expanded = window.document.querySelector('[role="dialog"]')!
+    expect(expanded.querySelector('img')).not.toBeNull()
+    expect(expanded.querySelector<HTMLTextAreaElement>('textarea')!.value).toBe('Look at this image')
+    expect(onSend).not.toHaveBeenCalled()
+    await dom.act(async () => {
+      expanded.querySelector('form')!.dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }))
+      await flushReact()
+    })
+    expect(upload).toHaveBeenCalledTimes(1)
+    expect(onSend).toHaveBeenCalledTimes(1)
+    expect(onSend).toHaveBeenCalledWith('Look at this image', ['image-mobile'])
+  })
+
   test.each([
     { name: 'an existing agent', props: { agentId: 'agent-1', squadId: 'squad-1' }, target: { agentId: 'agent-1' } },
     { name: 'a new scoped consultant', props: { squadId: 'squad-1' }, target: { squadId: 'squad-1' } },
