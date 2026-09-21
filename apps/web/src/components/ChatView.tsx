@@ -1,3 +1,4 @@
+import { useToolRenderers } from '../lib/ToolRenderersContext'
 import { ConversationSkeleton } from './loading/Skeleton'
 import clsx from 'clsx'
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
@@ -5,7 +6,7 @@ import { Link } from 'react-router-dom'
 import type { MessageMetadata, MessageToolCall, ContentBlock, DeliveryMode, ExecutionStatus } from '@tau/shared'
 import { AssistantMessageContent, HumanMessageContent, ThinkingSection, ParsedTextContent } from './MessageContent'
 import { TypingIndicator } from './TypingIndicator'
-import { agentToolRenderers, ToolSummary, ToolArgsView, ToolResultView } from '../lib/tool-renderers'
+import { ToolSummary, ToolArgsView, ToolResultView } from '../lib/tool-renderers'
 import { getImageAttachState } from '../lib/imageAttach'
 import {
   CheckIcon,
@@ -100,6 +101,7 @@ interface ChatViewProps {
   executionStatus?: ExecutionStatus | null
   viewingUserId?: string
   readOnly?: boolean
+  hideInboxMessages?: boolean
   hideComposer?: boolean
   enableFullscreen?: boolean
   embedded?: boolean
@@ -117,6 +119,7 @@ interface ChatViewProps {
   inputStorageKey?: string
   /** Squad ID for permissions, file mentions, and staging images before an agent exists. */
   squadId?: string
+  renderMessageFooter?: (item: Extract<RenderItem, { kind: 'persisted' }>) => React.ReactNode
   afterMessages?: React.ReactNode
   /** Persistent content in normal flow directly above the composer. */
   beforeComposer?: React.ReactNode
@@ -350,6 +353,7 @@ export function ChatView({
   viewingUserId,
   readOnly: _readOnly,
   hideComposer,
+  hideInboxMessages,
   enableFullscreen = false,
   embedded: _embedded,
   error,
@@ -362,6 +366,7 @@ export function ChatView({
   inputStorageKey,
   squadId,
   afterMessages,
+  renderMessageFooter,
   beforeComposer,
   className,
   autoFocus = true,
@@ -1433,6 +1438,14 @@ export function ChatView({
           // just above the very first user message on the page.
           let prevSenderUserId: string | undefined
           return items.map((item) => {
+            if (
+              hideInboxMessages &&
+              ((item.kind === 'pending' && item.metadata?.source === 'inbox') ||
+                (item.kind === 'persisted' &&
+                  item.message.role === 'human' &&
+                  item.message.metadata?.source === 'inbox'))
+            )
+              return null
             if (item.kind === 'persisted') {
               const m = item.message
               // Every source row id (the render key plus any merged-in rows) so a
@@ -1450,6 +1463,7 @@ export function ChatView({
                   )}
                 >
                   {node}
+                  {renderMessageFooter?.(item)}
                 </div>
               )
               if (m.content.startsWith('[System]')) {
@@ -2604,6 +2618,7 @@ function StreamingToolCallItem({
   onAbortTool?: () => void
   onToolInlineAction?: (action: ToolInlineAction) => void
 }) {
+  const toolRenderers = useToolRenderers()
   const inProgress = !toolCall._done
   const isIncomplete = !inProgress && !toolCall.result && !toolCall.isError
   const isError = toolCall.isError || isIncomplete
@@ -2630,7 +2645,7 @@ function StreamingToolCallItem({
             <span className="text-green-600 dark:text-green-400 shrink-0 inline-block w-3 text-center">&#10003;</span>
           )}
           <span className="font-medium shrink-0">{toolCall.toolName}</span>
-          <ToolSummary renderers={agentToolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
+          <ToolSummary renderers={toolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
           {isError && <span className="text-red-500 dark:text-red-400 text-[10px] font-medium shrink-0">ERROR</span>}
           <ChevronRightIcon
             className={clsx('w-3 h-3 shrink-0 text-muted transition-transform', expanded && 'rotate-90')}
@@ -2652,11 +2667,11 @@ function StreamingToolCallItem({
       {expanded && (
         <div className="mt-1 ml-1.5 border-l-2 border-th-border pl-3 py-0.5 space-y-1">
           {toolCall.args && (
-            <ToolArgsView renderers={agentToolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
+            <ToolArgsView renderers={toolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
           )}
           {result && (
             <ToolResultView
-              renderers={agentToolRenderers}
+              renderers={toolRenderers}
               toolName={toolCall.toolName}
               result={result}
               isError={isError}

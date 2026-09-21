@@ -1,3 +1,4 @@
+import type { RenderItem } from '@tau/client-core'
 import type { Agent } from '@tau/shared'
 import { z } from 'zod'
 import type { VoiceTranscriptEntry } from '../voice/types'
@@ -34,7 +35,15 @@ export function assistantConversationLink(entry: VoiceTranscriptEntry): Assistan
   const name = entry.toolName ?? ''
   if (!offerTools.has(name) && !messageTools.has(name)) return
   try {
-    const result = record(JSON.parse(entry.toolResult))
+    const raw = record(JSON.parse(entry.toolResult))
+    // Pi persists the complete tool result; legacy voice transcripts stored the receipt directly.
+    const text = Array.isArray(raw?.content)
+      ? raw.content
+          .filter((part: any) => part.type === 'text')
+          .map((part: any) => part.text)
+          .join('\n')
+      : undefined
+    const result = text ? record(JSON.parse(text)) : raw
     const receipt = record(result?.receipt) ?? result
     if (
       !result ||
@@ -52,7 +61,7 @@ export function assistantConversationLink(entry: VoiceTranscriptEntry): Assistan
     // Existing saved message receipts also carry canonical agent IDs.
     if (
       (messageTools.has(name) || name === 'show_conversation') &&
-      typeof receipt.id === 'string' &&
+      (typeof receipt.id === 'string' || typeof receipt.messageId === 'string') &&
       typeof receipt.agentId === 'string'
     ) {
       const legacy = conversationSchema.safeParse({ agentId: receipt.agentId, label: 'Agent conversation' })
@@ -61,4 +70,24 @@ export function assistantConversationLink(entry: VoiceTranscriptEntry): Assistan
   } catch {
     /* Incomplete or failed tool result. */
   }
+}
+
+export function durableAssistantConversationLinks(
+  item: Extract<RenderItem, { kind: 'persisted' }>
+): AssistantConversationLink[] {
+  const links = new Map<string, AssistantConversationLink>()
+  for (const block of item.blocks) {
+    if (block.type !== 'tool_use') continue
+    const tool = block.toolCall
+    const link = assistantConversationLink({
+      role: 'tool',
+      text: '',
+      final: true,
+      toolName: tool.toolName,
+      toolResult: tool.result,
+      toolError: tool.isError,
+    })
+    if (link) links.set(link.agentId, link)
+  }
+  return [...links.values()]
 }

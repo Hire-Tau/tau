@@ -1,5 +1,5 @@
 import { expect, mock, spyOn, test } from 'bun:test'
-import { StrictMode } from 'react'
+import { StrictMode, useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { createBlankWorkflow, type AssistantEditorState } from '@tau/shared'
@@ -35,6 +35,7 @@ test('StrictMode keeps the editor open, synchronizes current drafts, and closes 
   })
   const fakeConversationApi = {
     ...assistantApi,
+    ensureAgent: async () => ({ agentId: 'brain' }),
     history: async () => ({ entries: [], hasMore: false }),
     inbox: async () => ({ acquired: true, messages: [], pending: 0 }),
     release: async () => ({}),
@@ -65,7 +66,16 @@ test('StrictMode keeps the editor open, synchronizes current drafts, and closes 
               <PageEditorAssistant
                 draft={{ kind: 'workflow', target: {}, revision, document: createBlankWorkflow() }}
                 onProposal={onProposal}
-                conversationDependencies={{ api: fakeConversationApi as any, useAssistant: useAssistant as any }}
+                conversationDependencies={{
+                  api: fakeConversationApi as any,
+                  useAssistant: useAssistant as any,
+                  Chat: (({ onConversation }: any) => {
+                    useEffect(() => {
+                      onConversation?.({ items: [] })
+                    }, [onConversation])
+                    return null
+                  }) as any,
+                }}
               />
             </PermissionsProvider>
           </MemoryRouter>

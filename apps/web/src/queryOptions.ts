@@ -972,6 +972,16 @@ export const modelCatalogQuery = (agentId?: string) =>
   })
 
 export const assistantQueries = {
+  updates: (ownerId: string, id: string, ids: string[]) =>
+    queryOptions({
+      queryKey: assistantQueryKeys.updates(ownerId, id, ids),
+      queryFn: async () => {
+        const updates = [] as Awaited<ReturnType<typeof assistantApi.readUpdates>>
+        for (let offset = 0; offset < ids.length; offset += 50)
+          updates.push(...(await assistantApi.readUpdates(id, ids.slice(offset, offset + 50))))
+        return updates
+      },
+    }),
   editor: (id: string) =>
     queryOptions({ queryKey: assistantQueryKeys.editor(id), queryFn: () => assistantApi.editor(id) }),
   list: (q = '', offset = 0) =>

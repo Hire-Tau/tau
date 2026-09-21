@@ -1106,3 +1106,34 @@ describe('Assistant launcher sends', () => {
     expect(rejected).toHaveBeenCalledTimes(1)
   })
 })
+
+test('an editor preparation failure keeps the initial prompt retryable without dispatching it', async () => {
+  const dom = await installDom()
+  const mc = makeMockClient()
+  const { Providers, qc } = makeProviders(mc.client)
+  qc.setQueryData(queryKeys.system.pause(), { effective: false })
+  const { root, container } = dom.createRoot()
+  const beforeSend = mock(async () => {})
+  beforeSend.mockImplementationOnce(async () => {
+    throw new Error('Draft changed; retry')
+  })
+  await dom.act(async () =>
+    root.render(
+      <Providers>
+        <AgentChat
+          dependencies={{ ChatViewComponent: TestChatView }}
+          scope={{ type: 'system-manager' }}
+          initialMessage={{ content: 'Edit this draft' }}
+          beforeSend={beforeSend}
+        />
+      </Providers>
+    )
+  )
+  expect(mc.chatSent).toHaveLength(0)
+  expect(container.textContent).toContain('Draft changed; retry')
+  const retry = [...container.querySelectorAll('button')].find((button) => button.textContent === 'Retry sending')!
+  await dom.act(async () => retry.click())
+  await waitFor(() => expect(mc.chatSent).toHaveLength(1))
+  expect(mc.chatSent[0]!.message).toBe('Edit this draft')
+  expect(container.textContent).not.toContain('Draft changed; retry')
+})

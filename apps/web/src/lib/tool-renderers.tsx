@@ -557,8 +557,8 @@ const notifyContactRenderer: ToolRenderer = {
 }
 
 const memorySearchRenderer: ToolRenderer = {
-  summary: (args) => truncate(args.query ?? '', 60),
-  ArgsView: ({ args }) => <InlineCode>{args.query ?? ''}</InlineCode>,
+  summary: (args) => truncate(args.query ?? args.q ?? '', 60),
+  ArgsView: ({ args }) => <InlineCode>{args.query ?? args.q ?? ''}</InlineCode>,
   ResultView: ({ result, isError }) => {
     const text = extractResultText(result)
     const provenance = parseMemoryProvenance(text)
@@ -916,10 +916,10 @@ export function ToolResultView({
 }
 
 const delegateTaskRenderer: ToolRenderer = {
-  summary: (args) => `Started: ${truncate(args.label ?? 'background task', 60)}`,
+  summary: (args) => `Background task: ${truncate(args.label ?? 'background task', 60)}`,
   ArgsView: ({ args }) => <div className="whitespace-pre-wrap text-[12px]">{args.request ?? ''}</div>,
   ResultView: ({ result, isError }) => {
-    const parsed = parseObject(result)
+    const parsed = parseObject(extractResultText(result))
     if (isError || !parsed || parsed.error) return <CodeBlock isError>{extractResultText(result)}</CodeBlock>
     return <div className="text-[11px] text-muted">Running in the background. Updates will appear here.</div>
   },
@@ -951,8 +951,8 @@ const taskUpdateRenderer: ToolRenderer = {
 }
 
 const searchTauRenderer: ToolRenderer = {
-  summary: (args) => `Searched Tau for “${truncate(args.query ?? '', 40)}”`,
-  ArgsView: ({ args }) => <InlineCode>{args.query ?? ''}</InlineCode>,
+  summary: (args) => `Searched Tau for “${truncate(args.query ?? args.q ?? '', 40)}”`,
+  ArgsView: ({ args }) => <InlineCode>{args.query ?? args.q ?? ''}</InlineCode>,
   ResultView: ({ result, isError }) => <CodeBlock isError={isError}>{extractResultText(result)}</CodeBlock>,
 }
 

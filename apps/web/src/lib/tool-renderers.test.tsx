@@ -295,7 +295,7 @@ describe('site assistant task renderers', () => {
     const args = JSON.stringify({ label: 'Check enabled schedules', request: 'Which schedules are enabled?' })
     expect(
       renderToStaticMarkup(<ToolSummary renderers={siteAssistantToolRenderers} toolName="delegate_task" args={args} />)
-    ).toContain('Started: Check enabled schedules')
+    ).toContain('Background task: Check enabled schedules')
     const html = renderToStaticMarkup(
       <ToolArgsView renderers={siteAssistantToolRenderers} toolName="delegate_task" args={args} />
     )
@@ -325,7 +325,7 @@ describe('site assistant task renderers', () => {
     ).toContain('Running in the background')
     expect(
       renderToStaticMarkup(<ToolSummary renderers={siteAssistantToolRenderers} toolName="delegate_task" args={args} />)
-    ).toContain('Started: Pause deploy stream')
+    ).toContain('Background task: Pause deploy stream')
   })
 
   it('assistant_inbox renders as a task update with the content only', () => {
