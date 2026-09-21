@@ -1,17 +1,22 @@
-import { createContext, useContext, useState, useEffect, useLayoutEffect, useCallback, type ReactNode } from 'react'
-import { validateCustomTheme, type CustomThemeDocument, type AppearanceSetting } from '@tau/shared'
-import { BUILT_IN_THEMES, findWebTheme, resolveWebTheme } from '../theme/registry'
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useCallback,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react'
+import { type CustomThemeDocument, type AppearanceSetting } from '@tau/shared'
+import { findWebTheme, resolveWebTheme } from '../theme/registry'
 import { applyResolvedTheme } from '../theme/apply'
 import { getThemeStorage, persistSurfaceSnapshot, persistThemeSelection } from '../theme/storage'
 
-import {
-  applyCustomTheme,
-  clearCustomTheme,
-  customSelection,
-  loadCustomTheme,
-  persistCustomTheme,
-  removeCustomProperties,
-} from '../theme/custom'
+import { applyCustomTheme, customSelection, removeCustomProperties } from '../theme/custom'
+import { ThemeSyncStore, LOCAL_OVERRIDE_KEY } from '../theme/sync'
+import { CUSTOM_THEME_KEY } from '../theme/custom'
+import { THEME_ID_KEY, APPEARANCE_KEY, LEGACY_THEME_KEY } from '../theme/storage'
 
 /**
  * The resolved appearance (light/dark). Kept as `theme` for the existing
@@ -21,6 +26,9 @@ import {
 type Theme = 'light' | 'dark'
 
 interface ThemeContextValue {
+  localOverride: boolean
+  syncAvailable: boolean
+  adoptSynced: () => void
   /** The registered theme id currently applied (e.g. 'tau'). */
   customTheme: CustomThemeDocument | null
   customThemeError: string | null
@@ -35,6 +43,15 @@ interface ThemeContextValue {
   setTheme: (theme: Theme) => void
   setThemeId: (themeId: string) => void
   setAppearance: (appearance: AppearanceSetting) => void
+}
+
+const ThemeSyncContext = createContext<ThemeSyncStore | null>(null)
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function useThemeSyncStore() {
+  const store = useContext(ThemeSyncContext)
+  if (!store) throw new Error('useThemeSyncStore must be used within ThemeProvider')
+  return store
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
@@ -59,9 +76,23 @@ function readSystemPrefersDark(): boolean {
 export function ThemeProvider({ children }: { children: ReactNode }) {
   // The stored selection is read once, synchronously: legacy 'tau-theme'
   // values migrate here, unreadable values fall back to the defaults.
-  const [state, setState] = useState(() => loadCustomTheme(getThemeStorage()))
+  const [store] = useState(() => new ThemeSyncStore(getThemeStorage()))
+  const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   const { selection, custom, error } = state
   const [systemPrefersDark, setSystemPrefersDark] = useState(readSystemPrefersDark)
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.storageArea && event.storageArea !== getThemeStorage()) return
+      if (
+        event.key === null ||
+        [THEME_ID_KEY, APPEARANCE_KEY, LEGACY_THEME_KEY, CUSTOM_THEME_KEY, LOCAL_OVERRIDE_KEY].includes(event.key)
+      )
+        store.reloadFromStorage()
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [store])
 
   // Live system-preference tracking: a 'system' appearance follows OS scheme
   // changes without a reload (new capability in phase 0).
@@ -89,8 +120,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       try {
         applyCustomTheme(root, custom)
       } catch {
-        clearCustomTheme(getThemeStorage())
-        setState((s) => ({ ...s, custom: null, error: 'Custom theme could not be applied. Restored its base theme.' }))
+        store.recoverCustom()
         return
       }
     }
@@ -115,41 +145,40 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       }
       meta.content = surface
     }
-  }, [resolvedThemeDefinition, resolvedAppearance, selection, custom])
+  }, [resolvedThemeDefinition, resolvedAppearance, selection, custom, store])
 
-  const setThemeId = useCallback((themeId: string) => {
-    clearCustomTheme(getThemeStorage())
-    setState((s) => ({ selection: { ...s.selection, themeId: findWebTheme(themeId).id }, custom: null, error: null }))
-  }, [])
-  const setAppearance = useCallback((appearance: AppearanceSetting) => {
-    clearCustomTheme(getThemeStorage())
-    setState((s) => ({ selection: { ...s.selection, appearance }, custom: null, error: null }))
-  }, [])
+  const setThemeId = useCallback(
+    (themeId: string) => {
+      store.change({ ...store.getSnapshot().selection, themeId: findWebTheme(themeId).id, customTheme: null })
+    },
+    [store]
+  )
+  const setAppearance = useCallback(
+    (appearance: AppearanceSetting) => {
+      store.change({ ...store.getSnapshot().selection, appearance, customTheme: null })
+    },
+    [store]
+  )
   const setTheme = useCallback((theme: Theme) => setAppearance(theme), [setAppearance])
   const toggleTheme = useCallback(() => {
-    clearCustomTheme(getThemeStorage())
-    setState((s) => {
-      const current = resolveWebTheme(s.selection.themeId, s.selection.appearance, systemPrefersDark)
-      const next: Theme = current.appearance === 'dark' ? 'light' : 'dark'
-      return { selection: { ...s.selection, appearance: next }, custom: null, error: null }
-    })
-  }, [systemPrefersDark])
-  const applyCustom = useCallback((doc: CustomThemeDocument) => {
-    const result = validateCustomTheme(JSON.stringify(doc), BUILT_IN_THEMES)
-    if (!result.ok) throw new Error(result.error)
-    const saved = persistCustomTheme(getThemeStorage(), result.document)
-    setState((s) => ({
-      selection: customSelection(result.document, s.selection),
-      custom: result.document,
-      error: saved ? null : 'Theme applied for this session only: device storage is unavailable.',
-    }))
-  }, [])
+    const current = store.getSnapshot().selection
+    const resolved = resolveWebTheme(current.themeId, current.appearance, systemPrefersDark)
+    store.change({ ...current, appearance: resolved.appearance === 'dark' ? 'light' : 'dark', customTheme: null })
+  }, [store, systemPrefersDark])
+  const applyCustom = useCallback(
+    (doc: CustomThemeDocument) => {
+      store.change({ ...customSelection(doc, store.getSnapshot().selection), customTheme: doc })
+    },
+    [store]
+  )
   const resetTheme = useCallback(() => {
-    clearCustomTheme(getThemeStorage())
-    setState({ selection: { themeId: 'tau', appearance: 'light' }, custom: null, error: null })
-  }, [])
+    store.change({ themeId: 'tau', appearance: 'light', customTheme: null })
+  }, [store])
 
   const contextValue: ThemeContextValue = {
+    localOverride: state.localOverride,
+    syncAvailable: state.syncAvailable,
+    adoptSynced: store.adoptSynced,
     customTheme: custom,
     customThemeError: error,
     applyCustom,
@@ -163,5 +192,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setThemeId,
   }
 
-  return <ThemeContext.Provider value={contextValue}>{children}</ThemeContext.Provider>
+  return (
+    <ThemeSyncContext.Provider value={store}>
+      <ThemeContext.Provider value={contextValue}>{children}</ThemeContext.Provider>
+    </ThemeSyncContext.Provider>
+  )
 }

@@ -60,6 +60,20 @@ export function ThemeControl({
           {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
         </button>
       )}
+      {value.syncAvailable && (
+        <div className="mt-3 text-sm text-muted">
+          <p>
+            {value.localOverride
+              ? 'This device overrides your synced theme. Changes here also update your account theme.'
+              : 'Following your account theme.'}
+          </p>
+          {value.localOverride && (
+            <button className="tau-button tau-button-secondary min-h-[44px] px-3 py-2 mt-2" onClick={value.adoptSynced}>
+              Use synced theme
+            </button>
+          )}
+        </div>
+      )}
       {value.customTheme && (
         <p className="mt-3 text-sm text-secondary">
           Custom theme: {value.customTheme.name} ({value.customTheme.appearance})

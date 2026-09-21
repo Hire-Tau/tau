@@ -65,6 +65,7 @@ import { createExternalExportRouter } from './routes/external-export'
 import { Agent } from './entities/Agent'
 import { routingRouter } from './routes/routing'
 import { amtpRouter } from './routes/amtp'
+import { userPreferencesRouter } from './routes/user-preferences'
 import { notificationConfigRouter } from './routes/notification-config'
 import secretsRouter from './routes/secrets'
 import settingsRouter from './routes/settings'
@@ -319,6 +320,7 @@ app.route('/api/memory', memoryRouter)
 app.route('/api', grantsRouter)
 app.route('/api/routing', routingRouter)
 app.route('/api/notification-config', notificationConfigRouter)
+app.route('/api/user-preferences', userPreferencesRouter)
 app.route('/api/secrets', secretsRouter)
 app.route('/api/settings', settingsRouter)
 app.route('/api/system', systemRouter)
