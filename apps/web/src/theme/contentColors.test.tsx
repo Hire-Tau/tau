@@ -21,19 +21,26 @@ sheet.walkRules((rule) => {
   rule.walkDecls((decl) => {
     values[decl.prop] = decl.value
   })
-  rules[rule.selector] = values
+  for (const selector of rule.selectors) rules[selector] = values
 })
 const scopes = { light: rules[':root']!, dark: rules['.dark']! }
 
 function substitute(value: string, variables: Record<string, string>): string {
   for (let i = 0; value.includes('var(') && i < 20; i++) {
-    value = value.replace(/var\((--[\w-]+)(?:,\s*[^()]+)?\)/g, (_, name: string) => {
-      if (!variables[name]) throw new Error(`Missing ${name}`)
-      return variables[name]!
+    value = value.replace(/var\((--[\w-]+)(?:,\s*([^()]+))?\)/g, (_, name: string, fallback?: string) => {
+      if (!variables[name] && !fallback) throw new Error(`Missing ${name}`)
+      return variables[name] ?? fallback!
     })
   }
   expect(value).not.toContain('var(')
-  return value
+  return value.replace(/calc\(([\d.\s*]+)\)/g, (_, factors: string) =>
+    String(
+      factors
+        .split('*')
+        .map(Number)
+        .reduce((a, b) => a * b, 1)
+    )
+  )
 }
 
 /** Normalize to painted 8-bit channels, as browsers do for the legacy HSL. */
@@ -162,7 +169,11 @@ describe('default content palette parity', () => {
       ['text-[#767d8b]', 'text-[rgb(var(--term-muted))]', 'color'],
       ['prose-a:text-blue-200', 'prose-a:text-[rgb(var(--syntax-human-link))]', 'color'],
       ['prose-code:text-blue-100', 'prose-code:text-[rgb(var(--syntax-human-code-fg))]', 'color'],
-      ['prose-code:bg-blue-700/50', 'prose-code:bg-[rgb(var(--syntax-human-code-bg)/0.5)]', 'background-color'],
+      [
+        'prose-code:bg-blue-700/50',
+        'prose-code:bg-[rgb(var(--custom-rgb-syntax-human-code-bg,var(--syntax-human-code-bg))/calc(var(--custom-alpha-syntax-human-code-bg,1)*0.5))]',
+        'background-color',
+      ],
     ] as const
     const compiled = await postcss([
       tailwindcss({
@@ -173,7 +184,11 @@ describe('default content palette parity', () => {
     const generated: Record<string, Record<string, string>> = {}
     compiled.root.walkRules((rule) => {
       // Keep the utility itself, dropping typography's descendant selector.
-      const utility = rule.selector.replaceAll('\\', '').split(' :is')[0]!.slice(1)
+      const utility = rule.selector
+        .replace(/\\([0-9a-fA-F]{1,6})\s?/g, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+        .replaceAll('\\', '')
+        .split(' :is')[0]!
+        .slice(1)
       const declarations: Record<string, string> = {}
       rule.walkDecls((decl) => {
         declarations[decl.prop] = decl.value

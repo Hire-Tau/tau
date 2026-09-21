@@ -73,3 +73,10 @@ overrides. Graph node state aliases share semantic status tokens; chart defaults
 use their own legacy palette and never rewrite authored colors. Attribute-driven
 invalidation, fractional channels and intrinsic alpha apply to these consumers
 as well. Quantitative library chart schemes remain library defaults.
+
+## Custom themes
+
+The [v1 custom-theme contract](../../../../docs/theme/custom-themes.md) documents
+validation, scoped preview, device-local recovery and the generated pre-paint
+bootstrap. Custom alpha uses private split-channel helpers for opacity-modified
+CSS consumers; full channels and intrinsic metadata remain the JS adapter input.
