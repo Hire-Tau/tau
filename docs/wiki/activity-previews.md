@@ -66,7 +66,7 @@ links use `noopener noreferrer`. Clicking an inline control does not activate th
 
 ## Materialization and rollout
 
-Migration `0184_amusing_longshot.sql` adds `squad_activity.preview` JSONB with `[]` as
+Migration `0185_white_celestials.sql` adds `squad_activity.preview` JSONB with `[]` as
 its transitional storage default. All extractors generate spans from original sources;
 previews participate in persistence hashes and both REST projections and live events.
 Literal structural markers are prefixed separately, then enriched with work numbers
