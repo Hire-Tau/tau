@@ -3,9 +3,10 @@
 The registered theme's resolved CSS scope is the source of truth for all colors
 (`index.css`). The syntax object references variables directly, so changing the
 resolved appearance updates mounted blocks without a hook, duplicate JS palettes,
-or a first-render fallback. Tau intentionally keeps the old dark syntax and
-terminal palettes in **both** appearances; streamed ANSI retains its distinct
-light/dark palettes.
+or a first-render fallback. Tau keeps its dark syntax and terminal palettes in **both** appearances; phase 5
+minimally raises comment/property and terminal-muted ink for contrast. Streamed
+ANSI retains its distinct light/dark palettes. Additional built-ins define their
+complete scopes in `builtins.css`; see [built-in intent, gates and matrix](../../../../docs/theme/builtins.md).
 
 ## Compatibility contracts
 
@@ -46,14 +47,15 @@ light/dark palettes.
 Future built-in/custom-theme adapters must preserve the selection/scrollbar
 sentinels when inheriting Tau, support numeric fractional channels, and retain
 intrinsic-opacity metadata. Completeness alone does not establish contrast.
-This migration preserves existing contrast, including old low-contrast terminal
-black/comment colors; it does not claim a new accessibility certification.
+The phase-5 gate checks the defined critical pairs for every built-in, including
+code comments. Arbitrary ANSI/terminal combinations (including terminal black),
+legacy utility islands and authored artifacts are not accessibility-certified.
 
 ## Verification
 
 - `contentColors.test.tsx`: normalized rendered-markup parity against oneDark for
-  ten languages, with/without line numbers, in both appearances; all ANSI rules
-  and legacy xterm values; semantic ANSI hues; exact supporting colors; raw-color
+  ten languages, with/without line numbers, in both appearances, with exactly two
+  owner-approved syntax ink exceptions; all ANSI rules and legacy xterm values; semantic ANSI hues; exact supporting colors; raw-color
   guard on every migrated consumer. The JSON fixture was captured from the
   pre-migration CSS and terminal object at `2ce904fae`.
 - `terminal.test.ts`: constructor ordering, real DOM observer updates, custom
