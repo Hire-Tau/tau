@@ -1,3 +1,4 @@
+import { requireConsultantCreationAccess } from '../services/chat/consultant-access'
 import { assistantEditorContext } from '@tau/shared'
 import {
   syncAssistantEditor,
@@ -35,10 +36,9 @@ import { ASSISTANT_DELEGATION_KEY, ASSISTANT_TASK_ID_KEY } from '../services/ass
 import { assistantActivityRouter } from './assistant-activity'
 import { markAssistantUpdatesProcessed } from '../services/assistant-activity/acknowledge'
 import { Agent } from '../entities/Agent'
-import { Squad } from '../entities/Squad'
 import { InboxMessage } from '../entities/InboxMessage'
 import { resolveOwnedAgent } from '../services/assistant-agents'
-import { resolveActingUser, hasAgentResourcePermission, hasPermission } from '../services/rbac'
+import { resolveActingUser, hasAgentResourcePermission } from '../services/rbac'
 import { requirePermission } from '../middleware/require-permission'
 
 const uuid = z.string().uuid()
@@ -285,9 +285,7 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
       }
       // Explicit scopes and reply-inferred scopes pass through the same current authorization check.
       if (squadId) {
-        const squad = await Squad.find(squadId)
-        if (!squad || squad.status !== 'active' || !(await hasPermission(c.get('identity'), 'chat:send', squad.id)))
-          return c.json({ error: 'Squad not found' }, 404)
+        await requireConsultantCreationAccess(c.get('identity'), squadId)
       }
       targetSquadId = squadId
       const afterCommit: Array<() => void> = []

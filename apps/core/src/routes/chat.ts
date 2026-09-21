@@ -1,3 +1,5 @@
+import { HTTPException } from 'hono/http-exception'
+import { requireConsultantCreationAccess } from '../services/chat/consultant-access'
 import { findOrCreateConsultant } from '../services/chat/consultant'
 import { resolveActingUser } from '../services/rbac'
 import { withDeviceStreamRevocation } from '../services/streaming/device-revocation'
@@ -81,6 +83,7 @@ export const chatRouter = new Hono().post('/', zValidator('json', chatRequestSch
       const ownerUserId = (await resolveActingUser(identity))?.userId
 
       if (scopeType === 'consultant') {
+        await requireConsultantCreationAccess(identity, scopeId!)
         const actorUserId = identity ? identityUserId(identity) : null
         if (input.imageIds?.length && (!input.clientId || !actorUserId)) {
           return c.json({ error: 'Image attachments require an authenticated client send ID' }, 400)
@@ -212,6 +215,7 @@ export const chatRouter = new Hono().post('/', zValidator('json', chatRequestSch
       })
     )
   } catch (error) {
+    if (error instanceof HTTPException) return c.json({ error: error.message }, error.status)
     const message = error instanceof Error ? error.message : 'Unknown error'
     return c.json({ error: message }, error instanceof ChatIdempotencyConflictError ? 409 : 400)
   }
