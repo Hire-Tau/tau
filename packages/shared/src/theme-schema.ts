@@ -292,9 +292,9 @@ export const THEME_TOKEN_FAMILIES: readonly TokenFamilyDefinition[] = [
   },
   {
     family: 'brand',
-    description: 'Planned (PD-5): brand assets are themeable via --brand-* tokens (logo gradient, tile color).',
-    status: 'planned',
-    tokens: ['--brand-gradient-from', '--brand-gradient-to', '--brand-tile'],
+    description: 'Themeable logo gradient, underlying tile, and glyph ink (PD-5).',
+    status: 'active',
+    tokens: ['--brand-gradient-from', '--brand-gradient-to', '--brand-tile', '--brand-ink'],
   },
 ]
 
