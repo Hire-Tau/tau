@@ -246,3 +246,10 @@ test('shipped pre-paint custom matrix and broken-document fallback run before Re
     await dom.cleanup()
   }
 })
+
+test('pre-paint bundle stays independent of unrelated shared runtime exports', async () => {
+  const { generateThemeFlash } = await import('../../scripts/generate-theme-flash')
+  // Theme-only code fits comfortably here; the shared barrel pulled in Zod and
+  // workflow schemas (~100 KiB) before any page could paint.
+  expect(new TextEncoder().encode(await generateThemeFlash()).length).toBeLessThan(30000)
+})

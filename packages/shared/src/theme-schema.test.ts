@@ -75,6 +75,7 @@ describe('theme token registry', () => {
     const brand = THEME_TOKEN_FAMILIES.find((f) => f.family === 'brand')!
     expect(brand.tokens).toContain('--brand-gradient-from')
     expect(brand.tokens).toContain('--brand-tile')
+    expect(brand.status).toBe('active')
   })
 
   test('isThemeTokenName / themeTokenFamily lookups', () => {
@@ -103,10 +104,10 @@ describe('validateThemeTokenSet (completeness schema)', () => {
   })
 
   test('reports unknown tokens, including planned names defined before their family activates', () => {
-    const tokens = [...ACTIVE_THEME_TOKENS, '--brand-tile']
+    const tokens = [...ACTIVE_THEME_TOKENS, '--future-brand-tile']
     const result = validateThemeTokenSet(tokens)
     expect(result.ok).toBe(false)
-    expect(result.unexpected).toEqual(['--brand-tile'])
+    expect(result.unexpected).toEqual(['--future-brand-tile'])
   })
 
   test('duplicate definitions stay valid (a set is a set)', () => {
@@ -278,9 +279,9 @@ describe('coherent partial theme overrides', () => {
     expect(validateThemeTokenOverrides(STATUS_TOKENS).ok).toBe(true)
   })
   test('rejects unknown and inactive token names', () => {
-    expect(validateThemeTokenOverrides(['--status-typo-fg', '--brand-tile']).unexpected).toEqual([
+    expect(validateThemeTokenOverrides(['--status-typo-fg', '--future-brand-tile']).unexpected).toEqual([
       '--status-typo-fg',
-      '--brand-tile',
+      '--future-brand-tile',
     ])
   })
 })
