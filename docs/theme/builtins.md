@@ -11,21 +11,34 @@ The two recolors preserve status meanings and all seven used decorative Badge pa
 
 The Settings control has a native labeled theme selector and Light/Dark/System selector. Unified themes disable appearance and explain why; switching back restores the previously selected appearance. Selection, surface snapshot (including `constant`), document background and theme-color meta update together before paint. The existing legacy toggle remains the rollback UI while `THEME_PICKER_ENABLED` is false.
 
-## Release gate — pending default-palette decision
+## Release gate — enabled
 
-The picker remains **disabled** until the default-palette conflict is resolved. The requirement to keep Tau unchanged conflicts with the new all-built-in contrast gate. No failing pair is silently excluded: `builtins.test.ts` currently exposes the inherited Tau failures. The proposed correction is to adjust only its failing muted/placeholder, scrollbar, syntax comment/property and terminal-muted tokens, not its selection defaults or status/decorative identities. Owner decision pending.
+The picker is **enabled** after every built-in passed the strict contrast gate and the cold-load matrix. On 2026-09-21 the owner authorized a narrow exception to default-palette parity: minimally correct the six failing Tau tokens, while preserving its default selection and overall identity. No legacy contrast carve-out was added.
+
+### Authorized Tau deltas (worst applicable pair)
+
+| Token                              | Previous channels             | New channels                  | Before → after ratio |
+| ---------------------------------- | ----------------------------- | ----------------------------- | -------------------: |
+| Muted and placeholder text (light) | `114 109 129`                 | `111 106 126`                 |        4.389 → 4.586 |
+| Scrollbar (light, composited)      | `156 163 175 / 0.5`           | `55 65 81 / 0.65`             |        1.453 → 3.585 |
+| Scrollbar (dark, composited)       | `156 163 175 / 0.5`           | `156 163 175 / 0.6`           |        2.621 → 3.178 |
+| Syntax comment (both)              | `91.8 98.6 112.2`             | `141.8 148.6 162.2`           |        2.308 → 4.634 |
+| Syntax property (both)             | `223.7625 107.7375 117.40625` | `226.7625 111.7375 121.40625` |        4.375 → 4.567 |
+| Terminal-muted (both)              | `107 114 128`                 | `118 125 139`                 |        3.942 → 4.607 |
+
+Only these token values change in Tau. The syntax parity test explicitly substitutes the two authorized inks; all other syntax styles, ANSI/terminal slots, status and decorative palettes retain their parity checks. The dark muted/placeholder text remains unchanged.
 
 The gate checks **356 pairs per concrete palette** with sRGB WCAG luminance, fractional channels, foreground alpha and surface alpha × intrinsic-opacity metadata. Text requires 4.5:1; focus, scrollbars and graph links require 3:1. Covered: four text roles on six chrome surfaces, inline code, nine status roles and hover badges, seven decorative badge palettes, six agent identities, all syntax inks on both code surfaces, terminal text/muted/cursor, accent button states and graph labels/links. Status/badge translucent surfaces are composited over every likely underlying chrome surface.
 
-| Palette               | Lowest text ratio | Lowest indicator ratio | Failing pairs |
-| --------------------- | ----------------: | ---------------------: | ------------: |
-| Tau light (inherited) |             2.308 |                  1.453 |            16 |
-| Tau dark (inherited)  |             2.308 |                  2.621 |            10 |
-| Harbor light          |             4.682 |                  3.302 |             0 |
-| Harbor dark           |             4.908 |                  3.302 |             0 |
-| Ember light           |             4.641 |                  3.391 |             0 |
-| Ember dark            |             4.857 |                  3.391 |             0 |
-| High contrast         |             4.760 |                  3.657 |             0 |
+| Palette       | Lowest text ratio | Lowest indicator ratio | Failing pairs |
+| ------------- | ----------------: | ---------------------: | ------------: |
+| Tau light     |             4.567 |                  3.585 |             0 |
+| Tau dark      |             4.567 |                  3.178 |             0 |
+| Harbor light  |             4.682 |                  3.302 |             0 |
+| Harbor dark   |             4.908 |                  3.302 |             0 |
+| Ember light   |             4.641 |                  3.391 |             0 |
+| Ember dark    |             4.857 |                  3.391 |             0 |
+| High contrast |             4.760 |                  3.657 |             0 |
 
 These are defined-token-pair checks, not certification of every rendered page, text opacity utility, terminal SGR combination or third-party chart scheme.
 
@@ -62,3 +75,15 @@ Chromium real-renderer fixture, synthetic local data, 1280×1100: **96** cases (
 - [ ] Physical Windows high-contrast / assistive-technology pass (not performed).
 
 The browser review caught the existing `voice-orb-status { display: none }`; the forced-colors rule explicitly restores its display, hides decorative dots and exposes its accessible label visually. A color/box-shadow-only fallback would have missed this.
+
+## Verification (2026-09-21)
+
+After the authorized Tau corrections and picker enablement:
+
+- Full web gate: **2,383 passing, 0 failing**, 311 files.
+- Deterministic DOM-order gate: passed, including the full mixed/reversed cohorts.
+- Web typecheck and production build: passed.
+- Browser matrix rerun against the enabled picker and corrected Tau: **164 cases**, no uncaught errors (96 render, 4 forced-colors, 64 pre-paint), plus mounted canvas/xterm continuity and mobile selector review.
+- The six-token Tau change keeps all remaining content/status/decorative parity assertions intact.
+
+Browser evidence uses synthetic fixture data and the real components/libraries listed above. Screenshot review does not replace the specific limitations listed in the matrix.

@@ -52,8 +52,8 @@
     /* Text */
     --color-text-primary: 37 35 50;
     --color-text-secondary: 96 92 112;
-    --color-text-muted: 114 109 129;
-    --color-text-placeholder: 114 109 129;
+    --color-text-muted: 111 106 126;
+    --color-text-placeholder: 111 106 126;
 
     /* Borders */
     --color-border: 228 225 235;
@@ -263,18 +263,19 @@
     --agent-type-4-fg: 146 64 14;
     --agent-type-5-fg: 190 18 60;
     --agent-type-6-fg: 21 94 117;
-    --scrollbar-thumb: 156 163 175 / 0.5;
+    --scrollbar-thumb: 55 65 81 / 0.65;
     --on-accent-fg: 255 255 255;
     --checkbox-check: 255 255 255;
 
-    /* Syntax/terminal/ANSI: preserve the legacy content palettes in each appearance. */
+    /* Legacy content palettes, with owner-approved comment/property/muted contrast
+       corrections (docs/theme/builtins.md); all other slots preserve parity. */
     /* Terminal selection "none" retains ANSI ink; scrollbar "auto" retains native chrome. */
     --syntax-bg: 39.933 43.911 51.867;
     --syntax-fg: 170.697 177.599 191.403;
-    --syntax-comment: 91.8 98.6 112.2;
+    --syntax-comment: 141.8 148.6 162.2;
     --syntax-number: 209.253 153.7599 101.847;
     --syntax-keyword: 197.778 120.36 221.34;
-    --syntax-property: 223.7625 107.7375 117.40625;
+    --syntax-property: 226.7625 111.7375 121.40625;
     --syntax-string: 151.963 194.922 121.278;
     --syntax-function: 97.206 175.4094 239.394;
     --syntax-url: 86.3175 181.59825 194.1825;
@@ -314,7 +315,7 @@
     --term-scrollbar-thumb-hover: var(--term-scrollbar-thumb);
     --term-scrollbar-thumb-active: var(--term-scrollbar-thumb);
     --term-loading-bg: 55 65 81;
-    --term-muted: 107 114 128;
+    --term-muted: 118 125 139;
     --ansi-black: 30 30 30;
     --ansi-red: 197 48 48;
     --ansi-green: 47 133 90;
@@ -582,18 +583,19 @@
     --agent-type-4-fg: 252 211 77;
     --agent-type-5-fg: 253 164 175;
     --agent-type-6-fg: 103 232 249;
-    --scrollbar-thumb: 156 163 175 / 0.5;
+    --scrollbar-thumb: 156 163 175 / 0.6;
     --on-accent-fg: 255 255 255;
     --checkbox-check: 255 255 255;
 
-    /* Syntax/terminal/ANSI: preserve the legacy content palettes in each appearance. */
+    /* Legacy content palettes, with owner-approved comment/property/muted contrast
+       corrections (docs/theme/builtins.md); all other slots preserve parity. */
     /* Terminal selection "none" retains ANSI ink; scrollbar "auto" retains native chrome. */
     --syntax-bg: 39.933 43.911 51.867;
     --syntax-fg: 170.697 177.599 191.403;
-    --syntax-comment: 91.8 98.6 112.2;
+    --syntax-comment: 141.8 148.6 162.2;
     --syntax-number: 209.253 153.7599 101.847;
     --syntax-keyword: 197.778 120.36 221.34;
-    --syntax-property: 223.7625 107.7375 117.40625;
+    --syntax-property: 226.7625 111.7375 121.40625;
     --syntax-string: 151.963 194.922 121.278;
     --syntax-function: 97.206 175.4094 239.394;
     --syntax-url: 86.3175 181.59825 194.1825;
@@ -633,7 +635,7 @@
     --term-scrollbar-thumb-hover: var(--term-scrollbar-thumb);
     --term-scrollbar-thumb-active: var(--term-scrollbar-thumb);
     --term-loading-bg: 55 65 81;
-    --term-muted: 107 114 128;
+    --term-muted: 118 125 139;
     --ansi-black: 74 85 104;
     --ansi-red: 252 129 129;
     --ansi-green: 104 211 145;

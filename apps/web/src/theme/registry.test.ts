@@ -1,9 +1,19 @@
 import { describe, expect, test } from 'bun:test'
 import { validateThemeRegistry } from '@tau/shared'
-import { BUILT_IN_THEMES, KNOWN_THEME_IDS, TAU_THEME, findWebTheme, resolveWebTheme } from './registry'
+import {
+  BUILT_IN_THEMES,
+  KNOWN_THEME_IDS,
+  TAU_THEME,
+  THEME_PICKER_ENABLED,
+  findWebTheme,
+  resolveWebTheme,
+} from './registry'
 import { applyResolvedTheme } from './apply'
 
 describe('web theme registry', () => {
+  test('enables the picker after the built-in contrast and cold-load gates', () => {
+    expect(THEME_PICKER_ENABLED).toBe(true)
+  })
   test('ships Tau, two dual recolors, and a constant high-contrast theme', () => {
     expect(BUILT_IN_THEMES).toHaveLength(4)
     expect(findWebTheme('high-contrast').kind).toBe('unified')
