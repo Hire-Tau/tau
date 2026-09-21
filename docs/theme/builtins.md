@@ -87,3 +87,11 @@ After the authorized Tau corrections and picker enablement:
 - The six-token Tau change keeps all remaining content/status/decorative parity assertions intact.
 
 Browser evidence uses synthetic fixture data and the real components/libraries listed above. Screenshot review does not replace the specific limitations listed in the matrix.
+
+### Review screenshots
+
+Synthetic fixture, actual renderers (not live account data):
+
+- [Harbor light: Feed, work-stream rows, picker and badges](screenshots/harbor-light.png)
+- [Ember dark: chat, syntax, tools and ANSI](screenshots/ember-dark.png)
+- [High contrast: unified picker, Feed and badges](screenshots/high-contrast.png)
