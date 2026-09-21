@@ -61,6 +61,7 @@ export const getWsDisplayState = selectWorkStreamPresentationState
 export function isWorkStreamParked(workStream: WorkStreamPresentationFacts): boolean {
   if (workStream.status !== 'queued') return false
   return ['in_review', 'waiting_on_answer', 'waiting_on_dependency', 'blocked', 'paused'].includes(
-    getWsDisplayState(workStream)
+    // Admission state follows retained waits/pause, independently of delivery's primary label.
+    getWsDisplayState({ ...workStream, delivery: undefined })
   )
 }
