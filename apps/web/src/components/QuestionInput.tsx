@@ -1,3 +1,4 @@
+import { useVoiceEnabled } from '../hooks/useVoiceEnabled'
 import clsx from 'clsx'
 import { useCallback, useRef, useState } from 'react'
 import type { QuestionData, QuestionItem } from '@tau/shared'
@@ -87,11 +88,12 @@ export function QuestionInput({ questionData, onSubmit, disabled, secondaryActio
     [singleTextField]
   )
 
+  const dictationEnabled = useVoiceEnabled()
   const {
     state: voiceState,
     elapsed: voiceElapsed,
     volume: voiceVolume,
-    isSupported: voiceSupported,
+    isSupported: recorderSupported,
     isHoldMode,
     start: startRecording,
     stop: stopRecording,
@@ -106,8 +108,9 @@ export function QuestionInput({ questionData, onSubmit, disabled, secondaryActio
     onAutoSend: singleTextField ? handleAutoSend : undefined,
     onError: handleVoiceError,
     transcribe: transcribeAudio,
-    disabled: disabled,
+    disabled: disabled || !dictationEnabled,
   })
+  const voiceSupported = recorderSupported && dictationEnabled
 
   const beginPressForQuestion = useCallback(
     (questionId: string) => {

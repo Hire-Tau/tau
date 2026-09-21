@@ -3,16 +3,22 @@ import { assistantConversationLink, type AssistantConversationLink } from '../li
 import { AssistantConversationLinkRow } from './AssistantConversationLinkRow'
 import { siteAssistantToolRenderers, type ToolRenderers } from '../lib/tool-renderers'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { AssistantActivityUpdate, AssistantEntry, AssistantMessageReceipt } from '@tau/shared'
+import {
+  isTerminalAssistantTaskStatus,
+  type AssistantActivityUpdate,
+  type AssistantEntry,
+  type AssistantMessageReceipt,
+} from '@tau/shared'
 import { useLocation } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { assistantApi } from '../api/assistant'
-import { assistantQueryKeys } from '../queryKeys'
+import { assistantQueryKeys, queryKeys } from '../queryKeys'
 import { assistantQueries } from '../queryOptions'
 import { useStableRef } from '../hooks/useStableRef'
 import { useAssistantActivity } from '../hooks/useAssistantActivity'
 import { useAssistantInboxConsumer } from '../hooks/useAssistantInboxConsumer'
 import { AssistantUpdateList } from './AssistantUpdateList'
+import { AssistantAgentQuestions, AssistantTaskQuestions } from './AssistantQuestions'
 import { AssistantConversationContext, type AssistantConversationBridge } from '../voice/AssistantConversationContext'
 import { siteOperatorVoiceAssistant } from '../voice/assistants/siteOperator/siteOperatorAssistant'
 import { useRealtimeVoiceAssistant } from '../voice/useRealtimeVoiceAssistant'
@@ -38,6 +44,7 @@ export function AssistantConversationView(props: {
   existing?: boolean
   realtime: boolean
   initialMessage?: { id: string; text: string }
+  focusTaskId?: string
   compact: boolean
   visible: boolean
   onControls: (controls: AssistantViewControls) => void
@@ -410,7 +417,7 @@ function ConversationRuntime(
     },
   })
   return (
-    <div className="flex flex-1 min-h-0 flex-col" style={{ display: props.visible ? undefined : 'none' }}>
+    <div className="flex flex-1 min-h-0 min-w-0 flex-col" style={{ display: props.visible ? undefined : 'none' }}>
       {voice.isLiveAudio && (
         <VoiceCompanionButton
           embedded
@@ -484,6 +491,45 @@ function ConversationRuntime(
               onInterrupt={voice.status === 'speaking' || voice.status === 'processing' ? voice.interrupt : undefined}
             />
           </div>
+          {activity.data && props.visible && (
+            <div
+              className="min-h-0 min-w-0 max-h-[50dvh] shrink overflow-y-auto overscroll-contain space-y-2 px-3 py-2"
+              aria-label="Assistant questions"
+              data-assistant-questions
+            >
+              <AssistantAgentQuestions
+                agentIds={[
+                  ...new Set(
+                    activity.data.tasks.flatMap((task) =>
+                      task.agentId && !task.unavailable && !isTerminalAssistantTaskStatus(task.status)
+                        ? [task.agentId]
+                        : []
+                    )
+                  ),
+                ]}
+              />
+              <AssistantTaskQuestions
+                tasks={activity.data.tasks}
+                updates={activity.data.pendingInputs ?? shownUpdates}
+                focusTaskId={props.focusTaskId}
+                onReply={async (task, update, answer) => {
+                  const receipt = await props.sendAgent(
+                    answer,
+                    task.kind === 'agent' ? { agentId: task.agentId! } : {},
+                    'steer',
+                    update.messageId
+                  )
+                  // The accepted inbox receipt is the stable transcript identity, including retries.
+                  // Saving history is independent of delivery: a save failure must never resend an answer.
+                  void props
+                    .append([{ id: receipt.id, role: 'user', text: answer, final: true, channel: 'text' }])
+                    .catch(() => {})
+                  void refreshActivity()
+                  void queryClientForActivity.invalidateQueries({ queryKey: queryKeys.actions.pending() })
+                }}
+              />
+            </div>
+          )}
           {activity.data && (activity.data.updates.length > 0 || activity.data.tasks.length > 0) && (
             <AssistantUpdateList
               updates={shownUpdates}

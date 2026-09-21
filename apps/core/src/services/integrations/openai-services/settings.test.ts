@@ -143,7 +143,11 @@ test('service disable gates voice and transcription, and transcription uses rota
   {
     await configureOpenAIServices({ OPENAI_API_KEY: 'first-service-key' }, 'test')
     await setOpenAIServicesEnabled(false, 'test')
-    expect(await (await app.request('/voice/status')).json()).toEqual({ enabled: false, realtimeEnabled: false })
+    expect(await (await app.request('/voice/status')).json()).toEqual({
+      enabled: false,
+      realtimeEnabled: false,
+      transcriptionEnabled: false,
+    })
     const sdp = new FormData()
     sdp.set('sdp', 'fixture-sdp')
     expect((await app.request('/session', { method: 'POST', body: sdp })).status).toBe(503)

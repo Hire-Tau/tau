@@ -9,7 +9,8 @@ import './ResponsiveChat.css'
 
 type ModalSize = 'default' | 'viewport' | 'editor'
 
-export const VIEWPORT_MODAL_HEIGHT = 'calc(100dvh - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))'
+export const VIEWPORT_MODAL_HEIGHT =
+  'calc(var(--modal-viewport-height, 100dvh) - 2rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))'
 export const MODAL_SIZE_STYLE: Record<ModalSize, CSSProperties | undefined> = {
   default: undefined,
   editor: undefined,
@@ -60,6 +61,7 @@ export function Modal({
   noChildPadding = false,
 }: ModalProps) {
   const overlayRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
   const [hasOpened, setHasOpened] = useState(isOpen)
   if (isOpen && !hasOpened) setHasOpened(true)
 
@@ -68,23 +70,51 @@ export function Modal({
   }, [isOpen])
 
   useEffect(() => {
-    if (!isOpen || !mobileFullscreen) return
+    if (!isOpen) return
     const viewport = window.visualViewport
+    const overlay = overlayRef.current
+    let frame: number | undefined
+    const revealFocusedInput = () => {
+      frame = undefined
+      const body = bodyRef.current
+      const input = document.activeElement
+      if (
+        !body ||
+        !(input instanceof HTMLElement) ||
+        !body.contains(input) ||
+        !input.matches('input, textarea, select, [contenteditable="true"]')
+      )
+        return
+      const bounds = body.getBoundingClientRect()
+      const field = input.getBoundingClientRect()
+      // Scroll only this dialog's content. scrollIntoView can pan the fixed page on iOS,
+      // fighting the app shell's keyboard correction and moving the dock/composer again.
+      if (field.top < bounds.top + 12 || field.height > bounds.height - 24)
+        body.scrollTop += field.top - bounds.top - 12
+      else if (field.bottom > bounds.bottom - 12) body.scrollTop += field.bottom - bounds.bottom + 12
+    }
+    const scheduleReveal = () => {
+      if (frame !== undefined) window.cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(revealFocusedInput)
+    }
     const updateViewport = () => {
-      const style = overlayRef.current?.style
-      style?.setProperty('--chat-viewport-height', `${viewport?.height ?? window.innerHeight}px`)
-      style?.setProperty('--chat-viewport-top', `${viewport?.offsetTop ?? 0}px`)
+      overlay?.style.setProperty('--modal-viewport-height', `${viewport?.height ?? window.innerHeight}px`)
+      overlay?.style.setProperty('--modal-viewport-top', `${viewport?.offsetTop ?? 0}px`)
+      scheduleReveal()
     }
     updateViewport()
     viewport?.addEventListener('resize', updateViewport)
     viewport?.addEventListener('scroll', updateViewport)
     window.addEventListener('resize', updateViewport)
+    overlay?.addEventListener('focusin', scheduleReveal)
     return () => {
+      if (frame !== undefined) window.cancelAnimationFrame(frame)
       viewport?.removeEventListener('resize', updateViewport)
       viewport?.removeEventListener('scroll', updateViewport)
       window.removeEventListener('resize', updateViewport)
+      overlay?.removeEventListener('focusin', scheduleReveal)
     }
-  }, [isOpen, mobileFullscreen])
+  }, [isOpen])
 
   if ((!isOpen && !hasOpened) || typeof document === 'undefined') return null
 
@@ -94,7 +124,7 @@ export function Modal({
       ref={overlayRef}
       tabIndex={-1}
       className={clsx(
-        'tau-modal-backdrop fixed inset-0 z-[60] bg-black/50 flex items-center justify-center outline-none',
+        'tau-modal-backdrop fixed inset-x-0 z-[60] bg-black/50 flex items-center justify-center outline-none',
         mobileFullscreen && 'mobile-chat-modal',
         overlayClassName
       )}
@@ -110,9 +140,8 @@ export function Modal({
         style={MODAL_SIZE_STYLE[size]}
         className={clsx(
           'tau-overlay relative w-full mx-4 flex flex-col overflow-hidden min-h-0',
-          size === 'editor' && 'h-[90dvh] max-h-[90dvh] max-w-[92vw]',
+          size === 'editor' && 'max-w-[92vw]',
           size === 'default' && {
-            'max-h-[calc(90vh-env(safe-area-inset-top)-env(safe-area-inset-bottom))]': true,
             'max-w-lg': maxWidth === 'default',
             'max-w-[70ch]': maxWidth === 'readable',
             'max-w-[90ch]': maxWidth === 'chat',
@@ -139,7 +168,13 @@ export function Modal({
             </div>
           </div>
         )}
-        <div className={clsx('grow min-h-0 overflow-auto flex flex-col', !noChildPadding && 'p-4')}>{children}</div>
+        <div
+          ref={bodyRef}
+          data-modal-body
+          className={clsx('grow min-h-0 overflow-auto flex flex-col', !noChildPadding && 'p-4')}
+        >
+          {children}
+        </div>
         {footer && <div className="shrink-0 border-t border-th-border bg-surface-hover px-4 py-3">{footer}</div>}
       </div>
     </Presence>,

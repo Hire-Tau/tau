@@ -110,6 +110,8 @@ export interface AssistantConversationActivityDetail {
   conversation: AssistantConversationActivity
   tasks: AssistantTaskSummary[]
   updates: AssistantActivityUpdate[]
+  /** Latest current-request question per waiting task, independent of read state and update pagination. */
+  pendingInputs?: AssistantActivityUpdate[]
   hasMore: boolean
   beforeSequence: number | null
 }

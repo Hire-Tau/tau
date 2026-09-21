@@ -149,7 +149,7 @@ test('every indexed destination has a stable source anchor', () => {
   for (const entry of SETTINGS_SEARCH_ENTRIES) {
     if (entry.id.startsWith('secret-')) {
       expect(sources).toContain('data-setting-target={`secret-${secret.key.toLowerCase()}`}')
-    } else if (['realtime-assistant', 'automatic-embeddings'].includes(entry.id)) {
+    } else if (['realtime-assistant', 'voice-dictation', 'automatic-embeddings'].includes(entry.id)) {
       expect(sources).toContain(`target: '${entry.id}'`)
       expect(sources).toContain('data-setting-target={feature.target}')
     } else expect(sources).toContain(`data-setting-target="${entry.id}"`)

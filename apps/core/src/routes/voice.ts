@@ -29,6 +29,7 @@ export const voiceRouter = new Hono().get(
     const enabled = (apiKey ?? '').trim().length > 0
     return c.json({
       enabled,
+      transcriptionEnabled: enabled && getSettingsStore().getTyped('TRANSCRIPTION_ENABLED') === true,
       realtimeEnabled: enabled && getSettingsStore().getTyped('ASSISTANT_REALTIME_ENABLED') === true,
     })
   }

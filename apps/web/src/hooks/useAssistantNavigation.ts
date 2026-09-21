@@ -16,7 +16,14 @@ const labels = {
   assistant: 'Assistant',
   recent: 'Recent chats',
 }
-const navigationKeys = ['commandStack', 'commandQuery', 'assistantConversation', 'assistantChat', 'agentConversation']
+const navigationKeys = [
+  'commandStack',
+  'commandQuery',
+  'assistantConversation',
+  'assistantChat',
+  'agentConversation',
+  'assistantTask',
+]
 
 /** Store only navigation identifiers, never prompts or message contents. */
 export function assistantNavigationParams(params: URLSearchParams, entries: AssistantDestination[], query: string) {
