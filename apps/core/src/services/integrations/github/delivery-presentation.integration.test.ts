@@ -1,3 +1,4 @@
+import { githubOutputAdapter } from '../outputs/github'
 import { listGitHubPrWorkStreamCandidates } from './database-watch-source'
 import { notifyDeliverySnapshotChanged } from './delivery-presentation-store'
 import { eventEmitter } from '../../../lib/infra/event-emitter'
@@ -10,7 +11,15 @@ import {
   workStreamNeedsHumanAttention,
   buildWorkInterestSnapshot,
 } from '@tau/shared'
-import { db, squads, workStreams, workStreamFlowRuns, integrationEventPollingCursors } from '../../../db'
+import {
+  db,
+  squads,
+  workStreams,
+  workStreamFlowRuns,
+  integrationEventPollingCursors,
+  integrationOutputEvents,
+  integrationOutputDeliveries,
+} from '../../../db'
 import { WorkStream } from '../../../entities/WorkStream'
 import { computeDerivedStates } from '../../work-streams/derived-state'
 import { DbEventPollingCursorStore } from '../db-event-polling-cursor-store'
@@ -20,6 +29,7 @@ const squadId = crypto.randomUUID()
 const connectionId = crypto.randomUUID()
 const key = `${squadId}:${connectionId}:acme/widgets#7`
 afterEach(async () => {
+  await db.delete(integrationOutputEvents).where(eq(integrationOutputEvents.sourceKey, key))
   await db.delete(integrationEventPollingCursors).where(eq(integrationEventPollingCursors.resourceKey, key))
   await db.delete(workStreams).where(eq(workStreams.squadId, squadId))
   await db.delete(squads).where(eq(squads.id, squadId))
@@ -104,6 +114,47 @@ test('actual poll -> durable cursor -> serialized attention supports baseline an
     adapterVersion: 1,
     configuration: { owner: 'acme', repo: 'widgets', number: 7, deliveryPresentation: true },
   }
+  const older = new Date(Date.now() - 60_000)
+  const [fact] = githubOutputAdapter.normalize({
+    type: 'pull_request',
+    payload: {
+      action: 'opened',
+      repository: { full_name: 'acme/widgets' },
+      pull_request: {
+        id: 7,
+        number: 7,
+        state: 'open',
+        draft: false,
+        head: { sha: head },
+        mergeable_state: 'clean',
+        updated_at: older.toISOString(),
+      },
+    },
+  })
+  expect(fact).toBeDefined()
+  const [routed] = await db
+    .insert(integrationOutputEvents)
+    .values({
+      integration: 'github',
+      sourceKey: key,
+      eventKey: fact!.eventKey,
+      fact: fact!,
+      createdAt: older,
+      authority: { kind: 'connection', connectionId, squadId },
+    })
+    .returning()
+  await db.insert(integrationOutputDeliveries).values({
+    eventId: routed!.id,
+    workStreamId: row!.id,
+    subscriptionId: 'fixture',
+    status: 'delivered',
+    subscription: {
+      id: 'fixture',
+      source: { integration: 'github', output: 'pull_request.updated', version: 1 },
+      match: {},
+      deliver: { to: 'active', whenInactive: 'retain' },
+    },
+  })
   const store = new DbEventPollingCursorStore()
   let notifications = 0
   const stop = eventEmitter.on('workStream.updated', (event) => {
@@ -111,6 +162,9 @@ test('actual poll -> durable cursor -> serialized attention supports baseline an
   })
   try {
     for (const [review, check, mergeState, expected, attention, bucket] of [
+      ['APPROVED', 'PENDING', 'UNKNOWN', 'delivery_external', false, 'externalWait'],
+      ['UNKNOWN', 'UNKNOWN', 'UNKNOWN', 'delivery_external', false, 'externalWait'],
+      ['REVIEW_REQUIRED', 'PENDING', 'UNKNOWN', 'delivery_review', true, 'needsYou'],
       ['CHANGES_REQUESTED', 'SUCCESS', 'BLOCKED', 'delivery_failure', false, 'blocked'],
       // Dismissing a rejecting review restores the required-review gate without
       // synthesizing a review event or advancing the workflow.
@@ -147,6 +201,7 @@ test('actual poll -> durable cursor -> serialized attention supports baseline an
       expect(workStreamNeedsHumanAttention(json)).toBe(attention)
       expect(buildWorkInterestSnapshot([json]).liveActivity.top[0]?.bucket).toBe(bucket)
     }
+    await db.delete(integrationOutputEvents).where(eq(integrationOutputEvents.sourceKey, key))
     const [cached] = await db
       .select()
       .from(integrationEventPollingCursors)

@@ -123,8 +123,11 @@ function classifyPrimaryDeliveryPresentation(
         Date.now() - Date.parse(event.observedAt) >= -60_000))
   // Full native snapshots can arrive on reviews/comments as well as updates,
   // or through the asynchronous presentation-only polling cache.
-  const aggregate = current.find(
-    (event) => typeof event.data.mergeState === 'string' && event.data.mergeState !== 'unknown'
+  // Omitted fields are sparse evidence; explicit unknown fields supersede older
+  // readiness. Searching past them would resurrect a gate the provider no longer proves.
+  const aggregate = current.find((event) => typeof event.data.mergeState === 'string')
+  const checkRollup = current.find(
+    (event) => typeof event.data.checksState === 'string' || event.data.mergeState === 'clean'
   )
   const proofTime = (predicate: (event: DeliveryEvent) => boolean) => {
     const proof = current.find((event) => event.data.mergeState === 'clean' || predicate(event))
@@ -170,7 +173,7 @@ function classifyPrimaryDeliveryPresentation(
   // Draft is a non-readiness fact, never permission to hide a real failure.
   if (negative) return { kind: 'failure' }
   if (snapshot?.data.draft === true || lifecycle?.data.pullRequestState === 'unknown') return { kind: 'external' }
-  const reviewSnapshot = current.find((event) => event.data.reviewDecision && event.data.reviewDecision !== 'unknown')
+  const reviewSnapshot = current.find((event) => typeof event.data.reviewDecision === 'string')
   if (fresh(reviewSnapshot) && reviewSnapshot?.data.reviewDecision === 'required') return { kind: 'review' }
   if (
     fresh(snapshot) &&
@@ -185,7 +188,7 @@ function classifyPrimaryDeliveryPresentation(
     return { kind: 'review' }
   const pending =
     checks.some((event) => ['pending', 'queued', 'in_progress', 'requested'].includes(String(event.data.state))) ||
-    aggregate?.data.checksState === 'pending'
+    checkRollup?.data.checksState === 'pending'
   if (
     aggregate?.data.mergeState === 'clean' &&
     fresh(aggregate) &&

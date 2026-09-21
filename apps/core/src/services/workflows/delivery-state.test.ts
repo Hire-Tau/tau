@@ -241,3 +241,40 @@ test('normalized approvals, newer native snapshots and per-workflow CI recovery 
     expect(workBucket(presentation)).toBe('needsYou')
   }
 })
+
+test('explicit unknown aggregates supersede clean readiness while sparse facts do not', () => {
+  const clean = event('pull_request.updated', { mergeState: 'clean' })
+  const newer = (data: Record<string, unknown>) =>
+    event('pull_request.snapshot', data, 'a'.repeat(40), '2026-09-21T11:00:00Z')
+  for (const data of [
+    { mergeState: 'unknown', checksState: 'pending', reviewDecision: 'approved' },
+    { mergeState: 'unknown', checksState: 'unknown', reviewDecision: 'unknown' },
+    { checksState: 'pending' },
+  ])
+    expect(classifyDeliveryPresentation(run(), metadata, [clean, newer(data)])).toEqual({ kind: 'external' })
+  expect(classifyDeliveryPresentation(run(), metadata, [clean, newer({})])).toEqual({ kind: 'merge' })
+  expect(
+    classifyDeliveryPresentation(run(), metadata, [
+      event('pull_request.snapshot', { reviewDecision: 'required' }),
+      newer({ mergeState: 'unknown', checksState: 'unknown', reviewDecision: 'unknown' }),
+    ])
+  ).toEqual({ kind: 'external' })
+  expect(
+    classifyDeliveryPresentation(run(), metadata, [
+      event('pull_request.snapshot', { checksState: 'pending' }),
+      newer({ mergeState: 'clean' }),
+    ])
+  ).toEqual({ kind: 'merge' })
+  expect(
+    classifyDeliveryPresentation(run(), metadata, [
+      clean,
+      newer({ mergeState: 'unknown', checksState: 'pending', reviewDecision: 'required' }),
+    ])
+  ).toEqual({ kind: 'review' })
+  expect(
+    classifyDeliveryPresentation(run(), metadata, [
+      event('pull_request.updated', { mergeState: 'dirty' }),
+      newer({ mergeState: 'unknown', checksState: 'unknown' }),
+    ])
+  ).toEqual({ kind: 'failure' })
+})
