@@ -1,22 +1,23 @@
 import { workStreamTitle } from './work-stream-reference'
-import { selectWorkStreamPresentationState } from './status-presentation'
+import {
+  selectWorkStreamPresentationState,
+  workStreamNeedsHumanAttention,
+  type WorkStreamPresentationFacts,
+} from './status-presentation'
 import type { WorkStream, WorkStreamDerivedState, WorkStreamStatus, WorkStreamWaitType } from './types'
 
 /** Explicit reduced vocabulary used by WidgetKit and ActivityKit. */
-export type WorkBucket = 'needsYou' | 'running' | 'blocked' | 'queued'
+export type WorkBucket = 'needsYou' | 'running' | 'blocked' | 'queued' | 'paused' | 'externalWait'
 
-export interface WorkBucketFacts {
-  status: WorkStreamStatus
-  derivedState?: WorkStreamDerivedState
-  openWaits?: ReadonlyArray<{ type: WorkStreamWaitType }>
-}
+export type WorkBucketFacts = WorkStreamPresentationFacts
 
 /** Project precise work semantics into the intentionally reduced native buckets. */
 export function workBucket(stream: WorkBucketFacts): WorkBucket {
   const state = selectWorkStreamPresentationState(stream)
-  if (state === 'in_review' || state === 'waiting_on_answer') return 'needsYou'
-  if (state === 'blocked' && stream.openWaits?.some((wait) => wait.type === 'manual')) return 'needsYou'
-  if (state === 'blocked' || state === 'idle' || state === 'waiting_on_dependency') return 'blocked'
+  if (state === 'paused') return 'paused'
+  if (state === 'waiting_on_dependency' || state === 'delivery_external') return 'externalWait'
+  if (workStreamNeedsHumanAttention(stream)) return 'needsYou'
+  if (['blocked', 'idle', 'execution_failed', 'delivery_setup', 'delivery_failure'].includes(state)) return 'blocked'
   if (state === 'active' || state === 'in_progress') return 'running'
   return 'queued'
 }
@@ -42,11 +43,15 @@ export const WIDGET_TOP_LIMIT = 8
 
 /** Safe server-owned row consumed by the native widget. */
 export interface WidgetWorkStreamSummary {
+  /** Authoritative projection, including legacy omitted-wait compatibility. Older servers omit it. */
+  bucket?: WorkBucket
   number?: number
   id: string
   squadId: string
   title: string
   status: WorkStreamStatus
+  pause?: boolean
+  delivery?: WorkStream['delivery']
   derivedState?: WorkStreamDerivedState
   assigneeAgentId?: string
   /** An explicit empty array is authoritative and must survive serialization. */
@@ -57,14 +62,27 @@ export interface WidgetWorkStreamSummary {
 export interface WorkInterestSnapshot {
   asOf: string
   totalCount: number
-  bucketCounts: Record<WorkBucket, number>
+  bucketCounts: Record<Exclude<WorkBucket, 'paused' | 'externalWait'>, number> & {
+    paused?: number
+    externalWait?: number
+  }
   top: WidgetWorkStreamSummary[]
   liveActivity: LiveActivityState
 }
 
 type SnapshotSource = Pick<
   WorkStream,
-  'number' | 'id' | 'squadId' | 'title' | 'status' | 'derivedState' | 'assigneeAgentId' | 'openWaits' | 'updatedAt'
+  | 'pause'
+  | 'delivery'
+  | 'number'
+  | 'id'
+  | 'squadId'
+  | 'title'
+  | 'status'
+  | 'derivedState'
+  | 'assigneeAgentId'
+  | 'openWaits'
+  | 'updatedAt'
 >
 
 function updatedAtMs(stream: Pick<SnapshotSource, 'updatedAt'>): number {
@@ -94,6 +112,7 @@ function toStreamLite(stream: SnapshotSource): StreamLite {
 
 function toWidgetSummary(stream: SnapshotSource): WidgetWorkStreamSummary {
   const row: WidgetWorkStreamSummary = {
+    bucket: workBucket(stream),
     id: stream.id,
     squadId: stream.squadId,
     title: workStreamTitle(stream),
@@ -102,6 +121,8 @@ function toWidgetSummary(stream: SnapshotSource): WidgetWorkStreamSummary {
     openWaitTypes: stream.openWaits?.map(({ type }) => type) ?? [],
     updatedAt: new Date(stream.updatedAt).toISOString(),
   }
+  if (stream.pause) row.pause = true
+  if (stream.delivery) row.delivery = stream.delivery
   if (stream.derivedState) row.derivedState = stream.derivedState
   if (stream.assigneeAgentId) row.assigneeAgentId = stream.assigneeAgentId
   return row
@@ -109,7 +130,14 @@ function toWidgetSummary(stream: SnapshotSource): WidgetWorkStreamSummary {
 
 export function buildWorkInterestSnapshot(streams: SnapshotSource[], now: Date = new Date()): WorkInterestSnapshot {
   const ordered = [...streams].sort(compareWorkInterest)
-  const bucketCounts: Record<WorkBucket, number> = { needsYou: 0, running: 0, blocked: 0, queued: 0 }
+  const bucketCounts: Record<WorkBucket, number> = {
+    needsYou: 0,
+    running: 0,
+    blocked: 0,
+    queued: 0,
+    paused: 0,
+    externalWait: 0,
+  }
   for (const stream of ordered) bucketCounts[workBucket(stream)] += 1
 
   return {

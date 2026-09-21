@@ -47,6 +47,12 @@ export const SETTINGS_PAGE_KEYWORDS: Record<string, string> = {
 export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   {
     section: 'memory',
+    id: 'voice-dictation',
+    label: 'Voice dictation',
+    keywords: 'dictation transcription microphone whisper voice input',
+  },
+  {
+    section: 'memory',
     id: 'realtime-assistant',
     label: 'Voice assistant',
     keywords: 'voice realtime live microphone OpenAI',

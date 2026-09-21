@@ -42,6 +42,19 @@ export function coerceSquadActivityRef(raw: unknown): SquadActivityRef {
   return raw as SquadActivityRef
 }
 
+/** Flat, source-generated inline spans. No HTML or Markdown parsing on clients.
+ * Links are absolute HTTP(S) or explicit Tau references; code is always literal.
+ * The visible budget includes ellipsis, not destinations. Regenerate old rows
+ * from source before rollout; summary is plain text, not a rendering fallback.
+ */
+export interface ActivityPreviewSpan {
+  text: string
+  bold?: true
+  italic?: true
+  code?: true
+  href?: string
+}
+
 export interface SquadActivityItem {
   id: string
   at: string
@@ -49,6 +62,7 @@ export interface SquadActivityItem {
   agentTypeId: string | null
   kind: SquadActivityKind
   summary: string
+  preview: ActivityPreviewSpan[]
   ref: SquadActivityRef
 }
 

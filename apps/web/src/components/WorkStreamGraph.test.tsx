@@ -116,3 +116,27 @@ afterEach(async () => {
   await domHarness?.cleanup()
   domHarness = undefined
 })
+
+test('delivery action and paused states retain truthful visible labels', async () => {
+  await domHarness!.act(async () =>
+    root.render(
+      <WorkStreamGraph
+        workStreams={[
+          { ...stream('merge'), status: 'active', derivedState: 'idle', openWaits: [], delivery: { kind: 'merge' } },
+          { ...stream('ci'), status: 'active', derivedState: 'idle', openWaits: [], delivery: { kind: 'external' } },
+          {
+            ...stream('paused'),
+            pause: { pausedAt: '2026-09-21T00:00:00Z' } as WorkStream['pause'],
+            derivedState: 'in_review',
+          },
+        ]}
+        agentMap={new Map()}
+        onSelectWorkStream={() => undefined}
+      />
+    )
+  )
+  expect(container.textContent).toContain('Merge Pull Request')
+  expect(container.textContent).toContain('Awaiting Code Host')
+  expect(container.textContent).toContain('Paused')
+  expect(container.querySelector('[aria-label*="Stream merge, Merge Pull Request"]')).not.toBeNull()
+})

@@ -1,5 +1,6 @@
 import {
   effectiveSquadEventRules,
+  deliveryPullRequests,
   resolveCodeHostReference,
   resolveTrackedResources,
   integrationValueAt,
@@ -64,6 +65,7 @@ export function findGitHubPrUrl(value: unknown): GitHubPrReference | null {
 }
 
 export interface WorkStreamCandidate {
+  deliveryPresentation?: boolean
   squadId: string
   status: 'active' | 'queued' | 'done' | 'canceled' | string
   metadata: unknown
@@ -192,17 +194,31 @@ export class GitHubPrWatchPolicy {
         if (!connection) continue
         const repoFullName = `${pr.owner}/${pr.repo}`.toLowerCase()
         const key = `${stream.squadId}:${connection.id}:${repoFullName}#${pr.number}`
+        const presentation =
+          stream.deliveryPresentation === true &&
+          deliveryPullRequests(stream.metadata).some(
+            (resource) =>
+              resource.integration === 'github' &&
+              resource.repository.toLowerCase() === repoFullName &&
+              resource.number === pr.number
+          )
         const existing = drafts.get(key)
         if (existing) {
-          if (stream.status === 'active') existing.active = true
+          if (stream.status === 'active' || presentation) existing.active = true
+          if (presentation) (existing.connection.configuration as GitHubPrPollingConfig).deliveryPresentation = true
           continue
         }
         const [owner, repo] = repoFullName.split('/')
-        const configuration: GitHubPrPollingConfig = { owner, repo, number: pr.number }
+        const configuration: GitHubPrPollingConfig = {
+          owner,
+          repo,
+          number: pr.number,
+          ...(presentation ? { deliveryPresentation: true } : {}),
+        }
         drafts.set(key, {
           providerKey: 'github',
           resourceKey: `${stream.squadId}:${connection.id}:${repoFullName}#${pr.number}`,
-          active: stream.status === 'active',
+          active: stream.status === 'active' || presentation,
           connection: {
             id: connection.id,
             squadId: stream.squadId,
@@ -254,7 +270,7 @@ export class GitHubPrWatchPolicy {
         const config = watch.connection.configuration as GitHubPrPollingConfig
         const deliveredAt = deliveries.get(`${config.owner}/${config.repo}`)
         if (deliveredAt) config.lastVerifiedWebhookDeliveryAt = deliveredAt.toISOString()
-        return !deliveredAt || deliveredAt < cutoff
+        return config.deliveryPresentation === true || !deliveredAt || deliveredAt < cutoff
       }),
     ]
   }

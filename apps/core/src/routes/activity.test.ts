@@ -389,3 +389,37 @@ describe('GET /api/activity/presence', () => {
     expect(await readPresence(other.token)).toMatchObject({ needsYouCount: 1, streamCount: 1 })
   })
 })
+
+test('presence and native interest queries preserve paused rows without false human attention', async () => {
+  const squad = await seedSquad('paused-native-presence')
+  const reader = await scopedUser(squad.id, ['squads:read', 'agents:read', 'workstreams:read'])
+  const pause = {
+    id: crypto.randomUUID(),
+    pausedAt: new Date().toISOString(),
+    reason: 'private pause reason',
+    parkAt: null,
+    agentIds: [],
+  }
+  const [pausedWithWait, pausedWithoutWait, manual] = await db
+    .insert(workStreams)
+    .values([
+      { squadId: squad.id, title: 'Paused with wait', status: 'active', pause },
+      { squadId: squad.id, title: 'Paused without wait', status: 'active', pause },
+      { squadId: squad.id, title: 'Real manual blocker', status: 'active' },
+    ])
+    .returning()
+  await db.insert(workStreamWaits).values([
+    { workStreamId: pausedWithWait!.id, type: 'manual' },
+    { workStreamId: manual!.id, type: 'manual' },
+  ])
+  const response = await activityRequest('/api/activity/presence', { headers: authHeaders(reader.token) })
+  expect(response.status).toBe(200)
+  expect(await response.json()).toMatchObject({ needsYouCount: 1, streamCount: 3 })
+  await subscribeToSquad(squad.id, reader.id)
+  const { loadWorkInterestSnapshot } = await import('../services/push/work-interest')
+  const snapshot = await loadWorkInterestSnapshot(reader.id)
+  expect(snapshot.bucketCounts).toMatchObject({ needsYou: 1, paused: 2, running: 0, blocked: 0 })
+  expect(snapshot.totalCount).toBe(3)
+  expect(snapshot.top.find((row) => row.id === pausedWithoutWait!.id)).toMatchObject({ pause: true, bucket: 'paused' })
+  expect(JSON.stringify(snapshot)).not.toContain('private pause reason')
+})

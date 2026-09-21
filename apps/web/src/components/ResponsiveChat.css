@@ -1,10 +1,21 @@
-@media (max-width: 767px) {
-  .mobile-chat-modal {
-    top: var(--chat-viewport-top, 0px);
-    bottom: auto;
-    height: var(--chat-viewport-height, 100dvh);
-  }
+/* Portals live outside the keyboard-sized app shell. Every modal must track the
+   visible viewport, not just full-screen chat dialogs. */
+.tau-modal-backdrop {
+  top: var(--modal-viewport-top, 0px);
+  bottom: auto;
+  height: var(--modal-viewport-height, 100dvh);
+}
 
+.tau-modal-backdrop > [data-modal-size='default'] {
+  max-height: calc(var(--modal-viewport-height, 100dvh) * 0.9 - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+}
+
+.tau-modal-backdrop > [data-modal-size='editor'] {
+  height: calc(var(--modal-viewport-height, 100dvh) * 0.9);
+  max-height: calc(var(--modal-viewport-height, 100dvh) * 0.9);
+}
+
+@media (max-width: 767px) {
   .mobile-chat-modal > [data-modal-size] {
     width: 100%;
     height: 100%;

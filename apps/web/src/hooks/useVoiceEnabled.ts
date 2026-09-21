@@ -4,10 +4,10 @@ import type { VoiceStatus } from '../api/voice'
 
 /** Show voice only after configuration is confirmed; retain cached capability on refresh failures. */
 export function voiceEnabledFromQuery(result: { data?: VoiceStatus; isError: boolean }): boolean {
-  return result.data?.enabled === true
+  return result.data?.enabled === true && result.data.transcriptionEnabled !== false
 }
 
-/** Whether the server can actually do voice (i.e. it has an OpenAI API key). */
+/** Whether voice dictation is configured and enabled. */
 export function useVoiceEnabled(): boolean {
   const { data, isError } = useQuery(queries.voice.status())
   return voiceEnabledFromQuery({ data, isError })

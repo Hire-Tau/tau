@@ -1,3 +1,4 @@
+import { useVoiceEnabled } from '../hooks/useVoiceEnabled'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Modal } from './Modal'
 import { useVoiceRecorder } from '../hooks/useVoiceRecorder'
@@ -69,11 +70,12 @@ export function RejectionModal({
     setTimeout(() => setVoiceError(null), 3000)
   }, [])
 
+  const dictationEnabled = useVoiceEnabled()
   const {
     state: voiceState,
     elapsed: voiceElapsed,
     volume: voiceVolume,
-    isSupported: voiceSupported,
+    isSupported: recorderSupported,
     isHoldMode,
     start: startRecording,
     stop: stopRecording,
@@ -88,8 +90,9 @@ export function RejectionModal({
     onAutoSend: handleAutoConfirm,
     onError: handleVoiceError,
     transcribe: transcribeAudio,
-    disabled: isLoading,
+    disabled: isLoading || !dictationEnabled,
   })
+  const voiceSupported = recorderSupported && dictationEnabled
 
   const hasInput = !!reason.trim()
 

@@ -172,3 +172,12 @@ function findRepoRoot(): string {
   }
   return process.cwd()
 }
+
+it('desktop-owned runtimes cannot invoke the checkout updater', () => {
+  const flavor = detectDeploymentFlavor({ repoRoot: findRepoRoot(), env: { TAU_DESKTOP_MANAGED: '1', pm_id: '0' } })
+  expect(flavor.supervisor).toBe('desktop')
+  expect(supportsAutoUpdate(flavor)).toEqual({
+    ok: false,
+    reason: 'This instance is managed by Tau Desktop. Update it through the desktop application.',
+  })
+})

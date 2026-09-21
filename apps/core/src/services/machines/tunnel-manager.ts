@@ -4,6 +4,7 @@ import { access, chmod, mkdir, open, readFile, readdir, rename, stat, unlink, wr
 import { createConnection, createServer } from 'net'
 import { tmpdir } from 'os'
 import { basename, join } from 'path'
+import { machineControlDirectory } from '../../lib/infra/control-directory'
 import { getHomeDir } from '../../lib/utils/home'
 import { materializePrivateKey } from './keys'
 import type { Machine } from './queries'
@@ -192,7 +193,7 @@ export class MachineTunnelManager {
     allocateLocalPort?: () => Promise<number>
   }) {
     this.spawn = deps?.spawn ?? Bun.spawn
-    this.controlDir = deps?.controlDir ?? join(getHomeDir(), 'machines', 'ctl')
+    this.controlDir = deps?.controlDir ?? machineControlDirectory()
     this.masterTimeoutMs = deps?.masterTimeoutMs ?? DEFAULT_MASTER_TIMEOUT_MS
     this.controlTimeoutMs = deps?.controlTimeoutMs ?? DEFAULT_CONTROL_TIMEOUT_MS
     this.ownerId = deps?.ownerId ?? PROCESS_OWNER_GENERATION

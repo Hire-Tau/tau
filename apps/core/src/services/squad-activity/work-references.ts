@@ -25,6 +25,9 @@ export async function addWorkReferences<T extends SquadActivityItem>(items: T[])
     return {
       ...item,
       ref: { ...item.ref, workStreamNumber: number },
+      preview: item.preview.map((span, index) =>
+        index === 0 ? { ...span, text: span.text.replace(/^\[ws-[0-9a-f]+ /, `[#${number} `) } : span
+      ),
       summary: item.summary.replace(/^\[ws-[0-9a-f]+ /, `[#${number} `),
     }
   })

@@ -744,6 +744,7 @@ describe('assistant task questions', () => {
       expect(href.searchParams.get('tab')).toBe('work')
       expect(href.searchParams.get('chat')).toBe('open')
       expect(href.searchParams.get('assistantConversation')).toBe(conversationId)
+      expect(href.searchParams.get('assistantTask')).toBe('10000000-0000-4000-8000-000000000001')
     } finally {
       await dom.cleanup()
     }

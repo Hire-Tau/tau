@@ -26,6 +26,8 @@ export const integrationQueryKeys = {
     [...integrationQueryKeys.all, 'squad', squadId, 'github', 'author-defaults'] as const,
   gitAuthorDefaults: () => [...integrationQueryKeys.all, 'git-author-defaults'] as const,
   githubWebhook: () => [...integrationQueryKeys.all, 'webhook', 'github'] as const,
+  githubRepositoryAccess: (connectionId: string) =>
+    [...integrationQueryKeys.all, 'github-repository-access', connectionId] as const,
   oauthApp: (provider: string) => [...integrationQueryKeys.all, 'oauth-app', provider] as const,
   squad: (squadId: string, provider: string) => [...integrationQueryKeys.all, 'squad', squadId, provider] as const,
   export: (agentId: string) => [...integrationQueryKeys.all, 'export', agentId] as const,
@@ -37,6 +39,8 @@ export const modelCatalogQueryKeys = {
 }
 
 export const assistantQueryKeys = {
+  updates: (ownerId: string, id: string, ids: string[]) =>
+    ['assistant-conversations', 'activity', ownerId, 'updates', id, [...ids].sort()] as const,
   editor: (id: string) => ['assistant', 'editor', id] as const,
   all: ['assistant-conversations'] as const,
   list: (q = '', offset = 0) => ['assistant-conversations', 'list', q, offset] as const,

@@ -490,6 +490,7 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
             {isFullscreen && (
               <Modal
                 isOpen={isFullscreen}
+                mobileFullscreen
                 onClose={toggleFullscreen}
                 title={chatSubtitle ? `${chatTitle} (${chatSubtitle})` : chatTitle}
                 headerExtra={tabToggle}

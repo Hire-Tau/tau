@@ -278,6 +278,11 @@ describe('verified GitHub webhook Activity', () => {
     })
     expect(snapshot && 'fact' in snapshot ? snapshot.fact.providerDeliveryId : null).toBe('delivery-1')
     expect(await materializeGitHubWebhook(webhook.id)).toBe(1)
+    await db.update(squadActivity).set({ preview: [] }).where(eq(squadActivity.squadId, squad.id))
+    expect(await materializeGitHubWebhook(webhook.id)).toBe(1)
+    const [regenerated] = await db.select().from(squadActivity).where(eq(squadActivity.squadId, squad.id))
+    expect(regenerated.preview).toEqual([{ text: '[PR #42 merged]' }])
+
     const [row] = await db
       .select()
       .from(squadActivity)

@@ -48,10 +48,10 @@ function seededQueryClient(permissions: string[], onboardingStatus?: OnboardingS
   return queryClient
 }
 
-function renderStatic(queryClient: QueryClient): string {
+function renderStatic(queryClient: QueryClient, entry = '/onboarding'): string {
   return renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={['/onboarding']}>
+      <MemoryRouter initialEntries={[entry]}>
         <OnboardingPage />
       </MemoryRouter>
     </QueryClientProvider>
@@ -109,16 +109,25 @@ describe('OnboardingPage — static rendering', () => {
     expect((html.match(/>Unskip</g) ?? []).length).toBe(1)
   })
 
-  test('completed GitHub stays collapsed with Done and no Skip action', () => {
+  test('connected GitHub is labeled Account connected rather than implying repository setup is done', () => {
     const status = coreSettledStatus()
     status.items.find((item) => item.id === 'github')!.state = 'done'
     const html = renderStatic(seededQueryClient(['settings:read'], status))
     const github = html.match(/<section[^>]*>(?:(?!<section)[\s\S])*?Connect GitHub[\s\S]*?<\/section>/)?.[0]
     expect(github).toBeDefined()
-    expect(github).toContain('Done')
+    expect(github).toContain('Account connected')
     expect(github).toContain('aria-expanded="false"')
     expect(github).not.toContain('>Skip<')
     expect(github).not.toContain('>Unskip<')
+  })
+
+  test('returning from GitHub authorization opens the repository-access setup step', () => {
+    const status = coreSettledStatus()
+    status.items.find((item) => item.id === 'github')!.state = 'done'
+    const html = renderStatic(seededQueryClient(['settings:read'], status), '/onboarding?setup=github')
+    const github = html.match(/<section[^>]*>(?:(?!<section)[\s\S])*?Connect GitHub[\s\S]*?<\/section>/)?.[0]
+    expect(github).toContain('aria-expanded="true"')
+    expect(github).toContain('Account connected')
   })
 
   test('shows a restricted message for non-admins instead of the checklist', () => {

@@ -1,3 +1,7 @@
+import { assistantConversations, db } from '../db'
+import { eq, sql } from 'drizzle-orm'
+import { HTTPException } from 'hono/http-exception'
+import { requireConsultantCreationAccess } from '../services/chat/consultant-access'
 import { findOrCreateConsultant } from '../services/chat/consultant'
 import { resolveActingUser } from '../services/rbac'
 import { withDeviceStreamRevocation } from '../services/streaming/device-revocation'
@@ -10,7 +14,7 @@ import { Agent } from '../entities/Agent'
 import { User } from '../entities/User'
 import { InvalidAttachmentError } from '../services/attachments/agent-scope'
 import { ARTIFACT_BUILDER_RUNNER_TYPE } from '../entities/agent-runners/constants'
-import { hasPermission, identityUserId } from '../services/rbac'
+import { hasAgentResourcePermission, hasPermission, identityUserId } from '../services/rbac'
 import { ChatIdempotencyConflictError, consultantAgentId } from '../services/chat/consultant-idempotency'
 import type { Identity } from '../services/rbac'
 
@@ -45,13 +49,10 @@ export const chatRouter = new Hono().post('/', zValidator('json', chatRequestSch
       if (!existingAgent) {
         return c.json({ error: 'Agent not found' }, 404)
       }
-      // System-managers are private to their owning user — even admins cannot chat
-      // with someone else's. Return 404 (don't leak existence) to non-owner users.
       if (existingAgent.runnerType === 'system-manager') {
-        const id = c.get('identity') as Identity | undefined
-        if (id?.type === 'user' && existingAgent.ownerUserId !== id.userId) {
+        const actor = await resolveActingUser(c.get('identity'))
+        if (!actor || !(await hasAgentResourcePermission(actor, existingAgent, 'chat:send')))
           return c.json({ error: 'Agent not found' }, 404)
-        }
       }
       const denial = await canSendChat(c.get('identity'), existingAgent.squadId)
       if (denial) return denial
@@ -81,6 +82,7 @@ export const chatRouter = new Hono().post('/', zValidator('json', chatRequestSch
       const ownerUserId = (await resolveActingUser(identity))?.userId
 
       if (scopeType === 'consultant') {
+        await requireConsultantCreationAccess(identity, scopeId!)
         const actorUserId = identity ? identityUserId(identity) : null
         if (input.imageIds?.length && (!input.clientId || !actorUserId)) {
           return c.json({ error: 'Image attachments require an authenticated client send ID' }, 400)
@@ -178,6 +180,15 @@ export const chatRouter = new Hono().post('/', zValidator('json', chatRequestSch
       )
     }
 
+    if (agent.agentTypeId === 'assistant')
+      await db
+        .update(assistantConversations)
+        .set({
+          updatedAt: new Date(),
+          title: sql`CASE WHEN ${assistantConversations.title} = 'New conversation' THEN ${input.message.trim().slice(0, 120)} ELSE ${assistantConversations.title} END`,
+        })
+        .where(eq(assistantConversations.agentId, agent.id))
+
     // Disable reverse-proxy buffering (nginx & friends) so SSE tokens reach the client
     // in real time instead of arriving in one burst when the stream closes.
     c.header('X-Accel-Buffering', 'no')
@@ -212,6 +223,7 @@ export const chatRouter = new Hono().post('/', zValidator('json', chatRequestSch
       })
     )
   } catch (error) {
+    if (error instanceof HTTPException) return c.json({ error: error.message }, error.status)
     const message = error instanceof Error ? error.message : 'Unknown error'
     return c.json({ error: message }, error instanceof ChatIdempotencyConflictError ? 409 : 400)
   }

@@ -1,3 +1,4 @@
+import { inspectWorktreeCleanup } from '../services/work-streams/worktree-cleanup-inspection'
 import { WorktreeCleanupConflictError } from '../services/work-streams/worktree-cleanup-store'
 import { HTTPException } from 'hono/http-exception'
 import { AmbiguousPrefixError } from '../db/prefix-match'
@@ -887,6 +888,14 @@ export const workStreamsRouter = new Hono()
       throw error
     }
   })
+  .get(
+    '/:id/worktree-cleanup',
+    requireEntityPermission('workstreams:read', async (c) => routeWorkStreamSquadId(c)),
+    async (c) => {
+      const inspection = await inspectWorktreeCleanup(await routeWorkStreamId(c))
+      return inspection ? c.json(inspection) : c.json({ error: 'Work stream not found' }, 404)
+    }
+  )
   .get(
     '/:id',
     requireEntityPermission('workstreams:read', async (c) => routeWorkStreamSquadId(c)),

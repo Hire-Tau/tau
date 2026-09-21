@@ -805,7 +805,8 @@ describe('WebSocketManager', () => {
         agentId: null,
         agentTypeId: 'engineer',
         kind: 'workstream',
-        summary: '[ws-abcd created]',
+        summary: '[ws-abcd created] See #241',
+        preview: [{ text: '[ws-abcd created] See ' }, { text: '#241', bold: true, href: 'tau:ws:241' }],
         ref: { type: 'workstream', workStreamId: crypto.randomUUID() },
       },
       quietEligible: true,
@@ -815,6 +816,11 @@ describe('WebSocketManager', () => {
     })
     const delivered = JSON.parse(ws.send.mock.calls[0][0] as string)
     expect(delivered.data.item.agentTypeId).toBeNull()
+    expect(delivered.data.item.summary).toBe('[ws-abcd created] See #241')
+    expect(delivered.data.item.preview).toEqual([
+      { text: '[ws-abcd created] See ' },
+      { text: '#241', bold: true, href: 'tau:ws:241' },
+    ])
 
     identity.scopes.splice(0)
     ws.send.mockClear()
@@ -854,6 +860,7 @@ describe('WebSocketManager', () => {
       agentTypeId: null,
       kind: 'workstream' as const,
       summary: '[ws stale]',
+      preview: [{ text: '[ws stale]' }],
       ref: { type: 'workstream' as const, workStreamId: crypto.randomUUID() },
     }
     const broadcast = raceManager.broadcastActivity({
@@ -1300,6 +1307,7 @@ describe('WebSocketManager', () => {
         agentTypeId: null,
         kind: 'workstream',
         summary: '[ws-abcd deleted]',
+        preview: [{ text: '[ws-abcd deleted]' }],
         ref: { type: 'workstream', workStreamId: crypto.randomUUID() },
       },
       quietEligible: true,

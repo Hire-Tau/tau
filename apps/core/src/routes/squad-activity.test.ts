@@ -2,6 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { eq, sql } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { squadsRouter } from './squads'
+import { activityRouter } from './activity'
+import type { SquadActivityItem } from '@tau/shared'
 import { materializeActivityFixtures } from '../test-utils/activity-fixtures'
 import { githubPrLogicalRowId } from '../services/squad-activity/github-pr-fact'
 import { identityMiddleware } from '../middleware/identity'
@@ -31,6 +33,7 @@ import {
 const app = new Hono()
 app.use('*', identityMiddleware)
 app.route('/api/squads', squadsRouter)
+app.route('/api/activity', activityRouter)
 
 const prefix = `activity-route-${crypto.randomUUID()}`
 let admin: TestUser
@@ -581,4 +584,24 @@ describe('GET /api/squads/:id/activity', () => {
     expect(response.status).toBe(200)
     expect((await response.json()).items).toEqual([])
   })
+})
+
+test('global and squad APIs serve the same source-generated preview and literal numbered marker', async () => {
+  const squad = await seedSquad('inline-preview')
+  const [stream] = await db
+    .insert(workStreams)
+    .values({ squadId: squad.id, title: 'See [**#241**](tau:ws:241)' })
+    .returning()
+  await repairFixtures()
+  for (const url of [`/api/squads/${squad.id}/activity`, '/api/activity']) {
+    const response = await activityRequest(url, { headers: authHeaders(admin.token) })
+    expect(response.status).toBe(200)
+    const page = (await response.json()) as { items: SquadActivityItem[] }
+    const item = page.items.find((item) => item.id === `30:${stream.id}`)!
+    expect(item.summary).toBe(`[#${stream.number} created] See #241`)
+    expect(item.preview).toEqual([
+      { text: `[#${stream.number} created] See ` },
+      { text: '#241', bold: true, href: 'tau:ws:241' },
+    ])
+  }
 })

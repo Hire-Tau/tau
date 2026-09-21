@@ -74,3 +74,18 @@ test('navigate agent offers and legacy message receipts still produce links', ()
   ])
     expect(assistantConversationLink(receipt(name, { receipt: { id: 'm', agentId: 'a' } }))?.agentId).toBe('a')
 })
+
+test('persisted Pi receipts open delegates and failed wrapped receipts cannot create links', () => {
+  const toolResult = {
+    content: [{ type: 'text', text: JSON.stringify({ id: 'request', agentId: 'worker', conversation }) }],
+  }
+  expect(assistantConversationLink(entry(toolResult, { toolName: 'delegate_task' }))).toEqual(conversation)
+  expect(
+    assistantConversationLink(
+      entry(
+        { content: [{ type: 'text', text: JSON.stringify({ conversation, error: 'Denied' }) }] },
+        { toolName: 'delegate_task' }
+      )
+    )
+  ).toBeUndefined()
+})

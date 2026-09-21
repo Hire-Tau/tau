@@ -13,6 +13,7 @@ const item = (id: string, at = '2026-08-26T12:00:00.123Z'): SquadActivityItem =>
   agentId: null,
   agentTypeId: null,
   kind: 'wait',
+  preview: [{ text: 'summary' }],
   summary: 'summary',
   ref: { type: 'workstream', workStreamId: '00000000-0000-4000-8000-000000000001' },
 })

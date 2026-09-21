@@ -1,3 +1,4 @@
+import { waitFor } from '@testing-library/dom'
 import { describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -50,6 +51,7 @@ const waitItem: SquadActivityItem = {
   agentId: null,
   agentTypeId: null,
   kind: 'wait',
+  preview: [{ text: '[ws-abcd · review approved] Ship it' }],
   summary: '[ws-abcd · review approved] Ship it',
   ref: { type: 'workstream', workStreamId: '00000000-0000-4000-8000-000000000010' },
 }
@@ -59,6 +61,7 @@ const messageItem: SquadActivityItem = {
   agentId,
   agentTypeId: 'engineer',
   kind: 'message',
+  preview: [{ text: 'Implementation ready' }],
   summary: 'Implementation ready',
   ref: { type: 'agent', agentId, view: 'inbox', messageId: '00000000-0000-4000-8000-000000000020' },
 }
@@ -71,6 +74,7 @@ const historicalMessageItem: SquadActivityItem = {
   agentId: historicalAgentId,
   agentTypeId: 'engineer',
   kind: 'message',
+  preview: [{ text: 'Historical agent activity' }],
   summary: 'Historical agent activity',
   ref: {
     type: 'agent',
@@ -88,6 +92,7 @@ const issueItem: SquadActivityItem = {
   agentId: null,
   agentTypeId: null,
   kind: 'issue',
+  preview: [{ text: '[issue #12 opened] Flaky login' }],
   summary: '[issue #12 opened] Flaky login',
   ref: {
     type: 'issue',
@@ -175,30 +180,35 @@ describe('SquadActivityTab rendering', () => {
         ...waitItem,
         id: '30:00000000-0000-4000-8000-000000000030',
         kind: 'workstream',
+        preview: [{ text: '[ws-abcd created] Activity feed' }],
         summary: '[ws-abcd created] Activity feed',
       },
       {
         ...waitItem,
         id: '50:00000000-0000-4000-8000-000000000050',
         kind: 'handoff',
+        preview: [{ text: '[ws-abcd handoff → reviewer]' }],
         summary: '[ws-abcd handoff → reviewer]',
       },
       {
         ...messageItem,
         id: '61:00000000-0000-4000-8000-000000000061',
         kind: 'execution',
+        preview: [{ text: '[execution completed]' }],
         summary: '[execution completed]',
       },
       {
         ...messageItem,
         id: '10:00000000-0000-4000-8000-000000000010',
         ref: { type: 'agent', agentId, view: 'chat', executionId: crypto.randomUUID() },
+        preview: [{ text: 'Chat activity' }],
         summary: 'Chat activity',
       },
       {
         ...waitItem,
         id: '31:00000000-0000-4000-8000-000000000031',
         kind: 'pr',
+        preview: [{ text: '[PR #42 created]' }],
         summary: '[PR #42 created]',
         ref: { type: 'pr', url: 'https://example.test/pull/42' },
       },
@@ -280,7 +290,7 @@ describe('SquadActivityTab issue rows', () => {
       )
       expect(row).toBeDefined()
       expect(row!.getAttribute('target')).toBe('_blank')
-      expect(row!.getAttribute('rel')).toBe('noreferrer')
+      expect(row!.getAttribute('rel')).toBe('noopener noreferrer')
       const chip = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Open work stream #12"]')!
       expect(chip).toBeDefined()
       await dom.act(async () => chip.click())
@@ -300,6 +310,7 @@ describe('SquadActivityTab linkless issue rows', () => {
     const linkless: SquadActivityItem = {
       ...issueItem,
       id: '71:00000000-0000-4000-8000-000000000072',
+      preview: [{ text: '[Issue ENG-12 comment] Ship the tracked issue · by Ada' }],
       summary: '[Issue ENG-12 comment] Ship the tracked issue · by Ada',
       ref: { ...issueItem.ref, url: '' } as SquadActivityItem['ref'],
     }
@@ -495,6 +506,7 @@ describe('SquadActivityTab direct live activity', () => {
         ...messageItem,
         id: `61:${crypto.randomUUID()}`,
         kind: 'execution' as const,
+        preview: [{ text: 'Direct terminal' }],
         summary: 'Direct terminal',
       }
       await dom.act(async () => {
@@ -683,7 +695,7 @@ describe('SquadActivityTab in-place modals', () => {
         await Bun.sleep(20)
       })
       const agentRow = [...dom.window.document.querySelectorAll('a')].find((a) =>
-        a.textContent?.includes('Implementation ready')
+        a.getAttribute('aria-label')?.includes('Implementation ready')
       )!
       expect(agentRow).toBeDefined()
       // Plain click on a roster agent's row opens AgentViewModal in place, with the
@@ -703,7 +715,7 @@ describe('SquadActivityTab in-place modals', () => {
       // A historical/terminated agent absent from the roster still falls back to the
       // plain viewport AgentConversation modal.
       const historicalRow = [...dom.window.document.querySelectorAll('a')].find((a) =>
-        a.textContent?.includes('Historical agent activity')
+        a.getAttribute('aria-label')?.includes('Historical agent activity')
       )!
       expect(historicalRow).toBeDefined()
       await dom.act(async () => {
@@ -714,7 +726,9 @@ describe('SquadActivityTab in-place modals', () => {
       expect(dom.window.document.body.textContent).not.toContain('agent-view-modal:')
 
       // Plain click on a workstream row swaps to the work-stream modal.
-      const wsRow = [...dom.window.document.querySelectorAll('a')].find((a) => a.textContent?.includes('Ship it'))!
+      const wsRow = [...dom.window.document.querySelectorAll('a')].find((a) =>
+        a.getAttribute('aria-label')?.includes('Ship it')
+      )!
       await dom.act(async () => {
         wsRow.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }))
         await Bun.sleep(10)
@@ -762,3 +776,97 @@ describe('background presence (operator decisions 2026-08-27)', () => {
     expect(quiet).not.toContain('Working now')
   })
 })
+
+for (const reference of ['abc12345-1234-1234-1234-123456789abc', 'abc12345']) {
+  test(`inline agent ${reference} retains squad filters and scroll without opening the source`, async () => {
+    await import('../EntityReferenceModal')
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    // The target is intentionally outside this squad's roster and belongs to another squad.
+    const target = { ...agent, id: 'abc12345-1234-1234-1234-123456789abc', squadId: 'other-squad' }
+    const item = { ...messageItem, preview: [{ text: 'Review agent', href: `tau:agent:${reference}` }] }
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+    const allowed = new Set(['agents:read'])
+    for (const selected of [filters, { ...filters, kinds: ['message', 'subagent'] as const }])
+      client.setQueryData(
+        queryKeys.squads.activityInfinite(
+          squadId,
+          { ...selected, kinds: [...selected.kinds] },
+          accessSignature(allowed)
+        ),
+        {
+          pages: [{ items: [item], hasMore: false, nextCursor: null }],
+          pageParams: [null],
+        }
+      )
+    client.setQueryData(queryKeys.agents.detail(reference), target)
+    client.setQueryData(queryKeys.agents.detail(target.id), target)
+    function LocationProbe() {
+      return <p data-location>{useLocation().pathname}</p>
+    }
+    const opened: string[] = []
+    try {
+      const view = dom.createRoot()
+      await dom.act(() =>
+        view.root.render(
+          <MemoryRouter initialEntries={['/squads/tau/activity']}>
+            <QueryClientProvider client={client}>
+              <PermissionsProvider usePermissions={permissionHook(allowed)}>
+                <WebSocketContext.Provider value={{ isConnected: true, subscribe: () => () => {} }}>
+                  <LocationProbe />
+                  <SquadActivityTab
+                    squadId={squadId}
+                    squadSlug="tau"
+                    agents={[agent]}
+                    dependencies={{
+                      AgentViewModalComponent: (({
+                        agent,
+                        squadId,
+                        onClose,
+                      }: {
+                        agent: { id: string }
+                        squadId: string
+                        onClose: () => void
+                      }) => {
+                        opened.push(`${agent.id}:${squadId}`)
+                        return <button onClick={onClose}>Close referenced agent</button>
+                      }) as never,
+                    }}
+                  />
+                </WebSocketContext.Provider>
+              </PermissionsProvider>
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+      const messages = [...view.container.querySelectorAll('button')].find(
+        (button) => button.textContent === 'Messages'
+      )!
+      await dom.act(() => messages.click())
+      const scroller = view.container.querySelector<HTMLElement>('.overflow-y-auto')!
+      scroller.scrollTop = 400
+      await dom.act(async () => {
+        ;[...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Review agent')!.click()
+      })
+      await dom.act(async () => {
+        await waitFor(() => expect(view.container.textContent).toContain('Close referenced agent'))
+      })
+      expect(view.container.querySelector('[data-location]')?.textContent).toBe('/squads/tau/activity')
+      expect(opened).toContain(`${target.id}:${target.squadId}`)
+      expect(opened.every((value) => value.startsWith(target.id))).toBe(true)
+      expect(messages.getAttribute('aria-pressed')).toBe('true')
+      expect(view.container.querySelector('.overflow-y-auto')).toBe(scroller)
+      expect(scroller.scrollTop).toBe(400)
+      await dom.act(() =>
+        [...view.container.querySelectorAll('button')]
+          .find((button) => button.textContent === 'Close referenced agent')!
+          .click()
+      )
+      expect(view.container.querySelector('[data-location]')?.textContent).toBe('/squads/tau/activity')
+      expect(messages.getAttribute('aria-pressed')).toBe('true')
+      expect(scroller.scrollTop).toBe(400)
+    } finally {
+      client.clear()
+      await dom.cleanup()
+    }
+  })
+}

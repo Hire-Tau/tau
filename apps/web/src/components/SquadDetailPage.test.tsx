@@ -224,6 +224,7 @@ describe('SquadDetailPage', () => {
       agentId: historical.id,
       agentTypeId: 'reviewer',
       kind: 'message',
+      preview: [{ text: 'Reviewed the auth changes' }],
       summary: 'Reviewed the auth changes',
       ref: { type: 'agent', agentId: historical.id, view: 'chat' },
     }

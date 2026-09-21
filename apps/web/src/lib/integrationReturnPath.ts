@@ -1,7 +1,12 @@
 type OAuthProvider = 'github' | 'notion'
 
+/** Authorization accepts paths only. The callback restores the integration query parameters. */
+export function integrationAuthorizationReturnPath(baseUrl = import.meta.env?.BASE_URL ?? '/') {
+  return `${baseUrl.replace(/\/$/, '')}/settings`
+}
+
 export function integrationSettingsPath(provider: OAuthProvider, baseUrl = import.meta.env?.BASE_URL ?? '/') {
-  return `${baseUrl.replace(/\/$/, '')}/settings?section=integrations&setting=integration-${provider}`
+  return `${integrationAuthorizationReturnPath(baseUrl)}?section=integrations&setting=integration-${provider}`
 }
 
 /** Older authorization flows saved only /settings, which opens the personal account page. */
@@ -12,6 +17,12 @@ export function integrationReturnPath(
 ) {
   const settingsPath = `${baseUrl.replace(/\/$/, '')}/settings`
   const pathname = returnTo.split(/[?#]/, 1)[0]?.replace(/\/$/, '')
+  if (
+    provider === 'github' &&
+    (pathname === '/onboarding' || pathname === `${baseUrl.replace(/\/$/, '')}/onboarding`)
+  ) {
+    return `${baseUrl.replace(/\/$/, '')}/onboarding?setup=github`
+  }
   if (pathname !== '/settings' && pathname !== settingsPath) return returnTo
   const url = new URL(returnTo, 'https://tau.invalid')
   url.pathname = settingsPath

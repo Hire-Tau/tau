@@ -1,6 +1,6 @@
 /**
  * `tau assistant-task` — the delegated agent's direct handle on a task that a saved Assistant
- * conversation gave it. `status` reports lifecycle without tracking request IDs; the server turns
+ * conversation gave it. `status` reports lifecycle for a specific request generation; the server turns
  * it into the same inbox reply that `tau inbox send --assistant-task-status` would produce.
  */
 
@@ -41,12 +41,17 @@ export function registerAssistantTaskCommands(program: Command): void {
     .command('status <taskId>')
     .description('Report the tracked status of a task you own; delivered to the Assistant as an update')
     .addOption(new Option('-s, --status <status>', 'New status').choices(ASSISTANT_TASK_STATUSES).makeOptionMandatory())
+    .option('--request-id <requestId>', 'Request UUID being reported (required after a task continuation)')
     .option('-m, --message <text>', 'Update text shown to the user (defaults to a short status line)')
-    .action(async (taskId: string, options: { status: string; message?: string }) => {
+    .action(async (taskId: string, options: { status: string; message?: string; requestId?: string }) => {
       try {
         const result = await apiPost<{ task: AssistantTaskSummary; messageId: string }>(
           `/api/assistant-tasks/${encodeURIComponent(taskId)}/status`,
-          { status: options.status, ...(options.message ? { message: options.message } : {}) }
+          {
+            status: options.status,
+            ...(options.requestId ? { requestId: options.requestId } : {}),
+            ...(options.message ? { message: options.message } : {}),
+          }
         )
         output(result, `${renderAssistantTask(result.task)}\n  update:   ${result.messageId}`)
       } catch (error) {

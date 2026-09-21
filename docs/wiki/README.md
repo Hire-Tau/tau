@@ -70,7 +70,7 @@ Stored status is `queued | active | done | canceled`. An `active` stream holds a
 
 Work streams have instance-wide [numeric references](work-streams.md) for public labels, links, and lookups.
 
-Work streams carry bound agents (`agentIds`), dependencies (`dependsOn`), files, typed waits, flow state and metadata such as PR information, GitHub issue IDs and branch/worktree paths. See [shared work-stream types](../../packages/shared/src/types.ts) and [status presentation](../../packages/shared/src/status-presentation.ts) when changing lifecycle or UI state.
+Work streams carry bound agents (`agentIds`), dependencies (`dependsOn`), files, typed waits, flow state and metadata such as PR information, GitHub issue IDs and branch/worktree paths. See [shared work-stream types](../../packages/shared/src/types.ts) and the [status/delivery presentation contract](work-stream-status-presentation.md) when changing lifecycle or UI state.
 
 → CLI reference: [`cli/workstream-commands.md`](cli/workstream-commands.md)
 → Recovery behavior: [`agents-and-executions.md#work-stream-continuation-recovery`](agents-and-executions.md#work-stream-continuation-recovery)

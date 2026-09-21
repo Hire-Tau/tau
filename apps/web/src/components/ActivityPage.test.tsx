@@ -46,6 +46,7 @@ const workItem: GlobalSquadActivityItem = {
   agentId: null,
   agentTypeId: null,
   kind: 'workstream',
+  preview: [{ text: '[ws-abcd created] Cross-squad work' }],
   summary: '[ws-abcd created] Cross-squad work',
   ref: { type: 'workstream', workStreamId: '00000000-0000-4000-8000-000000000010' },
   squadId: squadAId,
@@ -56,6 +57,7 @@ const messageItem: GlobalSquadActivityItem = {
   agentId,
   agentTypeId: 'engineer',
   kind: 'message',
+  preview: [{ text: 'Implementation ready' }],
   summary: 'Implementation ready',
   ref: { type: 'agent', agentId, view: 'inbox', messageId: '00000000-0000-4000-8000-000000000020' },
   squadId: squadBId,
@@ -68,6 +70,7 @@ const issueItem: GlobalSquadActivityItem = {
   agentId: null,
   agentTypeId: null,
   kind: 'issue',
+  preview: [{ text: 'Flaky login' }],
   summary: 'Flaky login',
   ref: {
     type: 'issue',
@@ -374,7 +377,7 @@ describe('ActivityPage issue rows', () => {
       )
       expect(row).toBeDefined()
       expect(row!.getAttribute('target')).toBe('_blank')
-      expect(row!.getAttribute('rel')).toBe('noreferrer')
+      expect(row!.getAttribute('rel')).toBe('noopener noreferrer')
       const chip = dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Open work stream #12"]')!
       expect(chip).toBeDefined()
       await dom.act(async () => {
@@ -440,7 +443,7 @@ describe('ActivityPage in-place modals', () => {
         await Bun.sleep(20)
       })
       const wsRow = [...dom.window.document.querySelectorAll('a')].find((a) =>
-        a.textContent?.includes('Cross-squad work')
+        a.getAttribute('aria-label')?.includes('Cross-squad work')
       )!
       expect(wsRow).toBeDefined()
       await dom.act(async () => {
@@ -452,7 +455,7 @@ describe('ActivityPage in-place modals', () => {
       )
 
       const agentRow = [...dom.window.document.querySelectorAll('a')].find((a) =>
-        a.textContent?.includes('Implementation ready')
+        a.getAttribute('aria-label')?.includes('Implementation ready')
       )!
       expect(agentRow).toBeDefined()
       await dom.act(async () => {
@@ -497,7 +500,7 @@ describe('ActivityPage in-place modals', () => {
         await Bun.sleep(20)
       })
       const agentRow = [...dom.window.document.querySelectorAll('a')].find((a) =>
-        a.textContent?.includes('Implementation ready')
+        a.getAttribute('aria-label')?.includes('Implementation ready')
       )!
       await dom.act(async () => {
         agentRow.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }))
@@ -511,3 +514,80 @@ describe('ActivityPage in-place modals', () => {
     }
   })
 })
+
+for (const reference of ['abc12345-1234-1234-1234-123456789abc', 'abc12345']) {
+  test(`inline agent ${reference} retains global filters and scroll without opening the source`, async () => {
+    await import('./EntityReferenceModal')
+    const dom = await acquireDomHarness({ url: 'http://localhost/' })
+    const target = { id: 'abc12345-1234-1234-1234-123456789abc', squadId: squadAId, agentTypeId: 'reviewer' }
+    const item = { ...messageItem, preview: [{ text: 'Review agent', href: `tau:agent:${reference}` }] }
+    const client = seedClient([item])
+    client.setQueryData(queryKeys.activity.globalInfinite({ ...filters, kinds: ['message', 'subagent'] }), {
+      pages: [{ items: [item], hasMore: false, nextCursor: null, squads: { [squadBId]: { name: 'Bravo' } } }],
+      pageParams: [null],
+    })
+    client.setQueryData(queryKeys.agents.detail(reference), target)
+    client.setQueryData(queryKeys.agents.detail(target.id), target)
+    function LocationProbe() {
+      return <p data-location>{useLocation().pathname}</p>
+    }
+    const opened: string[] = []
+    try {
+      const view = dom.createRoot()
+      await dom.act(() =>
+        view.root.render(
+          <MemoryRouter initialEntries={['/activity']}>
+            <QueryClientProvider client={client}>
+              <LocationProbe />
+              <ActivityPage
+                dependencies={{
+                  AgentViewModalComponent: (({
+                    agent,
+                    squadId,
+                    onClose,
+                  }: {
+                    agent: { id: string }
+                    squadId: string
+                    onClose: () => void
+                  }) => {
+                    opened.push(`${agent.id}:${squadId}`)
+                    return <button onClick={onClose}>Close referenced agent</button>
+                  }) as never,
+                }}
+              />
+            </QueryClientProvider>
+          </MemoryRouter>
+        )
+      )
+      const messages = [...view.container.querySelectorAll('button')].find(
+        (button) => button.textContent === 'Messages'
+      )!
+      await dom.act(() => messages.click())
+      const scroller = view.container.querySelector<HTMLElement>('.overflow-y-auto')!
+      scroller.scrollTop = 400
+      await dom.act(async () => {
+        ;[...view.container.querySelectorAll('button')].find((button) => button.textContent === 'Review agent')!.click()
+      })
+      await dom.act(async () => {
+        await waitFor(() => expect(view.container.textContent).toContain('Close referenced agent'))
+      })
+      expect(view.container.querySelector('[data-location]')?.textContent).toBe('/activity')
+      expect(opened).toContain(`${target.id}:${squadAId}`)
+      expect(opened.every((value) => value.startsWith(target.id))).toBe(true)
+      expect(messages.getAttribute('aria-pressed')).toBe('true')
+      expect(view.container.querySelector('.overflow-y-auto')).toBe(scroller)
+      expect(scroller.scrollTop).toBe(400)
+      await dom.act(() =>
+        [...view.container.querySelectorAll('button')]
+          .find((button) => button.textContent === 'Close referenced agent')!
+          .click()
+      )
+      expect(view.container.querySelector('[data-location]')?.textContent).toBe('/activity')
+      expect(messages.getAttribute('aria-pressed')).toBe('true')
+      expect(scroller.scrollTop).toBe(400)
+    } finally {
+      client.clear()
+      await dom.cleanup()
+    }
+  })
+}

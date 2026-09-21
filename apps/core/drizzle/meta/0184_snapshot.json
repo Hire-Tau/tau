@@ -1,5 +1,5 @@
 {
-  "id": "b12d9b5c-2e04-4b0e-bfeb-80082d606f68",
+  "id": "eb739b38-00cf-457d-8251-8b182dcd6861",
   "prevId": "2c9b2ab9-8a69-4c17-a7b9-9970c876ccf0",
   "version": "7",
   "dialect": "postgresql",
@@ -2002,6 +2002,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "agent_id": {
+          "name": "agent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "inbox_consumer_id": {
           "name": "inbox_consumer_id",
           "type": "uuid",
@@ -2057,6 +2063,21 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "uq_assistant_conversations_agent": {
+          "name": "uq_assistant_conversations_agent",
+          "columns": [
+            {
+              "expression": "agent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {
@@ -2071,6 +2092,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "assistant_conversations_agent_id_agents_id_fk": {
+          "name": "assistant_conversations_agent_id_agents_id_fk",
+          "tableFrom": "assistant_conversations",
+          "tableTo": "agents",
+          "columnsFrom": [
+            "agent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -2342,6 +2376,18 @@
         "reported_status": {
           "name": "reported_status",
           "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "forwarded_message_id": {
+          "name": "forwarded_message_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "summarized_message_id": {
+          "name": "summarized_message_id",
+          "type": "uuid",
           "primaryKey": false,
           "notNull": false
         },
@@ -15882,52 +15928,6 @@
         "user_notification_preferences_user_id_users_id_fk": {
           "name": "user_notification_preferences_user_id_users_id_fk",
           "tableFrom": "user_notification_preferences",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.user_preferences": {
-      "name": "user_preferences",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "theme": {
-          "name": "theme",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "user_preferences_user_id_users_id_fk": {
-          "name": "user_preferences_user_id_users_id_fk",
-          "tableFrom": "user_preferences",
           "tableTo": "users",
           "columnsFrom": [
             "user_id"

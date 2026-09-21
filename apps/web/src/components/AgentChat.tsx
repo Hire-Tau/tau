@@ -1,3 +1,4 @@
+import { useStableRef } from '../hooks/useStableRef'
 import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
@@ -20,7 +21,12 @@ interface AgentChatDependencies {
   pendingQuestionsFallbackIntervalMs?: number
 }
 
+export type AgentChatController = ReturnType<typeof useAgentConversation>
 interface AgentChatProps {
+  beforeSend?: () => Promise<void>
+  onConversation?: (conversation: AgentChatController) => void
+  renderMessageFooter?: React.ComponentProps<typeof ChatView>['renderMessageFooter']
+  afterConversation?: React.ReactNode
   dependencies?: AgentChatDependencies
   agentId?: string
   scope?: ChatScope
@@ -28,6 +34,7 @@ interface AgentChatProps {
   embedded?: boolean
   enableFullscreen?: boolean
   readOnly?: boolean
+  hideInboxMessages?: boolean
   hideComposer?: boolean
   inputDisabled?: boolean
   pagePath?: string
@@ -84,6 +91,7 @@ export function AgentChat({
   enableFullscreen,
   readOnly,
   hideComposer,
+  hideInboxMessages,
   inputDisabled,
   initialPending,
   initialMessage,
@@ -108,21 +116,40 @@ export function AgentChat({
   focusMessageId,
   focusInboxMessageId,
   dependencies,
+  onConversation,
+  beforeSend,
+  afterConversation,
+  renderMessageFooter,
 }: AgentChatProps) {
   const ChatViewComponent = dependencies?.ChatViewComponent ?? ChatView
   const api = useChatApi()
   const conv = useAgentConversation({ agentId, scope, initialPending, onDone, pagePath })
+  const onConversationRef = useStableRef(onConversation)
+  useEffect(() => {
+    onConversationRef.current?.(conv)
+  }, [conv, onConversationRef])
 
+  const beforeSendRef = useStableRef(beforeSend)
+  const [preparationError, setPreparationError] = useState<string>()
+  const [initialPreparationAttempt, setInitialPreparationAttempt] = useState(0)
   const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>('steer')
 
   // Launcher requests are sends, not pre-existing optimistic rows. Keep failed sends
   // in the conversation's retry UI and never resend on rerenders or mode switches.
   const initialMessageSent = useRef(false)
+  const sendInitial = conv.send
   useEffect(() => {
     if (!initialMessage?.content || initialMessageSent.current || inputDisabled) return
     initialMessageSent.current = true
-    conv.send(initialMessage.content)
-  }, [initialMessage, inputDisabled, conv.send])
+    void (async () => {
+      await beforeSendRef.current?.()
+      setPreparationError(undefined)
+      sendInitial(initialMessage.content)
+    })().catch((error) => {
+      initialMessageSent.current = false
+      setPreparationError(error instanceof Error ? error.message : 'Could not prepare conversation')
+    })
+  }, [initialMessage, inputDisabled, sendInitial, beforeSendRef, initialPreparationAttempt])
 
   // Surface a newly-created agent to the wrapper (routing/URL). Notify at most once per created id:
   // callers (e.g. the consultant composer) keep agentId undefined and pass an inline onAgentCreated,
@@ -193,6 +220,7 @@ export function AgentChat({
       await onReviewFeedback(message)
       return
     }
+    await beforeSendRef.current?.()
     await conv.sendAccepted(message, { imageIds, deliveryMode }).accepted
   }
 
@@ -289,6 +317,7 @@ export function AgentChat({
   return (
     <ChatViewComponent
       items={conv.items}
+      renderMessageFooter={renderMessageFooter}
       agentId={conv.agentId}
       onSend={handleSend}
       onRetry={conv.retrySend}
@@ -306,12 +335,28 @@ export function AgentChat({
       executionStatus={conv.executionStatus}
       viewingUserId={viewingUserId}
       readOnly={readOnly || isTerminated}
+      hideInboxMessages={hideInboxMessages}
       hideComposer={shouldHideComposer}
       inputDisabled={inputDisabled}
       enableFullscreen={enableFullscreen}
       embedded={embedded}
       header={typeof header === 'function' ? header({ waitingForSandbox: conv.waitingForSandbox }) : header}
-      afterMessages={afterMessages}
+      afterMessages={
+        <>
+          {afterMessages}
+          {preparationError && (
+            <div role="alert">
+              {preparationError}
+              {!initialMessageSent.current && initialMessage && (
+                <button className="tau-button" onClick={() => setInitialPreparationAttempt((value) => value + 1)}>
+                  Retry sending
+                </button>
+              )}
+            </div>
+          )}
+          {afterConversation}
+        </>
+      }
       beforeComposer={pendingQuestionsBanner}
       placeholder={placeholder}
       thinkingLabel={thinkingLabel}

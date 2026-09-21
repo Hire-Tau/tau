@@ -73,7 +73,7 @@ Cards distinguish API-key and OAuth accounts and show whether usable credentials
 
 ### Assistant & Memory
 
-Controls Voice assistant (`ASSISTANT_REALTIME_ENABLED`) and Semantic memory search (`EMBEDDINGS_ENABLED`). Both require an enabled, configured **OpenAI API services** integration. This page exposes that same integration connection; feature switches do not change agent-model accounts. OpenAI API services also provides audio transcription. ChatGPT subscription login under AI Providers does not supply these API credentials.
+Controls Voice assistant (`ASSISTANT_REALTIME_ENABLED`), Voice dictation (`TRANSCRIPTION_ENABLED`), and Semantic memory search (`EMBEDDINGS_ENABLED`). All three require an enabled, configured **OpenAI API services** integration. This page exposes that same integration connection; feature switches do not change agent-model accounts. Voice dictation defaults on and controls transcription independently of realtime voice. Turning it off hides dictation microphones and shortcuts in chats and question replies, and the transcription endpoint rejects uploads. ChatGPT subscription login under AI Providers does not supply these API credentials.
 
 Message read-aloud uses **Integrations → Google Cloud**, with its own enable switch and service-account JSON or server Application Default Credentials. It is separate from the Realtime Assistant conversation.
 

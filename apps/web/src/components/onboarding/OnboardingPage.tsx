@@ -1,7 +1,7 @@
 import { squadSlugMap, type Squad } from '@tau/shared'
 import { queries } from '../../queryOptions'
 import { useState, type ComponentType } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { useOnboarding } from '../../hooks/useOnboarding'
@@ -189,8 +189,10 @@ function SetupSteps({
   pending: boolean
 }) {
   const first = core.find((meta) => itemsById.get(meta.id)?.state === 'todo')?.id ?? null
-  const [open, setOpen] = useState<OnboardingItemId | null>(first)
-  const [visited, setVisited] = useState(() => new Set<OnboardingItemId>(first ? [first] : []))
+  const { search } = useLocation()
+  const initial = new URLSearchParams(search).get('setup') === 'github' ? 'github' : first
+  const [open, setOpen] = useState<OnboardingItemId | null>(initial)
+  const [visited, setVisited] = useState(() => new Set<OnboardingItemId>(initial ? [initial] : []))
   const reveal = (id: OnboardingItemId | null) => {
     setOpen(id)
     if (id) setVisited((current) => new Set([...current, id]))
@@ -326,7 +328,11 @@ function SetupStepHeader({
           )}
         </span>
         <span className="flex-1 text-sm font-medium text-primary">{title}</span>
-        {(state === 'done' || state === 'skipped') && <span className="text-xs text-muted">{STATE_LABEL[state]}</span>}
+        {(state === 'done' || state === 'skipped') && (
+          <span className="text-xs text-muted">
+            {id === 'github' && state === 'done' ? 'Account connected' : STATE_LABEL[state]}
+          </span>
+        )}
       </button>
       {onSkip && (
         <button type="button" disabled={pending} onClick={onSkip} className="tau-button px-2 py-1 text-xs text-muted">
@@ -432,7 +438,7 @@ function DeepLinkItemRow({ meta, item, onSkip, onUnskip, pending, embedded }: It
 function ConnectionStep({ meta, item, onSkip, onUnskip, pending, embedded }: ItemRowProps) {
   const [editing, setEditing] = useState(false)
   const permissions = usePermissions()
-  const showSetup = item.state !== 'skipped' && (item.state !== 'done' || editing)
+  const showSetup = item.state !== 'skipped' && (meta.id === 'github' || item.state !== 'done' || editing)
   return (
     <div className={clsx('space-y-4', !embedded && 'px-4 py-4')}>
       {!embedded && (
@@ -441,7 +447,7 @@ function ConnectionStep({ meta, item, onSkip, onUnskip, pending, embedded }: Ite
             <div className="flex flex-wrap items-center gap-2">
               <p className="font-medium text-primary">{meta.title}</p>
               <span className={clsx('text-xs px-1.5 py-0.5 rounded', STATE_BADGE_CLASS[item.state])}>
-                {STATE_LABEL[item.state]}
+                {meta.id === 'github' && item.state === 'done' ? 'Account connected' : STATE_LABEL[item.state]}
               </span>
             </div>
             <p className="mt-1 text-sm text-muted">{meta.why}</p>
@@ -458,7 +464,7 @@ function ConnectionStep({ meta, item, onSkip, onUnskip, pending, embedded }: Ite
           )}
         </div>
       )}
-      {item.state === 'done' && (
+      {item.state === 'done' && meta.id !== 'github' && (
         <button type="button" className="tau-button text-sm text-accent-light" onClick={() => setEditing(!editing)}>
           {editing ? 'Close setup' : 'Manage connection'}
         </button>

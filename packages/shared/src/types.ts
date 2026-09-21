@@ -127,6 +127,9 @@ export type DeliveryMode = 'steer' | 'follow-up'
 export type MonitorMessageKind = 'lines' | 'exited' | 'canceled' | 'timed-out' | 'overload' | 'failed'
 
 export interface MessageMetadata {
+  /** Original task updates consumed in this exact response group. */
+  assistantUpdateIds?: string[]
+  assistantTaskIds?: string[]
   /** Append-only delegated conversation context; never direct human authorization. */
   assistantContext?: string
   /** Client-provided navigation context, separate from visible message content. */
@@ -1257,6 +1260,28 @@ export interface WorkStreamPause {
   agentIds: string[]
 }
 
+/** Immutable, server-observed receipt for a platform-created linked worktree. */
+export interface WorktreeOwnership {
+  workspace: string
+  repository: string
+  commonDirectory: string
+  gitDirectory: string
+  worktree: string
+  directoryIdentity: string
+  branch: string
+}
+
+export interface WorktreeCleanupInspection {
+  workStreamId: string
+  autoCleanupWorktree: boolean
+  owned: WorktreeOwnership | null
+  current: Partial<Record<'repository' | 'worktree' | 'branch', string>>
+  bindingsMatch: boolean | null
+  cleanup: WorktreeCleanupSummary | null
+  /** Snapshot only; retain rechecks under lifecycle locks. */
+  recovery: 'retain' | 'retained' | 'in-flight' | 'reclaimed'
+}
+
 export interface WorktreeCleanupSummary {
   status: 'pending' | 'deferred' | 'skipped' | 'removing' | 'succeeded' | 'error'
   reason: string | null
@@ -1267,6 +1292,7 @@ export interface WorktreeCleanupSummary {
 }
 
 export interface WorkStream {
+  delivery?: import('./status-presentation').WorkStreamDeliveryPresentation
   /** Durable platform cleanup state, when an intent exists. */
   worktreeCleanup?: WorktreeCleanupSummary | null
   /** Effective retention setting. Older servers omit this field (retain). */

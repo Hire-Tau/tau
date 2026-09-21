@@ -228,3 +228,32 @@ test('event-specific predicates match normalized review, CI, collection, boolean
     )
   }
 })
+
+test('PR snapshots preserve provider aggregate merge state, not individual CI success', () => {
+  const [fact] = githubOutputAdapter.normalize({
+    type: 'pull_request',
+    payload: {
+      action: 'synchronize',
+      repository,
+      pull_request: { ...pr, mergeable_state: 'clean' },
+    },
+  })
+  expect(fact!.data.mergeState).toBe('clean')
+})
+
+test('PR snapshots distinguish pending human review from bot-only requests', () => {
+  for (const [type, pendingHumanReview] of [
+    ['User', true],
+    ['Bot', false],
+  ] as const) {
+    const [fact] = githubOutputAdapter.normalize({
+      type: 'pull_request',
+      payload: {
+        action: 'synchronize',
+        repository,
+        pull_request: { ...pr, requested_reviewers: [{ login: 'reviewer', type }], requested_teams: [] },
+      },
+    })
+    expect(fact!.data.pendingHumanReview).toBe(pendingHumanReview)
+  }
+})

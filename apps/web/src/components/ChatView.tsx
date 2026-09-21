@@ -1,11 +1,13 @@
+import { useToolRenderers } from '../lib/ToolRenderersContext'
 import { ConversationSkeleton } from './loading/Skeleton'
 import clsx from 'clsx'
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
+import { flushSync } from 'react-dom'
 import type { MessageMetadata, MessageToolCall, ContentBlock, DeliveryMode, ExecutionStatus } from '@tau/shared'
 import { AssistantMessageContent, HumanMessageContent, ThinkingSection, ParsedTextContent } from './MessageContent'
 import { TypingIndicator } from './TypingIndicator'
-import { agentToolRenderers, ToolSummary, ToolArgsView, ToolResultView } from '../lib/tool-renderers'
+import { ToolSummary, ToolArgsView, ToolResultView } from '../lib/tool-renderers'
 import { getImageAttachState } from '../lib/imageAttach'
 import {
   CheckIcon,
@@ -100,7 +102,9 @@ interface ChatViewProps {
   executionStatus?: ExecutionStatus | null
   viewingUserId?: string
   readOnly?: boolean
+  hideInboxMessages?: boolean
   hideComposer?: boolean
+  /** Show the manual fullscreen control. Phone composer taps can also expand embedded chats locally. */
   enableFullscreen?: boolean
   embedded?: boolean
 
@@ -117,6 +121,7 @@ interface ChatViewProps {
   inputStorageKey?: string
   /** Squad ID for permissions, file mentions, and staging images before an agent exists. */
   squadId?: string
+  renderMessageFooter?: (item: Extract<RenderItem, { kind: 'persisted' }>) => React.ReactNode
   afterMessages?: React.ReactNode
   /** Persistent content in normal flow directly above the composer. */
   beforeComposer?: React.ReactNode
@@ -350,6 +355,7 @@ export function ChatView({
   viewingUserId,
   readOnly: _readOnly,
   hideComposer,
+  hideInboxMessages,
   enableFullscreen = false,
   embedded: _embedded,
   error,
@@ -362,6 +368,7 @@ export function ChatView({
   inputStorageKey,
   squadId,
   afterMessages,
+  renderMessageFooter,
   beforeComposer,
   className,
   autoFocus = true,
@@ -552,9 +559,36 @@ export function ChatView({
       })
     },
   })
-  const { isFullscreen: _isFullscreen, toggleFullscreen } = useFullscreen({ queryParam: 'fullscreen' })
+  const fullscreen = useFullscreen({ queryParam: enableFullscreen ? 'fullscreen' : undefined })
+  // Router transitions may commit after a mobile user gesture has ended. Keep
+  // tap-to-expand synchronous and local, including inside parent-owned layouts.
+  const mobileExpansion = useFullscreen()
+  const isFullscreen = fullscreen.isFullscreen || mobileExpansion.isFullscreen
+  const toggleFullscreen = mobileExpansion.isFullscreen ? mobileExpansion.exitFullscreen : fullscreen.toggleFullscreen
 
-  const isFullscreen = enableFullscreen && _isFullscreen
+  useEffect(() => {
+    // Retained Assistant tabs stay mounted when hidden. Their portal must not
+    // outlive the visible conversation when navigation switches to another tab.
+    if (!keyboardShortcutsEnabled && mobileExpansion.isFullscreen) mobileExpansion.exitFullscreen()
+  }, [keyboardShortcutsEnabled, mobileExpansion.isFullscreen, mobileExpansion.exitFullscreen])
+
+  const expandMobileComposer = (event: React.MouseEvent<HTMLTextAreaElement>) => {
+    const textarea = event.currentTarget
+    if (isFullscreen || !window.matchMedia('(max-width: 767px)').matches || textarea.closest('.mobile-chat-modal'))
+      return
+
+    const { selectionStart, selectionEnd, selectionDirection } = textarea
+    // Commit the portal and focus its input in the same user gesture so mobile
+    // Safari can keep the keyboard open. ChatView stays mounted: drafts, files,
+    // uploads, and conversation state survive expansion.
+    flushSync(mobileExpansion.enterFullscreen)
+    const expandedTextarea = textareaRef.current
+    if (expandedTextarea) {
+      resizeTextarea(expandedTextarea)
+      expandedTextarea.focus({ preventScroll: true })
+      expandedTextarea.setSelectionRange(selectionStart, selectionEnd, selectionDirection)
+    }
+  }
 
   // ---------------------------------------------------------------------
   // focusMessageId: scroll to and briefly highlight one message on mount,
@@ -1354,7 +1388,7 @@ export function ChatView({
     </button>
   )
 
-  const fullscreenButton = enableFullscreen && (
+  const fullscreenButton = (enableFullscreen || isFullscreen) && (
     <button
       onClick={toggleFullscreen}
       className="tau-button p-1.5 rounded-md text-placeholder hover:text-secondary hover:bg-surface-hover transition-colors shrink-0"
@@ -1433,6 +1467,14 @@ export function ChatView({
           // just above the very first user message on the page.
           let prevSenderUserId: string | undefined
           return items.map((item) => {
+            if (
+              hideInboxMessages &&
+              ((item.kind === 'pending' && item.metadata?.source === 'inbox') ||
+                (item.kind === 'persisted' &&
+                  item.message.role === 'human' &&
+                  item.message.metadata?.source === 'inbox'))
+            )
+              return null
             if (item.kind === 'persisted') {
               const m = item.message
               // Every source row id (the render key plus any merged-in rows) so a
@@ -1450,6 +1492,7 @@ export function ChatView({
                   )}
                 >
                   {node}
+                  {renderMessageFooter?.(item)}
                 </div>
               )
               if (m.content.startsWith('[System]')) {
@@ -1824,6 +1867,7 @@ export function ChatView({
 
               <textarea
                 ref={textareaRef}
+                onClick={expandMobileComposer}
                 defaultValue={inputRef.current}
                 onChange={(e) => {
                   if (isSubmittingRef.current) {
@@ -2605,6 +2649,7 @@ function StreamingToolCallItem({
   onAbortTool?: () => void
   onToolInlineAction?: (action: ToolInlineAction) => void
 }) {
+  const toolRenderers = useToolRenderers()
   const inProgress = !toolCall._done
   const isIncomplete = !inProgress && !toolCall.result && !toolCall.isError
   const isError = toolCall.isError || isIncomplete
@@ -2631,7 +2676,7 @@ function StreamingToolCallItem({
             <span className="text-green-600 dark:text-green-400 shrink-0 inline-block w-3 text-center">&#10003;</span>
           )}
           <span className="font-medium shrink-0">{toolCall.toolName}</span>
-          <ToolSummary renderers={agentToolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
+          <ToolSummary renderers={toolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
           {isError && <span className="text-red-500 dark:text-red-400 text-[10px] font-medium shrink-0">ERROR</span>}
           <ChevronRightIcon
             className={clsx('w-3 h-3 shrink-0 text-muted transition-transform', expanded && 'rotate-90')}
@@ -2653,11 +2698,11 @@ function StreamingToolCallItem({
       {expanded && (
         <div className="mt-1 ml-1.5 border-l-2 border-th-border pl-3 py-0.5 space-y-1">
           {toolCall.args && (
-            <ToolArgsView renderers={agentToolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
+            <ToolArgsView renderers={toolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
           )}
           {result && (
             <ToolResultView
-              renderers={agentToolRenderers}
+              renderers={toolRenderers}
               toolName={toolCall.toolName}
               result={result}
               isError={isError}

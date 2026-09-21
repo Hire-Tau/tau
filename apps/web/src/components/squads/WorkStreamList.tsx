@@ -28,7 +28,6 @@ import {
   sortCanonicalWorkStreams,
   WORK_STREAM_STATUS_ROLE,
   type WorkStream,
-  type WorkStreamDerivedState,
   type WorkStreamPresentationState,
   type Agent,
   type Squad,
@@ -38,6 +37,12 @@ import { webStatus } from '../../lib/statusPresentation'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 
 const KANBAN_CALLOUT: Partial<Record<WorkStreamPresentationState, { label: string; pulse: boolean }>> = {
+  delivery_approval: { label: 'Approve delivery — click to open', pulse: true },
+  delivery_review: { label: 'Review pull request — click to open', pulse: true },
+  delivery_merge: { label: 'Merge pull request — click to open', pulse: true },
+  delivery_external: { label: 'Awaiting code host', pulse: false },
+  delivery_setup: { label: 'Delivery setup required — click to inspect', pulse: true },
+  delivery_failure: { label: 'Delivery changes required — click to inspect', pulse: true },
   in_review: { label: 'Needs review — click to open', pulse: true },
   waiting_on_answer: { label: 'Waiting on answer — click to respond', pulse: true },
   waiting_on_dependency: { label: 'Waiting on dependency — click to inspect', pulse: false },
@@ -68,7 +73,14 @@ interface Props {
   onLoadMoreDone?: () => void
 }
 
-const KANBAN_COLUMNS: WorkStreamDerivedState[] = [
+const KANBAN_COLUMNS: WorkStreamPresentationState[] = [
+  'paused',
+  'delivery_approval',
+  'delivery_review',
+  'delivery_merge',
+  'delivery_external',
+  'delivery_setup',
+  'delivery_failure',
   'queued',
   'idle',
   'in_progress',
@@ -80,10 +92,10 @@ const KANBAN_COLUMNS: WorkStreamDerivedState[] = [
   'done',
   'canceled',
 ]
-const KANBAN_ALWAYS_SHOW: WorkStreamDerivedState[] = ['queued', 'in_progress', 'in_review', 'done']
+const KANBAN_ALWAYS_SHOW: WorkStreamPresentationState[] = ['queued', 'in_progress', 'in_review', 'done']
 
 /** Raw active is a compatibility fallback; precise derived waits retain their own columns. */
-function kanbanColumnFor(workStream: WorkStream): WorkStreamDerivedState {
+function kanbanColumnFor(workStream: WorkStream): WorkStreamPresentationState {
   const state = getWsDisplayState(workStream)
   return state === 'active' ? 'in_progress' : state
 }
@@ -176,7 +188,7 @@ export function WorkStreamList({
       acc[status] = filteredWorkStreams.filter((ws) => kanbanColumnFor(ws) === status)
       return acc
     },
-    {} as Record<WorkStreamDerivedState, WorkStream[]>
+    {} as Record<WorkStreamPresentationState, WorkStream[]>
   )
 
   const loadedSelectedWorkStream = selectedWs
@@ -394,7 +406,7 @@ function StatusColumn({
   isFetchingMore,
   onLoadMore,
 }: {
-  status: WorkStreamDerivedState
+  status: WorkStreamPresentationState
   workStreams: WorkStream[]
   agentMap: Map<string, Agent>
   selectedId: string | null

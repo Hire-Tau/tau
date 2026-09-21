@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import type {
+  Agent,
   GlobalActivityPresence,
   GlobalSquadActivityItem,
   NormalizedSquadActivityFilters,
@@ -24,7 +25,15 @@ const EMPTY_PRESENCE: GlobalActivityPresence = {
 
 type OpenActivityItem =
   | { type: 'workstream'; workStreamId: string; squadId: string }
-  | { type: 'agent'; agentId: string; squadId: string; label: string; view: 'chat' | 'inbox'; messageId?: string }
+  | {
+      type: 'agent'
+      agentId: string
+      squadId: string | null
+      label: string
+      view: 'chat' | 'inbox'
+      messageId?: string
+      resolvedAgent?: Agent
+    }
 
 export interface ActivityPageProps {
   /** Test seams: replace the heavy modal internals (conversation/provider stacks) — mirrors SquadActivityTab. */
@@ -84,6 +93,17 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
       })
   }, [])
 
+  const openAgentReference = useCallback((agent: Agent) => {
+    setOpenItem({
+      type: 'agent',
+      agentId: agent.id,
+      squadId: agent.squadId,
+      label: activityAgentLabel(agent.agentTypeId),
+      view: 'chat',
+      resolvedAgent: agent,
+    })
+  }, [])
+
   const hrefFor = useCallback((item: GlobalSquadActivityItem) => globalActivityItemHref(item, slugFor), [slugFor])
   const squadChipFor = useCallback(
     (item: GlobalSquadActivityItem) => ({
@@ -95,13 +115,15 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
   // No roster to source a purpose/name tooltip from without an N-query per squad — omitted (see module doc).
   const agentDetailFor = useCallback(() => undefined, [])
 
-  // Agent rows have no preloaded roster to look an Agent up in (unlike the per-squad tab), so every
-  // agent row fetches its record directly — falling back to the tab's own plain-conversation modal
-  // (used there for off-roster agents) while that fetch is in flight or the agent can't be found.
-  const { data: openAgent } = useQuery({
+  // Source rows have no preloaded roster, so fetch their agent directly with a
+  // plain-conversation modal while loading. Inline references already resolved
+  // an authorized agent and must not fetch again or borrow the source row's squad.
+  const { data: fetchedAgent } = useQuery({
     ...queries.agents.detail(openItem?.type === 'agent' ? openItem.agentId : ''),
-    enabled: openItem?.type === 'agent',
+    enabled: openItem?.type === 'agent' && !openItem.resolvedAgent,
   })
+
+  const openAgent = openItem?.type === 'agent' ? (openItem.resolvedAgent ?? fetchedAgent) : undefined
 
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label="Activity">
@@ -121,6 +143,7 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
         hrefFor={hrefFor}
         squadChipFor={squadChipFor}
         onOpen={openActivityItem}
+        onOpenAgentReference={openAgentReference}
         hasNextPage={query.hasNextPage}
         isFetchingNextPage={query.isFetchingNextPage}
         onLoadMore={() => void query.fetchNextPage()}
@@ -133,7 +156,7 @@ export function ActivityPage({ dependencies }: ActivityPageProps = {}) {
         />
       )}
       {openItem?.type === 'agent' &&
-        (openAgent ? (
+        (openAgent && openItem.squadId ? (
           <AgentViewModalBody
             agent={openAgent}
             squadId={openItem.squadId}

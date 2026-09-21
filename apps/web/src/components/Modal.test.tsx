@@ -41,37 +41,38 @@ test('viewport modal applies observable viewport geometry', async () => {
   }
 })
 
-test('mobile fullscreen follows keyboard viewport changes and removes its listeners on close', async () => {
-  const dom = await acquireDomHarness({})
-  const previous = Object.getOwnPropertyDescriptor(window, 'visualViewport')
-  const viewport = new dom.window.EventTarget()
-  Object.assign(viewport, { height: 812, offsetTop: 0 })
-  Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport })
-  try {
-    const { root } = dom.createRoot()
-    await dom.act(async () =>
-      root.render(
-        <Modal isOpen mobileFullscreen title="Chat" onClose={() => undefined}>
-          Conversation
-        </Modal>
+for (const mobileFullscreen of [false, true])
+  test(`modal (fullscreen=${mobileFullscreen}) follows keyboard viewport changes and removes its listeners on close`, async () => {
+    const dom = await acquireDomHarness({})
+    const previous = Object.getOwnPropertyDescriptor(window, 'visualViewport')
+    const viewport = new dom.window.EventTarget()
+    Object.assign(viewport, { height: 812, offsetTop: 0 })
+    Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport })
+    try {
+      const { root } = dom.createRoot()
+      await dom.act(async () =>
+        root.render(
+          <Modal isOpen mobileFullscreen={mobileFullscreen} title="Chat" onClose={() => undefined}>
+            Conversation
+          </Modal>
+        )
       )
-    )
-    const overlay = dom.window.document.querySelector<HTMLElement>('[role="dialog"]')!
-    expect(overlay.style.getPropertyValue('--chat-viewport-height')).toBe('812px')
-    Object.assign(viewport, { height: 420, offsetTop: 22 })
-    viewport.dispatchEvent(new dom.window.Event('resize'))
-    expect(overlay.style.getPropertyValue('--chat-viewport-height')).toBe('420px')
-    expect(overlay.style.getPropertyValue('--chat-viewport-top')).toBe('22px')
-    await dom.act(async () => root.unmount())
-    Object.assign(viewport, { height: 812 })
-    viewport.dispatchEvent(new dom.window.Event('resize'))
-    expect(overlay.style.getPropertyValue('--chat-viewport-height')).toBe('420px')
-  } finally {
-    if (previous) Object.defineProperty(window, 'visualViewport', previous)
-    else Reflect.deleteProperty(window, 'visualViewport')
-    await dom.cleanup()
-  }
-})
+      const overlay = dom.window.document.querySelector<HTMLElement>('[role="dialog"]')!
+      expect(overlay.style.getPropertyValue('--modal-viewport-height')).toBe('812px')
+      Object.assign(viewport, { height: 420, offsetTop: 22 })
+      viewport.dispatchEvent(new dom.window.Event('resize'))
+      expect(overlay.style.getPropertyValue('--modal-viewport-height')).toBe('420px')
+      expect(overlay.style.getPropertyValue('--modal-viewport-top')).toBe('22px')
+      await dom.act(async () => root.unmount())
+      Object.assign(viewport, { height: 812 })
+      viewport.dispatchEvent(new dom.window.Event('resize'))
+      expect(overlay.style.getPropertyValue('--modal-viewport-height')).toBe('420px')
+    } finally {
+      if (previous) Object.defineProperty(window, 'visualViewport', previous)
+      else Reflect.deleteProperty(window, 'visualViewport')
+      await dom.cleanup()
+    }
+  })
 
 test('a never-opened modal renders no portal in a static render even when a DOM is available', async () => {
   const dom = await acquireDomHarness({})
@@ -86,5 +87,62 @@ test('a never-opened modal renders no portal in a static render even when a DOM 
     ).toBe('')
   } finally {
     await dom.cleanup()
+  }
+})
+
+test('keyboard resize reveals the focused field by scrolling dialog content, without scrolling the page', async () => {
+  const dom = await acquireDomHarness({})
+  const viewportDescriptor = Object.getOwnPropertyDescriptor(window, 'visualViewport')
+  const ownedWindow = window
+  const requestFrame = window.requestAnimationFrame
+  const cancelFrame = window.cancelAnimationFrame
+  const scrollTo = window.scrollTo
+  const callbacks = new Map<number, FrameRequestCallback>()
+  let nextFrame = 0
+  let pageScrolls = 0
+  window.requestAnimationFrame = (callback) => {
+    callbacks.set(++nextFrame, callback)
+    return nextFrame
+  }
+  window.cancelAnimationFrame = (id) => {
+    callbacks.delete(id)
+  }
+  window.scrollTo = () => {
+    pageScrolls++
+  }
+  const viewport = new dom.window.EventTarget()
+  Object.assign(viewport, { height: 812, offsetTop: 0 })
+  Object.defineProperty(window, 'visualViewport', { configurable: true, value: viewport })
+  try {
+    const { root } = dom.createRoot()
+    await dom.act(async () =>
+      root.render(
+        <Modal isOpen title="Answer question" onClose={() => {}} footer={<button>Submit</button>}>
+          <textarea aria-label="Answer" />
+        </Modal>
+      )
+    )
+    const body = document.querySelector<HTMLElement>('[data-modal-body]')!
+    const input = document.querySelector('textarea')!
+    body.getBoundingClientRect = () => ({ top: 60, bottom: 350, height: 290 }) as DOMRect
+    input.getBoundingClientRect = () => ({ top: 490, bottom: 530, height: 40 }) as DOMRect
+    await dom.act(async () => {
+      input.focus()
+      Object.assign(viewport, { height: 420 })
+      viewport.dispatchEvent(new dom.window.Event('resize'))
+      const pending = [...callbacks.values()]
+      callbacks.clear()
+      for (const callback of pending) callback(0)
+    })
+    expect(body.scrollTop).toBe(192)
+    expect(pageScrolls).toBe(0)
+    expect(document.activeElement).toBe(input)
+  } finally {
+    await dom.cleanup()
+    ownedWindow.requestAnimationFrame = requestFrame
+    ownedWindow.cancelAnimationFrame = cancelFrame
+    ownedWindow.scrollTo = scrollTo
+    if (viewportDescriptor) Object.defineProperty(ownedWindow, 'visualViewport', viewportDescriptor)
+    else Reflect.deleteProperty(ownedWindow, 'visualViewport')
   }
 })

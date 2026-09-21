@@ -13,7 +13,7 @@ import type { DbHandle } from '../work-streams/waits'
  * This is deliberately NOT enforced in `canTerminate`: an operator unspawning
  * a consultant by hand is a legitimate act. Only the automatic path abstains.
  */
-const AUTO_DORMANCY_EXEMPT_TYPES = ['manager', 'system-manager', 'consultant'] as const
+const AUTO_DORMANCY_EXEMPT_TYPES = ['manager', 'system-manager', 'assistant', 'assistant-worker', 'consultant'] as const
 
 /** Whether automatic work-stream teardown must leave this agent type alone. */
 export function isAutoDormancyExempt(agentTypeId: string | null | undefined): boolean {

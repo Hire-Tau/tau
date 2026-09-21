@@ -1,3 +1,4 @@
+import { notifyDeliverySnapshotChanged } from './github/delivery-presentation-store'
 import { credentialSetupStatus, connectionSetupStatus } from './setup-status'
 import {
   pushIntegrationCatalog,
@@ -58,6 +59,9 @@ import {
 } from './authorization/db-device-repository'
 import { GitHubOAuthClient } from '@tau/shared/oauth-providers/github/client'
 import { resolveGitHubAppCredentials } from './authorization/github-app'
+import { resolveInstanceGitHubConnection } from './github/resolve-connection'
+import { checkGitHubRepositoryAccess } from './github/repository-access'
+import { parseGitHubConfiguration } from '@tau/shared/oauth-providers/github/config'
 import { integrationOutputRegistry } from './outputs/registry'
 import { join } from 'path'
 import { getHomeDir } from '../../lib/utils/home'
@@ -401,6 +405,7 @@ const observedPollingSquads = new WeakMap<object, string[]>()
 export const integrationEventPollingRuntime = new EventPollingRunner({
   listWatches: () => githubPrWatchPolicy.listWatches(),
   cursorStore: new DbEventPollingCursorStore(),
+  onCursorSaved: notifyDeliverySnapshotChanged,
   dispatchStore: new DbEventPollingDispatchStore(),
   resolveCapability: (watch) =>
     integrationRegistry.capability(watch.providerKey, watch.connection.adapterVersion, 'event_polling'),
@@ -423,8 +428,8 @@ export const integrationEventPollingRuntime = new EventPollingRunner({
     await materializeGitHubDispatch(dispatch.activityId, watch.connection.squadId)
   },
   onError: (error, watch) => log.error(`Polling failed for ${watch.providerKey}:${watch.resourceKey}`, error),
-  // Five conditional REST reads per GitHub PR: eight per 30-second scan stays
-  // below GitHub's 5,000 requests/hour even if every response is a cache miss.
+  // Forty requests per 30-second scan stay below 5,000/hour. Every REST page
+  // and optional delivery aggregate request consumes the same bounded budget.
   maxResourcesPerTick: 8,
   maxBudgetUnitsPerTick: 40,
 })
@@ -556,6 +561,12 @@ export const integrationRoutesService = Object.assign(integrationConnectionServi
     return row ? integrationConnectionService.safeView(row) : null
   },
   providerFor: (id: string) => integrationConnectionRepository.providerFor(id),
+  async githubRepositoryAccess(id: string) {
+    const resolved = await resolveInstanceGitHubConnection(id)
+    if (!resolved) return null
+    const configuration = parseGitHubConfiguration(resolved.connection.configuration)
+    return checkGitHubRepositoryAccess(resolved.credential.accessToken, configuration.login)
+  },
   serviceSettings: {
     get: (provider: string) =>
       isPushIntegration(provider)

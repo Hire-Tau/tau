@@ -36,8 +36,17 @@ expiring user tokens in that App's configuration.
 </ModeContent>
 
 Install the GitHub App on the repositories Tau should use. Authorizing your user
-account alone does not give the App repository access. When you return, confirm
-the account appears in the card without a reconnect warning.
+account alone does not give the App repository access. When you return, Tau
+checks the App installations available to that account and how many repositories
+each installation exposes. If setup needs repository access, choose **Grant
+repository access**, install the App on the intended account or organization,
+and select its repositories. Return to Tau or choose **Check again** to verify.
+
+Access through an organization does not include forks owned by your personal
+account. Tau shows a separate warning when the App is missing from that account.
+A failed or incomplete check is shown as unverified, rather than claiming the
+App is missing. The check verifies installation access, not whether a particular
+branch permits pushes.
 
 ## Choose the squad's account
 
@@ -96,6 +105,14 @@ instance must be reachable at the displayed public URL.
 If a repository cannot be read, check the App installation, the account's
 repository permissions, and the squad assignment. If the card shows **Reconnect
 required**, choose **Reconnect** and authorize the intended account again.
+
+If a push to your own fork is rejected, check that the App is installed on the
+fork as well as any upstream repository. Your account owning the fork does not
+automatically grant the App access. Pushes need **Contents: write**; changes to
+`.github/workflows` also need **Workflows: write**, which is separate from
+**Actions: write**. In GitHub's installation settings, approve any pending App
+permission updates. Reconnecting in Tau does not replace that approval or add
+repositories to the installation.
 
 Disabling GitHub preserves saved accounts and assignments while stopping new
 use. Disconnecting removes access through Tau. Removing a default account does

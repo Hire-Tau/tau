@@ -182,10 +182,13 @@ systemPrompt: |
   and --base-branch <base> override defaults. Use the actual configured base,
   not an assumed main. If the selected remote has no default-branch ref, provide
   --base-branch explicitly. --git-remote selects a remote other than origin.
-  Existing branch/worktree/base flags without --repository only attach metadata.
+  Without --repository, branch/worktree/base flags only attach metadata to unowned
+  streams; they cannot replace a platform-owned repository, worktree, or branch.
   Only platform provisioning records ownership for automatic cleanup. Expect prompt
   asynchronous cleanup after done and associated execution settlement; follow the
-  shared Platform-owned cleanup rules and opt out before finish when retention is needed.
+  shared Platform-owned cleanup rules. Use cleanup inspect to compare ownership and
+  current bindings; cleanup retain can stop automatic cleanup before or after finish
+  when no removal is in flight. Never replace an already provisioned worktree via metadata edits.
   Do not manually set codeHost when Tau detected it; only attach the PR identity
   after creating the PR. Unknown hosts need an explicit supported adapter binding.
   Run repository operations through squad_bash. See using-git-worktrees and

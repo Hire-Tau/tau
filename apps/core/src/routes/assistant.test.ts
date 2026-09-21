@@ -13,6 +13,7 @@ import {
   executions,
   inbox,
   squads,
+  users,
 } from '../db'
 import { Agent } from '../entities/Agent'
 import { Squad } from '../entities/Squad'
@@ -31,6 +32,7 @@ import {
   createTestAgentToken,
 } from '../test-utils'
 import { assistantRouter } from './assistant'
+import { sendAssistantTaskRequest, changeAssistantTask } from '../services/assistant-task-requests'
 const prefix = `assistant-${randomUUID()}`
 const conversationIds: string[] = [],
   agentIds: string[] = [],
@@ -542,7 +544,7 @@ async function squadFixture(owner: { id: string }, role: { id: string }) {
   return squad
 }
 
-test('squad delegations create one owned consultant per squad, label it, and steer by default', async () => {
+test('independent tasks share a neutrally labeled consultant and steer by default', async () => {
   const { id, owner, request } = await fixture()
   const role = await createTestRole({ prefix, permissions: ['chat:send'] })
   const squad = await squadFixture(owner, role)
@@ -561,19 +563,25 @@ test('squad delegations create one owned consultant per squad, label it, and ste
   expect(consultant.agentTypeId).toBe('consultant')
   expect(consultant.squadId).toBe(squad.id)
   expect(consultant.metadata?.name).toBe('Assistant task')
-  expect(consultant.metadata?.purpose).toBe('Assistant task: Check enabled schedules')
+  expect(consultant.metadata?.purpose).toBe('Assistant squad tasks')
   const second = await request(`/${id}/messages`, { ...body, clientId: randomUUID(), label: 'Pause the deploy stream' })
-  expect((await second.json()).agentId).toBe(receipt.agentId)
-  expect((await Agent.mustFind(receipt.agentId)).metadata?.purpose).toBe('Assistant task: Pause the deploy stream')
-  // Reusing the first request's clientId with different content conflicts (409); the relabel
-  // only applies after a request is accepted, so a rejected retry must not rewrite the purpose.
+  const secondReceipt = await second.json()
+  expect(secondReceipt.agentId).toBe(receipt.agentId)
+  expect(secondReceipt.taskId).not.toBe(receipt.taskId)
+  const taskRows = await db
+    .select()
+    .from(assistantTasks)
+    .where(inArray(assistantTasks.id, [receipt.taskId, secondReceipt.taskId]))
+  expect(taskRows.map((row) => row.label).sort()).toEqual(['Check enabled schedules', 'Pause the deploy stream'])
+  expect((await Agent.mustFind(receipt.agentId)).metadata?.purpose).toBe('Assistant squad tasks')
+  // Task labels are durable per scope; neither new work nor rejected retries relabel the shared helper.
   const conflict = await request(`/${id}/messages`, {
     ...body,
     request: 'Different request',
     label: 'Reroute the deploy pipeline',
   })
   expect(conflict.status).toBe(409)
-  expect((await Agent.mustFind(receipt.agentId)).metadata?.purpose).toBe('Assistant task: Pause the deploy stream')
+  expect((await Agent.mustFind(receipt.agentId)).metadata?.purpose).toBe('Assistant squad tasks')
   const rows = await db.select().from(inbox).where(eq(inbox.recipientId, receipt.agentId))
   expect(rows.map((row) => row.deliveryMode)).toEqual(['steer', 'steer'])
   const general = await request(`/${id}/messages`, {
@@ -585,7 +593,7 @@ test('squad delegations create one owned consultant per squad, label it, and ste
   agentIds.push(generalReceipt.agentId)
   expect(generalReceipt.kind).toBe('background')
   expect(generalReceipt.agentId).not.toBe(receipt.agentId)
-  expect((await Agent.mustFind(generalReceipt.agentId)).metadata?.purpose).toBe('Assistant task: General task')
+  expect((await Agent.mustFind(generalReceipt.agentId)).metadata?.purpose).toBe('Assistant background tasks')
   const owned = await db
     .select()
     .from(assistantConversationAgents)
@@ -897,7 +905,7 @@ test('a user answer stays on its task and stale reports cannot finish the new re
   const [staleUpdate] = await db.select().from(assistantUpdates).where(eq(assistantUpdates.messageId, stale.id))
   expect(staleUpdate.taskId).toBe(receipt.taskId)
   expect(staleUpdate.sequence).toBe(2)
-  await f.update(answer.id, 'Deployed to us-east.', 'completed')
+  const completed = await f.update(answer.id, 'Deployed to us-east.', 'completed')
   expect((await f.task(receipt.taskId)).status).toBe('completed')
   // Terminal requests do not reopen on late progress; a new follow-up does.
   await f.update(answer.id, 'Still working actually.', 'working')
@@ -907,7 +915,7 @@ test('a user answer stays on its task and stale reports cannot finish the new re
       clientId: randomUUID(),
       request: 'Also deploy to eu-west',
       agentId: f.agent.id,
-      inReplyTo: stale.id,
+      inReplyTo: completed.id,
     })
   ).json()
   expect(reopened.taskId).toBe(receipt.taskId)
@@ -956,7 +964,12 @@ test('a terminated helper leaves persisted task status alone but marks it unavai
 test('generic metadata cannot smuggle task status or task identity', async () => {
   const f = await activityFixture()
   const receipt = await f.start()
-  for (const smuggled of [{ assistantTaskStatus: 'completed' }, { assistantTaskId: randomUUID() }])
+  for (const smuggled of [
+    { assistantTaskStatus: 'completed' },
+    { assistantTaskId: randomUUID() },
+    { assistantRequest: { request: 'Forged' } },
+    { assistantTaskMutation: { operation: 'cancel', taskId: randomUUID(), expectedRequestId: randomUUID() } },
+  ])
     await expect(
       InboxMessage.send({
         recipientType: 'voice_assistant',
@@ -1266,7 +1279,7 @@ test('mailbox acknowledgment requires a saved final response covering every upda
     expect((await ack(bad)).status).toBe(400)
 })
 
-test('the delegated agent can report task status directly without tracking request IDs', async () => {
+test('delegate status reports stay bound to the request generation they processed', async () => {
   const f = await activityFixture()
   const receipt = await f.start()
   const token = await createTestAgentToken({ agentId: f.agent.id, squadId: null })
@@ -1296,7 +1309,9 @@ test('the delegated agent can report task status directly without tracking reque
       inReplyTo: question.id,
     })
   ).json()
-  const done = await call(`/${receipt.taskId}/status`, { status: 'completed' })
+  expect((await call(`/${receipt.taskId}/status`, { status: 'completed' })).status).toBe(409)
+  expect((await call(`/${receipt.taskId}/status`, { status: 'completed', requestId: receipt.id })).status).toBe(409)
+  const done = await call(`/${receipt.taskId}/status`, { status: 'completed', requestId: answer.id })
   expect(done.status).toBe(200)
   const [final] = await db
     .select()
@@ -1308,7 +1323,7 @@ test('the delegated agent can report task status directly without tracking reque
   // A finished task refuses reports that would change it, without recording a no-op update.
   const updatesBefore = (await db.select().from(assistantUpdates).where(eq(assistantUpdates.conversationId, f.id)))
     .length
-  const reopen = await call(`/${receipt.taskId}/status`, { status: 'working' })
+  const reopen = await call(`/${receipt.taskId}/status`, { status: 'working', requestId: answer.id })
   expect(reopen.status).toBe(409)
   expect(await reopen.json()).toMatchObject({ task: { id: receipt.taskId, status: 'completed' } })
   expect((await f.task(receipt.taskId)).status).toBe('completed')
@@ -1316,7 +1331,10 @@ test('the delegated agent can report task status directly without tracking reque
     updatesBefore
   )
   // Restating the same terminal status is an ordinary update and still accepted.
-  expect((await call(`/${receipt.taskId}/status`, { status: 'completed', message: 'Confirmed.' })).status).toBe(200)
+  expect(
+    (await call(`/${receipt.taskId}/status`, { status: 'completed', message: 'Confirmed.', requestId: answer.id }))
+      .status
+  ).toBe(200)
   // Other agents, users, unknown tasks, and bad statuses are refused.
   const stranger = await Agent.create({ agentTypeId: 'system-manager', ownerUserId: f.owner.id, context: {} })
   agentIds.push(stranger.id)
@@ -1372,4 +1390,300 @@ test("a task waiting for the owner's answer is a Needs-you item until the owner 
     ).status
   ).toBe(200)
   expect(mine(await pending())).toEqual([])
+})
+
+test('pending task input survives read state and update pagination, and settles only its request chain', async () => {
+  const f = await activityFixture()
+  const first = await f.start('Inspect storage')
+  const question = await f.update(first.id, 'Which directory?', 'needs-input')
+  await f.request(`/${f.id}/updates/seen`, { messageIds: [question.id] })
+  const other = await f.start('Check another task')
+  // Enough unrelated progress to move the question off the first update page.
+  for (let index = 0; index < 51; index++) await f.update(other.id, `Progress ${index}`)
+  const detail = await (await f.request(`/${f.id}/activity`)).json()
+  expect(detail.updates.some((row: { messageId: string }) => row.messageId === question.id)).toBe(false)
+  expect(detail.pendingInputs).toHaveLength(1)
+  expect(detail.pendingInputs[0]).toMatchObject({
+    messageId: question.id,
+    taskId: first.taskId,
+    requestId: first.id,
+    content: 'Which directory?',
+  })
+  expect(detail.pendingInputs[0].seenAt).not.toBeNull()
+  const next = await f.start('Inspect only the cache', { inReplyTo: question.id })
+  expect(next.taskId).toBe(first.taskId)
+  expect((await f.task(first.taskId)).status).toBe('working')
+  expect((await f.task(other.taskId)).currentRequestId).toBe(other.id)
+  // An old request reporting again cannot resurrect an answered question.
+  await f.update(first.id, 'Old question repeated', 'needs-input')
+  expect((await (await f.request(`/${f.id}/activity`)).json()).pendingInputs).toEqual([])
+  const fresh = await f.update(next.id, 'May I proceed?', 'needs-input')
+  expect(
+    (await (await f.request(`/${f.id}/activity`)).json()).pendingInputs.map(
+      (row: { messageId: string }) => row.messageId
+    )
+  ).toEqual([fresh.id])
+})
+
+test('accepted requests survive helper retirement and normalized optional fields without creating replacements', async () => {
+  const f = await fixture()
+  const identity = { type: 'user' as const, userId: f.owner.id }
+  const input = { clientId: randomUUID(), request: 'Review this draft', label: 'Review', squadId: undefined }
+  const first = await sendAssistantTaskRequest(identity, f.id, input)
+  agentIds.push(first.agentId)
+  await db.delete(executions).where(eq(executions.agentId, first.agentId))
+  await db.update(agents).set({ status: 'terminated', terminatedAt: new Date() }).where(eq(agents.id, first.agentId))
+  const retried = await sendAssistantTaskRequest(identity, f.id, input)
+  expect(retried).toMatchObject({ id: first.id, agentId: first.agentId, taskId: first.taskId })
+  expect(
+    await db.select().from(assistantConversationAgents).where(eq(assistantConversationAgents.conversationId, f.id))
+  ).toMatchObject([{ agentId: first.agentId }])
+  expect(await db.select().from(assistantTasks).where(eq(assistantTasks.conversationId, f.id))).toHaveLength(1)
+  for (const change of [{ label: 'Different label' }, { mode: 'follow-up' }, { pagePath: '/feed' }])
+    await expect(sendAssistantTaskRequest(identity, f.id, { ...input, ...change })).rejects.toMatchObject({
+      status: 409,
+    })
+})
+
+test('direct task service checks live ownership and permissions without HTTP middleware, including retries', async () => {
+  const f = await activityFixture()
+  const body = { clientId: randomUUID(), request: 'Private work', agentId: f.agent.id }
+  const identity = { type: 'user' as const, userId: f.owner.id }
+  const first = await sendAssistantTaskRequest(identity, f.id, body)
+  for (const invalid of [
+    undefined,
+    { type: 'legacy' as const },
+    { type: 'agent' as const, agentId: f.agent.id, squadId: null, userId: f.other.id },
+  ])
+    await expect(sendAssistantTaskRequest(invalid, f.id, body)).rejects.toMatchObject({ status: 403 })
+  await expect(sendAssistantTaskRequest({ type: 'user', userId: f.other.id }, f.id, body)).rejects.toMatchObject({
+    status: 404,
+  })
+  const ownConversation = randomUUID()
+  conversationIds.push(ownConversation)
+  await f.request('/', { id: ownConversation }, f.other.token)
+  await expect(
+    sendAssistantTaskRequest({ type: 'user', userId: f.other.id }, ownConversation, body)
+  ).rejects.toMatchObject({ status: 404 })
+  await db.update(users).set({ disabledAt: new Date() }).where(eq(users.id, f.owner.id))
+  await expect(sendAssistantTaskRequest(identity, f.id, body)).rejects.toMatchObject({ status: 403 })
+  expect((await f.task(first.taskId)).currentRequestId).toBe(first.id)
+})
+
+test('concurrent answers to one generation commit only one continuation and preserve other tasks', async () => {
+  const f = await activityFixture()
+  const first = await f.start()
+  const unrelated = await f.start('Independent work')
+  const question = await f.update(first.id, 'Which region?', 'needs-input')
+  const requests = ['us-east', 'eu-west'].map((request) => ({
+    clientId: randomUUID(),
+    request,
+    agentId: f.agent.id,
+    inReplyTo: question.id,
+  }))
+  let arrived = 0
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  setBeforeRecipientLifecycleLockHookForTest(async () => {
+    if (++arrived === 2) release()
+    await gate
+  })
+  let results: Response[]
+  try {
+    results = await Promise.all(requests.map((body) => f.request(`/${f.id}/messages`, body)))
+  } finally {
+    setBeforeRecipientLifecycleLockHookForTest(undefined)
+  }
+  expect(results.map((result) => result.status).sort()).toEqual([200, 409])
+  const winnerIndex = results.findIndex((result) => result.status === 200)
+  const winner = await results[winnerIndex].json()
+  const retry = await f.request(`/${f.id}/messages`, requests[winnerIndex])
+  expect(retry.status).toBe(200)
+  expect(await retry.json()).toMatchObject({ id: winner.id, taskId: first.taskId })
+  const stale = await f.request(`/${f.id}/messages`, { ...requests[0], clientId: randomUUID() })
+  expect(stale.status).toBe(409)
+  expect((await f.task(first.taskId)).currentRequestId).toBe(winner.id)
+  expect((await f.task(unrelated.taskId)).currentRequestId).toBe(unrelated.id)
+  expect(
+    await db
+      .select()
+      .from(inbox)
+      .where(inArray(inbox.content, ['us-east', 'eu-west']))
+  ).toHaveLength(1)
+})
+
+test('task commands continue and cancel only their scope while a delegate handles independent work', async () => {
+  const f = await activityFixture()
+  const first = await f.start()
+  const second = await f.start('Independent research')
+  const command = (taskId: string, body: unknown) => f.request(`/${f.id}/tasks/${taskId}/commands`, body)
+  const next = { operation: 'continue', clientId: randomUUID(), expectedRequestId: first.id, request: 'Use staging' }
+  const response = await command(first.taskId, next)
+  expect(response.status).toBe(200)
+  const continued = await response.json()
+  expect(continued).toMatchObject({ taskId: first.taskId, agentId: f.agent.id })
+  expect((await InboxMessage.mustFind(continued.id)).deliveryMode).toBe('steer')
+  const cancelledInput = {
+    operation: 'cancel',
+    clientId: randomUUID(),
+    expectedRequestId: continued.id,
+    reason: 'No longer needed',
+  }
+  const cancel = await command(first.taskId, cancelledInput)
+  expect(cancel.status).toBe(200)
+  const cancelled = await cancel.json()
+  expect(await f.task(first.taskId)).toMatchObject({ status: 'cancelled', currentRequestId: cancelled.id })
+  expect(await f.task(second.taskId)).toMatchObject({ status: 'working', currentRequestId: second.id })
+  expect((await Agent.mustFind(f.agent.id)).status).not.toBe('terminated')
+  const message = await InboxMessage.mustFind(cancelled.id)
+  expect(message.metadata.wakeEligible).toBe(false)
+  expect(formatInboxMessages([message])).toContain('Stop only its work and leave unrelated tasks running')
+  await f.update(continued.id, 'Late success', 'completed')
+  expect((await f.task(first.taskId)).status).toBe('cancelled')
+  expect(await (await command(first.taskId, cancelledInput)).json()).toMatchObject({ id: cancelled.id })
+  expect((await command(first.taskId, { ...next, clientId: randomUUID() })).status).toBe(409)
+  const resumed = await command(first.taskId, { ...next, clientId: randomUUID(), expectedRequestId: cancelled.id })
+  expect(resumed.status).toBe(200)
+  expect((await f.task(first.taskId)).status).toBe('working')
+})
+
+for (const status of ['terminated', 'deleted'] as const) {
+  test(`retry recovers a ${status} owned helper without replacing task history; cancellation needs no live helper`, async () => {
+    const f = await fixture()
+    const identity = { type: 'user' as const, userId: f.owner.id }
+    const first = await sendAssistantTaskRequest(identity, f.id, { clientId: randomUUID(), request: 'Investigate' })
+    agentIds.push(first.agentId)
+    await db.delete(executions).where(eq(executions.agentId, first.agentId))
+    if (status === 'deleted') await db.delete(agents).where(eq(agents.id, first.agentId))
+    else
+      await db
+        .update(agents)
+        .set({ status: 'terminated', terminatedAt: new Date() })
+        .where(eq(agents.id, first.agentId))
+    const cancelled = await changeAssistantTask(identity, f.id, first.taskId, {
+      clientId: randomUUID(),
+      operation: 'cancel',
+      expectedRequestId: first.id,
+    })
+    const retryInput = {
+      clientId: randomUUID(),
+      operation: 'retry',
+      expectedRequestId: cancelled.id,
+      request: 'Resume the investigation',
+    }
+    const retry = await changeAssistantTask(identity, f.id, first.taskId, retryInput)
+    agentIds.push(retry.agentId)
+    expect(retry.taskId).toBe(first.taskId)
+    expect(retry.agentId).not.toBe(first.agentId)
+    expect(await changeAssistantTask(identity, f.id, first.taskId, retryInput)).toMatchObject({
+      id: retry.id,
+      agentId: retry.agentId,
+    })
+    const rows = await db.select().from(assistantTasks).where(eq(assistantTasks.conversationId, f.id))
+    expect(rows).toMatchObject([
+      { id: first.taskId, currentRequestId: retry.id, agentId: retry.agentId, status: 'working' },
+    ])
+    expect(await InboxMessage.find(first.id)).not.toBeNull()
+  })
+}
+
+test('task command authorization cannot be bypassed by task IDs, private targets, or replay receipts', async () => {
+  const f = await activityFixture()
+  const first = await f.start()
+  const command = { clientId: randomUUID(), operation: 'continue', expectedRequestId: first.id, request: 'Do more' }
+  for (const operation of ['continue', 'retry', 'cancel']) {
+    await expect(
+      changeAssistantTask({ type: 'user', userId: f.other.id }, f.id, first.taskId, { ...command, operation })
+    ).rejects.toMatchObject({ status: 404 })
+    await expect(changeAssistantTask(undefined, f.id, first.taskId, { ...command, operation })).rejects.toMatchObject({
+      status: 403,
+    })
+  }
+  await expect(
+    changeAssistantTask({ type: 'user', userId: f.owner.id }, f.id, randomUUID(), command)
+  ).rejects.toMatchObject({ status: 404 })
+  await db.update(agents).set({ ownerUserId: f.other.id }).where(eq(agents.id, f.agent.id))
+  await expect(
+    changeAssistantTask({ type: 'user', userId: f.owner.id }, f.id, first.taskId, command)
+  ).rejects.toMatchObject({ status: 404 })
+  expect((await f.task(first.taskId)).currentRequestId).toBe(first.id)
+})
+
+test('replaying an accepted page-editor request uses its original snapshot after the draft changes', async () => {
+  const { createBlankWorkflow } = await import('@tau/shared')
+  const f = await fixture('page-editor')
+  const role = await createTestRole({ prefix, permissions: ['workflows:create', 'agent-types:read'] })
+  await assignRole({ userId: f.owner.id, roleId: role.id, scope: 'system' })
+  const draft = { kind: 'workflow', target: {}, revision: 0, document: createBlankWorkflow() }
+  const sync = (value: unknown) =>
+    app.request(`/api/assistant/${f.id}/editor`, {
+      method: 'PUT',
+      headers: { ...authHeaders(f.owner.token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(value),
+    })
+  expect((await sync(draft)).status).toBe(200)
+  const input = { clientId: randomUUID(), request: 'Review this draft' }
+  const first = await sendAssistantTaskRequest({ type: 'user', userId: f.owner.id }, f.id, input)
+  agentIds.push(first.agentId)
+  const original = await InboxMessage.mustFind(first.id)
+  expect(
+    (await sync({ ...draft, revision: 1, document: { ...draft.document, name: 'Updated after send' } })).status
+  ).toBe(200)
+  const retry = await sendAssistantTaskRequest({ type: 'user', userId: f.owner.id }, f.id, input)
+  expect(retry.id).toBe(first.id)
+  expect((await InboxMessage.mustFind(first.id)).content).toBe(original.content)
+  expect(original.content).not.toContain('Updated after send')
+})
+
+test('task recovery and accepted request replay recheck squad consultant creation access', async () => {
+  const f = await fixture()
+  const role = await createTestRole({ prefix, permissions: ['chat:send'] })
+  const squad = await squadFixture(f.owner, role)
+  const identity = { type: 'user' as const, userId: f.owner.id }
+  const input = { clientId: randomUUID(), request: 'Review schedules', squadId: squad.id }
+  const first = await sendAssistantTaskRequest(identity, f.id, input)
+  agentIds.push(first.agentId)
+  await db.update(squads).set({ status: 'archived' }).where(eq(squads.id, squad.id))
+  await expect(sendAssistantTaskRequest(identity, f.id, input)).rejects.toMatchObject({ status: 404 })
+  for (const operation of ['continue', 'retry', 'cancel'])
+    await expect(
+      changeAssistantTask(identity, f.id, first.taskId, {
+        clientId: randomUUID(),
+        operation,
+        request: 'Try again',
+        expectedRequestId: first.id,
+      })
+    ).rejects.toMatchObject({ status: 404 })
+  expect(await db.select().from(assistantTasks).where(eq(assistantTasks.conversationId, f.id))).toMatchObject([
+    { id: first.taskId, currentRequestId: first.id, status: 'working' },
+  ])
+})
+
+test('text and voice first opens converge on one durable Assistant without rewriting legacy history', async () => {
+  const f = await fixture()
+  await f.request(`/${f.id}/entries`, { entries: [entry('legacy', 'preserve me')] })
+  const responses = await Promise.all(Array.from({ length: 6 }, () => f.request(`/${f.id}/agent`, {})))
+  expect(responses.map((r) => r.status)).toEqual(Array(6).fill(200))
+  const bindings = await Promise.all(responses.map((r) => r.json()))
+  expect(new Set(bindings.map((b) => b.agentId)).size).toBe(1)
+  agentIds.push(bindings[0].agentId)
+  const brain = await Agent.mustFind(bindings[0].agentId)
+  expect(brain.agentTypeId).toBe('assistant')
+  expect(brain.ownerUserId).toBe(f.owner.id)
+  expect(brain.runnerType).toBe('system-manager')
+  expect((await (await f.request(`/${f.id}`)).json()).entries).toEqual([entry('legacy', 'preserve me')])
+  expect((await f.request(`/${f.id}/agent`, {}, f.other.token)).status).toBe(404)
+  await db.update(users).set({ disabledAt: new Date() }).where(eq(users.id, f.owner.id))
+  expect((await f.request(`/${f.id}/agent`, {})).status).not.toBe(200)
+})
+
+test('a terminated conversational agent cannot silently replace its transcript', async () => {
+  const f = await fixture()
+  const binding = await (await f.request(`/${f.id}/agent`, {})).json()
+  agentIds.push(binding.agentId)
+  await Agent.update(binding.agentId, { status: 'terminated' })
+  expect((await f.request(`/${f.id}/agent`, {})).status).toBe(409)
+  expect((await (await f.request(`/${f.id}`)).json()).conversation.agentId).toBe(binding.agentId)
 })

@@ -1,5 +1,6 @@
+import { requireAssistantConversation } from '../assistant-task-requests'
 import { z } from 'zod'
-import { and, eq, isNull, inArray } from 'drizzle-orm'
+import { or, and, eq, isNull, inArray } from 'drizzle-orm'
 import { isDeepStrictEqual } from 'node:util'
 import { HTTPException } from 'hono/http-exception'
 import {
@@ -57,6 +58,8 @@ async function lockedEditor(
   action: (state: AssistantEditorState | null, owner: string) => Promise<AssistantEditorState | null>
 ) {
   if (!z.string().uuid().safeParse(id).success) throw new HTTPException(404, { message: 'Editor not found' })
+  if ('agentId' in actor)
+    await requireAssistantConversation({ type: 'agent', agentId: actor.agentId, squadId: null }, id)
   return db.transaction(async (tx) => {
     const [row] = await tx
       .select()
@@ -65,17 +68,20 @@ async function lockedEditor(
         and(
           eq(assistantConversations.id, id),
           'agentId' in actor
-            ? inArray(
-                assistantConversations.id,
-                tx
-                  .select({ id: assistantConversationAgents.conversationId })
-                  .from(assistantConversationAgents)
-                  .where(
-                    and(
-                      eq(assistantConversationAgents.agentId, actor.agentId),
-                      isNull(assistantConversationAgents.squadId)
+            ? or(
+                eq(assistantConversations.agentId, actor.agentId),
+                inArray(
+                  assistantConversations.id,
+                  tx
+                    .select({ id: assistantConversationAgents.conversationId })
+                    .from(assistantConversationAgents)
+                    .where(
+                      and(
+                        eq(assistantConversationAgents.agentId, actor.agentId),
+                        isNull(assistantConversationAgents.squadId)
+                      )
                     )
-                  )
+                )
               )
             : eq(assistantConversations.ownerUserId, actor.userId)
         )
@@ -218,7 +224,7 @@ export async function closeAssistantEditor(id: string, actor: Extract<Actor, { u
   const state = await lockedEditor(id, actor, async (state) => (state ? { ...state, closed: true } : null))
   await db.transaction(async (tx) => {
     const [row] = await tx
-      .select({ id: assistantConversations.id })
+      .select({ id: assistantConversations.id, agentId: assistantConversations.agentId })
       .from(assistantConversations)
       .where(and(eq(assistantConversations.id, id), eq(assistantConversations.ownerUserId, actor.userId)))
       .for('update')
@@ -233,7 +239,8 @@ export async function closeAssistantEditor(id: string, actor: Extract<Actor, { u
       .from(assistantTasks)
       .where(eq(assistantTasks.conversationId, id))
       .limit(1)
-    if (!entry && !task) await tx.delete(assistantConversations).where(eq(assistantConversations.id, id))
+    if (!entry && !task && !row.agentId)
+      await tx.delete(assistantConversations).where(eq(assistantConversations.id, id))
   })
   return state
 }

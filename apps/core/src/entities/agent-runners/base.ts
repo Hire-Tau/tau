@@ -568,8 +568,8 @@ export abstract class AgentRunner {
     systemPrompt: string
     skillPaths: string[] | undefined
     extensionPaths: string[] | undefined
-    sandboxId: string
-    workspacePath: string
+    sandboxId?: string
+    workspacePath?: string
     squadId?: string
     model?: Parameters<typeof AgentSession.create>[0]['model']
     tools: Omit<NonNullable<Parameters<typeof AgentSession.create>[0]['tools']>, 'allow' | 'deny'>
@@ -590,11 +590,14 @@ export abstract class AgentRunner {
         allow: this.agentType.toolsAllow ?? undefined,
         deny: this.agentType.toolsDeny ?? undefined,
       },
-      sandbox: {
-        sandboxId: opts.sandboxId,
-        workspacePath: opts.workspacePath,
-        squadId: opts.squadId,
-      },
+      sandbox:
+        opts.sandboxId && opts.workspacePath
+          ? {
+              sandboxId: opts.sandboxId,
+              workspacePath: opts.workspacePath,
+              squadId: opts.squadId,
+            }
+          : undefined,
       onStoredToolResult: ({ toolCallId, storedKeys }) =>
         this.storedSecretToolContainment.recordAlreadyExecuted(toolCallId, storedKeys),
     }

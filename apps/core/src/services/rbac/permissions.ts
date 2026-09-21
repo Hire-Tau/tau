@@ -1,3 +1,4 @@
+import { isUserAssistantAgentType } from '@tau/shared'
 import { db } from '../../db'
 import { agentExtraScopes, agents, agentTypes, roleAssignments, roles, users } from '../../db/schema'
 import { eq, and, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm'
@@ -104,7 +105,7 @@ export async function resolveActingUser(identity: Identity | undefined): Promise
   const authority = await resolveAgentAuthority(identity.agentId)
   if (
     !authority ||
-    authority.agentTypeId !== 'system-manager' ||
+    !isUserAssistantAgentType(authority.agentTypeId) ||
     authority.squadId !== null ||
     identity.squadId !== null ||
     !authority.ownerUserId ||

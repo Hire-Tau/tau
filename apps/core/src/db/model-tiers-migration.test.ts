@@ -32,6 +32,8 @@ const historicalAssignment = {
   'security-auditor': 'exhaustive',
 } as const
 const shippedAssignment = {
+  assistant: 'fast',
+  'assistant-worker': 'standard',
   engineer: 'standard',
   reviewer: 'deep',
   'security-auditor': 'exhaustive',

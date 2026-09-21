@@ -2,7 +2,7 @@ import { afterEach, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { Hono } from 'hono'
 import { inArray } from 'drizzle-orm'
-import { db, squads, workStreams, agents, assistantConversations } from '../db'
+import { db, squads, workStreams, agents, assistantConversations, assistantEntries } from '../db'
 import { identityMiddleware } from '../middleware/identity'
 import { authzSentinel } from '../middleware/authz-sentinel'
 import {
@@ -84,6 +84,16 @@ test('search filters every entity by permission and owner before the shared limi
     .values({ ownerUserId: user.id, title: `${prefix} assistant` })
     .returning()
   await db.insert(assistantConversations).values({ ownerUserId: other.id, title: prefix })
+  await db.insert(assistantEntries).values({
+    conversationId: own.id,
+    clientId: 'history',
+    position: 1,
+    entry: { id: 'history', role: 'user', text: 'Hello', final: true },
+  })
+  await db.insert(assistantConversations).values([
+    { ownerUserId: user.id, title: `${prefix} empty` },
+    { ownerUserId: user.id, title: `${prefix} editor`, kind: 'page-editor' },
+  ])
   const results = await search(prefix)
   expect(new Set(results.map((row) => row.id))).toEqual(new Set([a.id, allowed.id, work.id, own.id]))
   expect(results.find((row) => row.id === privateAgent.id)).toBeUndefined()

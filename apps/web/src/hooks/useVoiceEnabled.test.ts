@@ -26,3 +26,17 @@ describe('voiceEnabledFromQuery', () => {
 test('a failed refresh does not expose voice on an unconfigured instance', () => {
   expect(voiceEnabledFromQuery({ data: { enabled: false }, isError: true })).toBe(false)
 })
+
+test('dictation stays disabled while realtime is enabled, including on cached refresh failures', () => {
+  for (const isError of [false, true]) {
+    expect(
+      voiceEnabledFromQuery({ data: { enabled: true, realtimeEnabled: true, transcriptionEnabled: false }, isError })
+    ).toBe(false)
+  }
+  expect(
+    voiceEnabledFromQuery({
+      data: { enabled: true, realtimeEnabled: false, transcriptionEnabled: true },
+      isError: false,
+    })
+  ).toBe(true)
+})

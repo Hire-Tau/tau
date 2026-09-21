@@ -28,7 +28,11 @@ import {
 } from '../services/integrations/authorization/service'
 import type { SafeOAuthAppSettings } from '../services/integrations/authorization/client-credentials'
 import type { SafeIntegrationCatalogEntry } from '../services/integrations/plugin'
-import type { IntegrationAuthorizationStart, IntegrationDeviceAuthorizationStatus } from '@tau/shared'
+import type {
+  IntegrationAuthorizationStart,
+  IntegrationDeviceAuthorizationStatus,
+  GitHubRepositoryAccess,
+} from '@tau/shared'
 
 const providerKeySchema = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)
 const createSchema = z
@@ -94,6 +98,7 @@ export interface IntegrationRoutesService extends Pick<
   get(id: string): Promise<SafeIntegrationConnection | null>
   providerFor(id: string): Promise<string | null>
   refresh?(connectionId: string): Promise<unknown>
+  githubRepositoryAccess?(connectionId: string): Promise<GitHubRepositoryAccess | null>
   linearWebhook?: {
     get(): GitHubWebhookSettings
     configure(input: unknown, actor: string): Promise<GitHubWebhookSettings>
@@ -463,6 +468,15 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       } catch (error) {
         return authorizationFailure(c, error)
       }
+    })
+    .get('/connections/:connectionId/github-repository-access', async (c) => {
+      const denied = await authorize(c, 'integrations:read:github')
+      if (denied) return denied
+      const id = c.req.param('connectionId')
+      c.header('Cache-Control', 'no-store')
+      if ((await service.providerFor(id)) !== 'github') return c.json({ error: 'GitHub connection not found' }, 404)
+      const result = await service.githubRepositoryAccess?.(id)
+      return result ? c.json(result) : c.json({ error: 'Repository access check unavailable' }, 503)
     })
     .get('/connections', async (c) => {
       const parsed = providerKeySchema.safeParse(c.req.query('provider'))

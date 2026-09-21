@@ -15,7 +15,7 @@ export type UpdateSource = 'git-checkout' | 'artifact' | 'unknown'
 
 /** A full, lowercase git object name — what `git rev-parse HEAD` prints. */
 const COMMIT_SHA_RE = /^[0-9a-f]{40}$/
-export type ProcessSupervisor = 'pm2' | 'systemd' | 'launchd' | 'systemd-user' | 'unknown'
+export type ProcessSupervisor = 'pm2' | 'systemd' | 'launchd' | 'systemd-user' | 'desktop' | 'unknown'
 export type SandboxRuntimeFlavor = 'k3d-local' | 'k8s' | 'vm' | 'host' | 'docker-sysbox' | 'docker-socket' | 'other'
 
 export interface DeploymentFlavor {
@@ -89,6 +89,7 @@ function detectSource(options: { repoRoot?: string; cwd?: string; artifactRoot?:
 }
 
 function detectSupervisor(env: Record<string, string | undefined>): ProcessSupervisor {
+  if (env.TAU_DESKTOP_MANAGED === '1') return 'desktop'
   const override = env.TAU_UPDATE_SUPERVISOR
   if (override === 'pm2' || override === 'systemd' || override === 'launchd' || override === 'systemd-user')
     return override
@@ -132,6 +133,8 @@ function detectSandboxRuntime(env: Record<string, string | undefined>): SandboxR
 }
 
 export function supportsAutoUpdate(flavor: DeploymentFlavor): { ok: boolean; reason?: string } {
+  if (flavor.supervisor === 'desktop')
+    return { ok: false, reason: 'This instance is managed by Tau Desktop. Update it through the desktop application.' }
   if (flavor.source === 'artifact') {
     return {
       ok: false,

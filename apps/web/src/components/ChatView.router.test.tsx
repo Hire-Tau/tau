@@ -1,4 +1,6 @@
 import { expect, test } from 'bun:test'
+import { fireEvent } from '@testing-library/dom'
+import { useState } from 'react'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import type { RenderItem } from '@tau/client-react'
 import { PermissionsProvider } from '../hooks/usePermissions'
@@ -154,6 +156,126 @@ test('two overlapping live ChatView roots keep URL mutations instance-local', as
     await dom.act(async () => buttonB.click())
     expect(a.state.location.search).toBe('?scope=A&fullscreen=1')
     expect(b.state.location.search).toBe('?scope=B&fullscreen=1')
+  } finally {
+    await dom.cleanup()
+  }
+})
+
+for (const enableFullscreen of [true, false]) {
+  test(`mobile composer tap expands ${enableFullscreen ? 'routed' : 'embedded'} chat and retains draft, caret, and focus`, async () => {
+    const dom = await acquireDomHarness({
+      url: 'http://localhost/chat/a?scope=all',
+      windowOptions: { innerWidth: 390 },
+    })
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/chat/:agentId',
+          element: (
+            <ChatView
+              dependencies={dependencies}
+              items={[]}
+              onSend={() => undefined}
+              enableFullscreen={enableFullscreen}
+            />
+          ),
+        },
+      ],
+      { initialEntries: ['/chat/a?scope=all'] }
+    )
+    const rendered = dom.createRoot()
+    try {
+      await dom.act(async () => rendered.root.render(<RouterProvider router={router} />))
+      const textarea = dom.window.document.querySelector('textarea')!
+      await dom.act(async () => {
+        fireEvent.input(textarea, { target: { value: 'Draft before expanding' } })
+        textarea.focus()
+        textarea.setSelectionRange(3, 8)
+      })
+      // Existing autofocus and focus restoration must not open a modal.
+      expect(dom.window.document.querySelector('[role="dialog"]')).toBeNull()
+      await dom.act(async () => textarea.click())
+      const expanded = dom.window.document.querySelector('[role="dialog"] textarea')! as HTMLTextAreaElement
+      expect(expanded).not.toBeNull()
+      expect(expanded.value).toBe('Draft before expanding')
+      expect(expanded.selectionStart).toBe(3)
+      expect(expanded.selectionEnd).toBe(8)
+      expect(dom.window.document.activeElement).toBe(expanded)
+      expect(router.state.location.search).toBe('?scope=all')
+      await dom.act(async () => expanded.click())
+      expect(dom.window.document.querySelectorAll('[role="dialog"]').length).toBe(1)
+      await dom.act(async () => {
+        fireEvent.input(expanded, { target: { value: 'Draft after expanding' } })
+        dom.window.document.querySelector<HTMLElement>('[aria-label="Exit fullscreen"]')!.click()
+      })
+      expect(dom.window.document.querySelector('[role="dialog"]')).toBeNull()
+      expect(dom.window.document.querySelector<HTMLTextAreaElement>('textarea')!.value).toBe('Draft after expanding')
+      expect(router.state.location.search).toBe('?scope=all')
+    } finally {
+      await dom.cleanup()
+    }
+  })
+}
+
+for (const scenario of [
+  { name: 'desktop', width: 768, alreadyFullscreen: false },
+  { name: 'an existing phone fullscreen modal', width: 390, alreadyFullscreen: true },
+]) {
+  test(`composer tap does not expand in ${scenario.name}`, async () => {
+    const dom = await acquireDomHarness({
+      url: 'http://localhost/chat/a',
+      windowOptions: { innerWidth: scenario.width },
+    })
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/chat/:agentId',
+          element: (
+            <div className={scenario.alreadyFullscreen ? 'mobile-chat-modal' : undefined}>
+              <ChatView dependencies={dependencies} items={[]} onSend={() => undefined} enableFullscreen />
+            </div>
+          ),
+        },
+      ],
+      { initialEntries: ['/chat/a?scope=all'] }
+    )
+    const rendered = dom.createRoot()
+    try {
+      await dom.act(async () => rendered.root.render(<RouterProvider router={router} />))
+      const textarea = dom.window.document.querySelector('textarea')!
+      await dom.act(async () => textarea.click())
+      expect(dom.window.document.querySelector('[role="dialog"]')).toBeNull()
+      expect(dom.window.document.querySelector('textarea')).toBe(textarea)
+      expect(router.state.location.search).toBe('?scope=all')
+    } finally {
+      await dom.cleanup()
+    }
+  })
+}
+
+test('a retained conversation closes its mobile fullscreen portal when it becomes inactive', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/chat/a', windowOptions: { innerWidth: 390 } })
+  function RetainedChat() {
+    const [active, setActive] = useState(true)
+    return (
+      <>
+        <button onClick={() => setActive(false)}>Switch conversation</button>
+        <div hidden={!active}>
+          <ChatView dependencies={dependencies} items={[]} onSend={() => undefined} keyboardShortcutsEnabled={active} />
+        </div>
+      </>
+    )
+  }
+  const router = createMemoryRouter([{ path: '/chat/:agentId', element: <RetainedChat /> }], {
+    initialEntries: ['/chat/a'],
+  })
+  const rendered = dom.createRoot()
+  try {
+    await dom.act(async () => rendered.root.render(<RouterProvider router={router} />))
+    await dom.act(async () => dom.window.document.querySelector('textarea')!.click())
+    expect(dom.window.document.querySelector('[role="dialog"]')).not.toBeNull()
+    await dom.act(async () => rendered.container.querySelector('button')!.click())
+    expect(dom.window.document.querySelector('[role="dialog"]')).toBeNull()
   } finally {
     await dom.cleanup()
   }

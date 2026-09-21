@@ -53,6 +53,8 @@ export interface EventPollingDispatchStore {
 }
 
 export interface EventPollingRunnerOptions {
+  /** Read-only projections may invalidate after (never before) durable cursor save. */
+  onCursorSaved?: (watch: EventPollingWatch, previous: unknown, next: Record<string, unknown>) => Promise<void>
   listWatches: () => Promise<readonly EventPollingWatch[]>
   cursorStore: EventPollingCursorStore
   resolveCapability: (watch: EventPollingWatch) => EventPollingCapability | undefined
@@ -201,6 +203,8 @@ export class EventPollingRunner {
           nextPollAt
         )
       )
+      if (this.#options.onCursorSaved)
+        await deadline(this.#options.onCursorSaved(watch, claimed.cursor, result.nextCursor))
       return result.budgetUnitsConsumed ?? 1
     } catch (error) {
       const failureDelayMs = this.#failureInterval()

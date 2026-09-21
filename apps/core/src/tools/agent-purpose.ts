@@ -1,3 +1,4 @@
+import { isUserAssistantAgentType } from '@tau/shared'
 import { Type } from '@sinclair/typebox'
 import type { AgentToolResult, ToolDefinition } from '@earendil-works/pi-coding-agent'
 import { Agent } from '../entities/Agent'
@@ -43,5 +44,5 @@ export function createSetAgentPurposeTool(ctx: SetAgentPurposeToolContext): Tool
 }
 
 function canSetAgentPurpose(agent: Agent): boolean {
-  return agent.agentTypeId === 'system-manager' || (!!agent.squadId && agent.agentTypeId !== 'manager')
+  return isUserAssistantAgentType(agent.agentTypeId) || (!!agent.squadId && agent.agentTypeId !== 'manager')
 }

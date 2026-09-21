@@ -1,3 +1,4 @@
+import type { Agent } from '@tau/shared'
 import { QueryClientContext } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { lazy, Suspense, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
@@ -10,7 +11,19 @@ const EntityReferencePreview = lazy(() =>
   import('./EntityReferencePreview').then((module) => ({ default: module.EntityReferencePreview }))
 )
 
-export function EntityReferenceLink({ reference, children }: { reference: EntityReference; children: ReactNode }) {
+export function EntityReferenceLink({
+  reference,
+  children,
+  preloadOnVisible = true,
+  onOpenAgent,
+}: {
+  reference: EntityReference
+  children: ReactNode
+  /** Compact feeds already materialize their content; resolve only on intent. */
+  preloadOnVisible?: boolean
+  /** Override agent navigation only after authorized reference resolution. */
+  onOpenAgent?: (agent: Agent) => void
+}) {
   const client = useContext(QueryClientContext)
   const button = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
@@ -59,7 +72,7 @@ export function EntityReferenceLink({ reference, children }: { reference: Entity
   }, [client, kind, id])
 
   useEffect(() => {
-    if (!button.current || typeof IntersectionObserver === 'undefined') return
+    if (!preloadOnVisible || !button.current || typeof IntersectionObserver === 'undefined') return
     const observer = new IntersectionObserver((entries) => {
       if (!entries.some((entry) => entry.isIntersecting)) return
       observer.disconnect()
@@ -67,7 +80,7 @@ export function EntityReferenceLink({ reference, children }: { reference: Entity
     })
     observer.observe(button.current)
     return () => observer.disconnect()
-  }, [preload])
+  }, [preload, preloadOnVisible])
 
   return (
     <>
@@ -143,6 +156,7 @@ export function EntityReferenceLink({ reference, children }: { reference: Entity
               leave()
             }}
             onDismiss={dismiss}
+            onOpenAgent={onOpenAgent}
           />
         </Suspense>
       )}
@@ -150,6 +164,7 @@ export function EntityReferenceLink({ reference, children }: { reference: Entity
         <Suspense fallback={null}>
           <EntityReferenceModal
             reference={reference}
+            onOpenAgent={onOpenAgent}
             onResolved={() => setLoading(false)}
             onClose={() => {
               setOpen(false)

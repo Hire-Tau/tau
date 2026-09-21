@@ -78,8 +78,9 @@ export interface ActivityFamilyDefinition {
     scanTo: Date
   ): Promise<SourceGroupPage>
   /**
-   * Immutable receipts: rows are insert-only (no diff updates, no deletes)
-   * and the repair projection anti-join pass is skipped.
+   * Immutable receipt authority/identity: presentation-only updates may be
+   * regenerated from the original source, but rows are never deleted or
+   * reattributed. The repair projection anti-join pass is skipped.
    */
   appendOnly: boolean
 }

@@ -129,6 +129,30 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
         action,
         actor: String(actor),
         state: String(item!.conclusion ?? item!.state ?? ''),
+        ...(payload!.requested_reviewer?.type
+          ? { requestedReviewerType: String(payload!.requested_reviewer.type) }
+          : {}),
+        ...(typeof native?.head?.ref === 'string' ? { headBranch: native.head.ref } : {}),
+        ...(typeof native?.base?.ref === 'string' ? { baseBranch: native.base.ref } : {}),
+        ...(Array.isArray(native?.requested_reviewers) || Array.isArray(native?.requested_teams)
+          ? {
+              pendingHumanReview:
+                (Array.isArray(native?.requested_reviewers) &&
+                  native.requested_reviewers.some((reviewer: any) => reviewer?.type === 'User')) ||
+                (Array.isArray(native?.requested_teams) &&
+                  native.requested_teams.some((team: any) => typeof team?.slug === 'string' && team.slug.length > 0)),
+            }
+          : {}),
+        ...(typeof native?.updated_at === 'string' && Number.isFinite(Date.parse(native.updated_at))
+          ? { snapshotAt: new Date(native.updated_at).toISOString() }
+          : {}),
+        ...(native && !output.startsWith('issue.')
+          ? { pullRequestState: native.merged === true ? 'merged' : String(native.state ?? 'unknown') }
+          : {}),
+        ...(typeof native?.draft === 'boolean' ? { draft: native.draft } : {}),
+        ...(output === 'pull_request.reviewed' && typeof item!.commit_id === 'string'
+          ? { reviewedHeadSha: item!.commit_id }
+          : {}),
         requestedReviewer: String(payload!.requested_reviewer?.login ?? ''),
         requestedTeam: String(payload!.requested_team?.slug ?? ''),
         actorType: String(payload!.sender?.type ?? item!.user?.type ?? ''),
@@ -151,6 +175,7 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
         ...(output === 'pull_request.review_comment'
           ? { path: String(item!.path ?? ''), line: item!.line ?? item!.original_line ?? null }
           : {}),
+        ...(typeof native?.mergeable_state === 'string' ? { mergeState: native.mergeable_state } : {}),
         ...(native?.mergeable_state === 'dirty' ? { mergeConflict: true } : {}),
         workflow: String(item!.name ?? ''),
       }

@@ -187,7 +187,7 @@ agentTypesRoutes.post('/:id/revert-template-fields', requirePermission('agent-ty
   }
 })
 
-const PROTECTED_AGENT_TYPES = ['manager', 'system-manager', 'consultant']
+const PROTECTED_AGENT_TYPES = ['manager', 'system-manager', 'assistant', 'assistant-worker', 'consultant']
 
 // POST /api/agent-types/:id/disable
 agentTypesRoutes.post('/:id/disable', requirePermission('agent-types:update'), async (c) => {

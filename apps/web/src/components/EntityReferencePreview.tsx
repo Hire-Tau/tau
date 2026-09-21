@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { workStreamTitle, type Agent, type WorkStream } from '@tau/shared'
-import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { useLayoutEffect, useRef, useState, type RefObject, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useStableRef } from '../hooks/useStableRef'
 import { getAgentPrimaryLabel, getAgentSecondaryLabel, AGENT_STATUS_LABELS } from '../lib/agentDisplay'
@@ -27,6 +27,7 @@ export function EntityReferencePreview({
   onDismiss,
   onFocus,
   onBlur,
+  onOpenAgent,
 }: {
   reference: EntityReference
   anchor: RefObject<HTMLButtonElement | null>
@@ -36,6 +37,7 @@ export function EntityReferencePreview({
   onFocus: () => void
   onBlur: () => void
   onDismiss: () => void
+  onOpenAgent?: (agent: Agent) => void
 }) {
   const card = useRef<HTMLDivElement>(null)
   const [position, setPosition] = useState<{ left: number; top: number }>()
@@ -115,9 +117,9 @@ export function EntityReferencePreview({
       style={{ ...position, visibility: position ? 'visible' : 'hidden' }}
     >
       {reference.kind === 'ws' ? (
-        <WorkPreview id={reference.id} onNavigate={onDismiss} />
+        <WorkPreview id={reference.id} onNavigate={onDismiss} onOpenAgent={onOpenAgent} />
       ) : (
-        <AgentPreview id={reference.id} onNavigate={onDismiss} />
+        <AgentPreview id={reference.id} onNavigate={onDismiss} onOpenAgent={onOpenAgent} />
       )}
     </div>,
     document.body
@@ -138,13 +140,13 @@ function Unavailable() {
   return <p className="text-muted">Preview unavailable. Open the reference to try again.</p>
 }
 
-function WorkPreview({ id, onNavigate }: { id: string; onNavigate: () => void }) {
+function WorkPreview({ id, onNavigate, onOpenAgent }: { id: string } & AgentNavigationProps) {
   const { data, isError } = useQuery({ ...queries.squads.workStreamDetail(id), staleTime, retry: false })
   if (isError) return <Unavailable />
-  return data ? <WorkSummary work={data} onNavigate={onNavigate} /> : <PreviewLoading />
+  return data ? <WorkSummary work={data} onNavigate={onNavigate} onOpenAgent={onOpenAgent} /> : <PreviewLoading />
 }
 
-function WorkSummary({ work, onNavigate }: { work: WorkStream; onNavigate: () => void }) {
+function WorkSummary({ work, onNavigate, onOpenAgent }: { work: WorkStream } & AgentNavigationProps) {
   // Observe the canonical ID too, so live updates invalidate number/prefix previews.
   const { data = work, isError } = useQuery({
     ...queries.squads.workStreamDetail(work.id),
@@ -167,7 +169,7 @@ function WorkSummary({ work, onNavigate }: { work: WorkStream; onNavigate: () =>
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-th-border pt-1">
         {data.assigneeAgentId ? (
-          <AssignedAgent id={data.assigneeAgentId} onNavigate={onNavigate} />
+          <AssignedAgent id={data.assigneeAgentId} onNavigate={onNavigate} onOpenAgent={onOpenAgent} />
         ) : (
           <span className="text-xs text-muted">Unassigned</span>
         )}
@@ -193,7 +195,7 @@ function useAgentTypeName(id: string | undefined) {
   )
 }
 
-function AssignedAgent({ id, onNavigate }: { id: string; onNavigate: () => void }) {
+function AssignedAgent({ id, onNavigate, onOpenAgent }: { id: string } & AgentNavigationProps) {
   const { data, isError } = useQuery({ ...queries.agents.detail(id), staleTime, retry: false })
   const type = useAgentTypeName(data?.agentTypeId)
   if (!data)
@@ -201,7 +203,7 @@ function AssignedAgent({ id, onNavigate }: { id: string; onNavigate: () => void 
   return (
     <Link
       to={agentChatPath(data)}
-      onClick={onNavigate}
+      onClick={agentNavigation(data, onNavigate, onOpenAgent)}
       className={quickLinkClass}
       title={getAgentPrimaryLabel(data)}
       aria-label={`Assigned agent: ${type}`}
@@ -212,13 +214,13 @@ function AssignedAgent({ id, onNavigate }: { id: string; onNavigate: () => void 
   )
 }
 
-function AgentPreview({ id, onNavigate }: { id: string; onNavigate: () => void }) {
+function AgentPreview({ id, onNavigate, onOpenAgent }: { id: string } & AgentNavigationProps) {
   const { data, isError } = useQuery({ ...queries.agents.detail(id), staleTime, retry: false })
   if (isError) return <Unavailable />
-  return data ? <AgentSummary agent={data} onNavigate={onNavigate} /> : <PreviewLoading />
+  return data ? <AgentSummary agent={data} onNavigate={onNavigate} onOpenAgent={onOpenAgent} /> : <PreviewLoading />
 }
 
-function AgentSummary({ agent, onNavigate }: { agent: Agent; onNavigate: () => void }) {
+function AgentSummary({ agent, onNavigate, onOpenAgent }: { agent: Agent } & AgentNavigationProps) {
   const { data = agent, isError } = useQuery({
     ...queries.agents.detail(agent.id),
     initialData: agent,
@@ -240,7 +242,11 @@ function AgentSummary({ agent, onNavigate }: { agent: Agent; onNavigate: () => v
           <AgentActivityDot status={data.status} />
           {AGENT_STATUS_LABELS[data.status]}
         </span>
-        <Link to={agentChatPath(data)} onClick={onNavigate} className={`${quickLinkClass} ml-auto`}>
+        <Link
+          to={agentChatPath(data)}
+          onClick={agentNavigation(data, onNavigate, onOpenAgent)}
+          className={`${quickLinkClass} ml-auto`}
+        >
           Open chat{' '}
           <span aria-hidden="true" className="ml-auto">
             →
@@ -249,4 +255,16 @@ function AgentSummary({ agent, onNavigate }: { agent: Agent; onNavigate: () => v
       </div>
     </div>
   )
+}
+
+type AgentNavigationProps = { onNavigate: () => void; onOpenAgent?: (agent: Agent) => void }
+
+/** Activity owns plain activation; modified clicks retain the canonical anchor behavior. */
+function agentNavigation(agent: Agent, onNavigate: () => void, onOpenAgent?: (agent: Agent) => void) {
+  return (event: MouseEvent<HTMLAnchorElement>) => {
+    onNavigate()
+    if (!onOpenAgent || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return
+    event.preventDefault()
+    onOpenAgent(agent)
+  }
 }

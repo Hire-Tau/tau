@@ -47,11 +47,13 @@ const actionRoles: Record<PendingAction['type'], StatusRole> = {
 }
 
 /** Opens the saved Assistant conversation on the current page; the navigation reader picks it up. */
-function assistantConversationSearch(search: string, conversationId: string): string {
+function assistantConversationSearch(search: string, conversationId: string, taskId?: string): string {
   const params = new URLSearchParams(search)
   for (const key of ['commandStack', 'commandQuery', 'assistantChat']) params.delete(key)
   params.set('chat', 'open')
   params.set('assistantConversation', conversationId)
+  if (taskId) params.set('assistantTask', taskId)
+  else params.delete('assistantTask')
   return params.toString()
 }
 
@@ -137,7 +139,7 @@ export function ActionItem({
   const linkTo = assistantTask
     ? {
         pathname: headerLocation.pathname,
-        search: assistantConversationSearch(headerLocation.search, assistantTask.conversationId),
+        search: assistantConversationSearch(headerLocation.search, assistantTask.conversationId, assistantTask.taskId),
       }
     : agentItem
       ? agentThreadPath(agentItem.agentId, agentItem.squadId)
@@ -764,7 +766,10 @@ function AssistantTaskActionContent({ action }: { action: PendingAction }) {
         )}
       </div>
       <Link
-        to={{ pathname: location.pathname, search: assistantConversationSearch(location.search, data.conversationId) }}
+        to={{
+          pathname: location.pathname,
+          search: assistantConversationSearch(location.search, data.conversationId, data.taskId),
+        }}
         onClick={closeActionCenter}
         className="tau-button tau-button-primary inline-flex min-h-10 items-center px-3 py-2 text-sm"
       >

@@ -386,6 +386,52 @@ app.get('/:provider/accounts', requirePermission('provider-auth:read'), (c) => {
 })
 
 /** Add an API-key account for a provider. */
+/** Explicit local discovery; never invoked by startup or a background task. */
+app.post('/openai-compatible/detect', requirePermission('provider-auth:read'), async (c) =>
+  c.json(await detectLocalServers())
+)
+app.post('/openai-compatible/probe', requirePermission('provider-auth:write'), async (c) => {
+  const body = await c.req.json()
+  if (!body.baseUrl || !body.model) return c.json({ error: 'baseUrl and model are required' }, 400)
+  try {
+    return c.json({
+      ...(await probeOpenAICompatible({ baseUrl: body.baseUrl, model: body.model, apiKey: body.apiKey })),
+      contextWindowFloor: Number(process.env.MODEL_CONTEXT_WINDOW_FLOOR ?? 16384),
+    })
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : String(error) }, 400)
+  }
+})
+app.post('/openai-compatible/accounts', requirePermission('provider-auth:write'), async (c) => {
+  const body = await c.req.json()
+  if (!body.baseUrl || !body.model || !body.providerId)
+    return c.json({ error: 'baseUrl, model, and providerId are required' }, 400)
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(body.providerId))
+    return c.json({ error: 'providerId must be kebab-case' }, 400)
+  try {
+    const result = await probeOpenAICompatible({ baseUrl: body.baseUrl, model: body.model, apiKey: body.apiKey })
+    let created: Account | undefined
+    await mutateAccountStore(
+      (store) => {
+        if (store.accounts[body.providerId]?.length) throw new Error(`Provider '${body.providerId}' already exists`)
+        created = addAccount(store, body.providerId, apiKeyCredential(body.apiKey ?? ''), body.label)
+        Object.assign(created!, {
+          kind: 'openai-compatible',
+          providerId: body.providerId,
+          baseUrl: body.baseUrl,
+          model: body.model,
+          capabilities: result.capabilities,
+        })
+      },
+      auditActor(c.get('identity') as Identity)
+    )
+    await refreshModelRuntime()
+    return c.json({ account: accountSummary(body.providerId, created!), models: result.models }, 201)
+  } catch (error) {
+    return c.json({ error: error instanceof Error ? error.message : String(error) }, 400)
+  }
+})
+
 app.post('/:provider/accounts', requirePermission('provider-auth:write'), async (c) => {
   const provider = c.req.param('provider')
   const body = await c.req.json<{ key?: string; label?: string }>()
@@ -995,52 +1041,6 @@ app.get('/:provider/oauth/status', requirePermission('provider-auth:read'), (c) 
     need: pending.need,
     progress: pending.progress,
   })
-})
-
-/** Explicit local discovery; never invoked by startup or a background task. */
-app.post('/openai-compatible/detect', requirePermission('provider-auth:read'), async (c) =>
-  c.json(await detectLocalServers())
-)
-app.post('/openai-compatible/probe', requirePermission('provider-auth:write'), async (c) => {
-  const body = await c.req.json()
-  if (!body.baseUrl || !body.model) return c.json({ error: 'baseUrl and model are required' }, 400)
-  try {
-    return c.json({
-      ...(await probeOpenAICompatible({ baseUrl: body.baseUrl, model: body.model, apiKey: body.apiKey })),
-      contextWindowFloor: Number(process.env.MODEL_CONTEXT_WINDOW_FLOOR ?? 16384),
-    })
-  } catch (error) {
-    return c.json({ error: error instanceof Error ? error.message : String(error) }, 400)
-  }
-})
-app.post('/openai-compatible/accounts', requirePermission('provider-auth:write'), async (c) => {
-  const body = await c.req.json()
-  if (!body.baseUrl || !body.model || !body.providerId)
-    return c.json({ error: 'baseUrl, model, and providerId are required' }, 400)
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(body.providerId))
-    return c.json({ error: 'providerId must be kebab-case' }, 400)
-  try {
-    const result = await probeOpenAICompatible({ baseUrl: body.baseUrl, model: body.model, apiKey: body.apiKey })
-    let created: Account | undefined
-    await mutateAccountStore(
-      (store) => {
-        if (store.accounts[body.providerId]?.length) throw new Error(`Provider '${body.providerId}' already exists`)
-        created = addAccount(store, body.providerId, apiKeyCredential(body.apiKey ?? ''), body.label)
-        Object.assign(created!, {
-          kind: 'openai-compatible',
-          providerId: body.providerId,
-          baseUrl: body.baseUrl,
-          model: body.model,
-          capabilities: result.capabilities,
-        })
-      },
-      auditActor(c.get('identity') as Identity)
-    )
-    await refreshModelRuntime()
-    return c.json({ account: accountSummary(body.providerId, created!), models: result.models }, 201)
-  } catch (error) {
-    return c.json({ error: error instanceof Error ? error.message : String(error) }, 400)
-  }
 })
 
 export default app

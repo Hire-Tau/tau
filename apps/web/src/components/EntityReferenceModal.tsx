@@ -1,3 +1,4 @@
+import type { Agent } from '@tau/shared'
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useStableRef } from '../hooks/useStableRef'
@@ -25,7 +26,7 @@ export async function preloadEntityReference(client: QueryClient, reference: Ent
   ])
 }
 
-type ResolutionProps = { onClose: () => void; onResolved?: () => void }
+type ResolutionProps = { onClose: () => void; onResolved?: () => void; onOpenAgent?: (agent: Agent) => void }
 
 export function EntityReferenceModal({ reference, ...props }: { reference: EntityReference } & ResolutionProps) {
   if (reference.kind === 'ws') return <WorkStreamReference id={reference.id} {...props} />
@@ -39,16 +40,18 @@ function useResolutionComplete(complete: boolean, onResolved?: () => void) {
   }, [complete, onResolvedRef])
 }
 
-function AgentReference({ id, onClose, onResolved }: { id: string } & ResolutionProps) {
+function AgentReference({ id, onClose, onResolved, onOpenAgent }: { id: string } & ResolutionProps) {
   const { data, isError } = useQuery(queries.agents.detail(id))
   useResolutionComplete(!!data || isError, onResolved)
   const navigate = useNavigate()
   const onCloseRef = useStableRef(onClose)
+  const onOpenAgentRef = useStableRef(onOpenAgent)
   useEffect(() => {
     if (!data) return
     onCloseRef.current()
-    navigate(agentChatPath(data))
-  }, [data, navigate, onCloseRef])
+    if (onOpenAgentRef.current) onOpenAgentRef.current(data)
+    else navigate(agentChatPath(data))
+  }, [data, navigate, onCloseRef, onOpenAgentRef])
   if (!isError) return null
   return (
     <Modal isOpen title="Agent chat" onClose={onClose}>

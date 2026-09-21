@@ -699,6 +699,7 @@ export const squadActivity = pgTable(
     agentTypeRequiresAgentsRead: boolean('agent_type_requires_agents_read').notNull().default(false),
     kind: varchar('kind', { length: 32 }).$type<SquadActivityKind>().notNull(),
     summary: varchar('summary', { length: 512 }).notNull(),
+    preview: jsonb('preview').$type<import('@tau/shared').ActivityPreviewSpan[]>().notNull().default([]),
     ref: jsonb('ref').$type<SquadActivityRef>().notNull(),
     quietEligible: boolean('quiet_eligible').notNull(),
     accessScope: squadActivityAccessScopeEnum('access_scope').notNull(),
@@ -3693,6 +3694,8 @@ export const assistantConversations = pgTable(
       .default('assistant'),
     title: text('title').notNull().default('New conversation'),
     editor: jsonb('editor').$type<import('@tau/shared').AssistantEditorState>(),
+    /** Durable conversation agent. NULL until the owner first opens the agent-backed conversation. */
+    agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
     inboxConsumerId: uuid('inbox_consumer_id'),
     inboxConsumerExpiresAt: timestamp('inbox_consumer_expires_at', { withTimezone: true }),
     /** Last allocated assistant_updates.sequence; incremented under the conversation row lock. */
@@ -3700,7 +3703,10 @@ export const assistantConversations = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index('idx_assistant_conversations_owner_updated').on(table.ownerUserId, table.updatedAt)]
+  (table) => [
+    index('idx_assistant_conversations_owner_updated').on(table.ownerUserId, table.updatedAt),
+    uniqueIndex('uq_assistant_conversations_agent').on(table.agentId),
+  ]
 )
 
 export const assistantConversationAgents = pgTable(
@@ -3784,6 +3790,10 @@ export const assistantUpdates = pgTable(
     requestId: uuid('request_id'),
     sequence: integer('sequence').notNull(),
     reportedStatus: varchar('reported_status', { length: 20 }).$type<import('@tau/shared').AssistantTaskStatus>(),
+    /** Durable inbox delivery to the conversational agent; separate from confirmed consumption. */
+    forwardedMessageId: uuid('forwarded_message_id'),
+    /** Assistant response that summarized the confirmed update. */
+    summarizedMessageId: uuid('summarized_message_id'),
     /** Realtime presented or deliberately interrupted this update. Never implies the human saw it. */
     processedAt: timestamp('processed_at', { withTimezone: true }),
     /** The human acknowledged this update (visible render or explicit mark-read). */

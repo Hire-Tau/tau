@@ -2,6 +2,8 @@ import { and, desc, inArray, isNotNull } from 'drizzle-orm'
 import {
   WORK_STREAM_WAIT_DISPLAY_PRECEDENCE,
   WORK_STREAM_WAIT_STATE,
+  selectWorkStreamPresentationState,
+  type WorkStreamDeliveryPresentation,
   type WorkStreamDerivedState,
   type WorkStreamStatus,
   type WorkStreamTerminalFailure,
@@ -12,6 +14,8 @@ import { executions } from '../../db/schema'
 import { ACTIVE_EXECUTION_STATUSES } from '../execution/status'
 import { collectWorkStreamAgentIds } from './agent-ids'
 import { listOpenWaitsForStreams, toWaitJson } from './waits'
+import { loadDeliveryPresentations } from '../workflows/delivery-state'
+import { flowWaitReference } from '../workflows/wait-policy'
 
 /**
  * Display-state derivation (spec: computed in serializers, never stored).
@@ -31,6 +35,7 @@ import { listOpenWaitsForStreams, toWaitJson } from './waits'
  */
 
 export interface DerivedStreamInfo {
+  delivery?: WorkStreamDeliveryPresentation
   derivedState: WorkStreamDerivedState
   /** Open waits, display precedence first (then newest first within a type). */
   openWaits: WorkStreamWait[]
@@ -61,6 +66,7 @@ interface StreamShape {
 }
 
 export interface DerivedStateDeps {
+  loadDelivery?: (ids: string[]) => Promise<Map<string, WorkStreamDeliveryPresentation>>
   /** Agent ids that currently have a live (active-status) execution. */
   loadBusyAgentIds?: (agentIds: string[]) => Promise<Set<string>>
   /** Newest attention-worthy terminal failure per agent (test seam). */
@@ -132,10 +138,14 @@ export async function computeDerivedStates(
   const result = new Map<string, DerivedStreamInfo>()
   if (streams.length === 0) return result
 
-  const waitsByStream = await listOpenWaitsForStreams(streams.map((s) => s.id))
+  const ids = streams.map((s) => s.id)
+  const [waitsByStream, deliveryByStream] = await Promise.all([
+    listOpenWaitsForStreams(ids),
+    (deps.loadDelivery ?? ((ids) => loadDeliveryPresentations(db, ids)))(ids),
+  ])
 
   const executionCandidates = streams.filter(
-    (s) => s.status === 'active' && (waitsByStream.get(s.id)?.length ?? 0) === 0
+    (s) => !s.pause && s.status === 'active' && (waitsByStream.get(s.id)?.length ?? 0) === 0
   )
   const probeAgentIds = [...new Set(executionCandidates.flatMap(collectWorkStreamAgentIds))]
   const loadBusy = deps.loadBusyAgentIds ?? defaultLoadBusyAgentIds
@@ -147,6 +157,17 @@ export async function computeDerivedStates(
 
   for (const stream of streams) {
     const openWaits = sortWaitsByDisplayPrecedence((waitsByStream.get(stream.id) ?? []).map(toWaitJson))
+
+    let delivery = deliveryByStream.get(stream.id)
+    if (delivery?.kind === 'approval') {
+      const approval = openWaits.find(
+        (wait) =>
+          wait.type === 'manual' &&
+          wait.resolutionHandler === 'workflow' &&
+          wait.referenceId === flowWaitReference(stream.id, 'delivery', 0)
+      )
+      if (approval) delivery = { ...delivery, approvalWaitId: approval.id }
+    }
 
     let derivedState: WorkStreamDerivedState
     let terminalFailure: WorkStreamTerminalFailure | undefined
@@ -173,7 +194,27 @@ export async function computeDerivedStates(
       derivedState = 'queued'
     }
 
-    result.set(stream.id, terminalFailure ? { derivedState, openWaits, terminalFailure } : { derivedState, openWaits })
+    const presentation = selectWorkStreamPresentationState({ ...stream, derivedState, openWaits, delivery })
+    // Keep the existing derived vocabulary for older consumers. New consumers
+    // retain the typed delivery fact even with an explicit empty wait list.
+    const deliveryStates = {
+      delivery_approval: 'in_review',
+      delivery_review: 'in_review',
+      delivery_merge: 'in_review',
+      delivery_external: 'waiting_on_dependency',
+      delivery_setup: 'blocked',
+      delivery_failure: 'blocked',
+    } as const
+    derivedState =
+      presentation in deliveryStates
+        ? deliveryStates[presentation as keyof typeof deliveryStates]
+        : (presentation as WorkStreamDerivedState)
+    result.set(stream.id, {
+      derivedState,
+      openWaits,
+      ...(delivery ? { delivery } : {}),
+      ...(terminalFailure ? { terminalFailure } : {}),
+    })
   }
   return result
 }
