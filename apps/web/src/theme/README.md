@@ -40,7 +40,8 @@ light/dark palettes.
   components (human markdown, file errors, terminal skeleton/disabled text).
   `--syntax-shadow` is CSS-only and retains embedded alpha. Other new numeric
   colors are channels, not Tailwind mappings. The two existing `--opacity-*`
-  metadata properties remain unchanged; definitions/overrides must preserve them.
+  metadata properties remain unchanged. Definitions/overrides must also preserve
+  all inherited status/badge intrinsic-opacity metadata from the semantic palette.
 
 Future built-in/custom-theme adapters must preserve the selection/scrollbar
 sentinels when inheriting Tau, support numeric fractional channels, and retain
