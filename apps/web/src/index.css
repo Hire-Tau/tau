@@ -33,10 +33,11 @@
        scrollbars, form controls) matches the page instead of guessing. */
     color-scheme: light;
 
-    /* Token values are RGB channel triplets (optionally "/ alpha") so
-       Tailwind can apply opacity modifiers via the <alpha-value> channel
-       form in tailwind.config.js. Consumers wrap them in a color function:
-       rgb(var(--color-bg-surface)). The token-name registry lives in
+    /* Tailwind-mapped tokens are bare RGB channels. Intrinsic translucency
+       lives in --opacity-* metadata, so the adapter can multiply intrinsic
+       alpha by a utility's requested opacity without producing two slashes.
+       Direct CSS consumers use the same metadata. Shadow/glass tokens are
+       CSS-only, so those retain their embedded alpha. Token names live in
        packages/shared/src/theme-schema.ts. */
 
     /* Backgrounds */
@@ -60,6 +61,7 @@
     /* Inputs */
     --color-input-bg: 255 255 255;
     --color-input-border: 209 203 220;
+    --opacity-input-border: 1;
 
     /* Shadows */
     --color-shadow: 32 22 55 / 0.045;
@@ -79,7 +81,8 @@
     --color-selection-bg: 238 232 248;
     --color-selection-border: 215 199 240;
     --color-focus: 124 58 237;
-    --color-panel-border: 94 75 132 / 0.12;
+    --color-panel-border: 94 75 132;
+    --opacity-panel-border: 0.12;
     --color-glass: 255 255 255 / 0.88;
     --color-overlay: 253 252 255;
 
@@ -111,7 +114,8 @@
 
     /* Inputs */
     --color-input-bg: 22 23 36;
-    --color-input-border: 209 202 232 / 0.16;
+    --color-input-border: 209 202 232;
+    --opacity-input-border: 0.16;
 
     /* Shadows */
     --color-shadow: 0 0 0 / 0.14;
@@ -130,7 +134,8 @@
     --color-selection-bg: 33 26 53;
     --color-selection-border: 68 50 95;
     --color-focus: 196 181 253;
-    --color-panel-border: 190 181 215 / 0.12;
+    --color-panel-border: 190 181 215;
+    --opacity-panel-border: 0.12;
     --color-glass: 16 17 28 / 0.88;
     --color-overlay: 26 27 41;
 
@@ -246,7 +251,7 @@
   input:-webkit-autofill:focus {
     -webkit-box-shadow: 0 0 0 1000px rgb(var(--color-input-bg)) inset !important;
     -webkit-text-fill-color: rgb(var(--color-text-primary)) !important;
-    border-color: rgb(var(--color-input-border)) !important;
+    border-color: rgb(var(--color-input-border) / var(--opacity-input-border)) !important;
   }
 }
 

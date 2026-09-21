@@ -103,7 +103,7 @@ function colorPartIsTokenOnly(rawPart: string): boolean {
   if (alphaParts.length === 2) {
     const head = alphaParts[0]!.trim()
     const tail = alphaParts[1]!.trim()
-    if (/^[\d.]+%?$/.test(tail)) return colorPartIsTokenOnly(head)
+    if (/^[\d.]+%?$/.test(tail) || /^var\(--[\w-]+\)$/.test(tail)) return colorPartIsTokenOnly(head)
   }
   const nested = NESTED_COLOR_FUNCTION.exec(part)
   if (nested) {

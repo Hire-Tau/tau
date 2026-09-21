@@ -12,7 +12,9 @@ const css = readFileSync(join(webRoot, 'src', 'index.css'), 'utf8')
 
 /** Extracts the custom-property names declared in a CSS block. */
 function declaredTokens(block: string): string[] {
-  return [...block.matchAll(/(--[a-z0-9-]+)\s*:/g)].map((match) => match[1]!)
+  return [...block.matchAll(/(--[a-z0-9-]+)\s*:/g)]
+    .map((match) => match[1]!)
+    .filter((name) => !name.startsWith('--opacity-'))
 }
 
 /** Slices a balanced `{ ... }` block starting at the given selector. */
@@ -59,6 +61,17 @@ describe('built-in theme token completeness (tau dual variant)', () => {
 })
 
 describe('channel-form tokens (opacity modifier support)', () => {
+  test('intrinsic opacity metadata is explicit, separate from color-token completeness', () => {
+    for (const block of [rootBlock, darkBlock]) {
+      const metadata = [...block.matchAll(/(--opacity-[a-z-]+)\s*:\s*([^;]+);/g)]
+      expect(metadata.map((match) => match[1]).sort()).toEqual(['--opacity-input-border', '--opacity-panel-border'])
+      for (const match of metadata) {
+        expect(Number(match[2])).toBeGreaterThan(0)
+        expect(Number(match[2])).toBeLessThanOrEqual(1)
+      }
+    }
+  })
+
   const CHANNEL_DECL =
     /^--[a-z0-9-]+:\s*(?:var\(--[a-z0-9-]+\)|\d{1,3}\s+\d{1,3}\s+\d{1,3}(?:\s*\/\s*(?:0?\.\d+|1|0))?)\s*;/
 
@@ -70,7 +83,7 @@ describe('channel-form tokens (opacity modifier support)', () => {
       const declarations = block
         .split('\n')
         .map((line) => line.trim())
-        .filter((line) => line.startsWith('--'))
+        .filter((line) => line.startsWith('--color-'))
       expect(declarations.length).toBe(29)
       for (const declaration of declarations) {
         expect(CHANNEL_DECL.test(declaration)).toBeTrue()

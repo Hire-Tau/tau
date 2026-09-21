@@ -25,6 +25,9 @@ import { scanSourceForRawColors, type RawColorCategory } from './no-raw-colors.s
 // became token-wrapped; FileUpload.tsx inline styles were removed upstream),
 // color-bearing inline styles 2/2 vs ~3 (MessageContent.tsx was cleaned
 // upstream; PullToRefresh.tsx carries a brand purple).
+// Rework base integration (2026-09-21, initiative/color-themes @ 11e775485):
+// one additional palette file, StorageSection.tsx:88 (text-red-400), is explicitly
+// recorded below; the earlier snapshot is historical, not a fresh base scan.
 
 type RawCategoryType = RawColorCategory
 const srcRoot = join(import.meta.dir)
@@ -141,6 +144,9 @@ const LEGACY_PALETTE_UTILITY_FILES: readonly string[] = [
   'components/settings/SignupPolicySection.tsx',
   'components/settings/SkillsSection.tsx',
   'components/settings/SquadPresetsSection.tsx',
+  // Upstream inventory delta from initiative/color-themes @ 11e775485:
+  // StorageSection.tsx:88 introduced one error-label palette utility.
+  'components/settings/StorageSection.tsx',
   'components/settings/SystemLogsSection.tsx',
   'components/settings/SystemTokensSection.tsx',
   'components/settings/SystemUpdateSection.tsx',
@@ -241,6 +247,8 @@ const LEGACY_INLINE_COLOR_STYLE_FILES: readonly string[] = [
 
 /** Documented exception-policy annotations (report §4.3). */
 const ENTRY_REASONS: Readonly<Record<string, string>> = {
+  'components/settings/StorageSection.tsx':
+    'temporary: upstream error-label palette use added in initiative base 11e775485; phase 2 status token migration',
   'components/TauLogo.tsx':
     'PD-5: temporary pending-tokenization via the planned --brand-* family (NOT a permanent exception)',
   'components/workspace/Terminal.tsx': 'temporary: planned terminal token family (phase 3)',
@@ -353,6 +361,15 @@ describe('raw-color detector', () => {
     ].join('\n')
     const findings = scanSourceForRawColors('synthetic.css', source).filter((f) => f.category === 'color-function')
     expect(findings.map((f) => f.line)).toEqual([4, 5])
+  })
+
+  test('accepts channel and opacity tokens together without allowing literal channels', () => {
+    const compliant = 'border-color: rgb(var(--color-panel-border) / var(--opacity-panel-border))'
+    expect(scanSourceForRawColors('synthetic.css', compliant)).toEqual([])
+    const literal = 'border-color: rgb(94 75 132 / var(--opacity-panel-border))'
+    expect(scanSourceForRawColors('synthetic.css', literal).map((finding) => finding.category)).toEqual([
+      'color-function',
+    ])
   })
 
   test('flags color-bearing inline styles but not layout-only ones', () => {

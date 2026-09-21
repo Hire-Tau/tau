@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    # Theme phases integrate here before the single rollout PR to main.
+    branches: [main, initiative/color-themes]
   merge_group:
     types: [checks_requested]
   schedule:

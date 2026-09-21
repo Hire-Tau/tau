@@ -29,9 +29,11 @@ export default {
         },
         overlay: 'rgb(var(--color-overlay) / <alpha-value>)',
         focus: 'rgb(var(--color-focus) / <alpha-value>)',
-        'panel-border': 'rgb(var(--color-panel-border) / <alpha-value>)',
+        // Multiply intrinsic alpha (shared with direct CSS consumers) by the
+        // requested opacity: /25 means 25% of the original translucent color.
+        'panel-border': 'rgb(var(--color-panel-border) / calc(var(--opacity-panel-border) * <alpha-value>))',
         'input-bg': 'rgb(var(--color-input-bg) / <alpha-value>)',
-        'input-border': 'rgb(var(--color-input-border) / <alpha-value>)',
+        'input-border': 'rgb(var(--color-input-border) / calc(var(--opacity-input-border) * <alpha-value>))',
         'code-bg': 'rgb(var(--color-code-bg) / <alpha-value>)',
         'code-text': 'rgb(var(--color-code-text) / <alpha-value>)',
         accent: {
