@@ -222,6 +222,9 @@ const LEGACY_INLINE_COLOR_STYLE_FILES: readonly string[] = [
 
 /** Documented exception-policy annotations (report §4.3). */
 const ENTRY_REASONS: Readonly<Record<string, string>> = {
+  'components/settings/CustomThemeEditor.tsx':
+    'theme-authoring data: one example value plus black/white contrast endpoints; bounded below',
+  'theme/flash.ts': 'theme definition: seven pre-CSS surface fallbacks; exact parity checked by flashScript.test.ts',
   'components/settings/StorageSection.tsx':
     'temporary: upstream error-label palette use added in initiative base 11e775485; phase 2 status token migration',
   'components/TauLogo.tsx':
@@ -235,12 +238,28 @@ const ENTRY_REASONS: Readonly<Record<string, string>> = {
 
 const ALLOWLIST: Readonly<Record<RawCategoryType, readonly string[]>> = {
   'palette-utility': LEGACY_PALETTE_UTILITY_FILES,
-  'literal-hex': LEGACY_LITERAL_HEX_FILES,
-  'color-function': LEGACY_COLOR_FUNCTION_FILES,
+  // Editor color data (sample + contrast endpoints), not chrome palette literals.
+  'literal-hex': [...LEGACY_LITERAL_HEX_FILES, 'components/settings/CustomThemeEditor.tsx'],
+  // The pre-CSS built-in surface fallback moved from index.html to bundled TS.
+  'color-function': [...LEGACY_COLOR_FUNCTION_FILES, 'theme/flash.ts'],
   'inline-color-style': LEGACY_INLINE_COLOR_STYLE_FILES,
 }
 
 describe('no-raw-colors guard', () => {
+  test('theme authoring exceptions remain bounded to color data, not UI styles', () => {
+    const editor = scanSourceForRawColors(
+      'editor.tsx',
+      readFileSync(join(srcRoot, 'components/settings/CustomThemeEditor.tsx'), 'utf8')
+    )
+    expect(editor.map(({ category, match }) => ({ category, match }))).toEqual([
+      { category: 'literal-hex', match: '#336699' },
+      { category: 'literal-hex', match: '#000000' },
+      { category: 'literal-hex', match: '#ffffff' },
+    ])
+    const flash = scanSourceForRawColors('flash.ts', readFileSync(join(srcRoot, 'theme/flash.ts'), 'utf8'))
+    expect(flash).toHaveLength(7)
+    expect(flash.every(({ category }) => category === 'color-function')).toBe(true)
+  })
   test('every raw-color category in apps/web/src is allowlisted (no NEW violations)', () => {
     const files = [...new Bun.Glob('**/*.{ts,tsx,js,jsx,css}').scanSync({ cwd: srcRoot })]
       .filter((path) => !isTestArtifact(path))
@@ -337,6 +356,20 @@ describe('raw-color detector', () => {
     expect(scanSourceForRawColors('synthetic.css', literal).map((finding) => finding.category)).toEqual([
       'color-function',
     ])
+  })
+
+  test('accepts compiler split channels and alpha but still rejects literal channel fallbacks', () => {
+    for (const source of [
+      'rgb(var(--custom-rgb-color-primary, var(--color-primary)) / calc(var(--custom-alpha-color-primary, 1) * 0.5))',
+      'rgb(var(--custom-rgb-status-danger-surface, var(--status-danger-surface)) / calc(var(--custom-alpha-status-danger-surface, 1) * var(--opacity-status-danger-surface) * 0.5))',
+    ])
+      expect(scanSourceForRawColors('example.ts', source)).toEqual([])
+    for (const source of [
+      'rgb(var(--x, 1 2 3))',
+      'rgb(var(--x, rgb(1 2 3)) / 0.5)',
+      'rgb(1 2 3 / calc(var(--alpha, 1) * 0.5))',
+    ])
+      expect(scanSourceForRawColors('example.ts', source).length).toBeGreaterThan(0)
   })
 
   test('flags color-bearing inline styles but not layout-only ones', () => {

@@ -1,3 +1,5 @@
+import { compileCustomTheme, STATUS_TOKENS } from '@tau/shared'
+import { BUILT_IN_THEMES } from './theme/registry'
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -25,7 +27,8 @@ function declarations(rule: Rule): Record<string, string> {
 
 function scopeVariables(selector: string): Record<string, string> {
   const scopes: Rule[] = []
-  sourceCss.walkRules(selector, (rule) => {
+  sourceCss.walkRules((rule) => {
+    if (!rule.selectors.includes(selector)) return
     scopes.push(rule)
   })
   expect(scopes).toHaveLength(1)
@@ -71,8 +74,13 @@ function substitute(value: string, variables: Record<string, string>): string {
   }
   // The adapter's only arithmetic is multiplication of two scalar alphas.
   // Reject anything else rather than silently accepting an unevaluated calc.
-  return value.replace(/calc\(\s*([\d.]+)\s*\*\s*([\d.]+)\s*\)/g, (_, a: string, b: string) =>
-    String(Number(a) * Number(b))
+  return value.replace(/calc\(([\d.\s*]+)\)/g, (_, factors: string) =>
+    String(
+      factors
+        .split('*')
+        .map(Number)
+        .reduce((a, b) => a * b, 1)
+    )
   )
 }
 
@@ -108,7 +116,7 @@ describe('tailwind theme color opacity after variable substitution', () => {
     expect(colors.length).toBeGreaterThan(20)
     for (const [, mapping] of colors) {
       expect(mapping).toContain('<alpha-value>')
-      expect(mapping).toMatch(/^rgb\(var\(--[a-z0-9-]+\) \/ /)
+      expect(mapping).toMatch(/^rgb\(var\(--custom-rgb-[a-z0-9-]+, var\(--[a-z0-9-]+\)\) \/ /)
       const token = /var\((--[a-z0-9-]+)\)/.exec(mapping)![1]!
       // Audit ALL mappings: none may embed an alpha before the adapter adds it.
       for (const variables of Object.values(scopes)) {
@@ -162,6 +170,29 @@ describe('tailwind theme color opacity after variable substitution', () => {
     }
   })
 
+  test('custom rgba composes with intrinsic alpha AND Tailwind modifiers for every mapped token', async () => {
+    const rules = new Map<string, Rule>()
+    ;(await compile(colors.map(([name]) => `border-${name}/50`))).walkRules((rule) => {
+      rules.set(rule.selector.replaceAll('\\', '').slice(1), rule)
+    })
+    for (const [appearance, base] of Object.entries(scopes) as Array<['light' | 'dark', Record<string, string>]>) {
+      for (const [name, mapping] of colors) {
+        const token = /var\((--[a-z0-9-]+)\)/.exec(mapping)![1]!
+        const overrides = Object.fromEntries(
+          (STATUS_TOKENS.includes(token) ? STATUS_TOKENS : [token]).map((key) => [key, 'rgba(12,34,56,0.5)'])
+        )
+        const variables = compileCustomTheme(
+          JSON.stringify({ format: 'tau-custom-theme', version: 1, name: 'Alpha', base: 'tau', appearance, overrides }),
+          BUILT_IN_THEMES
+        )
+        const declared = declarations(rules.get(`border-${name}/50`)!)
+        const color = numericRgb(substitute(declared['border-color']!, { ...base, ...variables, ...declared }))
+        expect(color.channels).toEqual([12, 34, 56])
+        expect(color.alpha).toBeCloseTo(0.5 * 0.5 * intrinsicAlpha(name, appearance), 8)
+      }
+    }
+  })
+
   test('the original double-alpha regression is rejected even though PostCSS emits a rule', () => {
     const substituted = substitute('rgb(var(--color-panel-border) / var(--tw-border-opacity, 1))', {
       '--color-panel-border': '94 75 132 / 0.12',
@@ -199,9 +230,17 @@ describe('tailwind theme color opacity after variable substitution', () => {
     const compiled = (
       await compile(['bg-surface/50', 'divide-th-border/50', 'text-accent/70', 'ring-focus/30'])
     ).toString()
-    expect(compiled).toContain('rgb(var(--color-bg-surface) / 0.5)')
-    expect(compiled).toContain('rgb(var(--color-border) / 0.5)')
-    expect(compiled).toContain('rgb(var(--color-primary) / 0.7)')
-    expect(compiled).toContain('rgb(var(--color-focus) / 0.3)')
+    expect(compiled).toContain(
+      'rgb(var(--custom-rgb-color-bg-surface, var(--color-bg-surface)) / calc(var(--custom-alpha-color-bg-surface, 1) * 0.5))'
+    )
+    expect(compiled).toContain(
+      'rgb(var(--custom-rgb-color-border, var(--color-border)) / calc(var(--custom-alpha-color-border, 1) * 0.5))'
+    )
+    expect(compiled).toContain(
+      'rgb(var(--custom-rgb-color-primary, var(--color-primary)) / calc(var(--custom-alpha-color-primary, 1) * 0.7))'
+    )
+    expect(compiled).toContain(
+      'rgb(var(--custom-rgb-color-focus, var(--color-focus)) / calc(var(--custom-alpha-color-focus, 1) * 0.3))'
+    )
   })
 })
