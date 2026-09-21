@@ -77,6 +77,11 @@ export class SettingValidationError extends Error {
 }
 
 const KNOWN_SETTINGS: Record<string, SettingDef> = {
+  TRANSCRIPTION_ENABLED: {
+    type: 'boolean',
+    default: 'true',
+    description: 'Allow voice dictation in chats and question replies. Independent of realtime voice.',
+  },
   ASSISTANT_REALTIME_ENABLED: {
     type: 'boolean',
     default: 'true',

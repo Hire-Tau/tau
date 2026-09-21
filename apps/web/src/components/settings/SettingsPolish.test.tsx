@@ -132,6 +132,7 @@ test('assistant features show pending setup and an inline API key form without e
   client.setQueryData(queryKeys.settings.list(), [
     { key: 'EMBEDDINGS_ENABLED', value: 'true' },
     { key: 'ASSISTANT_REALTIME_ENABLED', value: 'true' },
+    { key: 'TRANSCRIPTION_ENABLED', value: 'true' },
   ])
   client.setQueryData(integrationQueryKeys.catalog(), {
     integrations: [
@@ -150,7 +151,8 @@ test('assistant features show pending setup and an inline API key form without e
   expect(page.textContent).toContain('Make Tau your own')
   expect(page.textContent).toContain('Needs OpenAI API setup')
   expect(page.querySelector('input[type="password"]')?.hasAttribute('required')).toBe(true)
-  expect(page.querySelectorAll('[role="switch"]:checked')).toHaveLength(2)
+  expect(page.querySelectorAll('[role="switch"]:checked')).toHaveLength(3)
+  expect(page.textContent).toContain('Voice dictation')
   expect(requests).toEqual([])
 })
 

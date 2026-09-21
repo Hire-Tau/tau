@@ -46,6 +46,12 @@ export function AssistantMemorySection({ onboarding = false }: { onboarding?: bo
       description: 'Talk with the assistant and hear its responses aloud.',
     },
     {
+      key: 'TRANSCRIPTION_ENABLED',
+      target: 'voice-dictation',
+      label: 'Voice dictation',
+      description: 'Record speech as text in chats and question replies.',
+    },
+    {
       key: 'EMBEDDINGS_ENABLED',
       target: 'automatic-embeddings',
       label: 'Semantic memory search',
@@ -123,12 +129,12 @@ export function AssistantMemorySection({ onboarding = false }: { onboarding?: bo
           <p className="mt-1 text-sm text-muted">
             {onboarding
               ? 'These features need an OpenAI API key, separate from a ChatGPT subscription. API usage is billed by OpenAI.'
-              : 'Use an OpenAI API key for realtime sessions and embeddings. Tau’s ChatGPT subscription login under AI Providers does not supply this key. These features use your API account and incur API usage charges.'}
+              : 'Use an OpenAI API key for realtime sessions, dictation, and embeddings. Tau’s ChatGPT subscription login under AI Providers does not supply this key. These features use your API account and incur API usage charges.'}
           </p>
           {!onboarding && (
             <p className="mt-2 text-xs text-muted">
-              This is the same connection used in Integrations, including audio transcription. Feature switches above do
-              not change your agent model accounts.
+              This is the same connection used in Integrations. Feature switches above do not change your agent model
+              accounts.
             </p>
           )}
         </div>

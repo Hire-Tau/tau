@@ -1,3 +1,4 @@
+import { queryKeys } from '../queryKeys'
 import { acquireDomHarness } from '../test/domHarness'
 import { afterEach, describe, expect, mock, test } from 'bun:test'
 import type { Root } from 'react-dom/client'
@@ -89,8 +90,9 @@ describe('PendingQuestionsBanner', () => {
     globalThis.fetch = fetchMock as unknown as typeof fetch
     try {
       const queryClient = new QueryClient({
-        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+        defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } },
       })
+      queryClient.setQueryData(queryKeys.voice.status(), { enabled: false, transcriptionEnabled: false })
       const withDefault = {
         ...questions[0],
         questionData: {
