@@ -1,5 +1,17 @@
-import { and, eq, inArray } from 'drizzle-orm'
-import { workStreamFlowRuns, workStreams, squads, integrationOutputEvents, integrationOutputDeliveries } from '../../db'
+import {
+  readGitHubDeliverySnapshot,
+  DELIVERY_SNAPSHOT_MAX_AGE_MS,
+  type GitHubDeliverySnapshot,
+} from '../integrations/github/delivery-presentation'
+import { and, eq, inArray, sql } from 'drizzle-orm'
+import {
+  workStreamFlowRuns,
+  workStreams,
+  squads,
+  integrationOutputEvents,
+  integrationOutputDeliveries,
+  integrationEventPollingCursors,
+} from '../../db'
 import type { DbHandle } from '../work-streams/waits'
 import { codeHostingRegistry } from '../integrations/code-hosting'
 import {
@@ -41,7 +53,7 @@ export async function externalDeliveryStreamIds(store: DbHandle, streams: Array<
   )
 }
 
-export type DeliveryEvent = IntegrationOutputFact & { integration: string; connectionId?: string }
+export type DeliveryEvent = IntegrationOutputFact & { integration: string; connectionId?: string; observedAt?: string }
 
 /**
  * Read only event evidence routed to this stream by the integration runtime. A
@@ -73,6 +85,11 @@ function classifyPrimaryDeliveryPresentation(
   }
   if (!awaitsCodeHostDelivery(state, metadata)) return { kind: 'setup' }
   const reference = codeHostingRegistry.resolve(metadata)!.reference
+  const time = (event: DeliveryEvent) => Date.parse(event.occurredAt)
+  const snapshotTime = (event: DeliveryEvent) => {
+    const updated = typeof event.data.snapshotAt === 'string' ? Date.parse(event.data.snapshotAt) : NaN
+    return Number.isFinite(updated) ? Math.max(time(event), updated) : time(event)
+  }
   const matching = events
     .filter((event) => {
       const pr = event.data.pullRequest as { number?: number } | undefined
@@ -84,7 +101,7 @@ function classifyPrimaryDeliveryPresentation(
         Number.isFinite(Date.parse(event.occurredAt))
       )
     })
-    .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))
+    .sort((a, b) => snapshotTime(b) - snapshotTime(a))
   const head = (event: IntegrationOutputFact) => (event.data.pullRequest as { headSha?: string } | undefined)?.headSha
   // Late CI on an old commit cannot change the PR's head. Reviews may also be
   // delivered out of order, hence the provider occurrence timestamp ordering.
@@ -98,44 +115,84 @@ function classifyPrimaryDeliveryPresentation(
     (git?.baseBranch && snapshot?.data.baseBranch && git.baseBranch !== snapshot.data.baseBranch)
   )
     return { kind: 'setup' }
-  if (snapshot?.data.draft === true) return { kind: 'external' }
   const current = matching.filter((event) => head(event) === currentHead)
-  const latest = current[0]!
-  const lifecycle = current.find((event) =>
-    ['pull_request.updated', 'pull_request.merged', 'pull_request.closed'].includes(event.output)
-  )
-  if (lifecycle?.output === 'pull_request.merged') return { kind: 'merged' }
-  // Negative facts remain visible until a newer aggregate snapshot clears them.
+  const fresh = (event: DeliveryEvent | undefined) =>
+    !!event &&
+    (event.observedAt === undefined ||
+      (Date.now() - Date.parse(event.observedAt) <= DELIVERY_SNAPSHOT_MAX_AGE_MS &&
+        Date.now() - Date.parse(event.observedAt) >= -60_000))
+  // Full native snapshots can arrive on reviews/comments as well as updates,
+  // or through the asynchronous presentation-only polling cache.
   const aggregate = current.find(
-    (event) => event.output === 'pull_request.updated' && event.data.mergeState === 'clean'
+    (event) => typeof event.data.mergeState === 'string' && event.data.mergeState !== 'unknown'
   )
-  const unresolved = current.filter(
-    (event) => !aggregate || Date.parse(event.occurredAt) >= Date.parse(aggregate.occurredAt)
-  )
-  if (
-    unresolved.some(
-      (event) =>
-        event.data.mergeConflict === true ||
-        event.output === 'pull_request.closed' ||
-        (event.data.state === 'changes_requested' &&
-          (!event.data.reviewedHeadSha || event.data.reviewedHeadSha === currentHead)) ||
-        (event.output === 'pull_request.ci_completed' &&
-          ['failure', 'cancelled', 'timed_out', 'action_required'].includes(String(event.data.state)))
-    )
-  ) {
-    return { kind: 'failure' }
+  const proofTime = (predicate: (event: DeliveryEvent) => boolean) => {
+    const proof = current.find((event) => event.data.mergeState === 'clean' || predicate(event))
+    return proof ? snapshotTime(proof) : -Infinity
   }
+  const ciProof = proofTime((event) => ['success', 'pending', 'failure'].includes(String(event.data.checksState)))
+  const reviewProof = proofTime((event) =>
+    ['approved', 'required', 'changes_requested'].includes(String(event.data.reviewDecision))
+  )
+  const conflictProof = proofTime(
+    (event) => typeof event.data.mergeState === 'string' && event.data.mergeState !== 'unknown'
+  )
+  const lifecycle = current.find(
+    (event) =>
+      event.data.pullRequestState ||
+      ['pull_request.updated', 'pull_request.merged', 'pull_request.closed'].includes(event.output)
+  )
+  if (lifecycle?.data.pullRequestState === 'merged' || lifecycle?.output === 'pull_request.merged')
+    return { kind: 'merged' }
+  if (lifecycle?.data.pullRequestState === 'closed' || lifecycle?.output === 'pull_request.closed')
+    return { kind: 'failure' }
+  const latestChecks = new Map<string, DeliveryEvent>()
+  for (const event of current.filter(
+    (event) => event.output === 'pull_request.ci_completed' && time(event) >= ciProof
+  )) {
+    const workflow =
+      (event.data.ci as { workflowId?: string } | undefined)?.workflowId || event.ordering?.key || event.eventKey
+    if (!latestChecks.has(workflow)) latestChecks.set(workflow, event)
+  }
+  const checks = [...latestChecks.values()]
+  const negative =
+    current.some(
+      (event) =>
+        (snapshotTime(event) >= conflictProof &&
+          (event.data.mergeConflict === true || event.data.mergeState === 'dirty')) ||
+        (snapshotTime(event) >= ciProof && event.data.checksState === 'failure') ||
+        (snapshotTime(event) >= reviewProof && event.data.reviewDecision === 'changes_requested') ||
+        (time(event) >= reviewProof &&
+          event.data.state === 'changes_requested' &&
+          (!event.data.reviewedHeadSha || event.data.reviewedHeadSha === currentHead))
+    ) ||
+    checks.some((event) => ['failure', 'cancelled', 'timed_out', 'action_required'].includes(String(event.data.state)))
+  // Draft is a non-readiness fact, never permission to hide a real failure.
+  if (negative) return { kind: 'failure' }
+  if (snapshot?.data.draft === true || lifecycle?.data.pullRequestState === 'unknown') return { kind: 'external' }
+  const reviewSnapshot = current.find((event) => event.data.reviewDecision && event.data.reviewDecision !== 'unknown')
+  if (fresh(reviewSnapshot) && reviewSnapshot?.data.reviewDecision === 'required') return { kind: 'review' }
   if (
-    snapshot?.data.pendingHumanReview === true ||
-    (snapshot?.data.pendingHumanReview === undefined &&
-      snapshot?.output === 'pull_request.review_requested' &&
-      ((snapshot.data.requestedReviewerType === 'User' &&
-        typeof snapshot.data.requestedReviewer === 'string' &&
-        snapshot.data.requestedReviewer.length > 0) ||
-        (typeof snapshot.data.requestedTeam === 'string' && snapshot.data.requestedTeam.length > 0)))
+    fresh(snapshot) &&
+    (snapshot?.data.pendingHumanReview === true ||
+      (snapshot?.data.pendingHumanReview === undefined &&
+        snapshot?.output === 'pull_request.review_requested' &&
+        ((snapshot.data.requestedReviewerType === 'User' &&
+          typeof snapshot.data.requestedReviewer === 'string' &&
+          snapshot.data.requestedReviewer.length > 0) ||
+          (typeof snapshot.data.requestedTeam === 'string' && snapshot.data.requestedTeam.length > 0))))
   )
     return { kind: 'review' }
-  if (latest === aggregate && (mode === 'pr-merge' || policies?.allowAutoMerge === false)) return { kind: 'merge' }
+  const pending =
+    checks.some((event) => ['pending', 'queued', 'in_progress', 'requested'].includes(String(event.data.state))) ||
+    aggregate?.data.checksState === 'pending'
+  if (
+    aggregate?.data.mergeState === 'clean' &&
+    fresh(aggregate) &&
+    !pending &&
+    (mode === 'pr-merge' || policies?.allowAutoMerge === false)
+  )
+    return { kind: 'merge' }
   return { kind: 'external' }
 }
 
@@ -186,6 +243,7 @@ export async function loadDeliveryPresentations(store: DbHandle, ids: string[]) 
       state: workStreamFlowRuns.state,
       metadata: workStreams.metadata,
       squadMetadata: squads.metadata,
+      squadId: workStreams.squadId,
     })
     .from(workStreamFlowRuns)
     .innerJoin(workStreams, eq(workStreams.id, workStreamFlowRuns.workStreamId))
@@ -199,6 +257,7 @@ export async function loadDeliveryPresentations(store: DbHandle, ids: string[]) 
       fact: integrationOutputEvents.fact,
       integration: integrationOutputEvents.integration,
       authority: integrationOutputEvents.authority,
+      observedAt: integrationOutputEvents.createdAt,
     })
     .from(integrationOutputDeliveries)
     .innerJoin(integrationOutputEvents, eq(integrationOutputEvents.id, integrationOutputDeliveries.eventId))
@@ -214,16 +273,64 @@ export async function loadDeliveryPresentations(store: DbHandle, ids: string[]) 
     facts.push({
       ...row.fact,
       integration: row.integration,
+      observedAt: row.observedAt.toISOString(),
       ...(row.authority.kind === 'connection' ? { connectionId: row.authority.connectionId } : {}),
     })
     byStream.set(row.id, facts)
   }
+  const cached = await store
+    .select({ cursor: integrationEventPollingCursors.cursor })
+    .from(integrationEventPollingCursors)
+    .where(
+      and(
+        eq(integrationEventPollingCursors.providerKey, 'github'),
+        inArray(sql`${integrationEventPollingCursors.cursor}->'deliveryPresentation'->>'squadId'`, [
+          ...new Set(candidates.map((run) => run.squadId)),
+        ])
+      )
+    )
+  const snapshots = cached.flatMap(({ cursor }) => {
+    const snapshot = readGitHubDeliverySnapshot(cursor)
+    return snapshot ? [snapshot] : []
+  })
   for (const run of candidates) {
-    const presentation = classifyDeliveryPresentation(run.state, run.metadata, byStream.get(run.id) ?? [], {
+    const evidence = [
+      ...(byStream.get(run.id) ?? []),
+      ...snapshots.filter((snapshot) => snapshot.squadId === run.squadId).map(deliverySnapshotEvent),
+    ]
+    const presentation = classifyDeliveryPresentation(run.state, run.metadata, evidence, {
       allowAutoMerge:
         (run.squadMetadata as { policies?: { allowAutoMerge?: boolean } } | null)?.policies?.allowAutoMerge === true,
     })
     if (presentation) result.set(run.id, presentation)
   }
   return result
+}
+
+/** In-memory evidence only: never published as activity or delivered to an agent. */
+function deliverySnapshotEvent(snapshot: GitHubDeliverySnapshot): DeliveryEvent {
+  return {
+    integration: 'github',
+    connectionId: snapshot.connectionId,
+    observedAt: snapshot.observedAt,
+    output: 'pull_request.snapshot',
+    version: 1,
+    eventKey: '',
+    resourceKey: '',
+    subject: '',
+    body: '',
+    occurredAt: snapshot.observedAt,
+    data: {
+      repository: snapshot.repository,
+      pullRequest: { number: snapshot.number, headSha: snapshot.headSha },
+      headBranch: snapshot.headBranch,
+      baseBranch: snapshot.baseBranch,
+      pullRequestState: snapshot.state,
+      draft: snapshot.draft,
+      mergeState: snapshot.mergeState,
+      reviewDecision: snapshot.reviewDecision,
+      checksState: snapshot.checksState,
+      pendingHumanReview: snapshot.pendingHumanReview,
+    },
+  }
 }

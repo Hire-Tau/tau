@@ -289,3 +289,21 @@ test('wildcard issue rules establish one watch per expanded repository and none 
     configuration: { kind: 'issue-events', owner: 'acme', repo: 'svc-api' },
   })
 })
+
+test('completion-ready delivery watches refresh presentation even while webhooks suppress activity polling', async () => {
+  const policy = new GitHubPrWatchPolicy({
+    resolveConnection: async () => ({ id: 'account' }),
+    listWorkStreams: async () => [
+      {
+        squadId: 's1',
+        status: 'active',
+        deliveryPresentation: true,
+        metadata: { codeHost: { integration: 'github', repository: 'acme/widgets', changeRequest: { number: 7 } } },
+      },
+    ],
+    lastRealDeliveries: async () => new Map([['acme/widgets', new Date()]]),
+  })
+  const watches = await policy.listWatches()
+  expect(watches).toHaveLength(1)
+  expect(watches[0]?.connection.configuration).toMatchObject({ deliveryPresentation: true })
+})

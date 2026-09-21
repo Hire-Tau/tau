@@ -1124,3 +1124,47 @@ describe('EventPollingRunner', () => {
     expect(polls).toBe(1)
   })
 })
+
+test('presentation-only cursor changes notify only after durable save, without dispatching activity', async () => {
+  const cursorStore = new MemoryCursorStore()
+  let notified = 0,
+    dispatched = 0
+  const runner = new EventPollingRunner({
+    listWatches: async () => [watch],
+    cursorStore,
+    resolveCapability: () => ({
+      poll: async () => ({ events: [], nextCursor: { presentation: 'new' }, suggestedIntervalMs: 60_000 }),
+    }),
+    dispatch: async () => {
+      dispatched++
+    },
+    onCursorSaved: async (_watch, previous, next) => {
+      expect(previous).toBeNull()
+      expect(cursorStore.cursor).toEqual(next)
+      notified++
+    },
+  })
+  await runner.runOnce()
+  expect(notified).toBe(1)
+  expect(dispatched).toBe(0)
+})
+
+test('failed cursor saves cannot publish a presentation observation', async () => {
+  const cursorStore = new MemoryCursorStore()
+  cursorStore.save = async () => {
+    throw new Error('save failed')
+  }
+  let notified = false
+  const runner = new EventPollingRunner({
+    listWatches: async () => [watch],
+    cursorStore,
+    resolveCapability: () => ({ poll: async () => ({ events: [], nextCursor: {}, suggestedIntervalMs: 60_000 }) }),
+    dispatch: async () => {},
+    onCursorSaved: async () => {
+      notified = true
+    },
+  })
+  await runner.runOnce()
+  expect(notified).toBe(false)
+  expect(cursorStore.failures).toBe(1)
+})

@@ -1,3 +1,4 @@
+import { notifyDeliverySnapshotChanged } from './github/delivery-presentation-store'
 import { credentialSetupStatus, connectionSetupStatus } from './setup-status'
 import {
   pushIntegrationCatalog,
@@ -404,6 +405,7 @@ const observedPollingSquads = new WeakMap<object, string[]>()
 export const integrationEventPollingRuntime = new EventPollingRunner({
   listWatches: () => githubPrWatchPolicy.listWatches(),
   cursorStore: new DbEventPollingCursorStore(),
+  onCursorSaved: notifyDeliverySnapshotChanged,
   dispatchStore: new DbEventPollingDispatchStore(),
   resolveCapability: (watch) =>
     integrationRegistry.capability(watch.providerKey, watch.connection.adapterVersion, 'event_polling'),
@@ -426,8 +428,8 @@ export const integrationEventPollingRuntime = new EventPollingRunner({
     await materializeGitHubDispatch(dispatch.activityId, watch.connection.squadId)
   },
   onError: (error, watch) => log.error(`Polling failed for ${watch.providerKey}:${watch.resourceKey}`, error),
-  // Five conditional REST reads per GitHub PR: eight per 30-second scan stays
-  // below GitHub's 5,000 requests/hour even if every response is a cache miss.
+  // Forty requests per 30-second scan stay below 5,000/hour. Every REST page
+  // and optional delivery aggregate request consumes the same bounded budget.
   maxResourcesPerTick: 8,
   maxBudgetUnitsPerTick: 40,
 })

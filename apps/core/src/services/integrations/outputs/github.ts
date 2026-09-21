@@ -143,6 +143,12 @@ export const githubOutputAdapter: IntegrationOutputAdapter = {
                   native.requested_teams.some((team: any) => typeof team?.slug === 'string' && team.slug.length > 0)),
             }
           : {}),
+        ...(typeof native?.updated_at === 'string' && Number.isFinite(Date.parse(native.updated_at))
+          ? { snapshotAt: new Date(native.updated_at).toISOString() }
+          : {}),
+        ...(native && !output.startsWith('issue.')
+          ? { pullRequestState: native.merged === true ? 'merged' : String(native.state ?? 'unknown') }
+          : {}),
         ...(typeof native?.draft === 'boolean' ? { draft: native.draft } : {}),
         ...(output === 'pull_request.reviewed' && typeof item!.commit_id === 'string'
           ? { reviewedHeadSha: item!.commit_id }

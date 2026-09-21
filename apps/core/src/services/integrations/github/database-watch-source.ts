@@ -1,3 +1,4 @@
+import { awaitsCodeHostDelivery } from '../../workflows/delivery-state'
 import { codeHostingRegistry } from '../code-hosting'
 import { and, eq, ne } from 'drizzle-orm'
 import { db } from '../../../db'
@@ -11,13 +12,15 @@ export async function listGitHubPrWorkStreamCandidates(): Promise<WorkStreamCand
       status: workStreams.status,
       metadata: workStreams.metadata,
       flow: workStreamFlowRuns.state,
+      activated: workStreamFlowRuns.activated,
     })
     .from(workStreams)
     .leftJoin(workStreamFlowRuns, eq(workStreamFlowRuns.workStreamId, workStreams.id))
     .where(and(ne(workStreams.status, 'done'), ne(workStreams.status, 'canceled')))
     .then((rows) =>
-      rows.map(({ flow, ...stream }) => ({
+      rows.map(({ flow, activated, ...stream }) => ({
         ...stream,
+        ...(activated && flow && awaitsCodeHostDelivery(flow, stream.metadata) ? { deliveryPresentation: true } : {}),
         subscriptions: flow ? codeHostingRegistry.subscriptions(flow.definition, stream.metadata) : undefined,
       }))
     )

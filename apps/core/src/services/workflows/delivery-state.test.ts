@@ -160,3 +160,84 @@ test('a current human review request survives later CI success and unrelated PR 
   const comment = event('pull_request.comment', { pendingHumanReview: true }, 'a'.repeat(40), '2026-09-21T12:00:00Z')
   expect(classifyDeliveryPresentation(run(), metadata, [request, ci, comment])).toEqual({ kind: 'review' })
 })
+
+test('current clean review snapshots clear older changes requests and survive successful CI', () => {
+  const rejected = event('pull_request.reviewed', { state: 'changes_requested' })
+  const approved = event(
+    'pull_request.reviewed',
+    { state: 'approved', mergeState: 'clean', pendingHumanReview: false },
+    'a'.repeat(40),
+    '2026-09-21T11:00:00Z'
+  )
+  expect(classifyDeliveryPresentation(run(), metadata, [rejected, approved])).toEqual({ kind: 'merge' })
+  const ci = event('pull_request.ci_completed', { state: 'success' }, 'a'.repeat(40), '2026-09-21T12:00:00Z')
+  expect(classifyDeliveryPresentation(run(), metadata, [rejected, approved, ci])).toEqual({ kind: 'merge' })
+})
+test('draft does not hide current-head failures or conflicts', () => {
+  const draft = event('pull_request.updated', { draft: true })
+  const failure = event('pull_request.ci_completed', { state: 'failure' }, 'a'.repeat(40), '2026-09-21T11:00:00Z')
+  expect(classifyDeliveryPresentation(run(), metadata, [draft, failure])).toEqual({ kind: 'failure' })
+  expect(
+    classifyDeliveryPresentation(run(), metadata, [event('pull_request.updated', { draft: true, mergeConflict: true })])
+  ).toEqual({ kind: 'failure' })
+})
+
+test('stale aggregate observations cannot claim human readiness', () => {
+  const clean = {
+    ...event('pull_request.updated', { mergeState: 'clean' }),
+    observedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+  }
+  expect(classifyDeliveryPresentation(run(), metadata, [clean])).toEqual({ kind: 'external' })
+})
+
+test('normalized approvals, newer native snapshots and per-workflow CI recovery clear superseded failure without losing the gate', async () => {
+  const { githubOutputAdapter } = await import('../integrations/outputs/github')
+  const { workStreamNeedsHumanAttention, workBucket } = await import('@tau/shared')
+  const pr = { id: 42, number: 42, state: 'open', head: { sha: 'a'.repeat(40) }, mergeable_state: 'blocked' }
+  const normalize = (type: string, payload: unknown) =>
+    githubOutputAdapter.normalize({ type, payload }).map((fact) => ({ ...fact, integration: 'github' }))
+  const rejected = normalize('pull_request_review', {
+    action: 'submitted',
+    repository: { full_name: 'acme/repo' },
+    pull_request: pr,
+    review: { id: 1, state: 'changes_requested', submitted_at: '2026-09-21T10:00:00Z' },
+  })
+  for (const submittedAt of ['2026-09-21T10:00:00Z', '2026-09-21T11:00:00Z']) {
+    const recovered = normalize('pull_request_review', {
+      action: 'submitted',
+      repository: { full_name: 'acme/repo' },
+      pull_request: { ...pr, mergeable_state: 'clean', updated_at: '2026-09-21T11:00:00Z' },
+      review: { id: 2, state: 'approved', submitted_at: submittedAt },
+    })
+    expect(recovered).toHaveLength(1)
+    const ci = (state: string, hour: number, workflowId = 7) =>
+      normalize('workflow_run', {
+        action: 'completed',
+        repository: { full_name: 'acme/repo' },
+        workflow_run: {
+          id: hour,
+          workflow_id: workflowId,
+          run_number: hour,
+          run_attempt: 1,
+          conclusion: state,
+          head_sha: 'a'.repeat(40),
+          pull_requests: [{ number: 42 }],
+          completed_at: `2026-09-21T${hour}:00:00Z`,
+        },
+      })
+    expect(
+      classifyDeliveryPresentation(run(), metadata, [
+        ...rejected,
+        ...recovered,
+        ...ci('failure', 12),
+        ...ci('success', 13, 8),
+      ])
+    ).toEqual({ kind: 'failure' })
+    const facts = [...rejected, ...recovered, ...ci('failure', 12), ...ci('success', 13)]
+    const delivery = classifyDeliveryPresentation(run(), metadata, facts)
+    expect(delivery).toEqual({ kind: 'merge' })
+    const presentation = { status: 'active' as const, openWaits: [], delivery }
+    expect(workStreamNeedsHumanAttention(presentation)).toBe(true)
+    expect(workBucket(presentation)).toBe('needsYou')
+  }
+})
