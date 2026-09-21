@@ -155,7 +155,6 @@ const LEGACY_PALETTE_UTILITY_FILES: readonly string[] = [
   'components/squads/ActivityFeedView.tsx',
   'components/squads/AgentContextPanel.tsx',
   'components/squads/AgentInboxPanel.tsx',
-  'components/squads/AgentVisualization.tsx',
   'components/squads/AgentWorkStreamsPanel.tsx',
   'components/squads/CreateFlowWorkStream.tsx',
   'components/squads/CreateHostWorkspaceField.tsx',
@@ -170,7 +169,6 @@ const LEGACY_PALETTE_UTILITY_FILES: readonly string[] = [
   'components/squads/MemorySettings.tsx',
   'components/squads/MemorySyncSettings.tsx',
   'components/squads/NotificationSettings.tsx',
-  'components/squads/OrgGraph.tsx',
   'components/squads/RelationshipsList.tsx',
   'components/squads/RemoteHostsSettings.tsx',
   'components/squads/SandboxLogs.tsx',
@@ -189,7 +187,7 @@ const LEGACY_PALETTE_UTILITY_FILES: readonly string[] = [
   'components/squads/SquadList.tsx',
   'components/squads/SquadSshConfig.tsx',
   'components/squads/SquadSshKeys.tsx',
-  'components/squads/SquadUniverse.tsx',
+
   'components/squads/SquadWorkflowSettings.tsx',
   'components/squads/WorkflowEditor.tsx',
   'components/squads/WorkspaceIndexingSettings.tsx',
@@ -210,20 +208,12 @@ const LEGACY_LITERAL_HEX_FILES: readonly string[] = [
   'components/TauLogo.tsx',
   'components/WorkStreamFileCard.tsx',
   'components/settings/SystemLogsSection.tsx',
-  'components/squads/AgentVisualization.tsx',
-  'components/squads/OrgGraph.tsx',
   'components/squads/SandboxLogs.tsx',
   'components/squads/SquadAgentThreads.css',
-  'components/squads/SquadUniverse.tsx',
   'voice/VoiceTranscriptInspector.tsx',
 ]
 
-const LEGACY_COLOR_FUNCTION_FILES: readonly string[] = [
-  'components/VoiceWorkspacePage.tsx',
-  'components/squads/AgentVisualization.tsx',
-  'components/squads/OrgGraph.tsx',
-  'components/squads/SquadUniverse.tsx',
-]
+const LEGACY_COLOR_FUNCTION_FILES: readonly string[] = ['components/VoiceWorkspacePage.tsx']
 
 const LEGACY_INLINE_COLOR_STYLE_FILES: readonly string[] = [
   'components/PullToRefresh.tsx',
@@ -240,9 +230,7 @@ const ENTRY_REASONS: Readonly<Record<string, string>> = {
     'mixed: chart/presentation colors are content-authored (§4.3 permanent) alongside chrome palette use (phase 2+)',
   'components/PullToRefresh.tsx': 'temporary: brand purple pending --brand-* tokens (PD-5)',
   'components/VoiceWorkspacePage.tsx': 'temporary: voice orb CSS (phase 2+ sweep)',
-  'components/squads/AgentVisualization.tsx': 'temporary: graph/canvas token bridge (phase 4)',
-  'components/squads/SquadUniverse.tsx': 'temporary: graph/canvas token bridge (phase 4)',
-  'components/squads/OrgGraph.tsx': 'temporary: graph/canvas token bridge (phase 4)',
+  'components/squads/SquadUniverse.tsx': 'token-derived: live hovered-node swatch from graph/status tokens (phase 4)',
 }
 
 const ALLOWLIST: Readonly<Record<RawCategoryType, readonly string[]>> = {

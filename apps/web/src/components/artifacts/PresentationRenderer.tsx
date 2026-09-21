@@ -1,3 +1,5 @@
+import { useThemeColors } from '../../theme/useThemeColors'
+import { chartThemeConfig } from '../../theme/chart'
 import type {
   CalloutBlock,
   ChartBlock,
@@ -133,6 +135,8 @@ function TableBlockView({ block }: { block: TableBlock }) {
 }
 
 function ChartBlockView({ block }: { block: ChartBlock }) {
+  const colors = useThemeColors()
+  const config = useMemo(() => chartThemeConfig(block.spec, colors), [block.spec, colors])
   const [renderError, setRenderError] = useState<string | null>(null)
 
   if (hasExternalUrlReference(block.spec)) {
@@ -153,7 +157,7 @@ function ChartBlockView({ block }: { block: ChartBlock }) {
       <div className="overflow-hidden rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-950">
         <VegaEmbed
           spec={block.spec as VegaEmbedProps['spec']}
-          options={{ actions: false, renderer: 'canvas', loader: blockingVegaLoader }}
+          options={{ actions: false, renderer: 'canvas', loader: blockingVegaLoader, config }}
           onError={(error) =>
             setRenderError(error instanceof Error ? error.message : 'The chart spec could not be rendered.')
           }
