@@ -136,6 +136,8 @@ function makeMockClient(opts?: {
   } as unknown as TauClient
   return {
     client,
+    currentStream: () => streamCb!,
+    currentChat: () => chatCb!,
     sent,
     chatSent,
     aborted,
@@ -2286,5 +2288,383 @@ test('a point-read started before queue clear cannot restore a confirmed deletio
     resolveUpdate(message)
     await update
     hook.unmount()
+  }
+})
+
+describe('live response reconciliation regressions', () => {
+  test('full leading-flush replay never retracts text across intermediate renders or durable handoff', async () => {
+    const partial: Message = {
+      id: 'm1',
+      agentId: 'a',
+      role: 'assistant',
+      content: '',
+      pending: false,
+      createdAt: new Date(),
+      metadata: { streamGroupId: 'S', content: [{ type: 'thinking', id: 'p', content: 'Plan' }] },
+    }
+    const m = makeMockClient({ messages: [partial], activeExecution: { active: true, status: 'running' } })
+    const renders: string[] = []
+    const { result, unmount } = await renderHook(
+      () => {
+        const conversation = useAgentConversation({ agentId: 'a' })
+        renders.push(
+          conversation.items
+            .flatMap((item) =>
+              item.kind === 'streaming' || item.kind === 'persisted'
+                ? item.blocks.flatMap((b) => (b.type === 'text' ? [b.content] : []))
+                : []
+            )
+            .join('')
+        )
+        return conversation
+      },
+      { wrapper: wrap(m.client) }
+    )
+    await waitFor(() => expect(m.subscribeCount()).toBe(1))
+    const events: StreamEvent[] = [
+      { type: 'agent', agentId: 'a', executionId: 'e' },
+      { type: 'flush_agent' },
+      { type: 'thinking', text: 'Plan', streamGroupId: 'S' },
+      { type: 'thinking_end', durationMs: 1, streamGroupId: 'S' },
+      { type: 'text', text: 'Visible response', streamGroupId: 'S' },
+    ]
+    act(() => events.forEach(m.emit))
+    const start = renders.length - 1
+    for (const batch of [events, events, [], events.slice(0, 4), events.slice(0, 4)]) {
+      act(() => m.emitCatchup(batch))
+      expect(result.current.items.filter((item) => item.kind === 'working')).toHaveLength(1)
+      expect(renders.slice(start).every((text) => text === 'Visible response')).toBe(true)
+    }
+    act(() => m.emit({ type: 'text', text: ' tail', streamGroupId: 'S' }))
+    expect(renders.at(-1)).toBe('Visible response tail')
+    act(() => m.emit({ type: 'done', response: '', streamGroupId: 'S', messageIds: ['m1', 'm2'] }))
+    expect(result.current.items.filter((item) => item.kind === 'working')).toHaveLength(0)
+    expect(renders.at(-1)).toBe('Visible response tail')
+    m.setMessages([
+      partial,
+      {
+        ...partial,
+        id: 'm2',
+        metadata: { streamGroupId: 'S', content: [{ type: 'text', id: 't', content: 'Visible response tail' }] },
+      },
+    ])
+    await act(async () => {
+      await result.current.refresh()
+    })
+    await waitFor(() => expect(result.current.items.filter((item) => item.kind === 'streaming')).toHaveLength(0))
+    expect(renders.slice(start).every((text) => text.startsWith('Visible response'))).toBe(true)
+    unmount()
+  })
+
+  test.each(['onDone', 'onError', 'onDisconnect', 'onReconnect', 'onCatchup', 'onEvent'] as const)(
+    'replaced subscription ignores late %s',
+    async (callback) => {
+      const m = makeMockClient({ activeExecution: { active: true, status: 'running' } })
+      const { result, unmount } = await renderHook(() => useAgentConversation({ agentId: 'a' }), {
+        wrapper: wrap(m.client),
+      })
+      await waitFor(() => expect(m.subscribeCount()).toBe(1))
+      const old = m.currentStream()
+      act(() => {
+        focusManager.setFocused(false)
+        focusManager.setFocused(true)
+      })
+      await waitFor(() => expect(m.subscribeCount()).toBeGreaterThan(1))
+      act(() => m.emit({ type: 'text', text: 'new', streamGroupId: 'S' }))
+      const before = result.current.items
+      act(() => {
+        if (callback === 'onEvent') old.onEvent({ type: 'text', text: 'duplicate', streamGroupId: 'S' })
+        else if (callback === 'onCatchup') old.onCatchup?.([{ type: 'error', message: 'old' }])
+        else if (callback === 'onError') old.onError?.(new Error('old'))
+        else old[callback]?.()
+      })
+      expect(result.current.streamStatus).toBe('live')
+      expect(result.current.executionStatus).toBe('running')
+      expect(result.current.items).toEqual(before)
+      unmount()
+    }
+  )
+
+  test('reused A to B hook resets status and rejects every previous-agent callback', async () => {
+    const m = makeMockClient()
+    let agentId = 'a'
+    const { result, rerender, unmount } = await renderHook(() => useAgentConversation({ agentId }), {
+      wrapper: wrap(m.client),
+    })
+    await waitFor(() => expect(m.subscribeCount()).toBe(1))
+    const old = m.currentStream()
+    act(() => m.emit({ type: 'text', text: 'A', streamGroupId: 'A' }))
+    agentId = 'b'
+    await rerender()
+    await waitFor(() => expect(result.current.agentId).toBe('b'))
+    expect(result.current.executionStatus).toBeNull()
+    act(() => {
+      old.onEvent({ type: 'agent', agentId: 'a', executionId: 'old' })
+      old.onCatchup?.([{ type: 'text', text: 'A late', streamGroupId: 'A' }])
+      old.onDone?.()
+    })
+    expect(result.current.items.some((item) => item.kind === 'streaming')).toBe(false)
+    expect(result.current.streamStatus).toBe('live')
+    unmount()
+  })
+
+  test('create handoff ignores a repeated late agent announcement', async () => {
+    const m = makeMockClient()
+    const { result, unmount } = await renderHook(() => useAgentConversation({}), { wrapper: wrap(m.client) })
+    act(() => {
+      result.current.send('hello')
+    })
+    const old = m.currentChat()
+    act(() => old.onEvent({ type: 'agent', agentId: 'created' }))
+    await waitFor(() => expect(result.current.agentId).toBe('created'))
+    act(() => old.onEvent({ type: 'agent', agentId: 'late' }))
+    expect(result.current.agentId).toBe('created')
+    unmount()
+  })
+})
+
+describe('bounded transport reconciliation', () => {
+  test.each(['running', 'completed', 'failed'] as const)(
+    'closed exact stream reconciles %s and fetches missed tail without navigation',
+    async (status) => {
+      const m = makeMockClient({ activeExecution: { active: true, executionId: 'e', status: 'running' } })
+      let reads = 0
+      m.client.agents.getExecution = async () => {
+        reads++
+        return { agentId: 'a', executionId: 'e', executionVersion: 2, status, active: status === 'running' }
+      }
+      const { result, unmount } = await renderHook(() => useAgentConversation({ agentId: 'a' }), {
+        wrapper: wrap(m.client),
+      })
+      await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+      act(() => m.emit({ type: 'text', text: 'prefix', streamGroupId: 'S' }))
+      const before = m.subscribeCount()
+      await act(async () => {
+        m.triggerDone()
+        await Promise.resolve()
+      })
+      await waitFor(() => expect(m.subscribeCount()).toBeGreaterThan(before))
+      expect(reads).toBe(1)
+      expect(result.current.executionStatus).toBe(status)
+      expect(m.subscribedExecutionIds.at(-1)).toBe('e')
+      act(() =>
+        m.emitCatchup([
+          { type: 'text', text: 'prefix tail', streamGroupId: 'S' },
+          { type: 'done', response: '', streamGroupId: 'S', messageIds: ['m'] },
+        ])
+      )
+      expect(result.current.items.find((item) => item.kind === 'streaming')).toMatchObject({
+        blocks: [{ content: 'prefix tail' }],
+      })
+      expect(result.current.items.some((item) => item.kind === 'working')).toBe(false)
+      expect(result.current.executionStatus).toBe(status === 'failed' ? 'failed' : 'completed')
+      unmount()
+    }
+  )
+
+  test('failed exact reconciliation never invents success or loops', async () => {
+    const m = makeMockClient({ activeExecution: { active: true, executionId: 'e', status: 'running' } })
+    let reads = 0
+    m.client.agents.getExecution = async () => {
+      reads++
+      throw new Error('offline')
+    }
+    const { result, unmount } = await renderHook(() => useAgentConversation({ agentId: 'a' }), {
+      wrapper: wrap(m.client),
+    })
+    await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+    act(() => m.emit({ type: 'text', text: 'prefix', streamGroupId: 'S' }))
+    const before = m.subscribeCount()
+    await act(async () => {
+      m.triggerError()
+      m.triggerDone()
+      await Promise.resolve()
+    })
+    expect(reads).toBe(1)
+    expect(m.subscribeCount()).toBe(before)
+    expect(result.current.streamStatus).toBe('ended')
+    expect(result.current.executionStatus).toBe('running')
+    expect(result.current.items.find((item) => item.kind === 'streaming')).toMatchObject({
+      blocks: [{ content: 'prefix' }],
+      status: 'interrupted',
+    })
+    unmount()
+  })
+
+  test('repeated busy EOF recovery has a fixed budget', async () => {
+    const m = makeMockClient({ activeExecution: { active: true, executionId: 'e', status: 'running' } })
+    let reads = 0
+    m.client.agents.getExecution = async () => {
+      reads++
+      return { agentId: 'a', executionId: 'e', executionVersion: 1, status: 'running', active: true }
+    }
+    const { result, unmount } = await renderHook(() => useAgentConversation({ agentId: 'a' }), {
+      wrapper: wrap(m.client),
+    })
+    await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+    for (let i = 0; i < 5; i++)
+      await act(async () => {
+        m.triggerDone()
+        await Promise.resolve()
+      })
+    expect(reads).toBe(2)
+    expect(result.current.streamStatus).toBe('ended')
+    expect(result.current.executionStatus).toBe('running')
+    unmount()
+  })
+})
+
+test('quiet backstop rearms after same-status activity and verifies exact execution instead of stale idle', async () => {
+  const m = makeMockClient({ activeExecution: { active: false } })
+  let reads = 0
+  m.client.agents.getExecution = async () => {
+    reads++
+    return { agentId: 'a', executionId: 'e', executionVersion: 1, status: 'running', active: true }
+  }
+  const realSetTimeout = globalThis.setTimeout
+  const timers: Array<() => void> = []
+  globalThis.setTimeout = ((fn: () => void, delay?: number, ...args: unknown[]) => {
+    if (delay === 4000) {
+      timers.push(fn)
+      return realSetTimeout(() => {}, 100_000)
+    }
+    return realSetTimeout(fn, delay, ...args)
+  }) as typeof globalThis.setTimeout
+  let unmount: (() => void) | undefined
+  setSystemTime(1_700_000_000_000)
+  try {
+    const hook = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper: wrap(m.client) })
+    unmount = hook.unmount
+    act(() => {
+      m.emit({ type: 'agent', agentId: 'a', executionId: 'e' })
+      m.emit({ type: 'text', text: 'prefix', streamGroupId: 'S' })
+    })
+    const first = timers.length
+    setSystemTime(1_700_000_003_000)
+    act(() => m.emit({ type: 'text', text: ' tail', streamGroupId: 'S' }))
+    expect(timers.length).toBeGreaterThan(first)
+    setSystemTime(1_700_000_008_000)
+    await act(async () => {
+      timers.at(-1)!()
+      await Promise.resolve()
+    })
+    expect(reads).toBe(1)
+    expect(hook.result.current.executionStatus).toBe('running')
+  } finally {
+    unmount?.()
+    globalThis.setTimeout = realSetTimeout
+    setSystemTime()
+  }
+})
+
+test('a partial replay missing an observed done cannot restart the working indicator', async () => {
+  const m = makeMockClient()
+  const { result, unmount } = await renderHook(() => useAgentConversation({ agentId: 'a' }), {
+    wrapper: wrap(m.client),
+  })
+  const prefix: StreamEvent[] = [
+    { type: 'agent', agentId: 'a', executionId: 'e' },
+    { type: 'text', text: 'prefix', streamGroupId: 'S' },
+  ]
+  act(() => {
+    prefix.forEach(m.emit)
+    m.emit({ type: 'done', response: '', streamGroupId: 'S', messageIds: ['m'] })
+  })
+  expect(result.current.executionStatus).toBe('completed')
+  act(() => m.emitCatchup(prefix))
+  expect(result.current.executionStatus).toBe('completed')
+  expect(result.current.items.some((item) => item.kind === 'working')).toBe(false)
+  // A genuinely different execution still starts normally.
+  act(() => m.emit({ type: 'agent', agentId: 'a', executionId: 'next' }))
+  expect(result.current.executionStatus).toBe('running')
+  unmount()
+})
+
+test('parent adoption of the created agent keeps the subscription effective', async () => {
+  const m = makeMockClient()
+  let agentId: string | undefined = undefined
+  const { result, rerender, unmount } = await renderHook(() => useAgentConversation({ agentId }), {
+    wrapper: wrap(m.client),
+  })
+  act(() => {
+    result.current.send('hello')
+    m.emitChat({ type: 'agent', agentId: 'created' })
+  })
+  await waitFor(() => expect(result.current.agentId).toBe('created'))
+  agentId = 'created'
+  await rerender()
+  act(() => m.emit({ type: 'text', text: 'adopted response', streamGroupId: 'S' }))
+  expect(result.current.items.find((item) => item.kind === 'streaming')).toMatchObject({
+    blocks: [{ content: 'adopted response' }],
+  })
+  unmount()
+})
+
+test('late exact reconciliation cannot complete a replacement execution', async () => {
+  const m = makeMockClient({ activeExecution: { active: true, executionId: 'old', status: 'running' } })
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  let finish!: (value: Awaited<ReturnType<TauClient['agents']['getExecution']>>) => void
+  m.client.agents.getExecution = () =>
+    new Promise((resolve) => {
+      finish = resolve
+    })
+  const { result, unmount } = await renderHook(() => useAgentConversation({ agentId: 'a' }), {
+    wrapper: wrapWith(qc, m.client),
+  })
+  try {
+    await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('old'))
+    await act(async () => {
+      m.triggerDone()
+      await Promise.resolve()
+    })
+    m.setActiveExecution({ active: true, executionId: 'next', status: 'running' })
+    await act(async () => {
+      await qc.invalidateQueries({ queryKey: queryKeys.agents.activeExecution('a') })
+    })
+    await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('next'))
+    act(() => m.emit({ type: 'text', text: 'next response', streamGroupId: 'next' }))
+    await act(async () => {
+      finish({ agentId: 'a', executionId: 'old', executionVersion: 99, status: 'completed', active: false })
+      await Promise.resolve()
+    })
+    expect(result.current.executionStatus).toBe('running')
+    expect(result.current.streamStatus).toBe('live')
+    expect(result.current.items.find((item) => item.kind === 'streaming')).toMatchObject({
+      blocks: [{ content: 'next response' }],
+    })
+  } finally {
+    unmount()
+    qc.clear()
+  }
+})
+
+test('no intermediate B render exposes A content, optimistic sends or busy state', async () => {
+  const m = makeMockClient()
+  let agentId = 'a'
+  const renders: Array<{ agentId?: string; items: unknown[]; status: unknown }> = []
+  const { result, rerender, unmount } = await renderHook(
+    () => {
+      const c = useAgentConversation({ agentId })
+      renders.push({ agentId: c.agentId, items: c.items, status: c.executionStatus })
+      return c
+    },
+    { wrapper: wrap(m.client) }
+  )
+  try {
+    await act(async () => {
+      result.current.send('A prompt')
+      m.emit({ type: 'text', text: 'A response', streamGroupId: 'A' })
+      await Promise.resolve()
+    })
+    agentId = 'b'
+    await rerender()
+    const bRenders = renders.filter((render) => render.agentId === 'b')
+    expect(bRenders.length).toBeGreaterThan(0)
+    for (const render of bRenders) {
+      expect(render.items).toEqual([])
+      expect(render.status).toBeNull()
+    }
+  } finally {
+    unmount()
   }
 })

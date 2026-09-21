@@ -48,6 +48,9 @@ function includesLocalProgress(replayed: StreamingBlockState, local: StreamingBl
  */
 export class StreamGroupStore {
   private groups = new Map<string, MutableGroup>()
+  // Once durable history owns a group, old replay/deltas must not resurrect it
+  // after a history revision/deletion. IDs only; no retained response content.
+  private retired = new Set<string>()
   /** The agentId most recently seen on an `agent` event, stamped onto new groups. */
   private agentId = ''
   /** The execution most recently announced by an `agent` event. */
@@ -75,7 +78,7 @@ export class StreamGroupStore {
 
     if (event.type === 'done') {
       const id = event.streamGroupId ?? this.lastActive
-      if (!id) return
+      if (!id || this.retired.has(id)) return
       const g = this.ensure(id, now)
       g.done = true
       g.doneMessageIds = event.messageIds ?? (event.messageId ? [event.messageId] : [])
@@ -119,63 +122,56 @@ export class StreamGroupStore {
 
     const id = streamGroupIdOf(event)
     if (!id) return // other non-streamGroupId events are not block deltas
+    if (this.retired.has(id)) {
+      this.lastActive = id
+      return
+    }
     const g = this.ensure(id, now)
     g.state = reduceStreamingBlocks(g.state, event, now)
     this.lastActive = id
   }
 
   /**
-   * Apply a catchup batch idempotently. Terminal or empty groups touched by the batch are reset to a
-   * fresh accumulator and replayed. Active groups accept a replay that includes their local
-   * progress, filling disconnect gaps while preserving newer content against stale snapshots.
+   * Replay in an isolated routing context: a historical unscoped lifecycle event must
+   * never target the live cursor. Reconcile only groups actually reached by the replay.
+   * Groups remain uncommitted until combine proves durable coverage, even after done.
    */
   applyCatchup(events: StreamEvent[], now: number = Date.now()): void {
     const replay = new StreamGroupStore()
+    // Partial batches may omit the agent announcement, but never inherit lastActive.
+    replay.agentId = this.agentId
+    replay.executionId = this.executionId
     for (const [index, event] of events.entries()) replay.ingest(event, now + index)
-    const touched = new Set<string>()
-    for (const e of events) {
-      const id = e.type === 'done' ? (e.streamGroupId ?? undefined) : streamGroupIdOf(e)
-      if (id) touched.add(id)
-    }
-    const protectedActive = new Set<string>()
-    for (const id of touched) {
+    const previousIds = new Set(this.groups.keys())
+    for (const [id, replayed] of replay.groups) {
+      if (this.retired.has(id)) continue
       const existing = this.groups.get(id)
-      if (existing) {
-        const hasLocalBlocks = existing.state.blocks.length > 0
-        const isActive = !existing.done && !existing.errored && !existing.flushed
-        const replayed = replay.groups.get(id)
-        if (isActive && hasLocalBlocks && (!replayed || !includesLocalProgress(replayed.state, existing.state))) {
-          // An older or incomplete snapshot must not retract local text/tool completion.
-          protectedActive.add(id)
-          continue
-        }
-        // Catchup is authoritative for terminal/empty groups: replace the whole group (spec §6),
-        // preserving only identity + start time. Flags are re-derived from the replayed batch.
-        existing.state = createStreamingBlockState()
-        existing.done = false
-        existing.doneMessageIds = null
-        existing.flushed = false
-        existing.errored = false
+      if (!existing) {
+        this.groups.set(id, replayed)
+        continue
       }
+      if (includesLocalProgress(replayed.state, existing.state)) existing.state = replayed.state
+      // Missing earlier lifecycle events are not evidence of a reversal. Group IDs
+      // identify a response, not a reusable slot. Durable handoff clears these flags.
+      existing.done ||= replayed.done
+      existing.flushed ||= replayed.flushed
+      existing.errored ||= replayed.errored
+      if (replayed.done)
+        existing.doneMessageIds = [...new Set([...(existing.doneMessageIds ?? []), ...(replayed.doneMessageIds ?? [])])]
     }
-    // Preserve the original timestamps of system messages we've already seen. Catchup replays them
-    // in the same order, so position i maps 1:1. Without this, a reconnect re-stamps them to `now`,
-    // which sorts them BELOW the streaming bubble (whose startedAt is preserved) — making turn-start
-    // notices like a provider switch-back jump under the live response.
+    this.agentId = replay.agentId
+    this.executionId = replay.executionId
+    // An empty/lifecycle-only batch cannot retarget the next live unscoped event.
+    // Nor should a stale prefix move the cursor behind a newer local group.
+    if (replay.lastActive && (!this.lastActive || !previousIds.has(replay.lastActive))) {
+      this.lastActive = replay.lastActive
+    }
+
+    // Preserve timestamps so replayed notices do not jump below the live response.
     const prevSysAt = this.systemMsgs.map((s) => s.at)
-    this.systemMsgs = []
-    this.compaction = null
-    this.systemMsgCounter = 0
-    // Replay with order-preserving timestamps (now + index) so a system message emitted before a
-    // group's first delta sorts above that group even on the first catchup, where both are new.
-    events.forEach((e, i) => {
-      const id = e.type === 'done' ? undefined : streamGroupIdOf(e)
-      if (id && protectedActive.has(id)) {
-        this.lastActive = id
-        return
-      }
-      this.ingest(e, now + i)
-    })
+    this.systemMsgs = replay.systemMsgs
+    this.compaction = replay.compaction
+    this.systemMsgCounter = replay.systemMsgCounter
     for (let i = 0; i < this.systemMsgs.length && i < prevSysAt.length; i++) {
       this.systemMsgs[i].at = prevSysAt[i]
     }
@@ -184,15 +180,18 @@ export class StreamGroupStore {
   /** Remove one group by id, or all groups when called with no argument (does not clear agentId — use reset() for full teardown). */
   clear(streamGroupId?: string): void {
     if (streamGroupId === undefined) {
+      for (const id of this.groups.keys()) this.retired.add(id)
       this.groups.clear()
       this.lastActive = null
       return
     }
+    this.retired.add(streamGroupId)
     this.groups.delete(streamGroupId)
     if (this.lastActive === streamGroupId) this.lastActive = null
   }
 
   reset(): void {
+    this.retired.clear()
     this.groups.clear()
     this.agentId = ''
     this.executionId = undefined

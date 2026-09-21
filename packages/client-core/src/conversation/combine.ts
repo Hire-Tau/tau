@@ -71,13 +71,13 @@ export function groupPersisted(messages: Message[]): PersistedTurn[] {
   return turns.sort((a, b) => compareByKey(a.sortAt, a.id, b.sortAt, b.id))
 }
 
-/** Do these two blocks represent the same streamed content once committed? */
+/** Does a committed block cover this streamed content (including missed final text deltas)? */
 function blockContentMatches(streamed: StreamGroupSnapshot['blocks'][number], persisted: ContentBlock): boolean {
   if (streamed.type !== persisted.type) return false
   switch (streamed.type) {
     case 'thinking':
     case 'text':
-      return persisted.type === streamed.type && persisted.content === streamed.content
+      return persisted.type === streamed.type && persisted.content.startsWith(streamed.content)
     case 'tool_use':
       return (
         persisted.type === 'tool_use' &&
@@ -132,14 +132,18 @@ function streamingStatusFor(
   // Swap to persisted once the complete persisted turn is present.
   if (group.done && persistedTurnComplete(group, turn)) return null
 
-  // Ended without done: swap if anything was committed, else keep as interrupted.
+  // Transport/lifecycle termination does not prove the saved fragment covers the live tail.
   if (!group.done && session.streamStatus === 'ended') {
-    if (turn) return null
+    const stillBusy = ['queued', 'running', 'stopping', 'waiting-sandbox', 'waiting-maintenance'].includes(
+      session.executionStatus ?? ''
+    )
+    if (stillBusy && !group.flushed && !group.errored) return 'interrupted'
+    if (persistedTurnComplete(group, turn)) return null
     return 'interrupted'
   }
 
-  if (group.errored) return turn ? null : 'interrupted'
-  if (group.flushed) return turn ? null : 'flushed'
+  if (group.errored) return persistedTurnComplete(group, turn) ? null : 'interrupted'
+  if (group.flushed) return persistedTurnComplete(group, turn) ? null : 'flushed'
   return 'streaming'
 }
 
