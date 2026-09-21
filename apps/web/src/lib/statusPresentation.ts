@@ -1,7 +1,9 @@
 import type { StatusRole } from '@tau/shared'
+import { readTokenColor } from '../theme/tokenReader'
 
 export interface WebStatusTreatment {
   markerClass: string
+  markerToken: string
   /** Numeric CSS color, resolved lazily for canvas/WebGL (CSS var() is not supported there). */
   readonly markerColor: string
   textClass: string
@@ -13,14 +15,14 @@ export interface WebStatusTreatment {
 /** Read at use time, never snapshot a palette at module import. */
 export function readStatusMarkerColor(token: string, root?: Element): string {
   const element = root ?? (typeof document === 'undefined' ? undefined : document.documentElement)
-  const channels = element?.ownerDocument.defaultView?.getComputedStyle(element).getPropertyValue(token).trim()
-  // Comma form is understood by both Canvas2D and Three.Color's CSS parser.
-  return channels ? `rgb(${channels.split(/\s+/).join(', ')})` : 'transparent'
+  const style = element?.ownerDocument.defaultView?.getComputedStyle(element)
+  return (style && readTokenColor(style, token)) || 'transparent'
 }
 
 export const WEB_STATUS = {
   progress: {
     markerClass: 'bg-status-progress-solid',
+    markerToken: '--status-progress-solid',
     get markerColor() {
       return readStatusMarkerColor('--status-progress-solid')
     },
@@ -31,6 +33,7 @@ export const WEB_STATUS = {
   },
   queue: {
     markerClass: 'bg-status-queue-solid',
+    markerToken: '--status-queue-solid',
     get markerColor() {
       return readStatusMarkerColor('--status-queue-solid')
     },
@@ -41,6 +44,7 @@ export const WEB_STATUS = {
   },
   review: {
     markerClass: 'bg-status-review-solid',
+    markerToken: '--status-review-solid',
     get markerColor() {
       return readStatusMarkerColor('--status-review-solid')
     },
@@ -51,6 +55,7 @@ export const WEB_STATUS = {
   },
   humanWait: {
     markerClass: 'bg-status-human-wait-solid',
+    markerToken: '--status-human-wait-solid',
     get markerColor() {
       return readStatusMarkerColor('--status-human-wait-solid')
     },
@@ -61,6 +66,7 @@ export const WEB_STATUS = {
   },
   externalWait: {
     markerClass: 'bg-status-external-wait-solid',
+    markerToken: '--status-external-wait-solid',
     get markerColor() {
       return readStatusMarkerColor('--status-external-wait-solid')
     },
@@ -71,6 +77,7 @@ export const WEB_STATUS = {
   },
   attention: {
     markerClass: 'bg-status-attention-solid',
+    markerToken: '--status-attention-solid',
     get markerColor() {
       return readStatusMarkerColor('--status-attention-solid')
     },
@@ -81,6 +88,7 @@ export const WEB_STATUS = {
   },
   danger: {
     markerClass: 'bg-status-danger-solid',
+    markerToken: '--status-danger-solid',
     get markerColor() {
       return readStatusMarkerColor('--status-danger-solid')
     },
@@ -91,6 +99,7 @@ export const WEB_STATUS = {
   },
   success: {
     markerClass: 'bg-status-success-solid',
+    markerToken: '--status-success-solid',
     get markerColor() {
       return readStatusMarkerColor('--status-success-solid')
     },
@@ -101,6 +110,7 @@ export const WEB_STATUS = {
   },
   neutral: {
     markerClass: 'bg-status-neutral-solid',
+    markerToken: '--status-neutral-solid',
     get markerColor() {
       return readStatusMarkerColor('--status-neutral-solid')
     },
