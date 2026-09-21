@@ -1,11 +1,14 @@
+import { selectWorkStreamPresentationState, type WorkStreamDeliveryPresentation } from './status-presentation'
 import { priorityRank } from './work-stream-priority'
 import type { WorkStreamDerivedState, WorkStreamPriority, WorkStreamStatus, WorkStreamWait } from './types'
 
 export interface CanonicalWorkStreamOrderInput {
+  pause?: unknown
+  delivery?: WorkStreamDeliveryPresentation
   id: string
   status: WorkStreamStatus
   derivedState?: WorkStreamDerivedState
-  openWaits?: readonly Pick<WorkStreamWait, 'type' | 'closedAt'>[]
+  openWaits?: ReadonlyArray<Pick<WorkStreamWait, 'type' | 'closedAt'> & { id?: string }>
   priority?: WorkStreamPriority
   effectivePriority?: WorkStreamPriority
   queuePosition?: number
@@ -60,20 +63,28 @@ export function isValidQueuePosition(value: unknown): value is number {
 // Review is uniquely actionable and ranks first. Question, dependency, and
 // manual/blocked waits intentionally share one non-review-wait urgency tier.
 function activeUrgency(item: CanonicalWorkStreamOrderInput): number {
-  if (item.openWaits !== undefined) {
-    const openWaits = item.openWaits.filter((wait) => wait.closedAt === null)
-    if (openWaits.some((wait) => wait.type === 'review')) return 0
-    if (openWaits.length > 0) return 1
-    return item.derivedState === 'in_progress' ? 2 : 3
-  }
-
-  if (item.derivedState === 'in_review') return 0
-  if (item.derivedState && WAIT_DERIVED_STATES.has(item.derivedState)) return 1
-  if (item.derivedState === 'in_progress') return 2
+  const state = selectWorkStreamPresentationState({
+    ...item,
+    openWaits: item.openWaits?.filter((wait) => wait.closedAt === null),
+  })
+  if (['in_review', 'delivery_approval', 'delivery_review', 'delivery_merge'].includes(state)) return 0
+  if (
+    [
+      'waiting_on_answer',
+      'waiting_on_dependency',
+      'blocked',
+      'delivery_external',
+      'delivery_setup',
+      'delivery_failure',
+    ].includes(state)
+  )
+    return 1
+  if (state === 'in_progress') return 2
   return 3
 }
 
 function queuedHasWait(item: CanonicalWorkStreamOrderInput): boolean {
+  if (item.pause || item.derivedState === 'paused' || item.delivery) return true
   if (item.waitingOnDependencies === true) return true
   if (item.openWaits !== undefined) return item.openWaits.some((wait) => wait.closedAt === null)
   return item.derivedState !== undefined && WAIT_DERIVED_STATES.has(item.derivedState)

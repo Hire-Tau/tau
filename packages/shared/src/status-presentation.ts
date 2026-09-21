@@ -21,7 +21,19 @@ export type StatusRole =
   | 'neutral'
 
 export type AgentPresentationState = AgentStatus | 'offline'
-export type WorkStreamPresentationState = WorkStreamStatus | WorkStreamDerivedState
+export type DeliveryPresentationKind = 'approval' | 'review' | 'merge' | 'external' | 'setup' | 'failure'
+
+/** Server-owned delivery facts, never inferred from client metadata. Unknown kinds are ignored. */
+export interface WorkStreamDeliveryPresentation {
+  kind: DeliveryPresentationKind
+  /** The one operational approval wait represented by this gate; other waits retain precedence. */
+  approvalWaitId?: string
+}
+
+export type WorkStreamPresentationState =
+  | WorkStreamStatus
+  | WorkStreamDerivedState
+  | `delivery_${DeliveryPresentationKind}`
 export type SubagentPresentationState = 'queued' | 'running' | 'idle' | 'stopped' | 'done' | 'failed'
 export type SandboxPresentationState = SandboxRuntimeState | 'installing_packages' | 'running_setup' | 'degraded'
 
@@ -37,6 +49,12 @@ export const AGENT_STATUS_ROLE = {
 } as const satisfies Record<AgentPresentationState, StatusRole>
 
 export const WORK_STREAM_STATUS_ROLE = {
+  delivery_approval: 'review',
+  delivery_review: 'review',
+  delivery_merge: 'review',
+  delivery_external: 'externalWait',
+  delivery_setup: 'danger',
+  delivery_failure: 'danger',
   paused: 'neutral',
   queued: 'queue',
   active: 'progress',
@@ -100,10 +118,11 @@ export const WORK_STREAM_WAIT_STATE = {
 } as const satisfies Record<WorkStreamWaitType, WorkStreamDerivedState>
 
 export interface WorkStreamPresentationFacts {
+  delivery?: WorkStreamDeliveryPresentation
   pause?: unknown
   status: WorkStreamStatus
   derivedState?: WorkStreamDerivedState
-  openWaits?: ReadonlyArray<{ type: WorkStreamWaitType }>
+  openWaits?: ReadonlyArray<{ type: WorkStreamWaitType; id?: string }>
 }
 
 /**
@@ -117,26 +136,38 @@ export function selectWorkStreamPresentationState(
 
   if (workStream.pause || workStream.derivedState === 'paused') return 'paused'
 
+  const deliveryState =
+    workStream.delivery &&
+    ['approval', 'review', 'merge', 'external', 'setup', 'failure'].includes(workStream.delivery.kind)
+      ? (`delivery_${workStream.delivery.kind}` as WorkStreamPresentationState)
+      : undefined
   if (workStream.openWaits !== undefined) {
     const waitType = WORK_STREAM_WAIT_DISPLAY_PRECEDENCE.find((type) =>
-      workStream.openWaits!.some((wait) => wait.type === type)
+      workStream.openWaits!.some(
+        (wait) =>
+          wait.type === type &&
+          !(deliveryState === 'delivery_approval' && wait.id && wait.id === workStream.delivery?.approvalWaitId)
+      )
     )
     if (waitType) return WORK_STREAM_WAIT_STATE[waitType]
+    if (workStream.derivedState === 'execution_failed') return 'execution_failed'
+    if (deliveryState) return deliveryState
     if (workStream.status === 'queued') return 'queued'
     // Non-wait-derived states survive an explicit empty wait list: an empty
     // list cannot speak against a live execution or a failed execution, but a
     // STALE wait-derived state (in_review/…) must still collapse to idle.
     if (workStream.derivedState === 'in_progress') return 'in_progress'
-    if (workStream.derivedState === 'execution_failed') return 'execution_failed'
     return 'idle'
   }
 
-  return workStream.derivedState ?? workStream.status
+  if (workStream.derivedState === 'execution_failed') return 'execution_failed'
+  return deliveryState ?? workStream.derivedState ?? workStream.status
 }
 
 /** Whether a stream contributes to a user-attention aggregate. */
 export function workStreamNeedsHumanAttention(workStream: WorkStreamPresentationFacts): boolean {
   const state = selectWorkStreamPresentationState(workStream)
+  if (state === 'delivery_approval' || state === 'delivery_review' || state === 'delivery_merge') return true
   if (state === 'in_review' || state === 'waiting_on_answer') return true
   if (state !== 'blocked') return false
 

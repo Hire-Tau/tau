@@ -45,8 +45,8 @@ describe('workBucket mirrors the widget’s Swift case table', () => {
     expect(workBucket(stream({ derivedState: 'waiting_on_answer' } as Partial<WorkStream>))).toBe('needsYou')
   })
 
-  test('3. blocked derived state', () => {
-    expect(workBucket(stream({ derivedState: 'blocked' } as Partial<WorkStream>))).toBe('blocked')
+  test('3. legacy blocked without waits retains shared manual-attention fallback', () => {
+    expect(workBucket(stream({ derivedState: 'blocked' } as Partial<WorkStream>))).toBe('needsYou')
   })
 
   test('4. active status with nothing pending is running', () => {
@@ -116,7 +116,7 @@ describe('buildWorkInterestSnapshot', () => {
 
     const snapshot = buildWorkInterestSnapshot(many, new Date('2026-08-30T00:00:00Z'))
     expect(snapshot.totalCount).toBe(30)
-    expect(snapshot.bucketCounts).toEqual({ needsYou: 1, running: 29, blocked: 0, queued: 0 })
+    expect(snapshot.bucketCounts).toEqual({ needsYou: 1, running: 29, blocked: 0, queued: 0, paused: 0 })
     expect(snapshot.top).toHaveLength(WIDGET_TOP_LIMIT)
     expect(snapshot.top[0]!.id).toBe('late-review')
     expect(snapshot.liveActivity.needsYouCount).toBe(1)
@@ -126,6 +126,7 @@ describe('buildWorkInterestSnapshot', () => {
   test('projects only safe fields and wait types', () => {
     const snapshot = buildWorkInterestSnapshot([stream({ openWaits: wait('manual') })])
     expect(snapshot.top[0]).toEqual({
+      bucket: 'needsYou',
       id: 'ws-1',
       squadId: 'sq-1',
       title: 'Ship the widget',
@@ -165,4 +166,25 @@ describe('serializeLiveActivityState — rendered outside the app sandbox', () =
       expect(json).not.toContain(forbidden)
     }
   })
+})
+
+test('widget and live activity preserve pause/delivery, safe fields and omitted-wait legacy buckets', () => {
+  const snapshot = buildWorkInterestSnapshot([
+    stream({
+      id: 'paused',
+      pause: { reason: 'private operator reason' } as WorkStream['pause'],
+      openWaits: wait('manual'),
+    }),
+    stream({ id: 'merge', delivery: { kind: 'merge' }, openWaits: [] }),
+    stream({ id: 'legacy', derivedState: 'blocked' }),
+  ])
+  expect(snapshot.bucketCounts).toEqual({ needsYou: 2, paused: 1, blocked: 0, queued: 0, running: 0 })
+  expect(snapshot.top.find((row) => row.id === 'paused')).toMatchObject({ pause: true, bucket: 'paused' })
+  expect(snapshot.top.find((row) => row.id === 'merge')).toMatchObject({
+    delivery: { kind: 'merge' },
+    bucket: 'needsYou',
+  })
+  expect(snapshot.top.find((row) => row.id === 'legacy')?.bucket).toBe('needsYou')
+  expect(snapshot.liveActivity.top.find((row) => row.id === 'paused')?.bucket).toBe('paused')
+  expect(JSON.stringify(snapshot)).not.toContain('private operator reason')
 })
