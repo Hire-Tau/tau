@@ -80,3 +80,10 @@ The [v1 custom-theme contract](../../../../docs/theme/custom-themes.md) document
 validation, scoped preview, device-local recovery and the generated pre-paint
 bootstrap. Custom alpha uses private split-channel helpers for opacity-modified
 CSS consumers; full channels and intrinsic metadata remain the JS adapter input.
+
+## Account synchronization
+
+The [account sync contract](../../../../docs/theme/account-sync.md) defines device
+precedence, post-paint adoption, identity boundaries and the bounded custom-document
+wire format. `sync.ts` owns asynchronous reconciliation; it is not imported by the
+pre-paint entrypoint. `ThemeProvider` still applies local state synchronously.
