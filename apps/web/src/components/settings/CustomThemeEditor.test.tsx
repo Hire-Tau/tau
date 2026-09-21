@@ -152,3 +152,72 @@ test('provider recovers on apply exception without keeping partial overrides or 
   expect(root.getAttribute('data-theme')).toBe('harbor')
   expect(getByRole(container, 'alert').textContent).toContain('Restored its base theme')
 })
+
+function surfaceWarning(container: HTMLElement): HTMLLIElement | undefined {
+  return [...container.querySelectorAll<HTMLLIElement>('[aria-label="Contrast warnings"] li')].find((li) =>
+    li.textContent?.startsWith('--color-text-primary on --color-bg-surface:')
+  )
+}
+
+test('transparent preview surface uses its page backdrop; safe action improves rather than reverses contrast', async () => {
+  const container = await render()
+  await click(container, 'Edit custom theme')
+  const transparent = {
+    ...doc,
+    base: 'tau',
+    appearance: 'dark',
+    overrides: { '--color-bg-surface': 'rgba(255,255,255,0)', '--color-text-primary': '#ffffff' },
+  }
+  await importFile(container, JSON.stringify(transparent))
+  expect(surfaceWarning(container)).toBeUndefined()
+  // The actual preview renders a page scope outside the translucent surface.
+  expect(getByLabelText(container, 'Preview surface').parentElement).toBe(
+    getByLabelText(container, 'Custom theme preview')
+  )
+  await importFile(
+    container,
+    JSON.stringify({ ...transparent, overrides: { ...transparent.overrides, '--color-text-primary': '#000000' } })
+  )
+  const warning = surfaceWarning(container)!
+  expect(warning.textContent).toContain('1.06:1')
+  await click(warning, 'Use safe value #ffffff')
+  expect(getByLabelText(container, 'Custom theme preview').style.getPropertyValue('--color-text-primary')).toBe(
+    '255 255 255'
+  )
+  expect(surfaceWarning(container)).toBeUndefined()
+  expect(document.documentElement.getAttribute('data-theme')).toBe('tau')
+  expect(document.documentElement.getAttribute('data-appearance')).toBe('light')
+})
+
+test('unresolved backdrop explains uncertainty without safe-value claims or blocking Apply', async () => {
+  const container = await render()
+  await click(container, 'Edit custom theme')
+  await importFile(
+    container,
+    JSON.stringify({
+      ...doc,
+      overrides: { '--color-bg-page': 'rgba(0,0,0,0.5)', '--color-bg-surface': 'rgba(255,255,255,0)' },
+    })
+  )
+  const warning = surfaceWarning(container)!
+  expect(warning.textContent).toContain('Contrast unknown')
+  expect(warning.querySelector('button')).toBeNull()
+  expect(getByRole(container, 'button', { name: 'Apply custom theme' }).hasAttribute('disabled')).toBe(false)
+})
+
+test('tiny valid alpha still produces a low-contrast warning and an opaque safe-value action', async () => {
+  const container = await render()
+  await click(container, 'Edit custom theme')
+  await importFile(
+    container,
+    JSON.stringify({
+      ...doc,
+      overrides: { '--color-bg-surface': '#000000', '--color-text-primary': 'rgba(255,255,255,0.0000001)' },
+    })
+  )
+  const warning = surfaceWarning(container)!
+  expect(warning.textContent).toContain('1.00:1')
+  await click(warning, 'Use safe value #ffffff')
+  expect(surfaceWarning(container)).toBeUndefined()
+  expect(getByRole(container, 'button', { name: 'Apply custom theme' }).hasAttribute('disabled')).toBe(false)
+})

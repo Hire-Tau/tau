@@ -10,12 +10,12 @@ import {
   removeCustomProperties,
 } from '../../theme/custom'
 import { applyResolvedTheme } from '../../theme/apply'
-import { composite, contrast, contrastPairs, pairRatio, tokenRgba, type ContrastPair } from '../../theme/contrast'
+import { contrast, contrastPairs, pairBackground, tokenRgba, type ContrastPair } from '../../theme/contrast'
 
 interface Warning {
   pair: ContrastPair
-  ratio: number
-  safe: string
+  ratio: number | null
+  safe: string | null
 }
 
 export function CustomThemeEditor({ value }: { value: ReturnType<typeof useTheme> }) {
@@ -61,10 +61,14 @@ export function CustomThemeEditor({ value }: { value: ReturnType<typeof useTheme
       const next: Warning[] = []
       for (const pair of contrastPairs) {
         // No CSS in SSR/test renderers: a missing value isn't a contrast claim.
-        if (!tokens[pair.fg] || !tokens[pair.bg] || !tokens[pair.under ?? '--color-bg-surface']) continue
-        const ratio = pairRatio(tokens, pair)
+        if (!tokens[pair.fg] || !tokens[pair.bg]) continue
+        const bg = pairBackground(tokens, pair)
+        if (!bg) {
+          next.push({ pair, ratio: null, safe: null })
+          continue
+        }
+        const ratio = contrast(tokenRgba(tokens, pair.fg), bg)
         if (ratio >= pair.minimum) continue
-        const bg = composite(tokenRgba(tokens, pair.bg), tokenRgba(tokens, pair.under ?? '--color-bg-surface'))
         next.push({
           pair,
           ratio,
@@ -217,34 +221,44 @@ export function CustomThemeEditor({ value }: { value: ReturnType<typeof useTheme
         ref={preview}
         data-theme-scope=""
         aria-label="Custom theme preview"
-        className="rounded-lg p-4 bg-surface text-primary border border-default"
+        className="rounded-lg p-4 bg-page text-primary border border-default"
       >
-        <h4 className="font-medium">Preview: {draft.name}</h4>
-        <p className="text-secondary">
-          Secondary text <span className="text-muted">and muted text</span>
-        </p>
-        <button className="tau-button min-h-[44px] px-3 py-2 tau-button-primary mt-2" type="button">
-          Sample action
-        </button>
-        <p className="mt-2 text-[rgb(var(--status-danger-fg))]">Error status</p>
-        <pre className="mt-2 p-2 bg-[rgb(var(--syntax-bg))] text-[rgb(var(--syntax-comment))]">// Syntax comment</pre>
-        <p className="bg-[rgb(var(--term-bg))] text-[rgb(var(--term-fg))]">Terminal sample</p>
-        <p className="bg-[rgb(var(--graph-bg))] text-[rgb(var(--graph-label))]">Graph label</p>
+        <div aria-label="Preview surface" className="rounded-lg p-4 bg-surface">
+          <h4 className="font-medium">Preview: {draft.name}</h4>
+          <p className="text-secondary">
+            Secondary text <span className="text-muted">and muted text</span>
+          </p>
+          <button className="tau-button min-h-[44px] px-3 py-2 tau-button-primary mt-2" type="button">
+            Sample action
+          </button>
+          <p className="mt-2 text-[rgb(var(--status-danger-fg))]">Error status</p>
+          <pre className="mt-2 p-2 bg-[rgb(var(--syntax-bg))] text-[rgb(var(--syntax-comment))]">// Syntax comment</pre>
+          <p className="bg-[rgb(var(--term-bg))] text-[rgb(var(--term-fg))]">Terminal sample</p>
+          <p className="bg-[rgb(var(--graph-bg))] text-[rgb(var(--graph-label))]">Graph label</p>
+        </div>
       </div>
       {warnings.length > 0 && (
         <div aria-label="Contrast warnings" className="max-h-64 overflow-auto">
-          <p>Informational contrast warnings — these do not block Apply.</p>
+          <p>
+            Informational contrast warnings — these do not block Apply. Surfaces are checked over the preview surface
+            and page; a translucent page may have an unknown backdrop.
+          </p>
           <ul>
             {warnings.map(({ pair, ratio, safe }) => (
               <li key={`${pair.fg}/${pair.bg}/${pair.under}`} className="py-2">
                 {pair.fg} on {pair.bg}
-                {pair.under ? ` over ${pair.under}` : ''}: {ratio.toFixed(2)}:1 (recommended {pair.minimum}:1).
-                <button
-                  className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary ml-2"
-                  onClick={() => override(pair.fg, safe)}
-                >
-                  Use safe value {safe}
-                </button>
+                {pair.under ? ` over ${pair.under}` : ''}:{' '}
+                {ratio === null
+                  ? 'Contrast unknown: the translucent backdrop does not resolve to an opaque page or surface.'
+                  : `${ratio.toFixed(2)}:1 (recommended ${pair.minimum}:1).`}
+                {safe && (
+                  <button
+                    className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary ml-2"
+                    onClick={() => override(pair.fg, safe)}
+                  >
+                    Use safe value {safe}
+                  </button>
+                )}
               </li>
             ))}
           </ul>
