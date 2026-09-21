@@ -38,6 +38,7 @@ export interface StoredSquadActivityPayload {
   agentTypeRequiresAgentsRead: boolean
   kind: SquadActivityItem['kind']
   summary: string
+  preview: SquadActivityItem['preview']
   ref: SquadActivityRef
   quietEligible: boolean
   accessScope: SquadActivityAccessScope
@@ -58,6 +59,7 @@ export function activityPersistencePayload(item: ExtractedSquadActivity): Stored
     agentTypeRequiresAgentsRead: item.agentTypeRequiresAgentsRead,
     kind: item.kind,
     summary: item.summary,
+    preview: item.preview,
     ref: item.ref,
     quietEligible: item.quietEligible,
     accessScope: item.accessScope,
@@ -89,6 +91,7 @@ export function materializedItem(item: ExtractedSquadActivity): SquadActivityIte
     agentTypeId: item.agentTypeId,
     kind: item.kind,
     summary: item.summary,
+    preview: item.preview,
     ref: item.ref,
   }
 }

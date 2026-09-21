@@ -32,6 +32,7 @@ function storedToExtracted(row: typeof squadActivity.$inferSelect): ExtractedSqu
     agentTypeId: row.agentTypeId,
     kind: row.kind,
     summary: row.summary,
+    preview: row.preview,
     ref: coerceSquadActivityRef(row.ref),
     sourceFamily: row.sourceFamily as ExtractedSquadActivity['sourceFamily'],
     sourceGroupId: row.sourceGroupId,
@@ -79,7 +80,20 @@ export async function materializeSourceGroup(
     for (const item of extracted) {
       const insert = tx.insert(squadActivity).values(databaseValues(item))
       const [changed] = family.appendOnly
-        ? await insert.onConflictDoNothing().returning()
+        ? await insert
+            .onConflictDoUpdate({
+              target: [squadActivity.squadId, squadActivity.lane, squadActivity.rowId],
+              // Immutable event identity/authority stays append-only. Only the
+              // presentation is regenerated, and only by its original source.
+              set: {
+                preview: item.preview,
+                summary: item.summary,
+                payloadHash: activityPayloadHash(item),
+                updatedAt: sql`clock_timestamp()`,
+              },
+              setWhere: sql`${squadActivity.sourceGroupId}=${item.sourceGroupId} AND ${squadActivity.preview} IS DISTINCT FROM ${JSON.stringify(item.preview)}::jsonb`,
+            })
+            .returning()
         : await insert
             .onConflictDoUpdate({
               target: [squadActivity.squadId, squadActivity.lane, squadActivity.rowId],

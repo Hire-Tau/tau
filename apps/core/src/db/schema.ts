@@ -698,6 +698,7 @@ export const squadActivity = pgTable(
     agentTypeRequiresAgentsRead: boolean('agent_type_requires_agents_read').notNull().default(false),
     kind: varchar('kind', { length: 32 }).$type<SquadActivityKind>().notNull(),
     summary: varchar('summary', { length: 512 }).notNull(),
+    preview: jsonb('preview').$type<import('@tau/shared').ActivityPreviewSpan[]>().notNull().default([]),
     ref: jsonb('ref').$type<SquadActivityRef>().notNull(),
     quietEligible: boolean('quiet_eligible').notNull(),
     accessScope: squadActivityAccessScopeEnum('access_scope').notNull(),

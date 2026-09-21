@@ -324,7 +324,14 @@ export function SquadActivityTab({
   // middle) keep the original navigation for open-in-new-tab.
   const [openItem, setOpenItem] = useState<
     | { type: 'workstream'; workStreamId: string }
-    | { type: 'agent'; agentId: string; label: string; view: 'chat' | 'inbox'; messageId?: string }
+    | {
+        type: 'agent'
+        agentId: string
+        label: string
+        view: 'chat' | 'inbox'
+        messageId?: string
+        resolvedAgent?: Agent
+      }
     | null
   >(null)
   const openActivityItem = useCallback((item: SquadActivityItem) => {
@@ -339,6 +346,16 @@ export function SquadActivityTab({
         messageId: item.ref.messageId,
       })
     }
+  }, [])
+
+  const openAgentReference = useCallback((agent: Agent) => {
+    setOpenItem({
+      type: 'agent',
+      agentId: agent.id,
+      label: activityAgentLabel(agent.agentTypeId),
+      view: 'chat',
+      resolvedAgent: agent,
+    })
   }, [])
 
   const hrefFor = useCallback((item: SquadActivityItem) => squadActivityItemHref(item, squadSlug), [squadSlug])
@@ -363,6 +380,7 @@ export function SquadActivityTab({
         agentDetailFor={agentDetailFor}
         hrefFor={hrefFor}
         onOpen={openActivityItem}
+        onOpenAgentReference={openAgentReference}
         hasNextPage={query.hasNextPage}
         isFetchingNextPage={query.isFetchingNextPage}
         onLoadMore={() => void query.fetchNextPage()}
@@ -372,12 +390,13 @@ export function SquadActivityTab({
       )}
       {openItem?.type === 'agent' &&
         (() => {
-          const rosterAgent = agentById.get(openItem.agentId)
-          if (rosterAgent) {
+          const targetAgent = openItem.resolvedAgent ?? agentById.get(openItem.agentId)
+          const targetSquadId = openItem.resolvedAgent ? openItem.resolvedAgent.squadId : squadId
+          if (targetAgent && targetSquadId) {
             return (
               <AgentViewModalBody
-                agent={rosterAgent}
-                squadId={squadId}
+                agent={targetAgent}
+                squadId={targetSquadId}
                 onClose={() => setOpenItem(null)}
                 // Inbox rows open the CHAT tab too, focused on the transcript
                 // message that delivered the inbox message (operator decision

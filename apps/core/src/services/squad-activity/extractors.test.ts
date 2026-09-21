@@ -89,7 +89,9 @@ describe('agent-to-agent inbox rows (operator decision 2026-08-27)', () => {
       senderName: 'research-competitors',
       senderParentAgentTypeId: 'reviewer',
     })
-    expect(row.summary).toBe('Subagent sent message to Engineer: Findings for Task 1:')
+    expect(row.summary).toBe(
+      'Subagent sent message to Engineer: Findings for Task 1: second line is not part of the preview'
+    )
     // Attributed to the sender's PARENT type (renders as "› Reviewer",
     // consistent with spawn rows), gated behind agents-read via the flag.
     expect(row.agentTypeId).toBe('reviewer')
@@ -138,7 +140,7 @@ describe('agent-to-agent inbox rows (operator decision 2026-08-27)', () => {
 
   test('a sender without attribution still produces the recipient summary as system', () => {
     const [row] = extractInboxMessage({ ...base, senderAgentExists: true })
-    expect(row.summary).toBe('Sent message to Engineer: Findings for Task 1:')
+    expect(row.summary).toBe('Sent message to Engineer: Findings for Task 1: second line is not part of the preview')
     expect(row.agentTypeId).toBeNull()
     expect(row.agentId).toBe(base.senderId)
   })

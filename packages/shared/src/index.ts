@@ -73,3 +73,4 @@ export { workStreamRef, workStreamLabel, workStreamTitle } from './work-stream-r
 export type { StorageFolder, StorageSquad, StorageMachine, StorageSnapshot } from './storage'
 
 export * from './assistant-agent-types'
+export * from './entity-reference'

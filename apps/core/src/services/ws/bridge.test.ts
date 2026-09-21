@@ -405,6 +405,7 @@ describe('WebSocket Event Bridge', () => {
       agentTypeId: null,
       kind: 'workstream' as const,
       summary: '[ws visibility changed]',
+      preview: [{ text: '[ws visibility changed]' }],
       ref: { type: 'workstream' as const, workStreamId: crypto.randomUUID() },
     }
     const base = {
@@ -450,6 +451,7 @@ describe('WebSocket Event Bridge', () => {
         agentTypeId: null,
         kind: 'workstream' as const,
         summary: '[ws overflow]',
+        preview: [{ text: '[ws overflow]' }],
         ref: { type: 'workstream' as const, workStreamId: crypto.randomUUID() },
       },
       operation: 'upsert' as const,
@@ -486,6 +488,7 @@ describe('WebSocket Event Bridge', () => {
         agentTypeId: null,
         kind: 'workstream' as const,
         summary: '[ws queue]',
+        preview: [{ text: '[ws queue]' }],
         ref: { type: 'workstream' as const, workStreamId: crypto.randomUUID() },
       },
       quietEligible: true,

@@ -1,3 +1,4 @@
+import { activityPreview } from './preview'
 import { trackedResourceLabel } from '@tau/shared'
 import { activityRowIdForStream } from './activity-row-id'
 import { describeGitHubIssueFact, type GitHubIssueDispatchFact } from './github-issue-fact'
@@ -34,6 +35,10 @@ export function structuralSummary(marker: string, detail?: string | null): strin
   return firstLineSummary(`${marker}${detail?.trim() ? ` ${detail}` : ''}`, 512)
 }
 
+function structuralPreview(marker: string, detail?: string | null) {
+  return activityPreview(detail ?? '', 512, marker)
+}
+
 export interface ChatExecutionSnapshot {
   squadId: string
   executionId: string
@@ -65,7 +70,7 @@ export function extractChatExecution(snapshot: ChatExecutionSnapshot): Extracted
       agentId: snapshot.agentId,
       agentTypeId: snapshot.agentTypeId,
       kind: 'message',
-      summary: firstLineSummary(message.content),
+      ...activityPreview(message.content),
       ref: {
         type: 'agent',
         agentId: snapshot.agentId,
@@ -136,7 +141,7 @@ export function extractExecution(snapshot: ExecutionSnapshot): ExtractedSquadAct
       rowId: snapshot.id,
       at: at(snapshot.runStartedAt),
       kind: 'execution',
-      summary: `${subagent} spawned.`,
+      ...activityPreview(`${subagent} spawned.`, 512),
     })
   if (snapshot.endedAt && rowWorthyTerminalStatuses.has(snapshot.status))
     rows.push({
@@ -146,7 +151,7 @@ export function extractExecution(snapshot: ExecutionSnapshot): ExtractedSquadAct
       rowId: snapshot.id,
       at: at(snapshot.endedAt),
       kind: 'execution',
-      summary: `${subagent} ${snapshot.status}.`,
+      ...activityPreview(`${subagent} ${snapshot.status}.`, 512),
     })
   return rows
 }
@@ -170,7 +175,7 @@ export function extractWorkStream(snapshot: WorkStreamSnapshot): ExtractedSquadA
       agentId: snapshot.creatorAgentId,
       agentTypeId: snapshot.creatorAgentTypeId,
       kind: 'workstream',
-      summary: structuralSummary(`[ws-${snapshot.id.slice(0, 4)} created]`, snapshot.title),
+      ...structuralPreview(`[ws-${snapshot.id.slice(0, 4)} created]`, snapshot.title),
       ref: { type: 'workstream', workStreamId: snapshot.id },
       sourceFamily: 'workstream',
       sourceGroupId: snapshot.id,
@@ -219,10 +224,7 @@ export function extractWait(snapshot: WaitSnapshot): ExtractedSquadActivity[] {
       at: at(snapshot.openedAt),
       agentId: snapshot.createdByAgentId,
       agentTypeId: snapshot.createdByAgentTypeId,
-      summary: structuralSummary(
-        `[ws-${snapshot.workStreamId.slice(0, 4)} · ${snapshot.type} opened]`,
-        snapshot.message
-      ),
+      ...structuralPreview(`[ws-${snapshot.workStreamId.slice(0, 4)} · ${snapshot.type} opened]`, snapshot.message),
     },
   ]
   if (snapshot.closedAt)
@@ -233,7 +235,7 @@ export function extractWait(snapshot: WaitSnapshot): ExtractedSquadActivity[] {
       at: at(snapshot.closedAt),
       agentId: null,
       agentTypeId: null,
-      summary: structuralSummary(
+      ...structuralPreview(
         `[ws-${snapshot.workStreamId.slice(0, 4)} · ${snapshot.type} ${snapshot.resolution ?? 'resolved'}]`,
         snapshot.resolutionNote
       ),
@@ -306,12 +308,10 @@ export function extractInboxMessage(snapshot: InboxSnapshot): ExtractedSquadActi
           ? (snapshot.senderParentAgentTypeId ?? snapshot.senderAgentTypeId ?? null)
           : (snapshot.senderAgentTypeId ?? null),
         kind: fromSubagent ? ('subagent' as const) : ('message' as const),
-        summary: firstLineSummary(
-          `${fromSubagent ? 'Subagent sent message to' : 'Sent message to'} ${describeAssignee(
-            snapshot.recipientAgentTypeId,
-            null
-          )}: ${snapshot.content}`,
-          512
+        ...activityPreview(
+          snapshot.content,
+          512,
+          `${fromSubagent ? 'Subagent sent message to' : 'Sent message to'} ${describeAssignee(snapshot.recipientAgentTypeId, null)}:`
         ),
         ref: { type: 'agent', agentId: snapshot.recipientId, view: 'inbox', messageId: snapshot.id },
         workStreamId: null,
@@ -339,11 +339,10 @@ export function extractInboxMessage(snapshot: InboxSnapshot): ExtractedSquadActi
         agentId: null,
         agentTypeId: null,
         kind: 'message',
-        summary: firstLineSummary(
-          `Sent message to ${describeAssignee(snapshot.recipientAgentTypeId, null)}: ${
-            snapshot.subject?.trim() ? snapshot.subject : snapshot.content
-          }`,
-          512
+        ...activityPreview(
+          snapshot.subject?.trim() ? snapshot.subject : snapshot.content,
+          512,
+          `Sent message to ${describeAssignee(snapshot.recipientAgentTypeId, null)}:`
         ),
         ref: { type: 'agent', agentId: snapshot.recipientId, view: 'inbox', messageId: snapshot.id },
         workStreamId: null,
@@ -361,7 +360,7 @@ export function extractInboxMessage(snapshot: InboxSnapshot): ExtractedSquadActi
         agentId: snapshot.recipientId,
         agentTypeId: snapshot.recipientAgentTypeId,
         kind: 'handoff',
-        summary: structuralSummary(
+        ...structuralPreview(
           `[ws-${ws.id.slice(0, 4)} handoff]`,
           // Type only, no agent name; trailing period matches the done row
           // (operator decision 2026-08-27).
@@ -387,7 +386,7 @@ export function extractInboxMessage(snapshot: InboxSnapshot): ExtractedSquadActi
         agentId: null,
         agentTypeId: null,
         kind: 'workstream',
-        summary: structuralSummary(`[ws-${ws.id.slice(0, 4)} ${event}]`, snapshot.content),
+        ...structuralPreview(`[ws-${ws.id.slice(0, 4)} ${event}]`, snapshot.content),
         ref: { type: 'workstream', workStreamId: ws.id },
         workStreamId: ws.id,
         accessScope: 'workstreams_inbox',
@@ -423,7 +422,7 @@ function describeGitHubPrFact(fact: GitHubPrSnapshot['fact']): string {
 
 /** One row per tracking stream; the shared `pr` ref names no stream, the row column does. */
 export function extractGitHubPrDispatch(snapshot: GitHubPrSnapshot): ExtractedSquadActivity[] {
-  const summary = structuralSummary(
+  const summary = structuralPreview(
     `[PR #${snapshot.fact.prNumber} ${describeGitHubPrFact(snapshot.fact)}]`,
     snapshot.fact.actorLogin ? `by ${snapshot.fact.actorLogin}` : null
   )
@@ -438,7 +437,7 @@ export function extractGitHubPrDispatch(snapshot: GitHubPrSnapshot): ExtractedSq
       agentId: null,
       agentTypeId: null,
       kind: 'pr',
-      summary,
+      ...summary,
       ref: { type: 'pr', url: snapshot.fact.url },
       sourceFamily: 'github-pr',
       sourceGroupId: `${snapshot.sourceId}:${snapshot.squadId}`,
@@ -467,7 +466,7 @@ export function extractGitHubIssueDispatch(snapshot: GitHubIssueSnapshot): Extra
   const detail = [snapshot.fact.issueTitle.trim(), snapshot.fact.actorLogin ? `by ${snapshot.fact.actorLogin}` : '']
     .filter(Boolean)
     .join(' · ')
-  const summary = structuralSummary(
+  const summary = structuralPreview(
     `[Issue #${snapshot.fact.issueNumber} ${describeGitHubIssueFact(snapshot.fact)}]`,
     detail
   )
@@ -482,7 +481,7 @@ export function extractGitHubIssueDispatch(snapshot: GitHubIssueSnapshot): Extra
       agentId: null,
       agentTypeId: null,
       kind: 'issue',
-      summary,
+      ...summary,
       ref: { type: 'issue', url: snapshot.fact.url, workStreamId },
       sourceFamily: 'github-issue',
       sourceGroupId: `${snapshot.sourceId}:${snapshot.squadId}`,
@@ -525,7 +524,7 @@ export function extractLinearIssueDispatch(snapshot: LinearIssueSnapshot): Extra
   // The name Linear gave the actor reads better than its id, and neither identifies the row.
   const actor = snapshot.fact.actorName ?? snapshot.fact.actorId
   const detail = [snapshot.fact.title.trim(), actor ? `by ${actor}` : ''].filter(Boolean).join(' · ')
-  const summary = structuralSummary(
+  const summary = structuralPreview(
     `[Issue ${linearIssueLabel(snapshot.fact)} ${describeLinearIssueFact(snapshot.fact)}]`,
     detail
   )
@@ -541,7 +540,7 @@ export function extractLinearIssueDispatch(snapshot: LinearIssueSnapshot): Extra
       agentId: null,
       agentTypeId: null,
       kind: 'issue',
-      summary,
+      ...summary,
       ref: { type: 'issue', url, workStreamId },
       sourceFamily: 'linear-issue',
       sourceGroupId: `${snapshot.sourceId}:${snapshot.squadId}`,

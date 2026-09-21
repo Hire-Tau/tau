@@ -1,0 +1,1 @@
+ALTER TABLE "squad_activity" ADD COLUMN "preview" jsonb DEFAULT '[]'::jsonb NOT NULL;

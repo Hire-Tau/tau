@@ -131,3 +131,12 @@ export function squadActivityStatusMessage(isLoading: boolean, isError: boolean,
   if (isLoading) return 'Loading activity…'
   return itemCount === 0 ? 'No activity matches these filters.' : null
 }
+
+export function activityExternalHref(value: string): string | undefined {
+  try {
+    const url = new URL(value)
+    if (url.protocol === 'https:' || url.protocol === 'http:') return value
+  } catch {
+    /* Unknown and unsafe destinations render as text. */
+  }
+}
