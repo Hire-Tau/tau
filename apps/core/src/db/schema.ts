@@ -21,6 +21,7 @@ import {
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
 import type {
+  ThemePreference,
   AmtpEnvelope,
   AmtpSignedAgentCard,
   Attention,
@@ -1746,6 +1747,15 @@ export const systemInboxReads = pgTable(
     index('idx_system_inbox_reads_user_message').on(table.userId, table.messageId),
   ]
 )
+
+/** Account choice; absent row means this user has not synced a theme. */
+export const userPreferences = pgTable('user_preferences', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  theme: jsonb('theme').$type<ThemePreference>().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
 
 // Per-user notification preferences. Notification delivery (push) is per-user; this lets each user
 // control their own push without affecting the shared/system notification rules.
