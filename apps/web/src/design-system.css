@@ -368,3 +368,46 @@
   margin: 0;
   line-height: 1.5;
 }
+
+/* Author gradients and inset shadows vanish under forced colors. Keep real
+   control boundaries/focus using system colors; do not opt out of the user's
+   palette. Theme choices (including custom themes) are cosmetic in this mode. */
+@media (forced-colors: active) {
+  .tau-button,
+  .tau-field {
+    outline: 1px solid ButtonText;
+    outline-offset: -1px;
+  }
+  .tau-button:focus-visible,
+  .tau-field:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 3px;
+  }
+  .voice-orb {
+    outline: 2px solid ButtonText !important;
+  }
+  .voice-orb:focus-visible {
+    outline: 3px solid Highlight !important;
+    outline-offset: 4px;
+  }
+  .voice-orb__glow,
+  .voice-orb__swirl,
+  .voice-orb__shade,
+  .voice-orb__rim,
+  .voice-orb__shine {
+    display: none;
+  }
+  .voice-orb-status {
+    display: block !important;
+    width: auto;
+    height: auto;
+  }
+  .voice-orb-status > span {
+    display: none;
+  }
+  .voice-orb-status::after {
+    content: attr(aria-label);
+    color: CanvasText;
+    white-space: nowrap;
+  }
+}

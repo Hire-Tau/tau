@@ -86,6 +86,14 @@ describe('persistThemeSelection', () => {
 })
 
 describe('surface snapshots', () => {
+  test('unified themes round-trip a constant snapshot, never a light/dark snapshot', () => {
+    const storage = memoryStorage()
+    persistSurfaceSnapshot(storage, 'high-contrast', 'constant', 'rgb(255 255 255)')
+    expect(readSurfaceSnapshot(storage, 'high-contrast', 'constant')).toBe('rgb(255 255 255)')
+    expect(readSurfaceSnapshot(storage, 'high-contrast', 'light')).toBeNull()
+    expect(readSurfaceSnapshot(storage, 'tau', 'light')).toBeNull()
+  })
+
   test('the state-keyed snapshot round-trips for the matching resolved state', () => {
     const storage = memoryStorage()
     persistSurfaceSnapshot(storage, 'tau', 'dark', 'rgb(16 17 28)')
