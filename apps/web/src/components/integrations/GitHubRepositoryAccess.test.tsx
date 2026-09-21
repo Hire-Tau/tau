@@ -80,3 +80,15 @@ test('checking again replaces missing-access guidance with verified results', as
   expect(container.textContent).toContain('Repository access verified')
   expect(container.textContent).not.toContain('The App is not installed')
 })
+
+test('a failed recheck does not keep presenting stale installation conclusions', async () => {
+  const container = await render(missing)
+  globalThis.fetch = (async () => Response.json({ error: 'Unavailable' }, { status: 503 })) as typeof fetch
+  await harness.act(async () => {
+    fireEvent.click(container.querySelector('button')!)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  })
+  expect(container.textContent).toContain('Could not fully verify repository access')
+  expect(container.textContent).not.toContain('The App is not installed')
+  expect(container.textContent).not.toContain('Repository access verified')
+})

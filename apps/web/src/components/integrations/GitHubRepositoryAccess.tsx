@@ -11,7 +11,7 @@ export function GitHubRepositoryAccess({
   usesTauApp: boolean
 }) {
   const access = useQuery(integrationQueries.githubRepositoryAccess(connectionId))
-  const result = access.data
+  const result = access.isError ? undefined : access.data
   const uncertain = access.isError || result?.status === 'unknown'
   const needsAccess = result?.status === 'missing' || result?.personalAccountInstalled === false
   const installationUrl = usesTauApp
