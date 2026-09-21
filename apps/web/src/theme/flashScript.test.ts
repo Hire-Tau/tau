@@ -12,6 +12,7 @@ import {
   THEME_SURFACE_KEY,
   type ThemeStorage,
 } from './storage'
+import { palettes, resolveToken } from './test/builtins'
 import { BUILT_IN_THEMES } from './registry'
 
 // Covers the inline pre-paint flash script in apps/web/index.html: the actual
@@ -117,7 +118,7 @@ describe('pre-paint flash script (cold load, every stored state)', () => {
     expect(result.dataTheme).toBe('tau')
     expect(result.dataAppearance).toBe('light')
     expect(result.hasDarkClass).toBe(false)
-    expect(result.backgroundColor).toBe('')
+    expect(result.backgroundColor).toBe('rgb(255 255 255)')
   })
 
   test('new keys, dark: identical paint to the legacy dark path', async () => {
@@ -139,12 +140,12 @@ describe('pre-paint flash script (cold load, every stored state)', () => {
     expect(result.hasDarkClass).toBe(false)
   })
 
-  test('no keys at all: default light, no flash helpers', async () => {
+  test('no keys at all: default light surface before CSS', async () => {
     const result = await runFlashScript({})
     expect(result.dataTheme).toBe('tau')
     expect(result.dataAppearance).toBe('light')
     expect(result.hasDarkClass).toBe(false)
-    expect(result.backgroundColor).toBe('')
+    expect(result.backgroundColor).toBe('rgb(255 255 255)')
   })
 
   test('unreadable values degrade to the default pair instead of guessing', async () => {
@@ -163,7 +164,7 @@ describe('pre-paint flash script (cold load, every stored state)', () => {
     expect(matched.metaThemeColor).toBe('rgb(16 17 28)')
 
     const mismatched = await runFlashScript({ themeId: 'tau', appearance: 'light', snapshot })
-    expect(mismatched.backgroundColor).toBe('')
+    expect(mismatched.backgroundColor).toBe('rgb(255 255 255)')
   })
 
   test('a corrupt structured snapshot does not fall back to a possibly-stale legacy value', async () => {
@@ -173,7 +174,7 @@ describe('pre-paint flash script (cold load, every stored state)', () => {
       snapshot: '{oops',
       legacySurface: '#10111c',
     })
-    expect(result.backgroundColor).toBe('')
+    expect(result.backgroundColor).toBe('rgb(16 17 28)')
   })
 
   test('a stale dark class from a restored document is removed on a light cold load', async () => {
@@ -216,4 +217,35 @@ describe('flash script parity with the shared resolution rules', () => {
       expect(result.hasDarkClass).toBe(expectedAppearance === 'dark')
     }
   })
+})
+
+describe('every built-in × appearance × OS pre-paint matrix', () => {
+  for (const theme of BUILT_IN_THEMES)
+    for (const appearance of ['light', 'dark', 'system'] as const)
+      for (const systemPrefersDark of [false, true]) {
+        const resolved = resolveThemeSelection(BUILT_IN_THEMES, theme.id, appearance, systemPrefersDark).appearance
+        const palette = palettes.find((p) => p.id === theme.id && p.appearance === resolved)!
+        const surface = `rgb(${resolveToken(palette.tokens, '--color-bg-surface')})`
+        for (const snapshot of [
+          undefined,
+          '{broken',
+          JSON.stringify({ theme: 'unknown', appearance: resolved, surface: 'rgb(1 2 3)' }),
+          JSON.stringify({ theme: theme.id, appearance: resolved, surface }),
+        ]) {
+          test(`${theme.id}/${appearance}/OS-dark=${systemPrefersDark}/snapshot=${snapshot}`, async () => {
+            const result = await runFlashScript({
+              themeId: theme.id,
+              appearance,
+              systemPrefersDark,
+              snapshot,
+              staleDarkClass: true,
+            })
+            expect(result.dataTheme).toBe(theme.id)
+            expect(result.dataAppearance).toBe(resolved === 'constant' ? null : resolved)
+            expect(result.hasDarkClass).toBe(resolved === 'dark')
+            expect(result.backgroundColor).toBe(surface)
+            expect(result.metaThemeColor).toBe(surface)
+          })
+        }
+      }
 })

@@ -83,7 +83,7 @@ const samples = {
 
 describe('default content palette parity', () => {
   for (const [appearance, variables] of Object.entries(scopes)) {
-    test(`${appearance}: every rendered syntax style matches the old oneDark output`, () => {
+    test(`${appearance}: every rendered syntax style retains oneDark parity except the two approved contrast deltas`, () => {
       for (const [language, content] of Object.entries(samples)) {
         for (const showLineNumbers of [false, true]) {
           const before = renderToStaticMarkup(
@@ -96,7 +96,12 @@ describe('default content palette parity', () => {
               {content}
             </SyntaxHighlighter>
           )
-          expect(normalizeColors(substitute(after, variables))).toBe(normalizeColors(before))
+          // Owner approved these two palette corrections in phase 5 (2026-09-21).
+          // Keep all other colors, emitted classes, grouping and typography exact.
+          const expected = normalizeColors(before)
+            .replaceAll('#5c6370ff', '#8e95a2ff') // comment: 2.308 → 4.634
+            .replaceAll('#e06c75ff', '#e37079ff') // property: 4.375 → 4.567
+          expect(normalizeColors(substitute(after, variables))).toBe(expected)
         }
       }
     })
@@ -137,7 +142,7 @@ describe('default content palette parity', () => {
         '--syntax-human-code-fg': '#dbeafe',
         '--syntax-human-code-bg': '#1d4ed8',
         '--term-loading-bg': '#374151',
-        '--term-muted': '#6b7280',
+        '--term-muted': '#767d8b', // approved contrast correction: 3.942 → 4.607,
       }
       for (const [token, color] of Object.entries(expected)) {
         expect(normalizeColors(`rgb(${variables[token]})`)).toBe(normalizeColors(color))
@@ -153,7 +158,8 @@ describe('default content palette parity', () => {
       ['bg-[#1e1e1e]', 'bg-[rgb(var(--syntax-image-bg))]', 'background-color'],
       ['text-red-500', 'text-[rgb(var(--syntax-error-fg))]', 'color'],
       ['bg-gray-700', 'bg-[rgb(var(--term-loading-bg))]', 'background-color'],
-      ['text-gray-500', 'text-[rgb(var(--term-muted))]', 'color'],
+      // Phase 5 approved muted ink replaces gray-500; other utility pairs retain parity.
+      ['text-[#767d8b]', 'text-[rgb(var(--term-muted))]', 'color'],
       ['prose-a:text-blue-200', 'prose-a:text-[rgb(var(--syntax-human-link))]', 'color'],
       ['prose-code:text-blue-100', 'prose-code:text-[rgb(var(--syntax-human-code-fg))]', 'color'],
       ['prose-code:bg-blue-700/50', 'prose-code:bg-[rgb(var(--syntax-human-code-bg)/0.5)]', 'background-color'],

@@ -17,12 +17,13 @@ function value(selector: string, property: string): string | undefined {
 }
 
 describe('miscellaneous chrome tokens', () => {
-  test('preserves scrollbar and checkbox colors in both appearances', () => {
+  test('preserves checkbox colors and uses the approved contrast-safe scrollbars', () => {
     for (const tokens of Object.values(variants)) {
-      expect(tokens['--scrollbar-thumb']).toBe('156 163 175 / 0.5')
       expect(tokens['--checkbox-check']).toBe('255 255 255')
       expect(tokens['--on-accent-fg']).toBe('255 255 255')
     }
+    expect(variants.light['--scrollbar-thumb']).toBe('55 65 81 / 0.65')
+    expect(variants.dark['--scrollbar-thumb']).toBe('156 163 175 / 0.6')
     expect(value('.scrollbar-thin::-webkit-scrollbar-thumb', 'background-color')).toBe('rgb(var(--scrollbar-thumb))')
     expect(value(".dark input[type='checkbox']:checked::after", 'border')).toBe('solid rgb(var(--checkbox-check))')
   })
