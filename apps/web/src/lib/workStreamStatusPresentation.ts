@@ -3,8 +3,8 @@ import {
   WORK_STREAM_STATUS_ROLE,
   type WorkStreamPresentationFacts,
   type WorkStreamPresentationState,
+  type StatusRole,
 } from '@tau/shared'
-import type { BadgeColor } from '../components/Badge'
 import { webStatus } from './statusPresentation'
 
 // Merged label/color maps covering BOTH stored statuses (queued/active/done/canceled) and derived
@@ -27,7 +27,7 @@ export const WS_STATUS_LABELS: Record<WorkStreamPresentationState, string> = {
   paused: 'Paused',
 }
 
-export const WS_STATUS_BADGE_COLORS: Record<WorkStreamPresentationState, BadgeColor> = {
+export const WS_STATUS_BADGE_COLORS: Record<WorkStreamPresentationState, StatusRole> = {
   queued: webStatus(WORK_STREAM_STATUS_ROLE.queued).badgeColor,
   active: webStatus(WORK_STREAM_STATUS_ROLE.active).badgeColor,
   done: webStatus(WORK_STREAM_STATUS_ROLE.done).badgeColor,

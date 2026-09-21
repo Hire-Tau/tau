@@ -27,7 +27,7 @@ export function SquadAvatar({ name, avatarUrl, size = 40, className }: Props) {
   return (
     <div
       className={clsx(
-        'rounded-full bg-accent text-white font-semibold flex items-center justify-center shrink-0',
+        'rounded-full bg-accent text-on-accent font-semibold flex items-center justify-center shrink-0',
         className
       )}
       style={{ ...dims, fontSize: Math.round(size * 0.42) }}

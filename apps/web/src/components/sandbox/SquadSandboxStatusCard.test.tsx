@@ -42,8 +42,8 @@ describe('SquadSandboxStatusCard', () => {
     expect(html).toContain('Attempt 2')
     expect(html).toContain('2026-08-27T08:00:00.000Z')
     expect(html).toContain('Running — degraded')
-    expect(html).toContain('text-amber-700')
-    expect(html).toContain('bg-amber-500')
+    expect(html).toContain('text-status-attention-fg')
+    expect(html).toContain('bg-status-attention-solid')
   })
 
   test('uses the VM chain label when the machine is unreachable', () => {
@@ -54,8 +54,8 @@ describe('SquadSandboxStatusCard', () => {
       chain: { boxProvisioned: true, machine: 'unreachable', boxServer: 'unknown' },
     })
     expect(html).toContain('Machine unreachable')
-    expect(html).toContain('text-amber-700')
-    expect(html).toContain('bg-amber-500')
+    expect(html).toContain('text-status-attention-fg')
+    expect(html).toContain('bg-status-attention-solid')
     expect(html).not.toContain('>Failed<')
   })
 
@@ -67,8 +67,8 @@ describe('SquadSandboxStatusCard', () => {
     })
     expect(html).toContain('Box server down')
     expect(html).toContain('starts on next use')
-    expect(html).toContain('text-amber-700')
-    expect(html).toContain('bg-amber-500')
+    expect(html).toContain('text-status-attention-fg')
+    expect(html).toContain('bg-status-attention-solid')
     expect(html).not.toContain('Not running')
   })
 })

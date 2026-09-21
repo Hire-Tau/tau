@@ -233,7 +233,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
                 <button
                   type="submit"
                   disabled={loading || !password.trim()}
-                  className="tau-button tau-button-primary w-full mt-3 px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-white font-medium text-sm disabled:opacity-50"
+                  className="tau-button tau-button-primary w-full mt-3 px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
                 >
                   {loading ? 'Verifying...' : 'Continue'}
                 </button>
@@ -343,7 +343,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
           <button
             type="submit"
             disabled={loading || !password.trim()}
-            className="tau-button tau-button-primary w-full mt-3 px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-white font-medium text-sm disabled:opacity-50"
+            className="tau-button tau-button-primary w-full mt-3 px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
           >
             {loading ? 'Logging in...' : 'Login'}
           </button>

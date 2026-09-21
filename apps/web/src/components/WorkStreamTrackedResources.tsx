@@ -23,8 +23,8 @@ const SUBSCRIPTION_HINTS: Record<Exclude<TrackedResourcesView['subscriptions'], 
 
 /** An open pull request gets no chip: it is the unremarkable state while work is in flight. */
 const MERGE_STATE_COLORS: Partial<Record<NonNullable<TrackedRow['mergeState']>, BadgeColor>> = {
-  merged: 'green',
-  closed: 'gray',
+  merged: 'success',
+  closed: 'neutral',
 }
 
 const resourceIdentity = (resource: TrackedRow) => ({
@@ -97,7 +97,7 @@ export function WorkStreamTrackedResources({ workStreamId, canUpdate }: { workSt
                     {label}
                   </span>
                 )}
-                {resource.delivery && <Badge color="purple">delivery</Badge>}
+                {resource.delivery && <Badge color="accent-1">delivery</Badge>}
                 {resource.mergeState && MERGE_STATE_COLORS[resource.mergeState] && (
                   <Badge color={MERGE_STATE_COLORS[resource.mergeState]}>{resource.mergeState}</Badge>
                 )}

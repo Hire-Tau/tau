@@ -362,7 +362,7 @@ export function FileUpload({ squadId, targetDir = '', onUploadStart, onUploadCom
               </button>
               <button
                 onClick={handleOverwriteConfirm}
-                className="tau-button tau-button-primary px-4 py-2 text-sm rounded bg-accent hover:bg-accent/90 text-white"
+                className="tau-button tau-button-primary px-4 py-2 text-sm rounded bg-accent hover:bg-accent/90 text-on-accent"
               >
                 Overwrite
               </button>

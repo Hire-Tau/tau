@@ -900,7 +900,7 @@ function CommandAgentType({ typeId }: { typeId: string }) {
   const label =
     types.data?.find((type) => type.id === typeId)?.name ??
     typeId.replace(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
-  return <Badge color="purple">{label}</Badge>
+  return <Badge color="accent-1">{label}</Badge>
 }
 
 function CommandWorkStatus({ work }: { work: WorkStream }) {

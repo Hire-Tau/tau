@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { validateThemeTokenSet } from '@tau/shared'
+import { ACTIVE_THEME_TOKENS, THEME_TOKEN_FAMILIES, validateThemeTokenSet } from '@tau/shared'
 
 // Ties the CSS token scopes in src/index.css to the single source-of-truth
 // token registry in packages/shared/src/theme-schema.ts: every built-in theme
@@ -51,20 +51,36 @@ describe('built-in theme token completeness (tau dual variant)', () => {
     expect(result.ok).toBe(true)
   })
 
+  test('removing any newly active semantic token fails completeness in either variant', () => {
+    const semanticTokens = THEME_TOKEN_FAMILIES.filter((family) =>
+      ['status', 'agent-type', 'misc-chrome', 'badge-decoration'].includes(family.family)
+    ).flatMap((family) => family.tokens)
+    for (const block of [rootBlock, darkBlock]) {
+      for (const omitted of semanticTokens) {
+        const result = validateThemeTokenSet(declaredTokens(block).filter((name) => name !== omitted))
+        expect(result.ok).toBe(false)
+        expect(result.missing).toEqual([omitted])
+      }
+    }
+  })
+
   test('both variant scopes declare the same token names', () => {
     expect([...new Set(declaredTokens(rootBlock))].sort()).toEqual([...new Set(declaredTokens(darkBlock))].sort())
   })
 
-  test('scopes declare 29 tokens (the chrome family)', () => {
-    expect(new Set(declaredTokens(rootBlock)).size).toBe(29)
+  test('scopes declare every active token (including newly activated families)', () => {
+    expect(new Set(declaredTokens(rootBlock)).size).toBe(ACTIVE_THEME_TOKENS.length)
   })
 })
 
 describe('channel-form tokens (opacity modifier support)', () => {
   test('intrinsic opacity metadata is explicit, separate from color-token completeness', () => {
     for (const block of [rootBlock, darkBlock]) {
-      const metadata = [...block.matchAll(/(--opacity-[a-z-]+)\s*:\s*([^;]+);/g)]
-      expect(metadata.map((match) => match[1]).sort()).toEqual(['--opacity-input-border', '--opacity-panel-border'])
+      const metadata = [...block.matchAll(/(--opacity-[a-z0-9-]+)\s*:\s*([^;]+);/g)]
+      expect(metadata.map((match) => match[1])).toEqual(
+        expect.arrayContaining(['--opacity-input-border', '--opacity-panel-border'])
+      )
+      expect(new Set(metadata.map((match) => match[1])).size).toBe(metadata.length)
       for (const match of metadata) {
         expect(Number(match[2])).toBeGreaterThan(0)
         expect(Number(match[2])).toBeLessThanOrEqual(1)

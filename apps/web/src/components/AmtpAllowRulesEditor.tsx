@@ -121,7 +121,7 @@ export function AmtpAllowRulesEditor({ agentId, canWrite }: AmtpAllowRulesEditor
           <button
             type="submit"
             disabled={!canSubmit}
-            className="tau-button tau-button-primary rounded bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="tau-button tau-button-primary rounded bg-accent px-3 py-1 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             {addRule.isPending ? 'Adding…' : 'Add rule'}
           </button>

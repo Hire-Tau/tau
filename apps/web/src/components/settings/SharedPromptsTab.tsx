@@ -232,7 +232,7 @@ export function SharedPromptsTab() {
         </p>
         {canWrite && (
           <button
-            className="tau-button tau-button-primary shrink-0 px-3 py-1.5 text-sm bg-accent text-white rounded-md"
+            className="tau-button tau-button-primary shrink-0 px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md"
             onClick={openNew}
           >
             New shared prompt
@@ -320,7 +320,7 @@ export function SharedPromptsTab() {
             </div>
             <div className="flex items-center gap-2 flex-wrap">
               <button
-                className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-white rounded-md disabled:opacity-50"
+                className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md disabled:opacity-50"
                 disabled={save.isPending}
               >
                 {save.isPending ? 'Saving…' : 'Save'}

@@ -67,7 +67,7 @@ export function AgentViewTabs<T extends string>({ activeTab, onChange, tabs }: A
           'tau-button',
           'flex items-center gap-1 px-2 py-1 text-xs font-medium transition-colors',
           index > 0 && 'border-l border-th-border',
-          isActive ? 'bg-accent text-white' : 'text-muted hover:text-primary hover:bg-surface-hover'
+          isActive ? 'bg-accent text-on-accent' : 'text-muted hover:text-primary hover:bg-surface-hover'
         )}
       >
         <Icon className="w-3.5 h-3.5" />
@@ -78,7 +78,9 @@ export function AgentViewTabs<T extends string>({ activeTab, onChange, tabs }: A
             <span
               className={clsx(
                 'min-w-[16px] h-[16px] flex items-center justify-center text-[10px] font-bold rounded-full px-1 tabular-nums',
-                isActive ? 'bg-white/20 text-white' : 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400'
+                isActive
+                  ? 'bg-on-accent/20 text-on-accent'
+                  : 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400'
               )}
             >
               {activeCount}

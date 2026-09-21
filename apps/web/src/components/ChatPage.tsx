@@ -350,7 +350,7 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
                   'tau-button',
                   'px-2.5 py-0.5 rounded-full text-xs whitespace-nowrap',
                   scopeFilter === f.value
-                    ? 'bg-accent text-white'
+                    ? 'bg-accent text-on-accent'
                     : 'bg-surface-secondary text-secondary hover:bg-surface-hover'
                 )}
               >
@@ -364,7 +364,7 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
         <div className="hidden md:block p-3 border-b border-th-border space-y-3">
           <button
             onClick={handleNewChat}
-            className="tau-button tau-button-primary w-full bg-accent text-white px-4 py-2 rounded-md hover:bg-accent-hover text-sm font-medium"
+            className="tau-button tau-button-primary w-full bg-accent text-on-accent px-4 py-2 rounded-md hover:bg-accent-hover text-sm font-medium"
           >
             New System Chat
           </button>
@@ -377,7 +377,7 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
                   'tau-button',
                   'px-2 py-0.5 rounded-full text-xs',
                   scopeFilter === f.value
-                    ? 'bg-accent text-white'
+                    ? 'bg-accent text-on-accent'
                     : 'bg-surface-secondary text-secondary hover:bg-surface-hover'
                 )}
               >

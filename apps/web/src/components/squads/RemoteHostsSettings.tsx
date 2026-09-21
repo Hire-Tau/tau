@@ -145,7 +145,7 @@ export function RemoteHostsSettings({ squadId }: Props) {
         {canWrite && !showAddForm && (
           <button
             onClick={() => setShowAddForm(true)}
-            className="tau-button tau-button-primary px-3 py-1.5 text-sm rounded-md font-medium bg-accent text-white hover:bg-accent/90 transition-colors"
+            className="tau-button tau-button-primary px-3 py-1.5 text-sm rounded-md font-medium bg-accent text-on-accent hover:bg-accent/90 transition-colors"
           >
             Add Host
           </button>
@@ -279,7 +279,7 @@ export function RemoteHostsSettings({ squadId }: Props) {
                   'tau-button',
                   'px-4 py-1.5 text-sm rounded-md font-medium transition-colors',
                   canSubmit
-                    ? 'bg-accent text-white hover:bg-accent/90'
+                    ? 'bg-accent text-on-accent hover:bg-accent/90'
                     : 'bg-surface-secondary text-muted cursor-not-allowed'
                 )}
               >
