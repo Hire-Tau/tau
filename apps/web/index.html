@@ -73,18 +73,88 @@
     <!-- Prevent telephone number detection on iOS -->
     <meta name="format-detection" content="telephone=no" />
 
-    <!-- Flash prevention script for dark mode -->
-    <script>
+    <!-- Flash prevention script: resolves (themeId, appearance, system) before
+         first paint and applies data-theme / data-appearance / the legacy dark
+         class, plus the resolved-surface snapshot so any stored theme paints
+         without a flash of the default theme. Mirrors the shared
+         resolveThemeSelection fallback rules; kept dependency-free because it
+         runs before any module. Covered by src/theme/flashScript.test.ts. -->
+    <script data-tau-theme-flash>
       ;(function () {
-        var theme = localStorage.getItem('tau-theme')
-        if (theme === 'dark') {
-          document.documentElement.classList.add('dark')
-        }
-        var surface = localStorage.getItem('tau-surface-color')
-        if (surface) {
-          document.documentElement.style.backgroundColor = surface
-          var meta = document.querySelector("meta[name='theme-color']")
-          if (meta) meta.setAttribute('content', surface)
+        try {
+          var root = document.documentElement
+          var stored = { themeId: null, appearance: null, legacyTheme: null }
+          try {
+            stored.themeId = localStorage.getItem('tau-theme-id')
+            stored.appearance = localStorage.getItem('tau-appearance')
+            stored.legacyTheme = localStorage.getItem('tau-theme')
+          } catch (e) {
+            /* unreadable storage behaves as empty: defaults apply */
+          }
+          // Registered theme ids today: 'tau'. Unknown or missing ids resolve
+          // to it (shared fallback rule: unknown theme id -> default pair).
+          var themeId = stored.themeId === 'tau' ? stored.themeId : 'tau'
+          var appearance = stored.appearance
+          if (appearance !== 'light' && appearance !== 'dark' && appearance !== 'system') {
+            appearance = stored.legacyTheme === 'dark' ? 'dark' : 'light'
+          }
+          var resolved = appearance
+          if (appearance === 'system') {
+            try {
+              resolved = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+            } catch (e) {
+              resolved = 'light'
+            }
+          }
+          root.setAttribute('data-theme', themeId)
+          root.setAttribute('data-appearance', resolved)
+          if (resolved === 'dark') {
+            root.classList.add('dark')
+          } else {
+            root.classList.remove('dark')
+          }
+          // Resolved-surface snapshot: prefer the state-keyed snapshot. The
+          // legacy plain string carries no state, so it applies only while the
+          // structured key has never been written (pre-upgrade browsers) and
+          // only under the tau theme it was written with.
+          var surface = null
+          var rawSnapshot = null
+          try {
+            rawSnapshot = localStorage.getItem('tau-theme-surface')
+          } catch (e) {
+            rawSnapshot = null
+          }
+          if (rawSnapshot != null) {
+            try {
+              var snap = JSON.parse(rawSnapshot)
+              if (
+                snap &&
+                snap.theme === themeId &&
+                snap.appearance === resolved &&
+                typeof snap.surface === 'string' &&
+                snap.surface
+              ) {
+                surface = snap.surface
+              }
+              // A structured snapshot exists but does not match this state:
+              // paint from CSS rather than trusting a possibly-stale value.
+            } catch (e) {
+              /* corrupt snapshot: paint from CSS instead of guessing */
+            }
+          } else if (themeId === 'tau') {
+            try {
+              surface = localStorage.getItem('tau-surface-color')
+            } catch (e) {
+              surface = null
+            }
+          }
+          if (surface) {
+            root.style.backgroundColor = surface
+            var meta = document.querySelector("meta[name='theme-color']")
+            if (meta) meta.setAttribute('content', surface)
+          }
+        } catch (e) {
+          /* never block first paint on theme resolution */
         }
       })()
     </script>
