@@ -1,0 +1,241 @@
+{
+  "ansi": {
+    "light": {
+      "ansi-black": {
+        "color": "#1e1e1e"
+      },
+      "ansi-red": {
+        "color": "#c53030"
+      },
+      "ansi-green": {
+        "color": "#2f855a"
+      },
+      "ansi-yellow": {
+        "color": "#b7791f"
+      },
+      "ansi-blue": {
+        "color": "#2b6cb0"
+      },
+      "ansi-magenta": {
+        "color": "#97266d"
+      },
+      "ansi-cyan": {
+        "color": "#0987a0"
+      },
+      "ansi-white": {
+        "color": "#718096"
+      },
+      "ansi-bright-black": {
+        "color": "#4a5568"
+      },
+      "ansi-bright-red": {
+        "color": "#e53e3e"
+      },
+      "ansi-bright-green": {
+        "color": "#38a169"
+      },
+      "ansi-bright-yellow": {
+        "color": "#d69e2e"
+      },
+      "ansi-bright-blue": {
+        "color": "#3182ce"
+      },
+      "ansi-bright-magenta": {
+        "color": "#b83280"
+      },
+      "ansi-bright-cyan": {
+        "color": "#00b5d8"
+      },
+      "ansi-bright-white": {
+        "color": "#1a202c"
+      },
+      "ansi-bg-black": {
+        "background-color": "#1e1e1e",
+        "color": "#fff"
+      },
+      "ansi-bg-red": {
+        "background-color": "#fc8181"
+      },
+      "ansi-bg-green": {
+        "background-color": "#9ae6b4"
+      },
+      "ansi-bg-yellow": {
+        "background-color": "#faf089"
+      },
+      "ansi-bg-blue": {
+        "background-color": "#90cdf4"
+      },
+      "ansi-bg-magenta": {
+        "background-color": "#fbb6ce"
+      },
+      "ansi-bg-cyan": {
+        "background-color": "#81e6d9"
+      },
+      "ansi-bg-white": {
+        "background-color": "#edf2f7"
+      },
+      "ansi-bg-bright-black": {
+        "background-color": "#4a5568",
+        "color": "#fff"
+      },
+      "ansi-bg-bright-red": {
+        "background-color": "#feb2b2"
+      },
+      "ansi-bg-bright-green": {
+        "background-color": "#c6f6d5"
+      },
+      "ansi-bg-bright-yellow": {
+        "background-color": "#fefcbf"
+      },
+      "ansi-bg-bright-blue": {
+        "background-color": "#bee3f8"
+      },
+      "ansi-bg-bright-magenta": {
+        "background-color": "#fed7e2"
+      },
+      "ansi-bg-bright-cyan": {
+        "background-color": "#b2f5ea"
+      },
+      "ansi-bg-bright-white": {
+        "background-color": "#f7fafc"
+      }
+    },
+    "dark": {
+      "ansi-black": {
+        "color": "#4a5568"
+      },
+      "ansi-red": {
+        "color": "#fc8181"
+      },
+      "ansi-green": {
+        "color": "#68d391"
+      },
+      "ansi-yellow": {
+        "color": "#f6e05e"
+      },
+      "ansi-blue": {
+        "color": "#63b3ed"
+      },
+      "ansi-magenta": {
+        "color": "#f687b3"
+      },
+      "ansi-cyan": {
+        "color": "#4fd1c5"
+      },
+      "ansi-white": {
+        "color": "#a0aec0"
+      },
+      "ansi-bright-black": {
+        "color": "#718096"
+      },
+      "ansi-bright-red": {
+        "color": "#feb2b2"
+      },
+      "ansi-bright-green": {
+        "color": "#9ae6b4"
+      },
+      "ansi-bright-yellow": {
+        "color": "#faf089"
+      },
+      "ansi-bright-blue": {
+        "color": "#90cdf4"
+      },
+      "ansi-bright-magenta": {
+        "color": "#fbb6ce"
+      },
+      "ansi-bright-cyan": {
+        "color": "#76e4f7"
+      },
+      "ansi-bright-white": {
+        "color": "#e2e8f0"
+      },
+      "ansi-bg-black": {
+        "background-color": "#1a202c",
+        "color": "#e2e8f0"
+      },
+      "ansi-bg-red": {
+        "background-color": "#742a2a",
+        "color": "#feb2b2"
+      },
+      "ansi-bg-green": {
+        "background-color": "#22543d",
+        "color": "#c6f6d5"
+      },
+      "ansi-bg-yellow": {
+        "background-color": "#744210",
+        "color": "#fefcbf"
+      },
+      "ansi-bg-blue": {
+        "background-color": "#2a4365",
+        "color": "#bee3f8"
+      },
+      "ansi-bg-magenta": {
+        "background-color": "#702459",
+        "color": "#fed7e2"
+      },
+      "ansi-bg-cyan": {
+        "background-color": "#234e52",
+        "color": "#b2f5ea"
+      },
+      "ansi-bg-white": {
+        "background-color": "#4a5568",
+        "color": "#e2e8f0"
+      },
+      "ansi-bg-bright-black": {
+        "background-color": "#2d3748",
+        "color": "#e2e8f0"
+      },
+      "ansi-bg-bright-red": {
+        "background-color": "#9b2c2c",
+        "color": "#feb2b2"
+      },
+      "ansi-bg-bright-green": {
+        "background-color": "#276749",
+        "color": "#c6f6d5"
+      },
+      "ansi-bg-bright-yellow": {
+        "background-color": "#975a16",
+        "color": "#fefcbf"
+      },
+      "ansi-bg-bright-blue": {
+        "background-color": "#2c5282",
+        "color": "#bee3f8"
+      },
+      "ansi-bg-bright-magenta": {
+        "background-color": "#97266d",
+        "color": "#fed7e2"
+      },
+      "ansi-bg-bright-cyan": {
+        "background-color": "#285e61",
+        "color": "#b2f5ea"
+      },
+      "ansi-bg-bright-white": {
+        "background-color": "#718096",
+        "color": "#1a202c"
+      }
+    }
+  },
+  "terminal": {
+    "background": "#0e0f1a",
+    "foreground": "#abb2bf",
+    "cursor": "#528bff",
+    "cursorAccent": "#0e0f1a",
+    "selectionBackground": "#3e4451",
+    "black": "#1e2127",
+    "brightBlack": "#5c6370",
+    "red": "#e06c75",
+    "brightRed": "#e06c75",
+    "green": "#98c379",
+    "brightGreen": "#98c379",
+    "yellow": "#d19a66",
+    "brightYellow": "#e5c07b",
+    "blue": "#61afef",
+    "brightBlue": "#61afef",
+    "magenta": "#c678dd",
+    "brightMagenta": "#c678dd",
+    "cyan": "#56b6c2",
+    "brightCyan": "#56b6c2",
+    "white": "#abb2bf",
+    "brightWhite": "#ffffff"
+  }
+}

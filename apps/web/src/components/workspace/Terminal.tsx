@@ -13,6 +13,7 @@ import { getStoredToken, getWsUrl } from '../../api/client'
 import { fetchWsTicket } from '../../api/auth'
 import { useStableRef } from '../../hooks/useStableRef'
 import '@xterm/xterm/css/xterm.css'
+import { observeTerminalTheme, readTerminalTheme } from '../../theme/terminal'
 
 export interface TerminalProps {
   sandboxId: string
@@ -44,34 +45,10 @@ interface TimeoutMessage {
 
 type ControlMessage = SessionMessage | ScrollbackMessage | ExitMessage | TimeoutMessage
 
-// Terminal theme matching oneDark style
-const terminalTheme = {
-  background: '#0e0f1a',
-  foreground: '#abb2bf',
-  cursor: '#528bff',
-  cursorAccent: '#0e0f1a',
-  selectionBackground: '#3e4451',
-  black: '#1e2127',
-  brightBlack: '#5c6370',
-  red: '#e06c75',
-  brightRed: '#e06c75',
-  green: '#98c379',
-  brightGreen: '#98c379',
-  yellow: '#d19a66',
-  brightYellow: '#e5c07b',
-  blue: '#61afef',
-  brightBlue: '#61afef',
-  magenta: '#c678dd',
-  brightMagenta: '#c678dd',
-  cyan: '#56b6c2',
-  brightCyan: '#56b6c2',
-  white: '#abb2bf',
-  brightWhite: '#ffffff',
-}
-
 export function Terminal({ sandboxId, sessionId, isActive = true, onSessionCreated, onSessionExit }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<XTerm | null>(null)
+  const stopThemeObserverRef = useRef<(() => void) | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
@@ -201,7 +178,7 @@ export function Terminal({ sandboxId, sessionId, isActive = true, onSessionCreat
 
       // Create terminal and attach to container (once)
       const terminal = new XTerm({
-        theme: terminalTheme,
+        theme: readTerminalTheme(window.getComputedStyle(document.documentElement)),
         fontFamily: '"JetBrains Mono", "Fira Code", "Source Code Pro", monospace',
         fontSize: 13,
         lineHeight: 1.2,
@@ -216,6 +193,7 @@ export function Terminal({ sandboxId, sessionId, isActive = true, onSessionCreat
       terminal.loadAddon(fitAddon)
       terminal.loadAddon(webLinksAddon)
 
+      stopThemeObserverRef.current = observeTerminalTheme(terminal, container)
       terminal.open(container)
       fitAddon.fit()
 
@@ -311,6 +289,8 @@ export function Terminal({ sandboxId, sessionId, isActive = true, onSessionCreat
       if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
         ws.close(1000, 'Component unmounted')
       }
+      stopThemeObserverRef.current?.()
+      stopThemeObserverRef.current = null
       terminalRef.current?.dispose()
       terminalRef.current = null
       fitAddonRef.current = null
@@ -321,7 +301,7 @@ export function Terminal({ sandboxId, sessionId, isActive = true, onSessionCreat
   return (
     <div
       ref={containerRef}
-      className="w-full h-full bg-[#0e0f1a] relative"
+      className="w-full h-full tau-terminal bg-[rgb(var(--term-bg))] relative"
       aria-busy={connectionStatus === 'connecting'}
     >
       {connectionStatus === 'connecting' && (
