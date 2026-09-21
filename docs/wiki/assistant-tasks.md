@@ -85,17 +85,23 @@ stored message and the visible card are never truncated.
 ## Needs you
 
 A task in `needs-input` appears in the Action Center (`GET /api/actions/pending`, type
-`assistant-needs-input`) for the conversation owner only, carrying the task label, the latest update
+`assistant-needs-input`) for the conversation owner only, carrying the task label, the latest needs-input report for the current request
 as the question, and the conversation to answer in. It clears when the task leaves `needs-input`,
 normally because the owner's answer advanced the current request. The Action Center is nudged
 through the existing `actions.invalidated` frame whenever a conversation's activity changes.
+
+“Answer in Assistant” opens the exact task's answer form in the conversation. Unanswered task
+questions remain available after their updates are read or processed, including questions older
+than the newest update page. Submitting replies to that task's question; it does not start an
+unrelated background task. Failed sends retain the answer for retry. Ordinary `ask_human`
+questions from active task agents use the same pending-question form as normal agent chats.
 
 ## Discovery and notifications
 
 `GET /api/assistant/activity` returns owner-scoped totals plus the conversations with unread
 updates or unfinished tasks, ordered by needs-input, then unread, then recency; `GET
 /api/assistant/:id/activity` returns a conversation's tasks and its newest 50 updates with
-pagination by sequence. Reads never lease a mailbox, create agents, or run models. The
+pagination by sequence, plus `pendingInputs` for current unanswered task questions independent of that page. Reads never lease a mailbox, create agents, or run models. The
 `assistant.activityChanged` WebSocket event (identifiers only) is delivered to the conversation
 owner alone, including on the collection topic. Push notifications go only to the owner and only
 for status-changing `needs-input`, `completed`, and `failed` reports on the current request; routine

@@ -193,7 +193,23 @@ export async function readAssistantActivity(
     .orderBy(desc(assistantUpdates.sequence))
     .limit(ACTIVITY_UPDATE_PAGE_SIZE + 1)
   const page = updateRows.slice(0, ACTIVITY_UPDATE_PAGE_SIZE).reverse()
-  const updates: AssistantActivityUpdate[] = page.map(({ update, message }) => ({
+  // Pending answers must not disappear behind the update cursor or the read-state filter.
+  const pendingInputRows = await db
+    .selectDistinctOn([assistantTasks.id], { update: assistantUpdates, message: inbox })
+    .from(assistantTasks)
+    .innerJoin(
+      assistantUpdates,
+      and(
+        eq(assistantUpdates.taskId, assistantTasks.id),
+        eq(assistantUpdates.requestId, assistantTasks.currentRequestId),
+        eq(assistantUpdates.conversationId, assistantTasks.conversationId),
+        eq(assistantUpdates.reportedStatus, 'needs-input')
+      )
+    )
+    .innerJoin(inbox, eq(inbox.id, assistantUpdates.messageId))
+    .where(and(eq(assistantTasks.conversationId, conversationId), eq(assistantTasks.status, 'needs-input')))
+    .orderBy(asc(assistantTasks.id), desc(assistantUpdates.sequence))
+  const toUpdate = ({ update, message }: (typeof updateRows)[number]): AssistantActivityUpdate => ({
     messageId: update.messageId,
     taskId: update.taskId,
     requestId: update.requestId,
@@ -205,11 +221,12 @@ export async function readAssistantActivity(
     processedAt: update.processedAt?.toISOString() ?? null,
     seenAt: update.seenAt?.toISOString() ?? null,
     createdAt: update.createdAt.toISOString(),
-  }))
+  })
   return {
     conversation: toConversationActivity(row),
     tasks,
-    updates,
+    updates: page.map(toUpdate),
+    pendingInputs: pendingInputRows.map(toUpdate),
     hasMore: updateRows.length > ACTIVITY_UPDATE_PAGE_SIZE,
     beforeSequence: page[0]?.update.sequence ?? null,
   }

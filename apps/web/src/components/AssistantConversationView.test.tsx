@@ -467,3 +467,79 @@ test('legacy message receipts keep their Open conversation row', async () => {
     f.queryClient.clear()
   }
 })
+
+test('answering a task question from the Assistant panel sends a correlated steer and records the accepted answer', async () => {
+  const { fireEvent } = await import('@testing-library/dom')
+  const { queryKeys } = await import('../queryKeys')
+  const f = await fixture(false)
+  f.queryClient.setQueryData(queryKeys.auth.permissions(undefined), {
+    permissions: ['chat:send'],
+    identity: { type: 'user', userId: 'owner' },
+  })
+  f.queryClient.setQueryData(queryKeys.voice.status(), { enabled: false })
+  f.queryClient.setQueryDefaults(queryKeys.agentQuestions.all, { staleTime: Infinity })
+  f.queryClient.setQueryData(queryKeys.agentQuestions.byAgent('delegate', 'open'), [])
+  const task = {
+    id: 'storage-task',
+    currentRequestId: 'storage-request',
+    agentId: 'delegate',
+    kind: 'background',
+    squadId: null,
+    label: 'Inspect storage',
+    status: 'needs-input',
+    unavailable: false,
+    createdAt: '',
+    updatedAt: '',
+  }
+  const question = mailboxUpdate('storage-question', 'Which directory?', {
+    taskId: task.id,
+    requestId: task.currentRequestId,
+    reportedStatus: 'needs-input',
+    seenAt: '2026-09-20',
+  })
+  f.props.dependencies.api.conversationActivity = async () => ({
+    conversation: { latestUpdateSequence: 1 },
+    tasks: [task],
+    updates: [],
+    pendingInputs: [question],
+    hasMore: false,
+    beforeSequence: null,
+  })
+  f.props.dependencies.api.inbox.mockImplementation(async () => ({
+    acquired: true,
+    pending: 0,
+    unavailable: false,
+    messages: [],
+  }))
+  try {
+    await f.dom.act(async () => f.render())
+    const region = document.querySelector('[aria-label="Assistant questions"]')!
+    expect(region.textContent).toContain('Which directory?')
+    await f.dom.act(async () =>
+      fireEvent.change(region.querySelector('textarea')!, { target: { value: 'Inspect only the cache' } })
+    )
+    await f.dom.act(async () =>
+      [...region.querySelectorAll('button')].find((row) => row.textContent === 'Submit Answer')!.click()
+    )
+    expect(f.message.mock.calls.at(-1)).toEqual([
+      'conversation',
+      'Inspect only the cache',
+      expect.any(String),
+      {
+        agentId: undefined,
+        squadId: undefined,
+        label: undefined,
+        mode: 'steer',
+        inReplyTo: 'storage-question',
+        pagePath: '/',
+      },
+    ])
+    expect(f.stored.filter((entry) => entry.text === 'Inspect only the cache')).toEqual([
+      { id: 'task', role: 'user', text: 'Inspect only the cache', final: true, channel: 'text' },
+    ])
+    expect(f.sendText).not.toHaveBeenCalled()
+  } finally {
+    await f.dom.cleanup()
+    f.queryClient.clear()
+  }
+})

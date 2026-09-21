@@ -40,14 +40,16 @@ export function VoiceTranscriptInspector({
   const last = history.at(-1)
   const streamingText = last?.role === 'assistant' && !last.final && Boolean(last.text)
   return (
-    <div className={clsx('flex flex-col gap-1', alignContent ? 'p-3' : 'p-2', className)}>
+    <div
+      className={clsx('flex min-w-0 flex-col gap-1 [overflow-wrap:anywhere]', alignContent ? 'p-3' : 'p-2', className)}
+    >
       {history.map((entry, i) => {
         if (activityLabel && entry.role === 'assistant' && !entry.final && !entry.text) return null
         const prev = i > 0 ? history[i - 1] : null
         const roleChanged = prev && prev.role !== entry.role && prev.role !== 'tool' && entry.role !== 'tool'
         const key = entry.id ?? entry.toolCallId ?? `${entry.role}-${i}`
         return (
-          <div key={key} className={roleChanged ? 'mt-1.5' : ''}>
+          <div key={key} className={clsx('min-w-0', roleChanged && 'mt-1.5')}>
             <TranscriptBubble
               alignContent={alignContent}
               entry={entry}
@@ -119,14 +121,18 @@ function TranscriptBubble({
 
   const isUser = entry.role === 'user'
   return (
-    <div className={clsx('flex', isUser ? 'justify-end' : 'justify-start', onInterrupt && 'w-full gap-2')}>
+    <div className={clsx('flex min-w-0', isUser ? 'justify-end' : 'justify-start', onInterrupt && 'w-full gap-2')}>
       <div
-        className={clsx('rounded-lg py-1.5 text-sm', alignContent && !isUser ? 'w-full px-0' : 'max-w-[85%] px-2.5', {
-          'bg-selection text-primary': isUser && entry.final,
-          'bg-selection text-muted italic': isUser && !entry.final,
-          'text-primary': !isUser && entry.final,
-          'text-muted italic': !isUser && !entry.final,
-        })}
+        className={clsx(
+          'min-w-0 rounded-lg py-1.5 text-sm',
+          alignContent && !isUser ? 'w-full px-0' : 'max-w-[85%] px-2.5',
+          {
+            'bg-selection text-primary': isUser && entry.final,
+            'bg-selection text-muted italic': isUser && !entry.final,
+            'text-primary': !isUser && entry.final,
+            'text-muted italic': !isUser && !entry.final,
+          }
+        )}
       >
         {!isUser && entry.text ? (
           <MarkdownContent className="[&>:first-child]:mt-0 [&>:last-child]:mb-0">{entry.text}</MarkdownContent>

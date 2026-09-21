@@ -268,7 +268,10 @@ export async function listPendingActions(): Promise<PendingAction[]> {
       sql`LATERAL (
         SELECT au.message_id, i.content, au.created_at FROM ${assistantUpdates} au
         JOIN ${inbox} i ON i.id = au.message_id
-        WHERE au.task_id = ${assistantTasks.id} ORDER BY au.sequence DESC LIMIT 1
+        WHERE au.task_id = ${assistantTasks.id}
+          AND au.request_id = ${assistantTasks.currentRequestId}
+          AND au.reported_status = 'needs-input'
+        ORDER BY au.sequence DESC LIMIT 1
       ) latest`,
       sql`true`
     )

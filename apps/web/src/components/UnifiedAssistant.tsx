@@ -412,6 +412,7 @@ export function UnifiedAssistant({
           existing={existing}
           realtime={realtime}
           initialMessage={initial}
+          focusTaskId={params.get('assistantTask') ?? undefined}
           compact={small}
           visible={(open && viewing) || small}
           onControls={onControls}

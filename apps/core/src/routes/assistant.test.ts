@@ -1373,3 +1373,36 @@ test("a task waiting for the owner's answer is a Needs-you item until the owner 
   ).toBe(200)
   expect(mine(await pending())).toEqual([])
 })
+
+test('pending task input survives read state and update pagination, and settles only its request chain', async () => {
+  const f = await activityFixture()
+  const first = await f.start('Inspect storage')
+  const question = await f.update(first.id, 'Which directory?', 'needs-input')
+  await f.request(`/${f.id}/updates/seen`, { messageIds: [question.id] })
+  const other = await f.start('Check another task')
+  // Enough unrelated progress to move the question off the first update page.
+  for (let index = 0; index < 51; index++) await f.update(other.id, `Progress ${index}`)
+  const detail = await (await f.request(`/${f.id}/activity`)).json()
+  expect(detail.updates.some((row: { messageId: string }) => row.messageId === question.id)).toBe(false)
+  expect(detail.pendingInputs).toHaveLength(1)
+  expect(detail.pendingInputs[0]).toMatchObject({
+    messageId: question.id,
+    taskId: first.taskId,
+    requestId: first.id,
+    content: 'Which directory?',
+  })
+  expect(detail.pendingInputs[0].seenAt).not.toBeNull()
+  const next = await f.start('Inspect only the cache', { inReplyTo: question.id })
+  expect(next.taskId).toBe(first.taskId)
+  expect((await f.task(first.taskId)).status).toBe('working')
+  expect((await f.task(other.taskId)).currentRequestId).toBe(other.id)
+  // An old request reporting again cannot resurrect an answered question.
+  await f.update(first.id, 'Old question repeated', 'needs-input')
+  expect((await (await f.request(`/${f.id}/activity`)).json()).pendingInputs).toEqual([])
+  const fresh = await f.update(next.id, 'May I proceed?', 'needs-input')
+  expect(
+    (await (await f.request(`/${f.id}/activity`)).json()).pendingInputs.map(
+      (row: { messageId: string }) => row.messageId
+    )
+  ).toEqual([fresh.id])
+})
