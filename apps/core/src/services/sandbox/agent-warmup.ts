@@ -1,3 +1,4 @@
+import { isUserAssistantAgentType } from '@tau/shared'
 import { consultantSandboxSquadId } from './consultant-sandbox'
 import { isLiveAgentStatus, WORK_STREAM_ADMITTED_STATUSES } from '@tau/shared'
 import type { Agent } from '../../entities/Agent'
@@ -170,7 +171,7 @@ export async function ensureAgentSandbox(
     // ordering against. System-managers share one sandbox + /private per user;
     // skip federation identity (same guard as the non-squad branch below, so
     // the invariant holds regardless of squadId).
-    if (agent.agentTypeId !== 'system-manager' && !consultantSandboxSquadId(sandboxId)) {
+    if (!isUserAssistantAgentType(agent.agentTypeId) && !consultantSandboxSquadId(sandboxId)) {
       const { ensureAgentIdentity } = await import('../amtp/agent-identity')
       await ensureAgentIdentity(agent, sandboxId)
     }
@@ -206,7 +207,7 @@ export async function ensureAgentSandbox(
   // redundancy with ensure.ts's own generation are both intentional).
   // System-managers share one sandbox + /private per user, so their identity
   // key is not unique per agent row. Skip federation identity for them.
-  if (agent.agentTypeId !== 'system-manager' && !consultantSandboxSquadId(sandboxId)) {
+  if (!isUserAssistantAgentType(agent.agentTypeId) && !consultantSandboxSquadId(sandboxId)) {
     const { ensureAgentIdentity } = await import('../amtp/agent-identity')
     await ensureAgentIdentity(agent, sandboxId)
   }

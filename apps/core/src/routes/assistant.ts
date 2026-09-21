@@ -1,3 +1,5 @@
+import { listedAssistantConversation } from '../services/assistant-conversation-query'
+import { ensureAssistantConversationAgent } from '../services/assistant-conversation-agent'
 import {
   assistantMessageSchema,
   sendAssistantTaskRequest,
@@ -74,9 +76,7 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
             query ? ilike(assistantConversations.title, `%${query.replace(/[\\%_]/g, '\\$&')}%`) : undefined,
             // Page-editor conversations belong to their page, not the app-wide Assistant, and empty
             // shells (unused drafts) are not conversations yet.
-            eq(assistantConversations.kind, 'assistant'),
-            sql`(EXISTS (SELECT 1 FROM ${assistantEntries} WHERE ${assistantEntries.conversationId} = ${assistantConversations.id})
-              OR EXISTS (SELECT 1 FROM ${assistantTasks} WHERE ${assistantTasks.conversationId} = ${assistantConversations.id}))`
+            listedAssistantConversation()
           )
         )
         .orderBy(desc(assistantConversations.updatedAt), desc(assistantConversations.id))
@@ -205,6 +205,7 @@ export const assistantRouter = new Hono<{ Variables: { assistantOwner: string } 
     })
     return c.json({ success: true })
   })
+  .post('/:id/agent', async (c) => c.json(await ensureAssistantConversationAgent(c.get('identity'), c.req.param('id'))))
   .post('/:id/messages', zValidator('json', assistantMessageSchema), async (c) =>
     c.json(await sendAssistantTaskRequest(c.get('identity'), c.req.param('id'), c.req.valid('json')))
   )

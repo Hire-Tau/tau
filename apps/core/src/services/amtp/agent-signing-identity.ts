@@ -1,3 +1,4 @@
+import { isUserAssistantAgentType } from '@tau/shared'
 import { existsSync, readFileSync } from 'fs'
 import { createPublicKey } from 'crypto'
 import type { AmtpSigningIdentity, AmtpSigningIdentityReason } from '@tau/shared'
@@ -27,7 +28,7 @@ function failed(status: 'unavailable' | 'unsupported', reason: AmtpSigningIdenti
 
 /** Read-only inspection of whether Core has unique, matching signing custody. */
 export async function inspectAgentSigningIdentity(agent: Agent): Promise<AmtpSigningIdentity> {
-  if (agent.agentTypeId === 'system-manager') return failed('unsupported', 'shared_system_manager_custody')
+  if (isUserAssistantAgentType(agent.agentTypeId)) return failed('unsupported', 'shared_system_manager_custody')
   if (agent.parentAgentId) return failed('unsupported', 'shared_parent_custody')
   if (agent.agentTypeId === 'consultant' && agent.squadId) return failed('unsupported', 'shared_consultant_custody')
   if (!agent.identityPublicKey) return failed('unavailable', 'missing_public_key')

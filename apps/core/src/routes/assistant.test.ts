@@ -1660,3 +1660,30 @@ test('task recovery and accepted request replay recheck squad consultant creatio
     { id: first.taskId, currentRequestId: first.id, status: 'working' },
   ])
 })
+
+test('text and voice first opens converge on one durable Assistant without rewriting legacy history', async () => {
+  const f = await fixture()
+  await f.request(`/${f.id}/entries`, { entries: [entry('legacy', 'preserve me')] })
+  const responses = await Promise.all(Array.from({ length: 6 }, () => f.request(`/${f.id}/agent`, {})))
+  expect(responses.map((r) => r.status)).toEqual(Array(6).fill(200))
+  const bindings = await Promise.all(responses.map((r) => r.json()))
+  expect(new Set(bindings.map((b) => b.agentId)).size).toBe(1)
+  agentIds.push(bindings[0].agentId)
+  const brain = await Agent.mustFind(bindings[0].agentId)
+  expect(brain.agentTypeId).toBe('assistant')
+  expect(brain.ownerUserId).toBe(f.owner.id)
+  expect(brain.runnerType).toBe('system-manager')
+  expect((await (await f.request(`/${f.id}`)).json()).entries).toEqual([entry('legacy', 'preserve me')])
+  expect((await f.request(`/${f.id}/agent`, {}, f.other.token)).status).toBe(404)
+  await db.update(users).set({ disabledAt: new Date() }).where(eq(users.id, f.owner.id))
+  expect((await f.request(`/${f.id}/agent`, {})).status).not.toBe(200)
+})
+
+test('a terminated conversational agent cannot silently replace its transcript', async () => {
+  const f = await fixture()
+  const binding = await (await f.request(`/${f.id}/agent`, {})).json()
+  agentIds.push(binding.agentId)
+  await Agent.update(binding.agentId, { status: 'terminated' })
+  expect((await f.request(`/${f.id}/agent`, {})).status).toBe(409)
+  expect((await (await f.request(`/${f.id}`)).json()).conversation.agentId).toBe(binding.agentId)
+})

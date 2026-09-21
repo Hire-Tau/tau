@@ -1,3 +1,4 @@
+import { isUserAssistantAgentType } from '@tau/shared'
 import { consultantSandboxSquadId } from './consultant-sandbox'
 import { sandboxHasActiveExecution } from '../machines/sandbox-activity'
 import { RECENT_ACTIVITY_WINDOW_MS } from './squad-activity'
@@ -308,7 +309,7 @@ async function doEnsureAgentIdentityForSandbox(sandboxId: string): Promise<void>
   const agentId = sandboxId.slice(AGENT_SANDBOX_PREFIX.length)
   const { Agent } = await import('../../entities/Agent')
   const agent = await Agent.find(agentId, { eager: false })
-  if (!agent || agent.agentTypeId === 'system-manager') return
+  if (!agent || isUserAssistantAgentType(agent.agentTypeId)) return
   const { ensureAgentIdentity } = await import('../amtp/agent-identity')
   try {
     await ensureAgentIdentity(agent, sandboxId)

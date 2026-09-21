@@ -1,3 +1,5 @@
+import { and, eq, inArray } from 'drizzle-orm'
+import { db, assistantUpdates, assistantConversations, inbox } from '../db'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { zValidator } from '@hono/zod-validator'
@@ -23,6 +25,31 @@ export const assistantActivityRouter = new Hono<{ Variables: { assistantOwner: s
   .get('/activity', zValidator('query', activityQuerySchema), async (c) =>
     c.json(await listAssistantActivity(c.get('assistantOwner'), c.req.valid('query')))
   )
+  .post('/:id/updates/read', zValidator('json', seenSchema), async (c) => {
+    const id = c.req.param('id')
+    if (!uuid.safeParse(id).success) return c.json({ error: 'Conversation not found' }, 404)
+    const rows = await db
+      .select({ update: assistantUpdates, content: inbox.content })
+      .from(assistantUpdates)
+      .innerJoin(assistantConversations, eq(assistantConversations.id, assistantUpdates.conversationId))
+      .innerJoin(inbox, eq(inbox.id, assistantUpdates.messageId))
+      .where(
+        and(
+          eq(assistantConversations.id, id),
+          eq(assistantConversations.ownerUserId, c.get('assistantOwner')),
+          inArray(assistantUpdates.messageId, c.req.valid('json').messageIds)
+        )
+      )
+    if (rows.length !== new Set(c.req.valid('json').messageIds).size) return c.json({ error: 'Update not found' }, 404)
+    return c.json(
+      rows.map((row) => ({
+        messageId: row.update.messageId,
+        taskId: row.update.taskId,
+        content: row.content,
+        seenAt: row.update.seenAt,
+      }))
+    )
+  })
   .get('/:id/activity', zValidator('query', detailQuerySchema), async (c) => {
     const id = c.req.param('id')
     if (!uuid.safeParse(id).success) return c.json({ error: 'Conversation not found' }, 404)

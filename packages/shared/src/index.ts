@@ -71,3 +71,5 @@ export * from './event-rule-sample'
 export { workStreamRef, workStreamLabel, workStreamTitle } from './work-stream-reference'
 
 export type { StorageFolder, StorageSquad, StorageMachine, StorageSnapshot } from './storage'
+
+export * from './assistant-agent-types'

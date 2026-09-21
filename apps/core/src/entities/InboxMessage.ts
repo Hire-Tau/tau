@@ -1,3 +1,4 @@
+import { isUserAssistantAgentType } from '@tau/shared'
 import { eq, and, isNull, isNotNull, desc, sql, inArray, or, ilike, type SQL } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { db, uuidPrefixCondition, varcharPrefixCondition, AmbiguousPrefixError } from '../db'
@@ -550,8 +551,10 @@ export class InboxMessage
     if (!sameSquad) {
       // Allow the platform system-manager (a squad-less router) and squad managers to message each
       // other, so the system-manager can route work to a squad and the manager can report back.
-      const isSystemManagerToManager = fromAgent.agentTypeId === 'system-manager' && toAgent.agentTypeId === 'manager'
-      const isManagerToSystemManager = fromAgent.agentTypeId === 'manager' && toAgent.agentTypeId === 'system-manager'
+      const isSystemManagerToManager =
+        isUserAssistantAgentType(fromAgent.agentTypeId) && toAgent.agentTypeId === 'manager'
+      const isManagerToSystemManager =
+        fromAgent.agentTypeId === 'manager' && isUserAssistantAgentType(toAgent.agentTypeId)
       if (isSystemManagerToManager || isManagerToSystemManager) {
         return
       }
