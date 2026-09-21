@@ -7,7 +7,11 @@
   }
 
   .tau-panel {
-    border: 1px solid rgb(var(--color-panel-border) / var(--opacity-panel-border));
+    border: 1px solid
+      rgb(
+        var(--custom-rgb-color-panel-border, var(--color-panel-border)) /
+          calc(var(--custom-alpha-color-panel-border, 1) * var(--opacity-panel-border))
+      );
     border-radius: 12px;
     background: rgb(var(--color-bg-surface));
     box-shadow: none;
@@ -18,7 +22,11 @@
   }
 
   .tau-overlay {
-    border: 1px solid rgb(var(--color-panel-border) / var(--opacity-panel-border));
+    border: 1px solid
+      rgb(
+        var(--custom-rgb-color-panel-border, var(--color-panel-border)) /
+          calc(var(--custom-alpha-color-panel-border, 1) * var(--opacity-panel-border))
+      );
     border-radius: 12px;
     background: rgb(var(--color-overlay));
     box-shadow:
@@ -49,7 +57,11 @@
   }
 
   .tau-field {
-    border: 1px solid rgb(var(--color-input-border) / var(--opacity-input-border));
+    border: 1px solid
+      rgb(
+        var(--custom-rgb-color-input-border, var(--color-input-border)) /
+          calc(var(--custom-alpha-color-input-border, 1) * var(--opacity-input-border))
+      );
     border-radius: 8px;
     background: rgb(var(--color-input-bg));
     color: rgb(var(--color-text-primary));
@@ -87,7 +99,8 @@
   .tau-button-primary {
     background: rgb(var(--color-primary));
     color: rgb(var(--on-accent-fg));
-    box-shadow: inset 0 0 0 1px rgb(var(--on-accent-fg) / 0.08);
+    box-shadow: inset 0 0 0 1px
+      rgb(var(--custom-rgb-on-accent-fg, var(--on-accent-fg)) / calc(var(--custom-alpha-on-accent-fg, 1) * 0.08));
   }
 
   .tau-button-primary:hover:not(:disabled) {
@@ -101,7 +114,11 @@
   .tau-button-secondary {
     color: rgb(var(--color-text-secondary));
     background: rgb(var(--color-bg-surface-secondary));
-    box-shadow: inset 0 0 0 1px rgb(var(--color-panel-border) / var(--opacity-panel-border));
+    box-shadow: inset 0 0 0 1px
+      rgb(
+        var(--custom-rgb-color-panel-border, var(--color-panel-border)) /
+          calc(var(--custom-alpha-color-panel-border, 1) * var(--opacity-panel-border))
+      );
   }
 
   .tau-button-secondary:hover:not(:disabled) {
@@ -182,7 +199,10 @@
 
   .tau-table th,
   .tau-table td {
-    border-color: rgb(var(--color-panel-border) / var(--opacity-panel-border));
+    border-color: rgb(
+      var(--custom-rgb-color-panel-border, var(--color-panel-border)) /
+        calc(var(--custom-alpha-color-panel-border, 1) * var(--opacity-panel-border))
+    );
   }
 
   @supports (backdrop-filter: blur(16px)) or (-webkit-backdrop-filter: blur(16px)) {

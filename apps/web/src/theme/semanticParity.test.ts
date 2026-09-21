@@ -62,7 +62,14 @@ function resolve(rule: Rule, variables: Record<string, string>): string {
   for (let i = 0; value.includes('var(') && i < 10; i++) {
     value = value.replace(/var\((--[\w-]+)(?:,\s*([^()]+))?\)/g, (_, name, fallback) => declarations[name] ?? fallback)
   }
-  value = value.replace(/calc\(\s*([\d.]+)\s*\*\s*([\d.]+)\s*\)/g, (_, a, b) => String(Number(a) * Number(b)))
+  value = value.replace(/calc\(([\d.\s*]+)\)/g, (_, factors: string) =>
+    String(
+      factors
+        .split('*')
+        .map(Number)
+        .reduce((a, b) => a * b, 1)
+    )
+  )
   expect(value).toMatch(/^rgb\(\d+ \d+ \d+ \/ [\d.]+\)$/)
   return value
 }

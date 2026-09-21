@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { CustomThemeEditor } from './CustomThemeEditor'
 import type { AppearanceSetting } from '@tau/shared'
 import type { useTheme } from '../../providers/ThemeProvider'
 import { BUILT_IN_THEMES, findWebTheme, THEME_PICKER_ENABLED } from '../../theme/registry'
@@ -10,6 +12,7 @@ export function ThemeControl({
   enabled?: boolean
 }) {
   const { themeId, appearance, setThemeId, setAppearance, theme, toggleTheme } = value
+  const [editing, setEditing] = useState(false)
   const selected = findWebTheme(themeId)
   return (
     <section data-setting-target="appearance" aria-label="Theme" className="tau-section py-5">
@@ -53,9 +56,38 @@ export function ThemeControl({
           )}
         </div>
       ) : (
-        <button className="tau-button tau-button-secondary mt-3" onClick={toggleTheme}>
+        <button className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary mt-3" onClick={toggleTheme}>
           {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
         </button>
+      )}
+      {value.customTheme && (
+        <p className="mt-3 text-sm text-secondary">
+          Custom theme: {value.customTheme.name} ({value.customTheme.appearance})
+        </p>
+      )}
+      {value.customThemeError && <p role="alert">{value.customThemeError}</p>}
+      {enabled && (
+        <>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary"
+              aria-expanded={editing}
+              onClick={() => setEditing(!editing)}
+            >
+              {editing ? 'Close editor' : 'Edit custom theme'}
+            </button>
+            <button
+              className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary"
+              onClick={() => {
+                value.resetTheme()
+                setEditing(false)
+              }}
+            >
+              Reset to default
+            </button>
+          </div>
+          {editing && <CustomThemeEditor value={value} />}
+        </>
       )}
     </section>
   )

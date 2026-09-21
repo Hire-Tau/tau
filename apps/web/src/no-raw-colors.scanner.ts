@@ -94,7 +94,10 @@ function colorPartIsTokenOnly(rawPart: string): boolean {
   part = part.replace(/^in\s+[a-z-]+(?:\s+[a-z-]+)?\s*/, '').trim()
   if (part === '') return true
   if (part === 'transparent' || part === 'currentColor' || part === 'none') return true
-  if (/^var\(--[\w-]+\)$/.test(part)) return true
+  if (part.startsWith('var(') && balancedArguments(part, 3).length + 5 === part.length) {
+    const [name, ...fallback] = splitTopLevel(balancedArguments(part, 3), ',')
+    if (/^--[\w-]+$/.test(name!.trim())) return !fallback.length || colorPartIsTokenOnly(fallback.join(','))
+  }
   // color-mix amount suffix: "<color> 35%"
   const percentSuffix = /^(.*)\s+[\d.]+%$/.exec(part)
   if (percentSuffix) return colorPartIsTokenOnly(percentSuffix[1]!)
@@ -103,7 +106,8 @@ function colorPartIsTokenOnly(rawPart: string): boolean {
   if (alphaParts.length === 2) {
     const head = alphaParts[0]!.trim()
     const tail = alphaParts[1]!.trim()
-    if (/^[\d.]+%?$/.test(tail) || /^var\(--[\w-]+\)$/.test(tail)) return colorPartIsTokenOnly(head)
+    const alpha = tail.replace(/var\(--[\w-]+(?:,\s*[\d.]+)?\)/g, '1')
+    if (/^[\d.]+%?$/.test(alpha) || /^calc\([\d.\s*]+\)$/.test(alpha)) return colorPartIsTokenOnly(head)
   }
   const nested = NESTED_COLOR_FUNCTION.exec(part)
   if (nested) {

@@ -29,7 +29,8 @@
     width: 100%;
   }
 
-  :root {
+  :root,
+  [data-theme-scope][data-theme='tau'][data-appearance='light'] {
     /* Tell the browser/OS the real scheme so its chrome (iOS glass tint,
        scrollbars, form controls) matches the page instead of guessing. */
     color-scheme: light;
@@ -359,7 +360,8 @@
     --ansi-on-bright-white: 26 32 44;
   }
 
-  .dark {
+  .dark,
+  [data-theme-scope][data-theme='tau'][data-appearance='dark'] {
     color-scheme: dark;
 
     /* Backgrounds - from splash.html */
@@ -794,7 +796,10 @@
   input:-webkit-autofill:focus {
     -webkit-box-shadow: 0 0 0 1000px rgb(var(--color-input-bg)) inset !important;
     -webkit-text-fill-color: rgb(var(--color-text-primary)) !important;
-    border-color: rgb(var(--color-input-border) / var(--opacity-input-border)) !important;
+    border-color: rgb(
+      var(--custom-rgb-color-input-border, var(--color-input-border)) /
+        calc(var(--custom-alpha-color-input-border, 1) * var(--opacity-input-border))
+    ) !important;
   }
 }
 

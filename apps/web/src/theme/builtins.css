@@ -2,7 +2,8 @@
  * Intent and accessibility review: docs/theme/builtins.md.
  * Keep all active families and inherited opacity metadata explicit. */
 @layer base {
-  :root[data-theme='harbor'][data-appearance='light'] {
+  :root[data-theme='harbor'][data-appearance='light'],
+  [data-theme-scope][data-theme='harbor'][data-appearance='light'] {
     color-scheme: light;
     --color-bg-page: 244 249 250;
     --color-bg-surface: 255 255 255;
@@ -290,7 +291,8 @@
     --ansi-on-white: 226 232 240;
     --ansi-on-bright-white: 26 32 44;
   }
-  :root[data-theme='harbor'][data-appearance='dark'] {
+  :root[data-theme='harbor'][data-appearance='dark'],
+  [data-theme-scope][data-theme='harbor'][data-appearance='dark'] {
     color-scheme: dark;
     --color-bg-page: 11 22 30;
     --color-bg-surface: 15 30 40;
@@ -578,7 +580,8 @@
     --ansi-on-white: 226 232 240;
     --ansi-on-bright-white: 26 32 44;
   }
-  :root[data-theme='ember'][data-appearance='light'] {
+  :root[data-theme='ember'][data-appearance='light'],
+  [data-theme-scope][data-theme='ember'][data-appearance='light'] {
     color-scheme: light;
     --color-bg-page: 252 248 243;
     --color-bg-surface: 255 253 249;
@@ -866,7 +869,8 @@
     --ansi-on-white: 226 232 240;
     --ansi-on-bright-white: 26 32 44;
   }
-  :root[data-theme='ember'][data-appearance='dark'] {
+  :root[data-theme='ember'][data-appearance='dark'],
+  [data-theme-scope][data-theme='ember'][data-appearance='dark'] {
     color-scheme: dark;
     --color-bg-page: 27 20 18;
     --color-bg-surface: 35 26 23;
@@ -1154,7 +1158,8 @@
     --ansi-on-white: 226 232 240;
     --ansi-on-bright-white: 26 32 44;
   }
-  :root[data-theme='high-contrast'] {
+  :root[data-theme='high-contrast'],
+  [data-theme-scope][data-theme='high-contrast'] {
     color-scheme: light;
     --color-bg-page: 255 255 255;
     --color-bg-surface: 255 255 255;
