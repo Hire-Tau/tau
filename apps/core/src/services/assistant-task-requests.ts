@@ -1,3 +1,6 @@
+import { mapMessage } from '../entities/message-mapper'
+import { messageEventData } from '../entities/message-event'
+import { eventEmitter } from '../lib/infra/event-emitter'
 import { isDeepStrictEqual } from 'node:util'
 import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { HTTPException } from 'hono/http-exception'
@@ -16,6 +19,7 @@ import {
   assistantTasks,
   db,
   inbox,
+  messages,
   users,
 } from '../db'
 import { Agent } from '../entities/Agent'
@@ -86,7 +90,7 @@ export async function changeAssistantTask(
 ) {
   const parsed = assistantTaskCommandSchema.safeParse(request)
   if (!parsed.success) throw taskError(400, { message: 'Invalid Assistant task command' })
-  const { conversation } = await ownedConversation(identity, conversationId)
+  const { conversation } = await requireAssistantConversation(identity, conversationId)
   const [task] = uuid.safeParse(taskId).success
     ? await db
         .select()
@@ -107,7 +111,7 @@ export async function changeAssistantTask(
 }
 
 // This boundary is also called by in-process Assistant tools, without HTTP middleware.
-async function ownedConversation(identity: Identity | undefined, conversationId: string) {
+export async function requireAssistantConversation(identity: Identity | undefined, conversationId: string) {
   const user = await resolveActingUser(identity)
   if (!user) throw taskError(403, { message: 'Forbidden' })
   const [active] = await db
@@ -145,7 +149,30 @@ export async function sendAssistantTaskRequest(
   conversationId: string,
   request: unknown
 ): Promise<AssistantMessageReceipt> {
-  return dispatchAssistantTaskRequest(identity, conversationId, request)
+  const receipt = await dispatchAssistantTaskRequest(identity, conversationId, request)
+  const input = assistantMessageSchema.parse(request)
+  if (input.inReplyTo) {
+    const { conversation } = await requireAssistantConversation(identity, conversationId)
+    if (conversation.agentId) {
+      const [saved] = await db
+        .insert(messages)
+        .values({
+          id: receipt.id,
+          agentId: conversation.agentId,
+          role: 'human',
+          content: input.request,
+          metadata: {
+            clientId: `assistant-answer:${receipt.id}`,
+            source: 'assistant_task_answer',
+            assistantTaskIds: [receipt.taskId],
+          },
+        })
+        .onConflictDoNothing()
+        .returning()
+      if (saved) eventEmitter.emit('message.created', messageEventData(mapMessage(saved)))
+    }
+  }
+  return receipt
 }
 
 async function dispatchAssistantTaskRequest(
@@ -157,7 +184,7 @@ async function dispatchAssistantTaskRequest(
   const parsed = assistantMessageSchema.safeParse(request)
   if (!parsed.success) throw taskError(400, { message: 'Invalid Assistant request' })
   const input: z.infer<typeof assistantMessageSchema> = JSON.parse(JSON.stringify(parsed.data))
-  const { user, conversation } = await ownedConversation(identity, conversationId)
+  const { user, conversation } = await requireAssistantConversation(identity, conversationId)
   const snapshot = action ? JSON.parse(JSON.stringify({ taskId: action.task.id, ...action.command })) : input
   const mutation: AssistantTaskMutation | undefined = action
     ? {

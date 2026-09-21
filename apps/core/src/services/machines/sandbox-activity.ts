@@ -40,7 +40,10 @@ export async function sandboxActivity(sandboxId: string, executor: DbExecutor = 
   if (sandboxId.startsWith('system_manager_')) {
     const userId = sandboxId.slice('system_manager_'.length)
     if (!UUID_RE.test(userId)) return { active: true }
-    return ownerActivity(sql`${agents.ownerUserId} = ${userId} AND ${agents.agentTypeId} = 'system-manager'`, executor)
+    return ownerActivity(
+      sql`${agents.ownerUserId} = ${userId} AND ${agents.agentTypeId} IN ('system-manager', 'assistant', 'assistant-worker')`,
+      executor
+    )
   }
 
   if (sandboxId.startsWith('agent_')) {
@@ -56,7 +59,7 @@ export async function sandboxActivity(sandboxId: string, executor: DbExecutor = 
       SELECT count(*)::int AS count FROM ${executions} e
       JOIN ${agents} a ON e.agent_id = a.id
       WHERE a.squad_id = ${squadId}
-        AND (a.parent_agent_id IS NOT NULL OR a.agent_type_id NOT IN ('system-manager', ${ARTIFACT_BUILDER_AGENT_TYPE_ID}))
+        AND (a.parent_agent_id IS NOT NULL OR a.agent_type_id NOT IN ('system-manager', 'assistant', 'assistant-worker', ${ARTIFACT_BUILDER_AGENT_TYPE_ID}))
         AND e.status IN ('running', 'stopping')
     `)) as unknown as Array<{ count: number }>
     const activeExecutionCount = rows[0]?.count ?? 0

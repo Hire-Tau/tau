@@ -21,6 +21,7 @@ export type AssistantEntry = z.infer<typeof assistantEntrySchema>
 export const ASSISTANT_CONVERSATION_KINDS = ['assistant', 'page-editor'] as const
 export type AssistantConversationKind = (typeof ASSISTANT_CONVERSATION_KINDS)[number]
 export interface AssistantConversation {
+  agentId?: string | null
   id: string
   kind: AssistantConversationKind
   title: string

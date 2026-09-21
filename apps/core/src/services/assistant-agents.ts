@@ -24,7 +24,7 @@ function scopeFilter(conversationId: string, squadId: string | null) {
  */
 export async function resolveOwnedAgent(
   tx: Tx,
-  conversation: { id: string; ownerUserId: string },
+  conversation: { id: string; ownerUserId: string; agentId?: string | null },
   target: { squadId: string | null },
   afterCommit: Array<() => void>
 ): Promise<Agent> {
@@ -40,7 +40,8 @@ export async function resolveOwnedAgent(
   const [created] = await tx
     .insert(agents)
     .values({
-      agentTypeId: target.squadId === null ? 'system-manager' : 'consultant',
+      agentTypeId:
+        target.squadId === null ? (conversation.agentId ? 'assistant-worker' : 'system-manager') : 'consultant',
       ownerUserId: target.squadId === null ? conversation.ownerUserId : null,
       squadId: target.squadId,
       persist: false,
@@ -66,6 +67,12 @@ export async function resolveOwnedAgent(
 export async function findOwningConversation(
   agentId: string
 ): Promise<{ id: string; kind: AssistantConversationKind; editor: AssistantEditorState | null } | undefined> {
+  const [brain] = await db
+    .select({ id: assistantConversations.id, kind: assistantConversations.kind, editor: assistantConversations.editor })
+    .from(assistantConversations)
+    .where(eq(assistantConversations.agentId, agentId))
+    .limit(1)
+  if (brain) return brain
   const [row] = await db
     .select({
       id: assistantConversations.id,

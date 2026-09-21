@@ -10,7 +10,7 @@ A task is one delegated request within an Assistant conversation. It is a tracki
 inbox request chain: it is not a work stream, an execution, or another coordinator. The existing
 delegate (the conversation's general User Assistant, its owned squad consultant, or an explicitly
 targeted agent) owns execution and follow-through through existing agents, work streams, waits, and
-integrations. Tracking adds presentation only; an update arriving never starts new execution.
+integrations. A new update can wake the conversation’s Assistant to summarize it; it never implies that the delegated task completed.
 
 - The task ID is the first outgoing inbox request ID; the current request advances when the user
   answers a question (`inReplyTo` on the answer), continues, retries, or cancels it.
@@ -93,19 +93,20 @@ included by the User Assistant and consultant types.
 
 ## Processed versus seen
 
-Two independent facts are stored for every update:
+Updates retain separate delivery, summary, and visibility facts:
 
-- `processed_at`: Realtime presented the update (or the user deliberately interrupted it).
-  Processing requires a saved final Assistant entry whose `assistantUpdateIds` name the update,
-  so a crash before the response was saved replays the update instead of losing it. Delivery is
-  at-least-once presentation, not exactly-once audio.
-- `seen_at`: the human acknowledged the update, either because its card intersected the visible
-  scroll region in a visible document, or through “Mark updates read”, which acknowledges only the
-  sequence that was displayed. Badges and previews never mark anything seen; audio playback alone
-  does not either.
+- `forwarded_message_id` identifies the durable inbox delivery to the conversation’s agent.
+- `summarized_message_id` identifies the saved Assistant response in the exact execution and
+  response group that confirmed consuming the update. Core stores this binding before publishing
+  completion; a periodic reconciliation repairs interrupted attribution. `processed_at` retains
+  legacy compatibility and is also set when the durable response is linked.
+- `seen_at` records human acknowledgment through a visible original-update card or an explicit
+  mark-read action. Summarization and speech alone never mark an update seen.
 
-Catch-up batches feed at most 10 updates or 12,000 characters of model context per turn; the
-stored message and the visible card are never truncated.
+Forwarding is recoverable without a browser lease. Report context is bounded to 12,000 characters
+per delivery batch; longer reports remain available through `read_task_update`. Original reports
+are never truncated in storage. Source cards load by their exact IDs, independently of the latest
+activity page. Every fragment of a grouped response contributes source IDs.
 
 ## Needs you
 
@@ -140,3 +141,23 @@ their `inReplyTo` chains (distinct roots stay distinct), imports incoming messag
 become both processed and seen so the rollout does not resurrect old notifications; previously
 unread ones stay unread. Historical read state cannot distinguish machine consumption from human
 viewing — only updates created after the upgrade carry the precise processed/seen semantics.
+
+## Conversation execution and upgrades
+
+`POST /api/assistant/:conversationId/agent` resolves one owner-private `assistant` agent, even
+when text and voice open concurrently. Subsequent text and speech use the ordinary agent chat
+API and its idempotent send, queue, retry, and maintenance semantics. The Assistant uses the fast
+model tier and in-process tools; it does not provision a sandbox for conversational inference.
+General `assistant-worker` delegates use the owner’s current permissions and existing sandbox
+storage. Creating an owned squad consultant requires the same access as normal consultant creation.
+Consultants retain their normal squad authority; read-only squad work can use the general worker.
+
+The migration is additive: conversation IDs, legacy entries, task request generations, mailbox
+identities and existing helpers remain intact. Old `system-manager` helpers and internal sandbox
+names are retained for compatibility. No boxes or personal storage are deleted as part of this
+upgrade. Legacy mailbox and task endpoints remain available to existing clients; the web panel
+uses the new agent binding. Native mobile action links continue opening the exact web question.
+
+Quick tools recheck current ownership and permissions. Agent/thread tools accept full UUIDs from
+visible search results, so hidden candidates cannot affect prefix ambiguity. Page editors get
+only `read` and `edit`; they cannot delegate or mutate catalog entries outside their draft.

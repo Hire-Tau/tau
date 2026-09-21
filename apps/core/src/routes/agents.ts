@@ -1,3 +1,4 @@
+import { isUserAssistantAgentType } from '@tau/shared'
 import { listActiveSlotWaits } from '../services/slots/active-waits'
 import { chatPagePathSchema } from '@tau/shared'
 import { getModelCatalog } from '../services/model-selection/model-catalog'
@@ -152,7 +153,7 @@ function parseDuration(duration: string): Date {
 
 function isAllowedMessageTarget(agent: Agent): boolean {
   if (agent.agentTypeId === ARTIFACT_BUILDER_AGENT_TYPE_ID) return agent.status === 'waiting-input'
-  if (agent.agentTypeId === 'system-manager') return true
+  if (isUserAssistantAgentType(agent.agentTypeId)) return true
   if (agent.squadId) return true
   return false
 }

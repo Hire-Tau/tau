@@ -1,3 +1,4 @@
+import { forwardAssistantUpdates, reconcileAssistantSummaries } from './services/assistant-conversation-updates'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import {
@@ -380,7 +381,20 @@ const activityPruneRunner = createPeriodicRunner({
 
 let firstActivityRepairTimer: ReturnType<typeof setTimeout> | null = null
 
+const assistantUpdateRunner = createPeriodicRunner({
+  name: 'assistant-update-forwarding',
+  intervalMs: 5000,
+  task: async () => {
+    await forwardAssistantUpdates()
+    await reconcileAssistantSummaries()
+  },
+})
 const subsystems: Subsystem[] = [
+  subsystem(
+    'assistant-update-forwarding',
+    () => assistantUpdateRunner.start(),
+    () => assistantUpdateRunner.stop()
+  ),
   subsystem(
     'agent-private-archive-lifecycle',
     async () => {
