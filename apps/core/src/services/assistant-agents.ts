@@ -49,6 +49,7 @@ export async function resolveOwnedAgent(
       },
       metadata: {
         name: target.squadId === null ? generateAgentName() : 'Assistant task',
+        purpose: target.squadId === null ? 'Assistant background tasks' : 'Assistant squad tasks',
         resourceGeneration: crypto.randomUUID(),
       },
     })

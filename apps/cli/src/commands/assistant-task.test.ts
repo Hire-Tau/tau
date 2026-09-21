@@ -33,10 +33,21 @@ describe('tau assistant-task', () => {
   }
 
   it('posts the exact status body with an optional message', async () => {
-    await run(['assistant-task', 'status', taskId, '--status', 'completed', '-m', 'All done.'])
+    await run([
+      'assistant-task',
+      'status',
+      taskId,
+      '--status',
+      'completed',
+      '--request-id',
+      task.currentRequestId,
+      '-m',
+      'All done.',
+    ])
     expect(apiPost).toHaveBeenCalledWith(`/api/assistant-tasks/${taskId}/status`, {
       status: 'completed',
       message: 'All done.',
+      requestId: task.currentRequestId,
     })
     await run(['assistant-task', 'status', taskId, '--status', 'waiting'])
     expect(apiPost).toHaveBeenLastCalledWith(`/api/assistant-tasks/${taskId}/status`, { status: 'waiting' })

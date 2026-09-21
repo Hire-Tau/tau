@@ -13,21 +13,21 @@ targeted agent) owns execution and follow-through through existing agents, work 
 integrations. Tracking adds presentation only; an update arriving never starts new execution.
 
 - The task ID is the first outgoing inbox request ID; the current request advances when the user
-  answers a question (`inReplyTo` on the answer).
+  answers a question (`inReplyTo` on the answer), continues, retries, or cancels it.
 - An independent request without `inReplyTo` is a new task, even when it reuses the same helper.
 - The label comes from the delegation label, falling back to the request's first line (80 chars).
 
 Statuses:
 
-| Status        | Meaning                                                                          |
-| ------------- | -------------------------------------------------------------------------------- |
-| `working`     | Accepted and in progress. Does not assert the agent is executing right now.      |
-| `waiting`     | The delegate reports waiting on another agent, integration, or external event.  |
-| `needs-input` | The delegate needs the user's answer before dependent work continues.            |
-| `completed`   | The delegate explicitly reported the task complete.                              |
-| `failed`      | The delegate explicitly reported it could not complete the task.                 |
-| `cancelled`   | The delegate explicitly reported cancellation.                                   |
-| `unknown`     | Historical task imported at upgrade time without lifecycle evidence.             |
+| Status        | Meaning                                                                        |
+| ------------- | ------------------------------------------------------------------------------ |
+| `working`     | Accepted and in progress. Does not assert the agent is executing right now.    |
+| `waiting`     | The delegate reports waiting on another agent, integration, or external event. |
+| `needs-input` | The delegate needs the user's answer before dependent work continues.          |
+| `completed`   | The delegate explicitly reported the task complete.                            |
+| `failed`      | The delegate explicitly reported it could not complete the task.               |
+| `cancelled`   | Cancellation was requested, or the delegate reported it.                       |
+| `unknown`     | Historical task imported at upgrade time without lifecycle evidence.           |
 
 Rules: an update without a status changes nothing; a report against a superseded request stays
 visible but cannot change status; a terminal status is never reopened by a later `working`,
@@ -35,20 +35,45 @@ visible but cannot change status; a terminal status is never reopened by a later
 helpers never imply completion; a missing or terminated helper on an unfinished task is shown as
 `unavailable` without rewriting its status.
 
+## Continuing, recovering, and cancelling
+
+The owner can use `POST /api/assistant/:conversationId/tasks/:taskId/commands` with a durable
+`clientId`, the task's `expectedRequestId`, and one operation:
+
+- `continue`: provide a `request` and optional `mode` (`steer` by default, or `follow-up`).
+- `retry`: provide a `request` describing what to retry. An unavailable owned helper can be
+  replaced while the task ID, label, and prior updates remain intact. An explicitly selected
+  agent is never silently replaced with a different one.
+- `cancel`: provide an optional `reason`. This records cancellation and tells an available
+  delegate to stop only that scope. It does not terminate a shared agent or assert that an
+  external action already in flight has stopped. It does not wake dormant or terminated helpers.
+
+Each command advances the request generation atomically with its inbox record. A stale command
+receives HTTP 409 and must be reviewed against the current task; it is never silently applied to
+newer work. Reusing the same `clientId` and exact input recovers the accepted receipt, even after
+subsequent updates or a lost response. Reusing the ID with different input conflicts.
+
+Independent tasks may share a delegate and steer it while it is running. Their labels and states
+remain separate; continuing or cancelling one cannot finish or cancel another. Task creation,
+commands, and receipt replay recheck the owner's permissions and the relevant private-agent or
+squad consultant access.
+
 ## Reporting protocol
 
 The delegate reports directly on the task it owns; the request it received names the task ID:
 
 ```bash
-tau assistant-task status TASK_UUID --status completed -m "The comparison is finished."
+tau assistant-task status TASK_UUID --request-id REQUEST_UUID --status completed -m "The comparison is finished."
 tau assistant-task get TASK_UUID
 ```
 
 `POST /api/assistant-tasks/:taskId/status` accepts only the agent currently bound to the task and is
-sugar over an inbox reply on the task's current request, so it shares the validation, projection,
+sugar over an inbox reply on the specified `requestId`, so it shares the validation, projection,
 activity events, and push policy below. A report that would change a finished task is refused with
 HTTP 409 (and the current task state) rather than recorded as a no-op; only a new user follow-up
-reopens a task. The equivalent inbox form carries a validated status flag:
+reopens a task. Always pass the request ID that came with the work being reported. A stale request
+ID is refused with HTTP 409; do not replace it with the newest ID to report old work. Older clients
+may omit it for the original request only. The equivalent inbox form carries a validated status flag:
 
 ```bash
 tau inbox send assistant:CONVERSATION_UUID \
