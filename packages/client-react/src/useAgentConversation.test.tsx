@@ -2438,6 +2438,18 @@ describe('bounded transport reconciliation', () => {
       })
       await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
       act(() => m.emit({ type: 'text', text: 'prefix', streamGroupId: 'S' }))
+      if (status !== 'running')
+        m.setMessages([
+          {
+            id: 'm',
+            agentId: 'a',
+            role: 'assistant',
+            content: 'prefix tail',
+            pending: false,
+            createdAt: new Date(),
+            metadata: { streamGroupId: 'S', content: [{ type: 'text', id: 't', content: 'prefix tail' }] },
+          },
+        ])
       const before = m.subscribeCount()
       await act(async () => {
         m.triggerDone()
@@ -2447,15 +2459,28 @@ describe('bounded transport reconciliation', () => {
       expect(reads).toBe(1)
       expect(result.current.executionStatus).toBe(status)
       expect(m.subscribedExecutionIds.at(-1)).toBe('e')
-      act(() =>
-        m.emitCatchup([
-          { type: 'text', text: 'prefix tail', streamGroupId: 'S' },
-          { type: 'done', response: '', streamGroupId: 'S', messageIds: ['m'] },
-        ])
-      )
-      expect(result.current.items.find((item) => item.kind === 'streaming')).toMatchObject({
-        blocks: [{ content: 'prefix tail' }],
-      })
+      if (status === 'running') {
+        act(() =>
+          m.emitCatchup([
+            { type: 'text', text: 'prefix tail', streamGroupId: 'S' },
+            { type: 'done', response: '', streamGroupId: 'S', messageIds: ['m'] },
+          ])
+        )
+        expect(result.current.items.find((item) => item.kind === 'streaming')).toMatchObject({
+          blocks: [{ content: 'prefix tail' }],
+        })
+      } else {
+        // Terminal exact routes never proxy worker catchup: snapshot then EOF.
+        act(() => {
+          m.emit({ type: 'execution_snapshot', executionId: 'e', executionVersion: 2, status })
+          m.triggerDone()
+        })
+        await waitFor(() =>
+          expect(result.current.items.find((item) => item.kind === 'persisted')).toMatchObject({
+            blocks: [{ content: 'prefix tail' }],
+          })
+        )
+      }
       expect(result.current.items.some((item) => item.kind === 'working')).toBe(false)
       expect(result.current.executionStatus).toBe(status === 'failed' ? 'failed' : 'completed')
       unmount()
@@ -2666,5 +2691,271 @@ test('no intermediate B render exposes A content, optimistic sends or busy state
     }
   } finally {
     unmount()
+  }
+})
+
+test.each(['{}', '{"query":'] as const)(
+  'snapshot-only terminal recovery adopts saved completed tool and answer after missing args/tool_end/text (args=%s)',
+  async (args) => {
+    const m = makeMockClient({ activeExecution: { active: true, executionId: 'e', status: 'running' } })
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    m.client.agents.getExecution = async () => ({
+      agentId: 'a',
+      executionId: 'e',
+      status: 'completed',
+      executionVersion: 2,
+      active: false,
+    })
+    const { result, unmount } = await renderHook(() => useAgentConversation({ agentId: 'a' }), {
+      wrapper: wrapWith(qc, m.client),
+    })
+    try {
+      await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+      act(() => {
+        m.emit({ type: 'agent', agentId: 'a', executionId: 'e' })
+        m.emit({ type: 'tool_start', streamGroupId: 'S', toolCallId: 't', toolName: 'search', args })
+      })
+      const finalMessage: Message = {
+        id: 'm',
+        agentId: 'a',
+        role: 'assistant',
+        content: 'final answer',
+        pending: false,
+        createdAt: new Date(),
+        metadata: {
+          streamGroupId: 'S',
+          content: [
+            {
+              type: 'tool_use',
+              id: 't',
+              toolCall: {
+                toolCallId: 't',
+                toolName: 'search',
+                args: args === '{}' ? '{}' : '{"query":"value"}',
+                result: 'final tool result',
+                isError: false,
+              },
+            },
+            { type: 'text', id: 'answer', content: 'final answer' },
+          ],
+        },
+      }
+      m.setMessages([finalMessage])
+      const before = m.subscribeCount()
+      await act(async () => {
+        m.triggerDone()
+        await Promise.resolve()
+      })
+      await waitFor(() => expect(m.subscribeCount()).toBeGreaterThan(before))
+      // The real terminal exact route sends only execution_snapshot, then closes.
+      act(() => {
+        m.emit({ type: 'execution_snapshot', executionId: 'e', status: 'completed', executionVersion: 2 })
+        m.triggerDone()
+      })
+      await waitFor(() =>
+        expect(
+          qc.getQueryData<{ pages: Array<{ messages: Message[] }> }>(queryKeys.agents.messagesInfinite('a'))?.pages[0]
+            .messages
+        ).toEqual([finalMessage])
+      )
+      await waitFor(() =>
+        expect(result.current.items.find((item) => item.kind === 'persisted')).toMatchObject({
+          blocks: finalMessage.metadata!.content,
+        })
+      )
+      expect(result.current.items.some((item) => item.kind === 'streaming' || item.kind === 'working')).toBe(false)
+    } finally {
+      unmount()
+      qc.clear()
+    }
+  }
+)
+
+test('quiet backstop rearms for a silent foreground replacement and reconciles final history', async () => {
+  const m = makeMockClient({ activeExecution: { active: false } })
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  let reads = 0
+  m.client.agents.getExecution = async () => {
+    reads++
+    return { agentId: 'a', executionId: 'e', status: 'completed', executionVersion: 2, active: false }
+  }
+  const realSetTimeout = globalThis.setTimeout
+  const realClearTimeout = globalThis.clearTimeout
+  const timers = new Map<ReturnType<typeof setTimeout>, () => void>()
+  globalThis.setTimeout = ((fn: () => void, delay?: number, ...args: unknown[]) => {
+    if (delay === 4000) {
+      const id = realSetTimeout(() => {}, 100_000)
+      timers.set(id, fn)
+      return id
+    }
+    return realSetTimeout(fn, delay, ...args)
+  }) as typeof setTimeout
+  globalThis.clearTimeout = ((id: ReturnType<typeof setTimeout>) => {
+    timers.delete(id)
+    realClearTimeout(id)
+  }) as typeof clearTimeout
+  let unmount: (() => void) | undefined
+  setSystemTime(1_700_000_000_000)
+  try {
+    const hook = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper: wrapWith(qc, m.client) })
+    unmount = hook.unmount
+    act(() => {
+      m.emit({ type: 'agent', agentId: 'a', executionId: 'e' })
+      m.emit({ type: 'text', text: 'prefix', streamGroupId: 'S' })
+    })
+    const before = m.subscribeCount()
+    await act(async () => {
+      focusManager.setFocused(false)
+      focusManager.setFocused(true)
+      await Promise.resolve()
+    })
+    expect(m.subscribeCount()).toBeGreaterThan(before)
+    // Replacement is silent and the active query still says idle. No activity/status dependency changes.
+    const beforeHistory = m.getMessagesCount()
+    m.setMessages([
+      {
+        id: 'm',
+        agentId: 'a',
+        role: 'assistant',
+        content: 'prefix tail',
+        pending: false,
+        createdAt: new Date(),
+        metadata: { streamGroupId: 'S', content: [{ type: 'text', id: 't', content: 'prefix tail' }] },
+      },
+    ])
+    setSystemTime(1_700_000_005_000)
+    await act(async () => {
+      ;[...timers.values()].at(-1)!()
+      await Promise.resolve()
+    })
+    expect(reads).toBe(1)
+    expect(hook.result.current.executionStatus).toBe('completed')
+    expect(hook.result.current.items.some((item) => item.kind === 'working')).toBe(false)
+    expect(m.getMessagesCount()).toBeGreaterThan(beforeHistory)
+    expect(
+      qc.getQueryData<{ pages: Array<{ messages: Message[] }> }>(queryKeys.agents.messagesInfinite('a'))?.pages[0]
+        .messages[0].content
+    ).toBe('prefix tail')
+  } finally {
+    unmount?.()
+    qc.clear()
+    for (const id of timers.keys()) realClearTimeout(id)
+    globalThis.setTimeout = realSetTimeout
+    globalThis.clearTimeout = realClearTimeout
+    setSystemTime()
+  }
+})
+
+test('terminal exact confirmation refetches history even if the pre-confirmation refresh was incomplete', async () => {
+  const m = makeMockClient({ activeExecution: { active: true, executionId: 'e', status: 'running' } })
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  let finish!: (value: Awaited<ReturnType<TauClient['agents']['getExecution']>>) => void
+  m.client.agents.getExecution = () =>
+    new Promise((resolve) => {
+      finish = resolve
+    })
+  const { result, unmount } = await renderHook(() => useAgentConversation({ agentId: 'a' }), {
+    wrapper: wrapWith(qc, m.client),
+  })
+  try {
+    await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+    act(() => m.emit({ type: 'tool_start', streamGroupId: 'S', toolCallId: 't', toolName: 'search', args: '{}' }))
+    await act(async () => {
+      m.triggerDone()
+      await Promise.resolve()
+    })
+    expect(
+      qc.getQueryData<{ pages: Array<{ messages: Message[] }> }>(queryKeys.agents.messagesInfinite('a'))?.pages[0]
+        .messages
+    ).toEqual([])
+    const before = m.getMessagesCount()
+    m.setMessages([
+      {
+        id: 'm',
+        agentId: 'a',
+        role: 'assistant',
+        content: 'answer',
+        pending: false,
+        createdAt: new Date(),
+        metadata: {
+          streamGroupId: 'S',
+          content: [
+            {
+              type: 'tool_use',
+              id: 't',
+              toolCall: { toolCallId: 't', toolName: 'search', args: '{}', result: 'final result', isError: false },
+            },
+            { type: 'text', id: 'answer', content: 'answer' },
+          ],
+        },
+      },
+    ])
+    await act(async () => {
+      finish({ agentId: 'a', executionId: 'e', status: 'completed', executionVersion: 2, active: false })
+      await Promise.resolve()
+    })
+    act(() => {
+      m.emit({ type: 'execution_snapshot', executionId: 'e', status: 'completed', executionVersion: 2 })
+      m.triggerDone()
+    })
+    expect(m.getMessagesCount()).toBeGreaterThan(before)
+    await waitFor(() =>
+      expect(result.current.items.find((item) => item.kind === 'persisted')).toMatchObject({
+        message: { content: 'answer' },
+      })
+    )
+  } finally {
+    unmount()
+    qc.clear()
+  }
+})
+
+test('an in-flight quiet backstop result cannot terminalize a replacement execution', async () => {
+  const m = makeMockClient({ activeExecution: { active: false } })
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  let finish!: (value: Awaited<ReturnType<TauClient['agents']['getExecution']>>) => void
+  m.client.agents.getExecution = () =>
+    new Promise((resolve) => {
+      finish = resolve
+    })
+  const realSetTimeout = globalThis.setTimeout
+  const timers: Array<() => void> = []
+  globalThis.setTimeout = ((fn: () => void, delay?: number, ...args: unknown[]) => {
+    if (delay === 4000) {
+      timers.push(fn)
+      return realSetTimeout(() => {}, 100_000)
+    }
+    return realSetTimeout(fn, delay, ...args)
+  }) as typeof setTimeout
+  let unmount: (() => void) | undefined
+  setSystemTime(1_700_000_000_000)
+  try {
+    const hook = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper: wrapWith(qc, m.client) })
+    unmount = hook.unmount
+    act(() => {
+      m.emit({ type: 'agent', agentId: 'a', executionId: 'old' })
+      m.emit({ type: 'text', text: 'old', streamGroupId: 'old' })
+    })
+    setSystemTime(1_700_000_005_000)
+    act(() => timers.at(-1)!())
+    m.setActiveExecution({ active: true, executionId: 'next', status: 'running' })
+    await act(async () => {
+      await qc.invalidateQueries({ queryKey: queryKeys.agents.activeExecution('a') })
+    })
+    act(() => {
+      m.emit({ type: 'agent', agentId: 'a', executionId: 'next' })
+      m.emit({ type: 'text', text: 'next', streamGroupId: 'next' })
+    })
+    await act(async () => {
+      finish({ agentId: 'a', executionId: 'old', status: 'completed', executionVersion: 99, active: false })
+      await Promise.resolve()
+    })
+    expect(hook.result.current.executionStatus).toBe('running')
+    expect(hook.result.current.items.filter((item) => item.kind === 'working')).toHaveLength(1)
+  } finally {
+    unmount?.()
+    qc.clear()
+    globalThis.setTimeout = realSetTimeout
+    setSystemTime()
   }
 })

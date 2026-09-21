@@ -163,7 +163,11 @@ export class StreamGroupStore {
     this.executionId = replay.executionId
     // An empty/lifecycle-only batch cannot retarget the next live unscoped event.
     // Nor should a stale prefix move the cursor behind a newer local group.
-    if (replay.lastActive && (!this.lastActive || !previousIds.has(replay.lastActive))) {
+    if (
+      replay.lastActive &&
+      !this.retired.has(replay.lastActive) &&
+      (!this.lastActive || !previousIds.has(replay.lastActive))
+    ) {
       this.lastActive = replay.lastActive
     }
 

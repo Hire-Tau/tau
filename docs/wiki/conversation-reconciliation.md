@@ -14,7 +14,10 @@ saved fragment.
   appending duplicate deltas. An absent lifecycle event is not a reversal.
 - Done, flushed, errored and transport-ended handoffs all require durable ordered
   block coverage and every announced done message ID. Saved text may extend the
-  streamed prefix; tool identity, args and result must match. Transport end while
+  streamed prefix. Tool identity must match. An explicitly unfinished tool permits
+  saved argument extensions and replacement of its provisional result; a finalized
+  (or legacy) tool still requires exact args/result/error equality. Every other
+  observed block and done message ID must also be covered. Transport end while
   the execution is still busy cannot retire an otherwise open group.
 - After durable handoff, only the group ID is retired until conversation reset.
   Historical replay cannot resurrect it after an authoritative history revision or
@@ -35,10 +38,12 @@ existing 15 retries remain unchanged. Parked sandbox/maintenance transports keep
 using the existing resume signal rather than spinning reconnects.
 
 Reconciliation is fenced by subscription and execution identity/version. A terminal
-exact status triggers a final replay/history refresh to recover missed text/tools;
-a failed request is not interpreted as completion. The quiet backstop rearms on
-same-status stream activity and verifies the exact execution when known, rather
-than trusting a possibly stale agent-idle response. Legacy streams without exact
+exact status triggers a post-confirmation history refresh to recover missed
+text/tools: the terminal exact stream sends only an execution snapshot and EOF,
+**not worker catchup**. Busy reconnects can still receive catchup. A failed request
+is not interpreted as completion. The quiet backstop rearms on every subscription
+replacement (even a silent one) and on same-status stream activity. It verifies the
+exact execution when known, rather than trusting a possibly stale agent-idle response. Legacy streams without exact
 identity retain the existing idle fallback. Observed exact terminal status cannot
 be undone by an older content-only replay.
 

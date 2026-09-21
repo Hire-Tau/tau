@@ -356,3 +356,35 @@ test('durable handoff retires a group so replay cannot resurrect a later authori
   store.applyCatchup(events)
   expect(store.snapshot()).toHaveLength(1)
 })
+
+test.each(['flush_agent', 'done', 'error'] as const)(
+  'retired replay prefix cannot steal the target of a subsequent live %s',
+  (type) => {
+    const store = new StreamGroupStore()
+    store.ingest({ type: 'text', text: 'old', streamGroupId: 'old' })
+    store.ingest({ type: 'flush_agent' })
+    store.clear('old')
+    store.ingest({ type: 'text', text: 'current', streamGroupId: 'current' })
+    store.applyCatchup([{ type: 'text', text: 'old', streamGroupId: 'old' }])
+    store.ingest(type === 'done' ? { type, response: '' } : type === 'error' ? { type, message: 'failed' } : { type })
+    expect(store.snapshot()).toHaveLength(1)
+    expect(store.snapshot()[0][type === 'flush_agent' ? 'flushed' : type === 'error' ? 'errored' : 'done']).toBe(true)
+  }
+)
+
+test('a genuinely new replay group becomes the target of subsequent live lifecycle events', () => {
+  const store = new StreamGroupStore()
+  store.ingest({ type: 'text', text: 'current', streamGroupId: 'current' })
+  store.applyCatchup([
+    { type: 'text', text: 'current', streamGroupId: 'current' },
+    { type: 'flush_agent' },
+    { type: 'text', text: 'new', streamGroupId: 'new' },
+  ])
+  store.ingest({ type: 'done', response: '' })
+  expect(
+    store.snapshot().map((group) => ({ id: group.streamGroupId, done: group.done, flushed: group.flushed }))
+  ).toEqual([
+    { id: 'current', done: false, flushed: true },
+    { id: 'new', done: true, flushed: false },
+  ])
+})

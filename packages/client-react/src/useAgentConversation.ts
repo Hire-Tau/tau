@@ -132,6 +132,8 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
   conversationIdentityRef.current = { requested: options.agentId, resolved: resolvedAgentId }
   const recoveryAttemptsRef = useRef(new Map<string, number>())
   const subscriptionGenerationRef = useRef(0)
+  // Timer ownership must change even when a replacement stream delivers no events.
+  const [subscriptionGeneration, setSubscriptionGeneration] = useState(0)
   const createGenerationRef = useRef(0)
   useEffect(
     () => () => {
@@ -496,6 +498,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     const store = storeRef.current!
     if (streamedExecIdRef.current) announcedExecutionIdRef.current = streamedExecIdRef.current
     const generation = ++subscriptionGenerationRef.current
+    setSubscriptionGeneration(generation)
     const requestedIdentity = options.agentId
     let active = true
     const isCurrent = () =>
@@ -531,11 +534,15 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
           const highest = highestExecutionVersionRef.current.get(executionId) ?? -1
           if (execution.executionVersion < highest) return
           highestExecutionVersionRef.current.set(executionId, execution.executionVersion)
-          if (['completed', 'failed', 'stopped'].includes(execution.status))
+          if (['completed', 'failed', 'stopped'].includes(execution.status)) {
             terminalExecutionStatusesRef.current.set(executionId, execution.status)
+            // The earlier refresh may have raced persistence before completion.
+            invalidateConversationQueries()
+          }
           setExecutionStatusLocal(execution.status)
-          // Even a terminal execution can have undelivered text/tools. One exact
-          // reconnect gets its final replay; do not substitute the next execution.
+          // Busy executions can replay missed events. Terminal exact streams only
+          // send a status snapshot; their missing text/tools come from the durable
+          // post-confirmation history refresh, not a final worker replay.
           bumpStreamEpoch()
         })
         .catch(() => {
@@ -816,6 +823,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     liveStatus,
     executionStatus,
     streamTick,
+    subscriptionGeneration,
     resolvedAgentId,
     client,
     invalidateConversationQueries,

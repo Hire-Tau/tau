@@ -83,9 +83,14 @@ function blockContentMatches(streamed: StreamGroupSnapshot['blocks'][number], pe
         persisted.type === 'tool_use' &&
         persisted.toolCall.toolCallId === streamed.toolCall.toolCallId &&
         persisted.toolCall.toolName === streamed.toolCall.toolName &&
-        persisted.toolCall.args === streamed.toolCall.args &&
-        persisted.toolCall.result === streamed.toolCall.result &&
-        persisted.toolCall.isError === streamed.toolCall.isError
+        // A saved completion may extend args and replace a provisional tool_update
+        // result when tool_end was missed. Only explicitly unfinished tools allow
+        // this: observed final results (and legacy blocks) still require equality.
+        (streamed._done === false
+          ? persisted.toolCall.args.startsWith(streamed.toolCall.args)
+          : persisted.toolCall.args === streamed.toolCall.args &&
+            persisted.toolCall.result === streamed.toolCall.result &&
+            persisted.toolCall.isError === streamed.toolCall.isError)
       )
   }
 }
