@@ -1,7 +1,14 @@
-import type { IntegrationAuthorizationStart, IntegrationDeviceAuthorizationStatus } from '@tau/shared'
+import type {
+  IntegrationAuthorizationStart,
+  IntegrationDeviceAuthorizationStatus,
+  GitHubRepositoryAccess,
+} from '@tau/shared'
 import { apiFetch } from './client'
 
 type ApiFetcher = <T>(path: string, init?: RequestInit) => Promise<T>
+
+export const getGitHubRepositoryAccess = (connectionId: string, fetcher: ApiFetcher = apiFetch) =>
+  fetcher<GitHubRepositoryAccess>(`/integrations/connections/${connectionId}/github-repository-access`)
 
 export type IntegrationConnectionHealthState = 'unknown' | 'healthy' | 'degraded' | 'unreachable'
 

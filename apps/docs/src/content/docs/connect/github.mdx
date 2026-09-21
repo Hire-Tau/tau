@@ -36,8 +36,17 @@ expiring user tokens in that App's configuration.
 </ModeContent>
 
 Install the GitHub App on the repositories Tau should use. Authorizing your user
-account alone does not give the App repository access. When you return, confirm
-the account appears in the card without a reconnect warning.
+account alone does not give the App repository access. When you return, Tau
+checks the App installations available to that account and how many repositories
+each installation exposes. If setup needs repository access, choose **Grant
+repository access**, install the App on the intended account or organization,
+and select its repositories. Return to Tau or choose **Check again** to verify.
+
+Access through an organization does not include forks owned by your personal
+account. Tau shows a separate warning when the App is missing from that account.
+A failed or incomplete check is shown as unverified, rather than claiming the
+App is missing. The check verifies installation access, not whether a particular
+branch permits pushes.
 
 ## Choose the squad's account
 

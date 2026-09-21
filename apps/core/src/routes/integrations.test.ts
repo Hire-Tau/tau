@@ -39,6 +39,12 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
   const replaceCredential = mock(async () => get())
   const remove = mock(async () => {})
   const providerFor = mock(async () => loadedProvider)
+  const githubRepositoryAccess = mock(async () => ({
+    status: 'missing' as const,
+    personalAccountInstalled: false,
+    complete: true,
+    installations: [],
+  }))
   const oauthAppGet = mock(
     (_providerKey: string): SafeOAuthAppSettings => ({
       authority: 'local',
@@ -83,6 +89,7 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
       replaceCredential,
       remove,
       providerFor,
+      githubRepositoryAccess,
       channelSettings: { get: channelGet, configure: channelConfigure },
       deploymentSettings: { get: channelGet, configure: channelConfigure },
       serviceSettings: { get: channelGet, configure: channelConfigure },
@@ -109,6 +116,7 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
       replaceCredential,
       remove,
       providerFor,
+      githubRepositoryAccess,
       channelGet,
       channelConfigure,
       webhookGet,
@@ -127,6 +135,28 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
 }
 
 describe('integration routes', () => {
+  test('repository access checks require GitHub read permission and the matching provider', async () => {
+    for (const [scope, provider, expected] of [
+      ['integrations:read:github', 'github', 200],
+      ['integrations:read:notion', 'github', 403],
+      ['integrations:read:github', 'notion', 404],
+    ] as const) {
+      const { app, calls } = createApp(
+        { type: 'system', systemTokenId: 'check', name: 'check', scopes: [scope] },
+        provider
+      )
+      const response = await app.request(`/api/integrations/connections/${summary.id}/github-repository-access`)
+      expect(response.status).toBe(expected)
+      expect(calls.githubRepositoryAccess).toHaveBeenCalledTimes(expected === 200 ? 1 : 0)
+      if (expected === 200)
+        expect(await response.json()).toEqual({
+          status: 'missing',
+          personalAccountInstalled: false,
+          complete: true,
+          installations: [],
+        })
+    }
+  })
   // The squad guards resolve their route param, so these need a real squad: a placeholder shorter
   // than a full id is rejected before the scopes are ever consulted.
   let squadId: string

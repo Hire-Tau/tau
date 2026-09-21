@@ -891,6 +891,7 @@ import {
   getExternalExport,
   getIntegrationOAuthApp,
   getGitHubWebhookSettings,
+  getGitHubRepositoryAccess,
   getLinearWebhookSettings,
   getChannelIntegrationSettings,
   getServiceIntegrationSettings,
@@ -899,6 +900,14 @@ import {
   listIntegrationPool,
 } from './api/integrations'
 export const integrationQueries = {
+  githubRepositoryAccess: (connectionId: string) =>
+    queryOptions({
+      queryKey: integrationQueryKeys.githubRepositoryAccess(connectionId),
+      queryFn: () => getGitHubRepositoryAccess(connectionId),
+      staleTime: 60_000,
+      retry: false,
+      refetchOnWindowFocus: 'always',
+    }),
   outputs: () => queryOptions({ queryKey: integrationQueryKeys.outputs(), queryFn: listIntegrationOutputs }),
   credentialSettings: (provider: string, kind: 'channel' | 'deployment' | 'service') =>
     queryOptions({

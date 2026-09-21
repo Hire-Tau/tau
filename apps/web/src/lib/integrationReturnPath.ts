@@ -17,6 +17,12 @@ export function integrationReturnPath(
 ) {
   const settingsPath = `${baseUrl.replace(/\/$/, '')}/settings`
   const pathname = returnTo.split(/[?#]/, 1)[0]?.replace(/\/$/, '')
+  if (
+    provider === 'github' &&
+    (pathname === '/onboarding' || pathname === `${baseUrl.replace(/\/$/, '')}/onboarding`)
+  ) {
+    return `${baseUrl.replace(/\/$/, '')}/onboarding?setup=github`
+  }
   if (pathname !== '/settings' && pathname !== settingsPath) return returnTo
   const url = new URL(returnTo, 'https://tau.invalid')
   url.pathname = settingsPath

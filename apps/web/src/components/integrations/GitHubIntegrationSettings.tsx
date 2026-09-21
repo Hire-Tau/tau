@@ -1,5 +1,6 @@
 import { CheckIcon, ClipboardIcon } from '../icons'
 import { GitHubWebhookSettings } from './GitHubWebhookSettings'
+import { GitHubRepositoryAccess } from './GitHubRepositoryAccess'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { IntegrationAuthorizationStart } from '@tau/shared'
@@ -261,6 +262,13 @@ export function GitHubIntegrationSettings({
                 : 'Disabled'}{' '}
               · Used by {connection.usage.squadCount} squads
             </p>
+            {connection.enabled && connection.authState === 'authenticated' && (
+              <GitHubRepositoryAccess
+                connectionId={connection.id}
+                login={connection.configuration.login ?? connection.displayName}
+                usesTauApp={usesTauApp}
+              />
+            )}
           </div>
           {canWrite && (
             <div className="flex flex-wrap gap-2">

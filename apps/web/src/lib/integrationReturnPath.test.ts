@@ -20,8 +20,15 @@ for (const provider of ['github', 'notion'] as const) {
   })
 }
 
-test('callback preserves onboarding and custom return destinations', () => {
-  for (const destination of ['/onboarding', '/tau/onboarding', '/squads/test?tab=settings', '/settings-other']) {
+test('GitHub callback opens repository-access setup during onboarding', () => {
+  for (const base of ['/', '/tau/']) {
+    expect(integrationReturnPath(`${base}onboarding`, 'github', base)).toBe(`${base}onboarding?setup=github`)
+    expect(integrationReturnPath(`${base}onboarding`, 'notion', base)).toBe(`${base}onboarding`)
+  }
+})
+
+test('callback preserves custom return destinations', () => {
+  for (const destination of ['/squads/test?tab=settings', '/settings-other']) {
     expect(integrationReturnPath(destination, 'github', '/tau/')).toBe(destination)
   }
   expect(integrationReturnPath('/settings?section=account&setting=old&other=value#anchor', 'notion')).toBe(
