@@ -7,7 +7,7 @@ import {
 import type { WorkStream, WorkStreamDerivedState, WorkStreamStatus, WorkStreamWaitType } from './types'
 
 /** Explicit reduced vocabulary used by WidgetKit and ActivityKit. */
-export type WorkBucket = 'needsYou' | 'running' | 'blocked' | 'queued' | 'paused'
+export type WorkBucket = 'needsYou' | 'running' | 'blocked' | 'queued' | 'paused' | 'externalWait'
 
 export type WorkBucketFacts = WorkStreamPresentationFacts
 
@@ -15,19 +15,9 @@ export type WorkBucketFacts = WorkStreamPresentationFacts
 export function workBucket(stream: WorkBucketFacts): WorkBucket {
   const state = selectWorkStreamPresentationState(stream)
   if (state === 'paused') return 'paused'
+  if (state === 'waiting_on_dependency' || state === 'delivery_external') return 'externalWait'
   if (workStreamNeedsHumanAttention(stream)) return 'needsYou'
-  if (
-    [
-      'blocked',
-      'idle',
-      'execution_failed',
-      'waiting_on_dependency',
-      'delivery_external',
-      'delivery_setup',
-      'delivery_failure',
-    ].includes(state)
-  )
-    return 'blocked'
+  if (['blocked', 'idle', 'execution_failed', 'delivery_setup', 'delivery_failure'].includes(state)) return 'blocked'
   if (state === 'active' || state === 'in_progress') return 'running'
   return 'queued'
 }
@@ -72,7 +62,10 @@ export interface WidgetWorkStreamSummary {
 export interface WorkInterestSnapshot {
   asOf: string
   totalCount: number
-  bucketCounts: Record<Exclude<WorkBucket, 'paused'>, number> & { paused?: number }
+  bucketCounts: Record<Exclude<WorkBucket, 'paused' | 'externalWait'>, number> & {
+    paused?: number
+    externalWait?: number
+  }
   top: WidgetWorkStreamSummary[]
   liveActivity: LiveActivityState
 }
@@ -137,7 +130,14 @@ function toWidgetSummary(stream: SnapshotSource): WidgetWorkStreamSummary {
 
 export function buildWorkInterestSnapshot(streams: SnapshotSource[], now: Date = new Date()): WorkInterestSnapshot {
   const ordered = [...streams].sort(compareWorkInterest)
-  const bucketCounts: Record<WorkBucket, number> = { needsYou: 0, running: 0, blocked: 0, queued: 0, paused: 0 }
+  const bucketCounts: Record<WorkBucket, number> = {
+    needsYou: 0,
+    running: 0,
+    blocked: 0,
+    queued: 0,
+    paused: 0,
+    externalWait: 0,
+  }
   for (const stream of ordered) bucketCounts[workBucket(stream)] += 1
 
   return {

@@ -57,9 +57,9 @@ describe('workBucket mirrors the widget’s Swift case table', () => {
     expect(workBucket(stream({ status: 'queued', derivedState: undefined }))).toBe('queued')
   })
 
-  test('dependency waits and alarming idle project to blocked', () => {
-    expect(workBucket(stream({ openWaits: wait('dependency'), status: 'active' }))).toBe('blocked')
-    expect(workBucket(stream({ derivedState: 'waiting_on_dependency', status: 'active' }))).toBe('blocked')
+  test('dependency waits are external while alarming idle remains blocked', () => {
+    expect(workBucket(stream({ openWaits: wait('dependency'), status: 'active' }))).toBe('externalWait')
+    expect(workBucket(stream({ derivedState: 'waiting_on_dependency', status: 'active' }))).toBe('externalWait')
     expect(workBucket(stream({ derivedState: 'idle', status: 'active' }))).toBe('blocked')
   })
 
@@ -116,7 +116,14 @@ describe('buildWorkInterestSnapshot', () => {
 
     const snapshot = buildWorkInterestSnapshot(many, new Date('2026-08-30T00:00:00Z'))
     expect(snapshot.totalCount).toBe(30)
-    expect(snapshot.bucketCounts).toEqual({ needsYou: 1, running: 29, blocked: 0, queued: 0, paused: 0 })
+    expect(snapshot.bucketCounts).toEqual({
+      needsYou: 1,
+      running: 29,
+      blocked: 0,
+      queued: 0,
+      paused: 0,
+      externalWait: 0,
+    })
     expect(snapshot.top).toHaveLength(WIDGET_TOP_LIMIT)
     expect(snapshot.top[0]!.id).toBe('late-review')
     expect(snapshot.liveActivity.needsYouCount).toBe(1)
@@ -178,7 +185,7 @@ test('widget and live activity preserve pause/delivery, safe fields and omitted-
     stream({ id: 'merge', delivery: { kind: 'merge' }, openWaits: [] }),
     stream({ id: 'legacy', derivedState: 'blocked' }),
   ])
-  expect(snapshot.bucketCounts).toEqual({ needsYou: 2, paused: 1, blocked: 0, queued: 0, running: 0 })
+  expect(snapshot.bucketCounts).toEqual({ needsYou: 2, paused: 1, blocked: 0, queued: 0, running: 0, externalWait: 0 })
   expect(snapshot.top.find((row) => row.id === 'paused')).toMatchObject({ pause: true, bucket: 'paused' })
   expect(snapshot.top.find((row) => row.id === 'merge')).toMatchObject({
     delivery: { kind: 'merge' },

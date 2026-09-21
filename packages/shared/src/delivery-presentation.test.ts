@@ -10,7 +10,7 @@ const cases = [
   ['approval', 'delivery_approval', 'review', true, 'needsYou'],
   ['review', 'delivery_review', 'review', true, 'needsYou'],
   ['merge', 'delivery_merge', 'review', true, 'needsYou'],
-  ['external', 'delivery_external', 'externalWait', false, 'blocked'],
+  ['external', 'delivery_external', 'externalWait', false, 'externalWait'],
   ['setup', 'delivery_setup', 'danger', false, 'blocked'],
 ] as const
 for (const [kind, state, role, attention, bucket] of cases) {
@@ -48,4 +48,24 @@ test('only the identified delivery approval wait is reinterpreted; other manual 
   expect(selectWorkStreamPresentationState({ ...facts, openWaits: [], derivedState: 'execution_failed' })).toBe(
     'execution_failed'
   )
+})
+
+import { WORK_STREAM_PRESENTATION_CASES } from './test-fixtures/work-stream-presentation'
+for (const row of WORK_STREAM_PRESENTATION_CASES) {
+  test(`shared matrix: ${row.name}`, () => {
+    expect(selectWorkStreamPresentationState(row.facts)).toBe(row.state)
+    expect(WORK_STREAM_STATUS_ROLE[row.state]).toBe(row.role)
+    expect(workStreamNeedsHumanAttention(row.facts)).toBe(row.attention)
+    expect(workBucket(row.facts)).toBe(row.bucket)
+  })
+}
+
+test('an approval identifier cannot reinterpret a question or review wait', () => {
+  expect(
+    selectWorkStreamPresentationState({
+      status: 'active',
+      delivery: { kind: 'approval', approvalWaitId: 'same' },
+      openWaits: [{ type: 'question', id: 'same' }],
+    })
+  ).toBe('waiting_on_answer')
 })

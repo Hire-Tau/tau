@@ -11,6 +11,12 @@ import { webStatus } from './statusPresentation'
 // display states (in_progress/in_review/waiting_on_answer/waiting_on_dependency/blocked/idle). The
 // key spaces overlap on queued/done/canceled, which share the same label either way.
 export const WS_STATUS_LABELS: Record<WorkStreamPresentationState, string> = {
+  delivery_approval: 'Approve Delivery',
+  delivery_review: 'Review Pull Request',
+  delivery_merge: 'Merge Pull Request',
+  delivery_external: 'Awaiting Code Host',
+  delivery_setup: 'Delivery Setup Required',
+  delivery_failure: 'Delivery Changes Required',
   // Stored statuses
   queued: 'Queued',
   active: 'Active',
@@ -28,6 +34,13 @@ export const WS_STATUS_LABELS: Record<WorkStreamPresentationState, string> = {
 }
 
 export const WS_STATUS_BADGE_COLORS: Record<WorkStreamPresentationState, BadgeColor> = {
+  delivery_approval: webStatus(WORK_STREAM_STATUS_ROLE.delivery_approval).badgeColor,
+  delivery_review: webStatus(WORK_STREAM_STATUS_ROLE.delivery_review).badgeColor,
+  delivery_merge: webStatus(WORK_STREAM_STATUS_ROLE.delivery_merge).badgeColor,
+  delivery_external: webStatus(WORK_STREAM_STATUS_ROLE.delivery_external).badgeColor,
+  delivery_failure: webStatus(WORK_STREAM_STATUS_ROLE.delivery_failure).badgeColor,
+  delivery_setup: webStatus(WORK_STREAM_STATUS_ROLE.delivery_setup).badgeColor,
+
   queued: webStatus(WORK_STREAM_STATUS_ROLE.queued).badgeColor,
   active: webStatus(WORK_STREAM_STATUS_ROLE.active).badgeColor,
   done: webStatus(WORK_STREAM_STATUS_ROLE.done).badgeColor,

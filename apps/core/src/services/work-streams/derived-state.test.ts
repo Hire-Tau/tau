@@ -1,3 +1,4 @@
+import { WORK_STREAM_PRESENTATION_CASES } from '../../../../../packages/shared/src/test-fixtures/work-stream-presentation'
 import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stream'
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test'
 import { and, eq, like, inArray } from 'drizzle-orm'
@@ -53,6 +54,103 @@ describe('work-stream derived state', () => {
     const fresh = await WorkStream.mustFind(ws.id)
     return (await computeDerivedStates([fresh])).get(ws.id)!
   }
+
+  it('serializes authoritative delivery and projects its approval wait without altering the wait', async () => {
+    const ws = await createStream('approval')
+    const { flowWaitReference } = await import('../workflows/wait-policy')
+    const [wait] = await db
+      .insert(workStreamWaits)
+      .values({
+        workStreamId: ws.id,
+        type: 'manual',
+        resolutionHandler: 'workflow',
+        referenceId: flowWaitReference(ws.id, 'delivery', 0),
+        createdBy: 'system',
+      })
+      .returning()
+    const result = (
+      await computeDerivedStates([ws], {
+        loadDelivery: async () => new Map([[ws.id, { kind: 'approval' }]]),
+      })
+    ).get(ws.id)!
+    const { selectWorkStreamPresentationState, workStreamNeedsHumanAttention, buildWorkInterestSnapshot } =
+      await import('@tau/shared')
+    const json = { ...ws.toJson(), ...result }
+    expect(result.derivedState).toBe('in_review')
+    expect(result.delivery).toEqual({ kind: 'approval', approvalWaitId: wait!.id })
+    expect(result.openWaits[0]!.type).toBe('manual')
+    expect(selectWorkStreamPresentationState(json)).toBe('delivery_approval')
+    expect(workStreamNeedsHumanAttention(json)).toBe(true)
+    expect(buildWorkInterestSnapshot([json]).liveActivity.needsYouCount).toBe(1)
+  })
+
+  it('batch-loads active flow delivery independently of callers selecting metadata', async () => {
+    const { workStreamFlowRuns } = await import('../../db/schema')
+    const { attachFlow } = await import('../workflows/execution')
+    const { workflowPresetSchema } = await import('@tau/shared')
+    const definition = workflowPresetSchema.parse(
+      Bun.YAML.parse(
+        await Bun.file(new URL('../../../../../config/workflows/builder-reviewer.yaml', import.meta.url)).text()
+      )
+    ).definition
+    for (const participant of Object.values(definition.participants)) participant.agentTypeId = testAgentTypeId
+    definition.completion = { mode: 'review-approval' }
+    const ws = await createStream('batched delivery')
+    await db.transaction(async (tx) => {
+      const [stored] = await tx.select().from(workStreams).where(eq(workStreams.id, ws.id))
+      const flow = await attachFlow(tx, stored!, { kind: 'inline', definition })
+      await tx
+        .update(workStreamFlowRuns)
+        .set({ activated: true, state: { ...flow.state, status: 'completion-ready' } })
+        .where(eq(workStreamFlowRuns.workStreamId, ws.id))
+    })
+    const states = await computeDerivedStates([{ id: ws.id, status: 'active', assigneeAgentId: null, agentIds: [] }])
+    expect(states.get(ws.id)).toMatchObject({
+      derivedState: 'in_review',
+      delivery: { kind: 'approval' },
+      openWaits: [],
+    })
+  })
+
+  it('shared matrix survives derivation, JSON serialization, attention and both native projections', async () => {
+    const { selectWorkStreamPresentationState, workStreamNeedsHumanAttention, buildWorkInterestSnapshot } =
+      await import('@tau/shared')
+    for (const row of WORK_STREAM_PRESENTATION_CASES.filter((row) => row.facts.openWaits !== undefined)) {
+      const ws = await createStream(row.name)
+      for (const wait of row.facts.openWaits ?? [])
+        await db.insert(workStreamWaits).values({ workStreamId: ws.id, type: wait.type, createdBy: 'system' })
+      const input = { ...ws.toJson(), ...row.facts, agentIds: ['matrix-agent'], assigneeAgentId: null }
+      const derived = (
+        await computeDerivedStates([input], {
+          loadDelivery: async () => new Map(row.facts.delivery ? [[ws.id, row.facts.delivery]] : []),
+          loadBusyAgentIds: async () => new Set(row.facts.derivedState === 'in_progress' ? ['matrix-agent'] : []),
+          loadSurfacedFailures: async () =>
+            new Map(
+              row.facts.derivedState === 'execution_failed'
+                ? [
+                    [
+                      'matrix-agent',
+                      {
+                        executionId: 'failure',
+                        failureClass: null,
+                        failureReason: null,
+                        endedAt: new Date().toISOString(),
+                      },
+                    ],
+                  ]
+                : []
+            ),
+        })
+      ).get(ws.id)!
+      const json = JSON.parse(JSON.stringify({ ...input, ...derived }))
+      expect(selectWorkStreamPresentationState(json)).toBe(row.state)
+      expect(workStreamNeedsHumanAttention(json)).toBe(row.attention)
+      const snapshot = buildWorkInterestSnapshot([json])
+      expect(snapshot.top[0]?.bucket).toBe(row.bucket)
+      expect(snapshot.liveActivity.top[0]?.bucket).toBe(row.bucket)
+      expect(snapshot.liveActivity.needsYouCount).toBe(row.attention ? 1 : 0)
+    }
+  })
 
   it('in_progress requires a RUNNING execution for an assigned agent — assignee presence alone is NOT enough', async () => {
     const agent = await createAgent()

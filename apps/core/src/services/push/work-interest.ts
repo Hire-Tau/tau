@@ -4,6 +4,7 @@ import {
   buildWorkInterestSnapshot,
   hasNotify,
   type WorkInterestSnapshot,
+  type WorkStream,
   type WorkStreamDerivedState,
   type WorkStreamStatus,
   type WorkStreamWait,
@@ -15,6 +16,7 @@ import { loadUserAttention, type UserAttention } from '../attention/resolver'
 import { computeDerivedStates } from '../work-streams/derived-state'
 
 export interface WorkInterestCandidate {
+  pause?: WorkStream['pause']
   id: string
   squadId: string
   title: string
@@ -25,6 +27,7 @@ export interface WorkInterestCandidate {
 }
 
 interface DerivedFacts {
+  delivery?: WorkStream['delivery']
   derivedState: WorkStreamDerivedState
   openWaits: WorkStreamWait[]
 }
@@ -109,6 +112,7 @@ async function loadCandidates(squadIds: string[], streamIds: string[]): Promise<
       squadId: workStreams.squadId,
       title: workStreams.title,
       status: workStreams.status,
+      pause: workStreams.pause,
       assigneeAgentId: workStreams.assigneeAgentId,
       agentIds: workStreams.agentIds,
       updatedAt: workStreams.updatedAt,

@@ -146,7 +146,12 @@ export function selectWorkStreamPresentationState(
       workStream.openWaits!.some(
         (wait) =>
           wait.type === type &&
-          !(deliveryState === 'delivery_approval' && wait.id && wait.id === workStream.delivery?.approvalWaitId)
+          !(
+            deliveryState === 'delivery_approval' &&
+            wait.type === 'manual' &&
+            wait.id &&
+            wait.id === workStream.delivery?.approvalWaitId
+          )
       )
     )
     if (waitType) return WORK_STREAM_WAIT_STATE[waitType]

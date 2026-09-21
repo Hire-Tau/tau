@@ -1,4 +1,5 @@
 import { waitsForAgent } from '../../work-streams/wait-scope'
+import { awaitsCodeHostDelivery } from '../../workflows/delivery-state'
 import { isDeliveryApprovalWait } from '../../workflows/wait-policy'
 import { codeHostingRegistry } from '../code-hosting'
 import { isDeliveryFeedbackSubscription } from '../code-hosting/registry'
@@ -318,6 +319,7 @@ async function matchOutputEvent(event: Event) {
       )
         return false
       const [run] = await tx.select().from(workStreamFlowRuns).where(eq(workStreamFlowRuns.workStreamId, id))
+      let presentationChanged = false
       for (const subscription of run ? codeHostingRegistry.subscriptions(run.state.definition, stream.metadata) : []) {
         const descriptor = integrationOutputRegistry.descriptor(subscription.source)
         if (
@@ -326,20 +328,28 @@ async function matchOutputEvent(event: Event) {
           !integrationSubscriptionMatches(subscription, event.fact, stream.metadata, descriptor)
         )
           continue
-        await tx
+        const inserted = await tx
           .insert(integrationOutputDeliveries)
           .values({ eventId: event.id, workStreamId: id, subscriptionId: subscription.id, subscription })
           .onConflictDoNothing()
+          .returning({ id: integrationOutputDeliveries.id })
+        if (
+          inserted.length &&
+          run?.activated &&
+          awaitsCodeHostDelivery(run.state, stream.metadata) &&
+          isDeliveryFeedbackSubscription(subscription, stream.metadata)
+        )
+          presentationChanged = true
       }
       // Same locked row, same pass: what the event says about a designated delivery pull request.
-      return (await recordDeliveryObservation(tx, stream, event))
-        ? { workStreamId: stream.id, squadId: stream.squadId }
-        : false
+      const observationChanged = await recordDeliveryObservation(tx, stream, event)
+      return observationChanged || presentationChanged ? { workStreamId: stream.id, squadId: stream.squadId } : false
     })
     // Outside the transaction, and immediately: the watcher-facing event fires only once the
     // state it describes has committed, and a later stream's transaction throwing must not
-    // swallow a notification for a stream whose write already committed. `recordDeliveryObservation`
-    // is idempotent on timestamp, so a lost notification here could never be recovered by a retry.
+    // swallow a notification for a stream whose write already committed. New delivery evidence
+    // also invalidates presentation/attention/APNs without mutating flow state or creating waits.
+    // Both observation timestamps and unique delivery inserts make retries idempotent.
     if (result) {
       const { eventEmitter } = await import('../../../lib/infra/event-emitter')
       eventEmitter.emit('workStream.updated', result)
