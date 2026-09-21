@@ -228,6 +228,96 @@
     --scrollbar-thumb: 156 163 175 / 0.5;
     --on-accent-fg: 255 255 255;
     --checkbox-check: 255 255 255;
+
+    /* Syntax/terminal/ANSI: preserve the legacy content palettes in each appearance. */
+    /* Terminal selection "none" retains ANSI ink; scrollbar "auto" retains native chrome. */
+    --syntax-bg: 39.933 43.911 51.867;
+    --syntax-fg: 170.697 177.599 191.403;
+    --syntax-comment: 91.8 98.6 112.2;
+    --syntax-number: 209.253 153.7599 101.847;
+    --syntax-keyword: 197.778 120.36 221.34;
+    --syntax-property: 223.7625 107.7375 117.40625;
+    --syntax-string: 151.963 194.922 121.278;
+    --syntax-function: 97.206 175.4094 239.394;
+    --syntax-url: 86.3175 181.59825 194.1825;
+    --syntax-shadow: 0 0 0 / 0.3;
+    --syntax-punctuation: var(--syntax-fg);
+    --syntax-variable: var(--syntax-function);
+    --syntax-operator: var(--syntax-function);
+    --syntax-memory-bg: 14 15 26;
+    --syntax-image-bg: 30 30 30;
+    --syntax-error-fg: 239 68 68;
+    --syntax-human-link: 191 219 254;
+    --syntax-human-code-fg: 219 234 254;
+    --syntax-human-code-bg: 29 78 216;
+    --term-bg: 14 15 26;
+    --term-fg: 171 178 191;
+    --term-cursor: 82 139 255;
+    --term-cursor-accent: 14 15 26;
+    --term-selection-background: 62 68 81;
+    --term-black: 30 33 39;
+    --term-bright-black: 92 99 112;
+    --term-red: 224 108 117;
+    --term-bright-red: 224 108 117;
+    --term-green: 152 195 121;
+    --term-bright-green: 152 195 121;
+    --term-yellow: 209 154 102;
+    --term-bright-yellow: 229 192 123;
+    --term-blue: 97 175 239;
+    --term-bright-blue: 97 175 239;
+    --term-magenta: 198 120 221;
+    --term-bright-magenta: 198 120 221;
+    --term-cyan: 86 182 194;
+    --term-bright-cyan: 86 182 194;
+    --term-white: 171 178 191;
+    --term-bright-white: 255 255 255;
+    --term-selection-foreground: none;
+    --term-scrollbar-thumb: auto;
+    --term-scrollbar-thumb-hover: var(--term-scrollbar-thumb);
+    --term-scrollbar-thumb-active: var(--term-scrollbar-thumb);
+    --term-loading-bg: 55 65 81;
+    --term-muted: 107 114 128;
+    --ansi-black: 30 30 30;
+    --ansi-red: 197 48 48;
+    --ansi-green: 47 133 90;
+    --ansi-yellow: 183 121 31;
+    --ansi-blue: 43 108 176;
+    --ansi-magenta: 151 38 109;
+    --ansi-cyan: 9 135 160;
+    --ansi-white: 113 128 150;
+    --ansi-bright-black: 74 85 104;
+    --ansi-bright-red: 229 62 62;
+    --ansi-bright-green: 56 161 105;
+    --ansi-bright-yellow: 214 158 46;
+    --ansi-bright-blue: 49 130 206;
+    --ansi-bright-magenta: 184 50 128;
+    --ansi-bright-cyan: 0 181 216;
+    --ansi-bright-white: 26 32 44;
+    --ansi-bg-black: 30 30 30;
+    --ansi-bg-red: 252 129 129;
+    --ansi-bg-green: 154 230 180;
+    --ansi-bg-yellow: 250 240 137;
+    --ansi-bg-blue: 144 205 244;
+    --ansi-bg-magenta: 251 182 206;
+    --ansi-bg-cyan: 129 230 217;
+    --ansi-bg-white: 237 242 247;
+    --ansi-bg-bright-black: 74 85 104;
+    --ansi-bg-bright-red: 254 178 178;
+    --ansi-bg-bright-green: 198 246 213;
+    --ansi-bg-bright-yellow: 254 252 191;
+    --ansi-bg-bright-blue: 190 227 248;
+    --ansi-bg-bright-magenta: 254 215 226;
+    --ansi-bg-bright-cyan: 178 245 234;
+    --ansi-bg-bright-white: 247 250 252;
+    --ansi-on-black: 255 255 255;
+    --ansi-on-red: 254 178 178;
+    --ansi-on-green: 198 246 213;
+    --ansi-on-yellow: 254 252 191;
+    --ansi-on-blue: 190 227 248;
+    --ansi-on-magenta: 254 215 226;
+    --ansi-on-cyan: 178 245 234;
+    --ansi-on-white: 226 232 240;
+    --ansi-on-bright-white: 26 32 44;
   }
 
   .dark {
@@ -420,6 +510,96 @@
     --scrollbar-thumb: 156 163 175 / 0.5;
     --on-accent-fg: 255 255 255;
     --checkbox-check: 255 255 255;
+
+    /* Syntax/terminal/ANSI: preserve the legacy content palettes in each appearance. */
+    /* Terminal selection "none" retains ANSI ink; scrollbar "auto" retains native chrome. */
+    --syntax-bg: 39.933 43.911 51.867;
+    --syntax-fg: 170.697 177.599 191.403;
+    --syntax-comment: 91.8 98.6 112.2;
+    --syntax-number: 209.253 153.7599 101.847;
+    --syntax-keyword: 197.778 120.36 221.34;
+    --syntax-property: 223.7625 107.7375 117.40625;
+    --syntax-string: 151.963 194.922 121.278;
+    --syntax-function: 97.206 175.4094 239.394;
+    --syntax-url: 86.3175 181.59825 194.1825;
+    --syntax-shadow: 0 0 0 / 0.3;
+    --syntax-punctuation: var(--syntax-fg);
+    --syntax-variable: var(--syntax-function);
+    --syntax-operator: var(--syntax-function);
+    --syntax-memory-bg: 14 15 26;
+    --syntax-image-bg: 30 30 30;
+    --syntax-error-fg: 239 68 68;
+    --syntax-human-link: 191 219 254;
+    --syntax-human-code-fg: 219 234 254;
+    --syntax-human-code-bg: 29 78 216;
+    --term-bg: 14 15 26;
+    --term-fg: 171 178 191;
+    --term-cursor: 82 139 255;
+    --term-cursor-accent: 14 15 26;
+    --term-selection-background: 62 68 81;
+    --term-black: 30 33 39;
+    --term-bright-black: 92 99 112;
+    --term-red: 224 108 117;
+    --term-bright-red: 224 108 117;
+    --term-green: 152 195 121;
+    --term-bright-green: 152 195 121;
+    --term-yellow: 209 154 102;
+    --term-bright-yellow: 229 192 123;
+    --term-blue: 97 175 239;
+    --term-bright-blue: 97 175 239;
+    --term-magenta: 198 120 221;
+    --term-bright-magenta: 198 120 221;
+    --term-cyan: 86 182 194;
+    --term-bright-cyan: 86 182 194;
+    --term-white: 171 178 191;
+    --term-bright-white: 255 255 255;
+    --term-selection-foreground: none;
+    --term-scrollbar-thumb: auto;
+    --term-scrollbar-thumb-hover: var(--term-scrollbar-thumb);
+    --term-scrollbar-thumb-active: var(--term-scrollbar-thumb);
+    --term-loading-bg: 55 65 81;
+    --term-muted: 107 114 128;
+    --ansi-black: 74 85 104;
+    --ansi-red: 252 129 129;
+    --ansi-green: 104 211 145;
+    --ansi-yellow: 246 224 94;
+    --ansi-blue: 99 179 237;
+    --ansi-magenta: 246 135 179;
+    --ansi-cyan: 79 209 197;
+    --ansi-white: 160 174 192;
+    --ansi-bright-black: 113 128 150;
+    --ansi-bright-red: 254 178 178;
+    --ansi-bright-green: 154 230 180;
+    --ansi-bright-yellow: 250 240 137;
+    --ansi-bright-blue: 144 205 244;
+    --ansi-bright-magenta: 251 182 206;
+    --ansi-bright-cyan: 118 228 247;
+    --ansi-bright-white: 226 232 240;
+    --ansi-bg-black: 26 32 44;
+    --ansi-bg-red: 116 42 42;
+    --ansi-bg-green: 34 84 61;
+    --ansi-bg-yellow: 116 66 16;
+    --ansi-bg-blue: 42 67 101;
+    --ansi-bg-magenta: 112 36 89;
+    --ansi-bg-cyan: 35 78 82;
+    --ansi-bg-white: 74 85 104;
+    --ansi-bg-bright-black: 45 55 72;
+    --ansi-bg-bright-red: 155 44 44;
+    --ansi-bg-bright-green: 39 103 73;
+    --ansi-bg-bright-yellow: 151 90 22;
+    --ansi-bg-bright-blue: 44 82 130;
+    --ansi-bg-bright-magenta: 151 38 109;
+    --ansi-bg-bright-cyan: 40 94 97;
+    --ansi-bg-bright-white: 113 128 150;
+    --ansi-on-black: 226 232 240;
+    --ansi-on-red: 254 178 178;
+    --ansi-on-green: 198 246 213;
+    --ansi-on-yellow: 254 252 191;
+    --ansi-on-blue: 190 227 248;
+    --ansi-on-magenta: 254 215 226;
+    --ansi-on-cyan: 178 245 234;
+    --ansi-on-white: 226 232 240;
+    --ansi-on-bright-white: 26 32 44;
   }
 }
 
@@ -562,6 +742,30 @@
   }
 }
 
+/* xterm 5.5 uses native scrollbars. Leave them native for Tau (auto tokens),
+   but allow later themes to supply the complete thumb/hover/active palette. */
+.tau-terminal[data-terminal-scrollbar] .xterm-viewport {
+  scrollbar-color: rgb(var(--term-scrollbar-thumb)) rgb(var(--term-bg));
+}
+.tau-terminal[data-terminal-scrollbar] .xterm-viewport:hover {
+  scrollbar-color: rgb(var(--term-scrollbar-thumb-hover)) rgb(var(--term-bg));
+}
+.tau-terminal[data-terminal-scrollbar] .xterm-viewport:active {
+  scrollbar-color: rgb(var(--term-scrollbar-thumb-active)) rgb(var(--term-bg));
+}
+.tau-terminal[data-terminal-scrollbar] .xterm-viewport::-webkit-scrollbar {
+  width: 14px;
+}
+.tau-terminal[data-terminal-scrollbar] .xterm-viewport::-webkit-scrollbar-thumb {
+  background-color: rgb(var(--term-scrollbar-thumb));
+}
+.tau-terminal[data-terminal-scrollbar] .xterm-viewport::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(var(--term-scrollbar-thumb-hover));
+}
+.tau-terminal[data-terminal-scrollbar] .xterm-viewport::-webkit-scrollbar-thumb:active {
+  background-color: rgb(var(--term-scrollbar-thumb-active));
+}
+
 /* ============================================
    ANSI TERMINAL COLORS
    ============================================
@@ -569,227 +773,151 @@
    Uses a slightly muted palette that works well in both light and dark modes.
 */
 @layer utilities {
-  /* Standard foreground colors (30-37) - Light mode */
   .ansi-black {
-    color: #1e1e1e;
+    color: rgb(var(--ansi-black));
   }
   .ansi-red {
-    color: #c53030;
+    color: rgb(var(--ansi-red));
   }
   .ansi-green {
-    color: #2f855a;
+    color: rgb(var(--ansi-green));
   }
   .ansi-yellow {
-    color: #b7791f;
+    color: rgb(var(--ansi-yellow));
   }
   .ansi-blue {
-    color: #2b6cb0;
+    color: rgb(var(--ansi-blue));
   }
   .ansi-magenta {
-    color: #97266d;
+    color: rgb(var(--ansi-magenta));
   }
   .ansi-cyan {
-    color: #0987a0;
+    color: rgb(var(--ansi-cyan));
   }
   .ansi-white {
-    color: #718096;
+    color: rgb(var(--ansi-white));
   }
-
-  /* Bright foreground colors (90-97) - Light mode */
   .ansi-bright-black {
-    color: #4a5568;
+    color: rgb(var(--ansi-bright-black));
   }
   .ansi-bright-red {
-    color: #e53e3e;
+    color: rgb(var(--ansi-bright-red));
   }
   .ansi-bright-green {
-    color: #38a169;
+    color: rgb(var(--ansi-bright-green));
   }
   .ansi-bright-yellow {
-    color: #d69e2e;
+    color: rgb(var(--ansi-bright-yellow));
   }
   .ansi-bright-blue {
-    color: #3182ce;
+    color: rgb(var(--ansi-bright-blue));
   }
   .ansi-bright-magenta {
-    color: #b83280;
+    color: rgb(var(--ansi-bright-magenta));
   }
   .ansi-bright-cyan {
-    color: #00b5d8;
+    color: rgb(var(--ansi-bright-cyan));
   }
   .ansi-bright-white {
-    color: #1a202c;
+    color: rgb(var(--ansi-bright-white));
   }
-
-  /* Standard background colors (40-47) - Light mode */
   .ansi-bg-black {
-    background-color: #1e1e1e;
-    color: #fff;
+    background-color: rgb(var(--ansi-bg-black));
+    color: rgb(var(--ansi-on-black));
   }
   .ansi-bg-red {
-    background-color: #fc8181;
+    background-color: rgb(var(--ansi-bg-red));
   }
   .ansi-bg-green {
-    background-color: #9ae6b4;
+    background-color: rgb(var(--ansi-bg-green));
   }
   .ansi-bg-yellow {
-    background-color: #faf089;
+    background-color: rgb(var(--ansi-bg-yellow));
   }
   .ansi-bg-blue {
-    background-color: #90cdf4;
+    background-color: rgb(var(--ansi-bg-blue));
   }
   .ansi-bg-magenta {
-    background-color: #fbb6ce;
+    background-color: rgb(var(--ansi-bg-magenta));
   }
   .ansi-bg-cyan {
-    background-color: #81e6d9;
+    background-color: rgb(var(--ansi-bg-cyan));
   }
   .ansi-bg-white {
-    background-color: #edf2f7;
+    background-color: rgb(var(--ansi-bg-white));
   }
-
-  /* Bright background colors (100-107) - Light mode */
   .ansi-bg-bright-black {
-    background-color: #4a5568;
-    color: #fff;
+    background-color: rgb(var(--ansi-bg-bright-black));
+    color: rgb(var(--ansi-on-black));
   }
   .ansi-bg-bright-red {
-    background-color: #feb2b2;
+    background-color: rgb(var(--ansi-bg-bright-red));
   }
   .ansi-bg-bright-green {
-    background-color: #c6f6d5;
+    background-color: rgb(var(--ansi-bg-bright-green));
   }
   .ansi-bg-bright-yellow {
-    background-color: #fefcbf;
+    background-color: rgb(var(--ansi-bg-bright-yellow));
   }
   .ansi-bg-bright-blue {
-    background-color: #bee3f8;
+    background-color: rgb(var(--ansi-bg-bright-blue));
   }
   .ansi-bg-bright-magenta {
-    background-color: #fed7e2;
+    background-color: rgb(var(--ansi-bg-bright-magenta));
   }
   .ansi-bg-bright-cyan {
-    background-color: #b2f5ea;
+    background-color: rgb(var(--ansi-bg-bright-cyan));
   }
   .ansi-bg-bright-white {
-    background-color: #f7fafc;
+    background-color: rgb(var(--ansi-bg-bright-white));
   }
-
-  /* Dark mode overrides */
-  .dark .ansi-black {
-    color: #4a5568;
-  }
-  .dark .ansi-red {
-    color: #fc8181;
-  }
-  .dark .ansi-green {
-    color: #68d391;
-  }
-  .dark .ansi-yellow {
-    color: #f6e05e;
-  }
-  .dark .ansi-blue {
-    color: #63b3ed;
-  }
-  .dark .ansi-magenta {
-    color: #f687b3;
-  }
-  .dark .ansi-cyan {
-    color: #4fd1c5;
-  }
-  .dark .ansi-white {
-    color: #a0aec0;
-  }
-
-  .dark .ansi-bright-black {
-    color: #718096;
-  }
-  .dark .ansi-bright-red {
-    color: #feb2b2;
-  }
-  .dark .ansi-bright-green {
-    color: #9ae6b4;
-  }
-  .dark .ansi-bright-yellow {
-    color: #faf089;
-  }
-  .dark .ansi-bright-blue {
-    color: #90cdf4;
-  }
-  .dark .ansi-bright-magenta {
-    color: #fbb6ce;
-  }
-  .dark .ansi-bright-cyan {
-    color: #76e4f7;
-  }
-  .dark .ansi-bright-white {
-    color: #e2e8f0;
-  }
-
   .dark .ansi-bg-black {
-    background-color: #1a202c;
-    color: #e2e8f0;
+    color: rgb(var(--ansi-on-black));
   }
   .dark .ansi-bg-red {
-    background-color: #742a2a;
-    color: #feb2b2;
+    color: rgb(var(--ansi-on-red));
   }
   .dark .ansi-bg-green {
-    background-color: #22543d;
-    color: #c6f6d5;
+    color: rgb(var(--ansi-on-green));
   }
   .dark .ansi-bg-yellow {
-    background-color: #744210;
-    color: #fefcbf;
+    color: rgb(var(--ansi-on-yellow));
   }
   .dark .ansi-bg-blue {
-    background-color: #2a4365;
-    color: #bee3f8;
+    color: rgb(var(--ansi-on-blue));
   }
   .dark .ansi-bg-magenta {
-    background-color: #702459;
-    color: #fed7e2;
+    color: rgb(var(--ansi-on-magenta));
   }
   .dark .ansi-bg-cyan {
-    background-color: #234e52;
-    color: #b2f5ea;
+    color: rgb(var(--ansi-on-cyan));
   }
   .dark .ansi-bg-white {
-    background-color: #4a5568;
-    color: #e2e8f0;
+    color: rgb(var(--ansi-on-white));
   }
-
   .dark .ansi-bg-bright-black {
-    background-color: #2d3748;
-    color: #e2e8f0;
+    color: rgb(var(--ansi-on-black));
   }
   .dark .ansi-bg-bright-red {
-    background-color: #9b2c2c;
-    color: #feb2b2;
+    color: rgb(var(--ansi-on-red));
   }
   .dark .ansi-bg-bright-green {
-    background-color: #276749;
-    color: #c6f6d5;
+    color: rgb(var(--ansi-on-green));
   }
   .dark .ansi-bg-bright-yellow {
-    background-color: #975a16;
-    color: #fefcbf;
+    color: rgb(var(--ansi-on-yellow));
   }
   .dark .ansi-bg-bright-blue {
-    background-color: #2c5282;
-    color: #bee3f8;
+    color: rgb(var(--ansi-on-blue));
   }
   .dark .ansi-bg-bright-magenta {
-    background-color: #97266d;
-    color: #fed7e2;
+    color: rgb(var(--ansi-on-magenta));
   }
   .dark .ansi-bg-bright-cyan {
-    background-color: #285e61;
-    color: #b2f5ea;
+    color: rgb(var(--ansi-on-cyan));
   }
   .dark .ansi-bg-bright-white {
-    background-color: #718096;
-    color: #1a202c;
+    color: rgb(var(--ansi-on-bright-white));
   }
 }
 

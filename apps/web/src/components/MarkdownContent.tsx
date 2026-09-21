@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import ReactMarkdown, { Components, defaultUrlTransform } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { syntaxTheme } from '../theme/syntax'
 import { Children, type ComponentProps } from 'react'
 import remarkFrontmatter from 'remark-frontmatter'
 import { remarkAgentFileReferences } from '../lib/remarkAgentFileReferences'
@@ -37,7 +37,7 @@ export function MarkdownContent({
       className={clsx(
         'prose prose-sm max-w-none',
         variant === 'human'
-          ? 'prose-invert prose-a:text-blue-200 prose-code:text-blue-100 prose-code:bg-blue-700/50'
+          ? 'prose-invert prose-a:text-[rgb(var(--syntax-human-link))] prose-code:text-[rgb(var(--syntax-human-code-fg))] prose-code:bg-[rgb(var(--syntax-human-code-bg)/0.5)]'
           : 'prose-gray dark:prose-invert',
         className
       )}
@@ -107,7 +107,7 @@ function Code({ className, children, ...props }: ComponentProps<'code'>) {
   // Check if it's a code block (has language) vs inline code
   if (match) {
     return (
-      <SyntaxHighlighter style={oneDark} language={match[1]} PreTag="div">
+      <SyntaxHighlighter style={syntaxTheme} language={match[1]} PreTag="div">
         {codeString}
       </SyntaxHighlighter>
     )
