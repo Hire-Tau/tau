@@ -1107,6 +1107,7 @@ async function startup(): Promise<void> {
  * worker back.
  */
 async function shutdownWorker(reason: string): Promise<void> {
+  readiness.markStopping()
   log.info(`Received ${reason}, shutting down...`)
 
   // Abort all active sessions — saves partial messages to DB via agent_end
