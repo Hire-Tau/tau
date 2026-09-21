@@ -2,6 +2,18 @@ import { createHash, createPrivateKey, createPublicKey, sign, verify } from 'nod
 import { readdir, readFile } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 
+export type CoreArtifactPlatform = 'linux-x64' | 'darwin-arm64'
+
+export function artifactPlatform(
+  platform: string = process.platform,
+  arch: string = process.arch
+): CoreArtifactPlatform {
+  const target = `${platform}-${arch}`
+  if (target !== 'linux-x64' && target !== 'darwin-arm64')
+    throw new Error(`Unsupported Core artifact target: ${target}`)
+  return target
+}
+
 /**
  * The manifest written into a core release artifact tree as `artifact.json`.
  * `schema` is a literal `1` so a future incompatible layout can be detected by
@@ -12,7 +24,7 @@ export interface CoreArtifactManifest {
   commit: string
   commitDate: string
   bun: string
-  platform: 'linux-x64'
+  platform: CoreArtifactPlatform
   builder: string
   /** relpath (POSIX `/` separators, relative to the artifact root) -> `sha256:<hex>` of the file's bytes. */
   files: Record<string, string>
@@ -79,6 +91,7 @@ export async function buildManifest(opts: {
   commitDate: string
   bun: string
   builder: string
+  platform?: CoreArtifactPlatform
 }): Promise<CoreArtifactManifest> {
   const walked = await computeFilesMap(opts.rootDir)
   const files = Object.fromEntries(Object.entries(walked).sort(([a], [b]) => (a < b ? -1 : 1)))
@@ -87,7 +100,7 @@ export async function buildManifest(opts: {
     commit: opts.commit,
     commitDate: opts.commitDate,
     bun: opts.bun,
-    platform: 'linux-x64',
+    platform: opts.platform ?? artifactPlatform(),
     builder: opts.builder,
     files,
     digest: computeDigest(files),

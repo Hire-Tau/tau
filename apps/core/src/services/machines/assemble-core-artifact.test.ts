@@ -13,7 +13,12 @@ import {
   type Run,
   type RunResult,
 } from '../../../../../scripts/artifact/lib/assemble-core-artifact'
-import { computeDigest, computeFilesMap, verifyManifestSignature } from '../../../../../scripts/artifact/lib/manifest'
+import {
+  artifactPlatform,
+  computeDigest,
+  computeFilesMap,
+  verifyManifestSignature,
+} from '../../../../../scripts/artifact/lib/manifest'
 
 const COMMIT = '0123456789abcdef0123456789abcdef01234567'
 const COMMIT_DATE = '2026-08-25T12:00:00+00:00'
@@ -84,6 +89,10 @@ async function makeCheckout(): Promise<string> {
     await write(join(root, 'machine', name), `machine ${name}\n`)
   }
 
+  await write(
+    join(root, 'node_modules/playwright-core/package.json'),
+    '{"name":"playwright-core","version":"1.58.2"}\n'
+  )
   await write(join(root, 'node_modules/bun-pty/package.json'), '{"name":"bun-pty","version":"0.4.8"}\n')
   await write(join(root, 'node_modules/jsdom/package.json'), '{"name":"jsdom","version":"26.0.0"}\n')
   await write(
@@ -232,13 +241,13 @@ describe('assembleCoreArtifact', () => {
     expect((await stat(join(tree, 'apps/cli/dist/tau.js'))).mode & 0o111).not.toBe(0)
   })
 
-  it('names the tarball tau-core-<sha>-linux-x64.tar.gz and returns the trailer values', async () => {
+  it('names the tarball for the native build target and returns the trailer values', async () => {
     const { outDir, result } = await assemble()
     expect(result.sha).toBe(COMMIT)
-    expect(result.tarballPath).toBe(join(outDir, `tau-core-${COMMIT}-linux-x64.tar.gz`))
+    expect(result.tarballPath).toBe(join(outDir, `tau-core-${COMMIT}-${artifactPlatform()}.tar.gz`))
     expect((await stat(result.tarballPath)).size).toBeGreaterThan(0)
     expect(result.digest).toMatch(/^sha256:[0-9a-f]{64}$/)
-    expect((await readdir(outDir)).sort()).toEqual(['artifact.json', `tau-core-${COMMIT}-linux-x64.tar.gz`])
+    expect((await readdir(outDir)).sort()).toEqual(['artifact.json', `tau-core-${COMMIT}-${artifactPlatform()}.tar.gz`])
   })
 
   it('writes an artifact.json whose digest matches a recomputation over the extracted tree', async () => {
@@ -254,7 +263,7 @@ describe('assembleCoreArtifact', () => {
     expect(manifest.commit).toBe(COMMIT)
     expect(manifest.commitDate).toBe(COMMIT_DATE)
     expect(manifest.bun).toBe('1.3.8')
-    expect(manifest.platform).toBe('linux-x64')
+    expect(manifest.platform).toBe(artifactPlatform())
     expect(manifest.builder).toBe('test:builder')
     // The in-tree copy is byte-identical to the one beside the tarball.
     expect(await readFile(join(tree, 'artifact.json'), 'utf8')).toBe(
@@ -302,6 +311,7 @@ describe('assembleCoreArtifact', () => {
 
     expect(JSON.parse(scratchPackageJson).dependencies).toEqual({
       'bun-pty': '0.4.8',
+      'playwright-core': '1.58.2',
       jsdom: '26.0.0',
       '@silvia-odwyer/photon-node': '0.3.3',
       '@google-cloud/text-to-speech': '6.4.0',

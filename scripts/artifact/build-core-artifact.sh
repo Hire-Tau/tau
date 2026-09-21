@@ -110,10 +110,10 @@ if [[ "$BUN_ACTUAL" != "$BUN_V" ]]; then
   fi
 fi
 
-if [[ "$(uname -s)" != "Linux" ]]; then
-  echo "WARNING: building on $(uname -s), but every artifact is tagged linux-x64." >&2
-  echo "         The result is for LOCAL VERIFICATION ONLY — never publish it." >&2
-fi
+case "$(uname -s)-$(uname -m)" in
+  Linux-x86_64|Darwin-arm64) ;;
+  *) echo "error: unsupported native Core artifact build target" >&2; exit 1 ;;
+esac
 
 echo "==> commit $COMMIT (bun $BUN_V)" >&2
 

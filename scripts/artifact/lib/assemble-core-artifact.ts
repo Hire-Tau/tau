@@ -39,7 +39,7 @@
 import { chmod, copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { hostname, tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
-import { buildManifest, computeFilesMap, signManifest, type CoreArtifactManifest } from './manifest'
+import { artifactPlatform, buildManifest, computeFilesMap, signManifest, type CoreArtifactManifest } from './manifest'
 
 export interface RunResult {
   exitCode: number
@@ -74,6 +74,7 @@ export const defaultRun: Run = async (cmd, opts) => {
  */
 export const RUNTIME_EXTERNALS = [
   'bun-pty',
+  'playwright-core',
   // Everything below is external because bundling it bakes the BUILDER's
   // absolute node_modules path into the bundle (bun inlines CJS __dirname),
   // and these packages read real files through that path at runtime — jsdom
@@ -446,6 +447,7 @@ export async function assembleCoreArtifact(opts: AssembleCoreArtifactOptions): P
   const checkoutRoot = resolve(opts.checkoutRoot)
   const outDir = resolve(opts.outDir)
   const commit = opts.commit
+  const platform = artifactPlatform()
 
   const bunVersion = opts.bunVersion ?? (await readFile(join(checkoutRoot, '.bun-version'), 'utf8')).trim()
   let commitDate = opts.commitDate
@@ -466,6 +468,10 @@ export async function assembleCoreArtifact(opts: AssembleCoreArtifactOptions): P
 
     log(`staging tau-core-${commit} in ${staging}`)
     await stageLayout(checkoutRoot, treeRoot)
+    for (const notice of ['LICENSE', 'THIRD_PARTY_NOTICES.md']) {
+      if (await pathExists(join(checkoutRoot, notice)))
+        await copyRegularFile(join(checkoutRoot, notice), join(treeRoot, notice))
+    }
     await stagePrunedNodeModules(checkoutRoot, treeRoot, run, log)
 
     const manifest = await buildManifest({
@@ -473,6 +479,7 @@ export async function assembleCoreArtifact(opts: AssembleCoreArtifactOptions): P
       commit,
       commitDate,
       bun: bunVersion,
+      platform,
       builder: opts.builder ?? `local:${hostname()}`,
     })
     const manifestJson = `${JSON.stringify(manifest, null, 2)}\n`
@@ -495,7 +502,7 @@ export async function assembleCoreArtifact(opts: AssembleCoreArtifactOptions): P
       log(`signed artifact.json -> ${sigPath}`)
     }
 
-    const tarballPath = join(outDir, `tau-core-${commit}-linux-x64.tar.gz`)
+    const tarballPath = join(outDir, `tau-core-${commit}-${platform}.tar.gz`)
     const tar = await run(['tar', '-C', staging, '-czf', tarballPath, `tau-core-${commit}`], {})
     if (tar.exitCode !== 0) throw new Error(`tar failed (exit ${tar.exitCode}): ${tar.stderr}`)
     log(`wrote ${tarballPath}`)

@@ -2,8 +2,9 @@ import { createHash, generateKeyPairSync } from 'node:crypto'
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it, test } from 'bun:test'
 import {
+  artifactPlatform,
   buildManifest,
   computeDigest,
   computeFilesMap,
@@ -100,7 +101,7 @@ describe('buildManifest', () => {
       expect(manifest.commit).toBe('deadbeef')
       expect(manifest.commitDate).toBe('2026-08-25T00:00:00Z')
       expect(manifest.bun).toBe('1.3.8')
-      expect(manifest.platform).toBe('linux-x64')
+      expect(manifest.platform).toBe(artifactPlatform())
       expect(manifest.builder).toBe('test-builder')
       expect(manifest.files['artifact.json']).toBeUndefined()
       expect(manifest.digest).toBe(computeDigest(manifest.files))
@@ -160,4 +161,11 @@ describe('signManifest / verifyManifestSignature', () => {
     const otherPublicKeyPem = other.publicKey.export({ type: 'spki', format: 'pem' }) as string
     expect(verifyManifestSignature(manifestBytes, sig, otherPublicKeyPem)).toBe(false)
   })
+})
+
+test('native artifact target never relabels unsupported binaries', () => {
+  expect(artifactPlatform('darwin', 'arm64')).toBe('darwin-arm64')
+  expect(artifactPlatform('linux', 'x64')).toBe('linux-x64')
+  expect(() => artifactPlatform('darwin', 'x64')).toThrow('Unsupported')
+  expect(() => artifactPlatform('linux', 'arm64')).toThrow('Unsupported')
 })
