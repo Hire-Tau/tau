@@ -1,55 +1,29 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
-import { desktopBridge } from '../lib/desktop'
-import {
-  defaultThemePreference,
-  parseThemePreference,
-  resolveTheme,
-  SYSTEM_DARK_QUERY,
-  THEME_STORAGE_KEY,
-  type ResolvedTheme,
-  type ThemePreference,
-} from '../lib/theme'
+import type { AppearanceSetting } from '@tau/shared'
+import { resolveWebTheme } from '../theme/registry'
+import { applyResolvedTheme } from '../theme/apply'
+import { getThemeStorage, persistSurfaceSnapshot, persistThemeSelection, readThemeSelection } from '../theme/storage'
 
-type Theme = ResolvedTheme
+/**
+ * The resolved appearance (light/dark). Kept as `theme` for the existing
+ * toggle UX and call sites; `appearance` is the user's setting, which may be
+ * 'system'.
+ */
+type Theme = 'light' | 'dark'
 
 interface ThemeContextValue {
-  /** The theme on screen. */
+  /** The registered theme id currently applied (e.g. 'tau'). */
+  themeId: string
+  /** The user's appearance setting: 'light' | 'dark' | 'system'. */
+  appearance: AppearanceSetting
+  /** The resolved appearance after 'system' is resolved against the OS. */
   theme: Theme
-  /** What the person chose (or the default): light, dark, or follow the system. */
-  preference: ThemePreference
-  setPreference: (preference: ThemePreference) => void
   toggleTheme: () => void
   setTheme: (theme: Theme) => void
+  setAppearance: (appearance: AppearanceSetting) => void
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
-
-const SURFACE_COLOR_KEY = 'tau-surface-color'
-// Which theme the stored surface color belongs to, so the pre-render script in
-// index.html doesn't paint last session's surface after the OS appearance changed.
-const SURFACE_THEME_KEY = 'tau-surface-theme'
-
-function readStorage(key: string): string | null {
-  try {
-    return localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-
-function writeStorage(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value)
-  } catch {
-    // Private mode or blocked storage: the choice still applies for this visit.
-  }
-}
-
-function systemPrefersDark(): boolean {
-  return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
-    ? window.matchMedia(SYSTEM_DARK_QUERY).matches
-    : false
-}
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function useTheme(): ThemeContextValue {
@@ -58,43 +32,54 @@ export function useTheme(): ThemeContextValue {
   return ctx
 }
 
-/** The theme context inside ThemeProvider, otherwise null (for components also rendered standalone). */
-// eslint-disable-next-line react-refresh/only-export-components
-export function useOptionalTheme(): ThemeContextValue | null {
-  return useContext(ThemeContext)
+/** Reads the OS color-scheme preference once; light when unavailable. */
+function readSystemPrefersDark(): boolean {
+  try {
+    if (typeof window === 'undefined' || !window.matchMedia) return false
+    return window.matchMedia('(prefers-color-scheme: dark)').matches
+  } catch {
+    return false
+  }
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [preference, setPreferenceState] = useState<ThemePreference>(() => {
-    if (typeof window === 'undefined') return 'light'
-    return parseThemePreference(readStorage(THEME_STORAGE_KEY)) ?? defaultThemePreference(desktopBridge() !== undefined)
-  })
-  const [systemDark, setSystemDark] = useState(systemPrefersDark)
-  const theme = resolveTheme(preference, systemDark)
+  // The stored selection is read once, synchronously: legacy 'tau-theme'
+  // values migrate here, unreadable values fall back to the defaults.
+  const [selection, setSelection] = useState(() => readThemeSelection(getThemeStorage()))
+  const [systemPrefersDark, setSystemPrefersDark] = useState(readSystemPrefersDark)
 
-  // Follow OS appearance changes while the preference is "system".
+  // Live system-preference tracking: a 'system' appearance follows OS scheme
+  // changes without a reload (new capability in phase 0).
   useEffect(() => {
-    if (preference !== 'system' || typeof window.matchMedia !== 'function') return
-    const query = window.matchMedia(SYSTEM_DARK_QUERY)
-    const update = () => setSystemDark(query.matches)
-    update()
-    query.addEventListener?.('change', update)
-    return () => query.removeEventListener?.('change', update)
-  }, [preference])
+    try {
+      if (typeof window === 'undefined' || !window.matchMedia) return
+      const query = window.matchMedia('(prefers-color-scheme: dark)')
+      const onChange = (event: MediaQueryListEvent) => setSystemPrefersDark(event.matches)
+      query.addEventListener('change', onChange)
+      return () => query.removeEventListener('change', onChange)
+    } catch {
+      return
+    }
+  }, [])
+
+  const resolved = resolveWebTheme(selection.themeId, selection.appearance, systemPrefersDark)
+  const { theme: resolvedThemeDefinition, appearance: resolvedAppearance } = resolved
+  const resolvedTheme: Theme = resolvedAppearance === 'dark' ? 'dark' : 'light'
 
   useEffect(() => {
     const root = document.documentElement
-    if (theme === 'dark') {
-      root.classList.add('dark')
-    } else {
-      root.classList.remove('dark')
-    }
+    applyResolvedTheme(root, resolvedThemeDefinition, resolvedAppearance)
+    persistThemeSelection(getThemeStorage(), selection)
 
-    // Store the resolved surface color so the flash-prevention script can use it
-    const surface = window.getComputedStyle(root).getPropertyValue('--color-bg-surface').trim()
-    if (surface) {
-      writeStorage(SURFACE_COLOR_KEY, surface)
-      writeStorage(SURFACE_THEME_KEY, theme)
+    // Store the resolved surface color so the flash-prevention script can use
+    // it before React boots; token values are channel triplets, so wrap them
+    // into a real CSS color.
+    const channels = window.getComputedStyle(root).getPropertyValue('--color-bg-surface').trim()
+    if (channels) {
+      const surface = /^[\d\s./%]+$/.test(channels) ? `rgb(${channels})` : channels
+      if (resolvedAppearance !== 'constant') {
+        persistSurfaceSnapshot(getThemeStorage(), resolvedThemeDefinition.id, resolvedAppearance, surface)
+      }
       root.style.backgroundColor = surface
 
       // Keep the theme-color meta in sync: Safari/iOS tints its chrome (tab
@@ -107,20 +92,26 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       }
       meta.content = surface
     }
-  }, [theme])
+  }, [resolvedThemeDefinition, resolvedAppearance, selection])
 
-  // Only an explicit choice is stored: an unset preference keeps following the
-  // default (see defaultThemePreference) instead of freezing whatever it resolved to.
-  const setPreference = useCallback((next: ThemePreference) => {
-    writeStorage(THEME_STORAGE_KEY, next)
-    setPreferenceState(next)
-  }, [])
-  const setTheme = useCallback((t: Theme) => setPreference(t), [setPreference])
-  const toggleTheme = useCallback(() => setPreference(theme === 'dark' ? 'light' : 'dark'), [setPreference, theme])
+  const setAppearance = useCallback((appearance: AppearanceSetting) => setSelection((s) => ({ ...s, appearance })), [])
+  const setTheme = useCallback((theme: Theme) => setAppearance(theme), [setAppearance])
+  const toggleTheme = useCallback(() => {
+    setSelection((s) => {
+      const current = resolveWebTheme(s.themeId, s.appearance, systemPrefersDark)
+      const next: Theme = current.appearance === 'dark' ? 'light' : 'dark'
+      return { ...s, appearance: next }
+    })
+  }, [systemPrefersDark])
 
-  return (
-    <ThemeContext.Provider value={{ theme, preference, setPreference, toggleTheme, setTheme }}>
-      {children}
-    </ThemeContext.Provider>
-  )
+  const contextValue: ThemeContextValue = {
+    themeId: resolvedThemeDefinition.id,
+    appearance: selection.appearance,
+    theme: resolvedTheme,
+    toggleTheme,
+    setTheme,
+    setAppearance,
+  }
+
+  return <ThemeContext.Provider value={contextValue}>{children}</ThemeContext.Provider>
 }

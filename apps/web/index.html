@@ -73,44 +73,88 @@
     <!-- Prevent telephone number detection on iOS -->
     <meta name="format-detection" content="telephone=no" />
 
-    <!-- Flash prevention script for dark mode. Mirrors src/lib/theme.ts: the
-         stored preference, else "system" inside Tau Desktop (its preload injects
-         window.tauDesktopApp before page scripts run) and "light" in a browser. -->
-    <script>
+    <!-- Flash prevention script: resolves (themeId, appearance, system) before
+         first paint and applies data-theme / data-appearance / the legacy dark
+         class, plus the resolved-surface snapshot so any stored theme paints
+         without a flash of the default theme. Mirrors the shared
+         resolveThemeSelection fallback rules; kept dependency-free because it
+         runs before any module. Covered by src/theme/flashScript.test.ts. -->
+    <script data-tau-theme-flash>
       ;(function () {
-        var storage
         try {
-          storage = window.localStorage
-        } catch (e) {
-          storage = null
-        }
-        function read(key) {
+          var root = document.documentElement
+          var stored = { themeId: null, appearance: null, legacyTheme: null }
           try {
-            return storage ? storage.getItem(key) : null
+            stored.themeId = localStorage.getItem('tau-theme-id')
+            stored.appearance = localStorage.getItem('tau-appearance')
+            stored.legacyTheme = localStorage.getItem('tau-theme')
           } catch (e) {
-            return null
+            /* unreadable storage behaves as empty: defaults apply */
           }
-        }
-        var preference = read('tau-theme')
-        if (preference !== 'light' && preference !== 'dark' && preference !== 'system') {
-          var bridge = window.tauDesktopApp
-          preference = bridge && bridge.version === 1 ? 'system' : 'light'
-        }
-        var dark =
-          preference === 'dark' ||
-          (preference === 'system' &&
-            typeof window.matchMedia === 'function' &&
-            window.matchMedia('(prefers-color-scheme: dark)').matches)
-        if (dark) {
-          document.documentElement.classList.add('dark')
-        }
-        // Only reuse last session's surface color when it belongs to this theme.
-        var surface = read('tau-surface-color')
-        var surfaceTheme = read('tau-surface-theme')
-        if (surface && (surfaceTheme ? surfaceTheme === (dark ? 'dark' : 'light') : preference !== 'system')) {
-          document.documentElement.style.backgroundColor = surface
-          var meta = document.querySelector("meta[name='theme-color']")
-          if (meta) meta.setAttribute('content', surface)
+          // Registered theme ids today: 'tau'. Unknown or missing ids resolve
+          // to it (shared fallback rule: unknown theme id -> default pair).
+          var themeId = stored.themeId === 'tau' ? stored.themeId : 'tau'
+          var appearance = stored.appearance
+          if (appearance !== 'light' && appearance !== 'dark' && appearance !== 'system') {
+            appearance = stored.legacyTheme === 'dark' ? 'dark' : 'light'
+          }
+          var resolved = appearance
+          if (appearance === 'system') {
+            try {
+              resolved = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+            } catch (e) {
+              resolved = 'light'
+            }
+          }
+          root.setAttribute('data-theme', themeId)
+          root.setAttribute('data-appearance', resolved)
+          if (resolved === 'dark') {
+            root.classList.add('dark')
+          } else {
+            root.classList.remove('dark')
+          }
+          // Resolved-surface snapshot: prefer the state-keyed snapshot. The
+          // legacy plain string carries no state, so it applies only while the
+          // structured key has never been written (pre-upgrade browsers) and
+          // only under the tau theme it was written with.
+          var surface = null
+          var rawSnapshot = null
+          try {
+            rawSnapshot = localStorage.getItem('tau-theme-surface')
+          } catch (e) {
+            rawSnapshot = null
+          }
+          if (rawSnapshot != null) {
+            try {
+              var snap = JSON.parse(rawSnapshot)
+              if (
+                snap &&
+                snap.theme === themeId &&
+                snap.appearance === resolved &&
+                typeof snap.surface === 'string' &&
+                snap.surface
+              ) {
+                surface = snap.surface
+              }
+              // A structured snapshot exists but does not match this state:
+              // paint from CSS rather than trusting a possibly-stale value.
+            } catch (e) {
+              /* corrupt snapshot: paint from CSS instead of guessing */
+            }
+          } else if (themeId === 'tau') {
+            try {
+              surface = localStorage.getItem('tau-surface-color')
+            } catch (e) {
+              surface = null
+            }
+          }
+          if (surface) {
+            root.style.backgroundColor = surface
+            var meta = document.querySelector("meta[name='theme-color']")
+            if (meta) meta.setAttribute('content', surface)
+          }
+        } catch (e) {
+          /* never block first paint on theme resolution */
         }
       })()
     </script>
