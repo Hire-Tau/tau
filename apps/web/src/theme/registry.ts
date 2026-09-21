@@ -23,7 +23,7 @@ export interface WebThemeDefinition extends ThemeDescriptor {
   readonly variantClass: Partial<Record<EffectiveAppearance, string | null>>
 }
 
-/** The default dual-variant theme: today's light/dark look, unchanged. */
+/** The original default pair, with the narrow phase-5 contrast corrections. */
 export const TAU_THEME: WebThemeDefinition = {
   id: 'tau',
   label: 'Tau',
@@ -42,8 +42,9 @@ export const BUILT_IN_THEMES: readonly WebThemeDefinition[] = [
   { id: 'high-contrast', label: 'High contrast', kind: 'unified', variantClass: { constant: null } },
 ]
 
-/** Release gate: enable only after contrast and pre-paint matrices pass. */
-export const THEME_PICKER_ENABLED = false
+/** Release gate passed: all built-in contrast and pre-paint matrices (phase 5).
+ * Keep the switch for a quick picker rollback without losing stored choices. */
+export const THEME_PICKER_ENABLED = true
 
 export function findWebTheme(themeId: string | null | undefined): WebThemeDefinition {
   return (
