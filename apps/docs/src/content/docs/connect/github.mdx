@@ -24,14 +24,20 @@ need to enter an application client secret in your instance.
 
 <ModeContent mode="self-hosted">
 
-The default setup uses device login. Copy the code shown in Tau, open the displayed
-GitHub verification link, and enter the code. Leave Tau open while it waits for
-authorization. If the code expires, start **Connect account** again.
+The default setup uses Tau's GitHub App and device login, so no app setup is
+needed. Copy the code shown in Tau, open the displayed GitHub verification link,
+and enter the code. Leave Tau open while it waits for authorization. If the code
+expires, start **Connect account** again.
 
-To use your own GitHub App, expand **Use your own GitHub App**. A public client ID
-supports device login; browser authorization also needs the optional client
-secret and the exact callback URL displayed by Tau. Enable device flow and
-expiring user tokens in that App's configuration.
+To use your own GitHub App, expand **Use your own GitHub App** in Settings, or
+**Use your own GitHub App instead** during onboarding. A client ID alone uses
+device login and needs no public URL; enable device flow in that App. Adding the
+optional client secret switches to browser authorization, which redirects to the
+exact callback URL displayed by Tau. Enable expiring user tokens either way.
+
+If connecting fails, Tau shows GitHub's reason, such as GitHub being unreachable
+from the instance, device flow being disabled for the App, or GitHub rejecting
+the App's client ID or secret. Fix the cause, then choose **Retry**.
 
 </ModeContent>
 
