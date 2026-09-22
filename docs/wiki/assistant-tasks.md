@@ -158,6 +158,11 @@ names are retained for compatibility. No boxes or personal storage are deleted a
 upgrade. Legacy mailbox and task endpoints remain available to existing clients; the web panel
 uses the new agent binding. Native mobile action links continue opening the exact web question.
 
+The Assistant's read tools cover the same state as the UI: `read_inbox` with `view=actions` returns
+the Needs you list (`GET /api/actions/pending`), `get_work` reads work streams across readable
+squads with the feed's needs-human rule, and `read_activity` reads the activity feed. `list_tasks`
+lists only the conversation's own delegated tasks.
+
 Quick tools recheck current ownership and permissions. Agent/thread tools accept full UUIDs from
 visible search results, so hidden candidates cannot affect prefix ambiguity. Page editors get
 only `read` and `edit`; they cannot delegate or mutate catalog entries outside their draft.

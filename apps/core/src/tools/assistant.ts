@@ -2,24 +2,86 @@ import { readSquadFile } from '../services/squad/read-file'
 import { createHash } from 'node:crypto'
 import { Type, type TSchema, type Static } from '@sinclair/typebox'
 import type { ToolDefinition } from '@earendil-works/pi-coding-agent'
-import { and, desc, eq, isNull, lt } from 'drizzle-orm'
+import { and, desc, eq, inArray, isNull, lt, notInArray } from 'drizzle-orm'
 import { z } from 'zod'
-import { assistantEntries, assistantTasks, assistantUpdates, db, inbox } from '../db'
+import { selectWorkStreamPresentationState, workStreamNeedsHumanAttention, workStreamRef } from '@tau/shared'
+import { agents, assistantEntries, assistantTasks, assistantUpdates, db, inbox, workStreams } from '../db'
 import { Agent } from '../entities/Agent'
 import { InboxMessage } from '../entities/InboxMessage'
-import { hasAgentResourcePermission } from '../services/rbac'
+import { WorkStream } from '../entities/WorkStream'
+import { hasAgentResourcePermission, hasPermission } from '../services/rbac'
 import {
   requireAssistantConversation,
   sendAssistantTaskRequest,
   changeAssistantTask,
 } from '../services/assistant-task-requests'
 import { listVisibleSquads, searchEntities } from '../services/entity-search'
-import { getAgentQuestion, answerAgentQuestion } from '../services/agents/questions'
+import { getAgentQuestion, answerAgentQuestion, dismissAgentQuestion } from '../services/agents/questions'
 import { canAnswerAgentQuestion } from '../services/agents/question-authorization'
+import { listPendingActionsForIdentity } from '../services/agents/actions'
+import { resolveGlobalActivityAccess } from '../services/squad-activity/access'
+import { projectGlobalActivity } from '../services/squad-activity/global-activity'
+import { computeDerivedStates, type DerivedStreamInfo } from '../services/work-streams/derived-state'
 
 const uuid = Type.String({ format: 'uuid' })
 const request = Type.String({ minLength: 1, maxLength: 20000 })
 const limit = Type.Optional(Type.Integer({ minimum: 1, maximum: 100 }))
+
+type StreamRow = Pick<
+  typeof workStreams.$inferSelect,
+  'id' | 'number' | 'title' | 'squadId' | 'status' | 'pause' | 'assigneeAgentId' | 'agentIds' | 'updatedAt'
+>
+const streamColumns = {
+  id: workStreams.id,
+  number: workStreams.number,
+  title: workStreams.title,
+  squadId: workStreams.squadId,
+  status: workStreams.status,
+  pause: workStreams.pause,
+  assigneeAgentId: workStreams.assigneeAgentId,
+  agentIds: workStreams.agentIds,
+  updatedAt: workStreams.updatedAt,
+}
+
+/** The feed's presentation and needs-you rule, so the Assistant and the UI agree on what is waiting. */
+function presentStream(stream: Pick<StreamRow, 'status' | 'pause'>, facts: DerivedStreamInfo | undefined) {
+  const presentation = {
+    status: stream.status,
+    pause: stream.pause,
+    delivery: facts?.delivery,
+    derivedState: facts?.derivedState,
+    openWaits: facts?.openWaits,
+  }
+  return {
+    state: selectWorkStreamPresentationState(presentation),
+    needsHuman: workStreamNeedsHumanAttention(presentation),
+  }
+}
+
+/** Needs-human streams first, then most recently updated. */
+async function summarizeStreams(streams: StreamRow[], squadNames: Map<string, string>) {
+  const derived = await computeDerivedStates(streams)
+  const summaries = streams.map((stream) => {
+    const facts = derived.get(stream.id)
+    return {
+      id: workStreamRef(stream),
+      workStreamId: stream.id,
+      title: stream.title,
+      squadId: stream.squadId,
+      squadName: squadNames.get(stream.squadId),
+      ...presentStream(stream, facts),
+      openWaits:
+        facts?.openWaits.map((wait) => ({
+          id: wait.id,
+          type: wait.type,
+          message: wait.message,
+          referenceId: wait.referenceId,
+        })) ?? [],
+      updatedAt: stream.updatedAt,
+    }
+  })
+  return [...summaries.filter((s) => s.needsHuman), ...summaries.filter((s) => !s.needsHuman)]
+}
 
 /** Stable across provider/tool replay, distinct across executions and conversations. */
 export function assistantToolClientId(agentId: string, executionId: string, toolCallId: string): string {
@@ -66,7 +128,7 @@ export function createAssistantTools(agentId: string, executionId: string, conve
   const taskTools = (['continue', 'retry', 'cancel'] as const).map((operation) =>
     tool(
       `${operation}_task`,
-      `${operation} exactly one task's current request. Does not stop unrelated work. Read get_work for the current request ID.`,
+      `${operation} exactly one task's current request. Does not stop unrelated work. Read list_tasks for the current request ID.`,
       Type.Object({
         taskId: uuid,
         expectedRequestId: uuid,
@@ -117,8 +179,8 @@ export function createAssistantTools(agentId: string, executionId: string, conve
       }
     ),
     tool(
-      'get_work',
-      'List this conversation’s durable tasks and current request IDs, including blocked or completed tasks.',
+      'list_tasks',
+      'List the tasks this conversation delegated, with current request IDs, including blocked or completed tasks. Only your own delegations: use get_work for squads’ work streams and read_inbox view=actions for what needs the user.',
       Type.Object({ limit }),
       async (input) =>
         db
@@ -127,6 +189,104 @@ export function createAssistantTools(agentId: string, executionId: string, conve
           .where(eq(assistantTasks.conversationId, conversationId))
           .orderBy(desc(assistantTasks.updatedAt))
           .limit(input.limit ?? 50)
+    ),
+    tool(
+      'get_work',
+      'Read live work. No arguments: active work streams in every squad the user can read, needsHuman first, each with its state and open waits. With squadId: that squad’s agents (with status) and its work streams. With workStreamId: one work stream in full.',
+      Type.Object({
+        squadId: Type.Optional(uuid),
+        workStreamId: Type.Optional(
+          Type.String({ minLength: 1, maxLength: 64, description: 'Work number (42 or #42) or UUID.' })
+        ),
+        includeFinished: Type.Optional(Type.Boolean({ description: 'Include done and canceled work. Default false.' })),
+        limit,
+      }),
+      async (input) => {
+        const { user } = await access()
+        if (input.squadId && input.workStreamId) throw new Error('Pass squadId or workStreamId, not both')
+        if (input.workStreamId) {
+          const stream = await WorkStream.find(input.workStreamId.replace(/^work:/, ''))
+          if (!stream || !(await hasPermission(user, 'workstreams:read', stream.squadId)))
+            throw new Error('Work stream not found')
+          const facts = (await computeDerivedStates([stream])).get(stream.id)
+          return { ...stream.toJson(), ...facts, ...presentStream(stream, facts) }
+        }
+        const readable = await resolveGlobalActivityAccess(user)
+        const scoped = input.squadId ? readable.filter((entry) => entry.squadId === input.squadId) : readable
+        if (input.squadId && scoped.length === 0) throw new Error('Squad not found')
+        const squadIds = scoped.filter((entry) => entry.access.workstreamsRead).map((entry) => entry.squadId)
+        const max = input.limit ?? 50
+        // Every live stream is read before truncating, so an old blocked stream is never cut for a
+        // recently updated one; finished work is bounded and only fills the remaining space.
+        const inSquads = inArray(workStreams.squadId, squadIds)
+        const [live, finished] = squadIds.length
+          ? await Promise.all([
+              db
+                .select(streamColumns)
+                .from(workStreams)
+                .where(and(inSquads, inArray(workStreams.status, ['queued', 'active'])))
+                .orderBy(desc(workStreams.updatedAt)),
+              input.includeFinished
+                ? db
+                    .select(streamColumns)
+                    .from(workStreams)
+                    .where(and(inSquads, inArray(workStreams.status, ['done', 'canceled'])))
+                    .orderBy(desc(workStreams.updatedAt))
+                    .limit(max)
+                : [],
+            ])
+          : [[], []]
+        const all = await summarizeStreams(
+          [...live, ...finished],
+          new Map(scoped.map((entry) => [entry.squadId, entry.squadName]))
+        )
+        const streams = all.slice(0, max)
+        const truncated = all.length > max ? { omitted: all.length - max } : {}
+        if (!input.squadId) return { workStreams: streams, ...truncated }
+        const squad = scoped[0]!
+        const squadAgents = squad.access.agentsRead
+          ? await db
+              .select({
+                id: agents.id,
+                agentTypeId: agents.agentTypeId,
+                status: agents.status,
+                metadata: agents.metadata,
+              })
+              .from(agents)
+              .where(and(eq(agents.squadId, squad.squadId), notInArray(agents.status, ['terminated'])))
+          : []
+        return {
+          squad: { id: squad.squadId, name: squad.squadName },
+          agents: squadAgents.map((agent) => ({
+            id: agent.id,
+            type: agent.agentTypeId,
+            status: agent.status,
+            name: (agent.metadata as { name?: string } | null)?.name,
+          })),
+          workStreams: streams,
+          ...truncated,
+        }
+      }
+    ),
+    tool(
+      'read_activity',
+      'Read recent activity, newest first, across squads the user can read or for one squad. Use for what happened; use read_inbox view=actions for what needs the user.',
+      Type.Object({ squadId: Type.Optional(uuid), limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 50 })) }),
+      async (input) => {
+        const { user } = await access()
+        const readable = await resolveGlobalActivityAccess(user)
+        const scoped = input.squadId ? readable.filter((entry) => entry.squadId === input.squadId) : readable
+        if (input.squadId && scoped.length === 0) throw new Error('Squad not found')
+        const page = await projectGlobalActivity({
+          limit: input.limit ?? 20,
+          verbose: false,
+          agentIds: [],
+          kinds: [],
+          squadAccess: scoped.map(({ squadId, access }) => ({ squadId, access })),
+        })
+        const names = new Map(scoped.map((entry) => [entry.squadId, entry.squadName]))
+        return { items: page.items.map((item) => ({ ...item, squadName: names.get(item.squadId) })) }
+      }
     ),
     tool(
       'list_squads',
@@ -153,14 +313,26 @@ export function createAssistantTools(agentId: string, executionId: string, conve
     ),
     tool(
       'read_thread',
-      'Read an agent’s conversation using current resource access. Requires the full agent UUID; beforeId must belong to this thread.',
+      'Read an agent’s status, current execution, and conversation using current resource access. Requires the full agent UUID; beforeId must belong to this thread.',
       Type.Object({ agentId: uuid, beforeId: Type.Optional(uuid), limit }),
       async (input) => {
         const { user } = await access()
         const target = await Agent.find(z.string().uuid().parse(input.agentId))
         if (!target || !(await hasAgentResourcePermission(user, target, 'agents:read')))
           throw new Error('Agent not found')
-        return target.listMessages({ limit: input.limit ?? 50, beforeId: input.beforeId })
+        const [{ execution }, page] = await Promise.all([
+          target.getActiveExecutionState(),
+          target.listMessages({ limit: input.limit ?? 50, beforeId: input.beforeId }),
+        ])
+        return {
+          agent: {
+            id: target.id,
+            type: target.agentTypeId,
+            status: target.status,
+            execution: execution ? { id: execution.id, status: execution.status } : null,
+          },
+          ...page,
+        }
       }
     ),
     tool(
@@ -187,10 +359,18 @@ export function createAssistantTools(agentId: string, executionId: string, conve
     ),
     tool(
       'read_inbox',
-      'Read the user’s own inbox. Unread is independent of whether a task update has been summarized.',
-      Type.Object({ limit, unreadOnly: Type.Optional(Type.Boolean()) }),
+      'Read what is waiting for the user. view=actions: the Needs you list — agent questions awaiting an answer, blocked or in-review work streams, agent errors, and Assistant tasks needing input, each with its IDs; this is the tool for "what needs me". view=notifications: the user’s own inbox messages (task and agent updates, work-stream events); unread is independent of whether a task update has been summarized.',
+      Type.Object({
+        view: Type.Union([Type.Literal('actions'), Type.Literal('notifications')]),
+        limit,
+        unreadOnly: Type.Optional(Type.Boolean({ description: 'notifications only' })),
+      }),
       async (input) => {
         const { user } = await access()
+        if (input.view === 'actions') {
+          const actions = await listPendingActionsForIdentity(user)
+          return { actions: actions.slice(0, input.limit ?? 50), total: actions.length }
+        }
         return db
           .select()
           .from(inbox)
@@ -224,16 +404,39 @@ export function createAssistantTools(agentId: string, executionId: string, conve
     ),
     tool(
       'answer_question',
-      'Answer an existing agent question on the user’s behalf, only when the user supplied the answer. Never invent approvals.',
-      Type.Object({ questionId: uuid, answer: request }),
+      'Resolve an existing agent question on the user’s behalf: pass the answer the user supplied, or dismiss=true (with an optional reason) when the user asks to dismiss it. Question IDs come from read_inbox view=actions. Never invent approvals.',
+      Type.Object({
+        questionId: uuid,
+        answer: Type.Optional(request),
+        dismiss: Type.Optional(Type.Boolean()),
+        reason: Type.Optional(Type.String({ maxLength: 2000 })),
+      }),
       async (input) => {
         const { user } = await access()
+        if (input.dismiss ? input.answer !== undefined : input.answer === undefined)
+          throw new Error('Pass an answer, or dismiss=true without an answer')
         const question = await getAgentQuestion(z.string().uuid().parse(input.questionId))
         const target = question ? await Agent.find(question.agentId) : null
+        if (input.dismiss) {
+          // Dismissal sends nothing to the asking agent, so its lifecycle state is irrelevant.
+          if (
+            !question ||
+            !target ||
+            !(await canAnswerAgentQuestion(user, question, { allowTerminatedAgent: true, target }))
+          )
+            throw new Error('Question not found')
+          const dismissed = await dismissAgentQuestion(question.id, {
+            dismissedBy: { type: 'user', userId: user.userId },
+            reason: input.reason,
+            expectedAgentScope: { ownerUserId: target.ownerUserId, squadId: target.squadId },
+          })
+          if (!dismissed) throw new Error('Question is not open')
+          return dismissed
+        }
         if (!question || !target || !(await canAnswerAgentQuestion(user, question, { target })))
           throw new Error('Question not found')
         if (target.status === 'terminated' || target.pendingDormancyAt) throw new Error('Asking agent is unavailable')
-        const result = await answerAgentQuestion(question.id, input.answer, user.userId, {
+        const result = await answerAgentQuestion(question.id, input.answer!, user.userId, {
           expectedAgentScope: { ownerUserId: target.ownerUserId, squadId: target.squadId },
         })
         if (!result) throw new Error('Question already answered')
