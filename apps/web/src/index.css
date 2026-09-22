@@ -374,7 +374,7 @@
     --opacity-status-neutral-badge-hover: 1;
 
     /* Graph scenes stay dark in both Tau appearances. Links are contrast-corrected
-       (see docs/theme/graph-colors.md); all other graph/chart colors retain parity. */
+       (see docs/wiki/theme/graph-colors.md); all other graph/chart colors retain parity. */
     --graph-bg: 17 24 39;
     --graph-loading-bg: 15 23 42;
     --graph-label: 255 255 255;
@@ -459,7 +459,7 @@
     --checkbox-check: 255 255 255;
 
     /* Legacy content palettes, with owner-approved comment/property/muted contrast
-       corrections (docs/theme/builtins.md); all other slots preserve parity. */
+       corrections (docs/wiki/theme/builtins.md); all other slots preserve parity. */
     /* Terminal selection "none" retains ANSI ink; scrollbar "auto" retains native chrome. */
     --syntax-bg: 39.933 43.911 51.867;
     --syntax-fg: 170.697 177.599 191.403;
@@ -885,7 +885,7 @@
     --opacity-status-neutral-badge-hover: 1;
 
     /* Graph scenes stay dark in both Tau appearances. Links are contrast-corrected
-       (see docs/theme/graph-colors.md); all other graph/chart colors retain parity. */
+       (see docs/wiki/theme/graph-colors.md); all other graph/chart colors retain parity. */
     --graph-bg: 17 24 39;
     --graph-loading-bg: 15 23 42;
     --graph-label: 255 255 255;
@@ -970,7 +970,7 @@
     --checkbox-check: 255 255 255;
 
     /* Legacy content palettes, with owner-approved comment/property/muted contrast
-       corrections (docs/theme/builtins.md); all other slots preserve parity. */
+       corrections (docs/wiki/theme/builtins.md); all other slots preserve parity. */
     /* Terminal selection "none" retains ANSI ink; scrollbar "auto" retains native chrome. */
     --syntax-bg: 39.933 43.911 51.867;
     --syntax-fg: 170.697 177.599 191.403;
