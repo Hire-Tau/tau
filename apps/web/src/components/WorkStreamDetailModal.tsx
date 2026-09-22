@@ -334,7 +334,7 @@ export function WorkStreamDetailModal({
             </div>
 
             {respondMutation.isError && (
-              <p role="alert" className="mt-2 text-xs text-red-600 dark:text-red-400">
+              <p role="alert" className="mt-2 text-xs text-status-danger-600 dark:text-status-danger-400">
                 {actionErrorMessage(respondMutation.error)}
               </p>
             )}

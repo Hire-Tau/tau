@@ -57,7 +57,7 @@ describe('theme token registry', () => {
   })
 
   test('status family includes all nine roles and their distinct badge treatments', () => {
-    expect(STATUS_TOKENS).toHaveLength(63)
+    expect(STATUS_TOKENS).toHaveLength(162)
     for (const suffix of ['fg', 'solid', 'surface', 'border', 'badge-fg', 'badge-surface', 'badge-hover']) {
       expect(STATUS_TOKENS).toContain(`--status-human-wait-${suffix}`)
     }

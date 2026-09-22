@@ -226,10 +226,16 @@ test('shipped pre-paint custom matrix and broken-document fallback run before Re
   const dom = await acquireDomHarness({ url: 'https://tau.test' })
   try {
     for (const p of palettes) {
-      const doc = { ...custom, base: p.id, appearance: p.appearance }
+      const doc = {
+        ...custom,
+        base: p.id,
+        appearance: p.appearance,
+        overrides: { ...custom.overrides, '--brand-tile': '#123456' },
+      }
       for (const broken of [false, true]) {
         const storage = storageFor(JSON.stringify(broken ? { ...doc, overrides: { '--term-bg': 'url(x)' } } : doc))
         removeCustomProperties(document.documentElement)
+        document.head.innerHTML = '<meta name="msapplication-TileColor" content="#7c3aed" />'
         new Function('window', 'document', 'localStorage', script)(window, document, storage)
         expect(document.documentElement.getAttribute('data-theme')).toBe(p.id)
         expect(document.documentElement.getAttribute('data-appearance')).toBe(
@@ -237,6 +243,9 @@ test('shipped pre-paint custom matrix and broken-document fallback run before Re
         )
         expect(document.documentElement.style.getPropertyValue('--term-bg')).toBe(broken ? '' : '18 52 86')
         expect(storage.getItem(CUSTOM_THEME_KEY) === null).toBe(broken)
+        expect(document.querySelector('meta[name="msapplication-TileColor"]')?.getAttribute('content')).toBe(
+          broken ? '#7c3aed' : 'rgb(18, 52, 86)'
+        )
         expect(document.documentElement.style.backgroundColor).toBe(
           broken ? `rgb(${resolveToken(p.tokens, '--color-bg-surface')})` : 'rgb(18, 52, 86)'
         )

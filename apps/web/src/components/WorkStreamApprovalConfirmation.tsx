@@ -80,7 +80,7 @@ export function WorkStreamApprovalConfirmation({
     <Modal isOpen={isOpen} onClose={() => !isPending && onCancel()} title={title}>
       <div className="space-y-4">
         <p className="text-sm text-secondary">{approvalConfirmationMessage(completionMode, completesOnApproval)}</p>
-        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+        {error && <p className="text-sm text-status-danger-600 dark:text-status-danger-400">{error}</p>}
         <div className="flex flex-wrap justify-end gap-2">
           <button
             type="button"

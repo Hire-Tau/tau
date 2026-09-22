@@ -86,7 +86,7 @@ export function DemoAccessPage({ enabled }: { enabled: boolean }) {
               className="tau-field w-full rounded-md border-input-border bg-input-bg text-primary placeholder:text-placeholder focus:border-accent focus:ring-accent px-3 py-2 border text-sm"
             />
             {error && (
-              <p id="demo-access-error" className="text-sm text-red-600 dark:text-red-400 mt-2">
+              <p id="demo-access-error" className="text-sm text-status-danger-600 dark:text-status-danger-400 mt-2">
                 {error}
               </p>
             )}

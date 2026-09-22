@@ -124,7 +124,7 @@ export function Modal({
       ref={overlayRef}
       tabIndex={-1}
       className={clsx(
-        'tau-modal-backdrop fixed inset-x-0 z-[60] bg-black/50 flex items-center justify-center outline-none',
+        'tau-modal-backdrop fixed inset-x-0 z-[60] bg-chrome-scrim/50 flex items-center justify-center outline-none',
         mobileFullscreen && 'mobile-chat-modal',
         overlayClassName
       )}

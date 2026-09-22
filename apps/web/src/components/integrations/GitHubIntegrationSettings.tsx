@@ -291,7 +291,7 @@ export function GitHubIntegrationSettings({
         </div>
       )}
       {defaultMutation.isError && (
-        <p role="alert" className="text-sm text-red-500">
+        <p role="alert" className="text-sm text-status-danger-500">
           Could not change the global default. Please try again.
         </p>
       )}
@@ -474,7 +474,7 @@ export function GitHubIntegrationSettings({
       )}
       {failure && (
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
-          <p role="alert" className="text-sm text-red-600">
+          <p role="alert" className="text-sm text-status-danger-600">
             {failure}
           </p>
           {adminSetupRequired && finishAdminSetup ? (

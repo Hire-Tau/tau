@@ -144,7 +144,7 @@ export function SquadWorkflowSettings({ squadId, canEdit }: { squadId: string; c
             </button>
           </div>
           {save.error && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-sm text-status-danger-400">
               {save.error.message}
             </p>
           )}

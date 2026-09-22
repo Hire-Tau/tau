@@ -65,13 +65,13 @@ export function DevBackendBarContent({
         'z-50 flex shrink-0 flex-wrap items-center justify-center gap-x-3 gap-y-1 border-b px-3 py-1.5 text-xs',
         state?.isProduction
           ? state.productionWritesEnabled
-            ? 'border-red-700 bg-red-950 text-red-100'
-            : 'border-amber-400 bg-amber-100 text-amber-950 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100'
+            ? 'border-status-danger-700 bg-status-danger-950 text-status-danger-100'
+            : 'border-status-attention-400 bg-status-attention-100 text-status-attention-950 dark:border-status-attention-700 dark:bg-status-attention-950 dark:text-status-attention-100'
           : 'border-th-border bg-surface-secondary text-secondary'
       )}
       role="status"
     >
-      <span className="rounded bg-black/10 px-1.5 py-0.5 font-semibold uppercase tracking-wide dark:bg-white/10">
+      <span className="rounded bg-chrome-scrim/10 px-1.5 py-0.5 font-semibold uppercase tracking-wide dark:bg-chrome-paper/10">
         Dev UI
       </span>
       {state && (
@@ -103,7 +103,7 @@ export function DevBackendBarContent({
                   checked={state.productionWritesEnabled}
                   disabled={pending}
                   onChange={(event) => onSetProductionWrites(event.target.checked)}
-                  className="h-3.5 w-3.5 accent-red-600"
+                  className="h-3.5 w-3.5 accent-status-danger-600"
                 />
                 Enable production writes
               </label>
@@ -117,7 +117,7 @@ export function DevBackendBarContent({
           )}
         </>
       )}
-      {error && <span className="font-medium text-red-700 dark:text-red-300">{error}</span>}
+      {error && <span className="font-medium text-status-danger-700 dark:text-status-danger-300">{error}</span>}
     </div>
   )
 }

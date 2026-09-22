@@ -96,7 +96,7 @@ tau inbox read m1
     expect(html).toContain('Monitor &quot;build-watch&quot;')
     expect(html).toContain('2 new lines')
     expect(html).toContain('FAIL a')
-    expect(html).not.toContain('bg-blue-600')
+    expect(html).not.toContain('bg-status-progress-600')
   })
 
   test('renders a monitor overload terminal event as a red row', () => {
@@ -113,7 +113,7 @@ tau inbox read m1
     )
 
     expect(html).toContain('stopped — output exceeded the limit')
-    expect(html).toContain('text-red-700')
+    expect(html).toContain('text-status-danger-700')
   })
 
   test('renders a monitor exited event with a non-zero exit code as an amber row', () => {
@@ -127,7 +127,7 @@ tau inbox read m1
     )
 
     expect(html).toContain('exit_code=2')
-    expect(html).toContain('text-amber-700')
+    expect(html).toContain('text-status-attention-700')
     expect(html).toContain('✗')
   })
 })

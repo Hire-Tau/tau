@@ -48,7 +48,9 @@ export function AgentContextPanel({ agentId }: Props) {
   }
 
   if (error) {
-    return <div className="flex items-center justify-center h-full text-red-500">Failed to load agent context</div>
+    return (
+      <div className="flex items-center justify-center h-full text-status-danger-500">Failed to load agent context</div>
+    )
   }
 
   const hasMemory = data?.shortTermMemory && data.shortTermMemory.trim().length > 0
@@ -95,9 +97,9 @@ export function AgentContextPanel({ agentId }: Props) {
                       className={clsx(
                         'mt-0.5 w-4 h-4 rounded border flex items-center justify-center shrink-0',
                         todo.completed
-                          ? 'bg-green-500 border-green-500 text-white'
+                          ? 'bg-status-success-500 border-status-success-500 text-on-strong'
                           : isBlocked
-                            ? 'border-orange-400 dark:border-orange-500 bg-orange-50 dark:bg-orange-900/30'
+                            ? 'border-status-external-wait-400 dark:border-status-external-wait-500 bg-status-external-wait-50 dark:bg-status-external-wait-900/30'
                             : 'border-th-border'
                       )}
                     >
@@ -111,7 +113,9 @@ export function AgentContextPanel({ agentId }: Props) {
                         <span className="ml-2 text-xs text-muted">(depends: {todo.depends.join(', ')})</span>
                       )}
                       {isBlocked && !todo.completed && (
-                        <span className="ml-2 text-xs text-orange-600 dark:text-orange-400">blocked</span>
+                        <span className="ml-2 text-xs text-status-external-wait-600 dark:text-status-external-wait-400">
+                          blocked
+                        </span>
                       )}
                     </div>
                   </li>

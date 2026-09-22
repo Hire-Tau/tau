@@ -56,7 +56,7 @@ export function SquadWorkspaceImageViewer({ squadId, filePath, className }: Squa
   }
 
   if (error) {
-    return <div className="text-red-500">Failed to load image: {error}</div>
+    return <div className="text-status-danger-500">Failed to load image: {error}</div>
   }
 
   return (

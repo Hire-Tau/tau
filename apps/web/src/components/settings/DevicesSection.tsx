@@ -131,7 +131,7 @@ export function DevicesSection() {
             {startMutation.isPending ? 'Generating…' : 'Generate pairing QR'}
           </button>
         )}
-        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+        {error && <p className="text-sm text-status-danger-600 dark:text-status-danger-400">{error}</p>}
       </div>
 
       {/* List */}
@@ -161,7 +161,7 @@ export function DevicesSection() {
                 <button
                   onClick={() => revokeMutation.mutate(d.id)}
                   disabled={revokeMutation.isPending}
-                  className="tau-button px-2 py-1 text-xs font-medium text-red-600 dark:text-red-400 border border-th-border rounded hover:bg-surface-hover disabled:opacity-50 shrink-0"
+                  className="tau-button px-2 py-1 text-xs font-medium text-status-danger-600 dark:text-status-danger-400 border border-th-border rounded hover:bg-surface-hover disabled:opacity-50 shrink-0"
                 >
                   Revoke
                 </button>

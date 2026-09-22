@@ -204,7 +204,7 @@ export function PasskeyRegister({ onSuccess, onFailure, isBootstrap = false }: P
         </>
       )}
       {error && (
-        <p role="alert" className="text-red-600 dark:text-red-400 text-sm">
+        <p role="alert" className="text-status-danger-600 dark:text-status-danger-400 text-sm">
           {error}
         </p>
       )}

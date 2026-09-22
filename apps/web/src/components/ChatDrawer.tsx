@@ -344,10 +344,10 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
                       className={clsx(
                         'h-full rounded-full transition-all',
                         usage.context.percent > 80
-                          ? 'bg-red-400'
+                          ? 'bg-status-danger-400'
                           : usage.context.percent > 50
-                            ? 'bg-yellow-400'
-                            : 'bg-blue-400'
+                            ? 'bg-status-review-400'
+                            : 'bg-status-progress-400'
                       )}
                       style={{ width: `${Math.min(usage.context.percent, 100)}%` }}
                     />
@@ -381,8 +381,8 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
                           }}
                           disabled={compactMutation.isPending}
                           label="Compact"
-                          className="tau-button w-full text-left px-2 py-1 text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded transition-colors"
-                          confirmClassName="w-full text-left px-2 py-1 text-[11px] font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded transition-colors"
+                          className="tau-button w-full text-left px-2 py-1 text-[11px] font-medium text-status-progress-600 dark:text-status-progress-400 hover:bg-status-progress-50 dark:hover:bg-status-progress-900/30 rounded transition-colors"
+                          confirmClassName="w-full text-left px-2 py-1 text-[11px] font-medium text-status-progress-700 dark:text-status-progress-300 bg-status-progress-50 dark:bg-status-progress-900/30 hover:bg-status-progress-100 dark:hover:bg-status-progress-900/50 rounded transition-colors"
                         />
                         <ConfirmButton
                           onConfirm={() => {
@@ -391,8 +391,8 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
                           }}
                           disabled={resetMutation.isPending}
                           label="Reset"
-                          className="tau-button w-full text-left px-2 py-1 text-[11px] font-medium text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/30 rounded transition-colors"
-                          confirmClassName="w-full text-left px-2 py-1 text-[11px] font-medium text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-900/30 hover:bg-orange-100 dark:hover:bg-orange-900/50 rounded transition-colors"
+                          className="tau-button w-full text-left px-2 py-1 text-[11px] font-medium text-status-external-wait-600 dark:text-status-external-wait-400 hover:bg-status-external-wait-50 dark:hover:bg-status-external-wait-900/30 rounded transition-colors"
+                          confirmClassName="w-full text-left px-2 py-1 text-[11px] font-medium text-status-external-wait-700 dark:text-status-external-wait-300 bg-status-external-wait-50 dark:bg-status-external-wait-900/30 hover:bg-status-external-wait-100 dark:hover:bg-status-external-wait-900/50 rounded transition-colors"
                         />
                         <ConfirmButton
                           onConfirm={() => {
@@ -401,8 +401,8 @@ export function LegacyChatDrawer({ dependencies }: ChatDrawerProps = {}) {
                           }}
                           disabled={deleteMutation.isPending}
                           label="Delete"
-                          className="tau-button w-full text-left px-2 py-1 text-[11px] font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors"
-                          confirmClassName="w-full text-left px-2 py-1 text-[11px] font-medium text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 rounded transition-colors"
+                          className="tau-button w-full text-left px-2 py-1 text-[11px] font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/30 rounded transition-colors"
+                          confirmClassName="w-full text-left px-2 py-1 text-[11px] font-medium text-status-danger-700 dark:text-status-danger-300 bg-status-danger-50 dark:bg-status-danger-900/30 hover:bg-status-danger-100 dark:hover:bg-status-danger-900/50 rounded transition-colors"
                         />
                       </div>
                     )}

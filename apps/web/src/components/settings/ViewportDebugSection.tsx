@@ -111,17 +111,17 @@ export function ViewportDebugOverlay({ onClose }: { onClose: () => void }) {
   return (
     <div
       data-testid="viewport-debug-overlay"
-      className="fixed left-2 top-1/4 z-[9999] rounded-lg bg-black/85 p-3 font-mono text-[11px] leading-4 text-green-300 shadow-lg"
+      className="fixed left-2 top-1/4 z-[9999] rounded-lg bg-chrome-scrim/85 p-3 font-mono text-[11px] leading-4 text-status-success-300 shadow-lg"
     >
       <div className="mb-1 flex items-center justify-between gap-4">
-        <span className="font-bold text-white">viewport debug</span>
-        <button onClick={onClose} className="tau-button rounded bg-white/20 px-2 text-white">
+        <span className="font-bold text-on-strong">viewport debug</span>
+        <button onClick={onClose} className="tau-button rounded bg-chrome-paper/20 px-2 text-on-strong">
           ×
         </button>
       </div>
       {rows.map(([label, value]) => (
         <div key={label} className="flex justify-between gap-3">
-          <span className="text-green-500/80">{label}</span>
+          <span className="text-status-success-500/80">{label}</span>
           <span>{value}</span>
         </div>
       ))}

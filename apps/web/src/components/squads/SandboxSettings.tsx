@@ -118,7 +118,7 @@ export function SandboxSettings({ squadId }: Props) {
           >
             <span
               className={clsx(
-                'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
+                'inline-block h-4 w-4 transform rounded-full bg-chrome-toggle-thumb transition-transform',
                 config.alwaysOn ? 'translate-x-4' : 'translate-x-0'
               )}
             />
@@ -209,10 +209,10 @@ export function SandboxSettings({ squadId }: Props) {
       </div>
 
       {updateMutation.isError && (
-        <p className="text-xs text-red-500 mt-2">Failed to save: {String(updateMutation.error)}</p>
+        <p className="text-xs text-status-danger-500 mt-2">Failed to save: {String(updateMutation.error)}</p>
       )}
       {!hasChanges && updateMutation.isSuccess && (
-        <p className="text-xs text-green-500 mt-2">
+        <p className="text-xs text-status-success-500 mt-2">
           ✓ Saved. Changes take effect on the next sandbox restart or reconciliation cycle.
         </p>
       )}

@@ -34,7 +34,9 @@ export function PresentationRenderer({
     <article className={clsx(chrome === 'default' && 'space-y-6 p-5') || undefined}>
       {chrome === 'default' && (
         <header>
-          <h1 className="text-2xl font-semibold text-gray-950 dark:text-gray-50">{presentation.title}</h1>
+          <h1 className="text-2xl font-semibold text-status-neutral-950 dark:text-status-neutral-50">
+            {presentation.title}
+          </h1>
         </header>
       )}
       <div className={clsx(chrome === 'default' && 'space-y-5') || undefined}>
@@ -44,12 +46,14 @@ export function PresentationRenderer({
             className={
               clsx(
                 chrome === 'default' &&
-                  'space-y-4 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900'
+                  'space-y-4 rounded-xl border border-status-neutral-200 bg-chrome-paper p-4 dark:border-status-neutral-800 dark:bg-status-neutral-900'
               ) || undefined
             }
           >
             {chrome === 'default' && section.title && (
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{section.title}</h2>
+              <h2 className="text-lg font-semibold text-status-neutral-900 dark:text-status-neutral-100">
+                {section.title}
+              </h2>
             )}
             <div className={clsx(chrome === 'default' && 'space-y-4') || undefined}>
               {section.blocks.map((block, index) => (
@@ -93,8 +97,10 @@ function MetricsBlockView({ block }: { block: MetricsBlock }) {
     <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {block.items.map((item) => (
         <div key={item.label} className={clsx('rounded-lg border p-4', toneClasses(item.tone, 'card'))}>
-          <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">{item.label}</dt>
-          <dd className="mt-2 text-2xl font-semibold text-gray-950 dark:text-gray-50">{item.value}</dd>
+          <dt className="text-sm font-medium text-status-neutral-500 dark:text-status-neutral-400">{item.label}</dt>
+          <dd className="mt-2 text-2xl font-semibold text-status-neutral-950 dark:text-status-neutral-50">
+            {item.value}
+          </dd>
         </div>
       ))}
     </dl>
@@ -103,26 +109,26 @@ function MetricsBlockView({ block }: { block: MetricsBlock }) {
 
 function TableBlockView({ block }: { block: TableBlock }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
-      <table className="tau-table min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-800">
-        <thead className="bg-gray-50 dark:bg-gray-900">
+    <div className="overflow-x-auto rounded-lg border border-status-neutral-200 dark:border-status-neutral-800">
+      <table className="tau-table min-w-full divide-y divide-status-neutral-200 text-sm dark:divide-status-neutral-800">
+        <thead className="bg-status-neutral-50 dark:bg-status-neutral-900">
           <tr>
             {block.columns.map((column) => (
               <th
                 key={column.key}
                 scope="col"
-                className="px-3 py-2 text-left font-semibold text-gray-700 dark:text-gray-200"
+                className="px-3 py-2 text-left font-semibold text-status-neutral-700 dark:text-status-neutral-200"
               >
                 {column.label}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-100 bg-white dark:divide-gray-800 dark:bg-gray-950">
+        <tbody className="divide-y divide-status-neutral-100 bg-chrome-paper dark:divide-status-neutral-800 dark:bg-status-neutral-950">
           {block.rows.map((row, rowIndex) => (
             <tr key={rowIndex}>
               {block.columns.map((column) => (
-                <td key={column.key} className="px-3 py-2 text-gray-700 dark:text-gray-300">
+                <td key={column.key} className="px-3 py-2 text-status-neutral-700 dark:text-status-neutral-300">
                   {formatCellValue(row[column.key])}
                 </td>
               ))}
@@ -154,7 +160,7 @@ function ChartBlockView({ block }: { block: ChartBlock }) {
 
   return (
     <ChartErrorBoundary>
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-950">
+      <div className="overflow-hidden rounded-lg border border-status-neutral-200 bg-chrome-paper p-3 dark:border-status-neutral-800 dark:bg-status-neutral-950">
         <VegaEmbed
           spec={block.spec as VegaEmbedProps['spec']}
           options={{ actions: false, renderer: 'canvas', loader: blockingVegaLoader, config }}
@@ -202,20 +208,24 @@ function CalloutBlockView({ block }: { block: CalloutBlock }) {
 
 function TimelineBlockView({ block }: { block: TimelineBlock }) {
   return (
-    <ol className="space-y-3 border-l border-gray-200 pl-4 dark:border-gray-800">
+    <ol className="space-y-3 border-l border-status-neutral-200 pl-4 dark:border-status-neutral-800">
       {block.items.map((item, index) => (
         <li key={`${item.title}-${item.at ?? index}`} className="relative">
           <span
             aria-hidden="true"
-            className="absolute -left-[21px] top-1.5 h-3 w-3 rounded-full border-2 border-white bg-blue-500 dark:border-gray-900"
+            className="absolute -left-[21px] top-1.5 h-3 w-3 rounded-full border-2 border-chrome-highlight bg-status-progress-500 dark:border-status-neutral-900"
           />
           <div className="flex flex-wrap items-baseline gap-x-2">
-            <h3 className="font-medium text-gray-900 dark:text-gray-100">{item.title}</h3>
+            <h3 className="font-medium text-status-neutral-900 dark:text-status-neutral-100">{item.title}</h3>
             {item.at && (
-              <time className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">{item.at}</time>
+              <time className="text-xs uppercase tracking-wide text-status-neutral-500 dark:text-status-neutral-400">
+                {item.at}
+              </time>
             )}
           </div>
-          {item.content && <p className="mt-1 text-sm text-gray-600 dark:text-gray-300">{item.content}</p>}
+          {item.content && (
+            <p className="mt-1 text-sm text-status-neutral-600 dark:text-status-neutral-300">{item.content}</p>
+          )}
         </li>
       ))}
     </ol>
@@ -286,7 +296,7 @@ function HtmlBlockView({ block, chrome }: { block: HtmlBlock; chrome: 'default' 
       style={{ height }}
       className={clsx(
         'w-full bg-white',
-        chrome === 'none' ? 'border-0' : 'rounded-lg border border-gray-200 dark:border-gray-800'
+        chrome === 'none' ? 'border-0' : 'rounded-lg border border-status-neutral-200 dark:border-status-neutral-800'
       )}
     />
   )
@@ -318,7 +328,7 @@ function BlockError({ title, detail }: { title: string; detail: string }) {
   return (
     <div
       role="alert"
-      className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200"
+      className="rounded-lg border border-status-danger-200 bg-status-danger-50 p-4 text-sm text-status-danger-800 dark:border-status-danger-900/60 dark:bg-status-danger-950/40 dark:text-status-danger-200"
     >
       <p className="font-semibold">{title}</p>
       <p className="mt-1">{detail}</p>
@@ -370,19 +380,21 @@ function isBlockedUri(uri: string) {
 
 function toneClasses(tone: PresentationTone | undefined, variant: 'card' | 'callout') {
   const base =
-    variant === 'card' ? 'bg-white dark:bg-gray-950' : 'bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-200'
+    variant === 'card'
+      ? 'bg-chrome-paper dark:bg-status-neutral-950'
+      : 'bg-status-neutral-50 text-status-neutral-800 dark:bg-status-neutral-900 dark:text-status-neutral-200'
 
   switch (tone) {
     case 'info':
-      return 'border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/40 dark:text-blue-100'
+      return 'border-status-progress-200 bg-status-progress-50 text-status-progress-900 dark:border-status-progress-900/60 dark:bg-status-progress-950/40 dark:text-status-progress-100'
     case 'success':
-      return 'border-green-200 bg-green-50 text-green-900 dark:border-green-900/60 dark:bg-green-950/40 dark:text-green-100'
+      return 'border-status-success-200 bg-status-success-50 text-status-success-900 dark:border-status-success-900/60 dark:bg-status-success-950/40 dark:text-status-success-100'
     case 'warning':
-      return 'border-yellow-200 bg-yellow-50 text-yellow-900 dark:border-yellow-900/60 dark:bg-yellow-950/40 dark:text-yellow-100'
+      return 'border-status-review-200 bg-status-review-50 text-status-review-900 dark:border-status-review-900/60 dark:bg-status-review-950/40 dark:text-status-review-100'
     case 'error':
-      return 'border-red-200 bg-red-50 text-red-900 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-100'
+      return 'border-status-danger-200 bg-status-danger-50 text-status-danger-900 dark:border-status-danger-900/60 dark:bg-status-danger-950/40 dark:text-status-danger-100'
     case 'neutral':
     default:
-      return clsx('border-gray-200 dark:border-gray-800', base)
+      return clsx('border-status-neutral-200 dark:border-status-neutral-800', base)
   }
 }

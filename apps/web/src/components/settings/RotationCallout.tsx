@@ -23,8 +23,8 @@ export function RotationCallout({ result }: { result: RevokeRotationResult }) {
   }
 
   return (
-    <div className="rounded border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3">
-      <p className="text-xs text-amber-700 dark:text-amber-400">
+    <div className="rounded border border-status-attention-300 dark:border-status-attention-800 bg-status-attention-50 dark:bg-status-attention-900/20 p-3">
+      <p className="text-xs text-status-attention-700 dark:text-status-attention-400">
         {result.warning ?? result.message ?? 'Grant revoked.'}
       </p>
     </div>

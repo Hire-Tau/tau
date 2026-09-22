@@ -249,7 +249,9 @@ function AddSquadPresetForm({ onClose, onCreated }: { onClose: () => void; onCre
           Cancel
         </button>
         {createMutation.isError && (
-          <span className="text-xs text-red-600 dark:text-red-400">{(createMutation.error as Error).message}</span>
+          <span className="text-xs text-status-danger-600 dark:text-status-danger-400">
+            {(createMutation.error as Error).message}
+          </span>
         )}
       </div>
     </div>
@@ -370,17 +372,17 @@ function SquadPresetRow({
             <span className="font-semibold text-primary">{squadPreset.name}</span>
             <span className="text-xs text-muted font-mono">{squadPreset.id}</span>
             {squadPreset.disabled && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+              <span className="text-xs px-1.5 py-0.5 rounded bg-status-neutral-100 dark:bg-status-neutral-800 text-status-neutral-600 dark:text-status-neutral-400">
                 Disabled
               </span>
             )}
             {squadPreset.yamlFieldOverrides.length > 0 && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400">
+              <span className="text-xs px-1.5 py-0.5 rounded bg-status-review-100 dark:bg-status-review-900/30 text-status-review-700 dark:text-status-review-400">
                 Modified
               </span>
             )}
             {!squadPreset.hasTemplate && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
+              <span className="text-xs px-1.5 py-0.5 rounded bg-status-progress-100 dark:bg-status-progress-900/30 text-status-progress-700 dark:text-status-progress-400">
                 Custom
               </span>
             )}
@@ -427,7 +429,7 @@ function SquadPresetRow({
                 <button
                   onClick={() => toggleDisableMutation.mutate()}
                   disabled={toggleDisableMutation.isPending}
-                  className="tau-button text-xs text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 font-medium"
+                  className="tau-button text-xs text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 font-medium"
                 >
                   {squadPreset.disabled ? 'Enable' : 'Disable'}
                 </button>
@@ -436,7 +438,7 @@ function SquadPresetRow({
                 <button
                   onClick={handleDelete}
                   disabled={deleteMutation.isPending}
-                  className="tau-button text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 font-medium"
+                  className="tau-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium"
                 >
                   Delete
                 </button>
@@ -501,9 +503,11 @@ function SquadPresetRow({
                 >
                   {updateMutation.isPending ? 'Saving…' : 'Save'}
                 </button>
-                {updateMutation.isSuccess && <span className="text-xs text-green-600 dark:text-green-400">Saved!</span>}
+                {updateMutation.isSuccess && (
+                  <span className="text-xs text-status-success-600 dark:text-status-success-400">Saved!</span>
+                )}
                 {updateMutation.isError && (
-                  <span className="text-xs text-red-600 dark:text-red-400">
+                  <span className="text-xs text-status-danger-600 dark:text-status-danger-400">
                     {(updateMutation.error as Error).message}
                   </span>
                 )}

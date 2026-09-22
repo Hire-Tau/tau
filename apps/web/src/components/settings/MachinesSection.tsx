@@ -187,7 +187,7 @@ export function MachineRow({
             <button
               onClick={handleDelete}
               disabled={isMutating}
-              className="tau-button text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 font-medium disabled:opacity-50"
+              className="tau-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium disabled:opacity-50"
             >
               {deleteMutation.isPending ? 'Deleting…' : 'Delete'}
             </button>
@@ -195,7 +195,11 @@ export function MachineRow({
         )}
       </div>
 
-      {actionError && <p className="text-xs text-red-600 dark:text-red-400 mt-2">{(actionError as Error).message}</p>}
+      {actionError && (
+        <p className="text-xs text-status-danger-600 dark:text-status-danger-400 mt-2">
+          {(actionError as Error).message}
+        </p>
+      )}
 
       {expanded && (
         <div className="border-b border-panel-border last:border-b-0 mt-3 p-3 space-y-2 text-xs text-muted">
@@ -206,7 +210,7 @@ export function MachineRow({
               <SkeletonLine className="w-3/5" />
             </LoadingSurface>
           ) : detail.isError ? (
-            <p className="text-red-600 dark:text-red-400">{(detail.error as Error).message}</p>
+            <p className="text-status-danger-600 dark:text-status-danger-400">{(detail.error as Error).message}</p>
           ) : (
             <>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1">
@@ -246,7 +250,7 @@ export function MachineRow({
                     ) : (
                       // Loud on purpose: a misconfigured host that cannot sandbox
                       // Chromium must stand out (browsing disabled, machine still up).
-                      <span className="text-red-600 dark:text-red-400" role="alert">
+                      <span className="text-status-danger-600 dark:text-status-danger-400" role="alert">
                         unavailable
                         {machine.capabilities.browserReason ? ` (${machine.capabilities.browserReason})` : ''}
                       </span>
@@ -415,7 +419,9 @@ function RegisterMachineForm() {
         </div>
 
         {registerMutation.isError && (
-          <p className="text-xs text-red-600 dark:text-red-400">{(registerMutation.error as Error).message}</p>
+          <p className="text-xs text-status-danger-600 dark:text-status-danger-400">
+            {(registerMutation.error as Error).message}
+          </p>
         )}
 
         {registered?.provider === 'ssh' && (
@@ -452,15 +458,15 @@ function UtilizationBadge({ utilization }: { utilization: MachineUtilization }) 
 function statusBadgeClass(status: string): string {
   switch (status) {
     case 'ready':
-      return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+      return 'bg-status-success-100 dark:bg-status-success-900/30 text-status-success-700 dark:text-status-success-400'
     case 'bootstrapping':
-      return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+      return 'bg-status-progress-100 dark:bg-status-progress-900/30 text-status-progress-700 dark:text-status-progress-400'
     case 'unreachable':
-      return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+      return 'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-400'
     case 'registered':
-      return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+      return 'bg-status-review-100 dark:bg-status-review-900/30 text-status-review-700 dark:text-status-review-400'
     default:
-      return 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
+      return 'bg-status-neutral-200 dark:bg-status-neutral-700 text-status-neutral-600 dark:text-status-neutral-300'
   }
 }
 

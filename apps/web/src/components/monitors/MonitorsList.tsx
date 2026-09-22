@@ -8,12 +8,15 @@ function isActiveMonitor(monitor: Monitor) {
 }
 
 function statusClass(status: string) {
-  if (status === 'running') return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300'
-  if (status === 'starting') return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
-  if (status === 'canceling') return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+  if (status === 'running')
+    return 'bg-status-success-100 text-status-success-700 dark:bg-status-success-900/30 dark:text-status-success-300'
+  if (status === 'starting')
+    return 'bg-status-progress-100 text-status-progress-700 dark:bg-status-progress-900/30 dark:text-status-progress-300'
+  if (status === 'canceling')
+    return 'bg-status-attention-100 text-status-attention-700 dark:bg-status-attention-900/30 dark:text-status-attention-300'
   if (status === 'canceled') return 'bg-surface-secondary text-muted'
   if (status === 'failed' || status === 'overloaded') {
-    return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+    return 'bg-status-danger-100 text-status-danger-700 dark:bg-status-danger-900/30 dark:text-status-danger-300'
   }
   return 'bg-surface-secondary text-secondary'
 }
@@ -82,8 +85,8 @@ export function MonitorsList({
                     onConfirm={() => onCancel(m.id)}
                     disabled={!canCancel}
                     title={canCancel ? 'Cancel monitor' : 'You do not have permission to cancel monitors'}
-                    className="tau-button rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
-                    confirmClassName="rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300 dark:hover:bg-red-900/50 transition-colors"
+                    className="tau-button rounded-md px-2 py-1 text-xs font-medium text-status-danger-600 hover:bg-status-danger-50 dark:text-status-danger-400 dark:hover:bg-status-danger-900/30 transition-colors"
+                    confirmClassName="rounded-md bg-status-danger-50 px-2 py-1 text-xs font-medium text-status-danger-700 hover:bg-status-danger-100 dark:bg-status-danger-900/30 dark:text-status-danger-300 dark:hover:bg-status-danger-900/50 transition-colors"
                   />
                 )}
               </td>

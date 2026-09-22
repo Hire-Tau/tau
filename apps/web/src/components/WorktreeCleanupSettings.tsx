@@ -54,7 +54,7 @@ export function WorktreeCleanupSettings({ stream }: { stream: WorkStream }) {
         </p>
       )}
       {action.isError && (
-        <p role="alert" className="text-xs text-red-400">
+        <p role="alert" className="text-xs text-status-danger-400">
           {actionErrorMessage(action.error)}
         </p>
       )}

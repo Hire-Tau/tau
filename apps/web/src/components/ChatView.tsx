@@ -187,7 +187,7 @@ function HumanMessageRow({
         <div
           className={clsx(
             'max-w-[90%] md:max-w-[80%] rounded-lg',
-            auto ? 'break-words' : 'px-3 md:px-4 py-2 md:py-3 bg-blue-600 text-white break-words'
+            auto ? 'break-words' : 'px-3 md:px-4 py-2 md:py-3 bg-status-progress-600 text-on-strong break-words'
           )}
         >
           <HumanMessageContent
@@ -238,11 +238,11 @@ function AssistantMessageRow({
             <button
               type="button"
               onClick={() => tts.stop()}
-              className="tau-button flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition-colors text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50"
+              className="tau-button flex items-center gap-1 px-1.5 py-0.5 rounded text-xs transition-colors text-status-progress-600 dark:text-status-progress-400 bg-status-progress-50 dark:bg-status-progress-900/30 hover:bg-status-progress-100 dark:hover:bg-status-progress-900/50"
               title={tts.isSynthesizing ? 'Loading...' : 'Stop'}
             >
               {tts.isSynthesizing ? (
-                <span className="inline-block w-3.5 h-3.5 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin" />
+                <span className="inline-block w-3.5 h-3.5 border-2 border-status-progress-300 border-t-blue-600 rounded-full animate-spin" />
               ) : (
                 <StopIcon className="w-3.5 h-3.5" />
               )}
@@ -293,11 +293,11 @@ function PendingMessageRow({
       <div
         className={clsx(
           'max-w-[90%] md:max-w-[80%] rounded-lg break-words',
-          auto ? '' : 'px-3 md:px-4 py-2 md:py-3 bg-blue-600 text-white'
+          auto ? '' : 'px-3 md:px-4 py-2 md:py-3 bg-status-progress-600 text-on-strong'
         )}
       >
         {deliveryMode && !auto && queued && (
-          <div className="flex items-center gap-1.5 mb-1 text-blue-200 text-xs">
+          <div className="flex items-center gap-1.5 mb-1 text-status-progress-200 text-xs">
             {deliveryMode === 'steer' ? '⚡ Interrupt' : '📋 Follow up'}
           </div>
         )}
@@ -306,12 +306,14 @@ function PendingMessageRow({
           <button
             type="button"
             onClick={onRetry}
-            className="tau-button mt-1 text-xs text-blue-200 underline hover:text-white"
+            className="tau-button mt-1 text-xs text-status-progress-200 underline hover:text-on-strong"
           >
             Retry
           </button>
         )}
-        {status === 'sending' && !auto && <div className="mt-1 text-xs text-blue-200 opacity-70">Sending…</div>}
+        {status === 'sending' && !auto && (
+          <div className="mt-1 text-xs text-status-progress-200 opacity-70">Sending…</div>
+        )}
       </div>
     </div>
   )
@@ -1389,7 +1391,7 @@ export function ChatView({
         'tau-button',
         'p-1.5 rounded-md transition-colors shrink-0',
         showRawText
-          ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50'
+          ? 'text-status-progress-600 dark:text-status-progress-400 bg-status-progress-50 dark:bg-status-progress-900/30 hover:bg-status-progress-100 dark:hover:bg-status-progress-900/50'
           : 'text-placeholder hover:text-secondary hover:bg-surface-hover'
       )}
       aria-label={showRawText ? 'Show rendered markdown' : 'Show raw text'}
@@ -1563,7 +1565,7 @@ export function ChatView({
                   key={item.id}
                   role="status"
                   aria-live="polite"
-                  className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
+                  className="rounded-lg bg-status-attention-50 px-3 py-2 text-sm text-status-attention-800 dark:bg-status-attention-900/30 dark:text-status-attention-300"
                 >
                   {item.label}
                 </div>
@@ -1605,7 +1607,7 @@ export function ChatView({
 
         {error && (
           <div className="flex justify-center">
-            <div className="rounded-lg px-3 md:px-4 py-2 md:py-3 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-sm">
+            <div className="rounded-lg px-3 md:px-4 py-2 md:py-3 bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-600 dark:text-status-danger-400 text-sm">
               {error}
             </div>
           </div>
@@ -1613,7 +1615,7 @@ export function ChatView({
 
         {voiceError && (
           <div className="flex justify-center">
-            <div className="rounded-lg px-3 md:px-4 py-2 md:py-3 bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 text-sm">
+            <div className="rounded-lg px-3 md:px-4 py-2 md:py-3 bg-status-external-wait-50 dark:bg-status-external-wait-900/30 text-status-external-wait-600 dark:text-status-external-wait-400 text-sm">
               {voiceError}
             </div>
           </div>
@@ -1630,7 +1632,8 @@ export function ChatView({
           ref={inputContainerRef}
           className={clsx(
             'px-3 py-2 md:px-4 md:py-2.5 border-t border-th-border shrink-0 relative',
-            isDragging && 'ring-2 ring-blue-400 ring-inset bg-blue-50 dark:bg-blue-900/30'
+            isDragging &&
+              'ring-2 ring-status-progress-400 ring-inset bg-status-progress-50 dark:bg-status-progress-900/30'
           )}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
@@ -1672,7 +1675,7 @@ export function ChatView({
               <div
                 role="alert"
                 aria-live="assertive"
-                className="rounded-lg px-3 py-2 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-sm"
+                className="rounded-lg px-3 py-2 bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-600 dark:text-status-danger-400 text-sm"
               >
                 {imagePreparationError
                   ? `Image attachment failed: ${imagePreparationError}`
@@ -1684,8 +1687,8 @@ export function ChatView({
 
             {/* Drop overlay */}
             {isDragging && (
-              <div className="absolute inset-0 bg-blue-100/80 dark:bg-blue-900/80 flex items-center justify-center z-10 pointer-events-none rounded-b-lg">
-                <div className="text-blue-600 dark:text-blue-300 font-medium flex items-center gap-2">
+              <div className="absolute inset-0 bg-status-progress-100/80 dark:bg-status-progress-900/80 flex items-center justify-center z-10 pointer-events-none rounded-b-lg">
+                <div className="text-status-progress-600 dark:text-status-progress-300 font-medium flex items-center gap-2">
                   <FileIcon className="h-6 w-6" />
                   Drop files here
                 </div>
@@ -1705,12 +1708,12 @@ export function ChatView({
                     'tau-button',
                     'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors disabled:opacity-50',
                     confirmingClearQueue
-                      ? 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50'
-                      : 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50'
+                      ? 'bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-100 dark:hover:bg-status-danger-900/50'
+                      : 'bg-status-attention-50 dark:bg-status-attention-900/30 text-status-attention-700 dark:text-status-attention-300 hover:bg-status-attention-100 dark:hover:bg-status-attention-900/50'
                   )}
                 >
                   {isClearingQueue ? (
-                    <span className="inline-block w-3 h-3 border-2 border-amber-300 border-t-amber-600 rounded-full animate-spin" />
+                    <span className="inline-block w-3 h-3 border-2 border-status-attention-300 border-t-amber-600 rounded-full animate-spin" />
                   ) : (
                     <CloseIcon className="w-3 h-3" />
                   )}
@@ -1743,7 +1746,7 @@ export function ChatView({
                         {/* The server's reason (e.g. "Attachment unavailable")
                             is the only thing that tells the user whether a
                             retry can possibly help. */}
-                        <span role="alert" className="text-red-600 dark:text-red-400">
+                        <span role="alert" className="text-status-danger-600 dark:text-status-danger-400">
                           {agentFileErrorText(file.error)}
                         </span>
                         <button className="tau-button" type="button" onClick={() => agentFiles.retryFile(file.id)}>
@@ -1777,7 +1780,7 @@ export function ChatView({
                           img.status === 'uploading'
                             ? 'opacity-50'
                             : img.status === 'error'
-                              ? 'opacity-50 border-red-500'
+                              ? 'opacity-50 border-status-danger-500'
                               : 'border-th-border'
                         )}
                       />
@@ -1787,13 +1790,20 @@ export function ChatView({
                         <div className="absolute inset-0 flex items-center justify-center bg-surface/50 rounded">
                           <div className="relative h-8 w-8">
                             <svg className="h-8 w-8 -rotate-90" viewBox="0 0 32 32">
-                              <circle cx="16" cy="16" r="14" fill="none" stroke="#e5e7eb" strokeWidth="3" />
                               <circle
                                 cx="16"
                                 cy="16"
                                 r="14"
                                 fill="none"
-                                stroke="#3b82f6"
+                                stroke="rgb(var(--status-neutral-200))"
+                                strokeWidth="3"
+                              />
+                              <circle
+                                cx="16"
+                                cy="16"
+                                r="14"
+                                fill="none"
+                                stroke="rgb(var(--status-progress-500))"
                                 strokeWidth="3"
                                 strokeDasharray={`${img.progress * 0.88} 88`}
                                 strokeLinecap="round"
@@ -1808,7 +1818,7 @@ export function ChatView({
 
                       {/* Done checkmark */}
                       {img.status === 'done' && (
-                        <div className="absolute bottom-0 right-0 bg-green-500 text-white rounded-full p-0.5">
+                        <div className="absolute bottom-0 right-0 bg-status-success-500 text-on-strong rounded-full p-0.5">
                           <CheckIcon className="h-3 w-3" />
                         </div>
                       )}
@@ -1816,7 +1826,7 @@ export function ChatView({
                       {/* Error indicator */}
                       {img.status === 'error' && (
                         <div
-                          className="absolute bottom-0 right-0 bg-red-500 text-white rounded-full p-0.5"
+                          className="absolute bottom-0 right-0 bg-status-danger-500 text-on-strong rounded-full p-0.5"
                           title={img.error}
                         >
                           <CloseIcon className="h-3 w-3" />
@@ -1828,7 +1838,7 @@ export function ChatView({
                       <button
                         type="button"
                         onClick={() => retryImageUpload(img.id)}
-                        className="tau-button mt-1 block w-16 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+                        className="tau-button mt-1 block w-16 text-xs text-status-progress-600 dark:text-status-progress-400 hover:underline"
                         aria-label="Retry image upload"
                       >
                         Re-upload
@@ -1840,7 +1850,7 @@ export function ChatView({
                       <button
                         type="button"
                         onClick={() => removeImage(img.id)}
-                        className="tau-button absolute -top-1 -right-1 bg-red-500 hover:bg-red-600 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="tau-button absolute -top-1 -right-1 bg-status-danger-500 hover:bg-status-danger-600 text-on-strong rounded-full w-5 h-5 flex items-center justify-center text-xs shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
                         title="Remove image"
                         aria-label="Remove image"
                       >
@@ -1855,7 +1865,7 @@ export function ChatView({
                   <button
                     type="button"
                     onClick={clearAllImages}
-                    className="tau-button flex items-center gap-1 px-2 py-1 text-xs text-muted hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors self-center"
+                    className="tau-button flex items-center gap-1 px-2 py-1 text-xs text-muted hover:text-status-danger-600 dark:hover:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/30 rounded transition-colors self-center"
                   >
                     <TrashIcon className="h-3 w-3" />
                     Clear all
@@ -1931,7 +1941,7 @@ export function ChatView({
                 disabled={disabled || isUploading || isSubmitting}
                 rows={1}
                 onFocus={(event) => resizeTextarea(event.currentTarget)}
-                className="tau-field w-full min-h-[46px] md:min-h-[38px] shrink-0 rounded-md border-input-border bg-input-bg text-primary focus:border-blue-500 focus:ring-blue-500 px-3 py-2.5 md:py-2 border disabled:bg-surface-secondary resize-none max-h-40 overflow-y-auto text-base md:text-sm"
+                className="tau-field w-full min-h-[46px] md:min-h-[38px] shrink-0 rounded-md border-input-border bg-input-bg text-primary focus:border-status-progress-500 focus:ring-status-progress-500 px-3 py-2.5 md:py-2 border disabled:bg-surface-secondary resize-none max-h-40 overflow-y-auto text-base md:text-sm"
               />
               {/* File mention autocomplete dropdown */}
               {mentionState.isOpen && squadId && (
@@ -1945,8 +1955,8 @@ export function ChatView({
               )}
               <p className="text-xs text-placeholder !mt-1 hidden md:block">
                 {voiceState === 'recording' ? (
-                  <span className="text-red-500 dark:text-red-400 flex items-center gap-1">
-                    <span className="inline-block w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                  <span className="text-status-danger-500 dark:text-status-danger-400 flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 bg-status-danger-500 rounded-full animate-pulse" />
                     {isHoldMode
                       ? 'Hold-to-talk... release to send, Escape to cancel'
                       : 'Recording... ↑ to send, ↓ to stop and preview, Escape to cancel'}
@@ -2003,7 +2013,7 @@ export function ChatView({
                     <div className="relative flex items-center justify-center">
                       {voiceState === 'recording' && (
                         <span
-                          className="absolute inset-0 rounded-md bg-red-400 pointer-events-none"
+                          className="absolute inset-0 rounded-md bg-status-danger-400 pointer-events-none"
                           style={{
                             opacity: 0.15 + voiceVolume * 0.35,
                             transform: `scale(${1 + voiceVolume * 0.4})`,
@@ -2031,7 +2041,7 @@ export function ChatView({
                           'tau-button',
                           'relative z-10 p-2.5 md:p-2 rounded-md min-h-[44px] md:min-h-0 flex items-center justify-center transition-colors disabled:opacity-50',
                           voiceState === 'recording'
-                            ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50'
+                            ? 'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50'
                             : voiceState === 'transcribing'
                               ? 'bg-surface-secondary text-placeholder'
                               : 'text-muted hover:text-secondary hover:bg-surface-hover'
@@ -2049,7 +2059,7 @@ export function ChatView({
                         }
                       >
                         {voiceState === 'transcribing' ? (
-                          <span className="inline-block w-5 h-5 border-2 border-gray-300 dark:border-gray-600 border-t-gray-600 dark:border-t-gray-300 rounded-full animate-spin" />
+                          <span className="inline-block w-5 h-5 border-2 border-status-neutral-300 dark:border-status-neutral-600 border-t-gray-600 dark:border-t-gray-300 rounded-full animate-spin" />
                         ) : (
                           <MicIcon className="w-5 h-5" />
                         )}
@@ -2071,15 +2081,15 @@ export function ChatView({
                           'tau-button',
                           'p-2.5 md:p-2 rounded-md min-h-[44px] md:min-h-0 flex items-center justify-center transition-colors',
                           tts.isPlaying || tts.isSynthesizing
-                            ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                            ? 'bg-status-progress-100 dark:bg-status-progress-900/30 text-status-progress-600 dark:text-status-progress-400'
                             : tts.enabled
-                              ? 'text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30'
+                              ? 'text-status-progress-600 dark:text-status-progress-400 hover:bg-status-progress-50 dark:hover:bg-status-progress-900/30'
                               : 'text-placeholder hover:text-secondary hover:bg-surface-hover'
                         )}
                         title={tts.enabled ? 'Disable auto-speak' : 'Enable auto-speak'}
                       >
                         {tts.isSynthesizing ? (
-                          <span className="inline-block w-5 h-5 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin" />
+                          <span className="inline-block w-5 h-5 border-2 border-status-progress-300 border-t-blue-600 rounded-full animate-spin" />
                         ) : tts.enabled ? (
                           <SpeakerOnIcon className={clsx('w-5 h-5', tts.isPlaying && 'animate-pulse')} />
                         ) : (
@@ -2100,7 +2110,7 @@ export function ChatView({
                       'tau-button',
                       'p-2.5 md:p-2 rounded-md min-h-[44px] md:min-h-0 flex items-center justify-center transition-colors',
                       autoScroll
-                        ? 'text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30'
+                        ? 'text-status-progress-600 dark:text-status-progress-400 hover:bg-status-progress-50 dark:hover:bg-status-progress-900/30'
                         : 'text-placeholder hover:text-secondary hover:bg-surface-hover'
                     )}
                     title={autoScroll ? 'Auto-scroll enabled' : 'Auto-scroll disabled'}
@@ -2113,7 +2123,7 @@ export function ChatView({
                     <button
                       type="button"
                       onClick={onStop}
-                      className="tau-button chat-composer-stop px-2.5 py-2 md:py-1.5 rounded-md text-white text-sm font-medium min-h-[44px] md:min-h-0 bg-red-600 hover:bg-red-700 active:bg-red-800 transition-colors"
+                      className="tau-button chat-composer-stop px-2.5 py-2 md:py-1.5 rounded-md text-on-strong text-sm font-medium min-h-[44px] md:min-h-0 bg-status-danger-600 hover:bg-status-danger-700 active:bg-status-danger-800 transition-colors"
                       title="Stop"
                     >
                       Stop
@@ -2130,8 +2140,8 @@ export function ChatView({
                           'tau-button',
                           'hidden md:block px-2 py-1.5 rounded-l-md text-sm font-medium border-r transition-colors',
                           deliveryMode === 'steer'
-                            ? 'bg-blue-600 hover:bg-blue-700 text-white border-blue-700'
-                            : 'bg-amber-600 hover:bg-amber-700 text-white border-amber-700'
+                            ? 'bg-status-progress-600 hover:bg-status-progress-700 text-on-strong border-status-progress-700'
+                            : 'bg-status-attention-600 hover:bg-status-attention-700 text-on-strong border-status-attention-700'
                         )}
                         title={
                           deliveryMode === 'steer'
@@ -2175,10 +2185,10 @@ export function ChatView({
                         }
                         className={clsx(
                           'tau-button',
-                          'chat-composer-submit px-3 py-2 md:py-1.5 rounded-r-md text-white text-sm disabled:opacity-50 font-medium transition-colors',
+                          'chat-composer-submit px-3 py-2 md:py-1.5 rounded-r-md text-on-strong text-sm disabled:opacity-50 font-medium transition-colors',
                           deliveryMode === 'steer'
-                            ? 'bg-blue-600 hover:bg-blue-700 active:bg-blue-800'
-                            : 'bg-amber-600 hover:bg-amber-700 active:bg-amber-800'
+                            ? 'bg-status-progress-600 hover:bg-status-progress-700 active:bg-status-progress-800'
+                            : 'bg-status-attention-600 hover:bg-status-attention-700 active:bg-status-attention-800'
                         )}
                       >
                         <SendIcon className="h-5 w-5 md:hidden" />
@@ -2219,7 +2229,7 @@ export function ChatView({
                       className={clsx(
                         'tau-button',
                         'px-3 py-2 md:py-1.5 rounded-md text-sm disabled:opacity-50 font-medium min-h-[44px] md:min-h-0',
-                        sendButtonClassName ? 'text-white' : 'text-on-accent',
+                        sendButtonClassName ? 'text-on-strong' : 'text-on-accent',
                         sendButtonClassName ?? 'bg-accent hover:bg-accent-hover active:bg-accent-active'
                       )}
                     >
@@ -2385,7 +2395,7 @@ function NavigateButtons({ navigations }: { navigations: { path: string; id: str
         <Link
           key={nav.id}
           to={nav.path}
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-status-progress-50 dark:bg-status-progress-900/30 text-status-progress-700 dark:text-status-progress-300 hover:bg-status-progress-100 dark:hover:bg-status-progress-900/50 transition-colors"
         >
           {nav.path}
           <span aria-hidden="true">&rarr;</span>
@@ -2608,7 +2618,7 @@ function StreamingBlockGroupSection({
           className={clsx('w-3 h-3 shrink-0 text-muted transition-transform', expanded && 'rotate-90')}
         />
         {hasRunningTool && (
-          <span className="inline-block w-3 h-3 border-2 border-gray-300 dark:border-gray-600 border-t-gray-600 dark:border-t-gray-300 rounded-full animate-spin shrink-0" />
+          <span className="inline-block w-3 h-3 border-2 border-status-neutral-300 dark:border-status-neutral-600 border-t-gray-600 dark:border-t-gray-300 rounded-full animate-spin shrink-0" />
         )}
         <span className="font-medium">{summary}</span>
       </button>
@@ -2680,15 +2690,23 @@ function StreamingToolCallItem({
           className="tau-button flex-1 flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors text-left min-w-0"
         >
           {inProgress ? (
-            <span className="inline-block w-3 h-3 border-2 border-gray-300 dark:border-gray-600 border-t-gray-600 dark:border-t-gray-300 rounded-full animate-spin shrink-0" />
+            <span className="inline-block w-3 h-3 border-2 border-status-neutral-300 dark:border-status-neutral-600 border-t-gray-600 dark:border-t-gray-300 rounded-full animate-spin shrink-0" />
           ) : isError ? (
-            <span className="text-red-500 dark:text-red-400 shrink-0 inline-block w-3 text-center">&#10007;</span>
+            <span className="text-status-danger-500 dark:text-status-danger-400 shrink-0 inline-block w-3 text-center">
+              &#10007;
+            </span>
           ) : (
-            <span className="text-green-600 dark:text-green-400 shrink-0 inline-block w-3 text-center">&#10003;</span>
+            <span className="text-status-success-600 dark:text-status-success-400 shrink-0 inline-block w-3 text-center">
+              &#10003;
+            </span>
           )}
           <span className="font-medium shrink-0">{toolCall.toolName}</span>
           <ToolSummary renderers={toolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
-          {isError && <span className="text-red-500 dark:text-red-400 text-[10px] font-medium shrink-0">ERROR</span>}
+          {isError && (
+            <span className="text-status-danger-500 dark:text-status-danger-400 text-[10px] font-medium shrink-0">
+              ERROR
+            </span>
+          )}
           <ChevronRightIcon
             className={clsx('w-3 h-3 shrink-0 text-muted transition-transform', expanded && 'rotate-90')}
           />
@@ -2699,7 +2717,7 @@ function StreamingToolCallItem({
               e.stopPropagation()
               onAbortTool()
             }}
-            className="tau-button px-2 py-0.5 ml-1 text-xs font-medium text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/30 rounded transition-colors shrink-0"
+            className="tau-button px-2 py-0.5 ml-1 text-xs font-medium text-status-external-wait-600 dark:text-status-external-wait-400 hover:bg-status-external-wait-50 dark:hover:bg-status-external-wait-900/30 rounded transition-colors shrink-0"
           >
             Abort
           </button>
