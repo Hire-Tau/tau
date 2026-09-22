@@ -108,7 +108,7 @@ export function RelationshipsList({ squadId, relationships }: Props) {
             </div>
           </div>
           {createMutation.isError && (
-            <p className="mt-2 text-sm text-red-600 dark:text-red-400">
+            <p className="mt-2 text-sm text-status-danger-600 dark:text-status-danger-400">
               {createMutation.error instanceof Error ? createMutation.error.message : 'Failed to create relationship'}
             </p>
           )}

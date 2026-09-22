@@ -269,7 +269,7 @@ export function FileUpload({ squadId, targetDir = '', onUploadStart, onUploadCom
           }}
           onDrop={handleDrop}
         >
-          <div className="absolute inset-0 bg-black/70 pointer-events-none" />
+          <div className="absolute inset-0 bg-chrome-scrim/70 pointer-events-none" />
           <div className="text-center pointer-events-none z-10">
             <p className="text-lg font-medium text-accent-light">Drop files here</p>
             <p className="text-sm text-muted">Files and folders will be uploaded</p>
@@ -308,7 +308,7 @@ export function FileUpload({ squadId, targetDir = '', onUploadStart, onUploadCom
           {uploadMutation.isPending && (
             <button
               onClick={handleCancelUpload}
-              className="tau-button text-xs px-2 py-1 rounded bg-red-500/10 hover:bg-red-500/20 text-red-500 hover:text-red-600 cursor-pointer"
+              className="tau-button text-xs px-2 py-1 rounded bg-status-danger-500/10 hover:bg-status-danger-500/20 text-status-danger-500 hover:text-status-danger-600 cursor-pointer"
               title="Cancel upload"
             >
               Cancel
@@ -327,7 +327,7 @@ export function FileUpload({ squadId, targetDir = '', onUploadStart, onUploadCom
 
         {uploadError && (
           <div className="flex items-center gap-2 px-3 pb-2">
-            <span className="text-xs text-red-500 flex-1 whitespace-pre-line">{uploadError}</span>
+            <span className="text-xs text-status-danger-500 flex-1 whitespace-pre-line">{uploadError}</span>
             <button
               onClick={() => setUploadError(null)}
               className="tau-button text-xs text-muted hover:text-secondary"
@@ -341,7 +341,7 @@ export function FileUpload({ squadId, targetDir = '', onUploadStart, onUploadCom
 
       {/* Overwrite confirmation dialog */}
       {showOverwriteDialog && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-chrome-scrim/50 flex items-center justify-center z-50">
           <div className="tau-overlay bg-surface rounded-lg shadow-xl p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold text-primary mb-2">Files already exist</h3>
             <p className="text-sm text-muted mb-4">{skippedFiles.length} file(s) already exist at the destination:</p>

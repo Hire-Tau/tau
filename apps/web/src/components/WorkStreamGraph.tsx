@@ -94,8 +94,10 @@ export function WorkStreamGraph({ workStreams, agentMap, onSelectWorkStream }: W
                   <div
                     className={clsx(
                       'h-full rounded-lg border bg-surface p-3 transition-colors motion-reduce:transition-none hover:border-accent group-focus-visible:ring-2 group-focus-visible:ring-accent group-focus-visible:ring-offset-2 group-focus-visible:ring-offset-surface',
-                      boosted ? 'border-orange-400 ring-2 ring-orange-400/50' : 'border-th-border',
-                      node.unresolved && 'border-dashed border-red-400'
+                      boosted
+                        ? 'border-status-external-wait-400 ring-2 ring-status-external-wait-400/50'
+                        : 'border-th-border',
+                      node.unresolved && 'border-dashed border-status-danger-400'
                     )}
                   >
                     <div className="mb-2 truncate text-sm font-medium text-primary" title={stream.title}>
@@ -111,7 +113,7 @@ export function WorkStreamGraph({ workStreams, agentMap, onSelectWorkStream }: W
                         {effectivePriority}
                       </Badge>
                       <span
-                        className="ml-auto flex h-6 w-6 items-center justify-center rounded-full bg-purple-100 text-xs font-semibold text-purple-700 dark:bg-purple-900/50 dark:text-purple-200"
+                        className="ml-auto flex h-6 w-6 items-center justify-center rounded-full bg-status-human-wait-100 text-xs font-semibold text-status-human-wait-700 dark:bg-status-human-wait-900/50 dark:text-status-human-wait-200"
                         aria-label={assigneeLabel ? `Assigned to ${assigneeLabel}` : 'Unassigned'}
                       >
                         {assigneeInitial}
@@ -138,7 +140,7 @@ export function WorkStreamGraph({ workStreams, agentMap, onSelectWorkStream }: W
               {priority}
             </Badge>
           ))}
-          <span className="rounded border-2 border-orange-400 px-2 py-0.5">Boosted priority</span>
+          <span className="rounded border-2 border-status-external-wait-400 px-2 py-0.5">Boosted priority</span>
         </div>
       </details>
     </div>

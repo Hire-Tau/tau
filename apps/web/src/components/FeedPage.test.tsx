@@ -278,7 +278,7 @@ describe('FeedPage', () => {
 
     expect(html).toContain('data-testid="feed-pull-to-refresh"')
     expect(html).toContain('data-testid="pull-to-refresh-indicator"')
-    expect(html).toContain('#7c3aed')
+    expect(html).toContain('var(--brand-gradient-to)')
   })
 
   test('does not force the pull-to-refresh root to full height so app shell bottom padding remains visible', () => {

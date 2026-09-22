@@ -114,8 +114,10 @@ function withIframeCsp(content: string) {
 
 function SandboxAppPlaceholder() {
   return (
-    <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 p-6 text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
-      <p className="font-medium text-gray-900 dark:text-gray-100">Sandbox apps are not available yet.</p>
+    <div className="rounded-xl border border-dashed border-status-neutral-300 bg-status-neutral-50 p-6 text-sm text-status-neutral-600 dark:border-status-neutral-700 dark:bg-status-neutral-900 dark:text-status-neutral-300">
+      <p className="font-medium text-status-neutral-900 dark:text-status-neutral-100">
+        Sandbox apps are not available yet.
+      </p>
       <p className="mt-1">
         This artifact type requires an isolated app runtime that has not been implemented in the web renderer.
       </p>
@@ -127,7 +129,7 @@ function ArtifactError({ title, detail }: { title: string; detail: string }) {
   return (
     <div
       role="alert"
-      className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-200"
+      className="rounded-xl border border-status-danger-200 bg-status-danger-50 p-4 text-sm text-status-danger-800 dark:border-status-danger-900/60 dark:bg-status-danger-950/40 dark:text-status-danger-200"
     >
       <p className="font-semibold">{title}</p>
       <p className="mt-1">{detail}</p>

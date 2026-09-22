@@ -36,11 +36,14 @@ export function terminalTokenColor(channels: string): string | undefined {
   return `rgb(${parts.join(', ')})`
 }
 
-export function readTerminalTheme(style: Pick<CSSStyleDeclaration, 'getPropertyValue'>): ITheme {
+export function readTerminalTheme(
+  style: Pick<CSSStyleDeclaration, 'getPropertyValue'>,
+  palette: 'term' | 'log' = 'term'
+): ITheme {
   return Object.fromEntries(
     Object.entries(TERMINAL_TOKENS).map(([key, token]) => [
       key,
-      terminalTokenColor(style.getPropertyValue(token).trim()),
+      terminalTokenColor(style.getPropertyValue(token.replace('--term-', `--${palette}-`)).trim()),
     ])
   )
 }
@@ -51,12 +54,16 @@ export function readTerminalTheme(style: Pick<CSSStyleDeclaration, 'getPropertyV
  * effect) avoids child/parent effect ordering races and handles custom overrides.
  * The constructor also reads tokens BEFORE open(), so the first canvas is right.
  */
-export function observeTerminalTheme(terminal: { options: { theme?: ITheme } }, container: HTMLElement): () => void {
+export function observeTerminalTheme(
+  terminal: { options: { theme?: ITheme } },
+  container: HTMLElement,
+  palette: 'term' | 'log' = 'term'
+): () => void {
   const root = container.ownerDocument.documentElement
   const view = container.ownerDocument.defaultView!
   const update = () => {
     const style = view.getComputedStyle(root)
-    terminal.options.theme = readTerminalTheme(style)
+    terminal.options.theme = readTerminalTheme(style, palette)
     // xterm 5.5 has no scrollbar entries in ITheme. Its viewport is a native
     // scrollbar; opt into CSS styling only when a theme replaces the auto token.
     container.toggleAttribute(

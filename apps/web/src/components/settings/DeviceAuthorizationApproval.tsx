@@ -20,14 +20,14 @@ export function DeviceAuthorizationApproval(props: {
           <SkeletonBlock className="h-9 w-24" />
         </LoadingSurface>
       ) : props.invalid ? (
-        <p className="text-sm text-red-600">This authorization request is invalid or expired.</p>
+        <p className="text-sm text-status-danger-600">This authorization request is invalid or expired.</p>
       ) : props.preview ? (
         <>
           <p className="text-sm text-muted">
             Approve <strong>{props.preview.name}</strong> to access this account. This request expires{' '}
             {new Date(props.preview.expiresAt).toLocaleString()}.
           </p>
-          {props.error && <p className="text-sm text-red-600 dark:text-red-400">{props.error}</p>}
+          {props.error && <p className="text-sm text-status-danger-600 dark:text-status-danger-400">{props.error}</p>}
           <button
             onClick={props.onApprove}
             disabled={props.isPending || props.isSuccess}

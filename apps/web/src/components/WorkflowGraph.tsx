@@ -835,7 +835,11 @@ export function WorkflowGraph({
                           <span
                             className={clsx(
                               'shrink-0',
-                              isApproval ? 'text-amber-400' : node.kind === 'step' ? 'text-blue-400' : 'text-muted'
+                              isApproval
+                                ? 'text-status-attention-400'
+                                : node.kind === 'step'
+                                  ? 'text-status-progress-400'
+                                  : 'text-muted'
                             )}
                           >
                             <NodeIcon className="h-4 w-4" />
@@ -851,7 +855,7 @@ export function WorkflowGraph({
                           </span>
                           {changedStepIds.includes(node.stepId ?? '') && node.kind === 'step' && (
                             <span
-                              className="absolute bottom-3 left-3 h-2 w-2 rounded-full bg-blue-400"
+                              className="absolute bottom-3 left-3 h-2 w-2 rounded-full bg-status-progress-400"
                               title="Changed by assistant"
                               role="img"
                               aria-label="Changed by assistant"
@@ -906,7 +910,7 @@ export function WorkflowGraph({
                         className={clsx(
                           'block truncate text-xs',
                           (terminal || (fill && !run)) && 'hidden',
-                          label === 'Completed' || label === 'Joined' ? 'text-green-500' : 'text-secondary'
+                          label === 'Completed' || label === 'Joined' ? 'text-status-success-500' : 'text-secondary'
                         )}
                       >
                         {node.id === definition.entry ? 'Start · ' : ''}
@@ -916,7 +920,7 @@ export function WorkflowGraph({
                     {editable && step && selected === node.id && onDeleteStep && (
                       <button
                         type="button"
-                        className="tau-button absolute z-10 flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-red-500/10 hover:text-red-400"
+                        className="tau-button absolute z-10 flex h-7 w-7 items-center justify-center rounded-md text-muted hover:bg-status-danger-500/10 hover:text-status-danger-400"
                         style={{ left: node.x + W - 35, top: node.y + 5 }}
                         title={`Delete ${node.label} (Delete or Backspace)`}
                         onClick={onDeleteStep}
@@ -1033,7 +1037,7 @@ export function WorkflowGraph({
               className="tau-overlay pointer-events-auto flex max-w-lg items-start gap-3 rounded-lg border border-th-border bg-surface p-4 text-sm shadow-lg"
             >
               <div className="min-w-0 flex-1 space-y-2 break-words">
-                <p className="font-medium leading-5 text-amber-400">Workflow needs attention</p>
+                <p className="font-medium leading-5 text-status-attention-400">Workflow needs attention</p>
                 <p className="leading-relaxed text-primary">{notice.message}</p>
                 {notice.hint && <p className="text-xs leading-relaxed text-secondary">{notice.hint}</p>}
               </div>

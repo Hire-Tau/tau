@@ -56,7 +56,9 @@ export function PublicKeyBlock({ value, label }: { value: string; label?: string
         </button>
       </div>
       {copyFailed && (
-        <p className="text-xs text-red-600 dark:text-red-400">Couldn&apos;t copy — select the key manually.</p>
+        <p className="text-xs text-status-danger-600 dark:text-status-danger-400">
+          Couldn&apos;t copy — select the key manually.
+        </p>
       )}
     </div>
   )

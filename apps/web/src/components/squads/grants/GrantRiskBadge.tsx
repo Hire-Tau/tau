@@ -5,9 +5,10 @@ interface Props {
 }
 
 const SEVERITY_STYLES: Record<GrantRisk['severity'], string> = {
-  low: 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200',
-  medium: 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200',
-  high: 'bg-red-100 text-red-900 dark:bg-red-900/40 dark:text-red-200',
+  low: 'bg-status-progress-100 text-status-progress-800 dark:bg-status-progress-900/40 dark:text-status-progress-200',
+  medium:
+    'bg-status-attention-100 text-status-attention-900 dark:bg-status-attention-900/40 dark:text-status-attention-200',
+  high: 'bg-status-danger-100 text-status-danger-900 dark:bg-status-danger-900/40 dark:text-status-danger-200',
 }
 
 export function GrantRiskBadge({ risks }: Props) {

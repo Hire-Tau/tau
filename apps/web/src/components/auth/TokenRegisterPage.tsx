@@ -113,7 +113,7 @@ export function TokenRegisterPage({ onSuccess }: Props) {
 
         {!checking && !context && (
           <>
-            <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+            <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
               {error ?? 'This link is invalid or has expired.'}
             </p>
             <p className="text-xs text-secondary mt-4">
@@ -181,7 +181,7 @@ export function TokenRegisterPage({ onSuccess }: Props) {
               {loading ? 'Registering…' : isRecovery ? 'Replace my passkey' : 'Register with Passkey'}
             </button>
             {error && (
-              <p role="alert" className="text-red-600 dark:text-red-400 text-sm">
+              <p role="alert" className="text-status-danger-600 dark:text-status-danger-400 text-sm">
                 {error}
               </p>
             )}

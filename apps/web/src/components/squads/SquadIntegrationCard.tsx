@@ -65,7 +65,7 @@ export function SquadIntegrationCard({
           >
             <span
               className={clsx(
-                'absolute left-[3px] top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-white shadow transition-transform',
+                'absolute left-[3px] top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-chrome-paper shadow transition-transform',
                 enabled ? 'translate-x-4' : 'translate-x-0'
               )}
             />
@@ -73,7 +73,7 @@ export function SquadIntegrationCard({
         </div>
         <p className="mt-3 text-sm leading-relaxed text-muted">{entry.description}</p>
         {(toggle.isError || selection.isError) && (
-          <p role="alert" className="mt-3 text-sm text-red-500">
+          <p role="alert" className="mt-3 text-sm text-status-danger-500">
             Unable to load or update this squad’s integration.
           </p>
         )}

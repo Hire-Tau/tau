@@ -65,9 +65,13 @@ export function SharedPromptPickerView({
                   <span className="font-medium">{include?.name ?? id}</span>{' '}
                   <span className="text-xs text-muted font-mono">{id}</span>
                   {include?.disabled && (
-                    <span className="ml-1 text-xs text-amber-600 dark:text-amber-400">disabled</span>
+                    <span className="ml-1 text-xs text-status-attention-600 dark:text-status-attention-400">
+                      disabled
+                    </span>
                   )}
-                  {!include && !loading && <span className="ml-1 text-xs text-red-600 dark:text-red-400">missing</span>}
+                  {!include && !loading && (
+                    <span className="ml-1 text-xs text-status-danger-600 dark:text-status-danger-400">missing</span>
+                  )}
                 </span>
                 <button
                   type="button"
@@ -92,7 +96,7 @@ export function SharedPromptPickerView({
                   aria-label={`Remove ${id}`}
                   disabled={loading}
                   onClick={() => onChange(value.filter((_entry, position) => position !== index))}
-                  className="tau-button text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+                  className="tau-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300"
                 >
                   ✕
                 </button>

@@ -67,7 +67,7 @@ export function WorkflowRunPanel({
       refresh()
     },
   })
-  if (error) return <p className="text-sm text-red-400">Could not load the workflow.</p>
+  if (error) return <p className="text-sm text-status-danger-400">Could not load the workflow.</p>
   if (!run) return null
   const activeAttempts = activeWorkflowAttempts(run.state)
   const focusedAttempt = (run.openWaits ?? stream.openWaits ?? []).find(
@@ -403,7 +403,7 @@ export function WorkflowRunPanel({
         </details>
       )}
       {failure && (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-sm text-status-danger-400">
           {failure.message}
         </p>
       )}

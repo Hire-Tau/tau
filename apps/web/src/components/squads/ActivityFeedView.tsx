@@ -184,12 +184,16 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
             aria-hidden
             className={clsx(
               'inline-block h-1.5 w-1.5 rounded-full',
-              presence.workingCount > 0 ? 'animate-pulse bg-blue-500' : 'bg-placeholder'
+              presence.workingCount > 0 ? 'animate-pulse bg-status-progress-500' : 'bg-placeholder'
             )}
           />
           <span>{presenceLoading ? <SkeletonText className="inline-block w-3" /> : presence.workingCount} working</span>
           <span aria-hidden>·</span>
-          <span className={clsx(presence.needsYouCount > 0 && 'font-medium text-amber-600 dark:text-amber-400')}>
+          <span
+            className={clsx(
+              presence.needsYouCount > 0 && 'font-medium text-status-attention-600 dark:text-status-attention-400'
+            )}
+          >
             {presenceLoading ? <SkeletonText className="inline-block w-3" /> : presence.needsYouCount} waiting on you
           </span>
           <span aria-hidden>·</span>
@@ -245,7 +249,7 @@ export function ActivityFeedView<T extends SquadActivityItem = SquadActivityItem
           </LoadingSurface>
         )}
         {!isLoading && squadActivityStatusMessage(isLoading, isError, items.length) && (
-          <p className={clsx('text-sm py-8 text-center', isError ? 'text-red-600' : 'text-muted')}>
+          <p className={clsx('text-sm py-8 text-center', isError ? 'text-status-danger-600' : 'text-muted')}>
             {squadActivityStatusMessage(isLoading, isError, items.length)}
           </p>
         )}

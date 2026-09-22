@@ -296,7 +296,7 @@ export function BigbrainIntegrationSettings({
   if (pool.isError)
     return (
       <section className={embedded ? undefined : 'mt-6 border-b border-panel-border py-4'}>
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-status-danger-600">
           {boundedError(pool.error, 'Unable to load Bigbrain connections.')}
         </p>
       </section>
@@ -435,7 +435,10 @@ export function BigbrainIntegrationSettings({
                 </form>
               )}
               {confirming && (
-                <div role="alert" className="mt-3 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
+                <div
+                  role="alert"
+                  className="mt-3 rounded-md border border-status-attention-500/50 bg-status-attention-500/10 p-3 text-sm"
+                >
                   <p>
                     This connection is used by {confirming.usage.squadCount} squad
                     {confirming.usage.squadCount === 1 ? '' : 's'}.
@@ -444,7 +447,7 @@ export function BigbrainIntegrationSettings({
                     <p className="mt-1 text-xs">{confirming.usage.squads.map((squad) => squad.name).join(', ')}</p>
                   )}
                   <button
-                    className="tau-button mt-2 rounded-md border border-amber-600 px-3 py-1.5"
+                    className="tau-button mt-2 rounded-md border border-status-attention-600 px-3 py-1.5"
                     onClick={() => {
                       if (confirming.operation === 'disable')
                         action.mutate({ connectionId: connection.id, action: 'disable', confirmAssigned: true })
@@ -526,7 +529,10 @@ export function BigbrainIntegrationSettings({
       {feedback && (
         <p
           role={feedback.kind === 'error' ? 'alert' : 'status'}
-          className={clsx('mt-3 text-sm', feedback.kind === 'error' ? 'text-red-600' : 'text-green-700')}
+          className={clsx(
+            'mt-3 text-sm',
+            feedback.kind === 'error' ? 'text-status-danger-600' : 'text-status-success-700'
+          )}
         >
           {feedback.message}
         </p>

@@ -26,7 +26,7 @@ export function InviteTeamStep() {
           <p className="text-sm font-medium text-primary">Team members{users.length ? ` · ${users.length}` : ''}</p>
           {members.isLoading && <p className="text-xs text-muted">Loading teammates…</p>}
           {members.isError && (
-            <div role="alert" className="text-sm text-red-600 dark:text-red-400">
+            <div role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
               Could not load teammates.{' '}
               <button className="tau-button underline" onClick={() => members.refetch()}>
                 Retry
@@ -168,7 +168,7 @@ function InvitedMember({
         </div>
       )}
       {mutation.isError && (
-        <p role="alert" className="text-xs text-red-600 dark:text-red-400">
+        <p role="alert" className="text-xs text-status-danger-600 dark:text-status-danger-400">
           {mutation.error.message}
         </p>
       )}

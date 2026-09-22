@@ -146,8 +146,8 @@ export function SquadSshKeys({ squadId }: Props) {
                     onConfirm={() => deleteMutation.mutate(key.name)}
                     label="Delete"
                     confirmLabel="Confirm?"
-                    className="tau-button px-2 py-1 text-xs rounded border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                    confirmClassName="px-2 py-1 text-xs rounded border border-red-500 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 transition-colors"
+                    className="tau-button px-2 py-1 text-xs rounded border border-status-danger-300 dark:border-status-danger-800 text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/20 transition-colors"
+                    confirmClassName="px-2 py-1 text-xs rounded border border-status-danger-500 bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 transition-colors"
                     disabled={deleteMutation.isPending}
                   />
                 )}
@@ -175,17 +175,19 @@ export function SquadSshKeys({ squadId }: Props) {
                   'w-full px-3 py-2 text-sm rounded-md border bg-surface text-primary',
                   'placeholder:text-placeholder',
                   ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
-                  keyName && !validateKeyName(keyName) ? 'border-red-500' : 'border-th-border'
+                  keyName && !validateKeyName(keyName) ? 'border-status-danger-500' : 'border-th-border'
                 )}
               />
               {keyName && !validateKeyName(keyName) && (
-                <p className="text-xs text-red-500 mt-1">Only alphanumeric characters, hyphens, and underscores</p>
+                <p className="text-xs text-status-danger-500 mt-1">
+                  Only alphanumeric characters, hyphens, and underscores
+                </p>
               )}
             </div>
 
             <div>
               <label className="block text-xs font-medium text-secondary mb-1">
-                Private Key <span className="text-red-500">*</span>
+                Private Key <span className="text-status-danger-500">*</span>
               </label>
               <textarea
                 value={privateKey}
@@ -251,7 +253,7 @@ export function SquadSshKeys({ squadId }: Props) {
           </div>
 
           {addMutation.isError && (
-            <p className="text-xs text-red-500 mt-2">Failed to add key: {String(addMutation.error)}</p>
+            <p className="text-xs text-status-danger-500 mt-2">Failed to add key: {String(addMutation.error)}</p>
           )}
         </form>
       )}

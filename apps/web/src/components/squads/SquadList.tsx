@@ -238,8 +238,8 @@ function SquadCardContent({
               title="Agent activity in progress"
               aria-label="Agent activity in progress"
             >
-              <span className="absolute inline-flex h-full w-full rounded-full bg-blue-500 opacity-75 animate-ping" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
+              <span className="absolute inline-flex h-full w-full rounded-full bg-status-progress-500 opacity-75 animate-ping" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-status-progress-500" />
             </span>
           )}
         </div>

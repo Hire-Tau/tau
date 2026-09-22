@@ -33,7 +33,7 @@ export function CreateHostWorkspaceField({
         Default: <span className="font-mono">{defaultPath}</span>. Enter an absolute path to override it. Tau will
         create the directory if needed.
       </p>
-      {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p className="mt-1 text-xs text-status-danger-600 dark:text-status-danger-400">{error}</p>}
     </div>
   )
 }

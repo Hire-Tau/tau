@@ -56,8 +56,8 @@ describe('AgentViewTabs', () => {
 
     expect(html).toContain('Subagents')
     expect(html).toContain('>2</span>')
-    expect(html).toContain('bg-blue-500')
-    expect(html).toContain('text-blue-700')
+    expect(html).toContain('bg-status-progress-500')
+    expect(html).toContain('text-status-progress-700')
     expect(html).toContain('animate-pulse')
     expect(html).toContain('aria-label="Subagents, 2 active subagents"')
     expect(html).toContain('Subagents (2 active)')
@@ -73,7 +73,7 @@ describe('AgentViewTabs', () => {
     )
 
     expect(html).toContain('Subagents')
-    expect(html).not.toContain('bg-purple-500')
+    expect(html).not.toContain('bg-status-human-wait-500')
     expect(html).not.toContain('animate-pulse')
     expect(html).not.toContain('aria-label="Subagents, 0 active subagents"')
   })

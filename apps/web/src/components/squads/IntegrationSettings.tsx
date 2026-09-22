@@ -44,7 +44,7 @@ export function IntegrationSettings({ squadId }: { squadId: string }) {
       {catalog.isPending || permissions.isLoading ? (
         <FormSkeleton label="Loading integrations" sections={1} />
       ) : catalog.isError || permissions.isError ? (
-        <p role="alert" className="text-sm text-red-500">
+        <p role="alert" className="text-sm text-status-danger-500">
           Unable to load squad integrations.
         </p>
       ) : !permissions.can('integrations:read') ? (
@@ -189,7 +189,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
                       setGithubEntries((prev) => prev.filter((_, i) => i !== index))
                       setHasChanges(true)
                     }}
-                    className="tau-button text-xs text-red-500 hover:underline"
+                    className="tau-button text-xs text-status-danger-500 hover:underline"
                   >
                     Remove repository
                   </button>
@@ -245,7 +245,7 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
                       setLinearEntries((prev) => prev.filter((_, i) => i !== index))
                       setHasChanges(true)
                     }}
-                    className="tau-button text-xs text-red-500 hover:underline"
+                    className="tau-button text-xs text-status-danger-500 hover:underline"
                   >
                     Remove team
                   </button>
@@ -292,9 +292,9 @@ function IntegrationRoutingSettings({ squadId, provider }: { squadId: string; pr
         </button>
       )}
       {updateMutation.isError && (
-        <p className="text-xs text-red-500 mt-2">Failed to save: {String(updateMutation.error)}</p>
+        <p className="text-xs text-status-danger-500 mt-2">Failed to save: {String(updateMutation.error)}</p>
       )}
-      {!hasChanges && updateMutation.isSuccess && <p className="text-xs text-green-500 mt-2">✓ Saved.</p>}
+      {!hasChanges && updateMutation.isSuccess && <p className="text-xs text-status-success-500 mt-2">✓ Saved.</p>}
     </div>
   )
 }

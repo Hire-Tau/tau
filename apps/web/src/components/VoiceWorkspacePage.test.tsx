@@ -636,7 +636,7 @@ describe('VoiceWorkspacePage artifacts', () => {
 
     expect(html).toContain('voice-orb--muted .voice-orb__glow')
     expect(html).toContain('voice-orb-muted-glow')
-    expect(html).toContain('rgba(148,163,184')
+    expect(html).toContain('var(--voice-muted-primary)')
   })
 
   test('makes the orb clickable to interrupt while the assistant is speaking', () => {

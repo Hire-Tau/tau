@@ -59,3 +59,26 @@ describe('account theme migration (real runner, isolated database)', () => {
     expect(await connection.unsafe('SELECT * FROM user_preferences')).toHaveLength(0)
   })
 })
+
+test('the complete generated chain installs on an empty database', async () => {
+  const freshName = `theme_fresh_${crypto.randomUUID().replaceAll('-', '').slice(0, 12)}`
+  const admin = createPostgresConnection(urlFor('postgres'), { max: 1, onnotice: () => {} })
+  let client: ReturnType<typeof createPostgresConnection> | undefined
+  let connection: postgres.ReservedSql | undefined
+  try {
+    await admin.unsafe(`CREATE DATABASE "${freshName}"`)
+    client = createPostgresConnection(urlFor(freshName), { max: 1, onnotice: () => {} })
+    connection = await client.reserve()
+    await applyMigrations(connection, migrations)
+    await applyMigrations(connection, migrations)
+    expect(await connection.unsafe('SELECT * FROM user_preferences')).toHaveLength(0)
+    const [column] = await connection.unsafe(`SELECT column_default FROM information_schema.columns
+      WHERE table_name = 'user_preferences' AND column_name = 'updated_at'`)
+    expect(column.column_default).toBe('now()')
+  } finally {
+    connection?.release()
+    await client?.end()
+    await admin.unsafe(`DROP DATABASE IF EXISTS "${freshName}" WITH (FORCE)`)
+    await admin.end()
+  }
+})

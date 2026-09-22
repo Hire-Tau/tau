@@ -172,8 +172,8 @@ function RemoteHostRow({ host, squads, canWrite }: { host: RemoteHostWithGrants;
                 className={clsx(
                   'text-xs px-1.5 py-0.5 rounded',
                   checkResult.reachable
-                    ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                    : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                    ? 'bg-status-success-100 dark:bg-status-success-900/30 text-status-success-700 dark:text-status-success-400'
+                    : 'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-400'
                 )}
               >
                 {checkResult.reachable ? 'reachable' : 'unreachable'}
@@ -200,17 +200,21 @@ function RemoteHostRow({ host, squads, canWrite }: { host: RemoteHostWithGrants;
               onConfirm={() => deleteMutation.mutate()}
               label="Delete"
               confirmLabel="Confirm?"
-              className="tau-button text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 font-medium disabled:opacity-50"
-              confirmClassName="text-xs text-red-700 dark:text-red-300 font-medium"
+              className="tau-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium disabled:opacity-50"
+              confirmClassName="text-xs text-status-danger-700 dark:text-status-danger-300 font-medium"
               disabled={isMutating}
             />
           </div>
         )}
       </div>
 
-      {actionError && <p className="text-xs text-red-600 dark:text-red-400 mt-2">{(actionError as Error).message}</p>}
+      {actionError && (
+        <p className="text-xs text-status-danger-600 dark:text-status-danger-400 mt-2">
+          {(actionError as Error).message}
+        </p>
+      )}
       {checkResult && !checkResult.reachable && checkResult.error && (
-        <p className="text-xs text-red-600 dark:text-red-400 mt-2">{checkResult.error}</p>
+        <p className="text-xs text-status-danger-600 dark:text-status-danger-400 mt-2">{checkResult.error}</p>
       )}
 
       {expanded && (
@@ -222,7 +226,7 @@ function RemoteHostRow({ host, squads, canWrite }: { host: RemoteHostWithGrants;
               <SkeletonLine className="w-3/5" />
             </LoadingSurface>
           ) : detail.isError ? (
-            <p className="text-red-600 dark:text-red-400">{(detail.error as Error).message}</p>
+            <p className="text-status-danger-600 dark:text-status-danger-400">{(detail.error as Error).message}</p>
           ) : (
             <PublicKeyBlock label="SSH public key" value={host.sshPublicKey} />
           )}
@@ -243,7 +247,7 @@ function RemoteHostRow({ host, squads, canWrite }: { host: RemoteHostWithGrants;
                       <button
                         onClick={() => revokeGrantMutation.mutate(squadId)}
                         disabled={revokeGrantMutation.isPending}
-                        className="tau-button text-muted hover:text-red-600 dark:hover:text-red-400 disabled:opacity-50"
+                        className="tau-button text-muted hover:text-status-danger-600 dark:hover:text-status-danger-400 disabled:opacity-50"
                         title={`Revoke ${squadName(squadId)}'s access`}
                       >
                         ×
@@ -355,7 +359,12 @@ function RegisterRemoteHostForm({ squads }: { squads: Squad[] }) {
             onChange={(e) => setSshPort(e.target.value)}
             placeholder="Port"
             inputMode="numeric"
-            className={clsx('tau-field', inputClass, 'w-24', sshPort && !isPortValid(sshPort) && 'border-red-500')}
+            className={clsx(
+              'tau-field',
+              inputClass,
+              'w-24',
+              sshPort && !isPortValid(sshPort) && 'border-status-danger-500'
+            )}
           />
           <input
             value={sshUser}
@@ -380,12 +389,16 @@ function RegisterRemoteHostForm({ squads }: { squads: Squad[] }) {
           </button>
         </div>
         {name && !NAME_RE.test(name) && (
-          <p className="text-xs text-red-500">Name must be lowercase letters, digits, and hyphens only</p>
+          <p className="text-xs text-status-danger-500">Name must be lowercase letters, digits, and hyphens only</p>
         )}
-        {sshPort && !isPortValid(sshPort) && <p className="text-xs text-red-500">Port must be between 1 and 65535</p>}
+        {sshPort && !isPortValid(sshPort) && (
+          <p className="text-xs text-status-danger-500">Port must be between 1 and 65535</p>
+        )}
 
         {registerMutation.isError && (
-          <p className="text-xs text-red-600 dark:text-red-400">{(registerMutation.error as Error).message}</p>
+          <p className="text-xs text-status-danger-600 dark:text-status-danger-400">
+            {(registerMutation.error as Error).message}
+          </p>
         )}
 
         {registered && (
