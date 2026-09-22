@@ -627,6 +627,14 @@ test('local reconnect clears retired broker ownership and both artifacts drain',
       credentialRef: localCredentialRef,
       materialRevision: localRevision,
     })
+    const [schedule] = await db
+      .select({
+        next: integrationConnections.nextValidationAt,
+        expires: integrationConnections.validationExpiresAt,
+      })
+      .from(integrationConnections)
+      .where(eq(integrationConnections.id, installed.connectionId))
+    expect(schedule.expires!.getTime() - schedule.next!.getTime()).toBe(120_000)
     expect(
       await db
         .select({
@@ -1860,3 +1868,46 @@ test('permits multiple enabled pool connections for one provider', async () => {
     await db.delete(integrationConnections).where(inArray(integrationConnections.id, [first.id, second.id]))
   }
 })
+
+for (const method of ['enableValidated', 'recordValidation'] as const) {
+  test(`${method} schedules healthy revalidation before authorization expires`, async () => {
+    const repository = new DbIntegrationConnectionRepository()
+    const connection = await repository.createPending(pending())
+    try {
+      const now = new Date()
+      const expiresAt = new Date(now.getTime() + 15 * 60_000)
+      await repository.enableValidated({
+        id: connection.id,
+        materialRevision: connection.materialRevision,
+        validation: { ok: true, grantedScopes: [] },
+        now,
+        expiresAt,
+      })
+      await repository[method]({
+        id: connection.id,
+        materialRevision: connection.materialRevision,
+        validation: { ok: true, grantedScopes: [] },
+        now,
+        expiresAt,
+      })
+      expect(await repository.due(new Date(now.getTime() + 13 * 60_000 - 1), 1000)).not.toContainEqual({
+        id: connection.id,
+      })
+      expect(await repository.due(new Date(now.getTime() + 13 * 60_000), 1000)).toContainEqual({ id: connection.id })
+      expect((await repository.get(connection.id))?.validationExpiresAt).toEqual(expiresAt)
+      await repository.recordValidation({
+        id: connection.id,
+        materialRevision: connection.materialRevision,
+        validation: { ok: false, code: 'invalid_auth' },
+        now,
+        expiresAt,
+      })
+      expect(await repository.due(new Date(now.getTime() + 13 * 60_000), 1000)).not.toContainEqual({
+        id: connection.id,
+      })
+      expect(await repository.due(expiresAt, 1000)).toContainEqual({ id: connection.id })
+    } finally {
+      await db.delete(integrationConnections).where(eq(integrationConnections.id, connection.id))
+    }
+  })
+}

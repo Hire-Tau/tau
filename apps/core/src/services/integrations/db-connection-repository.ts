@@ -24,6 +24,14 @@ import type {
 } from './connection-repository'
 import { insertIntegrationAuditEvent } from './db-audit'
 
+// The worker polls once a minute; waiting until expiry creates a predictable
+// authorization outage on every cycle. Leave two polling intervals for refresh,
+// without extending validity or changing failed-validation retry backoff.
+function nextHealthyValidationAt(now: Date, expiresAt: Date): Date {
+  const lifetimeMs = Math.max(0, expiresAt.getTime() - now.getTime())
+  return new Date(expiresAt.getTime() - Math.min(120_000, lifetimeMs / 2))
+}
+
 export class DbIntegrationConnectionRepository
   implements IntegrationConnectionRepository, IntegrationAssignmentRepository
 {
@@ -457,7 +465,7 @@ export class DbIntegrationConnectionRepository
           lastHealthyAt: input.now,
           lastErrorCode: null,
           validationFailureCount: 0,
-          nextValidationAt: input.expiresAt,
+          nextValidationAt: nextHealthyValidationAt(input.now, input.expiresAt),
         }
       : {
           authState: input.validation.code === 'invalid_auth' ? ('invalid' as const) : ('authenticated' as const),
@@ -672,7 +680,7 @@ export class DbIntegrationConnectionRepository
           validationExpiresAt: input.expiresAt,
           healthCheckedAt: input.now,
           lastHealthyAt: input.now,
-          nextValidationAt: input.expiresAt,
+          nextValidationAt: nextHealthyValidationAt(input.now, input.expiresAt),
           lastErrorCode: null,
           validationFailureCount: 0,
           updatedAt: input.now,
@@ -967,7 +975,7 @@ export class DbIntegrationConnectionRepository
           lastHealthyAt: now,
           lastErrorCode: null,
           validationFailureCount: 0,
-          nextValidationAt: new Date(now.getTime() + 15 * 60_000),
+          nextValidationAt: nextHealthyValidationAt(now, new Date(now.getTime() + 15 * 60_000)),
           updatedByUserId: input.updatedByUserId,
           clientAuthority: input.clientAuthority,
           authorizationFlowId:
