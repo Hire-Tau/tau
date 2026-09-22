@@ -80,6 +80,12 @@ interface SendOpts {
   deliveryMode?: DeliveryMode
 }
 
+// Query cache pages can outlive a hook or be shared by multiple mounted views.
+// Use one runtime clock/owner, not restartable per-hook counters, for read causality.
+// The symbol is deliberately absent after JSON dehydration; those rows need a new read.
+const collectionRequestGenerationRef = { current: 0 }
+const collectionRequestOwner = Symbol('conversation-history')
+
 let pendingCounter = 0
 function nextClientId(): string {
   pendingCounter += 1
@@ -296,7 +302,8 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     new Map<string, CreatedMessageBarrier>()
   )
   const messageRequestGenerationsRef = useRef(new MessageRequestGenerations())
-  const collectionRequestGenerationRef = useRef(0)
+  // Starting a refresh is not completion evidence for its old cached rows.
+  const terminalHistoryAfterRef = useRef(new Map<string, number>())
   const liveMessageCollectionGenerationsRef = useRef(new Map<string, number>())
   const capReconciliationRef = useRef<{
     agentId: string | undefined
@@ -402,6 +409,15 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     onDoneRef.current?.(event.response, event.metadata ?? null, event.messageId)
   }, [])
 
+  const confirmTerminalHistory = useCallback(
+    (executionId: string) => {
+      if (terminalHistoryAfterRef.current.has(executionId)) return
+      terminalHistoryAfterRef.current.set(executionId, collectionRequestGenerationRef.current)
+      invalidateConversationQueries()
+    },
+    [invalidateConversationQueries]
+  )
+
   // Keep executionStatus in sync with the live stream (both the agent stream and the create-flow
   // chat stream) so the activity indicator clears on turn end. Without this it would otherwise be
   // seeded once on mount and stick at 'running'.
@@ -410,6 +426,21 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
       lastStreamAtRef.current = Date.now()
       if (event.type === 'agent') announcedExecutionIdRef.current = event.executionId ?? null
       const executionId = announcedExecutionIdRef.current
+      // Runner done with saved row IDs is emitted after persistence (including
+      // stop's aborted-tool update). A subsequent read can reconcile missed tool_end.
+      if (
+        event.type === 'done' &&
+        executionId &&
+        (event.messageId || event.messageIds?.length) &&
+        storeRef
+          .current!.snapshot()
+          .some(
+            (group) =>
+              (group.executionId === executionId || group.streamGroupId === event.streamGroupId) &&
+              group.blocks.some((block) => block.type === 'tool_use' && block._done === false)
+          )
+      )
+        confirmTerminalHistory(executionId)
       const terminal = executionId ? terminalExecutionStatusesRef.current.get(executionId) : undefined
       if (event.type !== 'execution_snapshot' && terminal) {
         if (event.type === 'done' || event.type === 'error') streamedExecIdRef.current = null
@@ -421,9 +452,13 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
         if (event.executionVersion < highest) return
         highestExecutionVersionRef.current.set(event.executionId, event.executionVersion)
         announcedExecutionIdRef.current = event.executionId
-        if (['completed', 'failed', 'stopped'].includes(event.status))
+        if (['completed', 'failed', 'stopped'].includes(event.status)) {
           terminalExecutionStatusesRef.current.set(event.executionId, event.status)
-        else terminalExecutionStatusesRef.current.delete(event.executionId)
+          confirmTerminalHistory(event.executionId)
+        } else {
+          terminalExecutionStatusesRef.current.delete(event.executionId)
+          terminalHistoryAfterRef.current.delete(event.executionId)
+        }
         streamedExecIdRef.current = ['completed', 'failed', 'stopped'].includes(event.status) ? null : event.executionId
         setExecutionStatusLocal(event.status)
       } else if (event.type === 'done') {
@@ -453,7 +488,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
         setWaitingForSandbox(false)
       }
     },
-    [setExecutionStatusLocal]
+    [setExecutionStatusLocal, confirmTerminalHistory]
   )
 
   // Reset store state when the conversation identity changes (new agent) — NOT on a re-subscribe for
@@ -470,6 +505,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
       createFlowHandedOffRef.current = false
       createGenerationRef.current += 1
       highestExecutionVersionRef.current.clear()
+      terminalHistoryAfterRef.current.clear()
       terminalExecutionStatusesRef.current.clear()
       announcedExecutionIdRef.current = null
       recoveryAttemptsRef.current.clear()
@@ -536,8 +572,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
           highestExecutionVersionRef.current.set(executionId, execution.executionVersion)
           if (['completed', 'failed', 'stopped'].includes(execution.status)) {
             terminalExecutionStatusesRef.current.set(executionId, execution.status)
-            // The earlier refresh may have raced persistence before completion.
-            invalidateConversationQueries()
+            confirmTerminalHistory(executionId)
           }
           setExecutionStatusLocal(execution.status)
           // Busy executions can replay missed events. Terminal exact streams only
@@ -595,6 +630,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     resolvedAgentId,
     options.agentId,
     streamEpoch,
+    confirmTerminalHistory,
     client,
     handleDone,
     applyExecStatus,
@@ -630,7 +666,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     queryFn: async ({ pageParam }) => {
       const generation = ++collectionRequestGenerationRef.current
       const page = await client.agents.getMessages(resolvedAgentId!, { cursor: pageParam, limit: 50 })
-      return { ...page, __collectionRequestGeneration: generation }
+      return { ...page, __collectionRequestGeneration: generation, __collectionRequestOwner: collectionRequestOwner }
     },
     getNextPageParam: (last) => (last.pagination.hasMore ? last.pagination.nextCursor : undefined),
     refetchOnWindowFocus: () => !isStreamLive(),
@@ -805,7 +841,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
               terminalExecutionStatusesRef.current.set(executionId, execution.status)
             setExecutionStatusLocal(execution.status)
             if (['completed', 'failed', 'stopped'].includes(execution.status)) {
-              invalidateConversationQueries()
+              confirmTerminalHistory(executionId)
               bumpStreamEpoch()
             }
           })
@@ -824,6 +860,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     executionStatus,
     streamTick,
     subscriptionGeneration,
+    confirmTerminalHistory,
     resolvedAgentId,
     client,
     invalidateConversationQueries,
@@ -1087,14 +1124,46 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
   }, [resolvedAgentId, client])
 
   // 4. Combine → items (memoized on inputs).
-  const session: CombineSession = useMemo(
-    () => ({ agentId: resolvedAgentId ?? '', streamStatus, executionStatus, waitingForSandbox }),
-    [resolvedAgentId, streamStatus, executionStatus, waitingForSandbox]
-  )
   // Identity changes render before their teardown effect. Never expose the old
   // store/status under the new identity during that intermediate render.
   const identityReady = storeIdentityRef.current === resolvedAgentId || createdViaFlowRef.current
   const groups = identityReady ? store.snapshot() : []
+  const groupById = new Map(groups.map((group) => [group.streamGroupId, group]))
+  const freshRows = new Map(
+    (messagesQuery.data?.pages ?? [])
+      .filter((page) => page.__collectionRequestOwner === collectionRequestOwner)
+      .flatMap((page) =>
+        page.messages
+          .filter((message) => !liveMessages.has(message.id))
+          .map((message) => [message.id, page.__collectionRequestGeneration] as const)
+      )
+  )
+  const authoritativeCompletedGroupIds = new Set(
+    history.flatMap((turn) => {
+      if (!turn.streamGroupId) return []
+      const group = groupById.get(turn.streamGroupId)
+      const executionId = group?.executionId ?? turn.message.metadata?.executionId
+      const after = executionId ? terminalHistoryAfterRef.current.get(executionId) : undefined
+      return after !== undefined &&
+        turn.mergedFrom.every(
+          (row) =>
+            (!row.metadata?.executionId || row.metadata.executionId === executionId) &&
+            (freshRows.get(row.id) ?? -1) > after
+        )
+        ? [turn.streamGroupId]
+        : []
+    })
+  )
+  const session: CombineSession = useMemo(
+    () => ({
+      agentId: resolvedAgentId ?? '',
+      streamStatus,
+      executionStatus,
+      waitingForSandbox,
+      authoritativeCompletedGroupIds,
+    }),
+    [resolvedAgentId, streamStatus, executionStatus, waitingForSandbox, authoritativeCompletedGroupIds]
+  )
   const visibleGroups = useMemo(
     () =>
       groups.filter(

@@ -15,8 +15,15 @@ saved fragment.
 - Done, flushed, errored and transport-ended handoffs all require durable ordered
   block coverage and every announced done message ID. Saved text may extend the
   streamed prefix. Tool identity must match. An explicitly unfinished tool permits
-  saved argument extensions and replacement of its provisional result; a finalized
-  (or legacy) tool still requires exact args/result/error equality. Every other
+  saved argument extensions. Replacement of a differing provisional result additionally
+  requires identified execution completion and collection rows whose reads began **after**
+  that confirmation. Terminal status, an invalidation in progress, an old cached row,
+  or a pre-confirmation read finishing late is not that authority. Generation counters
+  also carry ephemeral runtime ownership and a shared monotonic clock: remounting does not
+  restart it, concurrent views can share fresh reads, and dehydrated pages cannot
+  claim current runtime freshness. Point-read overlays
+  do not inherit collection freshness: the qualifying collection must own every row
+  of the turn. A finalized (or legacy) tool still requires exact args/result/error equality. Every other
   observed block and done message ID must also be covered. Transport end while
   the execution is still busy cannot retire an otherwise open group.
 - After durable handoff, only the group ID is retired until conversation reset.
@@ -57,7 +64,12 @@ poller or a guarantee of recovery while every transport/status request is offlin
 The wire format has no message revision/event sequence discriminator. A shorter or
 divergent saved fragment cannot prove an intentional edit to an **uncommitted**
 streamed answer rather than stale/incomplete persistence. The client conservatively
-retains that answer until coverage. Explicit authority for revising/removing such an
+retains that answer until coverage. Differing unfinished-tool results have one narrow
+causal authority: an identified execution's exact terminal confirmation (or runner `done` with
+saved row IDs, emitted after persistence), followed by a new server history read. This relies on terminal execution status following durable tool
+persistence; it does not label arbitrary matching tool rows as completed. Without
+execution identity or such a completed read, provisional results retain strict
+result/error coverage. No field is added to the wire protocol. Explicit authority for revising/removing such an
 uncommitted response would require a wire contract; this change does not invent one.
 Once handed off, saved history remains authoritative, including deletion/revision.
 Retired IDs and per-execution status/recovery metadata last only for the mounted

@@ -72,7 +72,11 @@ export function groupPersisted(messages: Message[]): PersistedTurn[] {
 }
 
 /** Does a committed block cover this streamed content (including missed final text deltas)? */
-function blockContentMatches(streamed: StreamGroupSnapshot['blocks'][number], persisted: ContentBlock): boolean {
+function blockContentMatches(
+  streamed: StreamGroupSnapshot['blocks'][number],
+  persisted: ContentBlock,
+  authoritativeCompletion: boolean
+): boolean {
   if (streamed.type !== persisted.type) return false
   switch (streamed.type) {
     case 'thinking':
@@ -83,11 +87,14 @@ function blockContentMatches(streamed: StreamGroupSnapshot['blocks'][number], pe
         persisted.type === 'tool_use' &&
         persisted.toolCall.toolCallId === streamed.toolCall.toolCallId &&
         persisted.toolCall.toolName === streamed.toolCall.toolName &&
-        // A saved completion may extend args and replace a provisional tool_update
-        // result when tool_end was missed. Only explicitly unfinished tools allow
-        // this: observed final results (and legacy blocks) still require equality.
+        // Matching identity/args alone also describes the pre-tool saved row.
+        // A differing provisional result needs a read begun after exact terminal
+        // confirmation. Finalized tools (and legacy blocks) always require equality.
         (streamed._done === false
-          ? persisted.toolCall.args.startsWith(streamed.toolCall.args)
+          ? persisted.toolCall.args.startsWith(streamed.toolCall.args) &&
+            (authoritativeCompletion ||
+              (persisted.toolCall.result === streamed.toolCall.result &&
+                persisted.toolCall.isError === streamed.toolCall.isError))
           : persisted.toolCall.args === streamed.toolCall.args &&
             persisted.toolCall.result === streamed.toolCall.result &&
             persisted.toolCall.isError === streamed.toolCall.isError)
@@ -96,12 +103,16 @@ function blockContentMatches(streamed: StreamGroupSnapshot['blocks'][number], pe
 }
 
 /** Does the persisted turn contain every streamed block in order? */
-function persistedTurnIncludesStreamedBlocks(group: StreamGroupSnapshot, turn: PersistedTurn): boolean {
+function persistedTurnIncludesStreamedBlocks(
+  group: StreamGroupSnapshot,
+  turn: PersistedTurn,
+  authoritativeCompletion: boolean
+): boolean {
   let persistedIndex = 0
   for (const streamedBlock of group.blocks) {
     let found = false
     while (persistedIndex < turn.blocks.length) {
-      if (blockContentMatches(streamedBlock, turn.blocks[persistedIndex])) {
+      if (blockContentMatches(streamedBlock, turn.blocks[persistedIndex], authoritativeCompletion)) {
         found = true
         persistedIndex += 1
         break
@@ -119,13 +130,21 @@ function persistedTurnIncludesStreamedBlocks(group: StreamGroupSnapshot, turn: P
  * content; keep the streamed copy visible until committed history includes the same content so it
  * does not flicker out between back-to-back streams.
  */
-function persistedTurnComplete(group: StreamGroupSnapshot, turn: PersistedTurn | undefined): boolean {
+function persistedTurnComplete(
+  group: StreamGroupSnapshot,
+  turn: PersistedTurn | undefined,
+  session: CombineSession
+): boolean {
   if (!turn) return false
   if (group.doneMessageIds && group.doneMessageIds.length > 0) {
     const have = new Set(turn.mergedFrom.map((m) => m.id))
     if (!group.doneMessageIds.every((id) => have.has(id))) return false
   }
-  return persistedTurnIncludesStreamedBlocks(group, turn)
+  return persistedTurnIncludesStreamedBlocks(
+    group,
+    turn,
+    session.authoritativeCompletedGroupIds?.has(group.streamGroupId) ?? false
+  )
 }
 
 /** Decide whether a stream group should still render (vs. having swapped to persisted). */
@@ -135,7 +154,7 @@ function streamingStatusFor(
   session: CombineSession
 ): StreamingItemStatus | null {
   // Swap to persisted once the complete persisted turn is present.
-  if (group.done && persistedTurnComplete(group, turn)) return null
+  if (group.done && persistedTurnComplete(group, turn, session)) return null
 
   // Transport/lifecycle termination does not prove the saved fragment covers the live tail.
   if (!group.done && session.streamStatus === 'ended') {
@@ -143,12 +162,12 @@ function streamingStatusFor(
       session.executionStatus ?? ''
     )
     if (stillBusy && !group.flushed && !group.errored) return 'interrupted'
-    if (persistedTurnComplete(group, turn)) return null
+    if (persistedTurnComplete(group, turn, session)) return null
     return 'interrupted'
   }
 
-  if (group.errored) return persistedTurnComplete(group, turn) ? null : 'interrupted'
-  if (group.flushed) return persistedTurnComplete(group, turn) ? null : 'flushed'
+  if (group.errored) return persistedTurnComplete(group, turn, session) ? null : 'interrupted'
+  if (group.flushed) return persistedTurnComplete(group, turn, session) ? null : 'flushed'
   return 'streaming'
 }
 

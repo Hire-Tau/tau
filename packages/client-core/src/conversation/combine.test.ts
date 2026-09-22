@@ -783,13 +783,15 @@ test('durable completed tools cover explicitly unfinished tools, but never overw
       metadata: { streamGroupId: 'S', content: [finalTool, textBlock('answer', 'final answer')] },
     }),
   ])
-  expect(completedGroupIds(history, [group], SESSION_ENDED)).toEqual(['S'])
+  expect(completedGroupIds(history, [group], SESSION_ENDED)).toEqual([])
+  const authoritative: CombineSession = { ...SESSION_ENDED, authoritativeCompletedGroupIds: new Set(['S']) }
+  expect(completedGroupIds(history, [group], authoritative)).toEqual(['S'])
   const finalized = { ...unfinished, _done: true }
-  expect(completedGroupIds(history, [{ ...group, blocks: [finalized] }], SESSION_ENDED)).toEqual([])
+  expect(completedGroupIds(history, [{ ...group, blocks: [finalized] }], authoritative)).toEqual([])
   expect(
-    completedGroupIds(history, [{ ...group, blocks: [unfinished, textBlock('tail', 'uncovered tail')] }], SESSION_ENDED)
+    completedGroupIds(history, [{ ...group, blocks: [unfinished, textBlock('tail', 'uncovered tail')] }], authoritative)
   ).toEqual([])
-  expect(completedGroupIds(history, [{ ...group, doneMessageIds: ['m', 'missing'] }], SESSION_ENDED)).toEqual([])
+  expect(completedGroupIds(history, [{ ...group, doneMessageIds: ['m', 'missing'] }], authoritative)).toEqual([])
   expect(
     completedGroupIds(
       history,
@@ -826,6 +828,8 @@ test.each(['result', 'error', 'legacy', 'id', 'name', 'args'] as const)(
     const history = groupPersisted([
       msg({ id: 'm', role: 'assistant', metadata: { streamGroupId: 'S', content: [saved] } }),
     ])
-    expect(completedGroupIds(history, [group], SESSION_ENDED)).toEqual([])
+    expect(
+      completedGroupIds(history, [group], { ...SESSION_ENDED, authoritativeCompletedGroupIds: new Set(['S']) })
+    ).toEqual([])
   }
 )

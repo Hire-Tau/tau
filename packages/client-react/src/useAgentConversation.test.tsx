@@ -2859,6 +2859,7 @@ test('terminal exact confirmation refetches history even if the pre-confirmation
   })
   try {
     await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+    act(() => m.emit({ type: 'agent', agentId: 'a', executionId: 'e' }))
     act(() => m.emit({ type: 'tool_start', streamGroupId: 'S', toolCallId: 't', toolName: 'search', args: '{}' }))
     await act(async () => {
       m.triggerDone()
@@ -2957,5 +2958,243 @@ test('an in-flight quiet backstop result cannot terminalize a replacement execut
     qc.clear()
     globalThis.setTimeout = realSetTimeout
     setSystemTime()
+  }
+})
+
+test.each(['terminal', 'error', 'flush', 'done'] as const)(
+  '%s preserves provisional tool output through every render until post-terminal history resolves',
+  async (mode) => {
+    const old: Message = {
+      id: 'm',
+      agentId: 'a',
+      role: 'assistant',
+      content: '',
+      pending: false,
+      createdAt: new Date(),
+      metadata: {
+        executionId: 'e',
+        streamGroupId: 'S',
+        content: [
+          {
+            type: 'tool_use',
+            id: 't',
+            toolCall: { toolCallId: 't', toolName: 'search', args: '{}', result: '', isError: false },
+          },
+        ],
+      },
+    }
+    let delayed = false
+    const pending: Array<
+      (value: { messages: Message[]; pagination: { hasMore: boolean; totalCount: number } }) => void
+    > = []
+    const m = makeMockClient({
+      activeExecution: { active: true, executionId: 'e', status: 'running' },
+      getMessages: () =>
+        delayed
+          ? new Promise((resolve) => {
+              pending.push(resolve)
+            })
+          : { messages: [old], pagination: { hasMore: false, totalCount: 1 } },
+    })
+    m.client.agents.getExecution = async () => ({
+      agentId: 'a',
+      executionId: 'e',
+      executionVersion: 2,
+      status: 'completed',
+      active: false,
+    })
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const renders: string[] = []
+    const { result, unmount } = await renderHook(
+      () => {
+        const c = useAgentConversation({ agentId: 'a' })
+        renders.push(
+          c.items
+            .flatMap((item) =>
+              item.kind === 'streaming' || item.kind === 'persisted'
+                ? item.blocks.flatMap((block) => (block.type === 'tool_use' ? [block.toolCall.result] : []))
+                : []
+            )
+            .join('|')
+        )
+        return c
+      },
+      { wrapper: wrapWith(qc, m.client) }
+    )
+    try {
+      await waitFor(() =>
+        expect(
+          qc.getQueryData<{ pages: Array<{ messages: Message[] }> }>(queryKeys.agents.messagesInfinite('a'))?.pages[0]
+            .messages
+        ).toEqual([old])
+      )
+      delayed = true
+      act(() => {
+        m.emit({ type: 'agent', agentId: 'a', executionId: 'e' })
+        m.emit({ type: 'tool_start', streamGroupId: 'S', toolCallId: 't', toolName: 'search', args: '{}' })
+        m.emit({ type: 'tool_update', streamGroupId: 'S', toolCallId: 't', result: 'visible progress' })
+      })
+      const start = renders.length - 1
+      if (mode === 'error') act(() => m.emit({ type: 'error', message: 'interrupted' }))
+      if (mode === 'done') act(() => m.emit({ type: 'done', response: '', streamGroupId: 'S', messageIds: ['m'] }))
+      if (mode === 'flush') act(() => m.emit({ type: 'flush_agent' }))
+      await act(async () => {
+        m.triggerDone()
+        await Promise.resolve()
+      })
+      if (mode !== 'done')
+        act(() => {
+          m.emit({ type: 'execution_snapshot', executionId: 'e', status: 'completed', executionVersion: 2 })
+          m.triggerDone()
+        })
+      expect(renders.slice(start).every((text) => text === 'visible progress')).toBe(true)
+      expect(pending.length).toBeGreaterThan(0)
+      // A pre-confirmation request completing late is not terminal-history authority.
+      if (mode === 'terminal') {
+        await act(async () => {
+          pending[0]({ messages: [old], pagination: { hasMore: false, totalCount: 1 } })
+          await Promise.resolve()
+        })
+        expect(renders.slice(start).every((text) => text === 'visible progress')).toBe(true)
+      }
+      const final: Message = {
+        ...old,
+        content: 'answer',
+        metadata: {
+          ...old.metadata,
+          content: [
+            {
+              type: 'tool_use',
+              id: 't',
+              toolCall: { toolCallId: 't', toolName: 'search', args: '{}', result: 'final result', isError: false },
+            },
+            { type: 'text', id: 'a', content: 'answer' },
+          ],
+        },
+      }
+      await act(async () => {
+        for (const resolve of pending) resolve({ messages: [final], pagination: { hasMore: false, totalCount: 1 } })
+        await Promise.resolve()
+      })
+      await waitFor(() =>
+        expect(result.current.items.find((item) => item.kind === 'persisted')).toMatchObject({
+          message: { content: 'answer' },
+        })
+      )
+      expect(renders.slice(start).every((text) => text === 'visible progress' || text === 'final result')).toBe(true)
+    } finally {
+      unmount()
+      qc.clear()
+    }
+  }
+)
+
+test('cached collection generations from a previous hook cannot authorize provisional tool replacement', async () => {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const old: Message = {
+    id: 'm',
+    agentId: 'a',
+    role: 'assistant',
+    content: '',
+    pending: false,
+    createdAt: new Date(),
+    metadata: {
+      executionId: 'e',
+      streamGroupId: 'S',
+      content: [
+        {
+          type: 'tool_use',
+          id: 't',
+          toolCall: { toolCallId: 't', toolName: 'search', args: '{}', result: '', isError: false },
+        },
+      ],
+    },
+  }
+  qc.setQueryData(queryKeys.agents.messagesInfinite('a'), {
+    pages: [{ messages: [old], pagination: { hasMore: false, totalCount: 1 }, __collectionRequestGeneration: 100 }],
+    pageParams: [undefined],
+  })
+  const m = makeMockClient({
+    activeExecution: { active: true, executionId: 'e', status: 'running' },
+    getMessages: () => new Promise(() => {}),
+  })
+  const { result, unmount } = await renderHook(() => useAgentConversation({ agentId: 'a' }), {
+    wrapper: wrapWith(qc, m.client),
+  })
+  try {
+    act(() => {
+      m.emit({ type: 'agent', agentId: 'a', executionId: 'e' })
+      m.emit({ type: 'tool_start', toolCallId: 't', toolName: 'search', args: '{}', streamGroupId: 'S' })
+      m.emit({ type: 'tool_update', toolCallId: 't', result: 'visible progress', streamGroupId: 'S' })
+    })
+    act(() => {
+      m.emit({ type: 'execution_snapshot', executionId: 'e', executionVersion: 2, status: 'completed' })
+      m.triggerDone()
+    })
+    expect(result.current.items.find((item) => item.kind === 'streaming')).toMatchObject({
+      blocks: [{ toolCall: { result: 'visible progress' } }],
+    })
+  } finally {
+    unmount()
+    qc.clear()
+  }
+})
+
+test('concurrent views can both use the shared post-confirmation history read', async () => {
+  const m = makeMockClient({ activeExecution: { active: true, executionId: 'e', status: 'running' } })
+  const callbacks = new Set<StreamCb>()
+  m.client.agents.subscribeToAgentStream = (_id, callback) => {
+    callbacks.add(callback)
+    return () => {
+      callbacks.delete(callback)
+    }
+  }
+  const emit = (event: StreamEvent) => {
+    for (const callback of callbacks) callback.onEvent(event)
+  }
+  const { result, unmount } = await renderHook(
+    () => ({ first: useAgentConversation({ agentId: 'a' }), second: useAgentConversation({ agentId: 'a' }) }),
+    { wrapper: wrap(m.client) }
+  )
+  try {
+    act(() => {
+      emit({ type: 'agent', agentId: 'a', executionId: 'e' })
+      emit({ type: 'tool_start', streamGroupId: 'S', toolCallId: 't', toolName: 'search', args: '{}' })
+      emit({ type: 'tool_update', streamGroupId: 'S', toolCallId: 't', result: 'progress' })
+    })
+    m.setMessages([
+      {
+        id: 'm',
+        agentId: 'a',
+        role: 'assistant',
+        content: 'answer',
+        pending: false,
+        createdAt: new Date(),
+        metadata: {
+          executionId: 'e',
+          streamGroupId: 'S',
+          content: [
+            {
+              type: 'tool_use',
+              id: 't',
+              toolCall: { toolCallId: 't', toolName: 'search', args: '{}', result: 'final', isError: false },
+            },
+          ],
+        },
+      },
+    ])
+    await act(async () => {
+      emit({ type: 'execution_snapshot', executionId: 'e', executionVersion: 2, status: 'completed' })
+      for (const callback of callbacks) callback.onDone?.()
+      await Promise.resolve()
+    })
+    await waitFor(() => {
+      for (const conversation of Object.values(result.current))
+        expect(conversation.items.find((item) => item.kind === 'persisted')).toMatchObject({
+          blocks: [{ toolCall: { result: 'final' } }],
+        })
+    })
+  } finally {
+    unmount()
   }
 })
