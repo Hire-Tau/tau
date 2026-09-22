@@ -124,7 +124,7 @@ class FakeClient {
     // stage specific content (a cache hit's seeded lock, or a deliberately
     // customized/empty lock) are never clobbered.
     if (req.command.includes('devbox install') && this.bashExit === 0 && !this.bashExitless) {
-      const match = req.command.match(/^cd '([^']*)' && devbox install$/)
+      const match = req.command.match(/^cd '([^']*)' &&/)
       const lockPath = match ? `${match[1]}/devbox.lock` : undefined
       if (lockPath && !this.files.has(lockPath)) {
         this.setText(lockPath, DEFAULT_GENERATED_LOCK)

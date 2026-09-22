@@ -13,6 +13,7 @@ import {
 } from './bootstrap'
 import { buildBoxProvisionArtifact } from './box-provision-artifact'
 import { tarCodecFlag } from './box-manager'
+import { devboxInstallCommand } from './devbox-seed'
 import type { SshResult, SshRunner } from './ssh'
 
 const repoRoot = join(import.meta.dir, '../../../../../')
@@ -1939,6 +1940,7 @@ describe('box-provision.sh unit modes (--print-units dry run)', () => {
         'Environment=EXECUTOR_IDLE_EXIT_MS=600000',
         'EnvironmentFile=-/home/box_abc123abc123/.tau/host.env',
         'EnvironmentFile=-/home/box_abc123abc123/.tau/server.env',
+        'ExecStartPre=-/bin/bash /opt/tau/bin/box-provision.sh --unix-user box_abc123abc123 --prepare-nix-cache',
         'ExecStart=/opt/tau/bin/bun /opt/tau/server/server.js --service-cgroup',
         'Delegate=no',
         'ExitType=main',
@@ -2009,6 +2011,7 @@ describe('box-provision.sh unit modes (--print-units dry run)', () => {
         'Environment=EXECUTOR_IDLE_EXIT_MS=600000',
         'EnvironmentFile=-%h/.tau/host.env',
         'EnvironmentFile=-%h/.tau/server.env',
+        'ExecStartPre=-/bin/bash /opt/tau/bin/box-provision.sh --unix-user box_abc123abc123 --prepare-nix-cache',
         'ExecStart=/opt/tau/bin/bun /opt/tau/server/server.js --service-cgroup',
         'Delegate=no',
         'ExitType=main',
@@ -2135,5 +2138,54 @@ describe('box-provision.sh unit modes (--print-units dry run)', () => {
       expect(service).toMatch(/^EnvironmentFile=-.*\.tau\/host\.env$/m)
       expect(service).toMatch(/^EnvironmentFile=-.*\.tau\/server\.env$/m)
     }
+  })
+})
+
+describe('shared machine Nix cache', () => {
+  it('cleans successful and failed installs without changing their exit status', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'tau-nix-install-'))
+    try {
+      const maintenance = join(dir, 'maintenance.sh')
+      const marker = join(dir, 'cleaned')
+      writeFileSync(maintenance, '#!/bin/bash\nprintf cleaned > "$CACHE_TEST_MARKER"\nexit 23\n')
+      // Portable timeout stand-in: the Linux fixture separately exercises a
+      // timed-out maintenance pass. These commands have no external work.
+      writeFileSync(join(dir, 'timeout'), '#!/bin/bash\nshift\nexec "$@"\n', { mode: 0o755 })
+      for (const status of [0, 7]) {
+        writeFileSync(join(dir, 'devbox'), `#!/bin/bash\nexit ${status}\n`, { mode: 0o755 })
+        rmSync(marker, { force: true })
+        const command = devboxInstallCommand(dir).replaceAll('/opt/tau/bin/box-provision.sh', maintenance)
+        const proc = Bun.spawn(['bash', '-c', command], {
+          env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, CACHE_TEST_MARKER: marker },
+          stdout: 'pipe',
+          stderr: 'pipe',
+          stdin: 'ignore',
+        })
+        const [, stderr, code] = await Promise.all([
+          new Response(proc.stdout).text(),
+          new Response(proc.stderr).text(),
+          proc.exited,
+        ])
+        expect({ code, stderr }).toEqual({ code: status, stderr: '' })
+        expect(readFileSync(marker, 'utf8')).toBe('cleaned')
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it.skipIf(process.platform !== 'linux')('reuses public objects while preserving private cache state', async () => {
+    const proc = Bun.spawn(['bash', join(repoRoot, 'scripts/machine/nix-cache.test.sh')], {
+      stdout: 'pipe',
+      stderr: 'pipe',
+      stdin: 'ignore',
+    })
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ])
+    expect({ code, stderr }).toEqual({ code: 0, stderr: '' })
+    expect(stdout).toContain('6 cache integration checks passed')
   })
 })
