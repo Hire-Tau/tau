@@ -157,3 +157,31 @@ test('the Assistant keeps every read the pre-durable web Assistant had', async (
   for (const name of ['read_inbox', 'get_work', 'read_activity', 'read_thread', 'answer_question', 'list_tasks'])
     expect(names).toContain(name)
 })
+
+test('read_squad_files gates memory on memory:read and the workspace on workspace:read', async () => {
+  const text = (result: { content: unknown[] }) => (result.content[0] as { text: string }).text
+  const reader = async (permission: string) => {
+    const user = await createTestUser({ prefix: `${prefix}-${permission.replace(':', '-')}` })
+    const role = await createTestRole({
+      prefix: `${prefix}-${permission.replace(':', '-')}-role`,
+      permissions: [permission],
+    })
+    const chat = await createTestRole({
+      prefix: `${prefix}-${permission.replace(':', '-')}-chat`,
+      permissions: ['chat:send'],
+    })
+    await assignRole({ userId: user.id, roleId: chat.id, scope: 'system' })
+    await assignRole({ userId: user.id, roleId: role.id, scope: 'squad', squadId: squad.id })
+    return toolsFor(user)
+  }
+  const memoryPath = { squadId: squad.id, path: '/memory/missing-note.md' }
+  const workspacePath = { squadId: squad.id, path: 'README.md' }
+
+  const workspaceOnly = await reader('workspace:read')
+  expect(text(await workspaceOnly('read_squad_files', memoryPath))).toBe('Squad not found')
+
+  // Past the permission gate, a missing memory file is reported as such rather than as a hidden squad.
+  const memoryOnly = await reader('memory:read')
+  expect(text(await memoryOnly('read_squad_files', memoryPath))).toBe('File not found')
+  expect(text(await memoryOnly('read_squad_files', workspacePath))).toBe('Squad not found')
+})

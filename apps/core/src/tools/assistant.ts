@@ -302,7 +302,7 @@ export function createAssistantTools(agentId: string, executionId: string, conve
     ),
     tool(
       'read_squad_files',
-      'Read a bounded portion of a squad workspace or memory file using the user’s workspace read permission.',
+      'Read a bounded portion of a squad workspace file, or a memory file under /memory/, using the user’s workspace or memory read permission.',
       Type.Object({
         squadId: uuid,
         path: Type.String({ minLength: 1, maxLength: 2048 }),
