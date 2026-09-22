@@ -32,12 +32,12 @@ export function GitHubRepositoryAccess({
             </p>
           )}
           {result?.status === 'missing' && (
-            <p role="status" className="text-status-attention-fg">
+            <p role="status" className="text-status-attention-600 dark:text-status-attention-400">
               Setup needs repository access. Install the App and choose the repositories Tau can use.
             </p>
           )}
           {result?.personalAccountInstalled === false && (
-            <p className="text-status-attention-fg">
+            <p className="text-status-attention-600 dark:text-status-attention-400">
               The App is not installed on {login}. Repositories and forks owned by this account are not available
               through the App.
             </p>

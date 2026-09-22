@@ -1,4 +1,5 @@
 import type { ITheme } from '@xterm/xterm'
+import { tokenColor as terminalTokenColor } from './tokenReader'
 
 const TERMINAL_TOKENS = {
   background: '--term-bg',
@@ -25,16 +26,11 @@ const TERMINAL_TOKENS = {
   brightWhite: '--term-bright-white',
 } as const satisfies Partial<Record<keyof ITheme, string>>
 
-/** xterm 5's fast parser expects comma-form RGB, not CSS variables/channels. */
-export function terminalTokenColor(channels: string): string | undefined {
-  // `none` preserves each selected cell's ANSI foreground. `auto` leaves native
-  // scrollbars alone. Neither is a color to pass into xterm's canvas parser.
-  if (!channels || channels === 'none' || channels === 'auto') return undefined
-  const [rgb, alpha] = channels.split('/').map((part) => part.trim())
-  const parts = rgb!.split(/\s+/)
-  if (alpha !== undefined) return `rgba(${parts.join(', ')}, ${alpha})`
-  return `rgb(${parts.join(', ')})`
-}
+/** Share the renderer-safe decimal serializer with graph/chart consumers.
+ * `none` keeps selected ANSI ink and `auto` keeps native scrollbars; neither
+ * sentinel is sent into xterm's color parser.
+ */
+export { terminalTokenColor }
 
 export function readTerminalTheme(
   style: Pick<CSSStyleDeclaration, 'getPropertyValue'>,

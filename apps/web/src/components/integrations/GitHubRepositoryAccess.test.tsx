@@ -4,6 +4,7 @@ import { fireEvent } from '@testing-library/dom'
 import type { GitHubRepositoryAccess as Access } from '@tau/shared'
 import { acquireDomHarness } from '../../test/domHarness'
 import { integrationQueryKeys } from '../../queryKeys'
+import { palettes } from '../../theme/test/builtins'
 import { GitHubRepositoryAccess } from './GitHubRepositoryAccess'
 
 let harness: Awaited<ReturnType<typeof acquireDomHarness>>
@@ -91,4 +92,21 @@ test('a failed recheck does not keep presenting stale installation conclusions',
   expect(container.textContent).toContain('Could not fully verify repository access')
   expect(container.textContent).not.toContain('The App is not installed')
   expect(container.textContent).not.toContain('Repository access verified')
+})
+
+test('both repository warnings retain the original light600 and dark400 attention colors', async () => {
+  const container = await render(missing)
+  const warnings = [...container.querySelectorAll('p')].filter((node) =>
+    /Setup needs repository access|The App is not installed/.test(node.textContent!)
+  )
+  expect(warnings).toHaveLength(2)
+  for (const warning of warnings) {
+    expect(warning.classList.contains('text-status-attention-600')).toBe(true)
+    expect(warning.classList.contains('dark:text-status-attention-400')).toBe(true)
+    expect(warning.classList.contains('text-status-attention-fg')).toBe(false)
+    for (const palette of palettes) {
+      const dark = palette.appearance === 'dark'
+      expect(palette.tokens[`--status-attention-${dark ? '400' : '600'}`]).toBe(dark ? '251 191 36' : '217 119 6')
+    }
+  }
 })
