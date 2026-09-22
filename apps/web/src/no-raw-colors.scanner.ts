@@ -1,22 +1,28 @@
 /**
- * Raw-color detector for apps/web/src (phase 1 guard).
+ * Raw-color detector for apps/web/src (complete rollout guard).
  *
- * Finds the four categories of un-tokenized color use documented in the
+ * Finds the categories of un-tokenized color use documented in the
  * research report §2.4/§9 (artifact: artifacts/color-theme-investigation):
  *
  *   1. Tailwind palette utilities (bg-<palette>-<step>, text-<palette>-<step>, …)
- *   2. Literal hex colors
- *   3. rgb()/hsl()-style color functions with non-token arguments
+ *   2. Raw Tailwind theme() palette lookups
+ *   3. Literal hex colors
+ *   4. rgb()/hsl()-style color functions with non-token arguments
  *      (a `rgb(var(--color-border))` channel wrapper is the sanctioned token
  *      form and is NOT a violation; a call with a JS template interpolation
  *      is dynamic construction, not a literal, and is likewise out of scope)
- *   4. color-bearing inline style objects
+ *   5. color-bearing inline style objects
  *
  * The scanner is intentionally dependency-free and pure so the guard test and
  * the detector's own unit tests share one implementation.
  */
 
-export type RawColorCategory = 'palette-utility' | 'literal-hex' | 'color-function' | 'inline-color-style'
+export type RawColorCategory =
+  | 'palette-utility'
+  | 'palette-lookup'
+  | 'literal-hex'
+  | 'color-function'
+  | 'inline-color-style'
 
 export interface RawColorFinding {
   readonly category: RawColorCategory
@@ -30,7 +36,13 @@ const TAILWIND_PALETTE_NAMES =
 
 /** Tailwind palette utilities, e.g. bg-<palette>-50, dark:text-<palette>-700, md:bg-<palette>-500/30. */
 export const PALETTE_UTILITY_PATTERN = new RegExp(
-  `(?<![\\w-])(?:[a-zA-Z-]+:)*(bg|text|border|ring|outline|divide|from|via|to|fill|stroke|shadow|accent|placeholder|decoration|caret)-(?:(${TAILWIND_PALETTE_NAMES})-(50|[1-9]00|950)|black|white)(?:\\/[\\d.]+)?\\b`,
+  `(?<![\\w-])(?:[a-zA-Z-]+:)*(bg|text|border(?:-(?:t|r|b|l|x|y|s|e|block|inline|block-start|block-end|inline-start|inline-end))?|ring(?:-offset)?|outline|divide|from|via|to|fill|stroke|shadow|accent|placeholder|decoration|caret)-(?:(${TAILWIND_PALETTE_NAMES})-(50|[1-9]00|950)|black|white)(?:\\/[\\d.]+)?\\b`,
+  'g'
+)
+
+/** CSS theme() references bypass utility scanning but still freeze palette colors. */
+export const PALETTE_LOOKUP_PATTERN = new RegExp(
+  `\\btheme\\(\\s*['"]?colors(?:\\.|\\[\\s*['"]?)(?:${TAILWIND_PALETTE_NAMES}|black|white)(?=[.\\s/\\[\\]'")])[^)]*\\)`,
   'g'
 )
 
@@ -160,6 +172,9 @@ export function scanSourceForRawColors(path: string, source: string): RawColorFi
 
   for (const match of source.matchAll(PALETTE_UTILITY_PATTERN)) {
     findings.push({ category: 'palette-utility', path, line: lineOf(source, match.index!), match: match[0] })
+  }
+  for (const match of source.matchAll(PALETTE_LOOKUP_PATTERN)) {
+    findings.push({ category: 'palette-lookup', path, line: lineOf(source, match.index!), match: match[0] })
   }
   for (const match of source.matchAll(LITERAL_HEX_PATTERN)) {
     findings.push({ category: 'literal-hex', path, line: lineOf(source, match.index!), match: match[0] })
