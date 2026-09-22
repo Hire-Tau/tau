@@ -43,8 +43,11 @@ describe('account theme migration (real runner, isolated database)', () => {
     expect(target).toBeDefined()
     await applyMigrations(connection, predecessors)
     await connection.unsafe(`INSERT INTO users (id, email) VALUES ('${userId}', 'theme-migration@example.test')`)
+    await connection.unsafe("INSERT INTO storage_monitor (id, error) VALUES ('retained', 'historical reading')")
     await applyMigrations(connection, [...predecessors, target!])
     await applyMigrations(connection, [...predecessors, target!])
+    const [monitor] = await connection.unsafe('SELECT id, error, levels, pending_alerts FROM storage_monitor')
+    expect(monitor).toEqual({ id: 'retained', error: 'historical reading', levels: {}, pending_alerts: [] })
     expect(await connection.unsafe('SELECT * FROM user_preferences')).toHaveLength(0)
     expect(await connection.unsafe('SELECT id FROM users')).toHaveLength(1)
     const theme = { themeId: 'harbor', appearance: 'system', customTheme: null }
