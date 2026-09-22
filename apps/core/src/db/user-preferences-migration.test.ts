@@ -1,3 +1,4 @@
+import type { StorageWarning } from '@tau/shared'
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { join } from 'node:path'
 import { readMigrationFiles } from 'drizzle-orm/migrator'
@@ -46,7 +47,14 @@ describe('account theme migration (real runner, isolated database)', () => {
     await connection.unsafe("INSERT INTO storage_monitor (id, error) VALUES ('retained', 'historical reading')")
     await applyMigrations(connection, [...predecessors, target!])
     await applyMigrations(connection, [...predecessors, target!])
-    const [monitor] = await connection.unsafe('SELECT id, error, levels, pending_alerts FROM storage_monitor')
+    const [monitor] = await connection.unsafe<
+      {
+        id: string
+        error: string | null
+        levels: Record<string, StorageWarning>
+        pending_alerts: Array<{ id: string; warning: StorageWarning }>
+      }[]
+    >('SELECT id, error, levels, pending_alerts FROM storage_monitor')
     expect(monitor).toEqual({ id: 'retained', error: 'historical reading', levels: {}, pending_alerts: [] })
     expect(await connection.unsafe('SELECT * FROM user_preferences')).toHaveLength(0)
     expect(await connection.unsafe('SELECT id FROM users')).toHaveLength(1)
