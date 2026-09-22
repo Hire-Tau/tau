@@ -61,7 +61,10 @@ export function AssistantConversationList({
             )}
           >
             <span
-              className={clsx('h-2 w-2 rounded-full shrink-0', working ? 'bg-blue-500' : 'bg-gray-400')}
+              className={clsx(
+                'h-2 w-2 rounded-full shrink-0',
+                working ? 'bg-status-progress-500' : 'bg-status-neutral-400'
+              )}
               aria-label={working ? 'Working' : 'Idle'}
             />
             <span className="min-w-0 flex-1">

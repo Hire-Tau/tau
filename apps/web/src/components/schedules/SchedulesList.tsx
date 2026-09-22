@@ -561,13 +561,13 @@ function ScheduleCard({
           className={clsx(
             'tau-button',
             'relative w-9 h-5 rounded-full transition-colors shrink-0',
-            schedule.enabled ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'
+            schedule.enabled ? 'bg-status-success-500' : 'bg-status-neutral-300 dark:bg-status-neutral-600'
           )}
           title={schedule.enabled ? 'Disable' : 'Enable'}
         >
           <span
             className={clsx(
-              'absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform',
+              'absolute top-0.5 left-0.5 w-4 h-4 bg-chrome-toggle-thumb rounded-full transition-transform',
               schedule.enabled ? 'translate-x-4' : 'translate-x-0'
             )}
           />
@@ -783,11 +783,16 @@ function ScheduleDetailModal({
                 'tau-button',
                 'flex items-center gap-2 px-2 py-1 rounded-md transition-colors',
                 schedule.enabled
-                  ? 'bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50'
-                  : 'bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700'
+                  ? 'bg-status-success-100 dark:bg-status-success-900/30 hover:bg-status-success-200 dark:hover:bg-status-success-900/50'
+                  : 'bg-status-neutral-100 dark:bg-status-neutral-800 hover:bg-status-neutral-200 dark:hover:bg-status-neutral-700'
               )}
             >
-              <span className={clsx('w-2 h-2 rounded-full', schedule.enabled ? 'bg-green-500' : 'bg-gray-400')} />
+              <span
+                className={clsx(
+                  'w-2 h-2 rounded-full',
+                  schedule.enabled ? 'bg-status-success-500' : 'bg-status-neutral-400'
+                )}
+              />
               <span className="text-primary text-xs font-medium">{schedule.enabled ? 'Enabled' : 'Disabled'}</span>
             </button>
           </DetailRow>
@@ -966,7 +971,7 @@ function ScheduleDetailModal({
         </div>
 
         {(schedule.healthStatus === 'failing' || schedule.healthStatus === 'automatically_disabled') && (
-          <div className="rounded border border-red-300 bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-800 dark:text-red-200">
+          <div className="rounded border border-status-danger-300 bg-status-danger-50 dark:bg-status-danger-950/30 p-3 text-sm text-status-danger-800 dark:text-status-danger-200">
             <p className="font-medium">{schedule.lastErrorCode || 'Schedule failure'}</p>
             {schedule.lastErrorSummary && <p>{schedule.lastErrorSummary}</p>}
             {schedule.automaticDisableReason && <p>{schedule.automaticDisableReason}</p>}
@@ -1021,7 +1026,7 @@ function ScheduleDetailModal({
               Cancel
             </button>
             {(updateMutation.isError || editError) && (
-              <span className="text-xs text-red-500">{editError || 'Failed to save'}</span>
+              <span className="text-xs text-status-danger-500">{editError || 'Failed to save'}</span>
             )}
           </div>
         )}
@@ -1094,8 +1099,8 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
               className={clsx(
                 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium',
                 schedule.webhookEnabled
-                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
+                  ? 'bg-status-success-100 dark:bg-status-success-900/30 text-status-success-700 dark:text-status-success-300'
+                  : 'bg-status-neutral-100 dark:bg-status-neutral-800 text-status-neutral-600 dark:text-status-neutral-400'
               )}
             >
               <LinkIcon className="w-3 h-3" />
@@ -1125,7 +1130,7 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
                 <button
                   onClick={() => disableMutation.mutate()}
                   disabled={disableMutation.isPending || !canUpdateSchedules}
-                  className="tau-button text-xs text-red-500 hover:text-red-600 disabled:opacity-50"
+                  className="tau-button text-xs text-status-danger-500 hover:text-status-danger-600 disabled:opacity-50"
                 >
                   {disableMutation.isPending ? 'Disabling...' : 'Disable'}
                 </button>
@@ -1135,12 +1140,12 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
 
           {/* Token display (only shown once after enable/regenerate) */}
           {showToken && (
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded p-2 space-y-1">
-              <p className="text-xs text-yellow-700 dark:text-yellow-300 font-medium">
+            <div className="bg-status-review-50 dark:bg-status-review-900/20 border border-status-review-200 dark:border-status-review-800 rounded p-2 space-y-1">
+              <p className="text-xs text-status-review-700 dark:text-status-review-300 font-medium">
                 ⚠️ Save this token - it will not be shown again!
               </p>
               <div className="flex items-center gap-2">
-                <code className="flex-1 text-xs font-mono bg-white dark:bg-gray-900 px-2 py-1 rounded border border-yellow-200 dark:border-yellow-800 text-primary overflow-x-auto">
+                <code className="flex-1 text-xs font-mono bg-chrome-toggle-thumb dark:bg-status-neutral-900 px-2 py-1 rounded border border-status-review-200 dark:border-status-review-800 text-primary overflow-x-auto">
                   {showToken}
                 </code>
                 <button
@@ -1151,7 +1156,7 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
                   <ClipboardIcon className="w-4 h-4" />
                 </button>
               </div>
-              {copied && <p className="text-xs text-green-600 dark:text-green-400">Copied!</p>}
+              {copied && <p className="text-xs text-status-success-600 dark:text-status-success-400">Copied!</p>}
             </div>
           )}
 

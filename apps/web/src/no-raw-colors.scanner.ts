@@ -30,12 +30,12 @@ const TAILWIND_PALETTE_NAMES =
 
 /** Tailwind palette utilities, e.g. bg-<palette>-50, dark:text-<palette>-700, md:bg-<palette>-500/30. */
 export const PALETTE_UTILITY_PATTERN = new RegExp(
-  `(?<![\\w-])(?:[a-zA-Z-]+:)*(bg|text|border|ring|outline|divide|from|via|to|fill|stroke|shadow|accent|placeholder|decoration|caret)-(${TAILWIND_PALETTE_NAMES})-(50|[1-9]00|950)(?:\\/[\\d.]+)?\\b`,
+  `(?<![\\w-])(?:[a-zA-Z-]+:)*(bg|text|border|ring|outline|divide|from|via|to|fill|stroke|shadow|accent|placeholder|decoration|caret)-(?:(${TAILWIND_PALETTE_NAMES})-(50|[1-9]00|950)|black|white)(?:\\/[\\d.]+)?\\b`,
   'g'
 )
 
 /** Literal hex colors: #rgb, #rgba, #rrggbb, #rrggbbaa. */
-export const LITERAL_HEX_PATTERN = /#[0-9a-fA-F]{3,8}\b/g
+export const LITERAL_HEX_PATTERN = /(?<!&)#[0-9a-fA-F]{3,8}\b/g
 
 /** Color functions whose arguments are not pure token references. */
 export const COLOR_FUNCTION_PATTERN = /\b(rgba?|hsla?|oklch|oklab|lab|lch|color|color-mix)\(/g

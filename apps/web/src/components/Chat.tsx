@@ -159,8 +159,8 @@ export function Chat({
           onConfirm={() => stopMutation.mutate()}
           disabled={stopMutation.isPending}
           label="Stop"
-          className="tau-button px-1.5 py-0.5 text-[11px] font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded transition-colors"
-          confirmClassName="px-1.5 py-0.5 text-[11px] font-medium text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/30 hover:bg-red-100 dark:hover:bg-red-900/50 rounded transition-colors"
+          className="tau-button px-1.5 py-0.5 text-[11px] font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/30 rounded transition-colors"
+          confirmClassName="px-1.5 py-0.5 text-[11px] font-medium text-status-danger-700 dark:text-status-danger-300 bg-status-danger-50 dark:bg-status-danger-900/30 hover:bg-status-danger-100 dark:hover:bg-status-danger-900/50 rounded transition-colors"
         />
       )}
       {isIdle && (
@@ -169,15 +169,15 @@ export function Chat({
             onConfirm={() => compactMutation.mutate()}
             disabled={compactMutation.isPending}
             label="Compact"
-            className="tau-button px-1.5 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded transition-colors"
-            confirmClassName="px-1.5 py-0.5 text-[11px] font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded transition-colors"
+            className="tau-button px-1.5 py-0.5 text-[11px] font-medium text-status-progress-600 dark:text-status-progress-400 hover:bg-status-progress-50 dark:hover:bg-status-progress-900/30 rounded transition-colors"
+            confirmClassName="px-1.5 py-0.5 text-[11px] font-medium text-status-progress-700 dark:text-status-progress-300 bg-status-progress-50 dark:bg-status-progress-900/30 hover:bg-status-progress-100 dark:hover:bg-status-progress-900/50 rounded transition-colors"
           />
           <ConfirmButton
             onConfirm={() => resetMutation.mutate()}
             disabled={resetMutation.isPending}
             label="Reset"
-            className="tau-button px-1.5 py-0.5 text-[11px] font-medium text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/30 rounded transition-colors"
-            confirmClassName="px-1.5 py-0.5 text-[11px] font-medium text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-900/30 hover:bg-orange-100 dark:hover:bg-orange-900/50 rounded transition-colors"
+            className="tau-button px-1.5 py-0.5 text-[11px] font-medium text-status-external-wait-600 dark:text-status-external-wait-400 hover:bg-status-external-wait-50 dark:hover:bg-status-external-wait-900/30 rounded transition-colors"
+            confirmClassName="px-1.5 py-0.5 text-[11px] font-medium text-status-external-wait-700 dark:text-status-external-wait-300 bg-status-external-wait-50 dark:bg-status-external-wait-900/30 hover:bg-status-external-wait-100 dark:hover:bg-status-external-wait-900/50 rounded transition-colors"
           />
         </>
       )}

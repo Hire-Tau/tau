@@ -97,7 +97,7 @@ export function AgentQuestionCard({
   return (
     <div className={clsx(!embedded && 'rounded-xl bg-surface p-4')}>
       {(answerMutation.isError || dismissMutation.isError) && (
-        <p role="alert" className="mb-2 text-xs text-red-600">
+        <p role="alert" className="mb-2 text-xs text-status-danger-600">
           {dismissalNoLongerPending
             ? 'This action is no longer pending.'
             : actionErrorMessage(dismissMutation.error ?? answerMutation.error)}

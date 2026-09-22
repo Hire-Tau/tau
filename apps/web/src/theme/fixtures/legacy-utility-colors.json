@@ -1,0 +1,506 @@
+{
+  "status-progress-50": {
+    "legacy": "blue-50",
+    "hex": "#eff6ff"
+  },
+  "status-progress-100": {
+    "legacy": "blue-100",
+    "hex": "#dbeafe"
+  },
+  "status-progress-200": {
+    "legacy": "blue-200",
+    "hex": "#bfdbfe"
+  },
+  "status-progress-300": {
+    "legacy": "blue-300",
+    "hex": "#93c5fd"
+  },
+  "status-progress-400": {
+    "legacy": "blue-400",
+    "hex": "#60a5fa"
+  },
+  "status-progress-500": {
+    "legacy": "blue-500",
+    "hex": "#3b82f6"
+  },
+  "status-progress-600": {
+    "legacy": "blue-600",
+    "hex": "#2563eb"
+  },
+  "status-progress-700": {
+    "legacy": "blue-700",
+    "hex": "#1d4ed8"
+  },
+  "status-progress-800": {
+    "legacy": "blue-800",
+    "hex": "#1e40af"
+  },
+  "status-progress-900": {
+    "legacy": "blue-900",
+    "hex": "#1e3a8a"
+  },
+  "status-progress-950": {
+    "legacy": "blue-950",
+    "hex": "#172554"
+  },
+  "status-queue-50": {
+    "legacy": "cyan-50",
+    "hex": "#ecfeff"
+  },
+  "status-queue-100": {
+    "legacy": "cyan-100",
+    "hex": "#cffafe"
+  },
+  "status-queue-200": {
+    "legacy": "cyan-200",
+    "hex": "#a5f3fc"
+  },
+  "status-queue-300": {
+    "legacy": "cyan-300",
+    "hex": "#67e8f9"
+  },
+  "status-queue-400": {
+    "legacy": "cyan-400",
+    "hex": "#22d3ee"
+  },
+  "status-queue-500": {
+    "legacy": "cyan-500",
+    "hex": "#06b6d4"
+  },
+  "status-queue-600": {
+    "legacy": "cyan-600",
+    "hex": "#0891b2"
+  },
+  "status-queue-700": {
+    "legacy": "cyan-700",
+    "hex": "#0e7490"
+  },
+  "status-queue-800": {
+    "legacy": "cyan-800",
+    "hex": "#155e75"
+  },
+  "status-queue-900": {
+    "legacy": "cyan-900",
+    "hex": "#164e63"
+  },
+  "status-queue-950": {
+    "legacy": "cyan-950",
+    "hex": "#083344"
+  },
+  "status-review-50": {
+    "legacy": "yellow-50",
+    "hex": "#fefce8"
+  },
+  "status-review-100": {
+    "legacy": "yellow-100",
+    "hex": "#fef9c3"
+  },
+  "status-review-200": {
+    "legacy": "yellow-200",
+    "hex": "#fef08a"
+  },
+  "status-review-300": {
+    "legacy": "yellow-300",
+    "hex": "#fde047"
+  },
+  "status-review-400": {
+    "legacy": "yellow-400",
+    "hex": "#facc15"
+  },
+  "status-review-500": {
+    "legacy": "yellow-500",
+    "hex": "#eab308"
+  },
+  "status-review-600": {
+    "legacy": "yellow-600",
+    "hex": "#ca8a04"
+  },
+  "status-review-700": {
+    "legacy": "yellow-700",
+    "hex": "#a16207"
+  },
+  "status-review-800": {
+    "legacy": "yellow-800",
+    "hex": "#854d0e"
+  },
+  "status-review-900": {
+    "legacy": "yellow-900",
+    "hex": "#713f12"
+  },
+  "status-review-950": {
+    "legacy": "yellow-950",
+    "hex": "#422006"
+  },
+  "status-human-wait-50": {
+    "legacy": "purple-50",
+    "hex": "#faf5ff"
+  },
+  "status-human-wait-100": {
+    "legacy": "purple-100",
+    "hex": "#f3e8ff"
+  },
+  "status-human-wait-200": {
+    "legacy": "purple-200",
+    "hex": "#e9d5ff"
+  },
+  "status-human-wait-300": {
+    "legacy": "purple-300",
+    "hex": "#d8b4fe"
+  },
+  "status-human-wait-400": {
+    "legacy": "purple-400",
+    "hex": "#c084fc"
+  },
+  "status-human-wait-500": {
+    "legacy": "purple-500",
+    "hex": "#a855f7"
+  },
+  "status-human-wait-600": {
+    "legacy": "purple-600",
+    "hex": "#9333ea"
+  },
+  "status-human-wait-700": {
+    "legacy": "purple-700",
+    "hex": "#7e22ce"
+  },
+  "status-human-wait-800": {
+    "legacy": "purple-800",
+    "hex": "#6b21a8"
+  },
+  "status-human-wait-900": {
+    "legacy": "purple-900",
+    "hex": "#581c87"
+  },
+  "status-human-wait-950": {
+    "legacy": "purple-950",
+    "hex": "#3b0764"
+  },
+  "status-external-wait-50": {
+    "legacy": "orange-50",
+    "hex": "#fff7ed"
+  },
+  "status-external-wait-100": {
+    "legacy": "orange-100",
+    "hex": "#ffedd5"
+  },
+  "status-external-wait-200": {
+    "legacy": "orange-200",
+    "hex": "#fed7aa"
+  },
+  "status-external-wait-300": {
+    "legacy": "orange-300",
+    "hex": "#fdba74"
+  },
+  "status-external-wait-400": {
+    "legacy": "orange-400",
+    "hex": "#fb923c"
+  },
+  "status-external-wait-500": {
+    "legacy": "orange-500",
+    "hex": "#f97316"
+  },
+  "status-external-wait-600": {
+    "legacy": "orange-600",
+    "hex": "#ea580c"
+  },
+  "status-external-wait-700": {
+    "legacy": "orange-700",
+    "hex": "#c2410c"
+  },
+  "status-external-wait-800": {
+    "legacy": "orange-800",
+    "hex": "#9a3412"
+  },
+  "status-external-wait-900": {
+    "legacy": "orange-900",
+    "hex": "#7c2d12"
+  },
+  "status-external-wait-950": {
+    "legacy": "orange-950",
+    "hex": "#431407"
+  },
+  "status-attention-50": {
+    "legacy": "amber-50",
+    "hex": "#fffbeb"
+  },
+  "status-attention-100": {
+    "legacy": "amber-100",
+    "hex": "#fef3c7"
+  },
+  "status-attention-200": {
+    "legacy": "amber-200",
+    "hex": "#fde68a"
+  },
+  "status-attention-300": {
+    "legacy": "amber-300",
+    "hex": "#fcd34d"
+  },
+  "status-attention-400": {
+    "legacy": "amber-400",
+    "hex": "#fbbf24"
+  },
+  "status-attention-500": {
+    "legacy": "amber-500",
+    "hex": "#f59e0b"
+  },
+  "status-attention-600": {
+    "legacy": "amber-600",
+    "hex": "#d97706"
+  },
+  "status-attention-700": {
+    "legacy": "amber-700",
+    "hex": "#b45309"
+  },
+  "status-attention-800": {
+    "legacy": "amber-800",
+    "hex": "#92400e"
+  },
+  "status-attention-900": {
+    "legacy": "amber-900",
+    "hex": "#78350f"
+  },
+  "status-attention-950": {
+    "legacy": "amber-950",
+    "hex": "#451a03"
+  },
+  "status-danger-50": {
+    "legacy": "red-50",
+    "hex": "#fef2f2"
+  },
+  "status-danger-100": {
+    "legacy": "red-100",
+    "hex": "#fee2e2"
+  },
+  "status-danger-200": {
+    "legacy": "red-200",
+    "hex": "#fecaca"
+  },
+  "status-danger-300": {
+    "legacy": "red-300",
+    "hex": "#fca5a5"
+  },
+  "status-danger-400": {
+    "legacy": "red-400",
+    "hex": "#f87171"
+  },
+  "status-danger-500": {
+    "legacy": "red-500",
+    "hex": "#ef4444"
+  },
+  "status-danger-600": {
+    "legacy": "red-600",
+    "hex": "#dc2626"
+  },
+  "status-danger-700": {
+    "legacy": "red-700",
+    "hex": "#b91c1c"
+  },
+  "status-danger-800": {
+    "legacy": "red-800",
+    "hex": "#991b1b"
+  },
+  "status-danger-900": {
+    "legacy": "red-900",
+    "hex": "#7f1d1d"
+  },
+  "status-danger-950": {
+    "legacy": "red-950",
+    "hex": "#450a0a"
+  },
+  "status-success-50": {
+    "legacy": "green-50",
+    "hex": "#f0fdf4"
+  },
+  "status-success-100": {
+    "legacy": "green-100",
+    "hex": "#dcfce7"
+  },
+  "status-success-200": {
+    "legacy": "green-200",
+    "hex": "#bbf7d0"
+  },
+  "status-success-300": {
+    "legacy": "green-300",
+    "hex": "#86efac"
+  },
+  "status-success-400": {
+    "legacy": "green-400",
+    "hex": "#4ade80"
+  },
+  "status-success-500": {
+    "legacy": "green-500",
+    "hex": "#22c55e"
+  },
+  "status-success-600": {
+    "legacy": "green-600",
+    "hex": "#16a34a"
+  },
+  "status-success-700": {
+    "legacy": "green-700",
+    "hex": "#15803d"
+  },
+  "status-success-800": {
+    "legacy": "green-800",
+    "hex": "#166534"
+  },
+  "status-success-900": {
+    "legacy": "green-900",
+    "hex": "#14532d"
+  },
+  "status-success-950": {
+    "legacy": "green-950",
+    "hex": "#052e16"
+  },
+  "status-neutral-50": {
+    "legacy": "gray-50",
+    "hex": "#f9fafb"
+  },
+  "status-neutral-100": {
+    "legacy": "gray-100",
+    "hex": "#f3f4f6"
+  },
+  "status-neutral-200": {
+    "legacy": "gray-200",
+    "hex": "#e5e7eb"
+  },
+  "status-neutral-300": {
+    "legacy": "gray-300",
+    "hex": "#d1d5db"
+  },
+  "status-neutral-400": {
+    "legacy": "gray-400",
+    "hex": "#9ca3af"
+  },
+  "status-neutral-500": {
+    "legacy": "gray-500",
+    "hex": "#6b7280"
+  },
+  "status-neutral-600": {
+    "legacy": "gray-600",
+    "hex": "#4b5563"
+  },
+  "status-neutral-700": {
+    "legacy": "gray-700",
+    "hex": "#374151"
+  },
+  "status-neutral-800": {
+    "legacy": "gray-800",
+    "hex": "#1f2937"
+  },
+  "status-neutral-900": {
+    "legacy": "gray-900",
+    "hex": "#111827"
+  },
+  "status-neutral-950": {
+    "legacy": "gray-950",
+    "hex": "#030712"
+  },
+  "decoration-8-100": {
+    "legacy": "indigo-100",
+    "hex": "#e0e7ff"
+  },
+  "decoration-8-300": {
+    "legacy": "indigo-300",
+    "hex": "#a5b4fc"
+  },
+  "decoration-8-400": {
+    "legacy": "indigo-400",
+    "hex": "#818cf8"
+  },
+  "decoration-8-600": {
+    "legacy": "indigo-600",
+    "hex": "#4f46e5"
+  },
+  "decoration-8-700": {
+    "legacy": "indigo-700",
+    "hex": "#4338ca"
+  },
+  "decoration-8-900": {
+    "legacy": "indigo-900",
+    "hex": "#312e81"
+  },
+  "decoration-9-100": {
+    "legacy": "pink-100",
+    "hex": "#fce7f3"
+  },
+  "decoration-9-400": {
+    "legacy": "pink-400",
+    "hex": "#f472b6"
+  },
+  "decoration-9-600": {
+    "legacy": "pink-600",
+    "hex": "#db2777"
+  },
+  "decoration-9-900": {
+    "legacy": "pink-900",
+    "hex": "#831843"
+  },
+  "decoration-10-200": {
+    "legacy": "rose-200",
+    "hex": "#fecdd3"
+  },
+  "decoration-11-50": {
+    "legacy": "emerald-50",
+    "hex": "#ecfdf5"
+  },
+  "decoration-11-100": {
+    "legacy": "emerald-100",
+    "hex": "#d1fae5"
+  },
+  "decoration-11-300": {
+    "legacy": "emerald-300",
+    "hex": "#6ee7b7"
+  },
+  "decoration-11-500": {
+    "legacy": "emerald-500",
+    "hex": "#10b981"
+  },
+  "decoration-11-600": {
+    "legacy": "emerald-600",
+    "hex": "#059669"
+  },
+  "decoration-11-700": {
+    "legacy": "emerald-700",
+    "hex": "#047857"
+  },
+  "decoration-11-900": {
+    "legacy": "emerald-900",
+    "hex": "#064e3b"
+  },
+  "decoration-4-50": {
+    "legacy": "violet-50",
+    "hex": "#f5f3ff"
+  },
+  "decoration-4-300": {
+    "legacy": "violet-300",
+    "hex": "#c4b5fd"
+  },
+  "decoration-4-500": {
+    "legacy": "violet-500",
+    "hex": "#8b5cf6"
+  },
+  "decoration-4-600": {
+    "legacy": "violet-600",
+    "hex": "#7c3aed"
+  },
+  "chrome-paper": {
+    "legacy": "#ffffff",
+    "hex": "#ffffff"
+  },
+  "chrome-scrim": {
+    "legacy": "#000000",
+    "hex": "#000000"
+  },
+  "chrome-highlight": {
+    "legacy": "#ffffff",
+    "hex": "#ffffff"
+  },
+  "on-strong": {
+    "legacy": "#ffffff",
+    "hex": "#ffffff"
+  },
+  "chrome-toggle-thumb": {
+    "legacy": "#ffffff",
+    "hex": "#ffffff"
+  }
+}

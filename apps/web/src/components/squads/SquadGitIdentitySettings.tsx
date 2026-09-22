@@ -111,7 +111,7 @@ export function SquadGitIdentitySettings({ squadId }: { squadId: string }) {
         </button>
       )}
       {updateMutation.isError && (
-        <p role="alert" className="text-sm text-red-500">
+        <p role="alert" className="text-sm text-status-danger-500">
           Failed to save: {String(updateMutation.error)}
         </p>
       )}

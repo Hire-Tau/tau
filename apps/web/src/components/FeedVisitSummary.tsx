@@ -158,7 +158,7 @@ export function AccountFeedVisit({
                     to={{ pathname: location.pathname, search: params.toString() }}
                     className="flex items-start gap-2 rounded-lg py-2.5 pl-6 pr-3 hover:bg-surface-hover"
                   >
-                    <span aria-hidden="true" className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-green-500" />
+                    <span aria-hidden="true" className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-status-success-500" />
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-medium text-primary break-words">
                         {workStreamTitle(stream)}

@@ -182,7 +182,7 @@ export function WorkflowEditor({
         Apply definition
       </button>
       {error && (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-sm text-status-danger-400">
           {error}
         </p>
       )}
@@ -257,7 +257,7 @@ export function WorkflowEditor({
         </button>
       )}
       {resolutionError && (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-sm text-status-danger-400">
           {resolutionError}
         </p>
       )}
@@ -428,7 +428,7 @@ export function WorkflowEditor({
       )}
       {!definitionOnly && rawEditor}
       {!definitionOnly && validation && !validation.success && (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-sm text-status-danger-400">
           {validation.error.issues[0]?.message}
         </p>
       )}

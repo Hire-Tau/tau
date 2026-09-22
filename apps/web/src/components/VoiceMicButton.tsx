@@ -20,10 +20,11 @@ interface VoiceMicButtonProps {
 }
 
 const colors = {
-  recording: 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50',
-  recordingText: 'text-red-600 dark:text-red-400',
-  volumeRing: 'bg-red-400',
-  focusRing: 'focus:ring-red-500/50',
+  recording:
+    'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50',
+  recordingText: 'text-status-danger-600 dark:text-status-danger-400',
+  volumeRing: 'bg-status-danger-400',
+  focusRing: 'focus:ring-status-danger-500/50',
 }
 
 const sizeConfig: Record<Size, { icon: string; spinner: string; padding: string }> = {
@@ -111,7 +112,7 @@ export function VoiceMicButton({
         {state === 'transcribing' ? (
           <span
             className={clsx(
-              'inline-block border-2 border-gray-300 dark:border-gray-600 border-t-gray-600 dark:border-t-gray-300 rounded-full animate-spin',
+              'inline-block border-2 border-status-neutral-300 dark:border-status-neutral-600 border-t-gray-600 dark:border-t-gray-300 rounded-full animate-spin',
               sizes.spinner
             )}
           />

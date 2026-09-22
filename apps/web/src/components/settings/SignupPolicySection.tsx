@@ -145,7 +145,7 @@ export function SignupPolicySection() {
                   className="tau-field w-full rounded-md border border-input-border bg-input-bg px-3 py-2 font-mono text-sm text-primary placeholder:text-placeholder focus:border-accent focus:ring-accent disabled:opacity-60"
                 />
                 {domainsEmpty ? (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                  <p className="text-xs text-status-attention-600 dark:text-status-attention-400">
                     Add at least one domain — an empty list is the same as invite only.
                   </p>
                 ) : (
@@ -189,12 +189,12 @@ export function SignupPolicySection() {
                   <p className="text-xs text-muted">You need roles:read permission to browse roles.</p>
                 )}
                 {rolesQuery.isError && (
-                  <p role="alert" className="text-xs text-red-500">
+                  <p role="alert" className="text-xs text-status-danger-500">
                     Could not load roles. Try again before choosing a role.
                   </p>
                 )}
                 {cannotGrantRole && (
-                  <p role="alert" className="text-xs text-red-500">
+                  <p role="alert" className="text-xs text-status-danger-500">
                     You cannot grant permissions you do not hold. Choose another role or No role.
                   </p>
                 )}
@@ -202,7 +202,7 @@ export function SignupPolicySection() {
             )}
 
             {error && (
-              <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+              <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
                 {error}
               </p>
             )}

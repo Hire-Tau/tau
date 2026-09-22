@@ -103,12 +103,12 @@ export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
                       </span>
                     )}
                     {isOwner && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-500/15 text-violet-600 dark:text-violet-300 shrink-0">
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-decoration-4-500/15 text-decoration-4-600 dark:text-decoration-4-300 shrink-0">
                         Owner
                       </span>
                     )}
                     {isCreator && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/15 text-emerald-600 dark:text-emerald-300 shrink-0">
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-decoration-11-500/15 text-decoration-11-600 dark:text-decoration-11-300 shrink-0">
                         Creator
                       </span>
                     )}

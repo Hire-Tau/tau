@@ -39,7 +39,7 @@ function ScanStatusDisplay({ scanStatus }: { scanStatus: NonNullable<MemoryConfi
             <span>·</span>
             <button
               onClick={() => setShowSkipped(!showSkipped)}
-              className="tau-button text-amber-600 dark:text-amber-400 hover:underline"
+              className="tau-button text-status-attention-600 dark:text-status-attention-400 hover:underline"
             >
               {scanStatus.skipped.length} skipped
             </button>
@@ -52,7 +52,7 @@ function ScanStatusDisplay({ scanStatus }: { scanStatus: NonNullable<MemoryConfi
         <div className="mt-2 space-y-1.5">
           {Object.entries(skippedByReason).map(([reason, count]) => (
             <div key={reason} className="text-xs">
-              <span className="text-amber-600 dark:text-amber-400 font-medium">
+              <span className="text-status-attention-600 dark:text-status-attention-400 font-medium">
                 {SKIP_REASON_LABELS[reason] || reason}
               </span>
               <span className="text-muted"> ({count})</span>
@@ -184,7 +184,7 @@ export function WorkspaceIndexingSettings({ squadId }: Props) {
                   <span className="text-sm font-mono text-primary flex-1">{pattern}</span>
                   <button
                     onClick={() => removeInclude(i)}
-                    className="tau-button text-xs text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="tau-button text-xs text-muted hover:text-status-danger-500 opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     ✕
                   </button>
@@ -235,7 +235,7 @@ export function WorkspaceIndexingSettings({ squadId }: Props) {
                   <span className="text-sm font-mono text-primary flex-1">{pattern}</span>
                   <button
                     onClick={() => removeExclude(i)}
-                    className="tau-button text-xs text-muted hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="tau-button text-xs text-muted hover:text-status-danger-500 opacity-0 group-hover:opacity-100 transition-opacity"
                   >
                     ✕
                   </button>

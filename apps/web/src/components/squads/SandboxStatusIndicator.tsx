@@ -122,7 +122,7 @@ export function SandboxStatusIndicator({ squadId }: SandboxStatusIndicatorProps)
             toolchainMutation.mutate()
           }}
           disabled={isBusy}
-          className="tau-button ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-yellow-600/15 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-600/25 transition-colors disabled:opacity-40"
+          className="tau-button ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-status-review-600/15 text-status-review-700 dark:text-status-review-400 hover:bg-status-review-600/25 transition-colors disabled:opacity-40"
           title="Retry toolchain provisioning"
         >
           Retry provisioning
@@ -134,7 +134,7 @@ export function SandboxStatusIndicator({ squadId }: SandboxStatusIndicatorProps)
             e.stopPropagation()
             startMutation.mutate()
           }}
-          className="tau-button ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-green-600/15 text-green-600 dark:text-green-400 hover:bg-green-600/25 transition-colors"
+          className="tau-button ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-status-success-600/15 text-status-success-600 dark:text-status-success-400 hover:bg-status-success-600/25 transition-colors"
           title="Start sandbox"
         >
           Start
@@ -146,7 +146,7 @@ export function SandboxStatusIndicator({ squadId }: SandboxStatusIndicatorProps)
             e.stopPropagation()
             stopMutation.mutate()
           }}
-          className="tau-button ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-red-600/15 text-red-600 dark:text-red-400 hover:bg-red-600/25 transition-colors"
+          className="tau-button ml-1 px-1.5 py-0.5 text-[10px] font-medium rounded bg-status-danger-600/15 text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-600/25 transition-colors"
           title="Stop sandbox"
         >
           Stop

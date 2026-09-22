@@ -214,7 +214,9 @@ export function NotificationsConfigSection() {
           {createMutation.isPending ? 'Creating…' : 'Set up notifications'}
         </button>
         {createMutation.isError && (
-          <p className="text-xs text-red-600 dark:text-red-400">{(createMutation.error as Error).message}</p>
+          <p className="text-xs text-status-danger-600 dark:text-status-danger-400">
+            {(createMutation.error as Error).message}
+          </p>
         )}
       </div>
     )

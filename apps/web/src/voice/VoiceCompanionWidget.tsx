@@ -269,7 +269,7 @@ export function VoiceCompanionButton({
               onClick={handleDisconnect}
               aria-label="End chat"
               title="End chat"
-              className="tau-button flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-red-500/10 hover:text-red-500"
+              className="tau-button flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:bg-status-danger-500/10 hover:text-status-danger-500"
             >
               <StopIcon className="h-4 w-4" />
             </button>
@@ -349,16 +349,18 @@ export function VoiceCompanionButton({
       )}
 
       {rateLimitRetry && isConnected && !compact && (
-        <div className="px-3 py-2  text-xs text-amber-600 dark:text-amber-400">
+        <div className="px-3 py-2  text-xs text-status-attention-600 dark:text-status-attention-400">
           <div className="flex items-center gap-2">
-            <span className="inline-block w-3 h-3 border-2 border-amber-300 border-t-amber-600 rounded-full animate-spin" />
+            <span className="inline-block w-3 h-3 border-2 border-status-attention-300 border-t-amber-600 rounded-full animate-spin" />
             <span>Rate limit hit. Retrying in {Math.ceil(rateLimitRetry.remainingMs / 1000)}s…</span>
           </div>
         </div>
       )}
 
       {/* Error */}
-      {status === 'error' && error && <div className="px-3 py-2 text-sm text-red-600 dark:text-red-400 ">{error}</div>}
+      {status === 'error' && error && (
+        <div className="px-3 py-2 text-sm text-status-danger-600 dark:text-status-danger-400 ">{error}</div>
+      )}
 
       {/* Transcript history */}
       {!controlsOnly && (hasHistory || (isConnected && canInterrupt)) && !(live && compact) && (

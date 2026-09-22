@@ -51,8 +51,8 @@ export function VoiceWorkspacePage({
 } = {}) {
   if (!supportsRealtimeVoice(environment)) {
     return (
-      <main className="min-h-[100dvh] bg-white text-gray-950 flex items-center justify-center p-8">
-        <p className="max-w-md text-center text-sm text-gray-500">
+      <main className="min-h-[100dvh] bg-chrome-paper text-status-neutral-950 flex items-center justify-center p-8">
+        <p className="max-w-md text-center text-sm text-status-neutral-500">
           Voice workspace requires microphone support in a secure browser context. Open Tau over HTTPS or localhost in a
           browser that supports WebRTC.
         </p>
@@ -151,9 +151,9 @@ function VoiceWorkspaceSession({
   })
 
   return (
-    <main className="relative min-h-[100dvh] overflow-hidden bg-white text-gray-950">
+    <main className="relative min-h-[100dvh] overflow-hidden bg-chrome-paper text-status-neutral-950">
       <ArtifactStage artifact={activeArtifact} context={artifactContextQuery.data} />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_120%,rgba(147,197,253,0.14),transparent_45%),radial-gradient(circle_at_50%_0%,rgba(221,214,254,0.16),transparent_35%)]" />
+      <div className="pointer-events-none absolute inset-0 voice-page-glow" />
       <VoiceInputModeControl inputMode={inputMode} onInputModeChange={onInputModeChange} />
       <VoiceDebugInspector
         open={debugOpen}
@@ -177,7 +177,7 @@ function VoiceWorkspaceSession({
         onStartUserSpeech={startManualSpeech}
         onSubmitUserSpeech={submitUserSpeech}
       />
-      {/* <div className="fixed bottom-2 left-1/2 z-20 -translate-x-1/2 rounded-full bg-white/75 px-3 py-1 text-center text-xs text-gray-500 shadow-sm backdrop-blur-md">
+      {/* <div className="fixed bottom-2 left-1/2 z-20 -translate-x-1/2 rounded-full bg-chrome-paper/75 px-3 py-1 text-center text-xs text-status-neutral-500 shadow-sm backdrop-blur-md">
         {inputMode === 'manual'
           ? 'Hold the orb or space bar to speak. Release to submit.'
           : 'Listening...'}
@@ -197,7 +197,7 @@ function VoiceInputModeControl({
     <div
       role="group"
       aria-label="Voice input mode"
-      className="fixed left-1/2 top-4 z-20 flex -translate-x-1/2 rounded-full border border-gray-200/70 bg-white/80 p-1 text-xs shadow-lg backdrop-blur-md"
+      className="fixed left-1/2 top-4 z-20 flex -translate-x-1/2 rounded-full border border-status-neutral-200/70 bg-chrome-paper/80 p-1 text-xs shadow-lg backdrop-blur-md"
     >
       {(['automatic', 'manual'] as const).map((mode) => (
         <button
@@ -211,7 +211,9 @@ function VoiceInputModeControl({
           className={clsx(
             'tau-button',
             'rounded-full px-3 py-1.5 font-medium',
-            inputMode === mode ? 'bg-gray-950 text-white' : 'text-gray-600 hover:bg-white'
+            inputMode === mode
+              ? 'bg-status-neutral-950 text-on-strong'
+              : 'text-status-neutral-600 hover:bg-chrome-paper'
           )}
         >
           {mode === 'automatic' ? 'Automatic' : 'Hold to speak'}
@@ -354,41 +356,43 @@ export function VoiceDebugInspector({
   return (
     <div className="fixed inset-x-3 top-3 z-30 flex max-w-[calc(100vw-1.5rem)] flex-wrap items-start justify-end gap-2 sm:inset-x-auto sm:right-4 sm:top-4 sm:max-w-none sm:flex-nowrap sm:gap-3">
       {open && (
-        <aside className="max-h-[calc(100dvh-2rem)] w-full min-w-0 max-w-full overflow-hidden rounded-2xl border border-gray-200/70 bg-white/92 text-gray-950 shadow-2xl backdrop-blur-xl sm:w-[min(26rem,calc(100vw-2rem))]">
-          <div className="flex items-center justify-between border-b border-gray-200/70 px-3 py-2">
+        <aside className="max-h-[calc(100dvh-2rem)] w-full min-w-0 max-w-full overflow-hidden rounded-2xl border border-status-neutral-200/70 bg-chrome-paper/92 text-status-neutral-950 shadow-2xl backdrop-blur-xl sm:w-[min(26rem,calc(100vw-2rem))]">
+          <div className="flex items-center justify-between border-b border-status-neutral-200/70 px-3 py-2">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">Voice debug</div>
-              <div className="mt-0.5 text-sm font-medium text-gray-900">Transcript & tool calls</div>
+              <div className="text-xs font-semibold uppercase tracking-[0.18em] text-status-neutral-500">
+                Voice debug
+              </div>
+              <div className="mt-0.5 text-sm font-medium text-status-neutral-900">Transcript & tool calls</div>
             </div>
             <button
               type="button"
               onClick={onToggle}
-              className="tau-button rounded-md px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+              className="tau-button rounded-md px-2 py-1 text-xs text-status-neutral-500 hover:bg-status-neutral-100 hover:text-status-neutral-900"
             >
               Close
             </button>
           </div>
-          <dl className="grid grid-cols-2 gap-x-3 gap-y-1 border-b border-gray-200/70 px-3 py-2 text-xs">
+          <dl className="grid grid-cols-2 gap-x-3 gap-y-1 border-b border-status-neutral-200/70 px-3 py-2 text-xs">
             <div>
-              <dt className="text-gray-500">Status</dt>
-              <dd className="font-medium text-gray-900">{status}</dd>
+              <dt className="text-status-neutral-500">Status</dt>
+              <dd className="font-medium text-status-neutral-900">{status}</dd>
             </div>
             <div>
-              <dt className="text-gray-500">Connection</dt>
-              <dd className="font-medium text-gray-900">{isConnected ? 'connected' : 'disconnected'}</dd>
+              <dt className="text-status-neutral-500">Connection</dt>
+              <dd className="font-medium text-status-neutral-900">{isConnected ? 'connected' : 'disconnected'}</dd>
             </div>
             <div>
-              <dt className="text-gray-500">Mic</dt>
-              <dd className="font-medium text-gray-900">{isMicMuted ? 'paused' : 'enabled'}</dd>
+              <dt className="text-status-neutral-500">Mic</dt>
+              <dd className="font-medium text-status-neutral-900">{isMicMuted ? 'paused' : 'enabled'}</dd>
             </div>
             <div>
-              <dt className="text-gray-500">Turns</dt>
-              <dd className="font-medium text-gray-900">{history.length}</dd>
+              <dt className="text-status-neutral-500">Turns</dt>
+              <dd className="font-medium text-status-neutral-900">{history.length}</dd>
             </div>
             {error && (
               <div className="col-span-2">
-                <dt className="text-gray-500">Error</dt>
-                <dd className="font-medium text-red-600">{error}</dd>
+                <dt className="text-status-neutral-500">Error</dt>
+                <dd className="font-medium text-status-danger-600">{error}</dd>
               </div>
             )}
           </dl>
@@ -401,7 +405,7 @@ export function VoiceDebugInspector({
         type="button"
         onClick={onToggle}
         aria-pressed={open}
-        className="tau-button rounded-full border border-gray-200/70 bg-white/80 px-3 py-1.5 text-xs font-medium uppercase tracking-[0.16em] text-gray-600 shadow-lg backdrop-blur-md hover:bg-white hover:text-gray-950"
+        className="tau-button rounded-full border border-status-neutral-200/70 bg-chrome-paper/80 px-3 py-1.5 text-xs font-medium uppercase tracking-[0.16em] text-status-neutral-600 shadow-lg backdrop-blur-md hover:bg-chrome-paper hover:text-status-neutral-950"
       >
         Debug
       </button>
@@ -436,7 +440,7 @@ function ArtifactStage({ artifact, context }: { artifact: ArtifactIndexItem | nu
   if (!hasRenderableContent) return null
 
   return (
-    <section className="relative z-0 h-[100dvh] w-full overflow-auto bg-white text-gray-950">
+    <section className="relative z-0 h-[100dvh] w-full overflow-auto bg-chrome-paper text-status-neutral-950">
       <ArtifactRenderer
         entry={entry}
         content={context?.content}
@@ -520,7 +524,7 @@ function VoiceOrb({
         className={clsx(
           'tau-button',
           'voice-orb group relative h-24 w-24 rounded-full outline-none transition-transform duration-300 disabled:cursor-default disabled:opacity-100',
-          canClickOrb && 'cursor-pointer focus-visible:ring-2 focus-visible:ring-rose-200/80',
+          canClickOrb && 'cursor-pointer focus-visible:ring-2 focus-visible:ring-decoration-10-200/80',
           isConnected && 'voice-orb--live',
           canInterrupt && 'voice-orb--active',
           status === 'connecting' && 'voice-orb--connecting',
@@ -546,7 +550,7 @@ function VoiceOrb({
         </span>
       </button>
       {error ? (
-        <div className="max-w-[18rem] rounded-full border border-red-200/20 bg-black/35 px-3 py-1.5 text-center text-[10px] uppercase tracking-[0.22em] text-red-100/80 shadow-[0_12px_40px_rgba(0,0,0,0.18)] backdrop-blur-md">
+        <div className="max-w-[18rem] rounded-full border border-status-danger-200/20 bg-chrome-scrim/35 px-3 py-1.5 text-center text-[10px] uppercase tracking-[0.22em] text-status-danger-100/80 voice-warning-shadow backdrop-blur-md">
           {error}
         </div>
       ) : (
@@ -593,11 +597,13 @@ const ORB_STYLES = `
 .voice-orb--error {
   transform: translateZ(0) scale(1.06);
 }
+.voice-page-glow { background: radial-gradient(circle at 50% 120%,rgb(var(--custom-rgb-voice-page-glow-cool, var(--voice-page-glow-cool)) / calc(var(--custom-alpha-voice-page-glow-cool, 1) * 0.14)),transparent 45%),radial-gradient(circle at 50% 0%,rgb(var(--custom-rgb-voice-page-glow-warm, var(--voice-page-glow-warm)) / calc(var(--custom-alpha-voice-page-glow-warm, 1) * 0.16)),transparent 35%); }
+.voice-warning-shadow { box-shadow: 0 12px 40px rgb(var(--custom-rgb-voice-shadow, var(--voice-shadow)) / calc(var(--custom-alpha-voice-shadow, 1) * 0.18)); }
 .voice-orb__glow {
   position: absolute;
   inset: 4%;
   border-radius: 9999px;
-  background: radial-gradient(circle, rgba(168,85,247,0.34), rgba(59,130,246,0.24) 42%, rgba(236,72,153,0.16) 60%, transparent 78%);
+  background: radial-gradient(circle, rgb(var(--custom-rgb-voice-idle-primary, var(--voice-idle-primary)) / calc(var(--custom-alpha-voice-idle-primary, 1) * 0.34)), rgb(var(--custom-rgb-voice-idle-secondary, var(--voice-idle-secondary)) / calc(var(--custom-alpha-voice-idle-secondary, 1) * 0.24)) 42%, rgb(var(--custom-rgb-voice-idle-tertiary, var(--voice-idle-tertiary)) / calc(var(--custom-alpha-voice-idle-tertiary, 1) * 0.16)) 60%, transparent 78%);
   filter: blur(22px);
   opacity: 0.5;
   transition: opacity 240ms ease, transform 240ms ease;
@@ -612,26 +618,26 @@ const ORB_STYLES = `
   animation: voice-orb-connecting-glow 1.15s ease-in-out infinite;
 }
 .voice-orb--listening .voice-orb__glow {
-  background: radial-gradient(circle, rgba(244,63,94,0.38), rgba(239,68,68,0.24) 42%, rgba(251,113,133,0.14) 62%, transparent 78%);
+  background: radial-gradient(circle, rgb(var(--custom-rgb-voice-listening-primary, var(--voice-listening-primary)) / calc(var(--custom-alpha-voice-listening-primary, 1) * 0.38)), rgb(var(--custom-rgb-voice-listening-secondary, var(--voice-listening-secondary)) / calc(var(--custom-alpha-voice-listening-secondary, 1) * 0.24)) 42%, rgb(var(--custom-rgb-voice-listening-highlight, var(--voice-listening-highlight)) / calc(var(--custom-alpha-voice-listening-highlight, 1) * 0.14)) 62%, transparent 78%);
   opacity: 0.86;
   transform: scale(calc(1.08 + (var(--voice-input-level, 0) * 0.18)));
   animation: voice-orb-listening-glow 2.6s ease-in-out infinite;
 }
 .voice-orb--user-speaking .voice-orb__glow {
-  background: radial-gradient(circle, rgba(244,63,94,0.58), rgba(220,38,38,0.36) 38%, rgba(251,113,133,0.22) 64%, transparent 82%);
+  background: radial-gradient(circle, rgb(var(--custom-rgb-voice-listening-primary, var(--voice-listening-primary)) / calc(var(--custom-alpha-voice-listening-primary, 1) * 0.58)), rgb(var(--custom-rgb-voice-speaking-depth, var(--voice-speaking-depth)) / calc(var(--custom-alpha-voice-speaking-depth, 1) * 0.36)) 38%, rgb(var(--custom-rgb-voice-listening-highlight, var(--voice-listening-highlight)) / calc(var(--custom-alpha-voice-listening-highlight, 1) * 0.22)) 64%, transparent 82%);
   opacity: 1;
   transform: scale(calc(1.24 + (var(--voice-input-level, 0) * 0.28)));
   animation: voice-orb-user-speaking-glow 0.72s ease-in-out infinite;
 }
 .voice-orb--muted .voice-orb__glow {
-  background: radial-gradient(circle, rgba(148,163,184,0.34), rgba(100,116,139,0.22) 46%, rgba(71,85,105,0.12) 66%, transparent 80%);
+  background: radial-gradient(circle, rgb(var(--custom-rgb-voice-muted-primary, var(--voice-muted-primary)) / calc(var(--custom-alpha-voice-muted-primary, 1) * 0.34)), rgb(var(--custom-rgb-voice-muted-secondary, var(--voice-muted-secondary)) / calc(var(--custom-alpha-voice-muted-secondary, 1) * 0.22)) 46%, rgb(var(--custom-rgb-voice-muted-depth, var(--voice-muted-depth)) / calc(var(--custom-alpha-voice-muted-depth, 1) * 0.12)) 66%, transparent 80%);
   opacity: 0.62;
   transform: scale(1.04);
   animation: voice-orb-muted-glow 4s ease-in-out infinite;
 }
 .voice-orb--processing .voice-orb__glow,
 .voice-orb--speaking .voice-orb__glow {
-  background: radial-gradient(circle, rgba(216,180,254,0.46), rgba(168,85,247,0.34) 38%, rgba(236,72,153,0.2) 62%, transparent 82%);
+  background: radial-gradient(circle, rgb(var(--custom-rgb-voice-processing-highlight, var(--voice-processing-highlight)) / calc(var(--custom-alpha-voice-processing-highlight, 1) * 0.46)), rgb(var(--custom-rgb-voice-idle-primary, var(--voice-idle-primary)) / calc(var(--custom-alpha-voice-idle-primary, 1) * 0.34)) 38%, rgb(var(--custom-rgb-voice-idle-tertiary, var(--voice-idle-tertiary)) / calc(var(--custom-alpha-voice-idle-tertiary, 1) * 0.2)) 62%, transparent 82%);
   opacity: 1;
   transform: scale(1.22);
   animation: voice-orb-speaking-glow 0.82s ease-in-out infinite;
@@ -642,7 +648,7 @@ const ORB_STYLES = `
 }
 .voice-orb--warning .voice-orb__glow,
 .voice-orb--error .voice-orb__glow {
-  background: radial-gradient(circle, rgba(251,146,60,0.46), rgba(249,115,22,0.34) 40%, rgba(245,158,11,0.2) 64%, transparent 82%);
+  background: radial-gradient(circle, rgb(var(--custom-rgb-voice-warning-primary, var(--voice-warning-primary)) / calc(var(--custom-alpha-voice-warning-primary, 1) * 0.46)), rgb(var(--custom-rgb-voice-warning-secondary, var(--voice-warning-secondary)) / calc(var(--custom-alpha-voice-warning-secondary, 1) * 0.34)) 40%, rgb(var(--custom-rgb-voice-warning-tertiary, var(--voice-warning-tertiary)) / calc(var(--custom-alpha-voice-warning-tertiary, 1) * 0.2)) 64%, transparent 82%);
   opacity: 0.96;
   transform: scale(1.2);
   animation: voice-orb-warning-glow 1.25s ease-in-out infinite;
@@ -652,18 +658,18 @@ const ORB_STYLES = `
   inset: 0;
   overflow: hidden;
   isolation: isolate;
-  border: 1px solid rgba(255, 255, 255, 0.58);
+  border: 1px solid rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.58));
   border-radius: 51% 49% 48% 52% / 49% 52% 48% 51%;
   transform-origin: 50% 52%;
   background:
-    radial-gradient(circle at 31% 17%, rgba(255,255,255,0.96), rgba(240,249,255,0.34) 15%, transparent 31%),
-    radial-gradient(circle at 66% 42%, rgba(255,255,255,0.18), transparent 18%),
-    radial-gradient(circle at 50% 55%, rgba(255,255,255,0.28), rgba(219,234,254,0.12) 42%, rgba(15,23,42,0.05) 100%);
+    radial-gradient(circle at 31% 17%, rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.96)), rgb(var(--custom-rgb-voice-glass-frost, var(--voice-glass-frost)) / calc(var(--custom-alpha-voice-glass-frost, 1) * 0.34)) 15%, transparent 31%),
+    radial-gradient(circle at 66% 42%, rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.18)), transparent 18%),
+    radial-gradient(circle at 50% 55%, rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.28)), rgb(var(--custom-rgb-voice-glass-reflection, var(--voice-glass-reflection)) / calc(var(--custom-alpha-voice-glass-reflection, 1) * 0.12)) 42%, rgb(var(--custom-rgb-voice-glass-shade, var(--voice-glass-shade)) / calc(var(--custom-alpha-voice-glass-shade, 1) * 0.05)) 100%);
   box-shadow:
-    inset 0 0 13px rgba(255,255,255,0.86),
-    inset 12px 12px 24px rgba(255,255,255,0.22),
-    inset -12px -18px 24px rgba(30,27,75,0.28),
-    0 18px 44px rgba(67,56,202,0.16);
+    inset 0 0 13px rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.86)),
+    inset 12px 12px 24px rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.22)),
+    inset -12px -18px 24px rgb(var(--custom-rgb-voice-glass-depth, var(--voice-glass-depth)) / calc(var(--custom-alpha-voice-glass-depth, 1) * 0.28)),
+    0 18px 44px rgb(var(--custom-rgb-voice-glass-shadow, var(--voice-glass-shadow)) / calc(var(--custom-alpha-voice-glass-shadow, 1) * 0.16));
   animation: voice-orb-breathe 6.4s ease-in-out infinite;
 }
 .voice-orb__swirl {
@@ -686,7 +692,7 @@ const ORB_STYLES = `
   bottom: 4%;
   width: 70%;
   height: 56%;
-  background: radial-gradient(circle, rgba(236,72,153,0.86), rgba(168,85,247,0.44) 50%, transparent 76%);
+  background: radial-gradient(circle, rgb(var(--custom-rgb-voice-idle-tertiary, var(--voice-idle-tertiary)) / calc(var(--custom-alpha-voice-idle-tertiary, 1) * 0.86)), rgb(var(--custom-rgb-voice-idle-primary, var(--voice-idle-primary)) / calc(var(--custom-alpha-voice-idle-primary, 1) * 0.44)) 50%, transparent 76%);
   animation: voice-orb-blob-a 6.5s ease-in-out infinite;
 }
 .voice-orb__blob--blue {
@@ -694,7 +700,7 @@ const ORB_STYLES = `
   top: 20%;
   width: 72%;
   height: 62%;
-  background: radial-gradient(circle, rgba(56,189,248,0.84), rgba(37,99,235,0.52) 48%, transparent 76%);
+  background: radial-gradient(circle, rgb(var(--custom-rgb-voice-swirl-cool, var(--voice-swirl-cool)) / calc(var(--custom-alpha-voice-swirl-cool, 1) * 0.84)), rgb(var(--custom-rgb-voice-swirl-cool-depth, var(--voice-swirl-cool-depth)) / calc(var(--custom-alpha-voice-swirl-cool-depth, 1) * 0.52)) 48%, transparent 76%);
   animation: voice-orb-blob-b 7.6s ease-in-out infinite;
 }
 .voice-orb__blob--violet {
@@ -702,7 +708,7 @@ const ORB_STYLES = `
   top: -2%;
   width: 76%;
   height: 70%;
-  background: radial-gradient(circle, rgba(192,132,252,0.84), rgba(109,40,217,0.56) 50%, transparent 78%);
+  background: radial-gradient(circle, rgb(var(--custom-rgb-voice-swirl-warm, var(--voice-swirl-warm)) / calc(var(--custom-alpha-voice-swirl-warm, 1) * 0.84)), rgb(var(--custom-rgb-voice-swirl-warm-depth, var(--voice-swirl-warm-depth)) / calc(var(--custom-alpha-voice-swirl-warm-depth, 1) * 0.56)) 50%, transparent 78%);
   animation: voice-orb-blob-c 8.2s ease-in-out infinite;
 }
 .voice-orb__shade {
@@ -711,10 +717,10 @@ const ORB_STYLES = `
   z-index: 2;
   border-radius: inherit;
   background:
-    radial-gradient(circle at 31% 18%, rgba(255,255,255,0.76), transparent 23%),
-    radial-gradient(circle at 70% 44%, rgba(255,255,255,0.18), transparent 18%),
-    radial-gradient(ellipse at 50% 88%, rgba(15,23,42,0.38), transparent 42%),
-    radial-gradient(circle at 50% 50%, transparent 52%, rgba(255,255,255,0.3) 80%, rgba(49,46,129,0.16) 100%);
+    radial-gradient(circle at 31% 18%, rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.76)), transparent 23%),
+    radial-gradient(circle at 70% 44%, rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.18)), transparent 18%),
+    radial-gradient(ellipse at 50% 88%, rgb(var(--custom-rgb-voice-glass-shade, var(--voice-glass-shade)) / calc(var(--custom-alpha-voice-glass-shade, 1) * 0.38)), transparent 42%),
+    radial-gradient(circle at 50% 50%, transparent 52%, rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.3)) 80%, rgb(var(--custom-rgb-voice-rim-depth, var(--voice-rim-depth)) / calc(var(--custom-alpha-voice-rim-depth, 1) * 0.16)) 100%);
   pointer-events: none;
 }
 .voice-orb__rim {
@@ -722,8 +728,8 @@ const ORB_STYLES = `
   inset: 2%;
   z-index: 3;
   border-radius: inherit;
-  border: 1px solid rgba(255,255,255,0.38);
-  box-shadow: inset 3px 2px 8px rgba(255,255,255,0.46), inset -8px -8px 14px rgba(49,46,129,0.14);
+  border: 1px solid rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.38));
+  box-shadow: inset 3px 2px 8px rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.46)), inset -8px -8px 14px rgb(var(--custom-rgb-voice-rim-depth, var(--voice-rim-depth)) / calc(var(--custom-alpha-voice-rim-depth, 1) * 0.14));
 }
 .voice-orb__shine {
   position: absolute;
@@ -733,7 +739,7 @@ const ORB_STYLES = `
   width: 48%;
   height: 16%;
   border-radius: 9999px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.72), transparent);
+  background: linear-gradient(90deg, transparent, rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.72)), transparent);
   filter: blur(5px);
   transform: rotate(-8deg);
   opacity: 0.68;
@@ -741,34 +747,34 @@ const ORB_STYLES = `
 .voice-orb--connecting .voice-orb__shell {
   animation-duration: 2.2s;
   box-shadow:
-    inset 0 0 16px rgba(255,255,255,0.96),
-    inset 12px 12px 26px rgba(255,255,255,0.28),
-    inset -12px -18px 26px rgba(30,27,75,0.32),
-    0 18px 52px rgba(14,165,233,0.34),
-    0 0 0 8px rgba(125,211,252,0.12);
+    inset 0 0 16px rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.96)),
+    inset 12px 12px 26px rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.28)),
+    inset -12px -18px 26px rgb(var(--custom-rgb-voice-glass-depth, var(--voice-glass-depth)) / calc(var(--custom-alpha-voice-glass-depth, 1) * 0.32)),
+    0 18px 52px rgb(var(--custom-rgb-voice-live-shadow, var(--voice-live-shadow)) / calc(var(--custom-alpha-voice-live-shadow, 1) * 0.34)),
+    0 0 0 8px rgb(var(--custom-rgb-voice-live-ring, var(--voice-live-ring)) / calc(var(--custom-alpha-voice-live-ring, 1) * 0.12));
 }
 .voice-orb--connecting .voice-orb__swirl {
   animation-duration: 3.2s;
 }
 .voice-orb--listening .voice-orb__shell {
   box-shadow:
-    inset 0 0 14px rgba(255,255,255,0.9),
-    inset 12px 12px 24px rgba(255,255,255,0.22),
-    inset -12px -18px 24px rgba(127,29,29,0.2),
-    0 18px 48px rgba(244,63,94,0.22),
-    0 0 0 7px rgba(244,63,94,0.08);
+    inset 0 0 14px rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.9)),
+    inset 12px 12px 24px rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.22)),
+    inset -12px -18px 24px rgb(var(--custom-rgb-voice-listening-depth, var(--voice-listening-depth)) / calc(var(--custom-alpha-voice-listening-depth, 1) * 0.2)),
+    0 18px 48px rgb(var(--custom-rgb-voice-listening-primary, var(--voice-listening-primary)) / calc(var(--custom-alpha-voice-listening-primary, 1) * 0.22)),
+    0 0 0 7px rgb(var(--custom-rgb-voice-listening-primary, var(--voice-listening-primary)) / calc(var(--custom-alpha-voice-listening-primary, 1) * 0.08));
 }
 .voice-orb--user-speaking .voice-orb__shell {
   animation-duration: 1.35s;
   box-shadow:
-    inset 0 0 18px rgba(255,255,255,0.96),
-    inset 12px 12px 28px rgba(255,255,255,0.28),
-    inset -12px -18px 28px rgba(127,29,29,0.34),
-    0 20px 62px rgba(244,63,94,0.38),
-    0 0 0 10px rgba(244,63,94,0.12);
+    inset 0 0 18px rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.96)),
+    inset 12px 12px 28px rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.28)),
+    inset -12px -18px 28px rgb(var(--custom-rgb-voice-listening-depth, var(--voice-listening-depth)) / calc(var(--custom-alpha-voice-listening-depth, 1) * 0.34)),
+    0 20px 62px rgb(var(--custom-rgb-voice-listening-primary, var(--voice-listening-primary)) / calc(var(--custom-alpha-voice-listening-primary, 1) * 0.38)),
+    0 0 0 10px rgb(var(--custom-rgb-voice-listening-primary, var(--voice-listening-primary)) / calc(var(--custom-alpha-voice-listening-primary, 1) * 0.12));
 }
 .voice-orb--listening .voice-orb__blob--magenta {
-  background: radial-gradient(circle, rgba(244,63,94,0.88), rgba(236,72,153,0.48) 52%, transparent 76%);
+  background: radial-gradient(circle, rgb(var(--custom-rgb-voice-listening-primary, var(--voice-listening-primary)) / calc(var(--custom-alpha-voice-listening-primary, 1) * 0.88)), rgb(var(--custom-rgb-voice-idle-tertiary, var(--voice-idle-tertiary)) / calc(var(--custom-alpha-voice-idle-tertiary, 1) * 0.48)) 52%, transparent 76%);
 }
 .voice-orb--listening .voice-orb__swirl {
   animation-duration: 8.8s;
@@ -777,32 +783,32 @@ const ORB_STYLES = `
   animation-duration: 2.2s;
 }
 .voice-orb--user-speaking .voice-orb__blob--magenta {
-  background: radial-gradient(circle, rgba(248,113,113,0.94), rgba(244,63,94,0.58) 52%, transparent 78%);
+  background: radial-gradient(circle, rgb(var(--custom-rgb-voice-listening-bright, var(--voice-listening-bright)) / calc(var(--custom-alpha-voice-listening-bright, 1) * 0.94)), rgb(var(--custom-rgb-voice-listening-primary, var(--voice-listening-primary)) / calc(var(--custom-alpha-voice-listening-primary, 1) * 0.58)) 52%, transparent 78%);
 }
 .voice-orb--muted .voice-orb__shell {
   animation-duration: 9s;
   box-shadow:
-    inset 0 0 12px rgba(255,255,255,0.82),
-    inset 12px 12px 22px rgba(255,255,255,0.16),
-    inset -12px -18px 22px rgba(51,65,85,0.22),
-    0 14px 36px rgba(71,85,105,0.16),
-    0 0 0 6px rgba(148,163,184,0.08);
+    inset 0 0 12px rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.82)),
+    inset 12px 12px 22px rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.16)),
+    inset -12px -18px 22px rgb(var(--custom-rgb-voice-muted-shadow, var(--voice-muted-shadow)) / calc(var(--custom-alpha-voice-muted-shadow, 1) * 0.22)),
+    0 14px 36px rgb(var(--custom-rgb-voice-muted-depth, var(--voice-muted-depth)) / calc(var(--custom-alpha-voice-muted-depth, 1) * 0.16)),
+    0 0 0 6px rgb(var(--custom-rgb-voice-muted-primary, var(--voice-muted-primary)) / calc(var(--custom-alpha-voice-muted-primary, 1) * 0.08));
 }
 .voice-orb--muted .voice-orb__blob--magenta,
 .voice-orb--muted .voice-orb__blob--blue,
 .voice-orb--muted .voice-orb__blob--violet {
-  background: radial-gradient(circle, rgba(148,163,184,0.72), rgba(71,85,105,0.34) 54%, transparent 78%);
+  background: radial-gradient(circle, rgb(var(--custom-rgb-voice-muted-primary, var(--voice-muted-primary)) / calc(var(--custom-alpha-voice-muted-primary, 1) * 0.72)), rgb(var(--custom-rgb-voice-muted-depth, var(--voice-muted-depth)) / calc(var(--custom-alpha-voice-muted-depth, 1) * 0.34)) 54%, transparent 78%);
   animation-duration: 10s;
 }
 .voice-orb--processing .voice-orb__shell,
 .voice-orb--speaking .voice-orb__shell {
   animation-duration: 1.8s;
   box-shadow:
-    inset 0 0 18px rgba(255,255,255,0.98),
-    inset 12px 12px 28px rgba(255,255,255,0.3),
-    inset -12px -18px 28px rgba(88,28,135,0.34),
-    0 18px 58px rgba(168,85,247,0.36),
-    0 0 0 9px rgba(216,180,254,0.12);
+    inset 0 0 18px rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.98)),
+    inset 12px 12px 28px rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.3)),
+    inset -12px -18px 28px rgb(var(--custom-rgb-voice-processing-depth, var(--voice-processing-depth)) / calc(var(--custom-alpha-voice-processing-depth, 1) * 0.34)),
+    0 18px 58px rgb(var(--custom-rgb-voice-idle-primary, var(--voice-idle-primary)) / calc(var(--custom-alpha-voice-idle-primary, 1) * 0.36)),
+    0 0 0 9px rgb(var(--custom-rgb-voice-processing-highlight, var(--voice-processing-highlight)) / calc(var(--custom-alpha-voice-processing-highlight, 1) * 0.12));
 }
 .voice-orb--processing .voice-orb__swirl,
 .voice-orb--speaking .voice-orb__swirl {
@@ -832,19 +838,19 @@ const ORB_STYLES = `
 .voice-orb--error .voice-orb__shell {
   animation-duration: 2.4s;
   box-shadow:
-    inset 0 0 16px rgba(255,255,255,0.94),
-    inset 12px 12px 26px rgba(255,255,255,0.24),
-    inset -12px -18px 26px rgba(124,45,18,0.28),
-    0 18px 54px rgba(249,115,22,0.32),
-    0 0 0 8px rgba(251,146,60,0.12);
+    inset 0 0 16px rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.94)),
+    inset 12px 12px 26px rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.24)),
+    inset -12px -18px 26px rgb(var(--custom-rgb-voice-warning-depth, var(--voice-warning-depth)) / calc(var(--custom-alpha-voice-warning-depth, 1) * 0.28)),
+    0 18px 54px rgb(var(--custom-rgb-voice-warning-secondary, var(--voice-warning-secondary)) / calc(var(--custom-alpha-voice-warning-secondary, 1) * 0.32)),
+    0 0 0 8px rgb(var(--custom-rgb-voice-warning-primary, var(--voice-warning-primary)) / calc(var(--custom-alpha-voice-warning-primary, 1) * 0.12));
 }
 .voice-orb--warning .voice-orb__blob--magenta,
 .voice-orb--error .voice-orb__blob--magenta {
-  background: radial-gradient(circle, rgba(251,146,60,0.88), rgba(244,63,94,0.42) 52%, transparent 76%);
+  background: radial-gradient(circle, rgb(var(--custom-rgb-voice-warning-primary, var(--voice-warning-primary)) / calc(var(--custom-alpha-voice-warning-primary, 1) * 0.88)), rgb(var(--custom-rgb-voice-listening-primary, var(--voice-listening-primary)) / calc(var(--custom-alpha-voice-listening-primary, 1) * 0.42)) 52%, transparent 76%);
 }
 .voice-orb--warning .voice-orb__blob--violet,
 .voice-orb--error .voice-orb__blob--violet {
-  background: radial-gradient(circle, rgba(253,186,116,0.82), rgba(249,115,22,0.5) 52%, transparent 78%);
+  background: radial-gradient(circle, rgb(var(--custom-rgb-voice-warning-highlight, var(--voice-warning-highlight)) / calc(var(--custom-alpha-voice-warning-highlight, 1) * 0.82)), rgb(var(--custom-rgb-voice-warning-secondary, var(--voice-warning-secondary)) / calc(var(--custom-alpha-voice-warning-secondary, 1) * 0.5)) 52%, transparent 78%);
 }
 .voice-orb-status {
   position: relative;
@@ -863,7 +869,7 @@ const ORB_STYLES = `
   top: 50%;
   width: 10px;
   height: 10px;
-  border: 1px solid rgba(224, 242, 254, 0.82);
+  border: 1px solid rgb(var(--custom-rgb-voice-status-ring, var(--voice-status-ring)) / calc(var(--custom-alpha-voice-status-ring, 1) * 0.82));
   border-radius: 9999px;
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.8);
@@ -872,8 +878,8 @@ const ORB_STYLES = `
   width: 4px;
   height: 4px;
   border-radius: 9999px;
-  background: rgba(240, 249, 255, 0.95);
-  box-shadow: 0 0 10px rgba(255,255,255,0.7), 0 0 18px rgba(147, 197, 253, 0.65);
+  background: rgb(var(--custom-rgb-voice-glass-frost, var(--voice-glass-frost)) / calc(var(--custom-alpha-voice-glass-frost, 1) * 0.95));
+  box-shadow: 0 0 10px rgb(var(--custom-rgb-voice-glass-highlight, var(--voice-glass-highlight)) / calc(var(--custom-alpha-voice-glass-highlight, 1) * 0.7)), 0 0 18px rgb(var(--custom-rgb-voice-page-glow-cool, var(--voice-page-glow-cool)) / calc(var(--custom-alpha-voice-page-glow-cool, 1) * 0.65));
   transform: scale(0.72);
 }
 .voice-orb-status[data-status='idle'] .voice-orb-status__dot {

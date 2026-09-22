@@ -764,7 +764,7 @@ describe('background presence (operator decisions 2026-08-27)', () => {
     expect(html).toContain('1 working')
     expect(html).toContain('2 waiting on you')
     expect(html).toContain('3 active streams')
-    expect(html).toContain('animate-pulse bg-blue-500')
+    expect(html).toContain('animate-pulse bg-status-progress-500')
     // Exactly ONE live dot: the agent's top-most row only.
     expect(html.split('Working now').length - 1).toBe(1)
     expect(html).toContain('bg-current')

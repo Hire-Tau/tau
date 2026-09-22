@@ -160,7 +160,7 @@ export function RejectionModal({
       </div>
 
       {voiceError && (
-        <div className="mb-4 rounded-md px-3 py-2 bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 text-sm">
+        <div className="mb-4 rounded-md px-3 py-2 bg-status-external-wait-50 dark:bg-status-external-wait-900/30 text-status-external-wait-600 dark:text-status-external-wait-400 text-sm">
           {voiceError}
         </div>
       )}
@@ -186,8 +186,8 @@ export function RejectionModal({
 
       <p className="text-xs text-placeholder mt-1 text-right self-end">
         {voiceState === 'recording' ? (
-          <span className="text-red-500 dark:text-red-400 flex items-center justify-end gap-1">
-            <span className="inline-block w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+          <span className="text-status-danger-500 dark:text-status-danger-400 flex items-center justify-end gap-1">
+            <span className="inline-block w-2 h-2 bg-status-danger-500 rounded-full animate-pulse" />
             {isHoldMode
               ? 'Hold-to-talk... release to transcribe, Esc to cancel'
               : 'Recording... ↑ to confirm, ↓ to preview, Esc to cancel'}

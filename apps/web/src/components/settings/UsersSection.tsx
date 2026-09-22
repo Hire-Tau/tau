@@ -86,7 +86,7 @@ export function UsersSection() {
       {showInvite && <InviteUserForm onCancel={() => setShowInvite(false)} />}
 
       {inviteLink && (
-        <div className="tau-section py-4 space-y-2 border-green-300 dark:border-green-700">
+        <div className="tau-section py-4 space-y-2 border-status-success-300 dark:border-status-success-700">
           <p className="text-sm font-medium text-primary">Invite link created</p>
           <p className="text-xs text-muted">
             Email isn’t configured, so share this one-time link with the invitee. It takes them straight to passkey
@@ -245,7 +245,7 @@ function UserRow({
             <span className="text-sm font-medium text-primary truncate max-w-full">{user.email}</span>
             {user.displayName && <span className="text-sm text-muted truncate">({user.displayName})</span>}
             {isDisabled && (
-              <span className="text-xs px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 font-medium whitespace-nowrap shrink-0">
+              <span className="text-xs px-1.5 py-0.5 rounded-full bg-status-danger-100 text-status-danger-700 dark:bg-status-danger-900/30 dark:text-status-danger-400 font-medium whitespace-nowrap shrink-0">
                 Disabled
               </span>
             )}
@@ -257,8 +257,8 @@ function UserRow({
                 className={clsx(
                   'text-xs px-1.5 py-0.5 rounded-full font-medium whitespace-nowrap shrink-0',
                   setup.pending
-                    ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400'
-                    : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                    ? 'bg-status-review-100 text-status-review-800 dark:bg-status-review-900/30 dark:text-status-review-400'
+                    : 'bg-status-success-100 text-status-success-700 dark:bg-status-success-900/30 dark:text-status-success-400'
                 )}
               >
                 {setup.label}
@@ -303,8 +303,8 @@ function UserRow({
               'tau-button',
               'text-xs font-medium',
               isDisabled
-                ? 'text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300'
-                : 'text-yellow-600 dark:text-yellow-400 hover:text-yellow-800 dark:hover:text-yellow-300'
+                ? 'text-status-success-600 dark:text-status-success-400 hover:text-status-success-800 dark:hover:text-status-success-300'
+                : 'text-status-review-600 dark:text-status-review-400 hover:text-status-review-800 dark:hover:text-status-review-300'
             )}
           >
             {isDisabled ? 'Enable' : 'Disable'}
@@ -313,7 +313,7 @@ function UserRow({
           <button
             onClick={onDelete}
             disabled={isDeleting}
-            className="tau-button text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 font-medium disabled:opacity-50"
+            className="tau-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium disabled:opacity-50"
           >
             Delete
           </button>
@@ -325,7 +325,9 @@ function UserRow({
           role={resendFeedback.isProblem ? 'alert' : 'status'}
           className={clsx(
             'text-xs mt-1',
-            resendFeedback.isProblem ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'
+            resendFeedback.isProblem
+              ? 'text-status-danger-600 dark:text-status-danger-400'
+              : 'text-status-success-600 dark:text-status-success-400'
           )}
         >
           {resendFeedback.message}
@@ -355,7 +357,7 @@ function UserRow({
                       )}
                       <button
                         onClick={() => removeMutation.mutate(assignment.id)}
-                        className="tau-button ml-0.5 text-accent-light hover:text-red-500 font-bold"
+                        className="tau-button ml-0.5 text-accent-light hover:text-status-danger-500 font-bold"
                         title={`Remove ${assignment.roleName || assignment.roleSlug || 'role'}`}
                         aria-label={`Remove ${assignment.roleName || assignment.roleSlug || 'role'}`}
                       >
@@ -424,7 +426,7 @@ function UserRow({
                 </button>
               </div>
               {assignMutation.isError && (
-                <p role="alert" className="text-xs text-red-600 dark:text-red-400">
+                <p role="alert" className="text-xs text-status-danger-600 dark:text-status-danger-400">
                   {(assignMutation.error as Error)?.message || 'Failed to assign role'}
                 </p>
               )}
