@@ -270,7 +270,7 @@ test('onboarding enables GitHub before login and returns authorization to onboar
     )
   )
   expect(container.textContent).not.toContain('Webhook delivery')
-  expect(container.textContent).not.toContain('Use your own GitHub App')
+  expect(container.querySelector('details summary')?.textContent).toBe('Use your own GitHub App instead')
   await harness.act(async () => {
     fireEvent.click(
       [...container.querySelectorAll('button')].find((button) => button.textContent === 'Connect account')!
@@ -390,4 +390,120 @@ test('global default account is first and changing it preserves the other accoun
     )
     await waitFor(() => expect(displayed()).toEqual(['OtherGlobal default', 'Personal', 'Work']))
   })
+})
+
+test('a failed login shows the server reason and Retry starts a new login', async () => {
+  const requests: string[] = []
+  globalThis.fetch = (async (input) => {
+    requests.push(String(input))
+    if (requests.length === 1)
+      return Response.json(
+        {
+          error:
+            "Device authorization is disabled for this GitHub App. Enable device flow in the app's settings or add a client secret.",
+          code: 'device_flow_disabled',
+        },
+        { status: 400 }
+      )
+    return Response.json({
+      kind: 'device',
+      id: 'retry-device',
+      userCode: 'RETRY-CODE',
+      verificationUri: 'https://github.com/login/device',
+      expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+      intervalSeconds: 60,
+    })
+  }) as typeof fetch
+  const { root, container } = harness.createRoot()
+  await harness.act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <GitHubIntegrationSettings canRead canWrite />
+      </QueryClientProvider>
+    )
+  )
+  const button = (text: string) => [...container.querySelectorAll('button')].find((item) => item.textContent === text)
+  await harness.act(async () => {
+    fireEvent.click(button('Connect account')!)
+  })
+  await waitFor(() =>
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      "Device authorization is disabled for this GitHub App. Enable device flow in the app's settings or add a client secret."
+    )
+  )
+  expect(container.textContent).not.toContain('GitHub operation failed')
+  await harness.act(async () => {
+    fireEvent.click(button('Retry')!)
+  })
+  await waitFor(() => expect(container.textContent).toContain('RETRY-CODE'))
+  expect(requests).toHaveLength(2)
+  expect(requests.every((url) => url.endsWith('/integrations/providers/github/authorization/start'))).toBe(true)
+  expect(container.querySelector('[role="alert"]')).toBeNull()
+  expect(button('Retry')).toBeUndefined()
+})
+
+test('failed app settings and account changes report the server reason instead of fixed text', async () => {
+  client.setQueryData(integrationQueryKeys.pool('github'), [
+    {
+      id: 'account',
+      displayName: 'Example',
+      configuration: { login: 'example' },
+      isGlobalDefault: true,
+      enabled: true,
+      authState: 'authenticated',
+      healthState: 'healthy',
+      usage: { squadCount: 0, squads: [] },
+    },
+  ])
+  globalThis.fetch = (async (input) => {
+    if (String(input).endsWith('/oauth-app'))
+      return Response.json({ error: 'OAuth application configuration failed' }, { status: 400 })
+    return new Response('Internal Server Error', { status: 500 })
+  }) as typeof fetch
+  const { root, container } = harness.createRoot()
+  await harness.act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <GitHubIntegrationSettings canRead canWrite />
+      </QueryClientProvider>
+    )
+  )
+  const button = (text: string) => [...container.querySelectorAll('button')].find((item) => item.textContent === text)!
+  await harness.act(async () => {
+    fireEvent.click(button('Use Tau app'))
+  })
+  await waitFor(() =>
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('OAuth application configuration failed')
+  )
+  expect(button('Retry')).toBeUndefined()
+  await harness.act(async () => {
+    fireEvent.click(button('Disable'))
+  })
+  await waitFor(() =>
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe("Couldn't update the GitHub account.")
+  )
+})
+
+test("Tau's default app explains that login needs no setup", async () => {
+  client.setQueryData([...integrationQueryKeys.all, 'oauth-app', 'github'], {
+    authority: 'local',
+    configured: true,
+    clientId: TAU_GITHUB_APP_CLIENT_ID,
+    authorizationMode: 'device',
+    callbackUrl: 'http://localhost/settings/integrations/oauth/callback/github',
+    requiredCapabilities: [],
+  })
+  const { root, container } = harness.createRoot()
+  await harness.act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <GitHubIntegrationSettings canRead canWrite embedded onboarding />
+      </QueryClientProvider>
+    )
+  )
+  expect(container.textContent).toContain(
+    "Uses Tau's GitHub App, so no setup is needed. You'll get a code to enter on github.com."
+  )
+  expect(container.textContent).toContain('no public URL is needed')
+  expect(container.textContent).toContain('http://localhost/settings/integrations/oauth/callback/github')
 })
