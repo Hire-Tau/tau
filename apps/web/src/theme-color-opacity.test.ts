@@ -1,4 +1,5 @@
 import { compileCustomTheme, STATUS_TOKENS } from '@tau/shared'
+import { palettes } from './theme/test/builtins'
 import { BUILT_IN_THEMES } from './theme/registry'
 import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
@@ -243,4 +244,50 @@ describe('tailwind theme color opacity after variable substitution', () => {
       'rgb(var(--custom-rgb-color-focus, var(--color-focus)) / calc(var(--custom-alpha-color-focus, 1) * 0.3))'
     )
   })
+})
+
+test('actual spinner and narrow Stop CSS follows custom status colors without changing builtin defaults', async () => {
+  const spinner = readFileSync(join(srcRoot, 'components/VoiceFormFillButton.tsx'), 'utf8')
+  expect(spinner).toContain('border-t-status-danger-600')
+  const generated = await compile(['border-t-status-danger-600', 'dark:border-t-status-danger-400'])
+  const css = await postcss([
+    tailwindcss({ ...tailwindConfig, content: [{ raw: 'chat-composer-stop' }], plugins: [] }),
+  ]).process(readFileSync(join(srcRoot, 'components/ResponsiveChat.css'), 'utf8'), { from: undefined })
+  const stop: string[] = []
+  css.root.walkRules((rule) => {
+    if (rule.selector.endsWith('.chat-composer .chat-composer-stop'))
+      rule.walkDecls('color', (decl) => {
+        stop.push(decl.value)
+      })
+  })
+  expect(stop).toEqual(['rgb(var(--status-danger-600))', 'rgb(var(--status-danger-400))'])
+  const custom = compileCustomTheme(
+    JSON.stringify({
+      format: 'tau-custom-theme',
+      version: 1,
+      name: 'Spinner',
+      base: 'tau',
+      appearance: 'light',
+      overrides: Object.fromEntries(STATUS_TOKENS.map((name) => [name, 'rgba(12, 34, 56, 0.5)'])),
+    }),
+    BUILT_IN_THEMES
+  )
+  for (const [i, shade] of ['600', '400'].entries()) {
+    const expected = shade === '600' ? [220, 38, 38] : [248, 113, 113]
+    for (const { tokens: scope } of palettes) {
+      expect(substitute(stop[i]!, scope)).toBe(`rgb(${expected.join(' ')})`)
+      expect(substitute(stop[i]!, { ...scope, ...custom })).toBe('rgb(12 34 56 / 0.5)')
+    }
+  }
+  let count = 0
+  generated.walkDecls('border-top-color', (decl) => {
+    count++
+    for (const { tokens } of palettes) {
+      const vars = { ...tokens, ...declarations(decl.parent as Rule) }
+      const channels = decl.value.includes('--status-danger-400') ? [248, 113, 113] : [220, 38, 38]
+      expect(numericRgb(substitute(decl.value, vars))).toEqual({ channels, alpha: 1 })
+      expect(numericRgb(substitute(decl.value, { ...vars, ...custom }))).toEqual({ channels: [12, 34, 56], alpha: 0.5 })
+    }
+  })
+  expect(count).toBe(2)
 })

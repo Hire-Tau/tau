@@ -7,7 +7,7 @@
 - **Ember** (`ember`, dual): warm paper/charcoal surfaces and terracotta actions, warm dark code/graph islands.
 - **High contrast** (`high-contrast`, unified): constant light ink-on-paper chrome, strong black boundaries and black code/graph backgrounds. This is not an application-wide AAA certification.
 
-The two recolors preserve status meanings and all seven used decorative Badge palettes. Every new CSS scope explicitly defines the full active token set plus intrinsic-opacity metadata. Fractional syntax channels, graph/status aliases, xterm's `none` selected-ink sentinel and `auto` scrollbar sentinel are retained. No runtime color generation or new runtime dependency is involved. Brand, authored artifact colors, arbitrary ANSI foreground/background combinations and remaining legacy palette utilities are not claimed to be fully themeable or contrast-certified.
+The two recolors preserve status meanings and all seven used decorative Badge palettes. Every new CSS scope explicitly defines the full active token set plus intrinsic-opacity metadata. Fractional syntax channels, graph/status aliases, xterm's `none` selected-ink sentinel and `auto` scrollbar sentinel are retained. No runtime color generation or new runtime dependency is involved. App-owned palette utilities, brand, voice materials and presentation framing are tokenized; see [complete coverage](complete-coverage.md) for the guard and bounded content/definition exceptions. Authored artifact colors remain content-owned. Arbitrary ANSI combinations, custom overrides and utility-tone pairings are not universally contrast-certified.
 
 The Settings control has a native labeled theme selector and Light/Dark/System selector. Unified themes disable appearance and explain why; switching back restores the previously selected appearance. Selection, surface snapshot (including `constant`), document background and theme-color meta update together before paint. The existing legacy toggle remains the rollback UI while `THEME_PICKER_ENABLED` is false.
 
@@ -50,7 +50,7 @@ The shipped inline script contains a minimal surface map, checked against the re
 - Provider matrix: 4 × 3 × 2 = **24** cases plus interaction coverage of unified → dual preference retention.
 - Chromium: actual shipped HTML with the application module blocked (no React/CSS assistance), 4 × (light, dark, system-light, system-dark) × (missing, corrupt, stale, matching snapshot) = **64** cases. Document scope, dark class, background and theme-color all matched before hydration.
 
-## Render matrix and limits
+## Historical phase-5 render matrix and current limits
 
 Chromium real-renderer fixture, synthetic local data, 1280×1100: **96** cases (six panels × four themes × light/dark/system-light/system-dark) without uncaught browser errors. This is not authenticated application navigation or a live service/session test.
 
@@ -64,7 +64,7 @@ Chromium real-renderer fixture, synthetic local data, 1280×1100: **96** cases (
 | Presentation / file viewer | Real `PresentationRenderer` with Vega-Lite chart and `FileViewer` with a TypeScript file                                                         |
 | Terminal                   | Real xterm, `readTerminalTheme` and root observer; theme changes repaint the existing terminal without discarding it; no remote shell connection |
 
-**Unverified:** successful `SquadUniverse` WebGL rendering (inherited tick/layout initialization failure already reproduced on the predecessor and its baseline), authenticated full-page flows, physical iOS Safari/PWA cold launch, Windows hardware high-contrast rendering, arbitrary artifact-authored palettes. No unrelated graph layout repair is included. Existing legacy palette islands remain visible, notably presentation framing and voice gradients; do not interpret the token matrix as zero remaining raw colors.
+**Unverified:** successful `SquadUniverse` WebGL rendering (inherited tick/layout initialization failure already reproduced on the predecessor and its baseline), authenticated full-page flows, physical iOS Safari/PWA cold launch, Windows hardware high-contrast rendering, arbitrary artifact-authored palettes. No unrelated graph layout repair is included. The final integration migrated the former presentation-framing and voice-gradient islands; the historical phase-5 matrix above does not certify that later work. The complete guard retains only explicitly bounded content/definition exceptions.
 
 ## Forced-colors checklist (each of Tau, Harbor, Ember, High contrast)
 
@@ -76,7 +76,7 @@ Chromium real-renderer fixture, synthetic local data, 1280×1100: **96** cases (
 
 The browser review caught the existing `voice-orb-status { display: none }`; the forced-colors rule explicitly restores its display, hides decorative dots and exposes its accessible label visually. A color/box-shadow-only fallback would have missed this.
 
-## Verification (2026-09-21)
+## Historical phase-5 verification (2026-09-21)
 
 After the authorized Tau corrections and picker enablement:
 

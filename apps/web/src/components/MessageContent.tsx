@@ -691,7 +691,7 @@ export function ThinkingSection({
         className="tau-button w-full flex items-center gap-1.5 py-0.5 text-status-human-wait-600 dark:text-status-human-wait-400 hover:text-status-human-wait-800 dark:hover:text-status-human-wait-300 transition-colors"
       >
         {isStreaming ? (
-          <span className="inline-block w-3 h-3 border-2 border-status-human-wait-300 dark:border-status-human-wait-700 border-t-purple-600 dark:border-t-purple-300 rounded-full animate-spin shrink-0" />
+          <span className="inline-block w-3 h-3 border-2 border-status-human-wait-300 dark:border-status-human-wait-700 border-t-status-human-wait-600 dark:border-t-status-human-wait-300 rounded-full animate-spin shrink-0" />
         ) : (
           <span className="shrink-0 inline-block w-3 text-center">✦</span>
         )}
