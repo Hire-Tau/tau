@@ -29,6 +29,96 @@ async function registry(reconcile: (record: BashInvocationRecord) => Promise<voi
   return { dir, value: new BashInvocationRegistry({ runtimeDir: dir, reconcile }) }
 }
 describe('BashInvocationRegistry', () => {
+  test('failed admission maintenance never strands a processless active reservation', async () => {
+    const { dir, value } = await registry(async () => {
+      throw new Error('prior invocation ownership is ambiguous')
+    })
+    await writeFile(join(dir, 'terminal'), 'unavailable storage')
+    await expect(value.acquire('setup-file-sync', 'digest')).rejects.toThrow()
+    expect(value.hasActiveInvocations()).toBe(false)
+    await rm(join(dir, 'terminal'))
+    const retry = await value.acquire('setup-file-sync', 'digest')
+    await retry.complete('success')
+    expect(value.hasActiveInvocations()).toBe(false)
+  })
+
+  test('failed terminal persistence keeps cleanup proof alive and can retry completion', async () => {
+    const { dir, value } = await registry()
+    const lease = await value.acquire('setup-file-sync', 'digest')
+    await writeFile(join(dir, 'generations'), 'unavailable storage')
+    await expect(lease.complete('failed')).rejects.toThrow()
+    expect(value.hasActiveInvocations()).toBe(true)
+    await rm(join(dir, 'generations'))
+    await lease.complete('failed')
+    expect(value.hasActiveInvocations()).toBe(false)
+    expect((await value.acquire('setup-file-sync', 'digest')).generation).toBe(1)
+  })
+
+  test('cancellation persists known completion after storage recovery without inventing process ownership', async () => {
+    let reconciliations = 0
+    const { dir, value } = await registry(async () => {
+      reconciliations += 1
+      throw new Error('prior invocation ownership is ambiguous')
+    })
+    const lease = await value.acquire('setup-file-sync', 'digest')
+    await writeFile(join(dir, 'generations'), 'unavailable storage')
+    await expect(lease.complete('failed')).rejects.toThrow()
+    await rm(join(dir, 'generations'))
+    await expect(value.terminate('setup-file-sync')).resolves.toEqual({ remainingPids: [] })
+    expect(reconciliations).toBe(0)
+    expect(value.hasActiveInvocations()).toBe(false)
+    expect((await value.acquire('setup-file-sync', 'digest')).generation).toBe(1)
+  })
+
+  test('a partial disk-full write never publishes corrupt immutable completion proof', async () => {
+    const { dir } = await registry()
+    let diskFull = false
+    const value = new BashInvocationRegistry({
+      runtimeDir: dir,
+      reconcile: async () => {
+        throw new Error('no process ownership')
+      },
+      writeRecord: async (file, contents) => {
+        if (diskFull) {
+          await file.writeFile(contents.slice(0, 12))
+          throw Object.assign(new Error('disk full'), { code: 'ENOSPC' })
+        }
+        await file.writeFile(contents)
+      },
+    })
+    const lease = await value.acquire('file-sync', 'digest')
+    diskFull = true
+    await expect(lease.complete('failed')).rejects.toThrow('disk full')
+    expect(value.hasActiveInvocations()).toBe(true)
+    expect(await readdir(join(dir, 'terminal'))).toEqual([])
+    diskFull = false
+    await value.terminate('file-sync')
+    expect(value.hasActiveInvocations()).toBe(false)
+    const restarted = new BashInvocationRegistry({
+      runtimeDir: dir,
+      reconcile: async () => {
+        throw new Error('no process ownership')
+      },
+    })
+    expect((await restarted.acquire('file-sync', 'digest')).generation).toBe(1)
+  })
+
+  test('a fresh registry still refuses a processless record without completion proof', async () => {
+    const { dir, value } = await registry()
+    await value.acquire('unknown-start', 'digest')
+    const restarted = new BashInvocationRegistry({
+      runtimeDir: dir,
+      reconcile: async () => {
+        throw new Error('prior invocation ownership is ambiguous')
+      },
+    })
+    await expect(restarted.terminate('unknown-start')).rejects.toThrow('prior invocation ownership is ambiguous')
+    await expect(restarted.acquire('unknown-start', 'digest')).rejects.toThrow(
+      'prior invocation ownership is ambiguous'
+    )
+    expect(value.hasActiveInvocations()).toBe(true)
+  })
+
   test('fences an active duplicate and advances generation only after terminal proof', async () => {
     const { value } = await registry()
     const first = await value.acquire('same-id', 'digest')
@@ -239,6 +329,10 @@ describe('quarantine and retention', () => {
     if (watchdog) clearTimeout(watchdog)
     expect(outcome).toBe('done')
     expect(locked).toBe(false)
+    expect(value.hasActiveInvocations()).toBe(false)
+    const retry = await value.acquire('one', 'digest')
+    expect(retry.generation).toBe(1)
+    await retry.complete('success')
   })
   test('treats a concurrent prune unlink ENOENT as benign across registry instances', async () => {
     const first = await registry()
