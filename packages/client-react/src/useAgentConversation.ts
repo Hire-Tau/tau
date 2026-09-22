@@ -21,7 +21,12 @@ import {
   type ExactResponseIdentity,
 } from './created-message-barriers'
 import { MessageRequestGenerations } from './messageRequestGenerations'
-import { acquireSilentRecovery, coalesceForegroundRefresh } from './silentConversationRecovery'
+import {
+  acquireSilentRecovery,
+  coalesceForegroundRefresh,
+  nextRecoveryBoundary,
+  type RecoveryAttempt,
+} from './silentConversationRecovery'
 
 // How long the SSE stream must be silent before the server's execution status is allowed to
 // terminalize a locally-busy state. Guards the backstop against a lagging activeExecution refetch
@@ -141,6 +146,8 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
   conversationIdentityRef.current = { requested: options.agentId, resolved: resolvedAgentId }
   const recoveryAttemptsRef = useRef(new Map<string, number>())
   const subscriptionGenerationRef = useRef(0)
+  const recoveryAcceptanceFloorRef = useRef(0)
+  const hasRecoveryScopeRef = useRef(false)
   // Timer ownership must change even when a replacement stream delivers no events.
   const [subscriptionGeneration, setSubscriptionGeneration] = useState(0)
   const createGenerationRef = useRef(0)
@@ -550,6 +557,9 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     if (!resolvedAgentId) return
     const store = storeRef.current!
     if (streamedExecIdRef.current) announcedExecutionIdRef.current = streamedExecIdRef.current
+    // Initial observers may share existing exact truth. Replacement of an
+    // established scoped subscription needs a newer read, including cached reads.
+    if (hasRecoveryScopeRef.current) recoveryAcceptanceFloorRef.current = nextRecoveryBoundary()
     const generation = ++subscriptionGenerationRef.current
     setSubscriptionGeneration(generation)
     const requestedIdentity = options.agentId
@@ -904,10 +914,9 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     execution: Awaited<ReturnType<typeof client.agents.getExecution>>
     historyAfter: number
     activityThrough: number
-    refresh: () => void
   }
   const recoveryLeaseRef = useRef<ReturnType<typeof acquireSilentRecovery<RecoveryResult>> | null>(null)
-  const observedRecoveryRef = useRef<RecoveryResult | undefined>(undefined)
+  const observedRecoveryRef = useRef<RecoveryAttempt<RecoveryResult> | undefined>(undefined)
   const recoveryExecutionId = streamedExecIdRef.current ?? announcedExecutionIdRef.current
   useEffect(() => {
     if (!resolvedAgentId || !recoveryExecutionId) return
@@ -916,9 +925,12 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
       JSON.stringify([resolvedAgentId, recoveryExecutionId])
     )
     recoveryLeaseRef.current = lease
+    hasRecoveryScopeRef.current = true
+    recoveryAcceptanceFloorRef.current = 0
     observedRecoveryRef.current = undefined
     return () => {
       recoveryLeaseRef.current = null
+      hasRecoveryScopeRef.current = false
       lease.release()
     }
   }, [queryClient, resolvedAgentId, recoveryExecutionId])
@@ -933,12 +945,16 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     const activity = activityAtRef.current
     const recovery = recoveryLeaseRef.current?.recovery
     const cached = recovery?.peek()
-    const unseen = cached !== undefined && cached !== observedRecoveryRef.current
+    const eligibleCached = cached !== undefined && cached.boundary >= recoveryAcceptanceFloorRef.current
+    const unseen = eligibleCached && cached !== observedRecoveryRef.current
     const manual = deferredRefreshRef.current
     const busy = ['running', 'queued', 'stopping'].includes(executionStatus ?? '')
     const now = performance.now()
     const delay = manual
-      ? Math.max(0, Math.min(activity + STREAM_QUIET_MS, (manualRequestedAtRef.current ?? now) + 30_000) - now)
+      ? Math.max(
+          cached && !eligibleCached ? recovery!.readDelay(now) : 0,
+          Math.min(activity + STREAM_QUIET_MS, (manualRequestedAtRef.current ?? now) + 30_000) - now
+        )
       : busy && streamStatus === 'live' && recovery
         ? unseen
           ? 0
@@ -982,25 +998,29 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
       const read =
         !explicit && unseen
           ? Promise.resolve(cached)
-          : recovery.read(performance.now(), explicit, async (signal) => {
-              const activityThrough = conversationActivitySequence
-              const execution = await client.agents.getExecution(resolvedAgentId, executionId, signal)
-              let refreshed = false
-              return {
-                execution,
-                activityThrough,
-                historyAfter: collectionRequestGenerationRef.current,
-                refresh: () => {
-                  if (!refreshed) {
-                    refreshed = true
-                    invalidateConversationQueries()
-                  }
-                },
-              }
-            })
-      void read.then((result) => {
+          : recovery.read(
+              performance.now(),
+              explicit,
+              async (signal) => {
+                const activityThrough = conversationActivitySequence
+                const execution = await client.agents.getExecution(resolvedAgentId, executionId, signal)
+                return {
+                  execution,
+                  activityThrough,
+                  historyAfter: collectionRequestGenerationRef.current,
+                }
+              },
+              invalidateConversationQueries
+            )
+      void read.then((attempt) => {
         if (!isCurrent()) return
-        observedRecoveryRef.current = result
+        observedRecoveryRef.current = attempt
+        if (attempt && attempt.boundary < recoveryAcceptanceFloorRef.current) {
+          // Keep explicit intent pending until a post-replacement read is eligible.
+          requestManualDrain()
+          return
+        }
+        const result = attempt?.value
         settleManual()
         if (result && activityAtRef.current === activity && activitySequenceRef.current <= result.activityThrough) {
           const { execution, historyAfter } = result
@@ -1022,8 +1042,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
         }
         // Even a failed exact read is not permission to drop content/clear busy.
         // Manual refresh still attempts history; automatic failures spend one probe.
-        if (result) result.refresh()
-        else if (explicit) invalidateConversationQueries()
+        if (result || explicit) attempt?.refresh()
         if (explicit && performance.now() - activityAtRef.current >= STREAM_QUIET_MS) bumpStreamEpoch()
         requestManualDrain() // schedule the next bounded deadline, not an interval
       })

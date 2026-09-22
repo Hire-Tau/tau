@@ -1,11 +1,25 @@
+// Requests and subscription replacements use the same strict causal clock.
+// Initial/late observers can share a result; existing observers raise their floor
+// on replacement without invalidating the result for other still-valid views.
+let recoveryBoundary = 0
+export function nextRecoveryBoundary() {
+  return ++recoveryBoundary
+}
+
+export interface RecoveryAttempt<T> {
+  boundary: number
+  value: T | undefined
+  refresh: () => void
+}
+
 /** Per-query-client/execution budget. Views share reads, including the causal
  * history watermark, but retain their own identity/subscription fences. */
 export class SilentConversationRecovery<T> {
   private attempts = 0
   private activity = -Infinity
   private lastAttempt = -Infinity
-  private pending: Promise<T | undefined> | undefined
-  private result: T | undefined
+  private pending: Promise<RecoveryAttempt<T> | undefined> | undefined
+  private result: RecoveryAttempt<T> | undefined
   private controller: AbortController | undefined
 
   dispose() {
@@ -20,13 +34,26 @@ export class SilentConversationRecovery<T> {
     return !!this.pending || now - this.lastAttempt < 4000
   }
 
+  readDelay(now: number) {
+    return Math.max(0, this.lastAttempt + 4000 - now)
+  }
+
   delay(now: number, lastActivity: number): number | undefined {
     this.activity = Math.max(this.activity, lastActivity)
     if (this.attempts >= 3) return undefined
-    return Math.max(0, this.activity + 15_000 - now, this.lastAttempt + [0, 30_000, 60_000][this.attempts]! - now)
+    return Math.max(
+      this.readDelay(now),
+      this.activity + 15_000 - now,
+      this.lastAttempt + [0, 30_000, 60_000][this.attempts]! - now
+    )
   }
 
-  read(now: number, manual: boolean, read: (signal: AbortSignal) => Promise<T>): Promise<T | undefined> {
+  read(
+    now: number,
+    manual: boolean,
+    read: (signal: AbortSignal) => Promise<T>,
+    refresh: () => void = () => {}
+  ): Promise<RecoveryAttempt<T> | undefined> {
     if (this.pending) return this.pending
     // Coalesce simultaneous observers and foreground/manual overlap. Explicit intent
     // does not replenish the automatic budget.
@@ -35,6 +62,22 @@ export class SilentConversationRecovery<T> {
     this.lastAttempt = now
     if (!manual) this.attempts++
     this.result = undefined
+    const boundary = nextRecoveryBoundary()
+    let refreshed = false
+    const settle = (value: T | undefined): RecoveryAttempt<T> => {
+      const attempt = {
+        boundary,
+        value,
+        refresh: () => {
+          if (!refreshed) {
+            refreshed = true
+            refresh()
+          }
+        },
+      }
+      this.result = attempt
+      return attempt
+    }
     const controller = new AbortController()
     this.controller = controller
     const timeout = setTimeout(() => controller.abort(), 10_000)
@@ -42,13 +85,7 @@ export class SilentConversationRecovery<T> {
       controller.signal.addEventListener('abort', () => resolve(undefined), { once: true })
     })
     this.pending = Promise.race([read(controller.signal), canceled])
-      .then(
-        (result) => {
-          this.result = result
-          return result
-        },
-        () => undefined
-      )
+      .then(settle, () => settle(undefined))
       .finally(() => {
         clearTimeout(timeout)
         this.pending = undefined

@@ -78,7 +78,11 @@ mounted. They start after **15 seconds quiet**, then no sooner than **30** and
 Activity uses `performance.now()`, not server timestamps or wall-clock changes.
 A shared monotonic event ordinal also fences cached exact results: a response
 started before resumed activity cannot later terminalize that activity, even when
-several events share one clock tick.
+several events share one clock tick. Requests and subscription replacements also
+share a strict causal clock. Each established observer raises its acceptance floor
+on replacement, rejecting both pending and cached reads started before that floor.
+This does not revoke the shared result for another eligible observer or replenish
+the budget; initial/late observers can still share eligible cached exact truth.
 Activity and subscription replacement postpone deadlines but **never replenish**
 the budget. Changing execution/conversation or removing the last observer releases
 that scope; a later fresh mount gets a fresh budget. Parked sandbox/maintenance,
@@ -106,7 +110,13 @@ from the first press** the intent runs a read-only reconciliation even during
 continued activity; it does not reconnect an actively emitting stream. Quiet manual
 refresh still replaces the subscription, preserving its existing catchup semantics
 and local buffers. Manual exact reads share pending requests and a four-second
-coalescing window, and do not refill the automatic budget. A failed exact read still
+coalescing window, and do not refill the automatic budget. The automatic scheduler
+also respects this four-second read-eligibility deadline: a manual read at 12s
+moves the earliest first automatic read from 15s to 16s, without a zero-delay
+render/timer loop. A replacement that rejects an old read keeps explicit intent
+pending until an eligible new read can start. Successful, rejected and timed-out
+shared attempts all own a one-shot history fallback, so multiple manual observers
+cannot cancel/restart the same history batch on failure. A failed exact read still
 allows explicit history refresh, never a fabricated terminal state. An online-manager
 offline signal suppresses new probes/drains, retains explicit intent, and rearms on
 online notification. A pending exact read times out; late results cannot mutate a

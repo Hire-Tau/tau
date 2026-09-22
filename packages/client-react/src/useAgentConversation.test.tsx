@@ -3907,3 +3907,204 @@ test('two foreground observers invalidate shared history only once', async () =>
     focusManager.setFocused(true)
   }
 })
+
+async function drainTimerTurns(count = 3) {
+  for (let i = 0; i < count; i++)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+}
+
+test.each([true, false])(
+  'replacement rejects old pending result when reused from cache (manual=%s)',
+  async (manual) => {
+    const clock = reconciliationClock()
+    const m = makeMockClient({ activeExecution: { active: true, status: 'running', executionId: 'e' } })
+    let finish!: (value: Awaited<ReturnType<TauClient['agents']['getExecution']>>) => void
+    m.client.agents.getExecution = () =>
+      new Promise((resolve) => {
+        finish = resolve
+      })
+    const hook = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper: wrap(m.client) })
+    try {
+      await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+      act(() => m.emit({ type: 'text', text: 'retained', streamGroupId: 'S' }))
+      await clock.advance(15000)
+      await act(async () => {
+        focusManager.setFocused(false)
+        focusManager.setFocused(true)
+        await Promise.resolve()
+      })
+      await act(async () => {
+        finish({ agentId: 'a', executionId: 'e', executionVersion: 99, status: 'completed', active: false })
+        await Promise.resolve()
+      })
+      expect(hook.result.current.executionStatus).toBe('running')
+      if (manual) act(() => hook.result.current.refresh())
+      else
+        act(() => {
+          onlineManager.setOnline(false)
+          onlineManager.setOnline(true)
+        })
+      await drainTimerTurns()
+      expect(hook.result.current.executionStatus).toBe('running')
+      const oldRead = finish
+      await clock.advance(manual ? 4000 : 30000)
+      expect(finish).not.toBe(oldRead)
+      await act(async () => {
+        finish({ agentId: 'a', executionId: 'e', executionVersion: 100, status: 'completed', active: false })
+        await Promise.resolve()
+      })
+      expect(hook.result.current.executionStatus).toBe('completed')
+    } finally {
+      hook.unmount()
+      focusManager.setFocused(true)
+      onlineManager.setOnline(true)
+      clock.restore()
+    }
+  }
+)
+
+test.each(['success', 'failure', 'online'] as const)(
+  'manual %s at 12s cannot spin at the first automatic deadline',
+  async (mode) => {
+    const clock = reconciliationClock()
+    const m = makeMockClient({ activeExecution: { active: true, status: 'running', executionId: 'e' } })
+    let reads = 0
+    let renders = 0
+    m.client.agents.getExecution = async () => {
+      reads++
+      if (mode === 'failure') throw new Error('offline')
+      return { agentId: 'a', executionId: 'e', executionVersion: 1, status: 'running', active: true }
+    }
+    const hook = await renderHook(
+      () => {
+        renders++
+        return useAgentConversation({ agentId: 'a' })
+      },
+      { wrapper: wrap(m.client) }
+    )
+    try {
+      await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+      act(() => m.emit({ type: 'text', text: 'retained', streamGroupId: 'S' }))
+      await clock.advance(12000)
+      act(() => {
+        if (mode === 'online') onlineManager.setOnline(false)
+        hook.result.current.refresh()
+      })
+      if (mode === 'online') act(() => onlineManager.setOnline(true))
+      await drainTimerTurns()
+      expect(reads).toBe(1)
+      await clock.advance(3000)
+      await drainTimerTurns()
+      const settled = renders
+      await drainTimerTurns(10)
+      expect(renders).toBe(settled)
+      expect(reads).toBe(1)
+      await clock.advance(1000)
+      expect(reads).toBe(2)
+      await clock.advance(30000)
+      expect(reads).toBe(3)
+      await clock.advance(60000)
+      expect(reads).toBe(4)
+      await clock.advance(300000)
+      expect(reads).toBe(4)
+      expect(hook.result.current.executionStatus).toBe('running')
+    } finally {
+      hook.unmount()
+      onlineManager.setOnline(true)
+      clock.restore()
+    }
+  }
+)
+
+test.each(['failure', 'timeout'] as const)('two manual observers share the %s history fallback', async (mode) => {
+  const clock = reconciliationClock()
+  const m = makeMockClient({ activeExecution: { active: true, status: 'running', executionId: 'e' } })
+  let reads = 0
+  m.client.agents.getExecution = async () => {
+    reads++
+    if (mode === 'failure') throw new Error('offline')
+    return new Promise(() => {})
+  }
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const wrapper = wrapWith(qc, m.client)
+  const a = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper })
+  const b = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper })
+  try {
+    await waitFor(() => {
+      expect(m.subscribedExecutionIds.filter((id) => id === 'e')).toHaveLength(2)
+      expect(a.result.current.executionStatus).toBe('running')
+      expect(b.result.current.executionStatus).toBe('running')
+      expect(qc.isFetching()).toBe(0)
+    })
+    const before = m.getMessagesCount()
+    act(() => {
+      a.result.current.refresh()
+      b.result.current.refresh()
+      a.result.current.refresh()
+      b.result.current.refresh()
+    })
+    await clock.advance(4000)
+    if (mode === 'timeout') await clock.advance(10000)
+    await drainTimerTurns()
+    expect(reads).toBe(1)
+    expect(m.getMessagesCount()).toBe(before + 1)
+    expect(a.result.current.executionStatus).toBe('running')
+    expect(b.result.current.executionStatus).toBe('running')
+  } finally {
+    a.unmount()
+    b.unmount()
+    qc.clear()
+    clock.restore()
+  }
+})
+
+test('one replacement floor does not revoke a shared result from another valid observer', async () => {
+  const clock = reconciliationClock()
+  const m = makeMockClient({ activeExecution: { active: true, status: 'running', executionId: 'e' } })
+  let finish!: (value: Awaited<ReturnType<TauClient['agents']['getExecution']>>) => void
+  let reads = 0
+  m.client.agents.getExecution = () => {
+    reads++
+    return new Promise((resolve) => {
+      finish = resolve
+    })
+  }
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const wrapper = wrapWith(qc, m.client)
+  const a = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper })
+  let b: Awaited<ReturnType<typeof renderHook<ReturnType<typeof useAgentConversation>>>> | undefined
+  try {
+    await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+    act(() => m.emit({ type: 'text', text: 'retained', streamGroupId: 'S' }))
+    await clock.advance(15000)
+    act(() => focusManager.setFocused(false))
+    // B has never observed a foreground loss, so only A replaces its subscription.
+    b = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper })
+    await waitFor(() => expect(b!.result.current.executionStatus).toBe('running'))
+    await act(async () => {
+      focusManager.setFocused(true)
+      await Promise.resolve()
+    })
+    await act(async () => {
+      finish({ agentId: 'a', executionId: 'e', executionVersion: 2, status: 'completed', active: false })
+      await Promise.resolve()
+    })
+    act(() => {
+      onlineManager.setOnline(false)
+      onlineManager.setOnline(true)
+    })
+    await drainTimerTurns()
+    expect(a.result.current.executionStatus).toBe('running')
+    expect(b.result.current.executionStatus).toBe('completed')
+    expect(reads).toBe(1)
+  } finally {
+    a.unmount()
+    b?.unmount()
+    qc.clear()
+    focusManager.setFocused(true)
+    onlineManager.setOnline(true)
+    clock.restore()
+  }
+})
