@@ -61,12 +61,12 @@ export function VoiceFormFillButton({
       >
         {state === 'extracting' ? (
           <>
-            <span className="inline-block w-4 h-4 border-2 border-status-danger-300 border-t-red-600 rounded-full animate-spin" />
+            <span className="inline-block w-4 h-4 border-2 border-status-danger-300 border-t-status-danger-600 rounded-full animate-spin" />
             <span className="text-sm font-medium">Filling form...</span>
           </>
         ) : state === 'transcribing' ? (
           <>
-            <span className="inline-block w-4 h-4 border-2 border-status-neutral-300 dark:border-status-neutral-600 border-t-gray-600 dark:border-t-gray-300 rounded-full animate-spin" />
+            <span className="inline-block w-4 h-4 border-2 border-status-neutral-300 dark:border-status-neutral-600 border-t-status-neutral-600 dark:border-t-status-neutral-300 rounded-full animate-spin" />
             <span className="text-sm font-medium">Transcribing...</span>
           </>
         ) : state === 'recording' ? (

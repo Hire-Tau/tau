@@ -34,6 +34,7 @@ const ALLOWLIST: Readonly<Record<RawCategoryType, readonly string[]>> = {
     'components/artifacts/ArtifactRenderer.tsx',
     'components/artifacts/PresentationRenderer.tsx',
   ],
+  'palette-lookup': [],
   'literal-hex': ['components/settings/CustomThemeEditor.tsx'],
   'color-function': ['theme/flash.ts'],
   'inline-color-style': ['components/squads/SquadUniverse.tsx'],
@@ -208,4 +209,44 @@ describe('raw-color detector', () => {
     expect(scanSourceForRawColors('synthetic.tsx', colorBearing).map((f) => f.category)).toEqual(['inline-color-style'])
     expect(scanSourceForRawColors('synthetic.tsx', layoutOnly)).toEqual([])
   })
+})
+
+test('detects directional, axis, logical and ring-offset palette escapes', () => {
+  for (const prefix of [
+    'border-t',
+    'border-r',
+    'border-b',
+    'border-l',
+    'border-x',
+    'border-y',
+    'border-s',
+    'border-e',
+    'ring-offset',
+  ]) {
+    for (const color of ['purple-600', 'gray-950', 'white', 'black/50']) {
+      const utility = `dark:hover:${prefix}-${color}`
+      expect(scanSourceForRawColors('example.tsx', `<span className="${utility}" />`).map((f) => f.match)).toEqual([
+        utility,
+      ])
+    }
+    expect(scanSourceForRawColors('example.tsx', `${prefix}-status-danger-600 ${prefix}-transparent`)).toEqual([])
+  }
+})
+
+test('detects raw CSS theme palette lookups without rejecting semantic lookups', () => {
+  for (const lookup of [
+    "theme('colors.red.600')",
+    'theme("colors.red.400 / 50%")',
+    "theme('colors.white')",
+    'theme(colors.black)',
+    "theme('colors[blue][500]')",
+  ]) {
+    expect(scanSourceForRawColors('example.css', `a { color: ${lookup}; }`).map((f) => f.match)).toEqual([lookup])
+  }
+  expect(
+    scanSourceForRawColors(
+      'example.css',
+      "a { color: theme('colors.status-danger-600'); } b { color: rgb(var(--status-danger-600)); }"
+    )
+  ).toEqual([])
 })

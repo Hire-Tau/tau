@@ -121,8 +121,9 @@ export function CustomThemeEditor({ value }: { value: ReturnType<typeof useTheme
   return (
     <div className="mt-4 flex flex-col gap-3 text-sm">
       <p className="text-secondary">
-        Device-local, single-appearance theme. Preview changes only the sample below; Apply changes the app. Switching
-        the built-in theme or appearance clears custom overrides.
+        Single-appearance theme. Preview stays on this device and changes only the sample below. Apply changes the app
+        and syncs the theme to your account when signed in. Switching the built-in theme or appearance clears custom
+        overrides.
       </p>
       <label className="flex flex-col gap-1">
         Theme name
