@@ -58,6 +58,15 @@ describe('no-raw-colors guard', () => {
     }
   })
 
+  test('the Universe exception is one live token-derived swatch, not arbitrary inline colors', () => {
+    const source = readFileSync(join(srcRoot, 'components/squads/SquadUniverse.tsx'), 'utf8')
+    expect(scanSourceForRawColors('universe.tsx', source).map(({ category, match }) => ({ category, match }))).toEqual([
+      { category: 'inline-color-style', match: 'style={{ … backgroundColor … }}' },
+    ])
+    expect(source).toContain('squadGraphColor(colors, hoveredNode.status)')
+    expect(source).toContain("agentGraphColor(colors, hoveredNode.status as Agent['status'])")
+  })
+
   test('theme authoring exceptions remain bounded to color data, not UI styles', () => {
     const editor = scanSourceForRawColors(
       'editor.tsx',
