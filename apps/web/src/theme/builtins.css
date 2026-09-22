@@ -1,5 +1,5 @@
 /* Complete, authored built-in palettes. No runtime color derivation.
- * Intent and accessibility review: docs/theme/builtins.md.
+ * Intent and accessibility review: docs/wiki/theme/builtins.md.
  * Keep all active families and inherited opacity metadata explicit. */
 @layer base {
   :root[data-theme='harbor'][data-appearance='light'],
