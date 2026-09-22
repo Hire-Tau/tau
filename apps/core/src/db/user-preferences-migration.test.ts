@@ -45,6 +45,11 @@ describe('account theme migration (real runner, isolated database)', () => {
     await applyMigrations(connection, predecessors)
     await connection.unsafe(`INSERT INTO users (id, email) VALUES ('${userId}', 'theme-migration@example.test')`)
     await connection.unsafe("INSERT INTO storage_monitor (id, error) VALUES ('retained', 'historical reading')")
+    await connection.unsafe(
+      `INSERT INTO desktop_notifications (user_id, event_key, event_type, category, title, body, url)
+       VALUES ($1, 'historical', 'test', 'test', 'Retained notification', 'Existing body', '/')`,
+      [userId]
+    )
     await applyMigrations(connection, [...predecessors, target!])
     await applyMigrations(connection, [...predecessors, target!])
     const [monitor] = await connection.unsafe<
@@ -56,6 +61,11 @@ describe('account theme migration (real runner, isolated database)', () => {
       }[]
     >('SELECT id, error, levels, pending_alerts FROM storage_monitor')
     expect(monitor).toEqual({ id: 'retained', error: 'historical reading', levels: {}, pending_alerts: [] })
+    const [notification] = await connection.unsafe<{ title: string; created_at: Date }[]>(
+      'SELECT title, created_at FROM desktop_notifications'
+    )
+    expect(notification.title).toBe('Retained notification')
+    expect(notification.created_at).toBeInstanceOf(Date)
     expect(await connection.unsafe('SELECT * FROM user_preferences')).toHaveLength(0)
     expect(await connection.unsafe('SELECT id FROM users')).toHaveLength(1)
     const theme = { themeId: 'harbor', appearance: 'system', customTheme: null }
