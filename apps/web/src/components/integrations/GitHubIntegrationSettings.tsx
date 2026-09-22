@@ -17,9 +17,13 @@ import {
 } from '../../api/integrations'
 import { integrationQueries } from '../../queryOptions'
 import { integrationAuthorizationReturnPath } from '../../lib/integrationReturnPath'
+import { integrationErrorMessage } from '../../lib/integrationErrorMessage'
 import { integrationQueryKeys, onboardingQueryKeys } from '../../queryKeys'
 
 type DeviceLogin = Extract<IntegrationAuthorizationStart, { kind: 'device' }>
+
+/** Device login ended because it timed out or the user declined, not because something broke. */
+const ENDED_DEVICE_CODES = new Set(['access_denied', 'expired_token', 'flow_expired', 'provider_denied'])
 
 export function GitHubIntegrationSettings({
   canRead,
@@ -61,10 +65,6 @@ export function GitHubIntegrationSettings({
     mutationFn: (id: string) => setIntegrationDefault('github', id),
     onSuccess: refresh,
   })
-  const useConnected = useMutation({
-    mutationFn: () => setIntegrationEnabled('github', true),
-    onSuccess: refresh,
-  })
   const authorize = useMutation({
     mutationFn: async (connectionId?: string) => {
       if (onboarding) await setIntegrationEnabled('github', true)
@@ -83,6 +83,19 @@ export function GitHubIntegrationSettings({
       if ('authorizationUrl' in result) window.location.assign(result.authorizationUrl)
       else setDevice(result)
     },
+    onError: (failure) => setError(integrationErrorMessage(failure, "Couldn't start GitHub login.")),
+  })
+  // Each action replaces the previous failure, including a stale login failure and its Retry.
+  const clearFailure = () => {
+    setError('')
+    authorize.reset()
+  }
+  const reportFailure = (fallback: string) => (failure: unknown) => setError(integrationErrorMessage(failure, fallback))
+  const useConnected = useMutation({
+    mutationFn: () => setIntegrationEnabled('github', true),
+    onMutate: clearFailure,
+    onSuccess: refresh,
+    onError: reportFailure("Couldn't turn on GitHub."),
   })
   useEffect(() => {
     if (!device || !canWrite) return
@@ -102,7 +115,11 @@ export function GitHubIntegrationSettings({
           ])
         } else if (result.status === 'failed') {
           setDevice(null)
-          setError('GitHub authorization expired or was declined. Connect again to start a new login.')
+          setError(
+            ENDED_DEVICE_CODES.has(result.code)
+              ? 'GitHub authorization expired or was declined. Connect again to start a new login.'
+              : `GitHub authorization failed (${result.code}). Connect again to start a new login.`
+          )
         } else timer = setTimeout(poll, Math.max(1, result.retryAfterSeconds) * 1000)
       } catch {
         if (stopped) return
@@ -125,10 +142,12 @@ export function GitHubIntegrationSettings({
   }, [canWrite])
   const cancel = useMutation({
     mutationFn: () => cancelIntegrationDeviceAuthorization(device!.id),
+    onMutate: clearFailure,
     onSuccess: () => {
       setDevice(null)
       setError('')
     },
+    onError: reportFailure("Couldn't cancel the GitHub login."),
   })
   const configure = useMutation({
     mutationFn: (useDefault: boolean) =>
@@ -142,10 +161,12 @@ export function GitHubIntegrationSettings({
               capabilitiesAcknowledged: true,
             }
       ),
+    onMutate: clearFailure,
     onSuccess: async () => {
       setAcknowledged(false)
       await refresh()
     },
+    onError: reportFailure("Couldn't save the GitHub App settings."),
     onSettled: () => setClientSecret(''),
   })
   const lifecycle = useMutation({
@@ -153,6 +174,8 @@ export function GitHubIntegrationSettings({
       if (input.action === 'remove') await removeIntegration(input.id, input.assigned)
       else await integrationAction(input.id, input.action, input.assigned)
     },
+    onMutate: clearFailure,
+    onError: reportFailure("Couldn't update the GitHub account."),
     onSuccess: async (_result, input) => {
       setConfirmation(null)
       if (input.action === 'remove')
@@ -168,6 +191,11 @@ export function GitHubIntegrationSettings({
   const hasAccounts = (pool.data?.length ?? 0) > 0
   const canConnect = canWrite && app.data?.configured && pool.isSuccess
   const usesTauApp = app.data?.authority === 'platform_broker' || app.data?.clientId === TAU_GITHUB_APP_CLIENT_ID
+  const failure =
+    error ||
+    (app.isError && integrationErrorMessage(app.error, "Couldn't load the GitHub App settings.")) ||
+    (pool.isError && integrationErrorMessage(pool.error, "Couldn't load GitHub accounts.")) ||
+    ''
   if (!canRead) return null
   return (
     <section className={embedded ? undefined : 'border-b border-panel-border py-5'}>
@@ -184,6 +212,13 @@ export function GitHubIntegrationSettings({
           </button>
         )}
       </div>
+      {canConnect && !hasAccounts && usesTauApp && (
+        <p className="mt-2 text-xs text-muted">
+          {app.data?.authority === 'local' && app.data.authorizationMode !== 'browser'
+            ? "Uses Tau's GitHub App, so no setup is needed. You'll get a code to enter on github.com."
+            : "Uses Tau's GitHub App, so no setup is needed. You'll sign in on github.com."}
+        </p>
+      )}
       <p className="mt-2 text-sm text-muted">
         {onboarding
           ? 'Connect your GitHub account, then grant repository access.'
@@ -350,9 +385,11 @@ export function GitHubIntegrationSettings({
           </button>
         )}
       </div>
-      {!onboarding && app.data?.authority === 'local' && canWrite && (
+      {app.data?.authority === 'local' && canWrite && (
         <details className="mt-4">
-          <summary className="cursor-pointer text-xs text-muted">Use your own GitHub App</summary>
+          <summary className="cursor-pointer text-xs text-muted">
+            {onboarding ? 'Use your own GitHub App instead' : 'Use your own GitHub App'}
+          </summary>
           <form
             className="mt-3 space-y-3"
             onSubmit={(event) => {
@@ -361,8 +398,9 @@ export function GitHubIntegrationSettings({
             }}
           >
             <p className="text-xs text-muted">
-              Enable device flow and expiring user tokens. A public client ID is enough for device login. For browser
-              login, also provide the app's client secret and set its callback to{' '}
+              Enable expiring user tokens in the app's settings. With only a client ID, Tau uses device login: enable
+              device flow, and no public URL is needed. Adding a client secret switches to browser login, which
+              redirects back to Tau, so set the app's callback URL to{' '}
               <span className="break-all">{app.data.callbackUrl}</span>.
             </p>
             <label className="block text-sm text-primary">
@@ -417,17 +455,22 @@ export function GitHubIntegrationSettings({
           {notice}
         </p>
       )}
-      {(error ||
-        app.isError ||
-        pool.isError ||
-        authorize.isError ||
-        cancel.isError ||
-        configure.isError ||
-        lifecycle.isError ||
-        useConnected.isError) && (
-        <p role="alert" className="mt-3 text-sm text-red-600">
-          {error || 'GitHub operation failed. Please try again.'}
-        </p>
+      {failure && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <p role="alert" className="text-sm text-red-600">
+            {failure}
+          </p>
+          {authorize.isError && canWrite && (
+            <button
+              type="button"
+              className="tau-button px-3 py-1.5 text-sm"
+              disabled={authorize.isPending || !!device}
+              onClick={() => authorize.mutate(authorize.variables)}
+            >
+              Retry
+            </button>
+          )}
+        </div>
       )}
     </section>
   )

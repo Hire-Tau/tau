@@ -27,12 +27,17 @@ import {
   BROKER_COMPLETION_HANDLE_PATTERN,
 } from '../services/integrations/authorization/service'
 import type { SafeOAuthAppSettings } from '../services/integrations/authorization/client-credentials'
+import { describeGitHubAuthorizationError } from '../services/integrations/authorization/github-errors'
+import { GitHubOAuthError } from '@tau/shared/oauth-providers/github/client'
+import { createLogger } from '../lib/infra/logger'
 import type { SafeIntegrationCatalogEntry } from '../services/integrations/plugin'
 import type {
   IntegrationAuthorizationStart,
   IntegrationDeviceAuthorizationStatus,
   GitHubRepositoryAccess,
 } from '@tau/shared'
+
+const log = createLogger('integration-routes')
 
 const providerKeySchema = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)
 const createSchema = z
@@ -392,7 +397,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
           })
         )
       } catch (error) {
-        return authorizationFailure(c, error)
+        return authorizationFailure(c, error, providerKey, 'start')
       }
     })
     .post('/providers/github/authorization/device/:id/poll', async (c) => {
@@ -406,7 +411,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       try {
         return c.json(await service.authorization.pollDevice({ id: id.data, userId: identity.userId }))
       } catch (error) {
-        return authorizationFailure(c, error)
+        return authorizationFailure(c, error, 'github', 'poll')
       }
     })
     .post('/providers/github/authorization/device/:id/cancel', async (c) => {
@@ -421,7 +426,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
         await service.authorization.cancelDevice({ id: id.data, userId: identity.userId })
         return c.json({ canceled: true })
       } catch (error) {
-        return authorizationFailure(c, error)
+        return authorizationFailure(c, error, 'github', 'cancel')
       }
     })
     .post('/providers/:provider/authorization/callback', zValidator('json', authorizationCallbackSchema), async (c) => {
@@ -444,7 +449,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
           })
         )
       } catch (error) {
-        return authorizationFailure(c, error)
+        return authorizationFailure(c, error, providerKey, 'callback')
       }
     })
     .post('/providers/:provider/authorization/complete', zValidator('json', authorizationCompleteSchema), async (c) => {
@@ -466,7 +471,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
           })
         )
       } catch (error) {
-        return authorizationFailure(c, error)
+        return authorizationFailure(c, error, providerKey, 'complete')
       }
     })
     .get('/connections/:connectionId/github-repository-access', async (c) => {
@@ -753,9 +758,32 @@ function usageConflict(c: any, error: unknown): Response {
   throw error
 }
 
-function authorizationFailure(c: any, error: unknown): Response {
+type AuthorizationOperation = 'start' | 'poll' | 'cancel' | 'callback' | 'complete'
+
+/**
+ * Map expected authorization failures to typed JSON and log each rejection at
+ * warn with its stable code only; provider bodies, tokens and secrets are never logged.
+ */
+function authorizationFailure(
+  c: any,
+  error: unknown,
+  providerKey: string,
+  operation: AuthorizationOperation
+): Response {
   if (error instanceof AuthorizationFlowError) {
-    return c.json({ error: error.code }, error.code === 'broker_unconfigured' ? 503 : 400)
+    const status = error.code === 'broker_unconfigured' ? 503 : 400
+    log.warn(`${providerKey} authorization ${operation} rejected: ${error.code} (HTTP ${status})`)
+    // `error` stays the bare code: web callback handling keys terminal states on it.
+    return c.json({ error: error.code, code: error.code }, status)
+  }
+  if (error instanceof GitHubOAuthError) {
+    const failure = describeGitHubAuthorizationError(error)
+    log.warn(
+      `${providerKey} authorization ${operation} failed at GitHub: ${failure.code} (HTTP ${failure.status}` +
+        `${error.status ? `, GitHub HTTP ${error.status}` : ''})`
+    )
+    if (failure.retryAfterSeconds !== undefined) c.header('Retry-After', String(failure.retryAfterSeconds))
+    return c.json({ error: failure.message, code: failure.code }, failure.status)
   }
   throw error
 }

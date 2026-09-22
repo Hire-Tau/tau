@@ -35,7 +35,9 @@ Legacy `GH_TOKEN`, `GITHUB_TOKEN`, `GH_TOKEN_*`, `GITHUB_TOKEN_*`, `GITHUB_USER`
 
 ## App configuration
 
-The default public client ID is `Iv23liN16iuEh5lT1PYV`. In a standalone instance, expand **Use your own GitHub App** to configure another public client ID. An optional client secret enables browser authorization; use the callback URL displayed in settings. Existing connections retain their issuing app reference.
+The default public client ID is `Iv23liN16iuEh5lT1PYV`. In a standalone instance, expand **Use your own GitHub App** (in onboarding, **Use your own GitHub App instead**) to configure another public client ID. A client ID alone uses device login and needs no public URL. An optional client secret switches to browser authorization; use the callback URL displayed in settings. Webhook delivery is configured only in Settings. Existing connections retain their issuing app reference.
+
+Failed authorization requests return a stable `code` and a user-safe `error` message, and Core logs each rejection at warn with its code (never provider bodies, tokens, or secrets). GitHub failures map as follows: `provider_unavailable` 502 and `provider_timeout` 504 (GitHub unreachable from the instance), `rate_limited` 429 with `Retry-After`, `device_flow_disabled` 400, `incorrect_client_credentials` and `invalid_auth` 400, `capability_or_resource_denied` 502 (GitHub refused the app, for example an unknown client ID), and `invalid_response` or other provider errors 502. Authorization flow rejections keep their code in `error`, for example `oauth_app_unconfigured`.
 
 Enable device flow and expiring user authorization tokens. Leave “Request user authorization during installation” unchecked so Tau initiates authorization with bound state. Configure repository permissions: Contents, Pull requests, Issues, Actions, and Workflows read/write; Checks, Commit statuses, and Metadata read-only. Users choose which repositories to install the app on.
 

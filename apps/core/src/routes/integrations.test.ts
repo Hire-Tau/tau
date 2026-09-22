@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, mock, test } from 'bun:test'
+import { afterAll, afterEach, beforeAll, describe, expect, mock, spyOn, test } from 'bun:test'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
 import { db, roleAssignments, roles, squads, users } from '../db'
@@ -7,6 +7,7 @@ import type { Identity } from '../services/rbac'
 import { createIntegrationsRouter, createSquadIntegrationsRouter } from './integrations'
 import type { SafeOAuthAppSettings } from '../services/integrations/authorization/client-credentials'
 import { AuthorizationFlowError } from '../services/integrations/authorization/service'
+import { GitHubOAuthError } from '@tau/shared/oauth-providers/github/client'
 
 const summary = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -62,6 +63,8 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
   const authorizationStart = mock(async () => ({ authorizationUrl: 'https://provider.example/authorize' }))
   const authorizationCallback = mock(async () => ({ returnTo: '/settings/integrations' }))
   const authorizationComplete = mock(async () => ({ returnTo: '/settings/integrations' }))
+  const authorizationPollDevice = mock(async () => ({ status: 'pending' as const, retryAfterSeconds: 5 }))
+  const authorizationCancelDevice = mock(async () => {})
   const selection = mock(async () => ({ providerKey: 'bigbrain', assignment: summary, connections: [summary] }))
   const assign = mock(async () => summary)
   const unassign = mock(async () => true)
@@ -95,7 +98,13 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
       serviceSettings: { get: channelGet, configure: channelConfigure },
       githubWebhook: { get: webhookGet, configure: webhookConfigure },
       oauthApp: { get: oauthAppGet, configure: oauthAppConfigure },
-      authorization: { start: authorizationStart, callback: authorizationCallback, complete: authorizationComplete },
+      authorization: {
+        start: authorizationStart,
+        callback: authorizationCallback,
+        complete: authorizationComplete,
+        pollDevice: authorizationPollDevice,
+        cancelDevice: authorizationCancelDevice,
+      },
     } as any)
   )
   app.route(
@@ -126,6 +135,8 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
       authorizationStart,
       authorizationCallback,
       authorizationComplete,
+      authorizationPollDevice,
+      authorizationCancelDevice,
       selection,
       assign,
       retryProjection,
@@ -668,7 +679,7 @@ describe('instance versus squad permission scope', () => {
       body: JSON.stringify({ returnTo: '/settings/integrations' }),
     })
     expect(unconfigured.status).toBe(503)
-    expect(await unconfigured.json()).toEqual({ error: 'broker_unconfigured' })
+    expect(await unconfigured.json()).toEqual({ error: 'broker_unconfigured', code: 'broker_unconfigured' })
 
     const callback = await app.request('/api/integrations/providers/notion/authorization/callback', {
       method: 'POST',
@@ -707,6 +718,93 @@ describe('instance versus squad permission scope', () => {
       localFlowId,
       handle: completionHandle,
     })
+  })
+
+  test('GitHub authorization failures return typed, user-safe errors and are logged at warn', async () => {
+    const [user] = await db
+      .insert(users)
+      .values({ email: `${crypto.randomUUID()}@example.com` })
+      .returning()
+    const [role] = await db
+      .insert(roles)
+      .values({
+        name: `GitHub authorizer ${crypto.randomUUID()}`,
+        slug: `github-authorizer-${crypto.randomUUID()}`,
+        permissions: ['integrations:write:github'],
+      })
+      .returning()
+    await db.insert(roleAssignments).values({
+      subjectType: 'user',
+      subjectId: user.id,
+      roleId: role.id,
+      scope: 'system',
+    })
+    cleanup = async () => {
+      await db.delete(roleAssignments).where(eq(roleAssignments.roleId, role.id))
+      await db.delete(roles).where(eq(roles.id, role.id))
+      await db.delete(users).where(eq(users.id, user.id))
+    }
+    const warnings: string[] = []
+    const warn = spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+      warnings.push(args.map(String).join(' '))
+    })
+    try {
+      const { app, calls } = createApp({ type: 'user', userId: user.id }, 'github')
+      const start = () =>
+        app.request('/api/integrations/providers/github/authorization/start', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ returnTo: '/onboarding' }),
+        })
+      const cases = [
+        [new GitHubOAuthError('provider_unavailable'), 502, "GitHub couldn't be reached from this computer."],
+        [new GitHubOAuthError('provider_timeout'), 504, "GitHub couldn't be reached from this computer."],
+        [new GitHubOAuthError('device_flow_disabled', 400), 400, 'Device authorization is disabled'],
+        [new GitHubOAuthError('incorrect_client_credentials', 400), 400, "GitHub rejected this app's client ID"],
+        [new GitHubOAuthError('capability_or_resource_denied', 404), 502, 'GitHub refused the request'],
+        [new GitHubOAuthError('invalid_response'), 502, 'GitHub returned an unexpected response'],
+        [new GitHubOAuthError('provider_error', 422), 502, "GitHub couldn't complete the authorization request"],
+      ] as const
+      for (const [error, status, message] of cases) {
+        calls.authorizationStart.mockImplementationOnce(async () => {
+          throw error
+        })
+        const response = await start()
+        expect(response.status).toBe(status)
+        const body = (await response.json()) as { error: string; code: string }
+        expect(body.code).toBe(error.code)
+        expect(body.error).toContain(message)
+        expect(warnings.at(-1)).toContain(`github authorization start failed at GitHub: ${error.code}`)
+      }
+
+      calls.authorizationStart.mockImplementationOnce(async () => {
+        throw new GitHubOAuthError('rate_limited', 429, 30, true)
+      })
+      const limited = await start()
+      expect(limited.status).toBe(429)
+      expect(limited.headers.get('retry-after')).toBe('30')
+      expect(((await limited.json()) as { code: string }).code).toBe('rate_limited')
+
+      calls.authorizationStart.mockImplementationOnce(async () => {
+        throw new AuthorizationFlowError('oauth_app_unconfigured')
+      })
+      const unconfigured = await start()
+      expect(unconfigured.status).toBe(400)
+      expect(await unconfigured.json()).toEqual({ error: 'oauth_app_unconfigured', code: 'oauth_app_unconfigured' })
+      expect(warnings.at(-1)).toContain('github authorization start rejected: oauth_app_unconfigured (HTTP 400)')
+
+      calls.authorizationPollDevice.mockImplementationOnce(async () => {
+        throw new AuthorizationFlowError('invalid_or_expired_state')
+      })
+      const poll = await app.request(`/api/integrations/providers/github/authorization/device/${summary.id}/poll`, {
+        method: 'POST',
+      })
+      expect(poll.status).toBe(400)
+      expect(((await poll.json()) as { code: string }).code).toBe('invalid_or_expired_state')
+      expect(warnings.at(-1)).toContain('github authorization poll rejected: invalid_or_expired_state')
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   test('squad-only write can assign but cannot invoke global lifecycle', async () => {
