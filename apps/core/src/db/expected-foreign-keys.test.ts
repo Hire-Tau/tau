@@ -16,6 +16,12 @@ test('derives every declared foreign key including durable receipts and delete/u
       'FOREIGN KEY ("message_id") REFERENCES "public"."messages" ("id") ON DELETE restrict ON UPDATE no action',
   })
   expect(expected.get('role_assignments|role_assignments_squad_id_squads_id_fk')?.deleteAction).toBe('c')
+  expect(expected.get('user_preferences|user_preferences_user_id_users_id_fk')).toMatchObject({
+    table: 'user_preferences',
+    deleteAction: 'c',
+    updateAction: 'a',
+    definition: 'FOREIGN KEY ("user_id") REFERENCES "public"."users" ("id") ON DELETE cascade ON UPDATE no action',
+  })
 })
 
 test('repairs a missing receipt foreign key in an existing test schema without dropping its table', async () => {

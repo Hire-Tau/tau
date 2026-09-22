@@ -94,7 +94,7 @@ export function StorageSection() {
         />
       )}
       {data?.warnings?.map((warning) => (
-        <p key={warning.machineId} role="status" className="text-sm text-amber-500">
+        <p key={warning.machineId} role="status" className="text-sm text-status-attention-500">
           {warning.machineName}: {warning.percent.toFixed(1)}% full at {new Date(warning.measuredAt).toLocaleString()}.
           {warning.stale ? ' Stale reading; current capacity is unknown.' : ''}
         </p>

@@ -10,7 +10,10 @@ export function StorageBanner() {
   if (!allowed || !data?.warnings.length) return null
   const worst = [...data.warnings].sort((a, b) => b.percent - a.percent)[0]!
   return (
-    <div role="status" className="shrink-0 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-primary">
+    <div
+      role="status"
+      className="shrink-0 border-b border-status-attention-500/30 bg-status-attention-500/10 px-4 py-2 text-sm text-primary"
+    >
       Storage warning: {worst.machineName} was {worst.percent.toFixed(1)}% full at{' '}
       {new Date(worst.measuredAt).toLocaleString()}.
       {worst.stale ? ' This reading is stale; current usage is unknown.' : ''}

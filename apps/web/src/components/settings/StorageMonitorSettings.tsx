@@ -67,7 +67,7 @@ export function StorageMonitorSettings({ config }: { config: StorageMonitoring }
         {save.isPending ? 'Saving…' : 'Save monitoring settings'}
       </button>
       {save.isError && (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-sm text-status-danger-400">
           {save.error.message}
         </p>
       )}
