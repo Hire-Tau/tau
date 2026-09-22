@@ -54,6 +54,16 @@ exact execution when known, rather than trusting a possibly stale agent-idle res
 identity retain the existing idle fallback. Observed exact terminal status cannot
 be undone by an older content-only replay.
 
+The proxy and runner share the same in-band `error` event shape. An error is not
+proof of execution failure. For an identified execution, the hook keeps the exact
+pin and last known status, reports a reconnecting transport, and does not latch a
+terminal group/error status. Same-execution content/catchup can recover normally;
+exhausted EOF enters the existing bounded exact-status/history reconciliation.
+Verified terminal snapshots/status responses remain protected against stale replay.
+No decision depends on English error messages. Legacy errors without execution
+identity retain their failed fallback; distinguishing their source requires a future
+wire error-category contract. A failed exact read remains interrupted, never success.
+
 After the bounded budget or a failed status read, the stream remains interrupted;
 server-busy is not relabeled as success. Foreground/manual refresh and subsequent
 execution updates remain recovery paths. This is not an indefinite background

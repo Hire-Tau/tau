@@ -466,10 +466,13 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
         streamedExecIdRef.current = null
         setExecutionStatusLocal('completed')
       } else if (event.type === 'error') {
-        if (executionId) terminalExecutionStatusesRef.current.set(executionId, 'failed')
-        streamedExecIdRef.current = null
-        setExecutionStatusLocal('failed')
+        // The proxy uses the same event for connection failures as runner errors.
+        // Keep an identified execution's status/pin until exact reconciliation;
+        // neither English message text nor this event proves terminal failure.
+        setStreamStatus('reconnecting')
+        if (!executionId && !streamedExecIdRef.current) setExecutionStatusLocal('failed')
       } else if (event.type === 'agent' && event.executionStatus) {
+        setStreamStatus('live')
         setExecutionStatusLocal(event.executionStatus)
       } else if (event.type === 'execution_phase') {
         if (event.phase === 'sandbox_recovery_wait') setExecutionStatusLocal('waiting-sandbox')
@@ -484,6 +487,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
       ) {
         // Any content event (agent/text/thinking/tool_*) means the turn is actively running — and,
         // if it arrived, the sandbox is definitely up, so the waiting label can't still apply.
+        setStreamStatus('live')
         setExecutionStatusLocal('running')
         setWaitingForSandbox(false)
       }
@@ -590,7 +594,10 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
       {
         onEvent: (event) => {
           if (!isCurrent()) return
-          store.ingest(event)
+          // Identified stream errors are transport-ambiguous. Do not mark the
+          // live group terminal/retireable before exact execution truth arrives.
+          if (event.type !== 'error' || !(streamedExecIdRef.current || announcedExecutionIdRef.current))
+            store.ingest(event)
           if (event.type === 'agent' && event.executionId) streamedExecIdRef.current = event.executionId
           if (event.type === 'done') handleDone(event)
           applyExecStatus(event)
@@ -599,7 +606,12 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
         },
         onCatchup: (events) => {
           if (!isCurrent()) return
-          store.applyCatchup(events)
+          const identified = !!(
+            streamedExecIdRef.current ||
+            announcedExecutionIdRef.current ||
+            events.some((event) => event.type === 'execution_snapshot' || (event.type === 'agent' && event.executionId))
+          )
+          store.applyCatchup(identified ? events.filter((event) => event.type !== 'error') : events)
           // Catchup replays the turn's events as one batch (on subscribe and every reconnect). It must
           // drive executionStatus exactly like live events — otherwise a turn whose 'done' lands in a
           // catchup batch never terminalizes and the activity indicator sticks at running.

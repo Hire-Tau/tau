@@ -2501,6 +2501,7 @@ describe('bounded transport reconciliation', () => {
     act(() => m.emit({ type: 'text', text: 'prefix', streamGroupId: 'S' }))
     const before = m.subscribeCount()
     await act(async () => {
+      m.emit({ type: 'error', message: 'Worker stream not ready' })
       m.triggerError()
       m.triggerDone()
       await Promise.resolve()
@@ -2639,6 +2640,7 @@ test('late exact reconciliation cannot complete a replacement execution', async 
   try {
     await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('old'))
     await act(async () => {
+      m.emit({ type: 'error', message: 'Stream connection lost' })
       m.triggerDone()
       await Promise.resolve()
     })
@@ -3193,6 +3195,158 @@ test('concurrent views can both use the shared post-confirmation history read', 
         expect(conversation.items.find((item) => item.kind === 'persisted')).toMatchObject({
           blocks: [{ toolCall: { result: 'final' } }],
         })
+    })
+  } finally {
+    unmount()
+  }
+})
+
+test('in-band proxy error is recoverable by generic same-execution retry without a snapshot or prefix loss', async () => {
+  const m = makeMockClient({
+    activeExecution: { active: true, status: 'running' },
+    messages: [
+      {
+        id: 'm',
+        agentId: 'a',
+        role: 'assistant',
+        content: 'prefix',
+        pending: false,
+        createdAt: new Date(),
+        metadata: { streamGroupId: 'S', content: [{ type: 'text', id: 't', content: 'prefix' }] },
+      },
+    ],
+  })
+  const { result, unmount } = await renderHook(() => useAgentConversation({ agentId: 'a' }), {
+    wrapper: wrap(m.client),
+  })
+  try {
+    act(() => {
+      m.emit({ type: 'agent', agentId: 'a', executionId: 'e', executionStatus: 'running' })
+      m.emit({ type: 'text', text: 'prefix', streamGroupId: 'S' })
+    })
+    act(() => m.emit({ type: 'error', message: 'Stream connection lost' }))
+    act(() => {
+      m.triggerDisconnect()
+      m.triggerReconnect()
+      m.emitCatchup([
+        { type: 'agent', agentId: 'a', executionId: 'e', executionStatus: 'running' },
+        { type: 'text', text: 'prefix tail', streamGroupId: 'S' },
+      ])
+    })
+    expect(result.current.executionStatus).toBe('running')
+    expect(result.current.items.filter((item) => item.kind === 'working')).toHaveLength(1)
+    act(() => m.emit({ type: 'text', text: ' continued', streamGroupId: 'S' }))
+    expect(result.current.items.find((item) => item.kind === 'streaming')).toMatchObject({
+      blocks: [{ content: 'prefix tail continued' }],
+    })
+  } finally {
+    unmount()
+  }
+})
+
+test.each(['running', 'completed', 'failed', 'stopped'] as const)(
+  'proxy error plus exhausted EOF reconciles exact execution truth: %s',
+  async (status) => {
+    const m = makeMockClient({ activeExecution: { active: true, executionId: 'e', status: 'running' } })
+    let reads = 0
+    m.client.agents.getExecution = async () => {
+      reads++
+      return { agentId: 'a', executionId: 'e', status, executionVersion: 2, active: status === 'running' }
+    }
+    const { result, unmount } = await renderHook(() => useAgentConversation({ agentId: 'a' }), {
+      wrapper: wrap(m.client),
+    })
+    try {
+      await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+      act(() => {
+        m.emit({ type: 'agent', agentId: 'a', executionId: 'e', executionStatus: 'running' })
+        m.emit({ type: 'tool_start', toolCallId: 't', toolName: 'search', args: '{}', streamGroupId: 'S' })
+        m.emit({ type: 'tool_update', toolCallId: 't', result: 'progress', streamGroupId: 'S' })
+      })
+      m.setMessages([
+        {
+          id: 'm',
+          agentId: 'a',
+          role: 'assistant',
+          content: 'answer',
+          pending: false,
+          createdAt: new Date(),
+          metadata: {
+            executionId: 'e',
+            streamGroupId: 'S',
+            content: [
+              {
+                type: 'tool_use',
+                id: 't',
+                toolCall: {
+                  toolCallId: 't',
+                  toolName: 'search',
+                  args: '{}',
+                  result: 'final',
+                  isError: status === 'failed',
+                },
+              },
+            ],
+          },
+        },
+      ])
+      const before = m.subscribeCount()
+      await act(async () => {
+        m.emit({ type: 'error', message: 'Worker stream not ready' })
+        m.triggerDone()
+        await Promise.resolve()
+      })
+      expect(reads).toBe(1)
+      await waitFor(() => expect(m.subscribeCount()).toBeGreaterThan(before))
+      expect(result.current.executionStatus).toBe(status)
+      if (status !== 'running') {
+        act(() => {
+          m.emit({ type: 'execution_snapshot', executionId: 'e', executionVersion: 2, status })
+          m.triggerDone()
+        })
+        await waitFor(() =>
+          expect(result.current.items.find((item) => item.kind === 'persisted')).toMatchObject({
+            blocks: [{ toolCall: { result: 'final' } }],
+          })
+        )
+        act(() =>
+          m.emitCatchup([
+            { type: 'agent', agentId: 'a', executionId: 'e', executionStatus: 'running' },
+            { type: 'text', text: 'stale', streamGroupId: 'S' },
+          ])
+        )
+        expect(result.current.executionStatus).toBe(status)
+        expect(result.current.items.some((item) => item.kind === 'working')).toBe(false)
+      }
+    } finally {
+      unmount()
+    }
+  }
+)
+
+test('an error inside catchup is not authoritative terminal status or destructive lifecycle routing', async () => {
+  const m = makeMockClient({ activeExecution: { active: true, status: 'running' } })
+  const { result, unmount } = await renderHook(() => useAgentConversation({ agentId: 'a' }), {
+    wrapper: wrap(m.client),
+  })
+  try {
+    const events: StreamEvent[] = [
+      { type: 'agent', agentId: 'a', executionId: 'e', executionStatus: 'running' },
+      { type: 'text', text: 'prefix', streamGroupId: 'S' },
+      { type: 'error', message: 'Unclassified stream failure' },
+      { type: 'text', text: ' tail', streamGroupId: 'S' },
+    ]
+    act(() => m.emitCatchup(events))
+    expect(result.current.executionStatus).toBe('running')
+    expect(result.current.streamStatus).toBe('live')
+    expect(result.current.items.find((item) => item.kind === 'streaming')).toMatchObject({
+      status: 'streaming',
+      blocks: [{ content: 'prefix tail' }],
+    })
+    act(() => m.emitCatchup(events))
+    act(() => m.emit({ type: 'text', text: ' next', streamGroupId: 'S' }))
+    expect(result.current.items.find((item) => item.kind === 'streaming')).toMatchObject({
+      blocks: [{ content: 'prefix tail next' }],
     })
   } finally {
     unmount()
