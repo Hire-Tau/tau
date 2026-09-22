@@ -34,7 +34,7 @@ function errorMessage(error: unknown): string {
 }
 
 /** Native update controls for the Tau Desktop app, which owns the bundled Core's upgrades. */
-export function DesktopUpdatePanel({ updates }: { updates: DesktopUpdates }) {
+export function DesktopUpdatePanel({ updates, canWrite }: { updates: DesktopUpdates; canWrite: boolean }) {
   const [state, setState] = useState<DesktopUpdateState | null>(null)
   const [bridgeError, setBridgeError] = useState<string | null>(null)
 
@@ -106,7 +106,13 @@ export function DesktopUpdatePanel({ updates }: { updates: DesktopUpdates }) {
             </div>
           )}
           <div className="space-y-3" data-setting-target="desktop-update-status">
-            <DesktopUpdateStatus state={state} percent={percent} onRestart={install} onRetry={check} />
+            <DesktopUpdateStatus
+              state={state}
+              percent={percent}
+              canWrite={canWrite}
+              onRestart={install}
+              onRetry={check}
+            />
             {state.lastCheckedAt && (
               <p className="text-sm text-muted">Last checked {formatLastChecked(state.lastCheckedAt)}</p>
             )}
@@ -116,11 +122,13 @@ export function DesktopUpdatePanel({ updates }: { updates: DesktopUpdates }) {
               </p>
             )}
           </div>
-          <div className="flex gap-2">
-            <button type="button" className={secondaryButton} onClick={check} disabled={busy || !state.supported}>
-              {phase === 'checking' ? 'Checking…' : 'Check now'}
-            </button>
-          </div>
+          {canWrite && state.supported && (
+            <div className="flex gap-2">
+              <button type="button" className={secondaryButton} onClick={check} disabled={busy}>
+                {phase === 'checking' ? 'Checking…' : 'Check now'}
+              </button>
+            </div>
+          )}
         </>
       )}
     </section>
@@ -130,11 +138,13 @@ export function DesktopUpdatePanel({ updates }: { updates: DesktopUpdates }) {
 function DesktopUpdateStatus({
   state,
   percent,
+  canWrite,
   onRestart,
   onRetry,
 }: {
   state: DesktopUpdateState
   percent: number | undefined
+  canWrite: boolean
   onRestart: () => void
   onRetry: () => void
 }) {
@@ -175,9 +185,11 @@ function DesktopUpdateStatus({
           <p role="status" className="text-sm text-primary">
             {version} is ready
           </p>
-          <button type="button" className={primaryButton} onClick={onRestart}>
-            Restart to update
-          </button>
+          {canWrite && (
+            <button type="button" className={primaryButton} onClick={onRestart}>
+              Restart to update
+            </button>
+          )}
         </div>
       )
     case 'installing':
@@ -192,12 +204,16 @@ function DesktopUpdateStatus({
           <p role="alert" className="text-sm text-danger">
             {state.error || 'The update check failed.'}
           </p>
-          <button type="button" className={secondaryButton} onClick={onRetry}>
-            Retry
-          </button>
+          {canWrite && (
+            <button type="button" className={secondaryButton} onClick={onRetry}>
+              Retry
+            </button>
+          )}
         </div>
       )
     default:
+      // Builds without the native updater already show a note; "Up to date" would be misleading.
+      if (!state.supported) return null
       return (
         <p role="status" className="text-sm text-primary">
           Up to date

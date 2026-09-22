@@ -22,7 +22,8 @@ import { DesktopUpdatePanel } from './DesktopUpdatePanel'
 export function SystemUpdateSection() {
   // Inside Tau Desktop the app owns updates natively; the git updater endpoints refuse all actions there.
   const updates = desktopUpdates()
-  if (updates) return <DesktopUpdatePanel updates={updates} />
+  const { can, isLoading: permissionsLoading } = usePermissions()
+  if (updates) return <DesktopUpdatePanel updates={updates} canWrite={!permissionsLoading && can('updates:write')} />
   return <GitUpdateSection />
 }
 

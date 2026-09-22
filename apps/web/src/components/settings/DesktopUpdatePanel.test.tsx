@@ -53,9 +53,9 @@ afterEach(async () => {
   delete window.tauDesktopApp
 })
 
-async function renderPanel(updates: DesktopUpdates) {
+async function renderPanel(updates: DesktopUpdates, canWrite = true) {
   const { root, container } = harness.createRoot()
-  await harness.act(async () => root.render(<DesktopUpdatePanel updates={updates} />))
+  await harness.act(async () => root.render(<DesktopUpdatePanel updates={updates} canWrite={canWrite} />))
   return { root, container }
 }
 
@@ -144,6 +144,19 @@ test('explains when this build does not receive automatic updates', async () => 
   const { container } = await renderPanel(fakeUpdates({ ...baseState, supported: false }))
 
   expect(container.textContent).toContain('doesn’t receive automatic updates')
+  expect(container.textContent).not.toContain('Up to date')
+  expect(container.textContent).not.toContain('Check now')
+})
+
+test('without update permission, status is visible but Check now and Restart to update are not', async () => {
+  const { container } = await renderPanel(
+    fakeUpdates({ ...baseState, phase: 'ready', availableVersion: '1.5.0' }),
+    false
+  )
+
+  expect(container.textContent).toContain('Tau 1.5.0 is ready')
+  expect(container.textContent).not.toContain('Restart to update')
+  expect(container.textContent).not.toContain('Check now')
 })
 
 test('follows pushed update states and unsubscribes on unmount', async () => {
