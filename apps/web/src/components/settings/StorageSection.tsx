@@ -3,6 +3,8 @@ import type { StorageFolder, StorageMachine } from '@tau/shared'
 import { refreshStorage } from '../../api/system'
 import { queryKeys } from '../../queryKeys'
 import { queries } from '../../queryOptions'
+import { usePermissions } from '../../hooks/usePermissions'
+import { StorageMonitorSettings } from './StorageMonitorSettings'
 import { ChevronRightIcon } from '../icons'
 
 function storageSize(bytes: number | null): string {
@@ -56,6 +58,7 @@ function FolderRow({ folder }: { folder: StorageFolder }) {
 }
 
 export function StorageSection() {
+  const { can } = usePermissions()
   const query = useQuery(queries.system.storage())
   const client = useQueryClient()
   const refresh = useMutation({
@@ -80,8 +83,27 @@ export function StorageSection() {
           {data?.scanning || refresh.isPending ? 'Scanning…' : 'Refresh'}
         </button>
       </div>
+      {data?.supported && data.monitoring && can('settings:write') && (
+        <StorageMonitorSettings
+          key={JSON.stringify([
+            data.monitoring.intervalHours,
+            data.monitoring.thresholds,
+            data.monitoring.alertsEnabled,
+          ])}
+          config={data.monitoring}
+        />
+      )}
+      {data?.warnings?.map((warning) => (
+        <p key={warning.machineId} role="status" className="text-sm text-amber-500">
+          {warning.machineName}: {warning.percent.toFixed(1)}% full at {new Date(warning.measuredAt).toLocaleString()}.
+          {warning.stale ? ' Stale reading; current capacity is unknown.' : ''}
+        </p>
+      ))}
       <p className="text-xs text-secondary" role="status">
         {data?.scanning ? 'Measuring storage in the background… ' : ''}
+        {data?.monitoring?.nextScanAt
+          ? `Next scheduled scan ${new Date(data.monitoring.nextScanAt).toLocaleString()}. `
+          : ''}
         {data?.scannedAt ? `Last scanned ${new Date(data.scannedAt).toLocaleString()}.` : 'Waiting for the first scan.'}
       </p>
       {(query.isError || refresh.isError || data?.error) && (
@@ -179,8 +201,9 @@ export function StorageSection() {
             prediction of space freed by deleting it.
           </p>
           <p>
-            Updates about every five minutes while this page is open. Manual scans are limited to once a minute.
-            Scanning does not start agents or remove files.
+            Measurements are saved and scanned by the worker on the configured schedule, even with this page closed.
+            These are the latest measured values, not continuous live readings. Manual requests are limited to once a
+            minute and start on the next worker check. Scanning does not start agents or remove files.
           </p>
         </div>
       )}

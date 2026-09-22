@@ -118,7 +118,7 @@ Each machine shows its used and total disk space. Squads are listed largest firs
 
 You or the User Assistant can also use `tau system storage --json` to read the breakdown and scan state, or `tau system storage --refresh --json` to request a background scan. Both return immediately; read again after a few seconds while `scanning` is true. See the [CLI reference](/reference/cli/#inspect-disk-usage).
 
-The page refreshes about every five minutes while open. **Refresh** requests a new scan; manual scans are limited to once a minute. A scan can take several seconds, and existing results stay visible with their previous timestamp until it finishes. Offline or parked machines show as unavailable. Partial scans are marked rather than presented as empty disks.
+The page reloads the latest saved result about every five minutes while open; viewing it does not start a scan. **Refresh** requests a new worker scan; manual scans are limited to once a minute. A scan can take several seconds, and existing results stay visible with their previous timestamp until it finishes. Offline or parked machines show as unavailable. Partial scans are marked rather than presented as empty disks.
 
 If a scan reaches its 45-second limit, measured child folders remain visible even when their parent totals were not returned. These sizes are labeled **Partial**; sandboxes with no measurements show **Not measured**. The page reports known scan failures and how many sandbox home totals were returned. A missing total does not prove a sandbox is empty or deleted. Large homes can still exceed the scan budget; repeated refreshes do not guarantee a complete result.
 
@@ -127,3 +127,13 @@ If a scan reaches its 45-second limit, measured child folders remain visible eve
 Hardlinked files count once per scan and may appear under whichever folder was visited first. Removing one link does not necessarily free the file's storage, so folder totals are not estimates of reclaimable space. Compare filesystem usage before and after an approved cleanup to verify actual recovery.
 
 Scans run at low CPU and idle I/O priority, but traversing a large directory tree can still generate disk activity. Inspection does not delete files or start agents. Worktree cleanup after work completes helps keep usage down, but the storage view itself only measures usage; do not manually remove a worktree that is still in use.
+
+### Scheduled storage checks
+
+VM sandbox storage is measured every **12 hours** by the worker, even with all browsers closed. The latest scan is saved across restarts. In **Settings → Storage**, users with settings-write permission can change the interval to 1–168 hours (including fractional hours), or use 0 to disable scheduled scans. Manual refresh remains available and normally starts within a minute when the worker is running.
+
+Capacity warnings use thresholds of **80%, 90%, and 95%** by default. Change the increasing, comma-separated percentages and enable or disable system-inbox alerts in the same settings section. A scan that crosses a higher threshold sends one alert per machine at the highest crossed threshold. Usage must fall three percentage points below an alerted threshold before it rearms, avoiding repeated alerts near the boundary. Missing measurements are not recovery.
+
+The banner and storage page show **latest measured usage**, not a continuous live reading. Stale warnings keep their timestamp; failed scans retain previous results and retry after 15 minutes while scheduling is enabled. Scans never start agents, wake parked machines, or delete files. Only the latest breakdown is retained, rather than an unbounded scan history.
+
+The same controls are available through the settings API/CLI keys `STORAGE_SCAN_INTERVAL_HOURS`, `STORAGE_ALERT_THRESHOLDS`, and `STORAGE_ALERTS_ENABLED`. Disabling inbox alerts does not hide capacity warnings in the webapp.

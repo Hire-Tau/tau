@@ -8,7 +8,6 @@ import type { SshRunner } from '../machines/ssh'
 import { defaultSshRunner, SshTimeoutError } from '../machines/ssh'
 import { isVmRuntime } from '../sandbox/runtime'
 import { attributeStorage, parseDirectoryUsage, type StorageOwner } from './accounting'
-import { createStorageCache } from './cache'
 
 // One traversal per machine: GNU du deduplicates hardlinks within the scan.
 // -x avoids mounted filesystems, -P (the default) avoids symlink traversal.
@@ -41,7 +40,7 @@ function unmeasuredMachine(
   }
 }
 
-async function scanStorage(): Promise<StorageSnapshot> {
+export async function scanStorage(): Promise<StorageSnapshot> {
   if (!isVmRuntime())
     return {
       supported: false,
@@ -129,5 +128,3 @@ export async function measureMachineStorage(
     return unmeasuredMachine(machine, owners, error instanceof SshTimeoutError ? 'ssh_timeout' : 'ssh_failed')
   }
 }
-
-export const storageCache = createStorageCache(scanStorage)

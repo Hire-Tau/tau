@@ -1060,6 +1060,16 @@ async function startup(): Promise<void> {
   const { drainSandboxHaltedAgentsOnce } = await import('./services/sandbox/restart')
   void drainSandboxHaltedAgentsOnce().catch((err) => log.warn('Sandbox halted-agent drain failed:', err))
 
+  createPeriodicRunner({
+    name: 'storage-monitor',
+    intervalMs: 60_000,
+    runImmediately: true,
+    task: async () => {
+      const { runStorageMonitor } = await import('./services/storage/monitor')
+      await runStorageMonitor()
+    },
+  }).start()
+
   // Initialize squad event handlers for manager notifications
   initSquadEventHandlers()
 

@@ -77,6 +77,39 @@ export class SettingValidationError extends Error {
 }
 
 const KNOWN_SETTINGS: Record<string, SettingDef> = {
+  STORAGE_SCAN_INTERVAL_HOURS: {
+    type: 'number',
+    default: '12',
+    crossProcess: true,
+    description: 'Hours between background storage scans; 0 disables scheduled scans.',
+    validate: (value) =>
+      value.trim() &&
+      Number.isFinite(Number(value)) &&
+      (Number(value) === 0 || (Number(value) >= 1 && Number(value) <= 168))
+        ? null
+        : 'Use 0 to disable, or 1–168 hours.',
+  },
+  STORAGE_ALERTS_ENABLED: {
+    type: 'boolean',
+    default: 'true',
+    crossProcess: true,
+    description: 'Send storage capacity threshold crossings to the system inbox.',
+    validate: (value) => (['true', 'false'].includes(value) ? null : 'Use true or false.'),
+  },
+  STORAGE_ALERT_THRESHOLDS: {
+    type: 'string',
+    default: '80,90,95',
+    crossProcess: true,
+    description: 'Comma-separated storage usage percentages for warnings and inbox alerts.',
+    validate: (value) => {
+      const parts = value.split(',').map((part) => Number(part.trim()))
+      return parts.length >= 1 &&
+        parts.length <= 10 &&
+        parts.every((n, i) => Number.isInteger(n) && n >= 1 && n <= 100 && (!i || n > parts[i - 1]!))
+        ? null
+        : 'Use 1–10 increasing, distinct percentages from 1 to 100.'
+    },
+  },
   TRANSCRIPTION_ENABLED: {
     type: 'boolean',
     default: 'true',

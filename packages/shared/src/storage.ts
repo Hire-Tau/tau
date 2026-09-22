@@ -44,9 +44,32 @@ export interface StorageMachine {
 }
 
 export interface StorageSnapshot {
+  monitoring?: StorageMonitoring
+  warnings?: StorageWarning[]
   supported: boolean
   scanning: boolean
   scannedAt: string | null
   error: string | null
   machines: StorageMachine[]
+}
+
+export interface StorageWarning {
+  machineId: string
+  machineName: string
+  percent: number
+  threshold: number
+  measuredAt: string
+  stale: boolean
+}
+
+export interface StorageMonitoring {
+  intervalHours: number
+  alertsEnabled: boolean
+  thresholds: number[]
+  nextScanAt: string | null
+}
+
+export type StorageStatus = Pick<StorageSnapshot, 'supported' | 'scanning' | 'scannedAt' | 'error'> & {
+  monitoring: StorageMonitoring
+  warnings: StorageWarning[]
 }
