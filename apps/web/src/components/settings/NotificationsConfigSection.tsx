@@ -13,6 +13,7 @@ import {
 import { TemplateDiffDialog } from './TemplateDiffDialog'
 import { TemplateFieldActions } from './TemplateFieldActions'
 import { FormSkeleton } from '../loading/Skeleton'
+import { DesktopNotificationsSetting } from './DesktopNotificationsSetting'
 
 const EVENTS: Record<string, { label: string; description: string }> = {
   'agent-question.created': { label: 'An agent needs an answer', description: 'A question is ready for your input.' },
@@ -206,6 +207,7 @@ export function NotificationsConfigSection() {
           <h3 className="text-lg font-semibold text-primary">Notification Rules</h3>
           <p className="text-sm text-muted mt-1">No notification configuration found.</p>
         </div>
+        <DesktopNotificationsSetting />
         <button
           onClick={() => createMutation.mutate()}
           disabled={!canWrite || createMutation.isPending}
@@ -226,6 +228,7 @@ export function NotificationsConfigSection() {
         <h3 className="text-lg font-semibold text-primary">Notification Rules</h3>
         <p className="text-sm text-muted mt-1">Decide which updates Tau sends to people across your workspace.</p>
       </div>
+      <DesktopNotificationsSetting />
 
       {config.disabled && (
         <p role="status" className="text-sm text-warning">
