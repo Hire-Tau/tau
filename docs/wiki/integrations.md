@@ -26,7 +26,7 @@ Connections belong to an instance-global pool. An authorized Operator or Admin m
 
 The credential is encrypted by Tau's secret store. Full pool responses contain safe configuration and `credentialConfigured` status, never a credential value or reference. The squad selector receives only connection ID, provider, display name, enabled state, and health state.
 
-Creation and enablement perform live validation. Provider I/O occurs outside database locks, followed by a material-revision compare-and-set. Validation remains fresh for 15 minutes. Changed credentials/configuration, stale validation, uncertain health, invalid authentication, unknown versions, or a missing assignment fail closed.
+Creation and enablement perform live validation. Provider I/O occurs outside database locks, followed by a material-revision compare-and-set. Validation remains fresh for 15 minutes. Healthy connections are scheduled for revalidation two minutes before expiry so the worker's one-minute polling interval does not create a recurring authorization gap. Failed validations retain their retry backoff. Changed credentials/configuration, stale validation, uncertain health, invalid authentication, unknown versions, or a missing assignment fail closed.
 
 Bigbrain scopes:
 

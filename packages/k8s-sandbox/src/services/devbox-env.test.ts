@@ -1,5 +1,6 @@
 import { describe, expect, test, afterEach } from 'bun:test'
-import { existsSync, mkdtempSync, writeFileSync, rmSync } from 'fs'
+import { existsSync, mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'fs'
+import { execFileSync } from 'child_process'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import {
@@ -117,7 +118,12 @@ describe('managed toolchain shellenv cache', () => {
     expect(getDevboxShellEnv()).toBe(existingCache)
 
     cacheManagedToolchainEnv(true, () => 'export MANAGED=1')
-    expect(getDevboxShellEnv()).toBe([existingCache, 'export MANAGED=1'].filter(Boolean).join('\n'))
+    expect(getDevboxShellEnv()).toContain(existingCache)
+    expect(
+      execFileSync('/bin/bash', ['-c', `${getDevboxShellEnv()}\nprintf '%s' "$MANAGED"`], { encoding: 'utf8' })
+    ).toBe('1')
+    clearManagedToolchainEnv()
+    expect(getDevboxShellEnv()).toBe(existingCache)
   })
 
   test('clears stale activation when files disappear', () => {
@@ -130,6 +136,46 @@ describe('managed toolchain shellenv cache', () => {
     rmSync(join(dir, 'devbox.json'))
     expect(() => cacheManagedToolchainEnv(true, () => 'should not run')).toThrow()
     expect(getDevboxShellEnv()).not.toContain('MANAGED')
+  })
+})
+
+describe('combined Devbox PATH', () => {
+  test('keeps comfort tools discoverable with managed tools taking precedence', () => {
+    const previousDevbox = process.env.TAU_DEVBOX_DIR
+    const previousToolchain = process.env.TAU_TOOLCHAIN_DIR
+    const dir = mkdtempSync(join(tmpdir(), 'devbox-path-'))
+    const comfort = join(dir, 'comfort tools')
+    const managed = join(dir, 'managed tools')
+    try {
+      for (const path of [comfort, managed]) {
+        mkdirSync(path)
+        writeFileSync(join(path, 'devbox.json'), '{"packages":["fixture"]}')
+        writeFileSync(join(path, 'node'), '#!/bin/sh\n', { mode: 0o755 })
+      }
+      writeFileSync(join(comfort, 'gh'), '#!/bin/sh\n', { mode: 0o755 })
+      process.env.TAU_DEVBOX_DIR = comfort
+      process.env.TAU_TOOLCHAIN_DIR = managed
+      cacheDevboxShellEnv(() => `export PATH='${comfort}:/usr/bin:/bin'`)
+      cacheManagedToolchainEnv(true, () => `export PATH='${managed}:/usr/bin:/bin'`)
+      const resolve = () =>
+        execFileSync('/bin/bash', ['-c', `${getDevboxShellEnv()}\ncommand -v gh; command -v node`], {
+          encoding: 'utf8',
+        })
+          .trim()
+          .split('\n')
+      expect(resolve()).toEqual([join(comfort, 'gh'), join(managed, 'node')])
+      clearManagedToolchainEnv()
+      expect(resolve()).toEqual([join(comfort, 'gh'), join(comfort, 'node')])
+    } finally {
+      clearManagedToolchainEnv()
+      writeFileSync(join(comfort, 'devbox.json'), '{"packages":[]}')
+      prepareDevboxShellEnv()
+      if (previousDevbox === undefined) delete process.env.TAU_DEVBOX_DIR
+      else process.env.TAU_DEVBOX_DIR = previousDevbox
+      if (previousToolchain === undefined) delete process.env.TAU_TOOLCHAIN_DIR
+      else process.env.TAU_TOOLCHAIN_DIR = previousToolchain
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 

@@ -118,7 +118,17 @@ export function cacheDevboxShellEnv(
  * Returns empty string if not yet cached or no devbox.json.
  */
 export function getDevboxShellEnv(): string {
-  return [cachedShellEnv, cachedManagedToolchainEnv].filter(Boolean).join('\n')
+  if (!cachedShellEnv || !cachedManagedToolchainEnv) return cachedManagedToolchainEnv ?? cachedShellEnv ?? ''
+  // Each shellenv can export a complete captured PATH. Activating the managed
+  // toolchain must not hide comfort tools (gh, rg, etc.) from the general box.
+  // Keep managed tools first, and retain the comfort PATH as a fallback.
+  return [
+    cachedShellEnv,
+    '_tau_comfort_path="${PATH:-}"',
+    cachedManagedToolchainEnv,
+    'export PATH="${PATH}${_tau_comfort_path:+:$_tau_comfort_path}"',
+    'unset _tau_comfort_path',
+  ].join('\n')
 }
 
 /** Clear only Tau's managed toolchain activation, preserving the comfort/project cache. */
