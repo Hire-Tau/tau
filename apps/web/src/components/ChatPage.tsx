@@ -11,7 +11,7 @@ import { useIsDesktop } from '../hooks/useIsDesktop'
 import { Chat } from './Chat'
 import { SubagentsInlinePanel } from './AgentConversation'
 import { BackLink } from './BackLink'
-import { Modal } from './Modal'
+import { ExpandableChatPanel } from './ExpandableChatPanel'
 import { AgentViewTabs } from './AgentViewTabs'
 import { useChatSession } from '../hooks/useChatSession'
 import { AgentInboxPanel } from './squads/AgentInboxPanel'
@@ -451,11 +451,14 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
       {/* Chat area - full width on mobile when viewing a chat */}
       <div className={clsx(showChat ? 'flex' : 'hidden md:flex', 'flex-1 flex-col min-w-0 min-h-0')}>
         {showChat ? (
-          <>
-            {isFullscreen ? (
-              <div className="flex-1 min-w-0 min-h-0" />
-            ) : (
-              <div className="tau-panel flex flex-col grow min-h-0 bg-surface md:rounded-lg overflow-hidden">
+          <ExpandableChatPanel
+            isFullscreen={isFullscreen}
+            onExitFullscreen={toggleFullscreen}
+            title={chatSubtitle ? `${chatTitle} (${chatSubtitle})` : chatTitle}
+            headerExtra={tabToggle}
+            className="tau-panel flex flex-col grow min-h-0 bg-surface md:rounded-lg overflow-hidden"
+            inlineHeader={
+              <>
                 <div className="md:hidden shrink-0 px-3 py-2 border-b border-th-border">
                   <BackLink
                     to="/chat"
@@ -484,23 +487,11 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
                     </button>
                   </div>
                 </div>
-                <div className="flex flex-col grow min-h-0">{chatContent}</div>
-              </div>
-            )}
-            {isFullscreen && (
-              <Modal
-                isOpen={isFullscreen}
-                mobileFullscreen
-                onClose={toggleFullscreen}
-                title={chatSubtitle ? `${chatTitle} (${chatSubtitle})` : chatTitle}
-                headerExtra={tabToggle}
-                maxWidth="chat"
-                noChildPadding
-              >
-                {chatContent}
-              </Modal>
-            )}
-          </>
+              </>
+            }
+          >
+            {chatContent}
+          </ExpandableChatPanel>
         ) : (
           <div className="tau-panel grow flex items-center justify-center bg-surface rounded-lg px-4 text-center">
             <p className="text-placeholder text-sm">

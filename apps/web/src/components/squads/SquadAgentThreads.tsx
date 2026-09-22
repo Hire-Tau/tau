@@ -32,6 +32,7 @@ import { SpawnAgentModal } from './SpawnAgentModal'
 import { SquadChatActions } from './SquadChatActions'
 import './SquadAgentThreads.css'
 import { Modal } from '../Modal'
+import { ExpandableChatPanel } from '../ExpandableChatPanel'
 import { AgentActivityDot } from '../AgentActivityDot'
 import {
   ChatIcon,
@@ -1013,37 +1014,17 @@ export function SquadAgentThreads({
           </div>
         ) : null
 
-        // Fullscreen: use Modal
-        if (isFullscreen && selectedAgent && !composing) {
-          const { title: agentTitle, suffix: titleSuffix } = getAgentHeaderTitleParts(selectedAgent)
-
-          return (
-            <>
-              {/* Placeholder to maintain layout */}
-              <div className="flex-1 min-w-0 min-h-0" />
-              <Modal
-                isOpen={isFullscreen}
-                onClose={toggleFullscreen}
-                title={`${agentTitle} ${titleSuffix}`}
-                mobileFullscreen
-                titleContent={<AgentHeaderTitle agent={selectedAgent} />}
-                headerExtra={tabToggle}
-                maxWidth="chat"
-                noChildPadding
-              >
-                {contentArea}
-                {/* <div className="flex flex-col grow min-h-0 overflow-hidden">{contentArea}</div> */}
-              </Modal>
-            </>
-          )
-        }
-
-        // Normal view
+        const titleParts = selectedAgent && getAgentHeaderTitleParts(selectedAgent)
         return (
-          <div className="flex-1 min-w-0 min-h-0 border border-th-border rounded-lg bg-surface overflow-hidden flex flex-col">
-            {composing || selectedAgent ? (
-              <>
-                {/* Header with inbox toggle */}
+          <ExpandableChatPanel
+            isFullscreen={isFullscreen}
+            onExitFullscreen={toggleFullscreen}
+            title={composing ? 'New consultant' : titleParts ? `${titleParts.title} ${titleParts.suffix}` : 'Chats'}
+            titleContent={!composing && selectedAgent ? <AgentHeaderTitle agent={selectedAgent} /> : undefined}
+            headerExtra={tabToggle}
+            className="flex-1 min-w-0 min-h-0 border border-th-border rounded-lg bg-surface overflow-hidden flex flex-col"
+            inlineHeader={
+              composing || selectedAgent ? (
                 <div className="px-3 py-2 border-b border-th-border flex items-center justify-between shrink-0">
                   <div className="flex items-center gap-2 min-w-0">
                     {headerLeading && <div className="shrink-0">{headerLeading}</div>}
@@ -1098,8 +1079,11 @@ export function SquadAgentThreads({
                     )}
                   </div>
                 </div>
-                {contentArea}
-              </>
+              ) : null
+            }
+          >
+            {composing || selectedAgent ? (
+              contentArea
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-muted gap-2">
                 <p>Select an agent to view their conversation</p>
@@ -1112,7 +1096,7 @@ export function SquadAgentThreads({
                 </button>
               </div>
             )}
-          </div>
+          </ExpandableChatPanel>
         )
       })()}
 
