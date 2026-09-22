@@ -12,7 +12,7 @@ import { type CustomThemeDocument, type AppearanceSetting } from '@tau/shared'
 import { findWebTheme, resolveWebTheme } from '../theme/registry'
 import { tokenColor } from '../theme/tokenReader'
 import { applyResolvedTheme } from '../theme/apply'
-import { getThemeStorage, persistSurfaceSnapshot, persistThemeSelection } from '../theme/storage'
+import { getThemeStorage, persistSurfaceSnapshot } from '../theme/storage'
 
 import { applyCustomTheme, customSelection, removeCustomProperties } from '../theme/custom'
 import { ThemeSyncStore, LOCAL_OVERRIDE_KEY } from '../theme/sync'
@@ -127,7 +127,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
     const tile = tokenColor(window.getComputedStyle(root).getPropertyValue('--brand-tile').trim())
     if (tile) document.querySelector('meta[name="msapplication-TileColor"]')?.setAttribute('content', tile)
-    persistThemeSelection(getThemeStorage(), selection)
 
     // Store the resolved surface color so the flash-prevention script can use
     // it before React boots; token values are channel triplets, so wrap them

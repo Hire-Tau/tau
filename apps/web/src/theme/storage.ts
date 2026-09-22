@@ -1,4 +1,8 @@
-import { normalizeStoredThemeSelection, type EffectiveAppearance, type StoredThemeSelection } from '@tau/shared/theme-schema'
+import {
+  normalizeStoredThemeSelection,
+  type EffectiveAppearance,
+  type StoredThemeSelection,
+} from '@tau/shared/theme-schema'
 import { KNOWN_THEME_IDS } from './registry'
 
 /**

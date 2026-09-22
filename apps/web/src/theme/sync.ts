@@ -47,6 +47,10 @@ export class ThemeSyncStore {
     const localOverride = readLocalOverride(storage)
     this.state = { ...loadCustomTheme(storage), localOverride, syncAvailable: false }
     this.persistOverride(localOverride)
+    // Initial migration/defaults are persisted once. Later writes belong only
+    // to deliberate changes or account adoption in apply(), never to a React
+    // rerender caused by a storage event from another document.
+    persistThemeSelection(storage, this.state.selection)
   }
   getSnapshot = () => this.state
   subscribe = (listener: () => void) => {
