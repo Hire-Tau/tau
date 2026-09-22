@@ -6,7 +6,8 @@ import webpush from 'web-push'
 import { eq } from 'drizzle-orm'
 import { NotificationService } from './service'
 import type { NotificationConfig, EventContext } from './types'
-import { db, apnsDevices, pushSubscriptions } from '../../db'
+import { db, apnsDevices, pushSubscriptions, desktopNotifications } from '../../db'
+import { eventBuilders } from './event-builders'
 import { cleanupTestRbac, createTestUser, type TestUser } from '../../test-utils'
 import { registerApnsDevice, getApnsDevicesByUser } from '../push/apns-devices'
 import { registerPushSubscription } from '../push/subscriptions'
@@ -310,6 +311,66 @@ describe('NotificationService', () => {
       await unconfiguredService.notify('inbox.messageReceived', {})
       const allLogs = consoleSpy.mock.calls.map((c: any[]) => c.join(' ')).join('\n')
       expect(allLogs).toContain('Notification config not loaded; skipping inbox.messageReceived')
+    })
+
+    test('a newly registered push event reaches web, APNs, and desktop through shared recipient preferences', async () => {
+      const prefix = `notification-fanout-${crypto.randomUUID()}`
+      const eventType = `${prefix}.created`
+      const previousDesktop = process.env.TAU_DESKTOP_MANAGED
+      const configureSpy = spyOn(service, 'configureVapid').mockResolvedValue()
+      const webSpy = spyOn(service as any, 'sendWebPush').mockImplementation(async () => {})
+      const apnsSpy = spyOn(service as any, 'sendApnsPush').mockImplementation(async () => {})
+      const event = {
+        type: eventType,
+        messageId: crypto.randomUUID(),
+        title: 'New event',
+        body: 'Ready for attention',
+        url: '/inbox',
+        timestamp: new Date(),
+      }
+      try {
+        const user = await createTestUser({ prefix })
+        process.env.TAU_DESKTOP_MANAGED = '1'
+        eventBuilders[eventType] = async () => event
+        service.setConfig({ rules: [{ event: eventType, channels: ['push'] }], channels: { push: { enabled: true } } })
+        const data = { recipientType: 'user', recipientId: user.id }
+
+        await service.notify(eventType, data)
+
+        expect(webSpy).toHaveBeenCalledTimes(1)
+        expect(webSpy).toHaveBeenCalledWith([user.id], event)
+        expect(apnsSpy).toHaveBeenCalledTimes(1)
+        expect(apnsSpy).toHaveBeenCalledWith([user.id], event)
+        const rows = await db.select().from(desktopNotifications).where(eq(desktopNotifications.userId, user.id))
+        expect(rows).toHaveLength(1)
+        expect(rows[0]).toMatchObject({
+          userId: user.id,
+          eventType,
+          category: 'message',
+          title: event.title,
+          body: event.body,
+          url: event.url,
+        })
+
+        await db.delete(desktopNotifications).where(eq(desktopNotifications.userId, user.id))
+        webSpy.mockClear()
+        apnsSpy.mockClear()
+        await UserNotificationPreferences.upsert(user.id, { mutedEvents: [eventType] })
+        await service.notify(eventType, data)
+        expect(webSpy).not.toHaveBeenCalled()
+        expect(apnsSpy).not.toHaveBeenCalled()
+        expect(
+          await db.select().from(desktopNotifications).where(eq(desktopNotifications.userId, user.id))
+        ).toHaveLength(0)
+      } finally {
+        delete eventBuilders[eventType]
+        if (previousDesktop === undefined) delete process.env.TAU_DESKTOP_MANAGED
+        else process.env.TAU_DESKTOP_MANAGED = previousDesktop
+        configureSpy.mockRestore()
+        webSpy.mockRestore()
+        apnsSpy.mockRestore()
+        await cleanupTestRbac(prefix)
+      }
     })
 
     test('logs to console when rule matches', async () => {

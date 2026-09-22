@@ -782,6 +782,8 @@ if (schemaCache?.matches()) {
       // registerPushSubscription's ownership-transfer upsert, #1111)
       `CREATE UNIQUE INDEX IF NOT EXISTS "idx_push_subscriptions_endpoint_unique"
       ON "push_subscriptions" ("endpoint")`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "idx_desktop_notifications_event"
+      ON "desktop_notifications" ("user_id", "event_key")`,
       // local deployments: one live deployment per port PER NETWORK SCOPE. On the
       // VM runtime every box on a machine shares one loopback, so a duplicate
       // would let a tokenized app URL reach a different squad's app (#1306).

@@ -25,7 +25,10 @@ Event Emitter
 NotificationService.notify()   (matches event/data rule, resolves recipients)
      │
      ├─► Console channel       (logs to stdout)
-     ├─► Push channel          (Web Push API to browsers)
+     ├─► Push channel          (shared recipients and preferences)
+     │     ├─► Web Push        (browser subscriptions)
+     │     ├─► APNs            (mobile devices)
+     │     └─► Desktop feed    (local Electron OS alerts)
      └─► External channels     (Discord, Slack, Telegram)
               │
               ▼
@@ -50,13 +53,14 @@ NotificationService.notify()   (matches event/data rule, resolves recipients)
 | `apps/core/src/services/push/vapid.ts`                    | VAPID key management                                                            |
 | `apps/core/src/services/push/apns.ts`                     | Direct APNs sender (HTTP/2 + ES256 provider JWT)                                |
 | `apps/core/src/services/push/apns-devices.ts`             | APNs device-token registration (database)                                       |
+| `apps/core/src/services/push/desktop.ts`                  | Desktop alert feed, deduplication, retention, and preference checks              |
 | `apps/core/src/routes/push.ts`                            | HTTP endpoints for Web Push + native device registration                        |
 
 ## Initialization
 
 On startup, `NotificationSync` syncs the YAML template to the `notification_config` DB table. The `NotificationService` loads its config from the database and subscribes to all events via the emitter's `onAny()`. Config can be edited via the Settings UI — admin changes are preserved across syncs.
 
-New event types added to `EventMap` are automatically picked up — no hardcoded event list to maintain.
+The subscription observes new event types added to `EventMap`, but observation alone does not make an event deliverable. A notification needs a matching rule, an event builder, and resolvable recipients. All three push paths share those decisions; desktop has no separate event allowlist.
 
 ## Rule Matching
 
@@ -73,7 +77,11 @@ Omitted filters match anything. A matching rule supplies a `channels` array, and
 
 Logs `<event>: <summary>` through the `notify` logger. Useful for development and monitoring.
 
-### Push (Web Push API)
+### Push channel
+
+The `push` channel resolves recipients and applies preferences once, then fans out to Web Push, APNs, and (only when `TAU_DESKTOP_MANAGED=1`) the desktop feed. Each delivery path has its own transport configuration; desktop delivery does not require Web Push subscriptions or APNs credentials.
+
+### Web Push
 
 Sends browser push notifications via the [Web Push protocol](https://web.dev/push-notifications-overview/):
 
@@ -91,7 +99,7 @@ Event builders construct the rich title, body, and destination. Device delivery 
 
 ### Native push (APNs)
 
-The mobile app receives **native iOS push via direct APNs** (HTTP/2 + an ES256 provider JWT) — no third-party push service. `NotificationService` delivers to Web Push and APNs **in parallel** for the target users; tokens APNs reports as unregistered (`410` / `Unregistered`) are pruned automatically.
+The mobile app receives **native iOS push via direct APNs** (HTTP/2 + an ES256 provider JWT) — no third-party push service. APNs participates in the shared push fan-out alongside Web Push and desktop; tokens APNs reports as unregistered (`410` / `Unregistered`) are pruned automatically.
 
 - Devices register with `POST /api/push/device`; tokens are stored per-user in the `apns_devices` table with the APNs environment (`sandbox` or `production`) used by that build.
 - Credentials come from the [Secret Store](secret-store.md) (`APNS_KEY_P8`, `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_BUNDLE_ID`, optional `APNS_ENV`), configured in **Settings → Integrations → Apple Push**. They're read live per send, so first-time setup needs no restart; APNs is active when Apple Push is enabled and all four required keys are set.
@@ -99,6 +107,21 @@ The mobile app receives **native iOS push via direct APNs** (HTTP/2 + an ES256 p
 - `BadDeviceToken` is logged but not pruned, because it often indicates a gateway/environment mismatch rather than a permanently invalid token.
 
 See [Mobile App → Push notifications](mobile-app.md#push-notifications-apns) for the device side.
+
+### Desktop notifications
+
+Desktop-managed instances store a per-user presentation copy in `desktop_notifications`. The signed-in web shell polls the local API and passes alerts through a narrow Electron bridge for OS display. This allows catch-up after reconnecting without a browser push service or cloud relay. Normal browser sessions do not poll this feed.
+
+The feed returns at most 100 recent alerts from seven days; expired rows are purged on subsequent enqueues. Current mute and preview preferences are rechecked on reads. A hidden or minimized window continues receiving alerts; quitting the app stops delivery until reopening. Displaying an alert never marks inbox messages read or advances work. See [Desktop notifications](desktop-notifications.md) for delivery, deduplication, privacy, and bridge boundaries.
+
+### Adding a notification type
+
+1. Define and emit the event through the shared event emitter. Add its presentation to `apps/core/src/services/notifications/event-builders.ts`; an event without a builder cannot produce a push alert.
+2. Add or update the rule in `config/notifications/rules.yaml` to select `push`. Preserve administrator overrides through the existing config sync.
+3. Supply the recipient fields understood by `resolveEnabledPushUserIds`, or extend that shared resolver for a new audience. Update `push-category.ts` when a new event needs a category other than the `message` fallback.
+4. Test the builder, audience, rule, and mutes. Update shared Web Push/APNs preview vocabulary if needed. Do not add desktop-specific event routing: the same built event and selected recipients already reach its feed.
+
+`services/notifications/service.test.ts` includes a regression that registers a new event builder and push rule, then verifies Web Push, APNs, and the persisted desktop alert all receive the same event for the selected user. Muting that event suppresses all three paths. This test must fail if desktop delivery is removed from the shared fan-out.
 
 ### External Channels (Discord, Slack, Telegram)
 
