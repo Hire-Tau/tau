@@ -761,7 +761,7 @@ describe('instance versus squad permission scope', () => {
         [new GitHubOAuthError('provider_timeout'), 504, "GitHub couldn't be reached from this computer."],
         [new GitHubOAuthError('device_flow_disabled', 400), 400, 'Device authorization is disabled'],
         [new GitHubOAuthError('incorrect_client_credentials', 400), 400, "GitHub rejected this app's client ID"],
-        [new GitHubOAuthError('capability_or_resource_denied', 404), 403, 'GitHub refused the request'],
+        [new GitHubOAuthError('capability_or_resource_denied', 404), 502, 'GitHub refused the request'],
         [new GitHubOAuthError('invalid_response'), 502, 'GitHub returned an unexpected response'],
         [new GitHubOAuthError('provider_error', 422), 502, "GitHub couldn't complete the authorization request"],
       ] as const

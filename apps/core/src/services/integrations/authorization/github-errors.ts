@@ -1,7 +1,7 @@
 import type { GitHubOAuthError } from '@tau/shared/oauth-providers/github/client'
 
 export interface GitHubAuthorizationFailure {
-  status: 400 | 403 | 429 | 502 | 504
+  status: 400 | 429 | 502 | 504
   code: string
   message: string
   retryAfterSeconds?: number
@@ -41,7 +41,7 @@ export function describeGitHubAuthorizationError(error: GitHubOAuthError): GitHu
       return { status: 400, code: error.code, message: REJECTED_CREDENTIALS }
     case 'capability_or_resource_denied':
       return {
-        status: 403,
+        status: 502,
         code: error.code,
         message:
           "GitHub refused the request for this app. Check that the GitHub App's client ID is correct and the app still exists.",
