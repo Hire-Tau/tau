@@ -170,10 +170,21 @@ export function computeDevboxSeedHash(role: SeedBoxRole): string {
   return createHash('sha256').update(renderDevboxJson(role)).digest('hex').slice(0, 16)
 }
 
+/** Keep installation and bounded cache maintenance in the same fenced command.
+ * Nix 2.24 writes loose duplicates even when shared Git alternates are present.
+ * The EXIT trap also cleans partial failed installs without masking their status.
+ * Older machine scripts are tolerated during rolling upgrades.
+ */
+export function devboxInstallCommand(devboxDir: string): string {
+  const cleanup =
+    'if [ -f /opt/tau/bin/box-provision.sh ]; then timeout 15s bash /opt/tau/bin/box-provision.sh --unix-user "$(id -un)" --prepare-nix-cache >&2 || true; fi'
+  return `cd ${shellQuote(devboxDir)} && (trap ${shellQuote(cleanup)} EXIT; devbox install)`
+}
+
 export function computeDevboxInstallInvocationId(sandboxId: string, role: SeedBoxRole): string {
   const hash = computeDevboxSeedHash(role)
   const devboxDir = `${defaultBoxHome(sandboxId)}/.tau/devbox`
-  const command = `cd ${shellQuote(devboxDir)} && devbox install`
+  const command = devboxInstallCommand(devboxDir)
   const commandDigest = createHash('sha256').update(command).digest('hex')
   return createHash('sha256').update(`${sandboxId}\0${hash}\0devbox-install\0${commandDigest}`).digest('hex')
 }
@@ -308,7 +319,7 @@ const REALIZE_MARKER = 'Installing the following packages to the nix store'
  * Run `devbox install` to completion, splitting its single opaque bash call
  * into `devbox-resolve` / `devbox-realize` BoxStepTimings using ONLY Core's own
  * clock — never a remote timestamp (see box-timing.ts's clock-authority doc).
- * The command itself is byte-identical to before; we merely time WHEN CORE
+ * The command includes bounded post-install cache maintenance. We time WHEN CORE
  * OBSERVES each streamed chunk arrive and note the first arrival whose
  * accumulated text contains {@link REALIZE_MARKER}.
  *
@@ -470,7 +481,7 @@ export async function seedBoxDevbox(
 
   // Realize the comfort set. `devbox install` reads devbox.json from its cwd; runs
   // as the box user (the sandbox-server's bash), never root — no sudo here.
-  const installCommand = `cd ${shellQuote(devboxDir)} && devbox install`
+  const installCommand = devboxInstallCommand(devboxDir)
   const invocationId = invocationIdOverride ?? computeDevboxInstallInvocationId(sandboxId, role)
   const timings = await runDevboxInstall(client, installCommand, invocationId, installTimeoutSeconds, now)
 

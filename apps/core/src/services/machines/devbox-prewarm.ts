@@ -24,8 +24,9 @@
  * default realize ensures a THROWAWAY, machine-scoped box (a synthetic
  * `devbox-prewarm-<role>-<machineId>` sandbox, NOT tied to any squad), seeds its
  * devbox via {@link seedBoxDevbox} (which warms both the `/nix` store and the
- * lock cache), then REMOVES the box. The realized `/nix` store + cached lock
- * survive the box's teardown — that persistence is the entire point.
+ * lock cache), publishes its public Nix source objects, then REMOVES the box.
+ * The realized `/nix` store, shared source objects and cached lock survive the
+ * box's teardown.
  *
  * ## Non-blocking, fault-isolated, idempotent
  * The entry point is fire-and-forget ({@link prewarmMachineDevboxBackground}) and
@@ -42,6 +43,7 @@ import { SandboxClient } from '../sandbox/k8s/http-client'
 import { ensureBox as ensureBoxReal, removeBox as removeBoxReal } from './box-manager'
 import { seedBoxDevbox as seedBoxDevboxReal, type SeedBoxRole } from './devbox-seed'
 import { getMachine as getMachineReal, type Machine } from './queries'
+import { publishPrewarmedNixCache } from './nix-cache'
 
 const log = createLogger('devbox-prewarm')
 
@@ -88,6 +90,7 @@ async function realizeDevboxViaThrowawayBox(machine: Machine, role: SeedBoxRole)
     const client = new SandboxClient(stripScheme(endpoint), box.authToken ?? undefined)
     try {
       await seedBoxDevboxReal(client, sandboxId, role)
+      await publishPrewarmedNixCache(machine, sandboxId)
     } finally {
       client.close()
     }

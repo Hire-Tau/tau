@@ -25,7 +25,8 @@
 # manager, never during bootstrap itself.
 #
 # Target OS : Ubuntu 24.04 LTS ONLY (systemd 255, bash 5.2).
-# Privilege : must run as root, or as a passwordless sudoer.
+# Privilege : provisioning/publication require root or a passwordless sudoer.
+#             --prepare-nix-cache runs unprivileged as the box user.
 # Idempotent: safe to re-run — user creation, dirs, unit install, and linger all
 #             check-then-act; --remove on an absent user is a no-op success.
 # No secrets: embeds NO credentials. The server config/secrets arrive out-of-band
@@ -52,6 +53,11 @@
 #     box-provision.sh --unix-user <user> --restore <tar>
 #     box-provision.sh --unix-user <user> --restore-stream \
 #                      --codec <gzip|zstd> --state-dirs "<dirs>"
+#
+#   Cache maintenance (port unused):
+#     box-provision.sh --unix-user <user> --prepare-nix-cache
+#     box-provision.sh --sandbox-id devbox-prewarm-<role>-<machine> \
+#                      --unix-user <user> --publish-nix-cache
 #
 # --port <port>
 #            --port is required for provisioning only. Restore and removal do
@@ -152,6 +158,8 @@ UNIT_MODE=""
 PRINT_SUBID_START=false
 PRINT_SLICE_LIMITS=false
 PRINT_UNITS=false
+PREPARE_NIX_CACHE=false
+PUBLISH_NIX_CACHE=false
 MEMTOTAL_KB_OVERRIDE=""
 NPROC_OVERRIDE=""
 
@@ -191,6 +199,14 @@ while [ "$#" -gt 0 ]; do
     --unit-mode)
       UNIT_MODE="${2:-}"
       shift 2
+      ;;
+    --prepare-nix-cache)
+      PREPARE_NIX_CACHE=true
+      shift
+      ;;
+    --publish-nix-cache)
+      PUBLISH_NIX_CACHE=true
+      shift
       ;;
     --remove)
       REMOVE=true
@@ -498,7 +514,7 @@ fi
 # `Environment=TAU_BOX_PORT=` into the unit. Removal and restore modes do not
 # use a port, so omission is safe there. If a caller does supply --port in any
 # mode, validate it consistently rather than silently accepting malformed input.
-if [ "${REMOVE}" != true ] && [ "${RESTORE}" != true ] && [ "${RESTORE_STREAM}" != true ] && [ "${PORT_SUPPLIED}" != true ]; then
+if [ "${REMOVE}" != true ] && [ "${RESTORE}" != true ] && [ "${RESTORE_STREAM}" != true ] && [ "${PORT_SUPPLIED}" != true ] && [ "${PREPARE_NIX_CACHE}" != true ] && [ "${PUBLISH_NIX_CACHE}" != true ]; then
   echo "box-provision.sh: --port is required for provisioning" >&2
   exit 2
 fi
@@ -725,9 +741,8 @@ box_uid() {
 
 
 # Run a command AS the box user inside its own lingering systemd --user session.
-# USER-MANAGER-ONLY by construction, and correct as such: its only caller is the
-# rootless-docker setup, which exists solely in user mode (--with-docker is
-# rejected for --unit-mode system above).
+# Also used for cache maintenance/publication reads, which need only UID/HOME
+# isolation and do not require a running user manager.
 # linger (enabled in provision_box) guarantees the user manager + its
 # XDG_RUNTIME_DIR (/run/user/<uid>) exist, which the rootless docker tooling and
 # `systemctl --user` both need. HOME is set explicitly because the privilege drop
@@ -1130,6 +1145,100 @@ ensure_user() {
   fi
 }
 
+# Only the dedicated, pristine machine prewarmer may populate this store.
+# Ordinary boxes READ shared objects via Git alternates; their fetcher SQLite
+# databases, credentials, custom sources and new objects remain private.
+NIX_CACHE_ROOT="/opt/tau/cache/nix"
+
+init_shared_nix_cache() (
+  umask 022
+  local name
+  "${SUDO[@]}" install -d -o root -g root -m 0755 "${NIX_CACHE_ROOT}"
+  for name in tarball-cache tarball-cache-v2; do
+    "${SUDO[@]}" git -c init.defaultBranch=main init --bare --quiet "${NIX_CACHE_ROOT}/${name}"
+    "${SUDO[@]}" chmod 0755 "${NIX_CACHE_ROOT}/${name}" "${NIX_CACHE_ROOT}/${name}/objects"
+  done
+)
+
+# Runs entirely AS THE BOX USER, including directory creation and atomic
+# alternate updates. Never traverse an agent-controlled path as root.
+attach_nix_cache() (
+  set -euo pipefail
+  local cache="$1" shared="$2" alternate temp
+  [ -d "${shared}/objects" ] || exit 0
+  if [ ! -e "${cache}/HEAD" ]; then
+    git -c init.defaultBranch=main init --bare --quiet "${cache}"
+  fi
+  mkdir -p "${cache}/objects/info"
+  exec 9>"${cache}/objects/info/.tau-shared.lock"
+  flock -w 1 9 || exit 0
+  alternate="${cache}/objects/info/alternates"
+  if ! grep -Fxq "${shared}/objects" "${alternate}" 2>/dev/null; then
+    temp="$(mktemp "${alternate}.XXXXXX")"
+    trap 'rm -f "${temp:-}"' EXIT
+    if [ -f "${alternate}" ]; then cat "${alternate}" >"${temp}"; fi
+    printf '\n%s\n' "${shared}/objects" >>"${temp}"
+    mv -f "${temp}" "${alternate}"
+  fi
+  # prune-packed removes ONLY loose duplicates already readable from a pack
+  # (including alternates). Never gc/prune: Nix stores roots in SQLite, not refs.
+  # Nix can recreate loose objects even with alternates attached. Recheck on
+  # every start and after seeding, including when the shared pack is unchanged.
+  # Bound work; an interrupted pass safely retries on the next invocation.
+  timeout 5s nice -n 19 git --git-dir="${cache}" prune-packed || exit 0
+)
+
+prepare_nix_cache() {
+  local home name
+  home="$(user_home)"
+  [ -n "${home}" ] || return 1
+  # ExecStartPre runs unprivileged. Operator invocations drop privileges too,
+  # so poisoned cache paths cannot escape the box UID.
+  if [ "$(id -un)" != "${UNIX_USER}" ]; then
+    run_as_box bash /opt/tau/bin/box-provision.sh --unix-user "${UNIX_USER}" --prepare-nix-cache
+    return
+  fi
+  for name in tarball-cache tarball-cache-v2; do
+    attach_nix_cache "${home}/.cache/nix/${name}" "${NIX_CACHE_ROOT}/${name}"
+  done
+}
+
+publish_nix_cache() (
+  set -euo pipefail
+  # The caller is the Core prewarm path, never a normal/customized agent box.
+  if [[ ! "${SANDBOX_ID}" =~ ^devbox-prewarm-(squad|agent)-[a-zA-Z0-9-]+$ ]]; then
+    echo 'box-provision.sh: only a dedicated devbox prewarm may publish Nix objects' >&2
+    exit 2
+  fi
+  local expected home name shared cache staging pack
+  expected="box_$(printf '%s' "${SANDBOX_ID}" | sha256sum | cut -c1-12)"
+  [ "${UNIX_USER}" = "${expected}" ] || exit 2
+  # Publication is root-only; the box users never get write permission here.
+  [ "$(id -u)" -eq 0 ] || exit 2
+  init_shared_nix_cache
+  home="$(user_home)"
+  exec 8>"${NIX_CACHE_ROOT}/.publish.lock"
+  flock -w 120 8
+  staging="$(mktemp -d "${NIX_CACHE_ROOT}/.publish.XXXXXX")"
+  trap 'rm -rf "${staging}"' EXIT
+  for name in tarball-cache tarball-cache-v2; do
+    cache="${home}/.cache/nix/${name}"
+    shared="${NIX_CACHE_ROOT}/${name}"
+    [ -d "${cache}/objects" ] || continue
+    # Run all reads of the prewarmer's repository AS that user. Git object IDs
+    # include content hashes; index-pack --strict verifies the incoming pack.
+    run_as_box git --git-dir="${cache}" cat-file --batch-all-objects --batch-check='%(objectname)' | LC_ALL=C sort -u >"${staging}/source"
+    git --git-dir="${shared}" cat-file --batch-all-objects --batch-check='%(objectname)' | LC_ALL=C sort -u >"${staging}/shared"
+    LC_ALL=C comm -23 "${staging}/source" "${staging}/shared" >"${staging}/new"
+    [ -s "${staging}/new" ] || continue
+    run_as_box nice -n 19 git --git-dir="${cache}" pack-objects --stdout --threads=1 --window=0 <"${staging}/new" \
+      | git --git-dir="${shared}" index-pack --stdin --strict >"${staging}/result"
+    pack="$(awk '{print $2}' "${staging}/result")"
+    [[ "${pack}" =~ ^[0-9a-f]{40}$ ]] || exit 1
+    chmod 0444 "${shared}/objects/pack/pack-${pack}.pack" "${shared}/objects/pack/pack-${pack}.idx"
+  done
+)
+
 ensure_dirs() {
   local home="$1"
   # The HOME itself is 0700: Ubuntu useradd leaves 0755 (via /etc/login.defs
@@ -1196,6 +1305,7 @@ render_unit() {
       "Environment=EXECUTOR_IDLE_EXIT_MS=${IDLE_EXIT_MS}"
       "EnvironmentFile=-${home}/.tau/host.env"
       "EnvironmentFile=-${home}/.tau/server.env"
+      "ExecStartPre=-/bin/bash /opt/tau/bin/box-provision.sh --unix-user ${UNIX_USER} --prepare-nix-cache"
       "ExecStart=/opt/tau/bin/bun /opt/tau/server/server.js --service-cgroup"
       'Delegate=no'
       'ExitType=main'
@@ -1223,6 +1333,7 @@ render_unit() {
       "Environment=EXECUTOR_IDLE_EXIT_MS=${IDLE_EXIT_MS}"
       'EnvironmentFile=-%h/.tau/host.env'
       'EnvironmentFile=-%h/.tau/server.env'
+      "ExecStartPre=-/bin/bash /opt/tau/bin/box-provision.sh --unix-user ${UNIX_USER} --prepare-nix-cache"
       'ExecStart=/opt/tau/bin/bun /opt/tau/server/server.js --service-cgroup'
       'Delegate=no'
       'ExitType=main'
@@ -1391,6 +1502,7 @@ provision_box() {
   fi
 
   ensure_dirs "${home}"
+  init_shared_nix_cache
   install_slice_limits
   write_host_env "${home}"
   install_unit "${home}"
@@ -1465,7 +1577,11 @@ if [ "${PRINT_UNITS}" = true ]; then
   exit 0
 fi
 
-if [ "${REMOVE}" = true ]; then
+if [ "${PREPARE_NIX_CACHE}" = true ]; then
+  prepare_nix_cache
+elif [ "${PUBLISH_NIX_CACHE}" = true ]; then
+  publish_nix_cache
+elif [ "${REMOVE}" = true ]; then
   remove_box
 elif [ "${RESTORE}" = true ]; then
   restore_box

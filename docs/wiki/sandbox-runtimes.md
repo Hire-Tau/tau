@@ -265,6 +265,30 @@ TAU_SANDBOX_RUNTIME=vm
 Setup toolkit: `runtime.sandbox: vm` (plus `runtime.exe.ssh_key_path` and
 `runtime.exe.machine_image` when using exe.dev).
 
+### Shared Nix source cache
+
+VM boxes already share the machine's `/nix/store`. Tau also shares the public
+source objects fetched while prewarming the default Devbox toolchains, in
+`/opt/tau/cache/nix/{tarball-cache,tarball-cache-v2}`. Only the dedicated machine
+prewarmer publishes objects. Shared packs are root-owned and read-only to boxes;
+ordinary agents cannot publish private repositories into this cache.
+
+Each box keeps its own Nix fetcher databases, credentials, custom sources and
+writable objects. Its Git-backed tarball cache reads shared objects through
+Git alternates. Nix can still write duplicate loose objects, so Tau runs bounded,
+low-priority `git prune-packed` maintenance at box startup and after Devbox
+seeding (including failed installs). This removes only loose objects already
+available in packs, preserving private objects and fetcher metadata. A timed-out
+pass retries at the next startup or install; it never runs Git garbage collection
+because Nix's roots live outside Git refs.
+
+Existing machines obtain the updated provisioning script through normal
+bootstrap reconciliation. Prewarming populates the shared cache, and boxes attach
+and compact on their next start after reprovisioning. Existing packed private
+caches are not rewritten; custom dependency caches remain per box. Shared packs
+are append-only and must not be manually removed while boxes reference them.
+This is a VM optimization; it does not change Docker or Kubernetes sandboxes.
+
 Deep docs: [machines/runtime.md](machines/runtime.md) (lifecycle, placement,
 troubleshooting) and [machines/exe-provider.md](machines/exe-provider.md)
 (credential, image, cost model).
