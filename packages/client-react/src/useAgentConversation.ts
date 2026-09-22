@@ -11,7 +11,7 @@ import {
   type StreamStatus,
 } from '@tau/client-core'
 import type { ChatScope, DeliveryMode, ExecutionStatus, Message, MessageMetadata, SessionUsage } from '@tau/shared'
-import { focusManager, useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
+import { focusManager, onlineManager, useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { useConversationEnvironment } from './ConversationClientProvider'
 import {
@@ -21,6 +21,7 @@ import {
   type ExactResponseIdentity,
 } from './created-message-barriers'
 import { MessageRequestGenerations } from './messageRequestGenerations'
+import { acquireSilentRecovery, coalesceForegroundRefresh } from './silentConversationRecovery'
 
 // How long the SSE stream must be silent before the server's execution status is allowed to
 // terminalize a locally-busy state. Guards the backstop against a lagging activeExecution refetch
@@ -85,6 +86,8 @@ interface SendOpts {
 // The symbol is deliberately absent after JSON dehydration; those rows need a new read.
 const collectionRequestGenerationRef = { current: 0 }
 const collectionRequestOwner = Symbol('conversation-history')
+// Strict causal ordering even when several events share one performance.now tick.
+let conversationActivitySequence = 0
 
 let pendingCounter = 0
 function nextClientId(): string {
@@ -215,6 +218,11 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
   const lastStreamAtRef = useRef(0)
   const deferredReconnectRef = useRef(false)
   const deferredRefreshRef = useRef(false)
+  // Monotonic liveness clock is independent of server/wall-clock timestamps.
+  const activityAtRef = useRef(performance.now())
+  const activitySequenceRef = useRef(0)
+  const manualRequestedAtRef = useRef<number | null>(null)
+  const [manualTick, requestManualDrain] = useReducer((n: number) => n + 1, 0)
 
   const isStreamLive = useCallback(() => {
     const status = executionStatusRef.current
@@ -229,7 +237,6 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
   const invalidateConversationQueries = useCallback(() => {
     if (!resolvedAgentId) return
     void queryClient.invalidateQueries({ queryKey: queryKeys.agents.messages(resolvedAgentId) })
-    void queryClient.invalidateQueries({ queryKey: queryKeys.agents.messagesInfinite(resolvedAgentId) })
     void queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(resolvedAgentId) })
     void queryClient.invalidateQueries({ queryKey: queryKeys.agents.activeExecution(resolvedAgentId) })
   }, [resolvedAgentId, queryClient])
@@ -395,6 +402,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     const shouldRefresh = deferredRefreshRef.current
     const shouldReconnect = deferredReconnectRef.current || shouldRefresh
     deferredRefreshRef.current = false
+    manualRequestedAtRef.current = null
     deferredReconnectRef.current = false
     if (shouldRefresh) invalidateConversationQueries()
     if (shouldReconnect) bumpStreamEpoch()
@@ -424,6 +432,8 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
   const applyExecStatus = useCallback(
     (event: import('@tau/shared').StreamEvent) => {
       lastStreamAtRef.current = Date.now()
+      activityAtRef.current = performance.now()
+      activitySequenceRef.current = ++conversationActivitySequence
       if (event.type === 'agent') announcedExecutionIdRef.current = event.executionId ?? null
       const executionId = announcedExecutionIdRef.current
       // Runner done with saved row IDs is emitted after persistence (including
@@ -517,6 +527,9 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
       lastStreamAtRef.current = 0
       deferredReconnectRef.current = false
       deferredRefreshRef.current = false
+      manualRequestedAtRef.current = null
+      activityAtRef.current = performance.now()
+      activitySequenceRef.current = 0
       setExecutionStatusLocal(null)
       setUsage(null)
     }
@@ -662,13 +675,17 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
       const focused = !!isFocused
       if (!wasFocusedRef.current && focused) {
         // A backgrounded fetch can look recently active while its transport is
-        // frozen. Always replace it and refetch durable history/status.
+        // frozen. Always replace it and refetch durable history/status. This also
+        // satisfies any earlier manual intent rather than scheduling a second refresh.
+        deferredRefreshRef.current = false
+        manualRequestedAtRef.current = null
+        deferredReconnectRef.current = false
         bumpStreamEpoch()
-        invalidateConversationQueries()
+        coalesceForegroundRefresh(queryClient, resolvedAgentId, invalidateConversationQueries)
       }
       wasFocusedRef.current = focused
     })
-  }, [resolvedAgentId, invalidateConversationQueries])
+  }, [resolvedAgentId, queryClient, invalidateConversationQueries])
 
   // 2. Persisted history → memoized groupPersisted.
   const messagesQuery = useInfiniteQuery({
@@ -879,6 +896,155 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     setExecutionStatusLocal,
   ])
 
+  // A silent *open* connection cannot rely on EOF, focus or a cached busy query.
+  // Exact reads never replace the stream or erase local content. Three shared probes
+  // per mounted execution: 15s quiet, then >=30s and >=60s backoff. Activity delays
+  // a probe but does not refill its budget (including replay on resubscription).
+  type RecoveryResult = {
+    execution: Awaited<ReturnType<typeof client.agents.getExecution>>
+    historyAfter: number
+    activityThrough: number
+    refresh: () => void
+  }
+  const recoveryLeaseRef = useRef<ReturnType<typeof acquireSilentRecovery<RecoveryResult>> | null>(null)
+  const observedRecoveryRef = useRef<RecoveryResult | undefined>(undefined)
+  const recoveryExecutionId = streamedExecIdRef.current ?? announcedExecutionIdRef.current
+  useEffect(() => {
+    if (!resolvedAgentId || !recoveryExecutionId) return
+    const lease = acquireSilentRecovery<RecoveryResult>(
+      queryClient,
+      JSON.stringify([resolvedAgentId, recoveryExecutionId])
+    )
+    recoveryLeaseRef.current = lease
+    observedRecoveryRef.current = undefined
+    return () => {
+      recoveryLeaseRef.current = null
+      lease.release()
+    }
+  }, [queryClient, resolvedAgentId, recoveryExecutionId])
+
+  useEffect(() => onlineManager.subscribe(() => requestManualDrain()), [])
+  useEffect(() => {
+    if (!resolvedAgentId || !onlineManager.isOnline()) return
+    let active = true
+    const generation = subscriptionGenerationRef.current
+    const identity = conversationIdentityRef.current
+    const executionId = recoveryExecutionId
+    const activity = activityAtRef.current
+    const recovery = recoveryLeaseRef.current?.recovery
+    const cached = recovery?.peek()
+    const unseen = cached !== undefined && cached !== observedRecoveryRef.current
+    const manual = deferredRefreshRef.current
+    const busy = ['running', 'queued', 'stopping'].includes(executionStatus ?? '')
+    const now = performance.now()
+    const delay = manual
+      ? Math.max(0, Math.min(activity + STREAM_QUIET_MS, (manualRequestedAtRef.current ?? now) + 30_000) - now)
+      : busy && streamStatus === 'live' && recovery
+        ? unseen
+          ? 0
+          : recovery.delay(now, activity)
+        : undefined
+    if (delay === undefined) return
+    const isCurrent = () =>
+      active &&
+      subscriptionGenerationRef.current === generation &&
+      conversationIdentityRef.current.requested === identity.requested &&
+      conversationIdentityRef.current.resolved === identity.resolved &&
+      (streamedExecIdRef.current ?? announcedExecutionIdRef.current) === executionId
+    const timer = setTimeout(() => {
+      if (!isCurrent() || !onlineManager.isOnline()) return
+      const explicit = deferredRefreshRef.current
+      // Another view (or an event before React's next commit) may have renewed
+      // the shared quiet deadline since this timer was armed.
+      if (!explicit && !unseen && recovery && !recovery.hasRecentRead(performance.now())) {
+        const remaining = recovery.delay(performance.now(), activityAtRef.current)
+        if (remaining === undefined) return
+        if (remaining > 0) {
+          requestManualDrain()
+          return
+        }
+      }
+      const settleManual = () => {
+        if (explicit) {
+          deferredRefreshRef.current = false
+          manualRequestedAtRef.current = null
+        }
+      }
+      // A legacy stream can still honor explicit refresh without inventing exact identity.
+      if (!executionId || !recovery) {
+        settleManual()
+        if (explicit) {
+          invalidateConversationQueries()
+          if (performance.now() - activityAtRef.current >= STREAM_QUIET_MS) bumpStreamEpoch()
+        }
+        return
+      }
+      const read =
+        !explicit && unseen
+          ? Promise.resolve(cached)
+          : recovery.read(performance.now(), explicit, async (signal) => {
+              const activityThrough = conversationActivitySequence
+              const execution = await client.agents.getExecution(resolvedAgentId, executionId, signal)
+              let refreshed = false
+              return {
+                execution,
+                activityThrough,
+                historyAfter: collectionRequestGenerationRef.current,
+                refresh: () => {
+                  if (!refreshed) {
+                    refreshed = true
+                    invalidateConversationQueries()
+                  }
+                },
+              }
+            })
+      void read.then((result) => {
+        if (!isCurrent()) return
+        observedRecoveryRef.current = result
+        settleManual()
+        if (result && activityAtRef.current === activity && activitySequenceRef.current <= result.activityThrough) {
+          const { execution, historyAfter } = result
+          const highest = highestExecutionVersionRef.current.get(executionId) ?? -1
+          if (
+            execution.agentId === resolvedAgentId &&
+            execution.executionId === executionId &&
+            execution.executionVersion >= highest
+          ) {
+            highestExecutionVersionRef.current.set(executionId, execution.executionVersion)
+            if (['completed', 'failed', 'stopped'].includes(execution.status)) {
+              terminalExecutionStatusesRef.current.set(executionId, execution.status)
+              setStreamStatus('ended')
+              if (!terminalHistoryAfterRef.current.has(executionId))
+                terminalHistoryAfterRef.current.set(executionId, historyAfter)
+            }
+            setExecutionStatusLocal(execution.status)
+          }
+        }
+        // Even a failed exact read is not permission to drop content/clear busy.
+        // Manual refresh still attempts history; automatic failures spend one probe.
+        if (result) result.refresh()
+        else if (explicit) invalidateConversationQueries()
+        if (explicit && performance.now() - activityAtRef.current >= STREAM_QUIET_MS) bumpStreamEpoch()
+        requestManualDrain() // schedule the next bounded deadline, not an interval
+      })
+    }, delay)
+    return () => {
+      active = false
+      clearTimeout(timer)
+    }
+  }, [
+    resolvedAgentId,
+    recoveryExecutionId,
+    subscriptionGeneration,
+    streamTick,
+    executionStatus,
+    streamStatus,
+    manualTick,
+    client,
+    invalidateConversationQueries,
+    setExecutionStatusLocal,
+  ])
+
   // 3. Pending store. An echo acknowledges an optimistic row permanently; merely
   // hiding it in combine() would resurrect it when Clear queue deletes the saved row.
   const [pending, dispatch] = useReducer(pendingReducer, [] as PendingItem[])
@@ -1036,6 +1202,8 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
 
   const markOptimisticallyRunning = useCallback(() => {
     lastStreamAtRef.current = Date.now()
+    activityAtRef.current = performance.now()
+    activitySequenceRef.current = ++conversationActivitySequence
     setExecutionStatusLocal('running')
   }, [setExecutionStatusLocal])
 
@@ -1116,11 +1284,13 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
 
   // Manual refresh: invalidate the conversation's persisted data and force a fresh SSE
   // connection (catchup reconciles any missed events). During an active stream, defer
-  // until the terminal stream event so refresh cannot wipe live streaming content.
+  // until quiet (or a bounded 30s read-only deadline); no stream buffer is reset.
   const refresh = useCallback(() => {
     if (!resolvedAgentId) return
-    if (isStreamLive()) {
+    if (isStreamLive() || streamedExecIdRef.current) {
       deferredRefreshRef.current = true
+      manualRequestedAtRef.current ??= performance.now()
+      requestManualDrain()
       return
     }
     invalidateConversationQueries()

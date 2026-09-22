@@ -153,14 +153,14 @@ export function agentsResource(t: Transport) {
     },
     getAgent: (id: string): Promise<Agent> => t.request(`/agents/${id}`),
     getActiveExecution: (agentId: string): Promise<ActiveExecution> => t.request(`/agents/${agentId}/active`),
-    getExecution: (agentId: string, executionId: string) =>
+    getExecution: (agentId: string, executionId: string, signal?: AbortSignal) =>
       t.request<{
         executionId: string
         agentId: string
         status: import('@tau/shared').ExecutionStatus
         executionVersion: number
         active: boolean
-      }>(`/agents/${agentId}/executions/${executionId}`),
+      }>(`/agents/${agentId}/executions/${executionId}`, signal ? { signal } : undefined),
     subscribeToAgentStream: (agentId: string, callbacks: AgentStreamCallbacks, executionId?: string): (() => void) =>
       openReconnectableAgentStream(t, agentId, callbacks, executionId),
     getMessage: (agentId: string, messageId: string): Promise<Message> =>

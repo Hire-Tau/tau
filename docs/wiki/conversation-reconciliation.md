@@ -69,6 +69,71 @@ server-busy is not relabeled as success. Foreground/manual refresh and subsequen
 execution updates remain recovery paths. This is not an indefinite background
 poller or a guarantee of recovery while every transport/status request is offline.
 
+### Open-but-silent transport and deferred manual intent
+
+An open SSE connection with stale cached busy status now gets **three** automatic
+exact-execution probes per query-client/agent/execution while at least one view is
+mounted. They start after **15 seconds quiet**, then no sooner than **30** and
+**60 seconds** after the preceding probe (15/45/105 seconds without activity).
+Activity uses `performance.now()`, not server timestamps or wall-clock changes.
+A shared monotonic event ordinal also fences cached exact results: a response
+started before resumed activity cannot later terminalize that activity, even when
+several events share one clock tick.
+Activity and subscription replacement postpone deadlines but **never replenish**
+the budget. Changing execution/conversation or removing the last observer releases
+that scope; a later fresh mount gets a fresh budget. Parked sandbox/maintenance,
+legacy unidentified streams and non-live transports do not start silent probes.
+The existing EOF/terminal-query recovery paths remain separate.
+
+Each probe makes one exact GET, with a **10-second abort deadline**, and on success
+one conversation invalidation batch (history, agent detail, active execution).
+History cost is the number of loaded infinite-query pages, not necessarily one HTTP
+request. Query retry policy still applies to history/detail/active reads; the exact
+probe itself does not retry. The redundant exact infinite-history invalidation was
+removed: the existing messages prefix already includes that query. This avoids
+canceling/restarting the same history batch. No general query cleanup is included.
+Concurrent views share the exact read, budget, terminal-history watermark and one
+invalidation batch; later cached observers can consume the same result. Releasing
+the last observer aborts its pending exact request. Network failure, timeout, or
+budget exhaustion preserves busy status and local text/tools: silence is **not**
+completion. Automatic probes neither replace SSE nor stop server work and expose no
+new loading/refresh UI state. Only verified exact terminal status allows an ended
+handoff, still subject to the existing ordered coverage and fresh-history rules.
+
+An early manual press is coalesced and drains after **4 seconds quiet** without
+needing done/error or another click. Activity postpones the drain, but at **30 seconds
+from the first press** the intent runs a read-only reconciliation even during
+continued activity; it does not reconnect an actively emitting stream. Quiet manual
+refresh still replaces the subscription, preserving its existing catchup semantics
+and local buffers. Manual exact reads share pending requests and a four-second
+coalescing window, and do not refill the automatic budget. A failed exact read still
+allows explicit history refresh, never a fabricated terminal state. An online-manager
+offline signal suppresses new probes/drains, retains explicit intent, and rearms on
+online notification. A pending exact read times out; late results cannot mutate a
+replacement subscription/execution/conversation. Foreground refresh satisfies an
+already deferred manual request instead of scheduling a second quiet refresh.
+Synchronous foreground notifications to several mounted views share one invalidation
+batch; each view still owns its own SSE replacement. Terminal-confirmation reads are
+not folded into that batch, preserving their post-confirmation authority.
+Unmount/agent switch cancels intent. Connectivity and provider availability are not
+guaranteed by these timers; after exhaustion, foreground/manual or a new execution
+remain recovery paths. This source behavior does not establish an installed iOS
+incident's cause, and does not change mobile feedback/release policy.
+
+Regression coverage uses owned timers plus mounted hook/query tests, including a
+real agents resource/SSE parser with open readers and two simultaneous views:
+
+| Case                                          | Expected result                                                                                 |
+| --------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Silent open SSE, stale busy cache, newer HTTP | Exact terminal/history recovery without remount or SSE replacement; no intermediate lost prefix |
+| Quiet running execution                       | Busy/content retained; three probes then no loop                                                |
+| Early/repeated manual press                   | One quiet drain; activity postponed, 30s starvation bound                                       |
+| Offline / pending / failure                   | No offline polling; 10s abort; honest busy; explicit later recovery                             |
+| Provisional tools                             | Visible progress survives every render until post-confirmation saved coverage                   |
+| Multiple views                                | One exact read/history batch, shared causal watermark, no replay duplication                    |
+| Identity switch / unmount                     | Late result ignored; last-view request aborted; no new-chat mutation                            |
+| Foreground/manual overlap                     | Foreground consumes prior intent, no second quiet refresh                                       |
+
 ## Authority boundary
 
 The wire format has no message revision/event sequence discriminator. A shorter or
