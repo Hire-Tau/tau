@@ -171,6 +171,8 @@ Template-based entries can be customized in the UI but not deleted — only disa
 
 ### By collection
 
+- [Web themes](theme/README.md) — built-in palettes, semantic colors, renderer integration, custom themes and account sync.
+
 - [CLI](cli/README.md) — command reference for squads, work streams and other resources.
 - [Memory](memory/README.md) — memory architecture, sync, files and agent threads.
 - [Kubernetes architecture](k8s/architecture.md) and [deployment](k8s/deployment.md) — cluster runtime and operating guidance.

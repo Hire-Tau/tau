@@ -6,7 +6,7 @@ resolved appearance updates mounted blocks without a hook, duplicate JS palettes
 or a first-render fallback. Tau keeps its dark syntax and terminal palettes in **both** appearances; phase 5
 minimally raises comment/property and terminal-muted ink for contrast. Streamed
 ANSI retains its distinct light/dark palettes. Additional built-ins define their
-complete scopes in `builtins.css`; see [built-in intent, gates and matrix](../../../../docs/theme/builtins.md).
+complete scopes in `builtins.css`; see [built-in intent, gates and matrix](../../../../docs/wiki/theme/builtins.md).
 
 ## Compatibility contracts
 
@@ -49,7 +49,7 @@ sentinels when inheriting Tau, support numeric fractional channels, and retain
 intrinsic-opacity metadata. Completeness alone does not establish contrast.
 The phase-5 gate checks the defined critical pairs for every built-in, including
 code comments. Arbitrary ANSI/terminal combinations (including terminal black),
-arbitrary utility tone combinations and authored artifacts are not accessibility-certified. There are no remaining un-tokenized utility islands; see [complete coverage](../../../../docs/theme/complete-coverage.md).
+arbitrary utility tone combinations and authored artifacts are not accessibility-certified. There are no remaining un-tokenized utility islands; see [complete coverage](../../../../docs/wiki/theme/complete-coverage.md).
 
 ## Verification
 
@@ -68,7 +68,7 @@ arbitrary utility tone combinations and authored artifacts are not accessibility
 
 `tokenReader.ts` / `useThemeColors.ts` provide memoized concrete colors for
 canvas/WebGL and chart consumers. Read the [graph adapter contract and contrast
-matrix](../../../../docs/theme/graph-colors.md) before adding themes or custom
+matrix](../../../../docs/wiki/theme/graph-colors.md) before adding themes or custom
 overrides. Graph node state aliases share semantic status tokens; chart defaults
 use their own legacy palette and never rewrite authored colors. Attribute-driven
 invalidation, fractional channels and intrinsic alpha apply to these consumers
@@ -76,14 +76,14 @@ as well. Quantitative library chart schemes remain library defaults.
 
 ## Custom themes
 
-The [v1 custom-theme contract](../../../../docs/theme/custom-themes.md) documents
+The [v1 custom-theme contract](../../../../docs/wiki/theme/custom-themes.md) documents
 validation, scoped preview, device-local recovery and the generated pre-paint
 bootstrap. Custom alpha uses private split-channel helpers for opacity-modified
 CSS consumers; full channels and intrinsic metadata remain the JS adapter input.
 
 ## Account synchronization
 
-The [account sync contract](../../../../docs/theme/account-sync.md) defines device
+The [account sync contract](../../../../docs/wiki/theme/account-sync.md) defines device
 precedence, post-paint adoption, identity boundaries and the bounded custom-document
 wire format. `sync.ts` owns asynchronous reconciliation; it is not imported by the
 pre-paint entrypoint. `ThemeProvider` still applies local state synchronously.
