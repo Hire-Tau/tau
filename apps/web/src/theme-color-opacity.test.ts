@@ -291,3 +291,67 @@ test('actual spinner and narrow Stop CSS follows custom status colors without ch
   })
   expect(count).toBe(2)
 })
+
+test('new storage warnings preserve main shades and opacity while accepting custom status colors', async () => {
+  const expected = [
+    [
+      'components/StorageBanner.tsx',
+      'border-status-attention-500/30',
+      'border-color',
+      '--status-attention-500',
+      0.3,
+      [245, 158, 11],
+    ],
+    [
+      'components/StorageBanner.tsx',
+      'bg-status-attention-500/10',
+      'background-color',
+      '--status-attention-500',
+      0.1,
+      [245, 158, 11],
+    ],
+    [
+      'components/settings/StorageSection.tsx',
+      'text-status-attention-500',
+      'color',
+      '--status-attention-500',
+      1,
+      [245, 158, 11],
+    ],
+    [
+      'components/settings/StorageMonitorSettings.tsx',
+      'text-status-danger-400',
+      'color',
+      '--status-danger-400',
+      1,
+      [248, 113, 113],
+    ],
+  ] as const
+  for (const [file, utility] of expected) expect(readFileSync(join(srcRoot, file), 'utf8')).toContain(utility)
+  const generated = await compile(expected.map(([, utility]) => utility))
+  const rules = new Map<string, Rule>()
+  generated.walkRules((rule) => {
+    rules.set(rule.selector.slice(1).replaceAll('\\', ''), rule)
+  })
+  const custom = compileCustomTheme(
+    JSON.stringify({
+      format: 'tau-custom-theme',
+      version: 1,
+      name: 'Storage',
+      base: 'tau',
+      appearance: 'light',
+      overrides: Object.fromEntries(STATUS_TOKENS.map((key) => [key, 'rgba(12,34,56,0.5)'])),
+    }),
+    BUILT_IN_THEMES
+  )
+  for (const [, utility, prop, , opacity, channels] of expected) {
+    const decls = declarations(rules.get(utility)!)
+    for (const { tokens } of palettes) {
+      expect(numericRgb(substitute(decls[prop]!, { ...tokens, ...decls }))).toEqual({ channels, alpha: opacity })
+      expect(numericRgb(substitute(decls[prop]!, { ...tokens, ...decls, ...custom }))).toEqual({
+        channels: [12, 34, 56],
+        alpha: 0.5 * opacity,
+      })
+    }
+  }
+})
