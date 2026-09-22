@@ -1540,3 +1540,26 @@ owned process remains. Cancellation proves that no predecessor is still running,
 it produced no side effects. This is especially important for long `devbox install`
 commands, which run at most once per reconciliation cycle. Monitor polling retains its
 existing five-consecutive-failure tolerance.
+
+### Setup blocked by unproven invocation cleanup
+
+`VM setup invocation cleanup remains unproven` means the setup row retains a
+pending Bash invocation and `/bash/cancel` cannot prove its cleanup. A healthy
+machine or newly freed disk space does not by itself clear that record. Consultant
+chats share a sandbox per squad, so creating another chat in the same squad does
+not bypass the blocker.
+
+The executor runs registry maintenance before reserving an invocation. It keeps
+known completion proof in memory until terminal records are durably published,
+prevents idle exit while that proof is pending, and retries persistence on
+cancellation after storage recovers. Terminal records are published atomically so
+a partial disk-full write cannot become an immutable, corrupt completion record.
+
+A record left by an older executor or a crash may have no process identity and no
+completion proof. Such a record must still fail closed; absence of a PID in JSON
+is not evidence that no command ran. Operator recovery requires holding the
+sandbox setup lease, ruling out active executions, stopping its server/socket/proxy
+units, and verifying no command processes survive before recording termination.
+Preserve the original invocation record for diagnosis. Do not simply delete the
+setup row or replay an ambiguous command; stopping a process does not undo any
+side effects it already produced.

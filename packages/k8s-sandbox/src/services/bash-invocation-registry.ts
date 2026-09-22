@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { advisoryLock as defaultAdvisoryLock } from '@tau/shared/advisory-lock'
-import { mkdir, open, opendir, readFile, readdir, rename, unlink } from 'node:fs/promises'
+import { link, mkdir, open, opendir, readFile, readdir, rename, unlink, type FileHandle } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 export type InvocationState =
   | 'starting'
@@ -61,6 +61,7 @@ interface Options {
   pruneEveryOperations?: number
   pruneAtRecordCount?: number
   unlink?: typeof unlink
+  writeRecord?: (file: FileHandle, contents: string) => Promise<void>
   legacyMigrationBatchSize?: number
   fileLockAttempts?: number
   beforeTerminalUnlink?: (path: string) => Promise<void>
@@ -80,21 +81,19 @@ export class BashInvocationRegistry {
   private readonly locks = new Map<string, Promise<void>>()
   private maintenanceOperations = 0
   constructor(private readonly options: Options) {}
-  /**
-   * Whether THIS process holds an invocation that is not yet terminal
-   * (starting | running | cancelling). The socket-activated server's idle
-   * self-exit is gated on this: exiting under a live invocation would kill a
-   * build, a deployed local app, or a mid-flight cancellation's cleanup.
-   *
-   * Reads the in-memory `active` map only — a record on disk in a non-terminal
-   * state belongs to a DEAD worker (see acquire's zombie handling) and must not
-   * keep a fresh server pinned alive forever.
+  /** Keep the executor alive until every owned invocation's terminal proof is durable.
+   * Storage failure can leave a completed process with an older starting record
+   * on disk. Losing our in-memory proof then makes that record unrecoverable.
    */
   hasActiveInvocations(): boolean {
-    for (const record of this.active.values()) {
-      if (record.state === 'starting' || record.state === 'running' || record.state === 'cancelling') return true
-    }
-    return false
+    return this.active.size > 0
+  }
+  private async persistOwnedCompletion(key: string, current: BashInvocationRecord): Promise<boolean> {
+    const owned = this.active.get(key)
+    if (!owned || owned.generation !== current.generation || !owned.terminalAt) return false
+    await this.archiveTerminal(key, owned)
+    this.active.delete(key)
+    return true
   }
   async reconcileAll(): Promise<{ reconciled: string[]; quarantined: string[] }> {
     const report = { reconciled: [] as string[], quarantined: [] as string[] }
@@ -110,6 +109,7 @@ export class BashInvocationRegistry {
         this.lock(key, async () => {
           const current = await this.readValidated(key)
           if (!current || current.generation !== record.generation) return
+          if (await this.persistOwnedCompletion(key, current)) return
           await this.options.reconcile(current)
           current.priorState = current.state
           current.state = 'terminated'
@@ -124,6 +124,7 @@ export class BashInvocationRegistry {
     const key = createHash('sha256').update(invocationId).digest('hex')
     const result = await this.lock<{ remainingPids: [] }>(key, async () => {
       const record = await this.readValidated(key)
+      if (record && (await this.persistOwnedCompletion(key, record))) return { remainingPids: [] }
       if (!record || !['starting', 'running', 'cancelling', 'quarantined'].includes(record.state))
         return { remainingPids: [] }
       if (record.state === 'quarantined' && !record.pid) throw new InvocationQuarantinedError()
@@ -145,85 +146,104 @@ export class BashInvocationRegistry {
   }
   async acquire(invocationId: string, commandDigest: string): Promise<BashInvocationLease> {
     const key = createHash('sha256').update(invocationId).digest('hex')
-    const lease = await this.lock<BashInvocationLease>(key, async () => {
-      if (this.active.has(key)) throw new InvocationActiveError()
-      await mkdir(this.options.runtimeDir, { recursive: true, mode: 0o700 })
-      const previous = (await this.readValidated(key)) ?? (await this.readGeneration(key))
-      if (previous?.state === 'quarantined') throw new InvocationQuarantinedError()
-      // A `previous` record read from DISK is never a concurrently-live invocation:
-      // the active.has(key) check above already rejects an in-flight invocation in
-      // this process, so `previous` is always a prior-lifecycle record — terminal, or
-      // a zombie starting/running/cancelling left by a died worker or an older core
-      // release. It is therefore always safe to supersede it (archive a terminal
-      // record, or reconcile+terminate a zombie) REGARDLESS of whether its command
-      // digest matches.
-      //
-      // The previous unconditional `throw INVOCATION_COMMAND_MISMATCH` on a digest
-      // change permanently wedged the STABLE setup invocation ids (git_config,
-      // devbox_install, …), which are reused across retries and across core upgrades
-      // that change the exact command string: once a record existed, every retry with
-      // a differing command threw before reaching the supersede logic below, so the
-      // sandbox setup retry loop deadlocked (observed live — git-credential setup
-      // stuck ready_degraded forever, and squad-warmup exit 127 every cycle).
-      if (previous && ['success', 'failed', 'terminated'].includes(previous.state))
-        await this.archiveTerminal(key, previous)
-      else if (previous && ['starting', 'running', 'cancelling'].includes(previous.state)) {
-        await this.options.reconcile(previous)
-        previous.priorState = previous.state
-        previous.state = 'terminated'
-        previous.terminalAt = this.now().toISOString()
-        await this.archiveTerminal(key, previous)
-      }
-      const record: BashInvocationRecord = {
-        version: 1,
-        invocationIdHash: key,
-        generation: (previous?.generation ?? -1) + 1,
-        commandDigest,
-        state: 'starting',
-        startedAt: this.now().toISOString(),
-      }
-      await this.write(key, record)
-      this.active.set(key, record)
-      let completed = false
-      return {
-        generation: record.generation,
-        markStarting: async (process) =>
-          this.lock(key, async () => {
-            if (completed) throw new Error('invocation already completed')
-            const current = await this.readValidated(key)
-            if (!current || current.generation !== record.generation) throw new InvocationActiveError()
-            Object.assign(record, process)
-            await this.write(key, record)
-          }),
-        markRunning: async (process) =>
-          this.lock(key, async () => {
-            if (completed) throw new Error('invocation already completed')
-            const current = await this.readValidated(key)
-            if (!current || current.generation !== record.generation) throw new InvocationActiveError()
-            Object.assign(record, process, { state: 'running' as const })
-            await this.write(key, record)
-          }),
-        complete: async (state) => {
-          await this.lock(key, async () => {
-            if (completed || this.active.get(key) !== record) return
-            const current = await this.readValidated(key)
-            if (!current || current.generation !== record.generation) {
+    // Maintenance must not throw after publishing a reservation: the caller
+    // would never receive its lease and could not complete a failed admission.
+    await this.maybePrune()
+    let unpublishedLease: BashInvocationLease | undefined
+    try {
+      const lease = await this.lock<BashInvocationLease>(key, async () => {
+        if (this.active.has(key)) throw new InvocationActiveError()
+        await mkdir(this.options.runtimeDir, { recursive: true, mode: 0o700 })
+        const previous = (await this.readValidated(key)) ?? (await this.readGeneration(key))
+        if (previous?.state === 'quarantined') throw new InvocationQuarantinedError()
+        // A `previous` record read from DISK is never a concurrently-live invocation:
+        // the active.has(key) check above already rejects an in-flight invocation in
+        // this process, so `previous` is always a prior-lifecycle record — terminal, or
+        // a zombie starting/running/cancelling left by a died worker or an older core
+        // release. It is therefore always safe to supersede it (archive a terminal
+        // record, or reconcile+terminate a zombie) REGARDLESS of whether its command
+        // digest matches.
+        //
+        // The previous unconditional `throw INVOCATION_COMMAND_MISMATCH` on a digest
+        // change permanently wedged the STABLE setup invocation ids (git_config,
+        // devbox_install, …), which are reused across retries and across core upgrades
+        // that change the exact command string: once a record existed, every retry with
+        // a differing command threw before reaching the supersede logic below, so the
+        // sandbox setup retry loop deadlocked (observed live — git-credential setup
+        // stuck ready_degraded forever, and squad-warmup exit 127 every cycle).
+        if (previous && ['success', 'failed', 'terminated'].includes(previous.state))
+          await this.archiveTerminal(key, previous)
+        else if (previous && ['starting', 'running', 'cancelling'].includes(previous.state)) {
+          await this.options.reconcile(previous)
+          previous.priorState = previous.state
+          previous.state = 'terminated'
+          previous.terminalAt = this.now().toISOString()
+          await this.archiveTerminal(key, previous)
+        }
+        const record: BashInvocationRecord = {
+          version: 1,
+          invocationIdHash: key,
+          generation: (previous?.generation ?? -1) + 1,
+          commandDigest,
+          state: 'starting',
+          startedAt: this.now().toISOString(),
+        }
+        await this.write(key, record)
+        this.active.set(key, record)
+        let completed = false
+        unpublishedLease = {
+          generation: record.generation,
+          markStarting: async (process) =>
+            this.lock(key, async () => {
+              if (completed) throw new Error('invocation already completed')
+              const current = await this.readValidated(key)
+              if (!current || current.generation !== record.generation) throw new InvocationActiveError()
+              Object.assign(record, process)
+              await this.write(key, record)
+            }),
+          markRunning: async (process) =>
+            this.lock(key, async () => {
+              if (completed) throw new Error('invocation already completed')
+              const current = await this.readValidated(key)
+              if (!current || current.generation !== record.generation) throw new InvocationActiveError()
+              Object.assign(record, process, { state: 'running' as const })
+              await this.write(key, record)
+            }),
+          complete: async (state) => {
+            await this.lock(key, async () => {
+              if (completed || this.active.get(key) !== record) return
+              const current = await this.readValidated(key)
+              if (!current || current.generation !== record.generation) {
+                completed = true
+                this.active.delete(key)
+                return
+              }
+              // Preserve the first proven outcome/timestamp across persistence
+              // retries, including an already-published immutable terminal file.
+              if (!record.terminalAt) {
+                record.state = state
+                record.terminalAt = this.now().toISOString()
+              }
+              await this.archiveTerminal(key, record)
               completed = true
               this.active.delete(key)
-              return
-            }
-            completed = true
-            record.state = state
-            record.terminalAt = this.now().toISOString()
-            await this.archiveTerminal(key, record)
-            this.active.delete(key)
-          })
-          await this.maybePrune()
-        },
+            })
+            await this.maybePrune()
+          },
+        }
+        return unpublishedLease
+      })
+      return lease
+    } catch (error) {
+      // No caller has received the lease, so no command can have spawned.
+      // Retain its in-memory terminal proof if storage is still unavailable.
+      try {
+        await unpublishedLease?.complete('failed')
+      } catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], 'Bash reservation rollback could not be persisted')
       }
-    })
-    await this.maybePrune()
-    return lease
+      throw error
+    }
   }
   private async lock<T>(key: string, fn: () => Promise<T>): Promise<T> {
     const prior = this.locks.get(key) ?? Promise.resolve()
@@ -554,33 +574,45 @@ export class BashInvocationRegistry {
   private async write(key: string, record: BashInvocationRecord): Promise<void> {
     await this.atomicWrite(this.path(key), record)
   }
-  private async atomicWrite(path: string, record: BashInvocationRecord): Promise<void> {
+  private async withStagedRecord(
+    path: string,
+    record: BashInvocationRecord,
+    publish: (temp: string) => Promise<void>
+  ): Promise<void> {
     await mkdir(dirname(path), { recursive: true, mode: 0o700 })
     const temp = `${path}.${randomUUID()}.tmp`
-    const file = await open(temp, 'wx', 0o600)
     try {
-      await file.writeFile(JSON.stringify(record))
-      await file.sync()
-    } finally {
-      await file.close()
-    }
-    await rename(temp, path)
-  }
-  private async writeImmutable(path: string, record: BashInvocationRecord): Promise<void> {
-    await mkdir(dirname(path), { recursive: true, mode: 0o700 })
-    try {
-      const file = await open(path, 'wx', 0o600)
+      const file = await open(temp, 'wx', 0o600)
       try {
-        await file.writeFile(JSON.stringify(record))
+        const contents = JSON.stringify(record)
+        if (this.options.writeRecord) await this.options.writeRecord(file, contents)
+        else await file.writeFile(contents)
         await file.sync()
       } finally {
         await file.close()
       }
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-      const existing = JSON.parse(await readFile(path, 'utf8')) as BashInvocationRecord
-      if (JSON.stringify(existing) !== JSON.stringify(record)) throw new Error('TERMINAL_GENERATION_CONFLICT')
+      await publish(temp)
+    } finally {
+      await unlink(temp).catch((error: NodeJS.ErrnoException) => {
+        if (error.code !== 'ENOENT') throw error
+      })
     }
+  }
+  private async atomicWrite(path: string, record: BashInvocationRecord): Promise<void> {
+    await this.withStagedRecord(path, record, (temp) => rename(temp, path))
+  }
+  private async writeImmutable(path: string, record: BashInvocationRecord): Promise<void> {
+    await this.withStagedRecord(path, record, async (temp) => {
+      try {
+        // Publish only a fully written record, without replacing an existing
+        // generation. A partial ENOSPC write must never become immutable proof.
+        await link(temp, path)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+        const existing = JSON.parse(await readFile(path, 'utf8')) as BashInvocationRecord
+        if (JSON.stringify(existing) !== JSON.stringify(record)) throw new Error('TERMINAL_GENERATION_CONFLICT')
+      }
+    })
   }
   private async archiveTerminal(key: string, record: BashInvocationRecord): Promise<void> {
     this.validateRecord(key, record)
