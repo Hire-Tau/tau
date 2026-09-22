@@ -9,10 +9,41 @@ export interface DesktopNotificationBatch {
   userId: string
   notifications: DesktopNotification[]
 }
-interface DesktopBridge {
+export type DesktopUpdatePhase = 'idle' | 'checking' | 'downloading' | 'ready' | 'installing' | 'error'
+export interface DesktopUpdateState {
+  appVersion: string
+  coreCommit: string
+  supported: boolean
+  phase: DesktopUpdatePhase
+  availableVersion?: string
+  progress?: { receivedBytes: number; totalBytes: number }
+  lastCheckedAt?: string
+  error?: string
+}
+export interface DesktopUpdates {
+  state(): Promise<DesktopUpdateState>
+  check(): Promise<DesktopUpdateState>
+  install(): Promise<void>
+  subscribe(listener: (state: DesktopUpdateState) => void): () => void
+}
+export interface DesktopShell {
+  platform: 'darwin'
+  insetTitleBar: boolean
+  fullscreen(): Promise<boolean>
+  onFullscreenChange(listener: (fullscreen: boolean) => void): () => void
+}
+/**
+ * The Tau Desktop preload bridge. Members added after the first release are
+ * optional: older and newer desktop builds keep `version: 1`, so feature-detect
+ * each optional member rather than the version.
+ */
+export interface DesktopBridge {
   version: 1
   notificationsEnabled(): Promise<boolean>
   deliverNotifications(batch: DesktopNotificationBatch): Promise<void>
+  setNotificationsEnabled?(enabled: boolean): Promise<boolean>
+  updates?: DesktopUpdates
+  shell?: DesktopShell
 }
 declare global {
   interface Window {
@@ -21,4 +52,30 @@ declare global {
 }
 export function desktopBridge(): DesktopBridge | undefined {
   return typeof window !== 'undefined' && window.tauDesktopApp?.version === 1 ? window.tauDesktopApp : undefined
+}
+
+function hasMethods<T extends object>(value: unknown, names: string[]): value is T {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    names.every((name) => typeof (value as Record<string, unknown>)[name] === 'function')
+  )
+}
+
+/** The desktop app's native update controls, when this desktop build provides them. */
+export function desktopUpdates(): DesktopUpdates | undefined {
+  const updates = desktopBridge()?.updates
+  return hasMethods<DesktopUpdates>(updates, ['state', 'check', 'install', 'subscribe']) ? updates : undefined
+}
+
+/** The desktop window chrome integration, when this desktop build provides it. */
+export function desktopShell(): DesktopShell | undefined {
+  const shell = desktopBridge()?.shell
+  return hasMethods<DesktopShell>(shell, ['fullscreen', 'onFullscreenChange']) ? shell : undefined
+}
+
+/** Whether this desktop build lets the web app change its notification preference. */
+export function desktopNotificationToggle(): ((enabled: boolean) => Promise<boolean>) | undefined {
+  const bridge = desktopBridge()
+  return typeof bridge?.setNotificationsEnabled === 'function' ? bridge.setNotificationsEnabled.bind(bridge) : undefined
 }

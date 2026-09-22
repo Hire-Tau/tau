@@ -5,22 +5,25 @@ import { join } from 'node:path'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { DEFAULT_LOCAL_AUTO_UPDATE_SETTINGS } from '../../api/updates'
-import type { LocalUpdateRun } from '../../api/updates'
+import type { LocalUpdateRun, UpdateStatusResponse } from '../../api/updates'
 import { queryKeys } from '../../queryKeys'
 import { SystemUpdateSection } from './SystemUpdateSection'
 import { getUpdateLoaderMessage } from './SystemUpdateSection.loader'
 
 const source = readFileSync(join(import.meta.dir, 'SystemUpdateSection.tsx'), 'utf8')
 
-function renderSystemUpdateSection(latest: LocalUpdateRun | null = null): string {
+function renderSystemUpdateSection(
+  latest: LocalUpdateRun | null = null,
+  flavor?: UpdateStatusResponse['flavor']
+): string {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } },
   })
   queryClient.setQueryData(queryKeys.updates.settings(), {
     settings: DEFAULT_LOCAL_AUTO_UPDATE_SETTINGS,
-    status: { active: false, latest },
+    status: { active: false, latest, flavor },
   })
-  queryClient.setQueryData(queryKeys.updates.status(), { active: false, latest })
+  queryClient.setQueryData(queryKeys.updates.status(), { active: false, latest, flavor })
   queryClient.setQueryData(queryKeys.auth.permissions(undefined), { permissions: ['updates:write'] })
   const previousLocalStorage = globalThis.localStorage
   Object.defineProperty(globalThis, 'localStorage', {
@@ -53,6 +56,26 @@ describe('SystemUpdateSection defaults', () => {
 
     expect(html).toContain('Auto-update this instance')
     expect(html).not.toContain('checked=""')
+  })
+})
+
+describe('SystemUpdateSection deployment flavor', () => {
+  test('keeps the git updater form for self-hosted installs', () => {
+    const html = renderSystemUpdateSection(null, { source: 'git-checkout', supervisor: 'pm2', sandboxRuntime: 'k3d' })
+
+    expect(html).toContain('Auto-update this instance')
+    expect(html).toContain('Manual rebuild')
+    expect(html).not.toContain('managed by Tau Desktop')
+  })
+
+  test('shows a read-only Tau Desktop note instead of git controls when opened outside the desktop app', () => {
+    const html = renderSystemUpdateSection(null, { source: 'artifact', supervisor: 'desktop', sandboxRuntime: 'host' })
+
+    expect(html).toContain('This instance is managed by Tau Desktop')
+    expect(html).toContain('Tau → Check for Updates…')
+    expect(html).not.toContain('Auto-update this instance')
+    expect(html).not.toContain('Manual rebuild')
+    expect(html).not.toContain('Update now')
   })
 })
 

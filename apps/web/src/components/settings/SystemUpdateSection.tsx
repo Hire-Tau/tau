@@ -16,8 +16,17 @@ import { AnsiText } from '../AnsiText'
 import { getUpdateLoaderMessage } from './SystemUpdateSection.loader'
 import { usePermissions } from '../../hooks/usePermissions'
 import { FormSkeleton } from '../loading/Skeleton'
+import { desktopUpdates } from '../../lib/desktop'
+import { DesktopUpdatePanel } from './DesktopUpdatePanel'
 
 export function SystemUpdateSection() {
+  // Inside Tau Desktop the app owns updates natively; the git updater endpoints refuse all actions there.
+  const updates = desktopUpdates()
+  if (updates) return <DesktopUpdatePanel updates={updates} />
+  return <GitUpdateSection />
+}
+
+function GitUpdateSection() {
   const qc = useQueryClient()
   const [selectedTargets, setSelectedTargets] = useState<Set<ManualUpdateTarget>>(new Set())
   const { can, isLoading: permissionsLoading } = usePermissions()
@@ -36,7 +45,8 @@ export function SystemUpdateSection() {
   })
   const statusQuery = useQuery({
     ...queries.updates.status(),
-    refetchInterval: 1000,
+    // A desktop-managed instance never runs the git updater; stop polling once the server says so.
+    refetchInterval: (query) => (query.state.data?.flavor?.supervisor === 'desktop' ? false : 1000),
   })
   const settings = data?.settings ?? DEFAULT_LOCAL_AUTO_UPDATE_SETTINGS
   const status = statusQuery.data ?? data?.status
@@ -57,6 +67,7 @@ export function SystemUpdateSection() {
 
   if (isLoading) return <FormSkeleton label="Loading update settings" sections={4} />
   if (error) return <div className="text-danger">Failed to load update settings: {(error as Error).message}</div>
+  if (status?.flavor?.supervisor === 'desktop') return <DesktopManagedNotice />
   return (
     <section className="space-y-6 text-primary">
       <div>
@@ -220,6 +231,18 @@ export function SystemUpdateSection() {
           )
         })}
       </div>
+    </section>
+  )
+}
+
+function DesktopManagedNotice() {
+  return (
+    <section className="space-y-3 text-primary" data-testid="desktop-managed-notice">
+      <h2 className="text-xl font-semibold text-primary">System Updates</h2>
+      <p className="text-sm text-muted">
+        This instance is managed by Tau Desktop. Update it from the app: choose Tau → Check for Updates… in the menu
+        bar.
+      </p>
     </section>
   )
 }
