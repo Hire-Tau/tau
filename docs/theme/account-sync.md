@@ -39,6 +39,11 @@ row is **no account choice**, not a default value to upload.
   a deliberate choice made in another tab, without echoing an upload. A failed
   in-flight write may retry only while its captured choice revision is current;
   it cannot revive an intent canceled by another tab or the adopt action.
+- Storage-event adoption is read-only for preference keys. A React rerender must
+  not persist its possibly intermediate selection back over the writing tab.
+  Initial migration is persisted once by the store; subsequent preference writes
+  belong to deliberate changes or server adoption. This closes a real-browser
+  race between the override-flag event and the following selection events.
 - Logout/account transitions abort requests and discard remote state and queued
   writes. Old responses cannot apply to the next session. A theme inherited during
   that session is cleared on logout; an explicit device override remains, including

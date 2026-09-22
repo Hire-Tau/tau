@@ -213,3 +213,30 @@ test('custom brand tile updates the OS tile metadata, not only the logo', async 
     'rgb(18, 52, 86)'
   )
 })
+
+test('a storage-driven rerender never writes an older selection over another tab update', async () => {
+  const { dom } = await installThemeDom()
+  localStorage.setItem('tau-theme-id', 'high-contrast')
+  localStorage.setItem('tau-appearance', 'light')
+  localStorage.setItem('tau-theme-local-override', '0')
+  const { root } = dom.createRoot()
+  await act(async () => {
+    root.render(
+      <ThemeProvider>
+        <ThemeProbe />
+      </ThemeProvider>
+    )
+  })
+  await act(async () => {
+    // Another tab writes its override flag before its selection. This document
+    // receives that first event while a later selection write is already queued.
+    localStorage.setItem('tau-theme-local-override', '1')
+    dom.window.dispatchEvent(new dom.window.StorageEvent('storage', { key: 'tau-theme-local-override', newValue: '1' }))
+    localStorage.setItem('tau-theme-id', 'tau')
+  })
+  expect(localStorage.getItem('tau-theme-id')).toBe('tau')
+  await act(async () => {
+    dom.window.dispatchEvent(new dom.window.StorageEvent('storage', { key: 'tau-theme-id', newValue: 'tau' }))
+  })
+  expect(document.documentElement.dataset.theme).toBe('tau')
+})
