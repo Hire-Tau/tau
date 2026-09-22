@@ -118,3 +118,37 @@ test('explicit colors, signals, nulls, schemes, ranges, styles and partial palet
   }
   expect(hasAuthoredChartColors({ data: { values: [{ color: 'just data' }] }, mark: 'bar' })).toBe(false)
 })
+
+test('Vega and Vega-Lite SVG output retains parser-safe tiny custom alpha products', async () => {
+  const { compileCustomTheme, validateCustomTheme } = await import('@tau/shared/custom-theme')
+  const { BUILT_IN_THEMES } = await import('./registry')
+  const { color: parseColor } = await import('d3-color')
+  const raw = JSON.stringify({
+    format: 'tau-custom-theme',
+    version: 1,
+    name: 'Tiny chart',
+    base: 'tau',
+    appearance: 'light',
+    overrides: { '--graph-chart-mark': 'rgba(10,20,30,0.0000001)' },
+  })
+  expect(validateCustomTheme(raw, BUILT_IN_THEMES).ok).toBe(true)
+  const channels = compileCustomTheme(raw, BUILT_IN_THEMES)['--graph-chart-mark']!
+  const concrete = tokenColor(channels, '0.12')!
+  expect(parseColor(concrete)!.opacity).toBe(0.0000001 * 0.12)
+  const custom = { ...colors, '--graph-chart-mark': concrete }
+  const lite = compile(bar as TopLevelSpec, { config: chartThemeConfig(bar, custom) }).spec
+  expect(await renderSvg(lite)).toContain(`fill="${concrete}"`)
+  const vega: Spec = {
+    width: 100,
+    height: 100,
+    marks: [
+      {
+        type: 'rect',
+        encode: { enter: { x: { value: 10 }, y: { value: 10 }, width: { value: 40 }, height: { value: 40 } } },
+      },
+    ],
+  }
+  expect(await renderSvg(vega, chartThemeConfig(vega as Record<string, unknown>, custom) as Config)).toContain(
+    `fill="${concrete}"`
+  )
+})
