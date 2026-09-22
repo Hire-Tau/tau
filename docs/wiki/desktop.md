@@ -13,3 +13,11 @@ Desktop provides `TAU_ROOT` for immutable resources and `HOME_DIR` for mutable u
 Authentication remains Core's normal first-admin bootstrap and passkey flow. Localhost is not an authorization bypass. Desktop may pass its generated first-admin credential through the existing immediately stripped `#setup=` fragment; the setup IPC API never returns that secret. Existing installations retain their configured origins, databases, supervisors, authentication and home paths.
 
 Desktop-managed host agents run as the signed-in OS user and have filesystem access. The UI must explain that boundary. Browser automation still requires a supported locally installed Chromium browser; embedding Electron does not install a Playwright browser.
+
+## Web app bridge
+
+The web app detects the desktop preload bridge (`window.tauDesktopApp`, `version: 1`). Members added after the first release are optional and feature-detected individually, so older and newer desktop builds degrade gracefully:
+
+- `updates` replaces the git updater on Settings → Updates with the app's native update status and **Restart to update**.
+- `setNotificationsEnabled` adds the **Desktop notifications** switch to Settings → Notification Rules (see [Desktop notifications](desktop-notifications.md)).
+- `shell.insetTitleBar` marks the document `data-desktop-shell="inset"` while the window is not fullscreen. The app header then becomes the title bar: 56px tall, a window drag region with interactive controls and overlays excluded, and the logo kept clear of the window controls. Browsers never receive the mark.
