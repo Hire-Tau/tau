@@ -9,6 +9,7 @@ import { withTestDbLockSync } from '@tau/shared/testDbLock'
 import { canExecuteQuery, isComposePostgresReady } from '@tau/shared/testDbReady'
 import { findFreeTestDbPort, testDbPortFile, testDbProjectName } from '@tau/shared/testDbPort'
 import { expectedCheckConstraints, expectedTableColumns, findSchemaDrift, parseColumnRows } from './db/expected-schema'
+import { expectedForeignKeys, foreignKeyStatements } from './db/expected-foreign-keys'
 import { runnerTestSchemaCache } from './test-utils/schema-cache'
 
 // Give the whole run its own Tau home so no test can write into the developer's
@@ -245,6 +246,10 @@ const INTROSPECTION_HOSTILE_INDEXES = [
   'idx_webhook_events_verified_repo_delivery',
   'idx_inbox_work_stream_id',
   'idx_messages_chat_source_page',
+  'idx_messages_agent_stream_group',
+  'idx_messages_agent_inbox_consumed',
+  'idx_messages_agent_sandbox_recovery_unique',
+  'idx_owned_worktree_path',
 ]
 
 function dropIntrospectionHostileIndexes(url: string): void {
@@ -409,13 +414,37 @@ function verifySchemaApplied(url: string): void {
   )
   const missingConstraints = [...expectedCheckConstraints().keys()].filter((name) => !liveConstraints.has(name)).sort()
 
+  const fkQuery = `SELECT t.relname || '|' || c.conname || '|' || c.confdeltype::text || '|' || c.confupdtype::text FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid WHERE c.contype = 'f' AND c.connamespace = 'public'::regnamespace`
+  const fkResult = Bun.spawnSync(['psql', url, '-tAc', fkQuery], { stdout: 'pipe', stderr: 'pipe', timeout: 10000 })
+  if (fkResult.exitCode !== 0 || fkResult.signalCode) {
+    console.error('Could not verify test foreign keys:', fkResult.stderr.toString())
+    process.exit(1)
+  }
+  const liveForeignKeys = new Set(
+    fkResult.stdout
+      .toString()
+      .split('\n')
+      .map((line) => line.trim())
+  )
+  const missingForeignKeys = [...expectedForeignKeys()]
+    .filter(([key, value]) => !liveForeignKeys.has(`${key}|${value.deleteAction}|${value.updateAction}`))
+    .map(([key]) => key)
+    .sort()
+
   const drift = findSchemaDrift(expectedTableColumns(), parseColumnRows(result.stdout.toString()))
-  if (drift.missingTables.length === 0 && drift.missingColumns.length === 0 && missingConstraints.length === 0) return
+  if (
+    drift.missingTables.length === 0 &&
+    drift.missingColumns.length === 0 &&
+    missingConstraints.length === 0 &&
+    missingForeignKeys.length === 0
+  )
+    return
 
   const detail = [
     drift.missingTables.length > 0 ? `missing tables: ${drift.missingTables.join(', ')}` : '',
     drift.missingColumns.length > 0 ? `missing columns: ${drift.missingColumns.join(', ')}` : '',
     missingConstraints.length > 0 ? `missing CHECK constraints: ${missingConstraints.join(', ')}` : '',
+    missingForeignKeys.length > 0 ? `missing or stale FOREIGN KEY constraints: ${missingForeignKeys.join(', ')}` : '',
   ]
     .filter(Boolean)
     .join('\n  ')
@@ -425,7 +454,7 @@ function verifySchemaApplied(url: string): void {
   const cause =
     drift.missingTables.length > 0 || drift.missingColumns.length > 0
       ? 'The push applied nothing (drizzle-kit exits 0 on failures it prints but does not raise).\n'
-      : 'The push succeeded; the CHECK constraints dropped before it were not all put back.\n'
+      : 'The push succeeded; declared constraints were not all synchronized.\n'
   console.error(
     `The schema push reported success but the test DB does not match src/db/schema.ts:\n  ${detail}\n` +
       cause +
@@ -660,20 +689,18 @@ if (schemaCache?.matches()) {
   // so the set dropped above has to be put back from schema.ts by hand.
   applyCheckConstraints(TEST_DATABASE_URL)
 
-  // The push claimed success. Prove it, before a single test runs.
-  verifySchemaApplied(TEST_DATABASE_URL)
-
   // Preserve the generated integration-output constraints even when push stops
   // after table creation. Derive this fixture DDL from the actual schema.
   {
     const { getTableConfig } = await import('drizzle-orm/pg-core')
-    const { getTableName } = await import('drizzle-orm')
     const {
       integrationOutputEvents,
       integrationOutputDeliveries,
       integrationOutputTriggerRuns,
       channelDirectChats,
       channelDirectAgents,
+      machineBoxes,
+      remoteHostGrants,
     } = await import('./db/schema')
     const quote = (name: string) => '"' + name.replaceAll('"', '""') + '"'
     const statements: string[] = []
@@ -683,6 +710,8 @@ if (schemaCache?.matches()) {
       integrationOutputTriggerRuns,
       channelDirectChats,
       channelDirectAgents,
+      machineBoxes,
+      remoteHostGrants,
     ]) {
       const config = getTableConfig(table)
       const add = (name: string, clause: string) => {
@@ -693,13 +722,6 @@ if (schemaCache?.matches()) {
       }
       for (const constraint of config.uniqueConstraints)
         add(constraint.getName()!, `UNIQUE (${constraint.columns.map((column) => quote(column.name)).join(', ')})`)
-      for (const constraint of config.foreignKeys) {
-        const ref = constraint.reference()
-        add(
-          constraint.getName(),
-          `FOREIGN KEY (${ref.columns.map((column) => quote(column.name)).join(', ')}) REFERENCES ${quote(getTableName(ref.foreignTable))} (${ref.foreignColumns.map((column) => quote(column.name)).join(', ')}) ON DELETE ${constraint.onDelete ?? 'no action'}`
-        )
-      }
     }
     const result = Bun.spawnSync(['psql', TEST_DATABASE_URL, '-v', 'ON_ERROR_STOP=1', '-c', statements.join('; ')], {
       stdout: 'pipe',
@@ -710,170 +732,36 @@ if (schemaCache?.matches()) {
       throw new Error(`Failed to enforce output schema constraints: ${result.stderr.toString()}`)
   }
 
-  // drizzle-kit push doesn't reliably create foreign key constraints.
-  // Apply them manually so cascade delete/set-null behavior works in tests.
-  {
-    const fkStatements = [
-      // Match the generated account-preference cascade in schema-push test databases.
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'user_preferences_user_id_users_id_fk') THEN
-        ALTER TABLE "user_preferences" ADD CONSTRAINT "user_preferences_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE cascade;
-      END IF;
-      END $$;`,
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'auth_settings_default_signup_role_id_roles_id_fk') THEN
-        ALTER TABLE "auth_settings" ADD CONSTRAINT "auth_settings_default_signup_role_id_roles_id_fk" FOREIGN KEY ("default_signup_role_id") REFERENCES "roles"("id") ON DELETE set null;
-      END IF;
-      END $$;`,
-      // Prepared flow history uses the same cascades as the generated migration.
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'work_stream_flow_runs_work_stream_id_work_streams_id_fk') THEN
-        ALTER TABLE "work_stream_flow_runs" ADD CONSTRAINT "work_stream_flow_runs_work_stream_id_work_streams_id_fk" FOREIGN KEY ("work_stream_id") REFERENCES "work_streams"("id") ON DELETE cascade;
-      END IF;
-      END $$;`,
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = left('work_stream_flow_transitions_work_stream_id_work_stream_flow_runs_work_stream_id_fk', 63)) THEN
-        ALTER TABLE "work_stream_flow_transitions" ADD CONSTRAINT "work_stream_flow_transitions_work_stream_id_work_stream_flow_runs_work_stream_id_fk" FOREIGN KEY ("work_stream_id") REFERENCES "work_stream_flow_runs"("work_stream_id") ON DELETE cascade;
-      END IF;
-      END $$;`,
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'workflow_bindings_agent_id_agents_id_fk') THEN
-        ALTER TABLE "workflow_bindings" ADD CONSTRAINT "workflow_bindings_agent_id_agents_id_fk" FOREIGN KEY ("agent_id") REFERENCES "agents"("id") ON DELETE cascade;
-      END IF;
-      END $$;`,
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'workflow_bindings_work_stream_id_work_streams_id_fk') THEN
-        ALTER TABLE "workflow_bindings" ADD CONSTRAINT "workflow_bindings_work_stream_id_work_streams_id_fk" FOREIGN KEY ("work_stream_id") REFERENCES "work_streams"("id") ON DELETE cascade;
-      END IF;
-      END $$;`,
-      // memory_chunks FK constraints
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'memory_chunks_squad_id_squads_id_fk') THEN
-        ALTER TABLE "memory_chunks" ADD CONSTRAINT "memory_chunks_squad_id_squads_id_fk" FOREIGN KEY ("squad_id") REFERENCES "squads"("id") ON DELETE cascade;
-      END IF;
-    END $$`,
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'memory_chunks_document_id_memory_documents_id_fk') THEN
-        ALTER TABLE "memory_chunks" ADD CONSTRAINT "memory_chunks_document_id_memory_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "memory_documents"("id") ON DELETE cascade;
-      END IF;
-    END $$`,
-      // memory_documents FK constraints
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'memory_documents_squad_id_squads_id_fk') THEN
-        ALTER TABLE "memory_documents" ADD CONSTRAINT "memory_documents_squad_id_squads_id_fk" FOREIGN KEY ("squad_id") REFERENCES "squads"("id") ON DELETE cascade;
-      END IF;
-    END $$`,
-      // memory_links FK constraints
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'memory_links_squad_id_squads_id_fk') THEN
-        ALTER TABLE "memory_links" ADD CONSTRAINT "memory_links_squad_id_squads_id_fk" FOREIGN KEY ("squad_id") REFERENCES "squads"("id") ON DELETE cascade;
-      END IF;
-    END $$`,
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'memory_links_source_document_id_memory_documents_id_fk') THEN
-        ALTER TABLE "memory_links" ADD CONSTRAINT "memory_links_source_document_id_memory_documents_id_fk" FOREIGN KEY ("source_document_id") REFERENCES "memory_documents"("id") ON DELETE cascade;
-      END IF;
-    END $$`,
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'memory_links_target_document_id_memory_documents_id_fk') THEN
-        ALTER TABLE "memory_links" ADD CONSTRAINT "memory_links_target_document_id_memory_documents_id_fk" FOREIGN KEY ("target_document_id") REFERENCES "memory_documents"("id") ON DELETE set null;
-      END IF;
-    END $$`,
-      // machine_boxes FK constraint (boxes cascade-delete with their machine)
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'machine_boxes_machine_id_machines_id_fk') THEN
-        ALTER TABLE "machine_boxes" ADD CONSTRAINT "machine_boxes_machine_id_machines_id_fk" FOREIGN KEY ("machine_id") REFERENCES "machines"("id") ON DELETE cascade;
-      END IF;
-    END $$`,
-      // machine_boxes (machine_id, port) uniqueness (backstop for serialized port allocation)
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'machine_boxes_machine_id_port_unique') THEN
-        ALTER TABLE "machine_boxes" ADD CONSTRAINT "machine_boxes_machine_id_port_unique" UNIQUE ("machine_id", "port");
-      END IF;
-    END $$`,
-      // remote_host_grants FK constraint (grants cascade-delete with their host)
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'remote_host_grants_host_id_remote_hosts_id_fk') THEN
-        ALTER TABLE "remote_host_grants" ADD CONSTRAINT "remote_host_grants_host_id_remote_hosts_id_fk" FOREIGN KEY ("host_id") REFERENCES "remote_hosts"("id") ON DELETE cascade;
-      END IF;
-    END $$`,
-      // remote_host_grants (host_id, squad_id) uniqueness (one grant per host/squad pair)
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'remote_host_grants_host_id_squad_id_unique') THEN
-        ALTER TABLE "remote_host_grants" ADD CONSTRAINT "remote_host_grants_host_id_squad_id_unique" UNIQUE ("host_id", "squad_id");
-      END IF;
-    END $$`,
-      // agents → squads FK (squad deletion detaches persisted agents)
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'agents_squad_id_squads_id_fk') THEN
-        ALTER TABLE "agents" ADD CONSTRAINT "agents_squad_id_squads_id_fk" FOREIGN KEY ("squad_id") REFERENCES "squads"("id") ON DELETE set null;
-      END IF;
-    END $$`,
-      // agents/squads → machines FK (machine pin cleared when its machine is removed)
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'agents_machine_id_machines_id_fk') THEN
-        ALTER TABLE "agents" ADD CONSTRAINT "agents_machine_id_machines_id_fk" FOREIGN KEY ("machine_id") REFERENCES "machines"("id") ON DELETE set null;
-      END IF;
-    END $$`,
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'squads_machine_id_machines_id_fk') THEN
-        ALTER TABLE "squads" ADD CONSTRAINT "squads_machine_id_machines_id_fk" FOREIGN KEY ("machine_id") REFERENCES "machines"("id") ON DELETE set null;
-      END IF;
-    END $$`,
-      // Squad slots: drizzle-kit push may omit these generated foreign keys.
-      // Reapply every 0149 relationship so tests exercise production deletion semantics.
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'slot_pools_squad_id_squads_id_fk') THEN
-        ALTER TABLE "slot_pools" ADD CONSTRAINT "slot_pools_squad_id_squads_id_fk" FOREIGN KEY ("squad_id") REFERENCES "squads"("id") ON DELETE cascade;
-      END IF;
-    END $$`,
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'slot_claims_pool_id_slot_pools_id_fk') THEN
-        ALTER TABLE "slot_claims" ADD CONSTRAINT "slot_claims_pool_id_slot_pools_id_fk" FOREIGN KEY ("pool_id") REFERENCES "slot_pools"("id") ON DELETE restrict;
-      END IF;
-    END $$`,
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'slot_notifications_pool_id_slot_pools_id_fk') THEN
-        ALTER TABLE "slot_notifications" ADD CONSTRAINT "slot_notifications_pool_id_slot_pools_id_fk" FOREIGN KEY ("pool_id") REFERENCES "slot_pools"("id") ON DELETE restrict;
-      END IF;
-    END $$`,
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'slot_notifications_claim_id_slot_claims_id_fk') THEN
-        ALTER TABLE "slot_notifications" ADD CONSTRAINT "slot_notifications_claim_id_slot_claims_id_fk" FOREIGN KEY ("claim_id") REFERENCES "slot_claims"("id") ON DELETE restrict;
-      END IF;
-    END $$`,
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'slot_notifications_inbox_id_inbox_id_fk') THEN
-        ALTER TABLE "slot_notifications" ADD CONSTRAINT "slot_notifications_inbox_id_inbox_id_fk" FOREIGN KEY ("inbox_id") REFERENCES "inbox"("id") ON DELETE set null;
-      END IF;
-    END $$`,
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'slot_waiters_pool_id_slot_pools_id_fk') THEN
-        ALTER TABLE "slot_waiters" ADD CONSTRAINT "slot_waiters_pool_id_slot_pools_id_fk" FOREIGN KEY ("pool_id") REFERENCES "slot_pools"("id") ON DELETE restrict;
-      END IF;
-    END $$`,
-      `DO $$ BEGIN
-      IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'slot_waiters_resulting_claim_id_slot_claims_id_fk') THEN
-        ALTER TABLE "slot_waiters" ADD CONSTRAINT "slot_waiters_resulting_claim_id_slot_claims_id_fk" FOREIGN KEY ("resulting_claim_id") REFERENCES "slot_claims"("id") ON DELETE restrict;
-      END IF;
-    END $$`,
-    ]
-
-    const fkScript = fkStatements.map((s) => s.replace(/\s+/g, ' ')).join('; ')
-    const fkResult = Bun.spawnSync(['psql', TEST_DATABASE_URL, '-c', fkScript], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: 10000,
-    })
-    if (fkResult.exitCode !== 0) {
-      throw new Error(`Failed to apply test FK constraints: ${fkResult.stderr.toString()}`)
-    }
+  // A reused Docker database must enforce the same FKs as a fresh native DB.
+  // Repair all declared keys atomically instead of maintaining a partial list.
+  const foreignKeys = Bun.spawnSync(['psql', TEST_DATABASE_URL, '-v', 'ON_ERROR_STOP=1'], {
+    stdin: Buffer.from('BEGIN;\n' + foreignKeyStatements().join(';\n') + ';\nCOMMIT;'),
+    stdout: 'pipe',
+    stderr: 'pipe',
+    timeout: 10000,
+  })
+  if (foreignKeys.exitCode !== 0 || foreignKeys.signalCode) {
+    console.error('Failed to synchronize test foreign keys:', foreignKeys.stderr.toString())
+    process.exit(1)
   }
 
   // drizzle-kit push doesn't reliably create partial unique indexes.
   // Apply them manually so RBAC uniqueness constraints work in tests.
   {
     const idxStatements = [
+      // Restore expression indexes removed for push introspection, including
+      // the uniqueness fences used by recovery and worktree ownership.
+      `CREATE INDEX IF NOT EXISTS "idx_messages_agent_stream_group"
+      ON "messages" ("agent_id", ("metadata"->>'streamGroupId'))
+      WHERE "role" = 'assistant' AND ("metadata"->>'streamGroupId') IS NOT NULL`,
+      `CREATE INDEX IF NOT EXISTS "idx_messages_agent_inbox_consumed"
+      ON "messages" ("agent_id", ("metadata"->>'consumedAt'))
+      WHERE "metadata"->>'source' = 'inbox' AND ("metadata"->>'consumedAt') IS NOT NULL`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "idx_messages_agent_sandbox_recovery_unique"
+      ON "messages" ("agent_id", ("metadata"->>'sandboxId'), ("metadata"->>'recoveryEpisodeId'), ("metadata"->>'recoveryNotificationKind'))
+      WHERE "role" = 'human' AND "metadata"->>'source' = 'sandbox-recovery'`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "idx_owned_worktree_path"
+      ON "work_stream_worktrees" ("squad_id", ("ownership"->>'worktree'))`,
       // role_assignments: unique assignment when squadId IS NULL
       `CREATE UNIQUE INDEX IF NOT EXISTS "uq_role_assignment_no_squad"
       ON "role_assignments" ("subject_type", "subject_id", "role_id", "scope")
@@ -923,5 +811,6 @@ if (schemaCache?.matches()) {
       throw new Error(`Failed to apply test partial unique indexes: ${idxResult.stderr.toString()}`)
     }
   }
+  verifySchemaApplied(TEST_DATABASE_URL)
   schemaCache?.record()
 }

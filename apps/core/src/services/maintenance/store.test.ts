@@ -8,6 +8,7 @@ import {
   executions,
   instanceMaintenanceAudit,
   instanceMaintenanceState,
+  chatSendReceipts,
 } from '../../db'
 import { MaintenanceLeaseConflict, MaintenanceStore } from './store'
 import { MaintenanceWorkerController } from './worker-controller'
@@ -30,6 +31,7 @@ describe('MaintenanceStore', () => {
     await store.initialize()
   })
   afterEach(async () => {
+    await db.delete(chatSendReceipts)
     await db.delete(executions)
     await db.delete(agents)
     await db.delete(instanceMaintenanceAudit)

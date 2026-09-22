@@ -24,7 +24,10 @@ beforeEach(async () => {
 
 afterEach(async () => {
   if (ids.squad) await db.delete(squads).where(eq(squads.id, ids.squad))
-  if (ids.user) await db.delete(users).where(eq(users.id, ids.user))
+  if (ids.user) {
+    await db.delete(integrationExportConsents).where(eq(integrationExportConsents.consentedByUserId, ids.user))
+    await db.delete(users).where(eq(users.id, ids.user))
+  }
   ids.squad = undefined
   ids.user = undefined
 })

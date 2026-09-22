@@ -1,6 +1,13 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
-import { and, eq } from 'drizzle-orm'
-import { agents, db, executionAdmissionReservations, executions, instanceMaintenanceState } from '../../db'
+import { and, eq, sql } from 'drizzle-orm'
+import {
+  agents,
+  db,
+  executionAdmissionReservations,
+  executions,
+  instanceMaintenanceState,
+  chatSendReceipts,
+} from '../../db'
 import { acquireMaintenanceTestIsolation } from '../../test-utils/maintenance-test-isolation'
 import {
   AdmissionReservationStore,
@@ -23,6 +30,7 @@ beforeEach(async () => {
 })
 afterEach(async () => {
   await db.delete(executionAdmissionReservations)
+  await db.delete(chatSendReceipts)
   await db.delete(executions)
   await db.delete(agents)
   await db.delete(instanceMaintenanceState)
@@ -524,16 +532,20 @@ describe('AdmissionReservationStore', () => {
       }
       return originalHeartbeat(...args)
     }
+    let releaseEffect!: () => void
+    const effectGate = new Promise<void>((resolve) => (releaseEffect = resolve))
+    const effect = scope.runEffect({ phase: 'sandbox-ensure', resourceKey: 'sandbox:test' }, () => effectGate)
+    let stalledTick: Promise<void> | undefined
     try {
-      let releaseEffect!: () => void
-      const effectGate = new Promise<void>((resolve) => (releaseEffect = resolve))
-      const effect = scope.runEffect({ phase: 'sandbox-ensure', resourceKey: 'sandbox:test' }, () => effectGate)
       while (!heartbeatTick) await new Promise<void>((resolve) => setImmediate(resolve))
+      // Shorten the owned lease with the database clock. Two fast real writes
+      // may share a millisecond; renewal must restore the full 30-second lease.
       const [before] = await db
-        .select({ leaseExpiresAt: executionAdmissionReservations.leaseExpiresAt })
-        .from(executionAdmissionReservations)
+        .update(executionAdmissionReservations)
+        .set({ leaseExpiresAt: sql`clock_timestamp() + interval '5 seconds'` })
         .where(eq(executionAdmissionReservations.executionId, execution.id))
-      void heartbeatTick() // stalls
+        .returning({ leaseExpiresAt: executionAdmissionReservations.leaseExpiresAt })
+      stalledTick = heartbeatTick() // stalls
       clock = 10
       void heartbeatTick() // within the stall budget: skipped
       expect(calls).toBe(1)
@@ -544,11 +556,15 @@ describe('AdmissionReservationStore', () => {
         .select({ leaseExpiresAt: executionAdmissionReservations.leaseExpiresAt })
         .from(executionAdmissionReservations)
         .where(eq(executionAdmissionReservations.executionId, execution.id))
-      expect(renewed!.leaseExpiresAt!.getTime()).toBeGreaterThan(before!.leaseExpiresAt!.getTime())
+      expect(renewed!.leaseExpiresAt!.getTime()).toBeGreaterThan(before!.leaseExpiresAt!.getTime() + 20_000)
       releaseStalled()
       releaseEffect()
       await effect
     } finally {
+      releaseStalled()
+      releaseEffect()
+      await stalledTick
+      await effect.catch(() => undefined)
       store.heartbeatEffect = originalHeartbeat
     }
   })

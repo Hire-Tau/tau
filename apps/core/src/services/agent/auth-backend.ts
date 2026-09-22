@@ -14,6 +14,7 @@
  */
 
 import { ModelRuntime } from '@earendil-works/pi-coding-agent'
+import { compatibleRuntimeProvider } from './openai-compatible-runtime'
 import type { Credential, CredentialInfo, CredentialStore } from '@earendil-works/pi-ai'
 import { registerBunOAuthFlows } from '@earendil-works/pi-ai/bun-oauth'
 import { KeyedSerialQueue } from '../../lib/infra/inflight'
@@ -290,7 +291,11 @@ export function openAICompatibleRegistrations(store: AccountStoreV1) {
 }
 type CustomProviderRegistry = Pick<
   ModelRuntime,
-  'getRegisteredProviderIds' | 'getRegisteredProviderConfig' | 'registerProvider' | 'unregisterProvider'
+  | 'getRegisteredProviderIds'
+  | 'getRegisteredProviderConfig'
+  | 'getRegisteredNativeProvider'
+  | 'registerNativeProvider'
+  | 'unregisterProvider'
 >
 const registrationSnapshots = new WeakMap<CustomProviderRegistry, string>()
 export function registerOpenAICompatibleAccounts(
@@ -311,28 +316,15 @@ export function registerOpenAICompatibleAccounts(
   )
   if (registrationSnapshots.get(runtime) === snapshot) return
   for (const providerId of runtime.getRegisteredProviderIds()) {
-    if (runtime.getRegisteredProviderConfig(providerId)?.name?.startsWith('OpenAI Compatible:'))
+    if (
+      (
+        runtime.getRegisteredProviderConfig(providerId)?.name ?? runtime.getRegisteredNativeProvider(providerId)?.name
+      )?.startsWith('OpenAI Compatible:')
+    )
       runtime.unregisterProvider(providerId)
   }
   for (const { providerId, account } of registrations) {
-    runtime.registerProvider(providerId, {
-      name: `OpenAI Compatible: ${account.label || providerId}`,
-      api: 'openai-completions',
-      models: [
-        {
-          id: account.model!,
-          name: account.label || account.model!,
-          api: 'openai-completions',
-          baseUrl: account.baseUrl!,
-          reasoning: false,
-          input: ['text'],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: account.capabilities?.contextWindow ?? 32768,
-          maxTokens: 8192,
-          compat: { supportsDeveloperRole: false, supportsReasoningEffort: false },
-        },
-      ],
-    })
+    runtime.registerNativeProvider(compatibleRuntimeProvider(providerId, account))
   }
   registrationSnapshots.set(runtime, snapshot)
 }

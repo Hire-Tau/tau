@@ -322,3 +322,109 @@ describe('agentsResource message methods', () => {
     expect(calls[0].options?.method).toBe('POST')
   })
 })
+
+describe('subscription cancellation fences buffered frames', () => {
+  test('unsubscribe inside onEvent cancels the reader and suppresses buffered catchup/done/status', async () => {
+    const t = mockTransport().t
+    let canceled = false
+    let drained!: () => void
+    const opened = new Promise<void>((resolve) => {
+      drained = resolve
+    })
+    t.openStream = async () =>
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              'data: {"type":"text","text":"one","streamGroupId":"S"}\n\n' +
+                'event: catchup\ndata: {"events":[{"type":"flush_agent"}]}\n\n' +
+                'event: done\ndata: \n\n'
+            )
+          )
+        },
+        cancel() {
+          canceled = true
+          drained()
+        },
+      }).getReader()
+    const seen: string[] = []
+    const stop = agentsResource(t).subscribeToAgentStream('a', {
+      onEvent: (event) => {
+        seen.push(event.type)
+        stop()
+      },
+      onCatchup: () => seen.push('catchup'),
+      onDone: () => seen.push('done'),
+      onDisconnect: () => seen.push('disconnect'),
+      onError: () => seen.push('error'),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(seen).toEqual(['text'])
+    expect(canceled).toBe(true)
+    await opened
+  })
+
+  test('late openStream resolution after unsubscribe is canceled without callbacks', async () => {
+    const t = mockTransport().t
+    let resolve!: (reader: ReadableStreamDefaultReader<Uint8Array>) => void
+    t.openStream = () =>
+      new Promise((r) => {
+        resolve = r
+      })
+    const seen: string[] = []
+    const stop = agentsResource(t).subscribeToAgentStream('a', {
+      onEvent: () => seen.push('event'),
+      onDone: () => seen.push('done'),
+    })
+    stop()
+    let canceled = false
+    resolve(
+      new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(new TextEncoder().encode('event: done\ndata: \n\n'))
+        },
+        cancel() {
+          canceled = true
+        },
+      }).getReader()
+    )
+    await new Promise((r) => setTimeout(r, 10))
+    expect(seen).toEqual([])
+    expect(canceled).toBe(true)
+  })
+})
+
+test.each(['eof', 'error'] as const)(
+  'unexpected %s exhausts transport retries without emitting execution success',
+  async (mode) => {
+    const t = mockTransport().t
+    let opens = 0
+    t.openStream = async () => {
+      opens++
+      if (mode === 'error') throw new Error('offline')
+      return streamReaderFromSse([])
+    }
+    const seen: string[] = []
+    let finish!: () => void
+    const finished = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    const realSetTimeout = globalThis.setTimeout
+    globalThis.setTimeout = ((fn: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) =>
+      realSetTimeout(fn, delay === 2000 ? 0 : delay, ...args)) as typeof globalThis.setTimeout
+    let stop: (() => void) | undefined
+    try {
+      stop = agentsResource(t).subscribeToAgentStream('a', {
+        onEvent: (event) => seen.push(event.type),
+        onDone: finish,
+        onError: () => seen.push('transport-error'),
+      })
+      await finished
+      expect(opens).toBe(16)
+      expect(seen).toEqual(mode === 'error' ? ['transport-error'] : [])
+    } finally {
+      stop?.()
+      globalThis.setTimeout = realSetTimeout
+    }
+  }
+)

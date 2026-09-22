@@ -524,6 +524,7 @@ describe('POST /api/agents/:id/message target validation', () => {
       expect(blank.status).toBe(400)
     } finally {
       await Image.deleteMany([image.id])
+      await db.delete(chatSendReceipts).where(eq(chatSendReceipts.agentId, agent.id))
       await db.delete(messagesTable).where(eq(messagesTable.agentId, agent.id))
       await db.delete(executions).where(eq(executions.agentId, agent.id))
       await db.delete(agents).where(eq(agents.id, agent.id))
@@ -626,6 +627,7 @@ describe('POST /api/agents/:id/message target validation', () => {
       expect((await Image.find(image.id))?.agentId).toBe(agent.id)
     } finally {
       await Image.deleteMany([image.id])
+      await db.delete(chatSendReceipts).where(eq(chatSendReceipts.agentId, agent.id))
       await db.delete(messagesTable).where(eq(messagesTable.agentId, agent.id))
       await db.delete(executions).where(eq(executions.agentId, agent.id))
       await db.delete(agents).where(eq(agents.id, agent.id))
@@ -682,6 +684,7 @@ describe('deprecated inline message routes', () => {
   })
 
   afterEach(async () => {
+    await db.delete(chatSendReceipts).where(eq(chatSendReceipts.agentId, testAgent.id))
     await db.delete(messagesTable).where(eq(messagesTable.agentId, testAgent.id))
     await db.delete(executions).where(eq(executions.agentId, testAgent.id))
     await db.delete(agents).where(eq(agents.id, testAgent.id))

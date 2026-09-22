@@ -106,9 +106,10 @@ test('a worker catalog follows added, changed and disabled accounts without rebu
   const runtime = {
     getRegisteredProviderIds: () => [...configs.keys()],
     getRegisteredProviderConfig: (id: string) => configs.get(id),
-    registerProvider: (id: string, config: any) => {
+    getRegisteredNativeProvider: (id: string) => configs.get(id),
+    registerNativeProvider: (provider: any) => {
       writes++
-      configs.set(id, config)
+      configs.set(provider.id, provider)
     },
     unregisterProvider: (id: string) => {
       configs.delete(id)
@@ -124,14 +125,14 @@ test('a worker catalog follows added, changed and disabled accounts without rebu
     capabilities,
   })
   registerOpenAICompatibleAccounts(runtime, store)
-  expect(configs.get('local').models[0].id).toBe('qwen')
+  expect(configs.get('local').getModels()[0].id).toBe('qwen')
   account.lastUsedAt = 100
   account.credential = { type: 'api_key', key: 'fixture-rotation' }
   registerOpenAICompatibleAccounts(runtime, store)
   expect(writes).toBe(1)
   account.model = 'new-model'
   registerOpenAICompatibleAccounts(runtime, store)
-  expect(configs.get('local').models[0].id).toBe('new-model')
+  expect(configs.get('local').getModels()[0].id).toBe('new-model')
   account.enabled = false
   registerOpenAICompatibleAccounts(runtime, store)
   expect(configs.has('local')).toBe(false)
@@ -171,4 +172,73 @@ test('a session-scoped runtime can authenticate a registered compatible model', 
   expect(runtime.getModel('local-fixture', 'qwen')?.baseUrl).toBe('http://localhost:8080/v1')
   expect(await runtime.checkAuth('local-fixture')).toBeDefined()
   expect((await runtime.getAuth('local-fixture'))?.auth.apiKey).toBe(key.key)
+})
+
+test('verified keyless models execute without an Authorization header and follow credential rotation', async () => {
+  const { ModelRuntime } = await import('@earendil-works/pi-coding-agent')
+  let current: typeof credential | undefined = { type: 'api_key', key: '' }
+  const runtime = await ModelRuntime.create({
+    modelsPath: null,
+    allowModelNetwork: false,
+    credentials: {
+      read: async () => current,
+      list: async () => (current ? [{ providerId: 'keyless-fixture', type: 'api_key' as const }] : []),
+      modify: async () => current,
+      delete: async () => {
+        current = undefined
+      },
+    },
+  })
+  const store: AccountStoreV1 = {
+    version: 1,
+    accounts: {
+      'keyless-fixture': [
+        {
+          id: 'fixture',
+          enabled: true,
+          credential: current!,
+          kind: 'openai-compatible',
+          baseUrl: 'http://localhost:1/v1',
+          model: 'fixture-model',
+          capabilities,
+        },
+      ],
+    },
+  }
+  registerOpenAICompatibleAccounts(runtime, store)
+  expect(await runtime.checkAuth('keyless-fixture')).toBeDefined()
+  const headers: Array<string | null> = []
+  const transport = (async (_url: unknown, init?: RequestInit) => {
+    headers.push(new Headers(init?.headers).get('authorization'))
+    const chunk = {
+      id: 'fixture',
+      object: 'chat.completion.chunk',
+      created: 1,
+      model: 'fixture-model',
+      choices: [{ index: 0, delta: { role: 'assistant', content: 'works' }, finish_reason: 'stop' }],
+    }
+    return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`, {
+      headers: { 'Content-Type': 'text/event-stream' },
+    })
+  }) as typeof fetch
+  const model = runtime.getModel('keyless-fixture', 'fixture-model')!
+  for (const key of ['', 'test-rotation-key', '']) {
+    current = { type: 'api_key', key }
+    const response = await runtime.completeSimple(
+      model,
+      { messages: [{ role: 'user', content: 'hello', timestamp: 1 }] },
+      { fetch: transport }
+    )
+    expect(response.stopReason).toBe('stop')
+    expect(response.content).toEqual([{ type: 'text', text: 'works' }])
+  }
+  expect(headers).toEqual([null, 'Bearer test-rotation-key', null])
+  current = undefined
+  expect(await runtime.checkAuth('keyless-fixture')).toBeUndefined()
+  const missing = await runtime.completeSimple(model, { messages: [] }, { fetch: transport })
+  expect(missing.stopReason).toBe('error')
+  expect(headers).toHaveLength(3)
+  store.accounts['keyless-fixture']![0]!.enabled = false
+  registerOpenAICompatibleAccounts(runtime, store)
+  expect(runtime.getModel('keyless-fixture', 'fixture-model')).toBeUndefined()
 })

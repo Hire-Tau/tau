@@ -6,6 +6,7 @@ import { db } from '../db'
 import {
   agents,
   agentTokens,
+  chatSendReceipts,
   agentTypes,
   executionAdmissionReservations,
   executions,
@@ -3363,6 +3364,7 @@ describe('agents service', () => {
       const after = await agent.listMessages()
       expect(after.messages.length).toBe(before.messages.length)
 
+      await db.delete(chatSendReceipts).where(eq(chatSendReceipts.agentId, agent.id))
       await db.delete(messages).where(eq(messages.agentId, agent.id))
     })
 
@@ -3458,6 +3460,7 @@ describe('agents service', () => {
       await agent.sendMessage('hi', { metadata: { clientId: 'c-send-1' } }) // retry, same clientId
       const after = (await agent.listMessages()).messages.filter((m) => m.role === 'human')
       expect(after.length).toBe(before.length)
+      await db.delete(chatSendReceipts).where(eq(chatSendReceipts.agentId, agent.id))
       await db.delete(messages).where(eq(messages.agentId, agent.id))
     })
   })
@@ -3601,6 +3604,7 @@ describe('agents service', () => {
         expect(await db.select().from(messages).where(eq(messages.agentId, agent.id))).toHaveLength(1)
         expect(await db.select().from(executions).where(eq(executions.agentId, agent.id))).toHaveLength(1)
       } finally {
+        await db.delete(chatSendReceipts).where(eq(chatSendReceipts.agentId, agent.id))
         await db.delete(messages).where(eq(messages.agentId, agent.id))
         await db.delete(executions).where(eq(executions.agentId, agent.id))
         await db.delete(agents).where(eq(agents.id, agent.id))
@@ -3639,6 +3643,7 @@ describe('agents service', () => {
         ).toEqual(new Set([first.recoveryEpisodeId, second.recoveryEpisodeId]))
         expect(await db.select().from(executions).where(eq(executions.agentId, agent.id))).toHaveLength(1)
       } finally {
+        await db.delete(chatSendReceipts).where(eq(chatSendReceipts.agentId, agent.id))
         await db.delete(messages).where(eq(messages.agentId, agent.id))
         await db.delete(executions).where(eq(executions.agentId, agent.id))
         await db.delete(agents).where(eq(agents.id, agent.id))
@@ -3684,6 +3689,7 @@ describe('agents service', () => {
         expect(await db.select().from(executions).where(eq(executions.agentId, neighbor.id))).toHaveLength(0)
         expect(await db.select().from(messages).where(eq(messages.agentId, neighbor.id))).toHaveLength(1)
       } finally {
+        await db.delete(chatSendReceipts).where(inArray(chatSendReceipts.agentId, [agent.id, neighbor.id]))
         await db.delete(messages).where(sql`${messages.agentId} IN (${agent.id}, ${neighbor.id})`)
         await db.delete(executions).where(sql`${executions.agentId} IN (${agent.id}, ${neighbor.id})`)
         await db.delete(agents).where(sql`${agents.id} IN (${agent.id}, ${neighbor.id})`)

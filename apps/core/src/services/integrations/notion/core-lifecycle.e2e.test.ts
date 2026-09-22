@@ -5,7 +5,7 @@ import { chmodSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
 import { eq } from 'drizzle-orm'
-import { db, integrationConnections, integrationProjectionStates, squads } from '../../../db'
+import { db, integrationConnections, integrationProjectionStates, squads, users } from '../../../db'
 import { githubCommandBindings, regenerateEnvFileForSquad } from '../../squad/env'
 import { ensureSquadWorkspace } from '../../squad/workspace'
 import { getSecretStore } from '../../secrets'
@@ -371,8 +371,9 @@ for(const [m,k] of [[net,'connect'],[net,'createConnection'],[tls,'connect']]){c
     }
     throw new Error('test projection did not become ready within the bounded drain')
   }
+  const userId = crypto.randomUUID()
   try {
-    const userId = crypto.randomUUID()
+    await db.insert(users).values({ id: userId, email: `notion-e2e-${userId}@example.test` })
     const second = await authorization.start({
       providerKey: 'notion',
       userId,
@@ -438,6 +439,7 @@ for(const [m,k] of [[net,'connect'],[net,'createConnection'],[tls,'connect']]){c
     if (createdConnectionId)
       await db.delete(integrationConnections).where(eq(integrationConnections.id, createdConnectionId))
     if (createdCredentialRef) await secretStore.delete(createdCredentialRef)
+    await db.delete(users).where(eq(users.id, userId))
     await db.delete(squads).where(eq(squads.id, squad.id))
     await db.delete(squads).where(eq(squads.id, earlierSquad.id))
     rmSync(root, { recursive: true, force: true })

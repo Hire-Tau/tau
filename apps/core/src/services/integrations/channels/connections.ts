@@ -477,6 +477,23 @@ export class ChannelConnections {
   ): Promise<void> {
     const plugin = this.#plugins[provider] as ChannelPlugin<unknown, unknown, unknown>
     const previous = await this.#row(provider)
+    if (previous) {
+      // Rotate atomically on the existing row. Creating its replacement first
+      // collides with the provider/name uniqueness constraint and loses routing.
+      await this.#service.replaceCredential(
+        previous.id,
+        plugin.connection.credential.serialize(material.credential),
+        actor,
+        false,
+        material.configuration
+      )
+      try {
+        await this.#service.enable(previous.id, actor)
+      } catch (error) {
+        log.warn(`${provider} connection saved but could not be enabled: ${String(error)}`)
+      }
+      return
+    }
     let createdId: string | undefined
     try {
       createdId = (
@@ -501,13 +518,6 @@ export class ChannelConnections {
         await this.#service.enable(createdId, actor)
       } catch (error) {
         log.warn(`${provider} connection saved but could not be enabled: ${String(error)}`)
-      }
-    }
-    if (previous) {
-      try {
-        await this.#service.remove(previous.id, actor)
-      } catch (error) {
-        log.warn(`Could not retire the previous ${provider} connection ${previous.id}: ${String(error)}`)
       }
     }
   }

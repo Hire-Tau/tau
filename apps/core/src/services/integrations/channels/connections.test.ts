@@ -13,12 +13,24 @@ let squadId: string
 let startedAt: Date
 
 async function wipe() {
+  const currentRefs = await db
+    .select({ ref: integrationConnections.credentialRef })
+    .from(integrationConnections)
+    .where(inArray(integrationConnections.providerKey, [...providers]))
+  const retiredRefs = startedAt
+    ? await db
+        .select({ ref: integrationCredentialCleanupJobs.credentialRef })
+        .from(integrationCredentialCleanupJobs)
+        .where(gte(integrationCredentialCleanupJobs.createdAt, startedAt))
+    : []
+  const refs = [...currentRefs, ...retiredRefs].map((row) => row.ref)
   // Replacing a credential retires the previous one through a cleanup job; leave
   // none behind for the cleanup worker's own tests to claim.
   if (startedAt) {
     await db.delete(integrationCredentialCleanupJobs).where(gte(integrationCredentialCleanupJobs.createdAt, startedAt))
   }
   await db.delete(integrationConnections).where(inArray(integrationConnections.providerKey, [...providers]))
+  if (refs.length) await db.delete(secrets).where(inArray(secrets.key, refs))
   await db.delete(channelInstances).where(inArray(channelInstances.provider, [...providers]))
   await db.delete(secrets).where(inArray(secrets.key, [...legacyChannelCredentialKeys]))
   await db.delete(settings).where(inArray(settings.key, enabledKeys))
@@ -127,8 +139,18 @@ test('a rejected credential is kept for the card to explain but never served to 
   expect(view.setup.state).toBe('needs_attention')
   expect(view.setup.issues[0]).toContain('Slack rejected the saved credential')
   expect(connections.get('slack')).toBeUndefined()
-  // Fixing it replaces the connection outright; the old row is gone.
+  const [before] = await db.select().from(integrationConnections).where(eq(integrationConnections.providerKey, 'slack'))
+  // Keep the named connection while replacing and validating its material.
   const fixed = await connections.configure('slack', { botToken: 'xoxb-good' }, 'test')
+  const [after] = await db.select().from(integrationConnections).where(eq(integrationConnections.providerKey, 'slack'))
+  expect(after.id).toBe(before.id)
+  expect(after.credentialRef).not.toBe(before.credentialRef)
+  expect(
+    await db
+      .select()
+      .from(integrationCredentialCleanupJobs)
+      .where(eq(integrationCredentialCleanupJobs.credentialRef, before.credentialRef))
+  ).toHaveLength(1)
   expect(fixed.identity).toEqual({ teamId: 'T123', botUserId: 'U1', teamName: 'Acme' })
   expect(connections.get('slack')?.credential).toEqual({ botToken: 'xoxb-good', signingSecret: 'sig' })
   expect(

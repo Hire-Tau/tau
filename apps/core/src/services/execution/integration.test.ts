@@ -6,9 +6,9 @@ maintenanceBeforeAll(async () => (releaseMaintenanceIsolation = await acquireMai
 maintenanceAfterAll(() => releaseMaintenanceIsolation?.())
 
 import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test'
-import { eq, sql } from 'drizzle-orm'
+import { eq, sql, inArray } from 'drizzle-orm'
 import { db } from '../../db'
-import { agents, executions, messages, sandboxProvisionRecoveries } from '../../db/schema'
+import { agents, chatSendReceipts, executions, messages, sandboxProvisionRecoveries } from '../../db/schema'
 import { AgentType } from '../../entities/AgentType'
 import { MockAgentSession, makeAgentType, TestAgentRunner } from './test-helpers'
 import { Agent } from '../../entities/Agent'
@@ -157,6 +157,14 @@ describe('Agent Runner Integration', () => {
       // local process) gets swept too and really spawned — "Unexpected agent
       // type" + a burned 5s budget (catalogued CI flake, 3 hits). Sweep the
       // strays first so this test's row is the only candidate.
+      await db
+        .delete(chatSendReceipts)
+        .where(
+          inArray(
+            chatSendReceipts.executionId,
+            db.select({ id: executions.id }).from(executions).where(eq(executions.status, 'queued'))
+          )
+        )
       await db.delete(executions).where(eq(executions.status, 'queued'))
       const agent = await Agent.create({ agentTypeId })
       await agent.update({ status: 'compacting' })
@@ -205,6 +213,14 @@ describe('Agent Runner Integration', () => {
       // local process) gets swept too and really spawned — "Unexpected agent
       // type" + a burned 5s budget (catalogued CI flake, 3 hits). Sweep the
       // strays first so this test's row is the only candidate.
+      await db
+        .delete(chatSendReceipts)
+        .where(
+          inArray(
+            chatSendReceipts.executionId,
+            db.select({ id: executions.id }).from(executions).where(eq(executions.status, 'queued'))
+          )
+        )
       await db.delete(executions).where(eq(executions.status, 'queued'))
       const agent = await Agent.create({ agentTypeId })
       await agent.update({ status: 'compacting' })

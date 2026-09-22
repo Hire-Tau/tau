@@ -144,6 +144,7 @@ test('switching assignments revokes active consent for agents in that squad', as
     expect(after?.revokedAt).toBeInstanceOf(Date)
   } finally {
     await db.delete(squads).where(eq(squads.id, squad.id))
+    await db.delete(integrationExportConsents).where(eq(integrationExportConsents.consentedByUserId, user.id))
     await db.delete(users).where(eq(users.id, user.id))
     await db.delete(integrationConnections).where(inArray(integrationConnections.id, [first.id, second.id]))
   }
@@ -180,6 +181,7 @@ test('assignment changes write content-free squad and actor-attributed audits', 
     ])
   } finally {
     await db.delete(squads).where(eq(squads.id, squad.id))
+    await db.delete(integrationExportConsents).where(eq(integrationExportConsents.consentedByUserId, user.id))
     await db.delete(users).where(eq(users.id, user.id))
     await db.delete(integrationConnections).where(eq(integrationConnections.id, connection.id))
   }

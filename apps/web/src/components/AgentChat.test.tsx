@@ -151,6 +151,7 @@ function makeMockClient() {
     sent,
     chatSent,
     emit: (...args: Parameters<NonNullable<StreamCb>['onEvent']>) => streamCb?.onEvent(...args),
+    catchup: (events: import('@tau/shared').StreamEvent[]) => streamCb?.onCatchup?.(events),
     emitChat: (event: import('@tau/shared').StreamEvent) => chatCb?.onEvent(event),
   }
 }
@@ -1136,4 +1137,59 @@ test('an editor preparation failure keeps the initial prompt retryable without d
   await waitFor(() => expect(mc.chatSent).toHaveLength(1))
   expect(mc.chatSent[0]!.message).toBe('Edit this draft')
   expect(container.textContent).not.toContain('Draft changed; retry')
+})
+
+test('mounted web conversation preserves live response through repeated leading-flush catchup', async () => {
+  const dom = await installDom()
+  const mc = makeMockClient()
+  mc.client.agents.getMessages = async () => ({
+    messages: [
+      {
+        id: 'm',
+        agentId: 'a1',
+        role: 'assistant',
+        content: 'Plan',
+        pending: false,
+        createdAt: new Date(),
+        metadata: { streamGroupId: 'S', content: [{ type: 'thinking', id: 'p', content: 'Plan' }] },
+      },
+    ],
+    pagination: { hasMore: false, totalCount: 1 },
+  })
+  mc.client.agents.getActiveExecution = async () => ({ active: true, status: 'running' })
+  const { Providers } = makeProviders(mc.client)
+  const snapshots: RenderItem[][] = []
+  const CaptureView = (props: Parameters<typeof TestChatView>[0]) => {
+    snapshots.push(props.items)
+    return <TestChatView {...props} />
+  }
+  const { root } = dom.createRoot()
+  await dom.act(async () =>
+    root.render(
+      <Providers>
+        <AgentChat dependencies={{ ChatViewComponent: CaptureView }} agentId="a1" />
+      </Providers>
+    )
+  )
+  await flush()
+  const events: import('@tau/shared').StreamEvent[] = [
+    { type: 'agent', agentId: 'a1', executionId: 'e' },
+    { type: 'flush_agent' },
+    { type: 'thinking', text: 'Plan', streamGroupId: 'S' },
+    { type: 'thinking_end', durationMs: 1, streamGroupId: 'S' },
+    { type: 'text', text: 'Visible response', streamGroupId: 'S' },
+  ]
+  await dom.act(async () => events.forEach(mc.emit))
+  const start = snapshots.length - 1
+  for (let i = 0; i < 2; i++) await dom.act(async () => mc.catchup(events))
+  await dom.act(async () => mc.emit({ type: 'text', text: ' tail', streamGroupId: 'S' }))
+  for (const items of snapshots.slice(start)) {
+    expect(items.filter((item) => item.kind === 'working')).toHaveLength(1)
+    const response = items.find((item) => item.kind === 'streaming')
+    expect(
+      response?.kind === 'streaming' &&
+        response.blocks.some((block) => block.type === 'text' && block.content.startsWith('Visible response'))
+    ).toBe(true)
+  }
+  expect(dom.window.document.body.textContent).toContain('Visible response tail')
 })

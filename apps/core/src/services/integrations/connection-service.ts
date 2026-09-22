@@ -280,10 +280,15 @@ export class IntegrationConnectionService {
     id: string,
     credential: string,
     actor: string,
-    confirmAssigned = false
+    confirmAssigned = false,
+    configuration?: unknown
   ): Promise<SafeIntegrationConnection> {
     const current = await this.#mustGet(id)
     if (!this.#allowsManualCredential(current.providerKey)) throw new IntegrationManualCredentialNotAllowedError()
+    const parsedConfiguration =
+      configuration === undefined
+        ? undefined
+        : this.#resolveProvider(current.providerKey, current.adapterVersion).parseConfig(configuration)
     const materialRevision = this.#uuid()
     const credentialRef = `__integration-credential:${id}:${materialRevision}:bearer`
     await this.#credentials.set(credentialRef, credential, actor)
@@ -293,6 +298,7 @@ export class IntegrationConnectionService {
         id,
         materialRevision,
         credentialRef,
+        ...(parsedConfiguration === undefined ? {} : { configuration: parsedConfiguration }),
         updatedByUserId: actorUserId(actor),
         confirmAssigned,
       })

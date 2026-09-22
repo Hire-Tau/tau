@@ -9,6 +9,7 @@ import {
   messages,
   instanceMaintenanceAudit,
   instanceMaintenanceState,
+  chatSendReceipts,
 } from '../../db'
 import { Execution } from '../../entities/Execution'
 import { MaintenanceStore } from './store'
@@ -45,6 +46,7 @@ beforeEach(async () => {
 })
 afterEach(async () => {
   await stopAdmissionProcessLiveness()
+  await db.delete(chatSendReceipts)
   await db.delete(executions)
   await db.delete(agents)
   await db.delete(instanceMaintenanceAudit)

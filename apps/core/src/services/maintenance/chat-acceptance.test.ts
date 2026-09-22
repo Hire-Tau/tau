@@ -1,6 +1,14 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
-import { agents, db, executions, instanceMaintenanceAudit, instanceMaintenanceState, messages } from '../../db'
+import {
+  agents,
+  db,
+  executions,
+  instanceMaintenanceAudit,
+  instanceMaintenanceState,
+  messages,
+  chatSendReceipts,
+} from '../../db'
 import { Agent } from '../../entities/Agent'
 import { acquireMaintenanceTestIsolation } from '../../test-utils/maintenance-test-isolation'
 import { MaintenanceStore } from './store'
@@ -18,6 +26,7 @@ beforeEach(async () => {
   await store.initialize()
 })
 afterEach(async () => {
+  await db.delete(chatSendReceipts)
   await db.delete(messages)
   await db.delete(executions)
   await db.delete(agents)

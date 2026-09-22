@@ -74,29 +74,38 @@ function openReconnectableAgentStream(
     try {
       const path = executionId ? `/agents/${agentId}/executions/${executionId}/stream` : `/agents/${agentId}/stream`
       const reader = await t.openStream(path, { method: 'GET', signal: controller.signal })
+      if (controller.signal.aborted) {
+        await reader.cancel().catch(() => {})
+        reader.releaseLock()
+        return
+      }
       if (reconnecting) callbacks.onReconnect?.()
 
       let receivedDone = false
       let doneCallbackDelivered = false
       let terminalSnapshot = false
-      await parseSSEStream(reader, {
-        onEvent: (event) => {
-          if (event.type === 'execution_snapshot' && ['completed', 'failed', 'stopped'].includes(event.status)) {
+      await parseSSEStream(
+        reader,
+        {
+          onEvent: (event) => {
+            if (event.type === 'execution_snapshot' && ['completed', 'failed', 'stopped'].includes(event.status)) {
+              receivedDone = true
+              terminalSnapshot = true
+            }
+            callbacks.onEvent(event)
+          },
+          onCatchup: callbacks.onCatchup,
+          onError: callbacks.onError,
+          onDone: () => {
             receivedDone = true
-            terminalSnapshot = true
-          }
-          callbacks.onEvent(event)
+            if (!doneCallbackDelivered) {
+              doneCallbackDelivered = true
+              callbacks.onDone?.()
+            }
+          },
         },
-        onCatchup: callbacks.onCatchup,
-        onError: callbacks.onError,
-        onDone: () => {
-          receivedDone = true
-          if (!doneCallbackDelivered) {
-            doneCallbackDelivered = true
-            callbacks.onDone?.()
-          }
-        },
-      })
+        controller.signal
+      )
 
       if (terminalSnapshot && !controller.signal.aborted && !doneCallbackDelivered) {
         doneCallbackDelivered = true
@@ -121,7 +130,7 @@ function openReconnectableAgentStream(
         return connect(retries + 1)
       }
       callbacks.onError?.(err instanceof Error ? err : new Error(String(err)))
-      callbacks.onDone?.()
+      if (!controller.signal.aborted) callbacks.onDone?.()
     }
   }
 

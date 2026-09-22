@@ -658,3 +658,178 @@ describe('explicit per-message queue placement', () => {
     expect(items.find((i) => i.id === 'next')).toMatchObject({ queued: true })
   })
 })
+
+describe('incomplete durable handoff', () => {
+  test.each(['ended', 'errored', 'flushed'] as const)(
+    '%s preserves uncommitted tails until complete coverage',
+    (reason) => {
+      const group = streamGroup({
+        streamGroupId: 'S',
+        blocks: [textBlock('b', 'Visible response')],
+        errored: reason === 'errored',
+        flushed: reason === 'flushed',
+      })
+      const session = reason === 'ended' ? SESSION_ENDED : SESSION_LIVE
+      const partial = groupPersisted([
+        msg({ id: 'm', role: 'assistant', metadata: { streamGroupId: 'S', content: [textBlock('b', 'Visible')] } }),
+      ])
+      expect(completedGroupIds(partial, [group], session)).toEqual([])
+      expect(combine(partial, [group], [], session)[0]).toMatchObject({ kind: 'streaming', blocks: group.blocks })
+      const full = groupPersisted([
+        msg({ id: 'm', role: 'assistant', metadata: { streamGroupId: 'S', content: group.blocks } }),
+      ])
+      expect(completedGroupIds(full, [group], session)).toEqual(['S'])
+      expect(combine(full, [group], [], session)[0].kind).toBe('persisted')
+      // Once handed off, authoritative removal is not resurrected by a retained longest-text cache.
+      expect(combine([], [], [], session)).toEqual([])
+    }
+  )
+})
+
+test('transport end while execution is busy cannot retire an open group even if current prefix is saved', () => {
+  const group = streamGroup({ streamGroupId: 'S', blocks: [textBlock('b', 'prefix')] })
+  const history = groupPersisted([
+    msg({ id: 'm', role: 'assistant', metadata: { streamGroupId: 'S', content: group.blocks } }),
+  ])
+  expect(
+    completedGroupIds(history, [group], { agentId: 'a', streamStatus: 'ended', executionStatus: 'running' })
+  ).toEqual([])
+})
+
+test.each(['ended', 'errored', 'flushed', 'done'] as const)(
+  '%s handoff checks split rows, final tool result and every done ID',
+  (reason) => {
+    const tool: ContentBlock = {
+      type: 'tool_use',
+      id: 'tool',
+      toolCall: { toolCallId: 't', toolName: 'search', args: '{}', result: 'final', isError: false },
+    }
+    const blocks: ContentBlock[] = [textBlock('b', 'prefix'), tool, textBlock('tail', 'tail')]
+    const group = streamGroup({
+      streamGroupId: 'S',
+      blocks,
+      done: reason === 'done',
+      doneMessageIds: reason === 'done' ? ['m1', 'm2'] : null,
+      errored: reason === 'errored',
+      flushed: reason === 'flushed',
+    })
+    const first = msg({
+      id: 'm1',
+      role: 'assistant',
+      createdAt: new Date(1),
+      metadata: { streamGroupId: 'S', content: blocks.slice(0, 2) },
+    })
+    const last = msg({
+      id: 'm2',
+      role: 'assistant',
+      createdAt: new Date(2),
+      metadata: { streamGroupId: 'S', content: blocks.slice(2) },
+    })
+    const staleTool = {
+      ...first,
+      metadata: {
+        ...first.metadata,
+        content: [blocks[0], { ...tool, toolCall: { ...tool.toolCall, result: '' } }],
+      },
+    }
+    const session = reason === 'ended' ? SESSION_ENDED : SESSION_LIVE
+    for (const messages of [[first], [last], [staleTool, last]]) {
+      expect(completedGroupIds(groupPersisted(messages), [group], session)).toEqual([])
+      expect(combine(groupPersisted(messages), [group], [], session)[0]).toMatchObject({ kind: 'streaming', blocks })
+    }
+    expect(completedGroupIds(groupPersisted([last, first]), [group], session)).toEqual(['S'])
+  }
+)
+
+test('a final saved text superset proves coverage after missed final deltas', () => {
+  const group = streamGroup({
+    streamGroupId: 'S',
+    blocks: [textBlock('b', 'prefix')],
+    done: true,
+    doneMessageIds: ['m'],
+  })
+  const history = groupPersisted([
+    msg({ id: 'm', role: 'assistant', metadata: { streamGroupId: 'S', content: [textBlock('b', 'prefix tail')] } }),
+  ])
+  expect(completedGroupIds(history, [group], SESSION_ENDED)).toEqual(['S'])
+  expect(combine(history, [group], [], SESSION_ENDED)[0]).toMatchObject({
+    kind: 'persisted',
+    blocks: [textBlock('b', 'prefix tail')],
+  })
+})
+
+test('durable completed tools cover explicitly unfinished tools, but never overwrite finalized tool content or uncovered tails', () => {
+  const finalTool: ContentBlock = {
+    type: 'tool_use',
+    id: 't',
+    toolCall: {
+      toolCallId: 't',
+      toolName: 'search',
+      args: '{"query":"value"}',
+      result: 'final result',
+      isError: false,
+    },
+  }
+  const unfinished = {
+    ...finalTool,
+    _done: false,
+    toolCall: { ...finalTool.toolCall, args: '{"query":', result: 'progress' },
+  }
+  const group = streamGroup({ streamGroupId: 'S', blocks: [unfinished], doneMessageIds: ['m'], done: true })
+  const history = groupPersisted([
+    msg({
+      id: 'm',
+      role: 'assistant',
+      metadata: { streamGroupId: 'S', content: [finalTool, textBlock('answer', 'final answer')] },
+    }),
+  ])
+  expect(completedGroupIds(history, [group], SESSION_ENDED)).toEqual([])
+  const authoritative: CombineSession = { ...SESSION_ENDED, authoritativeCompletedGroupIds: new Set(['S']) }
+  expect(completedGroupIds(history, [group], authoritative)).toEqual(['S'])
+  const finalized = { ...unfinished, _done: true }
+  expect(completedGroupIds(history, [{ ...group, blocks: [finalized] }], authoritative)).toEqual([])
+  expect(
+    completedGroupIds(history, [{ ...group, blocks: [unfinished, textBlock('tail', 'uncovered tail')] }], authoritative)
+  ).toEqual([])
+  expect(completedGroupIds(history, [{ ...group, doneMessageIds: ['m', 'missing'] }], authoritative)).toEqual([])
+  expect(
+    completedGroupIds(
+      history,
+      [
+        {
+          ...group,
+          blocks: [{ ...unfinished, toolCall: { ...unfinished.toolCall, args: 'different', toolCallId: 'other' } }],
+        },
+      ],
+      SESSION_ENDED
+    )
+  ).toEqual([])
+})
+
+test.each(['result', 'error', 'legacy', 'id', 'name', 'args'] as const)(
+  'tool coverage does not waive %s equality/identity beyond unfinished progress',
+  (field) => {
+    const saved: ContentBlock = {
+      type: 'tool_use',
+      id: 't',
+      toolCall: { toolCallId: 't', toolName: 'search', args: '{"query":"value"}', result: 'final', isError: false },
+    }
+    const streamed = {
+      ...saved,
+      _done: field === 'legacy' ? undefined : field === 'result' || field === 'error',
+      toolCall: { ...saved.toolCall },
+    }
+    if (field === 'result' || field === 'legacy') streamed.toolCall.result = 'observed final'
+    if (field === 'error') streamed.toolCall.isError = true
+    if (field === 'id') streamed.toolCall.toolCallId = 'other'
+    if (field === 'name') streamed.toolCall.toolName = 'other'
+    if (field === 'args') streamed.toolCall.args = '{"different":'
+    const group = streamGroup({ streamGroupId: 'S', done: true, blocks: [streamed] })
+    const history = groupPersisted([
+      msg({ id: 'm', role: 'assistant', metadata: { streamGroupId: 'S', content: [saved] } }),
+    ])
+    expect(
+      completedGroupIds(history, [group], { ...SESSION_ENDED, authoritativeCompletedGroupIds: new Set(['S']) })
+    ).toEqual([])
+  }
+)

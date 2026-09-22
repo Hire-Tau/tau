@@ -68,3 +68,51 @@ describe('parseSSEStream — catchup batching', () => {
     expect(singles).toHaveLength(1)
   })
 })
+
+describe('parser cancellation', () => {
+  test('abort during a parser yield suppresses every remaining decoded frame', async () => {
+    const controller = new AbortController()
+    const realSetTimeout = globalThis.setTimeout
+    const events: string[] = []
+    let yields = 0
+    globalThis.setTimeout = ((fn: () => void) => {
+      yields++
+      controller.abort()
+      return realSetTimeout(fn, 0)
+    }) as typeof setTimeout
+    try {
+      const frames = Array.from({ length: 101 }, () => 'data: {"type":"text","text":"x","streamGroupId":"S"}\n\n').join(
+        ''
+      )
+      await parseSSEStream(
+        readerFromText(frames + 'event: done\ndata: \n\n'),
+        {
+          onEvent: (event) => events.push(event.type),
+          onDone: () => events.push('done'),
+        },
+        controller.signal
+      )
+      expect(yields).toBe(1)
+      expect(events.length).toBeLessThanOrEqual(100)
+      expect(events).not.toContain('done')
+    } finally {
+      globalThis.setTimeout = realSetTimeout
+    }
+  })
+
+  test('fallback catchup dispatch stops when a consumer aborts mid-batch', async () => {
+    const controller = new AbortController()
+    const seen: string[] = []
+    await parseSSEStream(
+      readerFromText('event: catchup\ndata: {"events":[{"type":"flush_agent"},{"type":"error","message":"old"}]}\n\n'),
+      {
+        onEvent: (event) => {
+          seen.push(event.type)
+          controller.abort()
+        },
+      },
+      controller.signal
+    )
+    expect(seen).toEqual(['flush_agent'])
+  })
+})
