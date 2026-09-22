@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
-import { agents, db, executionAdmissionReservations, executions } from '../../db'
+import { agents, db, executionAdmissionReservations, executions, chatSendReceipts } from '../../db'
 import {
   acquireAgentQueueLock,
   createQueuedAdmission,
@@ -11,6 +11,7 @@ import {
 
 afterEach(async () => {
   await db.delete(executionAdmissionReservations)
+  await db.delete(chatSendReceipts)
   await db.delete(executions)
   await db.delete(agents)
 })

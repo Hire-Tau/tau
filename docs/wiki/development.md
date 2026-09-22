@@ -207,6 +207,13 @@ starting the configured package suites. Do not point tests at the development
 database or assume the Compose file's fallback port 5433 is the actual test
 port.
 
+The preload derives foreign keys from `schema.ts` and synchronizes them in both
+fresh and reused test databases. Fixtures must create referenced parents and
+remove restrictive children (including durable chat receipts) before their
+messages or executions. If an older disposable database contains orphaned
+fixtures, reset only this worktree’s database with `bun run test:db:down`; do not
+remove constraints to make a test pass.
+
 ```bash
 # Configured package test entrypoints, with DB readiness first
 bun run test

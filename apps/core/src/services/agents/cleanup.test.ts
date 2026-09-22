@@ -14,7 +14,7 @@ import { Agent } from '../../entities/Agent'
 import { Execution } from '../../entities/Execution'
 import { Squad } from '../../entities/Squad'
 import { db } from '../../db'
-import { agents, squads, workStreams, executions, sandboxProvisionRecoveries } from '../../db/schema'
+import { agents, squads, workStreams, executions, sandboxProvisionRecoveries, chatSendReceipts } from '../../db/schema'
 import { eq, sql } from 'drizzle-orm'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import {
@@ -52,6 +52,7 @@ describe('agent-cleanup', () => {
   let testSquadId: string
 
   beforeEach(async () => {
+    await db.delete(chatSendReceipts)
     await db.delete(executions)
     await db.delete(workStreams)
     await db.delete(agents)

@@ -1032,8 +1032,10 @@ test('any-account rules perform one action when two authorized squad accounts ob
   await withNativeRouting(async (connectionId, managerId) => {
     const [original] = await db.select().from(integrationConnections).where(eq(integrationConnections.id, connectionId))
     const secondId = randomUUID()
-    await db.insert(integrationConnections).values({ ...original!, id: secondId })
-    await db.insert(integrationConnectionAssignments).values({ squadId, providerKey: 'github', connectionId: secondId })
+    await db.insert(integrationConnections).values({ ...original!, id: secondId, displayName: `${prefix}-second` })
+    await db
+      .insert(integrationConnectionAssignments)
+      .values({ squadId, providerKey: 'github', connectionId: secondId, isDefault: false })
     const publishBoth = async (input: IntegrationOutputFact) => {
       const ids = await Promise.all(
         [connectionId, secondId].map((id) =>

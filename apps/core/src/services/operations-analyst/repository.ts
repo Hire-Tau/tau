@@ -138,7 +138,10 @@ export async function persistAnalysis(
         .select({ id: operationsRecommendations.id })
         .from(operationsRecommendations)
         .where(eq(operationsRecommendations.id, rec.id))
-        .for('update')
+        // Evidence inserts hold FK KEY SHARE locks on this row. A non-key
+        // aggregate update must not upgrade them to conflicting FOR UPDATE
+        // locks in two concurrent transactions.
+        .for('no key update')
       const evidence = await tx
         .select()
         .from(operationsRecommendationEvidence)

@@ -21,6 +21,9 @@ export async function storedLegacyWorkStream(input: CreateWorkStreamInput): Prom
     if (input[field] !== undefined) git[field] = input[field]
   if (Object.keys(git).length) metadata.git = git
   const id = await db.transaction(async (tx) => {
+    // Match WorkStream.create: take the admission mutex before the insert acquires
+    // an FK key-share lock, otherwise concurrent fixtures deadlock upgrading it.
+    await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, input.squadId)).for('update')
     const [row] = await tx
       .insert(workStreams)
       .values({

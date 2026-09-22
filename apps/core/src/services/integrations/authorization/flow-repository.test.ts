@@ -242,7 +242,7 @@ describe('authorization flow receipts', () => {
         adapterVersion: 1,
         clientAuthority: 'platform_broker',
         authorizationFlowId,
-        displayName: 'Referenced receipt',
+        displayName: `Referenced receipt ${crypto.randomUUID()}`,
         configuration: { version: 1 },
         credentialRef: blockerRefs[index]!,
         materialRevision: crypto.randomUUID(),

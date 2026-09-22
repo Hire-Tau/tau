@@ -273,13 +273,13 @@ describe('schedule due-scan database indexes', () => {
     const client = createPostgresConnection(process.env.DATABASE_URL!, { max: 1 })
     const connection = await client.reserve()
     const ledgerSchema = `schedule_index_test_${crypto.randomUUID().replaceAll('-', '')}`
-    let lockHeld = false
+    const fixtureSchema = `schedule_fixture_${crypto.randomUUID().replaceAll('-', '')}`
     try {
-      await connection`SELECT pg_advisory_lock(8675310)`
-      lockHeld = true
-      // `drizzle-kit push` silently skips partial and expression indexes, so the
-      // pushed test database never has these — applying the real migration is
-      // the only way to find out whether Postgres accepts the definitions.
+      // Run the real migration against an owned table, whether the shared test
+      // database already has these indexes or drizzle push omitted them.
+      await connection.unsafe(`CREATE SCHEMA "${fixtureSchema}"`)
+      await connection.unsafe(`CREATE TABLE "${fixtureSchema}".schedules (LIKE public.schedules INCLUDING DEFAULTS)`)
+      await connection.unsafe(`SET search_path TO "${fixtureSchema}", public`)
       await applyMigrations(connection, migration!, { migrationsSchema: ledgerSchema })
 
       const created = await connection<{ relname: string; indisvalid: boolean }[]>`
@@ -287,7 +287,7 @@ describe('schedule due-scan database indexes', () => {
         FROM pg_class index_class
         JOIN pg_namespace namespace ON namespace.oid = index_class.relnamespace
         JOIN pg_index i ON i.indexrelid = index_class.oid
-        WHERE namespace.nspname = 'public'
+        WHERE namespace.nspname = ${fixtureSchema}
           AND index_class.relname IN ('idx_schedules_next_trigger_due', 'idx_schedules_schedule_expires_at')
         ORDER BY index_class.relname`
       expect(created.map((row) => row.relname)).toEqual([
@@ -311,11 +311,10 @@ describe('schedule due-scan database indexes', () => {
     } finally {
       try {
         await connection.unsafe('RESET enable_seqscan')
-        await connection.unsafe('DROP INDEX IF EXISTS "public"."idx_schedules_next_trigger_due"')
-        await connection.unsafe('DROP INDEX IF EXISTS "public"."idx_schedules_schedule_expires_at"')
+        await connection.unsafe('RESET search_path')
+        await connection.unsafe(`DROP SCHEMA IF EXISTS "${fixtureSchema}" CASCADE`)
         await connection.unsafe(`DROP SCHEMA IF EXISTS "${ledgerSchema}" CASCADE`)
       } finally {
-        if (lockHeld) await connection`SELECT pg_advisory_unlock(8675310)`
         connection.release()
         await client.end()
       }

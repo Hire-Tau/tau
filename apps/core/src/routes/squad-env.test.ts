@@ -48,11 +48,15 @@ describe('squad-env routes', () => {
     it('denies squad env access outside the assigned squad scope', async () => {
       const user = await createTestUser({ prefix: rbacPrefix })
       const role = await createTestRole({ prefix: rbacPrefix, permissions: ['env:read'] })
+      const [otherSquad] = await db
+        .insert(squads)
+        .values({ name: `${testPrefix} other`, purpose: 'RBAC scope' })
+        .returning()
       await assignRole({
         userId: user.id,
         roleId: role.id,
         scope: 'squad',
-        squadId: '00000000-0000-0000-0000-000000000000',
+        squadId: otherSquad.id,
       })
 
       const res = await app.request(`/api/squads/workspace/${squadId}/env`, {

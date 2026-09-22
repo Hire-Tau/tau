@@ -146,6 +146,7 @@ test('delivery remains eligible only while consent matches the current squad ass
     if (previous) await db.update(settings).set(previous).where(eq(settings.key, key))
     else await db.delete(settings).where(eq(settings.key, key))
     await db.delete(squads).where(eq(squads.id, squad.id))
+    await db.delete(integrationExportConsents).where(eq(integrationExportConsents.consentedByUserId, user.id))
     await db.delete(users).where(eq(users.id, user.id))
     await db.delete(agentTypes).where(eq(agentTypes.id, agentTypeId))
     await db.delete(integrationConnections).where(eq(integrationConnections.id, first.id))
