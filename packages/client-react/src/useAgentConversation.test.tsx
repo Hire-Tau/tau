@@ -1,11 +1,28 @@
-import { describe, expect, mock, setSystemTime, spyOn, test } from 'bun:test'
-import { act, renderHook, waitFor } from './test-utils'
-import { focusManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { afterEach, describe, expect, mock, setSystemTime, spyOn, test } from 'bun:test'
+import { act, renderHook as renderHookBase, waitFor } from './test-utils'
+import { focusManager, onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { TauClient } from '@tau/client-core'
-import { queryKeys } from '@tau/client-core'
+import { createClient, queryKeys, type Transport } from '@tau/client-core'
 import { ConversationClientProvider, type SubscribeToAgentEvents } from './ConversationClientProvider'
 import { useAgentConversation } from './useAgentConversation'
 import type { Message, StreamEvent } from '@tau/shared'
+
+// Every mounted fixture owns its timers and focus/online subscriptions. Earlier
+// tests omitted unmount, letting later focus events wake unrelated conversations.
+const mountedHooks = new Set<() => void>()
+afterEach(() => {
+  for (const unmount of mountedHooks) unmount()
+  mountedHooks.clear()
+})
+async function renderHook<T>(useHook: () => T, options?: Parameters<typeof renderHookBase>[1]) {
+  const hook = await renderHookBase(useHook, options)
+  const unmount = () => {
+    mountedHooks.delete(unmount)
+    hook.unmount()
+  }
+  mountedHooks.add(unmount)
+  return { ...hook, unmount }
+}
 
 type StreamCb = Parameters<TauClient['agents']['subscribeToAgentStream']>[1]
 type ChatCb = Parameters<TauClient['chat']['sendChatMessage']>[1]
@@ -2963,9 +2980,10 @@ test('an in-flight quiet backstop result cannot terminalize a replacement execut
   }
 })
 
-test.each(['terminal', 'error', 'flush', 'done'] as const)(
+test.each(['terminal', 'error', 'flush', 'done', 'silent'] as const)(
   '%s preserves provisional tool output through every render until post-terminal history resolves',
   async (mode) => {
+    const clock = mode === 'silent' ? reconciliationClock() : undefined
     const old: Message = {
       id: 'm',
       agentId: 'a',
@@ -3040,11 +3058,13 @@ test.each(['terminal', 'error', 'flush', 'done'] as const)(
       if (mode === 'error') act(() => m.emit({ type: 'error', message: 'interrupted' }))
       if (mode === 'done') act(() => m.emit({ type: 'done', response: '', streamGroupId: 'S', messageIds: ['m'] }))
       if (mode === 'flush') act(() => m.emit({ type: 'flush_agent' }))
-      await act(async () => {
-        m.triggerDone()
-        await Promise.resolve()
-      })
-      if (mode !== 'done')
+      if (mode === 'silent') await clock!.advance(15000)
+      else
+        await act(async () => {
+          m.triggerDone()
+          await Promise.resolve()
+        })
+      if (mode !== 'done' && mode !== 'silent')
         act(() => {
           m.emit({ type: 'execution_snapshot', executionId: 'e', status: 'completed', executionVersion: 2 })
           m.triggerDone()
@@ -3087,6 +3107,7 @@ test.each(['terminal', 'error', 'flush', 'done'] as const)(
     } finally {
       unmount()
       qc.clear()
+      clock?.restore()
     }
   }
 )
@@ -3350,5 +3371,740 @@ test('an error inside catchup is not authoritative terminal status or destructiv
     })
   } finally {
     unmount()
+  }
+})
+
+// Own only reconciliation deadlines; React Query's notification timers stay real.
+function reconciliationClock() {
+  let now = 100_000
+  let sequence = 0
+  const timers = new Map<number, { at: number; run: () => void }>()
+  const realSet = globalThis.setTimeout
+  const realClear = globalThis.clearTimeout
+  const time = spyOn(performance, 'now').mockImplementation(() => now)
+  globalThis.setTimeout = ((run: () => void, ms?: number, ...args: unknown[]) => {
+    if (ms !== undefined && ms > 0 && ms !== 10 && ms <= 60_000) {
+      const id = --sequence
+      timers.set(id, { at: now + ms, run })
+      return id as unknown as ReturnType<typeof setTimeout>
+    }
+    return realSet(run, ms, ...args)
+  }) as typeof setTimeout
+  globalThis.clearTimeout = ((id: ReturnType<typeof setTimeout>) => {
+    if (!timers.delete(id as unknown as number)) realClear(id)
+  }) as typeof clearTimeout
+  return {
+    async advance(ms: number) {
+      const end = now + ms
+      while (true) {
+        const next = [...timers].filter(([, t]) => t.at <= end).sort((a, b) => a[1].at - b[1].at)[0]
+        if (!next) break
+        now = next[1].at
+        timers.delete(next[0])
+        await act(async () => {
+          next[1].run()
+          await Promise.resolve()
+        })
+      }
+      now = end
+      await act(async () => {
+        await Promise.resolve()
+      })
+    },
+    restore() {
+      globalThis.setTimeout = realSet
+      globalThis.clearTimeout = realClear
+      time.mockRestore()
+    },
+  }
+}
+
+describe('silent-open liveness', () => {
+  test('stale busy cache and silent open stream recover authoritative history without reconnect or remount', async () => {
+    const clock = reconciliationClock()
+    const m = makeMockClient({ activeExecution: { active: true, status: 'running', executionId: 'e' } })
+    let reads = 0
+    m.client.agents.getExecution = async () => {
+      reads++
+      return { agentId: 'a', executionId: 'e', executionVersion: 2, status: 'completed', active: false }
+    }
+    const renders: Array<ReturnType<typeof useAgentConversation>> = []
+    const hook = await renderHook(
+      () => {
+        const value = useAgentConversation({ agentId: 'a' })
+        renders.push(value)
+        return value
+      },
+      { wrapper: wrap(m.client) }
+    )
+    try {
+      await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+      act(() =>
+        m.emitCatchup([
+          { type: 'agent', agentId: 'a', executionId: 'e', executionStatus: 'running' },
+          { type: 'text', text: 'prefix', streamGroupId: 'S' },
+        ])
+      )
+      const start = renders.length - 1
+      m.setMessages([
+        {
+          id: 'm',
+          agentId: 'a',
+          role: 'assistant',
+          content: 'prefix tail',
+          pending: false,
+          createdAt: new Date(),
+          metadata: {
+            streamGroupId: 'S',
+            executionId: 'e',
+            content: [{ type: 'text', id: 't', content: 'prefix tail' }],
+          },
+        },
+      ])
+      const subscriptions = m.subscribeCount()
+      await clock.advance(14_999)
+      expect(reads).toBe(0)
+      await clock.advance(1)
+      await waitFor(() => expect(hook.result.current.executionStatus).toBe('completed'))
+      await waitFor(() => expect(hook.result.current.items.some((i) => i.kind === 'persisted')).toBe(true))
+      expect(reads).toBe(1)
+      expect(m.subscribeCount()).toBe(subscriptions)
+      for (const render of renders.slice(start)) {
+        const content = render.items.flatMap((i) => (i.kind === 'streaming' || i.kind === 'persisted' ? i.blocks : []))
+        expect(
+          content
+            .filter((b) => b.type === 'text')
+            .map((b) => b.content)
+            .join('')
+        ).toMatch(/^prefix(?: tail)?$/)
+      }
+    } finally {
+      hook.unmount()
+      clock.restore()
+    }
+  })
+
+  test('one early manual press drains at quiet without a terminal event; repeated presses coalesce', async () => {
+    const clock = reconciliationClock()
+    const m = makeMockClient()
+    const hook = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper: wrap(m.client) })
+    try {
+      act(() => m.emit({ type: 'text', text: 'prefix', streamGroupId: 'S' }))
+      const history = m.getMessagesCount()
+      const subscriptions = m.subscribeCount()
+      act(() => {
+        hook.result.current.refresh()
+        hook.result.current.refresh()
+      })
+      expect(m.getMessagesCount()).toBe(history)
+      await clock.advance(3999)
+      expect(m.subscribeCount()).toBe(subscriptions)
+      await clock.advance(1)
+      await waitFor(() => expect(m.getMessagesCount()).toBeGreaterThan(history))
+      expect(m.subscribeCount()).toBe(subscriptions + 1)
+      expect(hook.result.current.items.find((i) => i.kind === 'streaming')).toMatchObject({
+        blocks: [{ content: 'prefix' }],
+      })
+    } finally {
+      hook.unmount()
+      clock.restore()
+    }
+  })
+})
+
+describe('silent recovery bounds and ownership', () => {
+  test('quiet running tool keeps content, probes at 15/45/105 seconds and exhausts its budget', async () => {
+    const clock = reconciliationClock()
+    const m = makeMockClient({ activeExecution: { active: true, status: 'running', executionId: 'e' } })
+    let reads = 0
+    m.client.agents.getExecution = async () => {
+      reads++
+      return { agentId: 'a', executionId: 'e', executionVersion: 1, status: 'running', active: true }
+    }
+    const hook = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper: wrap(m.client) })
+    try {
+      await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+      act(() => m.emit({ type: 'text', text: 'retained', streamGroupId: 'S' }))
+      const subscriptions = m.subscribeCount()
+      for (const [ms, count] of [
+        [15000, 1],
+        [29999, 1],
+        [1, 2],
+        [59999, 2],
+        [1, 3],
+        [300000, 3],
+      ]) {
+        await clock.advance(ms!)
+        expect(reads).toBe(count)
+        expect(hook.result.current.executionStatus).toBe('running')
+        expect(hook.result.current.items.find((i) => i.kind === 'streaming')).toMatchObject({
+          blocks: [{ content: 'retained' }],
+        })
+        expect(m.subscribeCount()).toBe(subscriptions)
+      }
+    } finally {
+      hook.unmount()
+      clock.restore()
+    }
+  })
+
+  test('offline defers manual intent; online recovery drains it once', async () => {
+    const clock = reconciliationClock()
+    const m = makeMockClient()
+    const hook = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper: wrap(m.client) })
+    try {
+      act(() => m.emit({ type: 'text', text: 'retained', streamGroupId: 'S' }))
+      const subscriptions = m.subscribeCount()
+      act(() => {
+        onlineManager.setOnline(false)
+        hook.result.current.refresh()
+      })
+      await clock.advance(60000)
+      expect(m.subscribeCount()).toBe(subscriptions)
+      await act(async () => {
+        onlineManager.setOnline(true)
+        await Promise.resolve()
+      })
+      await waitFor(() => expect(m.subscribeCount()).toBe(subscriptions + 1))
+    } finally {
+      hook.unmount()
+      onlineManager.setOnline(true)
+      clock.restore()
+    }
+  })
+
+  test('resumed activity postpones quiet drain but cannot starve explicit history intent beyond 30s', async () => {
+    const clock = reconciliationClock()
+    const m = makeMockClient({ activeExecution: { active: true, status: 'running', executionId: 'e' } })
+    let reads = 0
+    m.client.agents.getExecution = async () => {
+      reads++
+      return { agentId: 'a', executionId: 'e', executionVersion: 1, status: 'running', active: true }
+    }
+    const hook = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper: wrap(m.client) })
+    try {
+      await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+      act(() => m.emit({ type: 'text', text: 'x', streamGroupId: 'S' }))
+      const subscriptions = m.subscribeCount()
+      const history = m.getMessagesCount()
+      act(() => hook.result.current.refresh())
+      for (let i = 0; i < 10; i++) {
+        await clock.advance(3000)
+        act(() => m.emit({ type: 'text', text: 'x', streamGroupId: 'S' }))
+      }
+      await waitFor(() => expect(m.getMessagesCount()).toBeGreaterThan(history))
+      expect(reads).toBe(1)
+      expect(m.subscribeCount()).toBe(subscriptions)
+      expect(hook.result.current.executionStatus).toBe('running')
+    } finally {
+      hook.unmount()
+      clock.restore()
+    }
+  })
+})
+
+test('two mounted views share silent-open exact/history recovery through real resource and SSE parser', async () => {
+  const clock = reconciliationClock()
+  const controllers: ReadableStreamDefaultController<Uint8Array>[] = []
+  let exact = 0
+  let history = 0
+  let rows: Message[] = []
+  const transport: Transport = {
+    request: async <T,>(path: string) => {
+      if (path.includes('/executions/')) {
+        exact++
+        return { agentId: 'a', executionId: 'e', executionVersion: 2, status: 'completed', active: false } as T
+      }
+      if (path.includes('/messages')) {
+        history++
+        return { messages: rows, pagination: { hasMore: false, totalCount: rows.length } } as T
+      }
+      if (path.endsWith('/active')) return { active: true, status: 'running', executionId: 'e' } as T
+      return {} as T
+    },
+    openStream: async () =>
+      new ReadableStream<Uint8Array>({
+        start(c) {
+          controllers.push(c)
+        },
+      }).getReader(),
+    url: (path) => path,
+    wsUrl: (path) => path,
+  }
+  const client = createClient(transport)
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const wrapper = wrapWith(qc, client)
+  const renders: ReturnType<typeof useAgentConversation>[] = []
+  const useTracked = () => {
+    const value = useAgentConversation({ agentId: 'a' })
+    renders.push(value)
+    return value
+  }
+  const a = await renderHook(useTracked, { wrapper })
+  const b = await renderHook(useTracked, { wrapper })
+  try {
+    await waitFor(() => expect(controllers.length).toBeGreaterThanOrEqual(3))
+    // The initial unpinned view is canceled on active-query resolution. Only live readers receive bytes.
+    await act(async () => {
+      for (const c of controllers) {
+        try {
+          for (const event of [
+            { type: 'agent', agentId: 'a', executionId: 'e', executionStatus: 'running' },
+            { type: 'text', text: 'prefix', streamGroupId: 'S' },
+          ])
+            c.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`))
+        } catch {
+          /* Owned reader already canceled by exact subscription adoption. */
+        }
+      }
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(b.result.current.items.find((i) => i.kind === 'streaming')).toBeDefined())
+    const start = renders.length
+    const before = history
+    rows = [
+      {
+        id: 'm',
+        agentId: 'a',
+        role: 'assistant',
+        content: 'prefix tail',
+        pending: false,
+        createdAt: new Date(),
+        metadata: {
+          streamGroupId: 'S',
+          executionId: 'e',
+          content: [{ type: 'text', id: 't', content: 'prefix tail' }],
+        },
+      },
+    ]
+    await clock.advance(15000)
+    await waitFor(() => {
+      expect(a.result.current.items.find((i) => i.kind === 'persisted')).toBeDefined()
+      expect(b.result.current.items.find((i) => i.kind === 'persisted')).toBeDefined()
+    })
+    expect(exact).toBe(1)
+    expect(history).toBe(before + 1)
+    for (const render of renders.slice(start)) {
+      const texts = render.items.flatMap((i) =>
+        i.kind === 'persisted' || i.kind === 'streaming'
+          ? i.blocks.flatMap((b) => (b.type === 'text' ? [b.content] : []))
+          : []
+      )
+      expect(texts).toHaveLength(1)
+      expect(texts[0]).toMatch(/^prefix(?: tail)?$/)
+    }
+    // A cached late observer consumes existing exact truth rather than spending
+    // another probe or remaining busy on a stale active-execution cache.
+    const late = await renderHook(useTracked, { wrapper })
+    try {
+      await waitFor(() => expect(late.result.current.executionStatus).toBe('completed'))
+      expect(exact).toBe(1)
+    } finally {
+      late.unmount()
+    }
+  } finally {
+    a.unmount()
+    b.unmount()
+    qc.clear()
+    clock.restore()
+  }
+})
+
+test('pending exact probe times out honestly; late completion cannot mutate a switched conversation', async () => {
+  const clock = reconciliationClock()
+  const m = makeMockClient({ activeExecution: { active: true, status: 'running', executionId: 'e' } })
+  let resolve!: (value: Awaited<ReturnType<TauClient['agents']['getExecution']>>) => void
+  let signal: AbortSignal | undefined
+  let reads = 0
+  m.client.agents.getExecution = async (_a, _e, s) => {
+    reads++
+    signal = s
+    return new Promise((r) => {
+      resolve = r
+    })
+  }
+  let agentId = 'a'
+  const hook = await renderHook(() => useAgentConversation({ agentId }), { wrapper: wrap(m.client) })
+  try {
+    await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+    act(() => m.emit({ type: 'text', text: 'retained', streamGroupId: 'S' }))
+    await clock.advance(15000)
+    expect(reads).toBe(1)
+    await clock.advance(10000)
+    expect(signal?.aborted).toBe(true)
+    expect(hook.result.current.executionStatus).toBe('running')
+    expect(hook.result.current.items.find((i) => i.kind === 'streaming')).toMatchObject({
+      blocks: [{ content: 'retained' }],
+    })
+    agentId = 'b'
+    m.setActiveExecution({ active: false })
+    await hook.rerender()
+    await act(async () => {
+      resolve({ agentId: 'a', executionId: 'e', executionVersion: 2, status: 'completed', active: false })
+      await Promise.resolve()
+    })
+    expect(hook.result.current.agentId).toBe('b')
+    expect(hook.result.current.executionStatus).toBeNull()
+    expect(hook.result.current.items).toEqual([])
+    await clock.advance(300000)
+    expect(reads).toBe(1)
+  } finally {
+    hook.unmount()
+    clock.restore()
+  }
+})
+
+test('failed probes are bounded and a later explicit refresh can recover exact terminal history', async () => {
+  const clock = reconciliationClock()
+  const m = makeMockClient({ activeExecution: { active: true, status: 'running', executionId: 'e' } })
+  let reads = 0
+  let offline = true
+  m.client.agents.getExecution = async () => {
+    reads++
+    if (offline) throw new Error('offline')
+    return { agentId: 'a', executionId: 'e', executionVersion: 2, status: 'completed', active: false }
+  }
+  const hook = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper: wrap(m.client) })
+  try {
+    await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+    act(() => m.emit({ type: 'text', text: 'retained', streamGroupId: 'S' }))
+    await clock.advance(300000)
+    expect(reads).toBe(3)
+    expect(hook.result.current.executionStatus).toBe('running')
+    offline = false
+    act(() => hook.result.current.refresh())
+    await waitFor(() => expect(hook.result.current.executionStatus).toBe('completed'))
+    expect(reads).toBe(4)
+    expect(hook.result.current.items.find((i) => i.kind === 'streaming')).toMatchObject({
+      blocks: [{ content: 'retained' }],
+    })
+  } finally {
+    hook.unmount()
+    clock.restore()
+  }
+})
+
+test('unmount cancels deferred manual intent and an in-flight exact read', async () => {
+  const clock = reconciliationClock()
+  const m = makeMockClient({ activeExecution: { active: true, status: 'running', executionId: 'e' } })
+  let signal: AbortSignal | undefined
+  m.client.agents.getExecution = async (_a, _e, s) => {
+    signal = s
+    return new Promise(() => {})
+  }
+  const hook = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper: wrap(m.client) })
+  try {
+    await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+    act(() => m.emit({ type: 'text', text: 'retained', streamGroupId: 'S' }))
+    await clock.advance(15000)
+    act(() => hook.result.current.refresh())
+    const history = m.getMessagesCount()
+    hook.unmount()
+    expect(signal?.aborted).toBe(true)
+    await clock.advance(300000)
+    expect(m.getMessagesCount()).toBe(history)
+  } finally {
+    clock.restore()
+  }
+})
+
+test('foreground refresh satisfies an early manual intent without a second quiet refresh', async () => {
+  const clock = reconciliationClock()
+  const m = makeMockClient({ activeExecution: { active: true, status: 'running', executionId: 'e' } })
+  const hook = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper: wrap(m.client) })
+  try {
+    await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+    act(() => m.emit({ type: 'text', text: 'retained', streamGroupId: 'S' }))
+    act(() => hook.result.current.refresh())
+    await act(async () => {
+      focusManager.setFocused(false)
+      focusManager.setFocused(true)
+      await Promise.resolve()
+    })
+    const subscriptions = m.subscribeCount()
+    const history = m.getMessagesCount()
+    await clock.advance(4000)
+    expect(m.subscribeCount()).toBe(subscriptions)
+    expect(m.getMessagesCount()).toBe(history)
+    expect(hook.result.current.items.find((i) => i.kind === 'streaming')).toMatchObject({
+      blocks: [{ content: 'retained' }],
+    })
+  } finally {
+    hook.unmount()
+    focusManager.setFocused(true)
+    clock.restore()
+  }
+})
+
+test.each(['execution', 'activity', 'foreground'] as const)(
+  'pending silent result cannot overwrite %s replacement state',
+  async (replacement) => {
+    const clock = reconciliationClock()
+    const m = makeMockClient({ activeExecution: { active: true, status: 'running', executionId: 'e' } })
+    let finish!: (value: Awaited<ReturnType<TauClient['agents']['getExecution']>>) => void
+    m.client.agents.getExecution = () =>
+      new Promise((resolve) => {
+        finish = resolve
+      })
+    const hook = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper: wrap(m.client) })
+    try {
+      await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+      act(() => m.emit({ type: 'text', text: 'retained', streamGroupId: 'S' }))
+      await clock.advance(15000)
+      expect(finish).toBeDefined()
+      act(() => {
+        if (replacement === 'execution') {
+          m.emit({ type: 'execution_snapshot', executionId: 'next', executionVersion: 1, status: 'running' })
+          m.emit({ type: 'text', text: 'next', streamGroupId: 'next' })
+        } else if (replacement === 'activity') m.emit({ type: 'text', text: ' tail', streamGroupId: 'S' })
+        else {
+          focusManager.setFocused(false)
+          focusManager.setFocused(true)
+        }
+      })
+      await act(async () => {
+        finish({ agentId: 'a', executionId: 'e', executionVersion: 99, status: 'completed', active: false })
+        await Promise.resolve()
+      })
+      expect(hook.result.current.executionStatus).toBe('running')
+      expect(hook.result.current.items.some((i) => i.kind === 'streaming')).toBe(true)
+      if (replacement === 'activity') {
+        act(() => m.emit({ type: 'text', text: ' still running', streamGroupId: 'S' }))
+        // Drain the next timer turn (including a cached-result deadline of zero).
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 0))
+        })
+        expect(hook.result.current.executionStatus).toBe('running')
+        await clock.advance(30000)
+        expect(hook.result.current.executionStatus).toBe('running')
+      }
+    } finally {
+      hook.unmount()
+      focusManager.setFocused(true)
+      clock.restore()
+    }
+  }
+)
+
+test('two foreground observers invalidate shared history only once', async () => {
+  const m = makeMockClient()
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const wrapper = wrapWith(qc, m.client)
+  const a = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper })
+  const b = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper })
+  try {
+    const before = m.getMessagesCount()
+    await act(async () => {
+      focusManager.setFocused(false)
+      focusManager.setFocused(true)
+      await Promise.resolve()
+    })
+    expect(m.getMessagesCount()).toBe(before + 1)
+  } finally {
+    a.unmount()
+    b.unmount()
+    qc.clear()
+    focusManager.setFocused(true)
+  }
+})
+
+async function drainTimerTurns(count = 3) {
+  for (let i = 0; i < count; i++)
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+}
+
+test.each([true, false])(
+  'replacement rejects old pending result when reused from cache (manual=%s)',
+  async (manual) => {
+    const clock = reconciliationClock()
+    const m = makeMockClient({ activeExecution: { active: true, status: 'running', executionId: 'e' } })
+    let finish!: (value: Awaited<ReturnType<TauClient['agents']['getExecution']>>) => void
+    m.client.agents.getExecution = () =>
+      new Promise((resolve) => {
+        finish = resolve
+      })
+    const hook = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper: wrap(m.client) })
+    try {
+      await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+      act(() => m.emit({ type: 'text', text: 'retained', streamGroupId: 'S' }))
+      await clock.advance(15000)
+      await act(async () => {
+        focusManager.setFocused(false)
+        focusManager.setFocused(true)
+        await Promise.resolve()
+      })
+      await act(async () => {
+        finish({ agentId: 'a', executionId: 'e', executionVersion: 99, status: 'completed', active: false })
+        await Promise.resolve()
+      })
+      expect(hook.result.current.executionStatus).toBe('running')
+      if (manual) act(() => hook.result.current.refresh())
+      else
+        act(() => {
+          onlineManager.setOnline(false)
+          onlineManager.setOnline(true)
+        })
+      await drainTimerTurns()
+      expect(hook.result.current.executionStatus).toBe('running')
+      const oldRead = finish
+      await clock.advance(manual ? 4000 : 30000)
+      expect(finish).not.toBe(oldRead)
+      await act(async () => {
+        finish({ agentId: 'a', executionId: 'e', executionVersion: 100, status: 'completed', active: false })
+        await Promise.resolve()
+      })
+      expect(hook.result.current.executionStatus).toBe('completed')
+    } finally {
+      hook.unmount()
+      focusManager.setFocused(true)
+      onlineManager.setOnline(true)
+      clock.restore()
+    }
+  }
+)
+
+test.each(['success', 'failure', 'online'] as const)(
+  'manual %s at 12s cannot spin at the first automatic deadline',
+  async (mode) => {
+    const clock = reconciliationClock()
+    const m = makeMockClient({ activeExecution: { active: true, status: 'running', executionId: 'e' } })
+    let reads = 0
+    let renders = 0
+    m.client.agents.getExecution = async () => {
+      reads++
+      if (mode === 'failure') throw new Error('offline')
+      return { agentId: 'a', executionId: 'e', executionVersion: 1, status: 'running', active: true }
+    }
+    const hook = await renderHook(
+      () => {
+        renders++
+        return useAgentConversation({ agentId: 'a' })
+      },
+      { wrapper: wrap(m.client) }
+    )
+    try {
+      await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+      act(() => m.emit({ type: 'text', text: 'retained', streamGroupId: 'S' }))
+      await clock.advance(12000)
+      act(() => {
+        if (mode === 'online') onlineManager.setOnline(false)
+        hook.result.current.refresh()
+      })
+      if (mode === 'online') act(() => onlineManager.setOnline(true))
+      await drainTimerTurns()
+      expect(reads).toBe(1)
+      await clock.advance(3000)
+      await drainTimerTurns()
+      const settled = renders
+      await drainTimerTurns(10)
+      expect(renders).toBe(settled)
+      expect(reads).toBe(1)
+      await clock.advance(1000)
+      expect(reads).toBe(2)
+      await clock.advance(30000)
+      expect(reads).toBe(3)
+      await clock.advance(60000)
+      expect(reads).toBe(4)
+      await clock.advance(300000)
+      expect(reads).toBe(4)
+      expect(hook.result.current.executionStatus).toBe('running')
+    } finally {
+      hook.unmount()
+      onlineManager.setOnline(true)
+      clock.restore()
+    }
+  }
+)
+
+test.each(['failure', 'timeout'] as const)('two manual observers share the %s history fallback', async (mode) => {
+  const clock = reconciliationClock()
+  const m = makeMockClient({ activeExecution: { active: true, status: 'running', executionId: 'e' } })
+  let reads = 0
+  m.client.agents.getExecution = async () => {
+    reads++
+    if (mode === 'failure') throw new Error('offline')
+    return new Promise(() => {})
+  }
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const wrapper = wrapWith(qc, m.client)
+  const a = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper })
+  const b = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper })
+  try {
+    await waitFor(() => {
+      expect(m.subscribedExecutionIds.filter((id) => id === 'e')).toHaveLength(2)
+      expect(a.result.current.executionStatus).toBe('running')
+      expect(b.result.current.executionStatus).toBe('running')
+      expect(qc.isFetching()).toBe(0)
+    })
+    const before = m.getMessagesCount()
+    act(() => {
+      a.result.current.refresh()
+      b.result.current.refresh()
+      a.result.current.refresh()
+      b.result.current.refresh()
+    })
+    await clock.advance(4000)
+    if (mode === 'timeout') await clock.advance(10000)
+    await drainTimerTurns()
+    expect(reads).toBe(1)
+    expect(m.getMessagesCount()).toBe(before + 1)
+    expect(a.result.current.executionStatus).toBe('running')
+    expect(b.result.current.executionStatus).toBe('running')
+  } finally {
+    a.unmount()
+    b.unmount()
+    qc.clear()
+    clock.restore()
+  }
+})
+
+test('one replacement floor does not revoke a shared result from another valid observer', async () => {
+  const clock = reconciliationClock()
+  const m = makeMockClient({ activeExecution: { active: true, status: 'running', executionId: 'e' } })
+  let finish!: (value: Awaited<ReturnType<TauClient['agents']['getExecution']>>) => void
+  let reads = 0
+  m.client.agents.getExecution = () => {
+    reads++
+    return new Promise((resolve) => {
+      finish = resolve
+    })
+  }
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const wrapper = wrapWith(qc, m.client)
+  const a = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper })
+  let b: Awaited<ReturnType<typeof renderHook<ReturnType<typeof useAgentConversation>>>> | undefined
+  try {
+    await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+    act(() => m.emit({ type: 'text', text: 'retained', streamGroupId: 'S' }))
+    await clock.advance(15000)
+    act(() => focusManager.setFocused(false))
+    // B has never observed a foreground loss, so only A replaces its subscription.
+    b = await renderHook(() => useAgentConversation({ agentId: 'a' }), { wrapper })
+    await waitFor(() => expect(b!.result.current.executionStatus).toBe('running'))
+    await act(async () => {
+      focusManager.setFocused(true)
+      await Promise.resolve()
+    })
+    await act(async () => {
+      finish({ agentId: 'a', executionId: 'e', executionVersion: 2, status: 'completed', active: false })
+      await Promise.resolve()
+    })
+    act(() => {
+      onlineManager.setOnline(false)
+      onlineManager.setOnline(true)
+    })
+    await drainTimerTurns()
+    expect(a.result.current.executionStatus).toBe('running')
+    expect(b.result.current.executionStatus).toBe('completed')
+    expect(reads).toBe(1)
+  } finally {
+    a.unmount()
+    b?.unmount()
+    qc.clear()
+    focusManager.setFocused(true)
+    onlineManager.setOnline(true)
+    clock.restore()
   }
 })

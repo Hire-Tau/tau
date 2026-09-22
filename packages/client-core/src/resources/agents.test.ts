@@ -428,3 +428,10 @@ test.each(['eof', 'error'] as const)(
     }
   }
 )
+
+test('exact execution reads forward caller cancellation without changing the route', async () => {
+  const { t, calls } = mockTransport()
+  const controller = new AbortController()
+  await agentsResource(t).getExecution('a', 'e', controller.signal)
+  expect(calls).toEqual([{ path: '/agents/a/executions/e', options: { signal: controller.signal } }])
+})
