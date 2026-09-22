@@ -241,7 +241,7 @@ function AssistantMessageRow({
               title={tts.isSynthesizing ? 'Loading...' : 'Stop'}
             >
               {tts.isSynthesizing ? (
-                <span className="inline-block w-3.5 h-3.5 border-2 border-status-progress-300 border-t-blue-600 rounded-full animate-spin" />
+                <span className="inline-block w-3.5 h-3.5 border-2 border-status-progress-300 border-t-status-progress-600 rounded-full animate-spin" />
               ) : (
                 <StopIcon className="w-3.5 h-3.5" />
               )}
@@ -1702,7 +1702,7 @@ export function ChatView({
                   )}
                 >
                   {isClearingQueue ? (
-                    <span className="inline-block w-3 h-3 border-2 border-status-attention-300 border-t-amber-600 rounded-full animate-spin" />
+                    <span className="inline-block w-3 h-3 border-2 border-status-attention-300 border-t-status-attention-600 rounded-full animate-spin" />
                   ) : (
                     <CloseIcon className="w-3 h-3" />
                   )}
@@ -2048,7 +2048,7 @@ export function ChatView({
                         }
                       >
                         {voiceState === 'transcribing' ? (
-                          <span className="inline-block w-5 h-5 border-2 border-status-neutral-300 dark:border-status-neutral-600 border-t-gray-600 dark:border-t-gray-300 rounded-full animate-spin" />
+                          <span className="inline-block w-5 h-5 border-2 border-status-neutral-300 dark:border-status-neutral-600 border-t-status-neutral-600 dark:border-t-status-neutral-300 rounded-full animate-spin" />
                         ) : (
                           <MicIcon className="w-5 h-5" />
                         )}
@@ -2078,7 +2078,7 @@ export function ChatView({
                         title={tts.enabled ? 'Disable auto-speak' : 'Enable auto-speak'}
                       >
                         {tts.isSynthesizing ? (
-                          <span className="inline-block w-5 h-5 border-2 border-status-progress-300 border-t-blue-600 rounded-full animate-spin" />
+                          <span className="inline-block w-5 h-5 border-2 border-status-progress-300 border-t-status-progress-600 rounded-full animate-spin" />
                         ) : tts.enabled ? (
                           <SpeakerOnIcon className={clsx('w-5 h-5', tts.isPlaying && 'animate-pulse')} />
                         ) : (
@@ -2607,7 +2607,7 @@ function StreamingBlockGroupSection({
           className={clsx('w-3 h-3 shrink-0 text-muted transition-transform', expanded && 'rotate-90')}
         />
         {hasRunningTool && (
-          <span className="inline-block w-3 h-3 border-2 border-status-neutral-300 dark:border-status-neutral-600 border-t-gray-600 dark:border-t-gray-300 rounded-full animate-spin shrink-0" />
+          <span className="inline-block w-3 h-3 border-2 border-status-neutral-300 dark:border-status-neutral-600 border-t-status-neutral-600 dark:border-t-status-neutral-300 rounded-full animate-spin shrink-0" />
         )}
         <span className="font-medium">{summary}</span>
       </button>
@@ -2679,7 +2679,7 @@ function StreamingToolCallItem({
           className="tau-button flex-1 flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors text-left min-w-0"
         >
           {inProgress ? (
-            <span className="inline-block w-3 h-3 border-2 border-status-neutral-300 dark:border-status-neutral-600 border-t-gray-600 dark:border-t-gray-300 rounded-full animate-spin shrink-0" />
+            <span className="inline-block w-3 h-3 border-2 border-status-neutral-300 dark:border-status-neutral-600 border-t-status-neutral-600 dark:border-t-status-neutral-300 rounded-full animate-spin shrink-0" />
           ) : isError ? (
             <span className="text-status-danger-500 dark:text-status-danger-400 shrink-0 inline-block w-3 text-center">
               &#10007;

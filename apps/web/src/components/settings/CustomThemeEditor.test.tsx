@@ -221,3 +221,11 @@ test('tiny valid alpha still produces a low-contrast warning and an opaque safe-
   expect(surfaceWarning(container)).toBeUndefined()
   expect(getByRole(container, 'button', { name: 'Apply custom theme' }).hasAttribute('disabled')).toBe(false)
 })
+
+test('editor distinguishes local preview from account-synced applied documents', async () => {
+  const container = await render()
+  await click(container, 'Edit custom theme')
+  expect(container.textContent).toContain('Preview stays on this device')
+  expect(container.textContent).toContain('syncs the theme to your account when signed in')
+  expect(container.textContent).not.toContain('Device-local, single-appearance theme')
+})
