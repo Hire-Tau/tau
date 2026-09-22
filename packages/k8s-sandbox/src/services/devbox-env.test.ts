@@ -155,8 +155,10 @@ describe('combined Devbox PATH', () => {
       writeFileSync(join(comfort, 'gh'), '#!/bin/sh\n', { mode: 0o755 })
       process.env.TAU_DEVBOX_DIR = comfort
       process.env.TAU_TOOLCHAIN_DIR = managed
-      cacheDevboxShellEnv(() => `export PATH='${comfort}:/usr/bin:/bin'`)
-      cacheManagedToolchainEnv(true, () => `export PATH='${managed}:/usr/bin:/bin'`)
+      // Use only fixture directories: CI may have its own gh in /usr/bin.
+      // The absolute shell and its command/printf builtins need no system PATH.
+      cacheDevboxShellEnv(() => `export PATH='${comfort}'`)
+      cacheManagedToolchainEnv(true, () => `export PATH='${managed}'`)
       const resolve = () =>
         execFileSync('/bin/bash', ['-c', `${getDevboxShellEnv()}\ncommand -v gh; command -v node`], {
           encoding: 'utf8',

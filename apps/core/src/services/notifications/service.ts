@@ -257,7 +257,7 @@ export class NotificationService {
       return
     }
 
-    // Fan out to both web-push subscriptions and native (APNs) devices.
+    // Shared push audience: web subscriptions, APNs devices, and the desktop feed.
     await Promise.all([
       this.sendWebPush(userIds, event),
       this.sendApnsPush(userIds, event),
