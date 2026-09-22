@@ -1,7 +1,7 @@
 import { useToolRenderers } from '../lib/ToolRenderersContext'
 import { ConversationSkeleton } from './loading/Skeleton'
 import clsx from 'clsx'
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo, useContext } from 'react'
 import { Link } from 'react-router-dom'
 import { flushSync } from 'react-dom'
 import type { MessageMetadata, MessageToolCall, ContentBlock, DeliveryMode, ExecutionStatus } from '@tau/shared'
@@ -30,6 +30,7 @@ import {
 } from './icons'
 import { useFullscreen } from '../hooks/useFullscreen'
 import { Modal } from './Modal'
+import { ChatFullscreenContext } from './ChatFullscreenContext'
 import { MobileChatOptionsSheet } from './MobileChatOptionsSheet'
 import { ToolInlineActions } from './ToolInlineActions'
 import { ToolInlineActionModal, type ToolInlineActionModalProps } from './ToolInlineActionModal'
@@ -564,15 +565,20 @@ export function ChatView({
   const fullscreen = useFullscreen({ queryParam: enableFullscreen ? 'fullscreen' : undefined })
   // Router transitions may commit after a mobile user gesture has ended. Keep
   // tap-to-expand synchronous and local, including inside parent-owned layouts.
-  const mobileExpansion = useFullscreen()
-  const isFullscreen = fullscreen.isFullscreen || mobileExpansion.isFullscreen
-  const toggleFullscreen = mobileExpansion.isFullscreen ? mobileExpansion.exitFullscreen : fullscreen.toggleFullscreen
+  const {
+    isFullscreen: isMobileExpanded,
+    enterFullscreen: enterMobileFullscreen,
+    exitFullscreen: exitMobileFullscreen,
+  } = useFullscreen()
+  const expandParentChat = useContext(ChatFullscreenContext)
+  const isFullscreen = fullscreen.isFullscreen || isMobileExpanded
+  const toggleFullscreen = isMobileExpanded ? exitMobileFullscreen : fullscreen.toggleFullscreen
 
   useEffect(() => {
     // Retained Assistant tabs stay mounted when hidden. Their portal must not
     // outlive the visible conversation when navigation switches to another tab.
-    if (!keyboardShortcutsEnabled && mobileExpansion.isFullscreen) mobileExpansion.exitFullscreen()
-  }, [keyboardShortcutsEnabled, mobileExpansion.isFullscreen, mobileExpansion.exitFullscreen])
+    if (!keyboardShortcutsEnabled && isMobileExpanded) exitMobileFullscreen()
+  }, [keyboardShortcutsEnabled, isMobileExpanded, exitMobileFullscreen])
 
   const expandMobileComposer = (event: React.MouseEvent<HTMLTextAreaElement>) => {
     const textarea = event.currentTarget
@@ -583,7 +589,7 @@ export function ChatView({
     // Commit the portal and focus its input in the same user gesture so mobile
     // Safari can keep the keyboard open. ChatView stays mounted: drafts, files,
     // uploads, and conversation state survive expansion.
-    flushSync(mobileExpansion.enterFullscreen)
+    flushSync(expandParentChat ?? enterMobileFullscreen)
     const expandedTextarea = textareaRef.current
     if (expandedTextarea) {
       resizeTextarea(expandedTextarea)

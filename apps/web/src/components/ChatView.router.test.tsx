@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { fireEvent } from '@testing-library/dom'
 import { useState } from 'react'
+import { ExpandableChatPanel } from './ExpandableChatPanel'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import type { RenderItem } from '@tau/client-react'
 import { PermissionsProvider } from '../hooks/usePermissions'
@@ -276,6 +277,68 @@ test('a retained conversation closes its mobile fullscreen portal when it become
     expect(dom.window.document.querySelector('[role="dialog"]')).not.toBeNull()
     await dom.act(async () => rendered.container.querySelector('button')!.click())
     expect(dom.window.document.querySelector('[role="dialog"]')).toBeNull()
+  } finally {
+    await dom.cleanup()
+  }
+})
+
+test('composer and button expansion share the parent header without remounting the conversation', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/chat/a', windowOptions: { innerWidth: 390 } })
+  function ParentChat() {
+    const [fullscreen, setFullscreen] = useState(false)
+    const [tab, setTab] = useState('Chat')
+    return (
+      <ExpandableChatPanel
+        isFullscreen={fullscreen}
+        onExitFullscreen={() => setFullscreen(false)}
+        title="Investigate mobile startup crash"
+        titleContent={
+          <span>
+            Investigate mobile startup crash <small>Consultant · Kai</small>
+          </span>
+        }
+        headerExtra={<button onClick={() => setTab(tab === 'Chat' ? 'Info' : 'Chat')}>{tab}</button>}
+        className="inline-chat"
+        inlineHeader={<button onClick={() => setFullscreen(true)}>Fullscreen</button>}
+      >
+        <ChatView dependencies={dependencies} items={[]} onSend={() => undefined} />
+      </ExpandableChatPanel>
+    )
+  }
+  const router = createMemoryRouter([{ path: '/chat/:agentId', element: <ParentChat /> }], {
+    initialEntries: ['/chat/a'],
+  })
+  const rendered = dom.createRoot()
+  try {
+    await dom.act(async () => rendered.root.render(<RouterProvider router={router} />))
+    const textarea = dom.window.document.querySelector('textarea')!
+    await dom.act(async () => {
+      fireEvent.input(textarea, { target: { value: 'Unsent draft' } })
+      textarea.setSelectionRange(2, 5)
+      textarea.click()
+    })
+    let dialog = dom.window.document.querySelector('[role="dialog"]')!
+    expect(dialog.getAttribute('aria-label')).toBe('Investigate mobile startup crash')
+    expect(dialog.querySelector('h3')!.textContent).toContain('Consultant · Kai')
+    expect(dialog.querySelector('textarea')).toBe(textarea)
+    expect(dom.window.document.activeElement).toBe(textarea)
+    expect(textarea.selectionStart).toBe(2)
+    expect(textarea.selectionEnd).toBe(5)
+    const tapHeading = dialog.querySelector('h3')!.textContent
+    await dom.act(async () => dialog.querySelector<HTMLElement>('[aria-label="Close"]')!.click())
+    expect(rendered.container.querySelector('textarea')).toBe(textarea)
+    expect(textarea.value).toBe('Unsent draft')
+    await dom.act(async () => rendered.container.querySelector('button')!.click())
+    dialog = dom.window.document.querySelector('[role="dialog"]')!
+    expect(dialog.querySelector('h3')!.textContent).toBe(tapHeading)
+    expect(dialog.querySelector('textarea')).toBe(textarea)
+    await dom.act(async () => {
+      const tabs = Array.from(dialog.querySelectorAll('button')).find((button) => button.textContent === 'Chat')!
+      tabs.click()
+    })
+    expect(dialog.textContent).toContain('Info')
+    expect(dialog.querySelector('textarea')).toBe(textarea)
+    expect(dom.window.document.querySelectorAll('[role="dialog"]')).toHaveLength(1)
   } finally {
     await dom.cleanup()
   }

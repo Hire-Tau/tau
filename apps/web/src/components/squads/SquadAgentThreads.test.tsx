@@ -2,7 +2,9 @@ import { PermissionsProvider } from '../../hooks/usePermissions'
 import { afterEach, describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, getByRole, queryAllByRole } from '@testing-library/dom'
-import { type ComponentProps } from 'react'
+import { useContext, type ComponentProps } from 'react'
+import { flushSync } from 'react-dom'
+import { ChatFullscreenContext } from '../ChatFullscreenContext'
 import type { Root } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
@@ -1877,6 +1879,49 @@ test('archiving a recent consultant requires confirmation without selecting its 
     await dom.act(async () => freshArchive.click())
     expect(singleArchiveCalls).toEqual([['squad-1', 'archive-me']])
   } finally {
+    await dom.cleanup()
+  }
+})
+
+test('squad composer expansion includes the selected agent identity and view tabs', async () => {
+  const dom = await installDom()
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const { root } = dom.createRoot()
+  function Composer() {
+    const expand = useContext(ChatFullscreenContext)
+    return (
+      <textarea
+        aria-label="Test composer"
+        onClick={() => {
+          if (expand) flushSync(expand)
+        }}
+      />
+    )
+  }
+  try {
+    initialSearchParams = 'agent=agent-1'
+    await dom.act(async () =>
+      renderThreadsDom(
+        root,
+        client,
+        [agent({ agentTypeId: 'consultant', metadata: { name: 'Kai', purpose: 'Investigate mobile startup crash' } })],
+        [],
+        {
+          dependencies: { ...threadsDependencies, AgentConversation: Composer },
+        }
+      )
+    )
+    const textarea = dom.window.document.querySelector('textarea')!
+    await dom.act(async () => textarea.click())
+    const dialog = dom.window.document.querySelector('[role="dialog"]')!
+    expect(dialog).not.toBeNull()
+    expect(dialog.querySelector('h3')!.textContent).toContain('Kai')
+    expect(dialog.querySelector('h3')!.textContent).toContain('Investigate mobile startup crash')
+    expect(dialog.querySelector('textarea')).toBe(textarea)
+    expect(dialog.textContent).toContain('Chat')
+    expect(dialog.textContent).toContain('Work')
+  } finally {
+    client.clear()
     await dom.cleanup()
   }
 })
