@@ -1306,14 +1306,21 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
   // until quiet (or a bounded 30s read-only deadline); no stream buffer is reset.
   const refresh = useCallback(() => {
     if (!resolvedAgentId) return
-    if (isStreamLive() || streamedExecIdRef.current) {
+    // Exact terminal recovery retains the execution pin for subscription/coverage
+    // authority. That pin alone must not defer an idle caller's history request:
+    // refresh() returns void, so callers observe their request before it returns.
+    const executionId = streamedExecIdRef.current
+    const terminal = executionId ? terminalExecutionStatusesRef.current.get(executionId) : undefined
+    const settled = terminal !== undefined && terminal === executionStatusRef.current
+    if (isStreamLive() || (executionId && !settled)) {
       deferredRefreshRef.current = true
       manualRequestedAtRef.current ??= performance.now()
       requestManualDrain()
       return
     }
     invalidateConversationQueries()
-    bumpStreamEpoch()
+    // Exact terminal truth needs history, not a replacement of its retained SSE.
+    if (!settled) bumpStreamEpoch()
   }, [resolvedAgentId, invalidateConversationQueries, isStreamLive])
 
   const stop = useCallback(() => {

@@ -107,9 +107,15 @@ handoff, still subject to the existing ordered coverage and fresh-history rules.
 An early manual press is coalesced and drains after **4 seconds quiet** without
 needing done/error or another click. Activity postpones the drain, but at **30 seconds
 from the first press** the intent runs a read-only reconciliation even during
-continued activity; it does not reconnect an actively emitting stream. Quiet manual
-refresh still replaces the subscription, preserving its existing catchup semantics
-and local buffers. Manual exact reads share pending requests and a four-second
+continued activity; it does not reconnect an actively emitting stream. Quiet deferred
+manual refresh still replaces the subscription, preserving its existing catchup semantics
+and local buffers. Once exact terminal recovery has settled the current execution,
+an idle manual refresh invalidates history **before `refresh()` returns**, even though
+the execution pin is retained. It does not reread exact status or replace that settled
+subscription. This preserves invocation-bound request observation without exposing
+an asynchronous standing refresh intent; paused/offline queries are not dispatched
+requests. The terminal status, execution authority and uncovered buffers remain intact.
+Manual exact reads share pending requests and a four-second
 coalescing window, and do not refill the automatic budget. The automatic scheduler
 also respects this four-second read-eligibility deadline: a manual read at 12s
 moves the earliest first automatic read from 15s to 16s, without a zero-delay
