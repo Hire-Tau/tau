@@ -18,7 +18,7 @@ export function MaintenanceBanner() {
     <div
       role="status"
       aria-live="polite"
-      className="shrink-0 border-b border-amber-300 bg-amber-50 px-4 py-2 text-center text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
+      className="shrink-0 border-b border-status-attention-300 bg-status-attention-50 px-4 py-2 text-center text-sm text-status-attention-950 dark:border-status-attention-800 dark:bg-status-attention-950/40 dark:text-status-attention-100"
     >
       {text}
     </div>

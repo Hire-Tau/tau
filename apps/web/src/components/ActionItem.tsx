@@ -382,7 +382,7 @@ function SquadQuestionActionContent({
   return (
     <div className="space-y-3">
       {mutation.isError && (
-        <p role="alert" className="text-xs text-red-600">
+        <p role="alert" className="text-xs text-status-danger-600">
           {actionErrorMessage(mutation.error)}
         </p>
       )}
@@ -422,7 +422,7 @@ function AgentQuestionActionContent({
       <div className="space-y-3">
         <p className="text-xs text-secondary">Your answer was saved, but delivery to the agent failed.</p>
         {retryMutation.isError && (
-          <p role="alert" className="text-xs text-red-600">
+          <p role="alert" className="text-xs text-status-danger-600">
             {actionErrorMessage(retryMutation.error)}
           </p>
         )}
@@ -496,7 +496,7 @@ function AgentErrorActionContent({
     <div className="space-y-3">
       <p className="text-sm leading-relaxed text-secondary whitespace-pre-wrap">{data.reason}</p>
       {mutation.isError && (
-        <p role="alert" className="text-xs text-red-600">
+        <p role="alert" className="text-xs text-status-danger-600">
           {actionErrorMessage(mutation.error)}
         </p>
       )}
@@ -573,7 +573,7 @@ function WorkStreamReviewActionContent({
           <WorkStreamFileList files={data.prompt.files} squadId={data.squadId} />
         )}
         {(approveMutation.isError || rejectMutation.isError) && (
-          <p role="alert" className="text-xs text-red-600">
+          <p role="alert" className="text-xs text-status-danger-600">
             {actionErrorMessage(approveMutation.error ?? rejectMutation.error)}
           </p>
         )}
@@ -672,7 +672,7 @@ function WorkStreamBlockedActionContent({
       )}
 
       {respondMutation.isError && (
-        <p role="alert" className="text-xs text-red-600">
+        <p role="alert" className="text-xs text-status-danger-600">
           {actionErrorMessage(respondMutation.error)}
         </p>
       )}

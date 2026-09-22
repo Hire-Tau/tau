@@ -74,7 +74,7 @@ export function OutboundGrantsList({ sourceSquadId }: Props) {
                   onClick={() => {
                     if (confirm('Revoke this grant?')) deleteMutation.mutate(grant.id)
                   }}
-                  className="tau-button text-xs text-red-600 dark:text-red-400 hover:underline"
+                  className="tau-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:underline"
                 >
                   Revoke
                 </button>

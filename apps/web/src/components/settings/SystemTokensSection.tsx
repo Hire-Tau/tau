@@ -114,7 +114,7 @@ export function SystemTokensSection() {
             </button>
           </div>
         </details>
-        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+        {error && <p className="text-sm text-status-danger-600 dark:text-status-danger-400">{error}</p>}
         <button
           onClick={() => createMutation.mutate()}
           disabled={createMutation.isPending}
@@ -126,8 +126,8 @@ export function SystemTokensSection() {
 
       {/* One-time token reveal */}
       {created && (
-        <div className="rounded-lg border-2 border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20 p-4 space-y-2">
-          <p className="text-sm font-medium text-green-800 dark:text-green-200">
+        <div className="rounded-lg border-2 border-status-success-300 dark:border-status-success-700 bg-status-success-50 dark:bg-status-success-900/20 p-4 space-y-2">
+          <p className="text-sm font-medium text-status-success-800 dark:text-status-success-200">
             Token “{created.name}” created — copy it now, it won’t be shown again:
           </p>
           <div className="flex items-center gap-2">
@@ -183,7 +183,7 @@ export function SystemTokensSection() {
                 <button
                   onClick={() => revokeMutation.mutate(t.id)}
                   disabled={revokeMutation.isPending}
-                  className="tau-button px-2 py-1 text-xs font-medium text-red-600 dark:text-red-400 border border-th-border rounded hover:bg-surface-hover disabled:opacity-50 shrink-0"
+                  className="tau-button px-2 py-1 text-xs font-medium text-status-danger-600 dark:text-status-danger-400 border border-th-border rounded hover:bg-surface-hover disabled:opacity-50 shrink-0"
                 >
                   Revoke
                 </button>

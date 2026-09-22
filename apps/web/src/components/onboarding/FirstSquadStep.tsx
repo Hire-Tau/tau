@@ -278,7 +278,7 @@ export function FirstSquadStep({ meta, item, embedded, onSquadCreated }: ItemRow
           )}
           <ReposField value={repos} onChange={setRepos} idPrefix="first-squad-create" />
           {createMutation.isError && (
-            <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+            <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
               {createMutation.error instanceof Error ? createMutation.error.message : 'Failed to create the squad.'}
             </p>
           )}
@@ -347,7 +347,9 @@ function KickoffFeedback({
   if (isError) {
     return (
       <div role="alert" className="mt-2 flex items-center gap-2">
-        <p className="text-sm text-red-600 dark:text-red-400">Failed to send the kickoff message.</p>
+        <p className="text-sm text-status-danger-600 dark:text-status-danger-400">
+          Failed to send the kickoff message.
+        </p>
         <button type="button" onClick={onRetry} className="tau-button text-sm text-accent-light hover:underline">
           Retry
         </button>
@@ -355,7 +357,11 @@ function KickoffFeedback({
     )
   }
   if (isSuccess) {
-    return <p className="text-sm text-green-700 dark:text-green-300 mt-2">Sent — your squad is getting started.</p>
+    return (
+      <p className="text-sm text-status-success-700 dark:text-status-success-300 mt-2">
+        Sent — your squad is getting started.
+      </p>
+    )
   }
   return null
 }

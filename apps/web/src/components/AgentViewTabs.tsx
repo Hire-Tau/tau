@@ -74,13 +74,13 @@ export function AgentViewTabs<T extends string>({ activeTab, onChange, tabs }: A
         {tab.label}
         {activeCount > 0 && (
           <span aria-hidden="true" className="shrink-0 inline-flex items-center gap-1">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-status-progress-500 animate-pulse" />
             <span
               className={clsx(
                 'min-w-[16px] h-[16px] flex items-center justify-center text-[10px] font-bold rounded-full px-1 tabular-nums',
                 isActive
                   ? 'bg-on-accent/20 text-on-accent'
-                  : 'bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400'
+                  : 'bg-status-progress-50 text-status-progress-700 dark:bg-status-progress-900/20 dark:text-status-progress-400'
               )}
             >
               {activeCount}

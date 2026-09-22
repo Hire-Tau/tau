@@ -58,7 +58,7 @@ export function SharedPromptList({
             <div className="font-semibold text-primary flex items-center gap-2 flex-wrap">
               <span>{include.name}</span>
               {include.yamlFieldOverrides.length > 0 && (
-                <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-600 dark:text-amber-400">
+                <span className="rounded-full bg-status-attention-500/10 px-2 py-0.5 text-[11px] text-status-attention-600 dark:text-status-attention-400">
                   Modified from template
                 </span>
               )}
@@ -81,7 +81,7 @@ export function SharedPromptList({
               </button>
             )}
             {canWrite && !include.hasTemplate && (
-              <button className="tau-button text-sm text-red-600" onClick={() => onDelete(include)}>
+              <button className="tau-button text-sm text-status-danger-600" onClick={() => onDelete(include)}>
                 Delete
               </button>
             )}
@@ -240,7 +240,7 @@ export function SharedPromptsTab() {
         )}
       </div>
 
-      {actionError && <div className="text-sm text-red-600 dark:text-red-400">{actionError}</div>}
+      {actionError && <div className="text-sm text-status-danger-600 dark:text-status-danger-400">{actionError}</div>}
 
       <SharedPromptList
         includes={includes}
@@ -335,7 +335,7 @@ export function SharedPromptsTab() {
               {existing?.hasTemplate && existing.yamlFieldOverrides.length > 0 && (
                 <button
                   type="button"
-                  className="tau-button px-3 py-1.5 text-sm text-amber-600 dark:text-amber-400 disabled:opacity-50"
+                  className="tau-button px-3 py-1.5 text-sm text-status-attention-600 dark:text-status-attention-400 disabled:opacity-50"
                   disabled={revertAll.isPending}
                   onClick={() => {
                     if (window.confirm(`Revert "${existing.id}" to its template?`)) revertAll.mutate(existing.id)
@@ -345,7 +345,9 @@ export function SharedPromptsTab() {
                 </button>
               )}
               {save.isError && (
-                <span className="text-xs text-red-600 dark:text-red-400">{(save.error as Error).message}</span>
+                <span className="text-xs text-status-danger-600 dark:text-status-danger-400">
+                  {(save.error as Error).message}
+                </span>
               )}
             </div>
           </form>

@@ -67,7 +67,7 @@ export function SquadContextEditor({ squadId, context }: Props) {
           'font-mono leading-relaxed resize-y',
           'placeholder:text-placeholder',
           ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
-          dirty ? 'border-yellow-500 dark:border-yellow-400' : 'border-th-border'
+          dirty ? 'border-status-review-500 dark:border-status-review-400' : 'border-th-border'
         )}
       />
 
@@ -86,7 +86,9 @@ export function SquadContextEditor({ squadId, context }: Props) {
         </button>
       </div>
 
-      {mutation.isError && <p className="text-xs text-red-500 mt-2">Failed to save: {String(mutation.error)}</p>}
+      {mutation.isError && (
+        <p className="text-xs text-status-danger-500 mt-2">Failed to save: {String(mutation.error)}</p>
+      )}
     </div>
   )
 }

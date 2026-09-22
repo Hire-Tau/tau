@@ -103,7 +103,7 @@ export function IntegrationDirectoryCard({
           >
             <span
               className={clsx(
-                'absolute left-[3px] top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-white shadow transition-transform',
+                'absolute left-[3px] top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-chrome-toggle-thumb shadow transition-transform',
                 enabled ? 'translate-x-4' : 'translate-x-0'
               )}
             />
@@ -115,7 +115,7 @@ export function IntegrationDirectoryCard({
         <div className="mt-auto">
           {managedPush && <p className="mt-3 text-sm text-muted">Managed by the platform.</p>}
           {enabled && entry.setup && entry.setup.state !== 'configured' && (
-            <div className="mt-3 text-xs text-amber-600 dark:text-amber-400">
+            <div className="mt-3 text-xs text-status-attention-600 dark:text-status-attention-400">
               <p className="font-medium">
                 {entry.setup.state === 'needs_setup' ? 'Setup required' : 'Needs attention'}
               </p>
@@ -129,7 +129,7 @@ export function IntegrationDirectoryCard({
             </div>
           )}
           {toggle.isError && (
-            <p role="alert" className="mt-3 text-sm text-red-500">
+            <p role="alert" className="mt-3 text-sm text-status-danger-500">
               Could not update {entry.label}. Please try again.
             </p>
           )}
@@ -261,7 +261,7 @@ export function IntegrationsSection() {
       {permissions.isLoading || catalog.isPending ? (
         <p className="text-sm text-muted">Loading integrations…</p>
       ) : permissions.isError || catalog.isError ? (
-        <p role="alert" className="text-sm text-red-500">
+        <p role="alert" className="text-sm text-status-danger-500">
           Unable to check integration access. Please try again.
         </p>
       ) : visible.length === 0 ? (

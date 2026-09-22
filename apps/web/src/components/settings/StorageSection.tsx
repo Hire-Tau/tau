@@ -107,7 +107,7 @@ export function StorageSection() {
         {data?.scannedAt ? `Last scanned ${new Date(data.scannedAt).toLocaleString()}.` : 'Waiting for the first scan.'}
       </p>
       {(query.isError || refresh.isError || data?.error) && (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-sm text-status-danger-400">
           {data?.error ?? 'Could not load storage. Try refreshing.'}
         </p>
       )}

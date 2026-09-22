@@ -81,7 +81,7 @@ export function TemplateDiffDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="absolute inset-0 bg-chrome-scrim/50" onClick={onClose} />
       <div className="tau-overlay relative bg-surface rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[80vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-th-border">
@@ -89,11 +89,11 @@ export function TemplateDiffDialog({
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-3 text-xs">
               <span className="flex items-center gap-1">
-                <span className="inline-block w-3 h-3 rounded bg-red-100 dark:bg-red-900/40 border border-red-300 dark:border-red-700" />
+                <span className="inline-block w-3 h-3 rounded bg-status-danger-100 dark:bg-status-danger-900/40 border border-status-danger-300 dark:border-status-danger-700" />
                 Template
               </span>
               <span className="flex items-center gap-1">
-                <span className="inline-block w-3 h-3 rounded bg-green-100 dark:bg-green-900/40 border border-green-300 dark:border-green-700" />
+                <span className="inline-block w-3 h-3 rounded bg-status-success-100 dark:bg-status-success-900/40 border border-status-success-300 dark:border-status-success-700" />
                 Current
               </span>
             </div>
@@ -114,7 +114,7 @@ export function TemplateDiffDialog({
                     key={field}
                     onClick={() => handleRevertField(field)}
                     disabled={isReverting}
-                    className="tau-button text-xs px-2 py-1 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-900/50 disabled:opacity-50 font-mono"
+                    className="tau-button text-xs px-2 py-1 rounded bg-status-attention-100 dark:bg-status-attention-900/30 text-status-attention-800 dark:text-status-attention-300 hover:bg-status-attention-200 dark:hover:bg-status-attention-900/50 disabled:opacity-50 font-mono"
                   >
                     Revert {field}
                   </button>
@@ -164,8 +164,10 @@ export function TemplateDiffDialog({
                     <span
                       key={i}
                       className={clsx(
-                        part.removed && 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300',
-                        part.added && 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300'
+                        part.removed &&
+                          'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-800 dark:text-status-danger-300',
+                        part.added &&
+                          'bg-status-success-100 dark:bg-status-success-900/30 text-status-success-800 dark:text-status-success-300'
                       )}
                     >
                       {part.value
@@ -194,7 +196,7 @@ export function TemplateDiffDialog({
             <button
               onClick={handleRevert}
               disabled={isReverting || !hasDiff}
-              className="tau-button text-sm bg-amber-600 text-white px-4 py-1.5 rounded font-medium hover:bg-amber-700 disabled:opacity-50"
+              className="tau-button text-sm bg-status-attention-600 text-on-strong px-4 py-1.5 rounded font-medium hover:bg-status-attention-700 disabled:opacity-50"
             >
               {isReverting ? 'Reverting…' : 'Revert to Template'}
             </button>

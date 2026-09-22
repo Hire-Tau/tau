@@ -124,7 +124,10 @@ export function IntegrationCredentialSettings({
                     />
                   )}
                   {missing && (
-                    <span id={hintId} className="block text-xs text-amber-600 dark:text-amber-400">
+                    <span
+                      id={hintId}
+                      className="block text-xs text-status-attention-600 dark:text-status-attention-400"
+                    >
                       {field.label} is required.
                     </span>
                   )}

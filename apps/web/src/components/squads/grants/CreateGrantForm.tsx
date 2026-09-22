@@ -65,7 +65,7 @@ export function CreateGrantForm({ sourceSquadId, onClose }: Props) {
       </div>
 
       {createMutation.isError && (
-        <p className="text-sm text-red-600 dark:text-red-400">
+        <p className="text-sm text-status-danger-600 dark:text-status-danger-400">
           {createMutation.error instanceof Error ? createMutation.error.message : 'Failed to create grant'}
         </p>
       )}

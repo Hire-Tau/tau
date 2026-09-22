@@ -53,25 +53,25 @@ export function VoiceFormFillButton({
           'tau-button',
           'w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg border-2 border-dashed transition-colors disabled:opacity-50',
           state === 'recording'
-            ? 'border-red-400 dark:border-red-600 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+            ? 'border-status-danger-400 dark:border-status-danger-600 bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300'
             : state === 'transcribing' || state === 'extracting'
               ? 'border-th-border bg-surface-secondary text-placeholder'
-              : 'border-th-border hover:border-red-400 dark:hover:border-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 text-secondary hover:text-red-700 dark:hover:text-red-300'
+              : 'border-th-border hover:border-status-danger-400 dark:hover:border-status-danger-600 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/30 text-secondary hover:text-status-danger-700 dark:hover:text-status-danger-300'
         )}
       >
         {state === 'extracting' ? (
           <>
-            <span className="inline-block w-4 h-4 border-2 border-red-300 border-t-red-600 rounded-full animate-spin" />
+            <span className="inline-block w-4 h-4 border-2 border-status-danger-300 border-t-red-600 rounded-full animate-spin" />
             <span className="text-sm font-medium">Filling form...</span>
           </>
         ) : state === 'transcribing' ? (
           <>
-            <span className="inline-block w-4 h-4 border-2 border-gray-300 dark:border-gray-600 border-t-gray-600 dark:border-t-gray-300 rounded-full animate-spin" />
+            <span className="inline-block w-4 h-4 border-2 border-status-neutral-300 dark:border-status-neutral-600 border-t-gray-600 dark:border-t-gray-300 rounded-full animate-spin" />
             <span className="text-sm font-medium">Transcribing...</span>
           </>
         ) : state === 'recording' ? (
           <>
-            <span className="inline-block w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
+            <span className="inline-block w-2.5 h-2.5 bg-status-danger-500 rounded-full animate-pulse" />
             <span className="text-sm font-medium">
               Listening... {Math.floor(elapsed / 60)}:{String(elapsed % 60).padStart(2, '0')}
             </span>

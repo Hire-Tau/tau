@@ -35,7 +35,7 @@
 }
 
 .dark .squad-chat-filter[aria-pressed='true'] {
-  color: #c4b5fd;
+  color: rgb(var(--decoration-4-300));
 }
 
 .squad-chat-category {

@@ -60,7 +60,7 @@ export function NotificationPreferences() {
             'tau-button',
             'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
             pushEnabled
-              ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50'
+              ? 'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50'
               : 'bg-accent text-on-accent hover:bg-accent-hover'
           )}
         >

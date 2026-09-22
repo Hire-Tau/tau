@@ -3,31 +3,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { scanSourceForRawColors, type RawColorCategory } from './no-raw-colors.scanner'
 
-// No-raw-colors guard (phase 1 of the color-theme architecture; report §7 row 1).
-//
-// New UI colors must flow through theme tokens (CSS custom properties mapped to
-// Tailwind semantic utilities). This guard fails on NEW violations only: the
-// allowlist below is the quantified pre-tokenization inventory from research
-// work stream #215 (report §2.4, artifact
-// artifacts/color-theme-investigation/report.md), re-derived against this tree
-// (main @ d0610e293, 2026-09-16) so the guard passes on main as-is.
-//
-// The allowlist ONLY EVER SHRINKS: when phases 2–4 migrate a surface onto
-// tokens, remove its entry here in the same PR. Entries that are documented
-// exception-policy surfaces (report §4.3) are annotated inline instead of
-// being migrated — EXCEPT brand assets, which are temporary pending
-// tokenization per owner decision PD-5, not permanent exceptions.
-//
-// Inventory cross-check at guard introduction (current tree vs report §2.4 at
-// 417a6c3f): palette utilities 1,936/150 vs 1,935/149 (tree drift), literal
-// hex 190/20 vs 234/20 (44 chrome-token hexes moved to channel form by phase
-// 0), color functions 101/6 vs 118/7 (SquadAgentThreads.css color-mix calls
-// became token-wrapped; FileUpload.tsx inline styles were removed upstream),
-// color-bearing inline styles 2/2 vs ~3 (MessageContent.tsx was cleaned
-// upstream; PullToRefresh.tsx carries a brand purple).
-// Rework base integration (2026-09-21, initiative/color-themes @ 11e775485):
-// one additional palette file, StorageSection.tsx:88 (text-red-400), is explicitly
-// recorded below; the earlier snapshot is historical, not a fresh base scan.
+// Complete app-owned color coverage. Palette utilities (including black/white),
+// literal colors, and unreviewed inline color styles fail CI. Only bounded
+// content/definition exceptions below remain; there is no legacy-file waiver.
 
 type RawCategoryType = RawColorCategory
 const srcRoot = join(import.meta.dir)
@@ -48,197 +26,38 @@ function isTestArtifact(path: string): boolean {
   )
 }
 
-// ---------------------------------------------------------------------------
-// Allowlist: legacy inventory (phases 2–4 migrate these onto tokens)
-// ---------------------------------------------------------------------------
-
-const LEGACY_PALETTE_UTILITY_FILES: readonly string[] = [
-  'components/ActionCenterContent.tsx',
-  'components/ActionItem.tsx',
-  'components/AgentChat.tsx',
-  'components/AgentConversationBody.tsx',
-  'components/AgentQuestionCard.tsx',
-  'components/AgentSandboxControls.tsx',
-  'components/AgentViewTabs.tsx',
-  'components/AmtpAllowRulesEditor.tsx',
-  'components/AmtpMailboxSection.tsx',
-  'components/AppNav.tsx',
-  'components/AssistantConversations.tsx',
-  'components/Chat.tsx',
-  'components/ChatDrawer.tsx',
-  'components/ChatPage.tsx',
-  'components/ChatView.tsx',
-  'components/ConfirmButton.tsx',
-  'components/DevBackendBar.tsx',
-  'components/FeedVisitSummary.tsx',
-  'components/LoginPage.tsx',
-  'components/MaintenanceBanner.tsx',
-  'components/MessageContent.tsx',
-  'components/OfflineBanner.tsx',
-  'components/QuestionInput.tsx',
-  'components/RejectionModal.tsx',
-  'components/RewindModal.tsx',
-  'components/SchemaFieldInput.tsx',
-  'components/SettingsPage.tsx',
-  'components/SquadDetailPage.tsx',
-  'components/SquadWorkspaceImageViewer.tsx',
-  'components/UpdateBanner.tsx',
-  'components/VoiceFormFillButton.tsx',
-  'components/VoiceMicButton.tsx',
-  'components/VoiceWorkspacePage.tsx',
-  'components/WorkStreamApprovalConfirmation.tsx',
-  'components/WorkStreamDetailModal.tsx',
-  'components/WorkStreamFileCard.tsx',
-  'components/WorkStreamGraph.tsx',
-  'components/WorkStreamPauseControls.tsx',
-  'components/WorkflowGraph.tsx',
-  'components/WorkflowRunPanel.tsx',
-  'components/WorktreeCleanupSettings.tsx',
-  'components/artifacts/ArtifactRenderer.tsx',
-  'components/artifacts/PresentationRenderer.tsx',
-  'components/auth/DemoAccessPage.tsx',
-  'components/auth/PasskeyLogin.tsx',
-  'components/auth/PasskeyRecoveryRequest.tsx',
-  'components/auth/PasskeyRegister.tsx',
-  'components/auth/TokenRegisterPage.tsx',
-  'components/integrations/BigbrainIntegrationSettings.tsx',
-  'components/integrations/ConnectionAssignmentPicker.tsx',
-  'components/integrations/GitHubIntegrationSettings.tsx',
-  'components/integrations/IntegrationCredentialSettings.tsx',
-  'components/integrations/NotionIntegrationSettings.tsx',
-  'components/integrations/OAuthCallbackPage.tsx',
-  'components/monitors/AgentMonitorsPanel.tsx',
-  'components/monitors/MonitorDetailsModal.tsx',
-  'components/monitors/MonitorsList.tsx',
-  'components/onboarding/FirstSquadStep.tsx',
-  'components/onboarding/InviteTeamStep.tsx',
-  'components/onboarding/OnboardingPage.tsx',
-  'components/onboarding/onboardingItemPresentation.ts',
-  'components/schedules/CreateScheduleModal.tsx',
-  'components/schedules/SchedulesList.tsx',
-  'components/settings/AgentTypesSection.tsx',
-  'components/settings/AmtpSection.tsx',
-  'components/settings/ChannelsSection.tsx',
-  'components/settings/DeviceAuthorizationApproval.tsx',
-  'components/settings/DevicesSection.tsx',
-  'components/settings/IntegrationsSection.tsx',
-  'components/settings/InviteUserForm.tsx',
-  'components/settings/LinkedChatAccounts.tsx',
-  'components/settings/MachinesSection.tsx',
-  'components/settings/MigrateControl.tsx',
-  'components/settings/NotificationPreferences.tsx',
-  'components/settings/NotificationsConfigSection.tsx',
-  'components/settings/ProviderAuthSection.tsx',
-  'components/settings/PublicKeyBlock.tsx',
-  'components/settings/RebalancePanel.tsx',
-  'components/settings/RemoteHostsSection.tsx',
-  'components/settings/RolesSection.tsx',
-  'components/settings/RotationCallout.tsx',
-  'components/settings/SecretsSection.tsx',
-  'components/settings/SessionsSection.tsx',
-  'components/settings/SharedPromptPicker.tsx',
-  'components/settings/SharedPromptsTab.tsx',
-  'components/settings/SignupPolicySection.tsx',
-  'components/settings/SkillsSection.tsx',
-  'components/settings/SquadPresetsSection.tsx',
-  // Upstream inventory delta from initiative/color-themes @ 11e775485:
-  // StorageSection.tsx:88 introduced one error-label palette utility.
-  'components/settings/StorageSection.tsx',
-  'components/settings/SystemLogsSection.tsx',
-  'components/settings/SystemTokensSection.tsx',
-  'components/settings/SystemUpdateSection.tsx',
-  'components/settings/TemplateDiffDialog.tsx',
-  'components/settings/TemplateFieldActions.tsx',
-  'components/settings/UsersSection.tsx',
-  'components/settings/ViewportDebugSection.tsx',
-  'components/squads/ActivityFeedView.tsx',
-  'components/squads/AgentContextPanel.tsx',
-  'components/squads/AgentInboxPanel.tsx',
-  'components/squads/AgentWorkStreamsPanel.tsx',
-  'components/squads/CreateFlowWorkStream.tsx',
-  'components/squads/CreateHostWorkspaceField.tsx',
-  'components/squads/CreateSquadModal.tsx',
-  'components/squads/DeleteSquadModal.tsx',
-  'components/squads/DirectMergePolicySettings.tsx',
-  'components/squads/EventRulePredicates.tsx',
-  'components/squads/EventRulePreview.tsx',
-  'components/squads/ExternalDeploymentsPanel.tsx',
-  'components/squads/IntegrationSettings.tsx',
-  'components/squads/LocalDeploymentsPanel.tsx',
-  'components/squads/MemorySettings.tsx',
-  'components/squads/MemorySyncSettings.tsx',
-  'components/squads/NotificationSettings.tsx',
-  'components/squads/RelationshipsList.tsx',
-  'components/squads/RemoteHostsSettings.tsx',
-  'components/squads/SandboxLogs.tsx',
-  'components/squads/SandboxSettings.tsx',
-  'components/squads/SandboxStatusIndicator.tsx',
-  'components/squads/SpawnAgentModal.tsx',
-  'components/squads/SquadAgentContextEditor.tsx',
-  'components/squads/SquadAgentThreads.tsx',
-  'components/squads/SquadAvatarSettings.tsx',
-  'components/squads/SquadContextEditor.tsx',
-  'components/squads/SquadEnvConfig.tsx',
-  'components/squads/SquadEventRulesEditor.tsx',
-  'components/squads/SquadGeneralSettings.tsx',
-  'components/squads/SquadGitIdentitySettings.tsx',
-  'components/squads/SquadIntegrationCard.tsx',
-  'components/squads/SquadList.tsx',
-  'components/squads/SquadSshConfig.tsx',
-  'components/squads/SquadSshKeys.tsx',
-
-  'components/squads/SquadWorkflowSettings.tsx',
-  'components/squads/WorkflowEditor.tsx',
-  'components/squads/WorkspaceIndexingSettings.tsx',
-  'components/squads/grants/CreateGrantForm.tsx',
-  'components/squads/grants/GrantRiskBadge.tsx',
-  'components/squads/grants/OutboundGrantsList.tsx',
-  'components/workspace/FileUpload.tsx',
-  'lib/tool-renderers.tsx',
-  'voice/VoiceCompanionWidget.tsx',
-  'voice/VoiceTranscriptInspector.tsx',
-]
-
-const LEGACY_LITERAL_HEX_FILES: readonly string[] = [
-  'components/ActionCenterContent.tsx',
-  'components/ChatView.tsx',
-  'components/MessageContent.tsx',
-  'components/WorkStreamFileCard.tsx',
-  'components/settings/SystemLogsSection.tsx',
-  'components/squads/SandboxLogs.tsx',
-  'components/squads/SquadAgentThreads.css',
-  'voice/VoiceTranscriptInspector.tsx',
-]
-
-const LEGACY_COLOR_FUNCTION_FILES: readonly string[] = ['components/VoiceWorkspacePage.tsx']
-
-const LEGACY_INLINE_COLOR_STYLE_FILES: readonly string[] = [
-  'components/squads/SquadUniverse.tsx',
-]
-
-/** Documented exception-policy annotations (report §4.3). */
-const ENTRY_REASONS: Readonly<Record<string, string>> = {
-  'components/settings/CustomThemeEditor.tsx':
-    'theme-authoring data: one example value plus black/white contrast endpoints; bounded below',
-  'theme/flash.ts': 'theme definition: seven pre-CSS surface fallbacks; exact parity checked by flashScript.test.ts',
-  'components/settings/StorageSection.tsx':
-    'temporary: upstream error-label palette use added in initiative base 11e775485; phase 2 status token migration',
-  'components/artifacts/PresentationRenderer.tsx':
-    'mixed: chart/presentation colors are content-authored (§4.3 permanent) alongside chrome palette use (phase 2+)',
-  'components/VoiceWorkspacePage.tsx': 'temporary: voice orb CSS (phase 2+ sweep)',
-  'components/squads/SquadUniverse.tsx': 'token-derived: live hovered-node swatch from graph/status tokens (phase 4)',
-}
-
+// Only genuine content/definition exceptions survive the complete rollout.
+// Match-level caps below prevent adding unrelated raw colors to these files.
 const ALLOWLIST: Readonly<Record<RawCategoryType, readonly string[]>> = {
-  'palette-utility': LEGACY_PALETTE_UTILITY_FILES,
-  // Editor color data (sample + contrast endpoints), not chrome palette literals.
-  'literal-hex': [...LEGACY_LITERAL_HEX_FILES, 'components/settings/CustomThemeEditor.tsx'],
-  // The pre-CSS built-in surface fallback moved from index.html to bundled TS.
-  'color-function': [...LEGACY_COLOR_FUNCTION_FILES, 'theme/flash.ts'],
-  'inline-color-style': LEGACY_INLINE_COLOR_STYLE_FILES,
+  'palette-utility': [
+    'components/settings/PairingCode.tsx',
+    'components/artifacts/ArtifactRenderer.tsx',
+    'components/artifacts/PresentationRenderer.tsx',
+  ],
+  'literal-hex': ['components/settings/CustomThemeEditor.tsx'],
+  'color-function': ['theme/flash.ts'],
+  'inline-color-style': ['components/squads/SquadUniverse.tsx'],
+}
+const ENTRY_REASONS: Readonly<Record<string, string>> = {
+  'components/settings/PairingCode.tsx': 'QR-code quiet zone belongs to the generated image, not app chrome.',
+  'components/artifacts/ArtifactRenderer.tsx': 'Sandboxed user-authored HTML retains its document canvas.',
+  'components/artifacts/PresentationRenderer.tsx':
+    'Only sandboxed HTML canvas is exempt; surrounding presentation chrome is tokenized.',
+  'components/settings/CustomThemeEditor.tsx': 'Theme-authoring sample and contrast endpoints, not app chrome.',
+  'theme/flash.ts': 'Minimal pre-CSS builtin surface definitions, verified against authored CSS.',
+  'components/squads/SquadUniverse.tsx': 'Hovered-node swatch comes from the live graph/status token reader.',
 }
 
 describe('no-raw-colors guard', () => {
+  test('content exceptions allow only one white image/document canvas each', () => {
+    for (const path of ALLOWLIST['palette-utility']) {
+      const findings = scanSourceForRawColors(path, readFileSync(join(srcRoot, path), 'utf8'))
+      expect(findings.map(({ category, match }) => ({ category, match }))).toEqual([
+        { category: 'palette-utility', match: 'bg-white' },
+      ])
+    }
+  })
+
   test('theme authoring exceptions remain bounded to color data, not UI styles', () => {
     const editor = scanSourceForRawColors(
       'editor.tsx',
@@ -316,6 +135,15 @@ describe('raw-color detector', () => {
       'dark:text-blue-700',
       'md:bg-red-500/30',
       'border-slate-200',
+    ])
+  })
+
+  test('detects black/white escape hatches but ignores numeric HTML entities', () => {
+    const source = '<div className="bg-black/50 dark:text-white hover:border-white/20">&#10003;</div>'
+    expect(scanSourceForRawColors('synthetic.tsx', source).map((f) => f.match)).toEqual([
+      'bg-black/50',
+      'dark:text-white',
+      'hover:border-white/20',
     ])
   })
 

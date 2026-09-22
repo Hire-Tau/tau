@@ -72,7 +72,7 @@ export function InviteUserForm({
           </button>
         )}
         {resendMutation.isError && (
-          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+          <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
             {resendMutation.error.message}
           </p>
         )}
@@ -198,7 +198,7 @@ export function InviteUserForm({
         )}
       </div>
       {inviteMutation.isError && (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+        <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
           {(inviteMutation.error as Error)?.message || 'Failed to invite user'}
         </p>
       )}

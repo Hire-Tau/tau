@@ -201,7 +201,7 @@ export function SquadGeneralSettings({
                   'w-full px-3 py-2 rounded-lg border bg-surface text-primary text-sm',
                   'placeholder:text-placeholder',
                   ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
-                  nameValue !== name ? 'border-yellow-500 dark:border-yellow-400' : 'border-th-border'
+                  nameValue !== name ? 'border-status-review-500 dark:border-status-review-400' : 'border-th-border'
                 )}
               />
             </div>
@@ -228,7 +228,9 @@ export function SquadGeneralSettings({
                   'leading-relaxed resize-y',
                   'placeholder:text-placeholder',
                   ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
-                  purposeValue !== purpose ? 'border-yellow-500 dark:border-yellow-400' : 'border-th-border'
+                  purposeValue !== purpose
+                    ? 'border-status-review-500 dark:border-status-review-400'
+                    : 'border-th-border'
                 )}
               />
             </div>
@@ -268,7 +270,7 @@ export function SquadGeneralSettings({
                   'placeholder:text-placeholder',
                   ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
                   maxConcurrentWorkStreamsValue !== maxConcurrentWorkStreams
-                    ? 'border-yellow-500 dark:border-yellow-400'
+                    ? 'border-status-review-500 dark:border-status-review-400'
                     : 'border-th-border'
                 )}
               />
@@ -305,16 +307,16 @@ export function SquadGeneralSettings({
                   'placeholder:text-placeholder',
                   ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
                   graceError
-                    ? 'border-red-500 dark:border-red-400'
+                    ? 'border-status-danger-500 dark:border-status-danger-400'
                     : blockedGraceMinutesValue !== blockedGraceMinutes
-                      ? 'border-yellow-500 dark:border-yellow-400'
+                      ? 'border-status-review-500 dark:border-status-review-400'
                       : 'border-th-border'
                 )}
               />
               <p id="squad-blocked-grace-minutes-help" className="text-xs text-muted mt-1">
                 Blocked streams release their slot after this long; empty = 30. Changes take effect live.
               </p>
-              {graceError && <p className="text-xs text-red-500 mt-1">{graceError}</p>}
+              {graceError && <p className="text-xs text-status-danger-500 mt-1">{graceError}</p>}
             </div>
           </>
         )}
@@ -346,9 +348,9 @@ export function SquadGeneralSettings({
                 'placeholder:text-placeholder',
                 ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
                 hostError
-                  ? 'border-red-500 dark:border-red-400'
+                  ? 'border-status-danger-500 dark:border-status-danger-400'
                   : hostWorkspacePathValue !== hostWorkspacePath
-                    ? 'border-yellow-500 dark:border-yellow-400'
+                    ? 'border-status-review-500 dark:border-status-review-400'
                     : 'border-th-border'
               )}
             />
@@ -366,7 +368,7 @@ export function SquadGeneralSettings({
               Absolute directory on the Tau host this squad works in. Takes effect on the squad&apos;s next sandbox
               start. Tau never deletes this directory.
             </p>
-            {hostError && <p className="text-xs text-red-500 mt-1">{hostError}</p>}
+            {hostError && <p className="text-xs text-status-danger-500 mt-1">{hostError}</p>}
           </div>
         )}
 
@@ -408,7 +410,9 @@ export function SquadGeneralSettings({
         </button>
       </div>
 
-      {mutation.isError && <p className="text-xs text-red-500 mt-2">Failed to save: {String(mutation.error)}</p>}
+      {mutation.isError && (
+        <p className="text-xs text-status-danger-500 mt-2">Failed to save: {String(mutation.error)}</p>
+      )}
     </div>
   )
 }

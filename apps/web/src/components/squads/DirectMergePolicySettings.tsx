@@ -137,7 +137,9 @@ export function DirectMergePolicySettings({ squadId }: Props) {
         </button>
       </div>
 
-      {mutation.isError && <p className="text-xs text-red-500 mt-2">Failed to save: {String(mutation.error)}</p>}
+      {mutation.isError && (
+        <p className="text-xs text-status-danger-500 mt-2">Failed to save: {String(mutation.error)}</p>
+      )}
     </div>
   )
 }
