@@ -129,11 +129,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     if (tile) document.querySelector('meta[name="msapplication-TileColor"]')?.setAttribute('content', tile)
 
     // Store the resolved surface color so the flash-prevention script can use
-    // it before React boots; token values are channel triplets, so wrap them
-    // into a real CSS color.
+    // it before React boots. Share the pre-paint serializer: valid custom
+    // alpha may compile to exponent notation, which is not a bare CSS color.
     const channels = window.getComputedStyle(root).getPropertyValue('--color-bg-surface').trim()
-    if (channels) {
-      const surface = /^[\d\s./%]+$/.test(channels) ? `rgb(${channels})` : channels
+    const surface = tokenColor(channels)
+    if (surface) {
       persistSurfaceSnapshot(getThemeStorage(), resolvedThemeDefinition.id, resolvedAppearance, surface)
       root.style.backgroundColor = surface
 
