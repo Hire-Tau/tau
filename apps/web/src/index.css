@@ -509,3 +509,48 @@
     transform: scale(1);
   }
 }
+
+/* Tau Desktop inset title bar (html[data-desktop-shell='inset'], set by
+   useDesktopShellChrome only inside the desktop app while windowed). The macOS
+   window controls sit over the top-left of the page, so the app header becomes
+   the title bar: exactly 56px tall, a window drag region, and its logo never
+   starts left of x=80px. Browsers and mobile never get the attribute. */
+:root[data-desktop-shell='inset'] .tau-app-header {
+  height: 56px;
+  padding-top: 0;
+  -webkit-app-region: drag;
+}
+
+:root[data-desktop-shell='inset'] .tau-app-header-bar {
+  height: 100%;
+  padding-top: 0;
+  padding-bottom: 0;
+  /* 80px clears the window controls. The bar is centered at max-w-7xl (80rem),
+     so on windows wide enough that its centering offset already clears them,
+     keep the usual 1.5rem gutter aligned with the page content. */
+  padding-left: max(1.5rem, calc(80px - max(0px, (100vw - 80rem) / 2)));
+}
+
+/* Everything interactive in the title bar, and any overlay that can cover it,
+   must stay clickable rather than drag the window. */
+:root[data-desktop-shell='inset']
+  .tau-app-header
+  :is(
+    a,
+    button,
+    input,
+    select,
+    textarea,
+    summary,
+    label,
+    [role='button'],
+    [role='menu'],
+    [role='menuitem'],
+    [role='listbox'],
+    [role='option'],
+    [role='dialog'],
+    [tabindex]
+  ),
+:root[data-desktop-shell='inset'] :is([role='dialog'], [aria-modal='true'], .tau-overlay, .fixed.inset-0) {
+  -webkit-app-region: no-drag;
+}

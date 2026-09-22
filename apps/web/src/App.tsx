@@ -28,11 +28,14 @@ import { useAuth } from './providers/AuthProvider'
 import { useRef } from 'react'
 import { useVisualViewportShell } from './hooks/useVisualViewportShell'
 import { DesktopNotifications } from './components/DesktopNotifications'
+import { useDesktopShellChrome } from './hooks/useDesktopShellChrome'
 
 export default function App() {
   // Fit the fixed shell to the visible area while a software keyboard is open (see the hook).
   const shellRef = useRef<HTMLDivElement>(null)
   useVisualViewportShell(shellRef)
+  // Inside Tau Desktop with an inset title bar, the header doubles as the window's title bar.
+  useDesktopShellChrome()
   const { authRequired, authStatus, isAuthenticated, needsFirstAdminSetup, loginWithToken } = useAuth()
   const location = useLocation()
 

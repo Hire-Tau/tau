@@ -12,6 +12,8 @@ The active page is stored in the URL query string (`?section=integrations`). Mob
 
 System Updates reads the current deployment mode and run history from the backend. It does not cache update runs in browser storage or infer runtime mode from a previous run.
 
+Inside Tau Desktop, System Updates shows the app's native updater instead of the git updater: installed app version, bundled Core commit, check/download progress, and **Restart to update** once an update is ready. When a desktop-managed instance (`flavor.supervisor` is `desktop`) is opened in an ordinary browser, the page only explains that updates come from the desktop app's **Check for Updates…** menu item and stops polling the git updater.
+
 ## User Sections
 
 ### Notifications
@@ -154,6 +156,8 @@ Channel routing (per-channel overrides) stays in the existing channel system, wi
 
 Configure which notification channels receive which events.
 
+**Desktop notifications** — Inside a Tau Desktop build that supports it, a personal switch turns the app's OS alerts for inbox updates on or off. It is stored by the desktop app, not in notification rules, so it does not need `settings:write`.
+
 **Channels section** — Checkboxes to globally enable/disable each channel: `push`, `console`, `discord`, `slack`, `telegram`.
 
 **Rules section** — One card per event type. Each card shows the event name (e.g. `workStream.blocked`) and pill-style channel buttons. Click a pill to toggle that channel for the event. Disabled channels appear dimmed.
@@ -218,6 +222,8 @@ Workspace indexing settings (include/exclude patterns, reindex button, scan resu
 | Channels section                       | `apps/web/src/components/settings/ChannelsSection.tsx`            |
 | Notification Rules section             | `apps/web/src/components/settings/NotificationsConfigSection.tsx` |
 | Template Diff dialog                   | `apps/web/src/components/settings/TemplateDiffDialog.tsx`         |
+| System Updates section                 | `apps/web/src/components/settings/SystemUpdateSection.tsx`        |
+| Tau Desktop updates panel              | `apps/web/src/components/settings/DesktopUpdatePanel.tsx`         |
 | Workspace Indexing (squad-level)       | `apps/web/src/components/squads/WorkspaceIndexingSettings.tsx`    |
 | Query options                          | `apps/web/src/queryOptions.ts`                                    |
 | Query keys                             | `apps/web/src/queryKeys.ts`                                       |
