@@ -26,6 +26,8 @@ import { BellCheckIcon, BellIcon, SpeakerOffIcon } from './icons'
 
 export type AttentionTarget = { kind: 'squad'; id: string } | { kind: 'workStream'; id: string }
 
+type PreviewOption = { kind: AttentionKind; level: AttentionLevel } | null
+
 const LEVEL_LABEL: Record<AttentionLevel, string> = { mute: 'Mute', show: 'Show', notify: 'Notify' }
 
 // The radio itself is `sr-only`, and `clip: rect(0,0,0,0)` would clip its focus outline away, so
@@ -69,6 +71,8 @@ export function AttentionMenu({
   // `<details>` owns its own openness, so the state mirrors the element (via onToggle) rather
   // than driving it; closing writes the DOM property back, which re-fires onToggle.
   const [open, setOpen] = useState(false)
+  const [hoveredOption, setHoveredOption] = useState<PreviewOption>(null)
+  const [focusedOption, setFocusedOption] = useState<PreviewOption>(null)
   const detailsRef = useRef<HTMLDetailsElement>(null)
   const summaryRef = useRef<HTMLElement>(null)
   const close = useCallback(() => {
@@ -127,7 +131,13 @@ export function AttentionMenu({
   return (
     <details
       ref={detailsRef}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
+      onToggle={(event) => {
+        setOpen(event.currentTarget.open)
+        if (!event.currentTarget.open) {
+          setHoveredOption(null)
+          setFocusedOption(null)
+        }
+      }}
       className={clsx('attention-menu relative', className)}
     >
       <summary
@@ -162,6 +172,8 @@ export function AttentionMenu({
               {ATTENTION_LEVELS.map((level) => (
                 <label
                   key={level}
+                  onMouseEnter={() => setHoveredOption({ kind, level })}
+                  onMouseLeave={() => setHoveredOption(null)}
                   className={clsx(
                     'flex-1 cursor-pointer rounded border border-th-border px-2 py-1 text-center text-xs',
                     LABEL_FOCUS_RING,
@@ -175,17 +187,24 @@ export function AttentionMenu({
                     aria-label={`${ATTENTION_KIND_COPY[kind].label}: ${LEVEL_LABEL[level]}`}
                     checked={attention[kind] === level}
                     onChange={() => setLevel(kind, level)}
+                    onFocus={() => setFocusedOption({ kind, level })}
+                    onBlur={() => setFocusedOption(null)}
                   />
                   {LEVEL_LABEL[level]}
                 </label>
               ))}
             </div>
-            {/* The CURRENT level's meaning, so the words change as the user moves along the
-                control rather than making them guess what they just chose. Referenced by the
-                radiogroup's aria-describedby, so a screen reader reads the effect with the
-                group. */}
-            <p id={`${descriptionId}-${kind}`} className="mt-1 text-xs text-muted">
-              {describeAttentionLevel(kind, attention[kind])}
+            {/* Preview an option without changing the saved level. Restore the selected
+                description when neither the pointer nor keyboard focus is on an option. */}
+            <p id={`${descriptionId}-${kind}`} className="mt-1 min-h-8 text-[11px] leading-4 text-muted opacity-80">
+              {describeAttentionLevel(
+                kind,
+                hoveredOption?.kind === kind
+                  ? hoveredOption.level
+                  : focusedOption?.kind === kind
+                    ? focusedOption.level
+                    : attention[kind]
+              )}
             </p>
           </div>
         ))}
