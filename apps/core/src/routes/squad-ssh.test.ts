@@ -66,11 +66,15 @@ describe('squad-ssh routes', () => {
   it('denies squad ssh access outside the assigned squad scope', async () => {
     const user = await createTestUser({ prefix: rbacPrefix })
     const role = await createTestRole({ prefix: rbacPrefix, permissions: ['ssh:read'] })
+    const [otherSquad] = await db
+      .insert(squads)
+      .values({ name: `${testPrefix} other`, purpose: 'RBAC scope' })
+      .returning()
     await assignRole({
       userId: user.id,
       roleId: role.id,
       scope: 'squad',
-      squadId: '00000000-0000-0000-0000-000000000000',
+      squadId: otherSquad.id,
     })
 
     const res = await app.request(`/api/squads/ssh/${squadId}/config`, {

@@ -1,6 +1,6 @@
 import { useEnabledIntegrationFixtures } from '../../test-utils/enabled-integrations'
 useEnabledIntegrationFixtures('bigbrain', 'notion')
-import { expect, test } from 'bun:test'
+import { afterEach, expect, test } from 'bun:test'
 import { eq, inArray, sql } from 'drizzle-orm'
 import {
   db,
@@ -11,6 +11,7 @@ import {
   integrationProjectionStates,
   integrationRevocationJobs,
   secrets,
+  users,
   squads,
 } from '../../db'
 import { DbIntegrationConnectionRepository } from './db-connection-repository'
@@ -29,6 +30,20 @@ import type { SecretStoreTransaction } from '../secrets/store'
 import { resolveAssignedIntegrationRefs } from './projection/agent-refs'
 import { loadEffectiveToolchain } from './projection/load-effective-toolchain'
 import { loadProtectedIntegrationBindings } from './projection/protected-env'
+
+const actorIds: string[] = []
+async function createActor(): Promise<string> {
+  const id = crypto.randomUUID()
+  await db.insert(users).values({ id, email: `integration-actor-${id}@example.test` })
+  actorIds.push(id)
+  return id
+}
+afterEach(async () => {
+  if (!actorIds.length) return
+  await db.delete(integrationConnections).where(inArray(integrationConnections.updatedByUserId, actorIds))
+  await db.delete(users).where(inArray(users.id, actorIds))
+  actorIds.length = 0
+})
 
 function pending(id = crypto.randomUUID()) {
   return {
@@ -602,7 +617,7 @@ test('local reconnect clears retired broker ownership and both artifacts drain',
         credentialRef: localCredentialRef,
         materialRevision: localRevision,
         displayName: 'Local Workspace',
-        updatedByUserId: crypto.randomUUID(),
+        updatedByUserId: await createActor(),
         clientAuthority: 'local',
       })
     ).toEqual({ status: 'updated' })
@@ -861,7 +876,7 @@ test('local staged revocation ownership transfers atomically on create and recon
         credentialRef: nextRef,
         materialRevision: nextRevision,
         displayName: 'Renamed',
-        updatedByUserId: crypto.randomUUID(),
+        updatedByUserId: await createActor(),
         clientAuthority: 'local',
         adoptStagedRevocationRef: nextRef,
       })
@@ -889,7 +904,7 @@ test('local staged revocation ownership transfers atomically on create and recon
         credentialRef: nextRef,
         materialRevision: nextRevision,
         displayName: 'Renamed',
-        updatedByUserId: crypto.randomUUID(),
+        updatedByUserId: await createActor(),
         clientAuthority: 'local',
         adoptStagedRevocationRef: nextRef,
       })
@@ -909,6 +924,7 @@ test('local staged revocation ownership transfers atomically on create and recon
 test('pending local rollback preserves its exact pristine revocation owner without another lease', async () => {
   const repository = new DbIntegrationConnectionRepository()
   const input = { ...pending(), providerKey: 'notion', clientAuthority: 'local' as const }
+  await db.insert(secrets).values({ key: input.credentialRef, encryptedValue: 'ciphertext', iv: 'iv' })
   try {
     await db.insert(integrationRevocationJobs).values({
       providerKey: input.providerKey,
@@ -935,6 +951,7 @@ test('pending local rollback preserves its exact pristine revocation owner witho
   } finally {
     await db.delete(integrationConnections).where(eq(integrationConnections.id, input.id))
     await db.delete(integrationRevocationJobs).where(eq(integrationRevocationJobs.credentialRef, input.credentialRef))
+    await db.delete(secrets).where(eq(secrets.key, input.credentialRef))
   }
 })
 
@@ -1407,7 +1424,7 @@ test('authorized Notion reconnect atomically compares workspace and revision bef
         credentialRef: newRef,
         materialRevision: nextRevision,
         displayName: 'Mismatch',
-        updatedByUserId: crypto.randomUUID(),
+        updatedByUserId: await createActor(),
         clientAuthority: 'platform_broker',
         authorizationFlowId: localFlowId,
       })
@@ -1436,7 +1453,7 @@ test('authorized Notion reconnect atomically compares workspace and revision bef
         credentialRef: newRef,
         materialRevision: nextRevision,
         displayName: 'New',
-        updatedByUserId: crypto.randomUUID(),
+        updatedByUserId: await createActor(),
         clientAuthority: 'platform_broker',
         authorizationFlowId: localFlowId,
       })
@@ -1494,7 +1511,7 @@ test('authorized Notion reconnect atomically compares workspace and revision bef
         credentialRef: oldRef,
         materialRevision: crypto.randomUUID(),
         displayName: 'Stale',
-        updatedByUserId: crypto.randomUUID(),
+        updatedByUserId: await createActor(),
         clientAuthority: 'platform_broker',
       })
     ).toEqual({ status: 'changed' })

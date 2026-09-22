@@ -40,7 +40,7 @@ async function createSquadWithLinear(credential: string) {
     id,
     providerKey: 'linear',
     adapterVersion: 1,
-    displayName: 'Linear test account',
+    displayName: `Linear test account ${id}`,
     configuration: { version: 1 },
     credentialRef,
     materialRevision: revision,

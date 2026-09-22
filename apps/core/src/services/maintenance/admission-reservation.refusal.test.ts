@@ -1,6 +1,13 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import { eq } from 'drizzle-orm'
-import { agents, db, executionAdmissionReservations, executions, instanceMaintenanceState } from '../../db'
+import {
+  agents,
+  db,
+  executionAdmissionReservations,
+  executions,
+  instanceMaintenanceState,
+  chatSendReceipts,
+} from '../../db'
 import { acquireMaintenanceTestIsolation } from '../../test-utils/maintenance-test-isolation'
 import {
   AdmissionEffectRefusedError,
@@ -24,6 +31,7 @@ beforeEach(async () => {
 })
 afterEach(async () => {
   await db.delete(executionAdmissionReservations)
+  await db.delete(chatSendReceipts)
   await db.delete(executions)
   await db.delete(agents)
   await db.delete(instanceMaintenanceState)

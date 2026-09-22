@@ -345,6 +345,7 @@ describe('POST /api/chat clientId idempotency', () => {
   })
 
   afterAll(async () => {
+    await db.delete(chatSendReceipts).where(eq(chatSendReceipts.agentId, idempotencyAgent.id))
     await db.delete(messages).where(eq(messages.agentId, idempotencyAgent.id))
     await db.delete(executions).where(eq(executions.agentId, idempotencyAgent.id))
     await db.delete(agents).where(eq(agents.id, idempotencyAgent.id))
@@ -537,6 +538,7 @@ describe('POST /api/chat sender metadata', () => {
   })
 
   afterAll(async () => {
+    await db.delete(chatSendReceipts).where(eq(chatSendReceipts.agentId, senderAgent.id))
     await db.delete(messages).where(eq(messages.agentId, senderAgent.id))
     await db.delete(executions).where(eq(executions.agentId, senderAgent.id))
     await db.delete(agents).where(eq(agents.id, senderAgent.id))

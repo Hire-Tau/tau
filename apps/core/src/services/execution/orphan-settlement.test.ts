@@ -1,7 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
-import { agents, executionAdmissionReservations, executions, sandboxProvisionRecoveries, squads } from '../../db/schema'
+import {
+  agents,
+  chatSendReceipts,
+  executionAdmissionReservations,
+  executions,
+  sandboxProvisionRecoveries,
+  squads,
+} from '../../db/schema'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { ACTIVE_EXECUTION_STATUSES } from './status'
 import {
@@ -32,6 +39,7 @@ describe('orphaned execution settlement', () => {
     // Hard-deleted-agent fixtures leave execution rows with no cascade
     // target, so executions are removed explicitly by id.
     if (ownedExecutionIds.length) {
+      await db.delete(chatSendReceipts).where(inArray(chatSendReceipts.executionId, ownedExecutionIds))
       await db.delete(executions).where(inArray(executions.id, ownedExecutionIds))
     }
     if (ownedAgentIds.length) {
@@ -279,6 +287,15 @@ describe('orphaned execution settlement', () => {
       // squads are deleted — inert for demand, but live candidates for this
       // sweep. Clear the candidate set so exact-count assertions stay
       // deterministic.
+      await db.delete(chatSendReceipts).where(
+        inArray(
+          chatSendReceipts.executionId,
+          db
+            .select({ id: executions.id })
+            .from(executions)
+            .where(inArray(executions.status, [...ACTIVE_EXECUTION_STATUSES]))
+        )
+      )
       await db.delete(executions).where(inArray(executions.status, [...ACTIVE_EXECUTION_STATUSES]))
     })
 

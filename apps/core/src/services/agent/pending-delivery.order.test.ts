@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
-import { agents, agentTypes, messages } from '../../db/schema'
+import { agents, agentTypes, messages, chatSendReceipts } from '../../db/schema'
 import { Agent } from '../../entities/Agent'
 import { AgentType } from '../../entities/AgentType'
 import { PENDING_CLAIM_LOCK_NAMESPACE } from './pending-delivery'
@@ -22,6 +22,7 @@ describe('pending delivery FIFO', () => {
   })
 
   afterEach(async () => {
+    await db.delete(chatSendReceipts).where(eq(chatSendReceipts.agentId, agent.id))
     await db.delete(messages).where(eq(messages.agentId, agent.id))
     await db.delete(agents).where(eq(agents.agentTypeId, typeId))
     await db.delete(agentTypes).where(eq(agentTypes.id, typeId))
@@ -337,6 +338,7 @@ describe('confirmPendingMessage with scalar metadata (22023 regression)', () => 
   })
 
   afterEach(async () => {
+    await db.delete(chatSendReceipts).where(eq(chatSendReceipts.agentId, agent.id))
     await db.delete(messages).where(eq(messages.agentId, agent.id))
     await db.delete(agents).where(eq(agents.agentTypeId, typeId))
     await db.delete(agentTypes).where(eq(agentTypes.id, typeId))

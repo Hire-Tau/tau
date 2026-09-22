@@ -1,13 +1,22 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { beforeEach, afterEach, describe, expect, test } from 'bun:test'
 import { authenticateWsRequest, authorizeSystemLogsRequest, authorizeTerminalRequest } from './index'
 import { assignRole, cleanupTestRbac, createTestAdmin, createTestRole, createTestUser } from './test-utils/rbac'
 
-const prefix = 'ws-auth'
-const squadId = '11111111-1111-4111-8111-111111111111'
-const otherSquadId = '22222222-2222-4222-8222-222222222222'
+import { db, squads } from './db'
+import { inArray } from 'drizzle-orm'
+const prefix = `ws-auth-${crypto.randomUUID()}`
+const squadId = crypto.randomUUID()
+const otherSquadId = crypto.randomUUID()
+
+beforeEach(async () => {
+  await db
+    .insert(squads)
+    .values([squadId, otherSquadId].map((id) => ({ id, name: `${prefix}-${id}`, purpose: 'RBAC scope' })))
+})
 
 afterEach(async () => {
   await cleanupTestRbac(prefix)
+  await db.delete(squads).where(inArray(squads.id, [squadId, otherSquadId]))
 })
 
 describe('websocket handshake auth', () => {

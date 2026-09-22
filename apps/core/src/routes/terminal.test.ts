@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { Hono } from 'hono'
+import { db, squads } from '../db'
+import { inArray } from 'drizzle-orm'
 import { identityMiddleware } from '../middleware/identity'
 import { terminalRouter } from './terminal'
 import {
@@ -17,17 +19,21 @@ app.use('*', identityMiddleware)
 app.route('/api/terminal', terminalRouter)
 
 const rbacPrefix = `terminal-rbac-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-const squadId = '11111111-1111-4111-8111-111111111111'
-const otherSquadId = '22222222-2222-4222-8222-222222222222'
+const squadId = crypto.randomUUID()
+const otherSquadId = crypto.randomUUID()
 const sandboxId = `squad_${squadId}`
 let admin: TestUser
 
 beforeAll(async () => {
+  await db
+    .insert(squads)
+    .values([squadId, otherSquadId].map((id) => ({ id, name: `${rbacPrefix}-${id}`, purpose: 'RBAC scope' })))
   admin = await createTestAdmin({ prefix: rbacPrefix, canonicalAdmin: true })
 })
 
 afterAll(async () => {
   await cleanupTestRbac(rbacPrefix)
+  await db.delete(squads).where(inArray(squads.id, [squadId, otherSquadId]))
 })
 
 describe('terminal routes', () => {
