@@ -1,4 +1,5 @@
 import { agentSlotWaitQueryKeys, assistantQueryKeys } from '../queryKeys'
+import { desktopQueryKeys } from '../queryKeys'
 import { parseAssistantInboxConversationId } from '@tau/shared'
 import { hashKey } from '@tanstack/react-query'
 import { useEffect, useRef } from 'react'
@@ -402,6 +403,7 @@ function QueryInvalidatorEffects({ queryClient, subscribe, isConnected = false }
 
       // ── Inbox events ────────────────────────────────────────────
       subscribe('inbox', ({ event, data }) => {
+        invalidate(desktopQueryKeys.notifications())
         if (event === 'assistant.activityChanged') {
           // Durable task/update state changed: refresh badges, the open conversation's activity,
           // and saved-conversation lists so ordering and previews follow.

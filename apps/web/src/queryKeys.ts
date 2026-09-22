@@ -1,5 +1,9 @@
 // Query keys now live in @tau/client-core so web and mobile share one definition.
 export { queryKeys } from '@tau/client-core'
+export const desktopQueryKeys = {
+  notifications: () => ['desktop', 'notifications'] as const,
+  enabled: () => ['desktop', 'notifications-enabled'] as const,
+}
 
 export const modelTierQueryKeys = { list: () => ['model-tiers'] as const }
 

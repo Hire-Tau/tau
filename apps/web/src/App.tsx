@@ -27,6 +27,7 @@ import { OnboardingBanner } from './components/onboarding/OnboardingBanner'
 import { useAuth } from './providers/AuthProvider'
 import { useRef } from 'react'
 import { useVisualViewportShell } from './hooks/useVisualViewportShell'
+import { DesktopNotifications } from './components/DesktopNotifications'
 
 export default function App() {
   // Fit the fixed shell to the visible area while a software keyboard is open (see the hook).
@@ -59,10 +60,13 @@ export default function App() {
 
   if (location.pathname === '/voice') {
     return (
-      <Routes>
-        <Route path="/voice" element={<VoiceWorkspacePage />} />
-        <Route path="*" element={<Navigate to="/voice" replace />} />
-      </Routes>
+      <>
+        <DesktopNotifications />
+        <Routes>
+          <Route path="/voice" element={<VoiceWorkspacePage />} />
+          <Route path="*" element={<Navigate to="/voice" replace />} />
+        </Routes>
+      </>
     )
   }
 
@@ -73,6 +77,7 @@ export default function App() {
       className="h-full max-h-full overflow-hidden overscroll-none flex flex-col bg-page text-primary"
     >
       <AppHeader />
+      <DesktopNotifications />
 
       {/* PWA status banners — in flow so they can never half-hide under the notch */}
       <UpdateBanner />

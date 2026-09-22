@@ -1,4 +1,5 @@
 import { getSettingsStore } from '../services/settings'
+import { listDesktopNotifications } from '../services/push/desktop'
 import { pushRelayConfig, enrollInstancePro } from '../services/push/relay'
 import { relayBindingTokenSchema, instanceEnrollmentSchema } from '@tau/shared/push-relay'
 import { Hono } from 'hono'
@@ -18,6 +19,14 @@ import {
 } from '../services/push/live-activity-tokens'
 
 export const pushRouter = new Hono()
+
+pushRouter.get('/desktop', async (c) => {
+  const identity = c.get('identity')
+  if (identity?.type !== 'user') return c.json({ error: 'User identity required' }, 401)
+  c.set('authzChecked', true)
+  c.header('Cache-Control', 'no-store')
+  return c.json({ userId: identity.userId, notifications: await listDesktopNotifications(identity.userId) })
+})
 
 function getPushUserId(c: Context): string | null {
   const identity = c.get('identity')

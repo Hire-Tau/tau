@@ -1,4 +1,7 @@
 import { agentSlotWaitQueryKeys } from './queryKeys'
+import { desktopQueryKeys } from './queryKeys'
+import { desktopBridge, type DesktopNotificationBatch } from './lib/desktop'
+import { apiFetch } from './api/client'
 import { channelLinkQueryKeys } from './queryKeys'
 import { getChannelLinks } from './api/channelLinks'
 import { listIntegrationOutputs } from './api/integrations'
@@ -127,6 +130,18 @@ import type { NormalizedSquadActivityFilters } from '@tau/shared'
  * invalidates every query under that domain via prefix matching.
  */
 export const queries = {
+  desktop: {
+    enabled: () =>
+      queryOptions({
+        queryKey: desktopQueryKeys.enabled(),
+        queryFn: () => desktopBridge()?.notificationsEnabled() ?? Promise.resolve(false),
+      }),
+    notifications: () =>
+      queryOptions({
+        queryKey: desktopQueryKeys.notifications(),
+        queryFn: () => apiFetch<DesktopNotificationBatch>('/push/desktop'),
+      }),
+  },
   channelLinks: { list: () => queryOptions({ queryKey: channelLinkQueryKeys.all, queryFn: getChannelLinks }) },
   workflows: {
     reviewers: (squadId: string) =>

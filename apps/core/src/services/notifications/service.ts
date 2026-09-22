@@ -1,4 +1,5 @@
 import { pushCategoryFor } from './push-category'
+import { enqueueDesktopNotifications } from '../push/desktop'
 import type { PushCategory } from '@tau/shared'
 import { pushAlertText, pushEventType } from '@tau/shared/push-relay'
 import { WorkStream } from '../../entities/WorkStream'
@@ -257,7 +258,11 @@ export class NotificationService {
     }
 
     // Fan out to both web-push subscriptions and native (APNs) devices.
-    await Promise.all([this.sendWebPush(userIds, event), this.sendApnsPush(userIds, event)])
+    await Promise.all([
+      this.sendWebPush(userIds, event),
+      this.sendApnsPush(userIds, event),
+      enqueueDesktopNotifications(userIds, event, eventType, category),
+    ])
   }
 
   private async sendWebPush(userIds: string[], event: ChannelNotificationEvent): Promise<void> {

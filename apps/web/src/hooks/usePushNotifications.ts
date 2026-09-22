@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiFetch } from '../api/client'
 import type { PushSubscription } from '@tau/shared'
+import { desktopBridge } from '../lib/desktop'
 
 const SUBSCRIPTION_ID_KEY = 'tau_push_subscription_id'
 
@@ -18,7 +19,7 @@ interface UsePushNotificationsReturn {
 }
 
 export function usePushNotifications(): UsePushNotificationsReturn {
-  const [isSupported] = useState(() => 'serviceWorker' in navigator && 'PushManager' in window)
+  const [isSupported] = useState(() => !desktopBridge() && 'serviceWorker' in navigator && 'PushManager' in window)
   const [permission, setPermission] = useState<NotificationPermission | 'unsupported'>(
     isSupported ? Notification.permission : 'unsupported'
   )
@@ -55,7 +56,11 @@ export function usePushNotifications(): UsePushNotificationsReturn {
     setError(null)
 
     if (!isSupported) {
-      setError('Push notifications not supported')
+      setError(
+        desktopBridge()
+          ? 'Enable desktop notifications from the Tau application menu.'
+          : 'Push notifications not supported'
+      )
       return
     }
 

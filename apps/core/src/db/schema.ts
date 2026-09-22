@@ -612,6 +612,27 @@ export const chatSendReceipts = pgTable(
   (table) => [primaryKey({ columns: [table.agentId, table.clientId] })]
 )
 
+export const desktopNotifications = pgTable(
+  'desktop_notifications',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references((): AnyPgColumn => users.id, { onDelete: 'cascade' }),
+    eventKey: text('event_key').notNull(),
+    eventType: text('event_type').notNull(),
+    category: text('category').notNull(),
+    title: text('title').notNull(),
+    body: text('body').notNull(),
+    url: text('url').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('idx_desktop_notifications_event').on(table.userId, table.eventKey),
+    index('idx_desktop_notifications_recent').on(table.userId, table.createdAt),
+  ]
+)
+
 export const pushSubscriptions = pgTable(
   'push_subscriptions',
   {
