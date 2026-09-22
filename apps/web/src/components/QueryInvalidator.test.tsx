@@ -168,19 +168,24 @@ describe('QueryInvalidator', () => {
     await dom.act(async () => render(false))
     expect(fakeQueryClient.invalidateQueries).not.toHaveBeenCalled()
 
-    // Each open repairs slot waits, Assistant activity, actions, and questions exactly once.
+    // Each open repairs slot waits, Assistant activity, actions, questions, and both storage views exactly once.
     await dom.act(async () => render(true))
     await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 200)))
-    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(4)
+    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(6)
 
     await dom.act(async () => render(true))
-    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(4)
+    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(6)
 
     await dom.act(async () => render(false))
     await dom.act(async () => render(true))
     await dom.act(async () => new Promise((resolve) => setTimeout(resolve, 200)))
-    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(8)
-    for (const key of [agentSlotWaitQueryKeys.all, assistantQueryKeys.activityPrefix])
+    expect(fakeQueryClient.invalidateQueries).toHaveBeenCalledTimes(12)
+    for (const key of [
+      agentSlotWaitQueryKeys.all,
+      assistantQueryKeys.activityPrefix,
+      queryKeys.system.storage(),
+      queryKeys.system.storageStatus(),
+    ])
       expect(
         fakeQueryClient.invalidateQueries.mock.calls.filter(
           ([options]) => JSON.stringify(options.queryKey) === JSON.stringify(key)

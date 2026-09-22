@@ -1,4 +1,4 @@
-import type { StorageSnapshot } from '@tau/shared'
+import type { StorageSnapshot, StorageStatus } from '@tau/shared'
 import { apiFetch } from './client'
 
 export interface PublicMaintenanceStatus {
@@ -42,4 +42,8 @@ export function getStorage(): Promise<StorageSnapshot> {
 
 export function refreshStorage(): Promise<StorageSnapshot> {
   return apiFetch('/system/storage/refresh', { method: 'POST' })
+}
+
+export function getStorageStatus(): Promise<StorageStatus> {
+  return apiFetch('/system/storage/status')
 }

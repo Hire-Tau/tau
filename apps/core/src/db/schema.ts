@@ -3800,3 +3800,20 @@ export const assistantUpdates = pgTable(
       .where(sql`${table.processedAt} IS NULL`),
   ]
 )
+
+// Latest scan, cross-process lease, and durable capacity-alert outbox.
+export const storageMonitor = pgTable('storage_monitor', {
+  id: text('id').primaryKey(),
+  snapshot: jsonb('snapshot').$type<import('@tau/shared').StorageSnapshot>(),
+  requestedAt: timestamp('requested_at', { withTimezone: true }),
+  startedAt: timestamp('started_at', { withTimezone: true }),
+  completedAt: timestamp('completed_at', { withTimezone: true }),
+  leaseId: uuid('lease_id'),
+  leaseUntil: timestamp('lease_until', { withTimezone: true }),
+  error: text('error'),
+  levels: jsonb('levels').$type<Record<string, import('@tau/shared').StorageWarning>>().notNull().default({}),
+  pendingAlerts: jsonb('pending_alerts')
+    .$type<Array<{ id: string; warning: import('@tau/shared').StorageWarning }>>()
+    .notNull()
+    .default([]),
+})

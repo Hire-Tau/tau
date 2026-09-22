@@ -138,9 +138,9 @@ Both commands return immediately with `scanning`, `scannedAt`, `error`, and the 
 
 Squads and folders also have a `status`. On an interrupted scan, completed child measurements are retained under partial parents without counting overlapping subtrees twice. A `bytes: null` value means nothing was measured, rather than zero usage. Folder `path` identifies the measured directory. Machine `diagnostics` includes the command's `exitCode`, reason codes such as `scan_timeout` or `permission_denied`, and `expectedHomes`, `measuredHomes`, and `missingHomes`. Missing home totals alone do not establish whether a directory is absent, unreadable, or simply not reached before the time limit.
 
-Reads request a new scan when the cache is five minutes old. `--refresh` requests one sooner, subject to a one-minute cooldown; concurrent requests share the running scan. This requires `system:logs` permission and VM sandbox machines. Other runtimes return `supported: false`. The User Assistant can use these commands with your permissions.
+Storage scans also run on the worker every 12 hours by default. Configure the interval and capacity alerts in **Settings → Storage**. Reading storage does not itself trigger a scan; a manual refresh queues one for the next worker check. `--refresh` has a one-minute cooldown; concurrent requests share the running scan. This requires `system:logs` permission and VM sandbox machines. Other runtimes return `supported: false`. The User Assistant can use these commands with your permissions.
 
-The API equivalents are `GET /api/system/storage` and `POST /api/system/storage/refresh`, with the same permissions and cache behavior. See [disk troubleshooting](/self-host/troubleshooting/#find-what-is-using-disk-space) for measurement limits.
+The API equivalents are `GET /api/system/storage` and `POST /api/system/storage/refresh`, with the same permissions and persisted results. See [disk troubleshooting](/self-host/troubleshooting/#find-what-is-using-disk-space) for measurement limits.
 
 ### Get help
 

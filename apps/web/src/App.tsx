@@ -11,6 +11,7 @@ import { OAuthCallbackPage } from './components/integrations/OAuthCallbackPage'
 import { FeedPage } from './components/FeedPage'
 import { UpdateBanner } from './components/UpdateBanner'
 import { OfflineBanner } from './components/OfflineBanner'
+import { StorageBanner } from './components/StorageBanner'
 import { MaintenanceBanner } from './components/MaintenanceBanner'
 import { AppHeader, MobileBottomNav, DesktopFooter } from './components/AppNav'
 import { LoginPage } from './components/LoginPage'
@@ -77,6 +78,7 @@ export default function App() {
       <UpdateBanner />
       <OfflineBanner />
       <MaintenanceBanner />
+      <StorageBanner />
       <OnboardingBanner />
 
       <div className="grow min-h-0 flex flex-col overflow-hidden overscroll-none">

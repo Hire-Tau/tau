@@ -10,7 +10,7 @@ import { MaintenanceLeaseConflict, maintenanceStore } from '../services/maintena
 import { getSandboxManager } from '../services/sandbox/factory'
 import { sandboxRecoveryWatch } from '../services/sandbox/recovery-watch'
 import { wsManager } from '../services/ws/manager'
-import { storageCache } from '../services/storage'
+import { storageMonitorService } from '../services/storage/monitor'
 import { parseJsonBody } from './json-body'
 
 const log = createLogger('system')
@@ -115,14 +115,19 @@ app.delete('/pause/platform-lease/:leaseId', requirePermission('system:pause'), 
   }
 })
 
-app.get('/storage', requirePermission('system:logs'), (c) => {
+app.get('/storage', requirePermission('system:logs'), async (c) => {
   c.header('Cache-Control', 'no-store')
-  return c.json(storageCache.read())
+  return c.json(await storageMonitorService.read())
 })
 
-app.post('/storage/refresh', requirePermission('system:logs'), (c) => {
+app.post('/storage/refresh', requirePermission('system:logs'), async (c) => {
   c.header('Cache-Control', 'no-store')
-  return c.json(storageCache.read(true))
+  return c.json(await storageMonitorService.refresh())
+})
+
+app.get('/storage/status', requirePermission('system:logs'), async (c) => {
+  c.header('Cache-Control', 'no-store')
+  return c.json(await storageMonitorService.status())
 })
 
 app.get('/diagnostics', requirePermission('system:logs'), (c) => {

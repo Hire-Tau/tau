@@ -455,6 +455,8 @@ function QueryInvalidatorEffects({ queryClient, subscribe, isConnected = false }
     // A reconnect may have missed activity events; badges must not stay stale until the fallback
     // interval. This rides the independent repair coalescer so it never delays the Action Center.
     slotCoalescerRef.current?.queue(assistantQueryKeys.activityPrefix)
+    slotCoalescerRef.current?.queue(queryKeys.system.storageStatus())
+    slotCoalescerRef.current?.queue(queryKeys.system.storage())
     if (actionFrameBeforeOpenRef.current) {
       actionFrameBeforeOpenRef.current = false
       if (actionFrameExpiryRef.current !== null) {
