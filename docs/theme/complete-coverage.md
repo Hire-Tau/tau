@@ -22,10 +22,10 @@ The guard permits only these bounded findings, not whole-file legacy palettes:
 4. Seven minimal pre-CSS built-in surface fallbacks, tested against the authored palettes.
 5. Universe's hovered-node inline swatch, supplied by its live token reader.
 
-The scanner also catches black/white utilities and distinguishes numeric HTML entities from hex colors. New raw colors and stale exception entries fail the guard. Colors inside user documents, chart specs, images or isolated presentation HTML are never rewritten.
+The scanner covers palette and black/white utilities, including directional/axis/logical borders and ring offsets, plus CSS `theme()` palette lookups. It distinguishes numeric HTML entities from hex colors. New raw colors and stale exception entries fail the guard. Colors inside user documents, chart specs, images or isolated presentation HTML are never rewritten.
 
 ## Verification boundary
 
-Frozen fixtures check exact utility and voice channels/alpha and log palette compatibility. Real Tailwind compilation checks every ramp utility and alpha modifier. Existing suites additionally cover all mapped-token opacity combinations, custom compilation/inheritance/reset, strict built-in critical-pair contrast, pre-paint migration and account/device/tab races.
+Frozen fixtures check exact utility and voice channels/alpha and log palette compatibility. Real Tailwind compilation checks every ramp utility and alpha modifier, with regressions for spinner border colors and the narrow chat Stop control under built-in and custom values. Existing suites additionally cover all mapped-token opacity combinations, custom compilation/inheritance/reset, strict built-in critical-pair contrast, pre-paint migration and account/device/tab races.
 
 Token completeness is not universal accessibility certification: arbitrary terminal/ANSI combinations, custom overrides and arbitrary tone-step pairings can have insufficient contrast. The editor warns for its documented pairs and offers safe values; it does not silently modify user content or block all low-contrast documents. Browser evidence is complementary to these tests, not implied by a passing source guard.

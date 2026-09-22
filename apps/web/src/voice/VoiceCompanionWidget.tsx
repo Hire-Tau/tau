@@ -351,7 +351,7 @@ export function VoiceCompanionButton({
       {rateLimitRetry && isConnected && !compact && (
         <div className="px-3 py-2  text-xs text-status-attention-600 dark:text-status-attention-400">
           <div className="flex items-center gap-2">
-            <span className="inline-block w-3 h-3 border-2 border-status-attention-300 border-t-amber-600 rounded-full animate-spin" />
+            <span className="inline-block w-3 h-3 border-2 border-status-attention-300 border-t-status-attention-600 rounded-full animate-spin" />
             <span>Rate limit hit. Retrying in {Math.ceil(rateLimitRetry.remainingMs / 1000)}s…</span>
           </div>
         </div>
