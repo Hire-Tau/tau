@@ -61,7 +61,7 @@ export function DeleteSquadModal({ isOpen, onClose, squadId, squadName }: Props)
             onClick={() => mutation.mutate()}
             disabled={!isConfirmed || mutation.isPending || !canDeleteSquad}
             title={canDeleteSquad ? 'Archive squad' : 'You do not have permission to delete squads'}
-            className="tau-button px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
+            className="tau-button px-4 py-2 text-sm font-medium text-on-strong bg-status-danger-600 hover:bg-status-danger-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
           >
             {mutation.isPending ? 'Archiving...' : 'Archive Squad'}
           </button>
@@ -104,7 +104,7 @@ export function DeleteSquadModal({ isOpen, onClose, squadId, squadName }: Props)
         </div>
 
         {mutation.isError && (
-          <p className="text-sm text-red-600 dark:text-red-400">
+          <p className="text-sm text-status-danger-600 dark:text-status-danger-400">
             Failed to archive squad: {(mutation.error as Error).message}
           </p>
         )}

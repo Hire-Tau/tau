@@ -17,11 +17,11 @@ interface Props {
 }
 
 const senderTypeColors: Record<InboxMessageSenderType, string> = {
-  system: 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300',
-  agent: 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300',
-  user: 'bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300',
-  voice_assistant: 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300',
-  remote: 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300',
+  system: 'bg-status-neutral-100 dark:bg-status-neutral-800 text-status-neutral-700 dark:text-status-neutral-300',
+  agent: 'bg-status-progress-100 dark:bg-status-progress-900/50 text-status-progress-700 dark:text-status-progress-300',
+  user: 'bg-status-human-wait-100 dark:bg-status-human-wait-900/50 text-status-human-wait-700 dark:text-status-human-wait-300',
+  voice_assistant: 'bg-decoration-8-100 dark:bg-decoration-8-900/50 text-decoration-8-700 dark:text-decoration-8-300',
+  remote: 'bg-decoration-11-100 dark:bg-decoration-11-900/50 text-decoration-11-700 dark:text-decoration-11-300',
 }
 
 export function AgentInboxPanel({ agent, onClose, fullWidth }: Props) {

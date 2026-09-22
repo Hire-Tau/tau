@@ -71,11 +71,14 @@ type TabView = 'chat' | 'work' | 'monitors' | 'inbox' | 'context' | 'subagents' 
 const VALID_TABS = ['chat', 'work', 'monitors', 'inbox', 'context', 'subagents', 'info'] as const
 
 const SCOPE_COLORS: Record<string, string> = {
-  'system-manager': 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300',
-  'artifact-builder': 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300',
-  'squad-manager': 'bg-purple-100 dark:bg-purple-900/50 text-purple-700 dark:text-purple-300',
-  'squad-worker': 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300',
-  task: 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300',
+  'system-manager':
+    'bg-status-progress-100 dark:bg-status-progress-900/50 text-status-progress-700 dark:text-status-progress-300',
+  'artifact-builder':
+    'bg-status-attention-100 dark:bg-status-attention-900/50 text-status-attention-700 dark:text-status-attention-300',
+  'squad-manager':
+    'bg-status-human-wait-100 dark:bg-status-human-wait-900/50 text-status-human-wait-700 dark:text-status-human-wait-300',
+  'squad-worker': 'bg-decoration-8-100 dark:bg-decoration-8-900/50 text-decoration-8-700 dark:text-decoration-8-300',
+  task: 'bg-status-success-100 dark:bg-status-success-900/50 text-status-success-700 dark:text-status-success-300',
 }
 
 function timeAgo(date: Date): string {
@@ -418,7 +421,7 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
                 className={clsx(
                   'tau-button',
                   'w-full text-left px-3 py-3 md:py-2.5 border-b border-th-border hover:bg-surface-hover group',
-                  agentId === agent.id && 'bg-blue-50 dark:bg-blue-900/20'
+                  agentId === agent.id && 'bg-status-progress-50 dark:bg-status-progress-900/20'
                 )}
                 title={`${stableName} · ${agent.agentTypeId} · ${agent.id}`}
               >
@@ -432,8 +435,9 @@ export function ChatPage({ dependencies }: ChatPageProps = {}) {
                     className={clsx(
                       'text-xs px-1.5 py-0.5 rounded font-medium ml-auto hidden md:inline-block',
                       scope
-                        ? (SCOPE_COLORS[scope] ?? 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300')
-                        : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300'
+                        ? (SCOPE_COLORS[scope] ??
+                            'bg-status-neutral-100 dark:bg-status-neutral-800 text-status-neutral-700 dark:text-status-neutral-300')
+                        : 'bg-status-neutral-100 dark:bg-status-neutral-800 text-status-neutral-700 dark:text-status-neutral-300'
                     )}
                   >
                     {scope ? SCOPE_LABELS[scope] || scope : agent.agentTypeId}

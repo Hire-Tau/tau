@@ -177,7 +177,7 @@ export function SquadAgentContextEditor({ squadId, typeContext, agentTypes }: Pr
               <label className="block text-xs font-medium text-secondary">{name}</label>
               <button
                 onClick={() => handleRemoveType(typeId)}
-                className="tau-button text-xs text-muted hover:text-red-500 transition-colors"
+                className="tau-button text-xs text-muted hover:text-status-danger-500 transition-colors"
                 aria-label={`Remove ${name} context field`}
               >
                 ✕
@@ -235,7 +235,7 @@ export function SquadAgentContextEditor({ squadId, typeContext, agentTypes }: Pr
           {mutation.isPending ? 'Saving...' : 'Save'}
         </button>
       </div>
-      {mutation.isError && <p className="text-xs text-red-500">Failed to save: {String(mutation.error)}</p>}
+      {mutation.isError && <p className="text-xs text-status-danger-500">Failed to save: {String(mutation.error)}</p>}
     </div>
   )
 }

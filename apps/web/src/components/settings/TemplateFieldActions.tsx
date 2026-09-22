@@ -87,14 +87,14 @@ export function TemplateFieldActions({
           type="button"
           onClick={handleRevert}
           disabled={isReverting}
-          className="tau-button text-[11px] text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 disabled:opacity-50"
+          className="tau-button text-[11px] text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 disabled:opacity-50"
         >
           Revert
         </button>
       )}
       {isDiffOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setIsDiffOpen(false)} />
+          <div className="absolute inset-0 bg-chrome-scrim/50" onClick={() => setIsDiffOpen(false)} />
           <div className="tau-overlay relative bg-surface rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[75vh] flex flex-col">
             <div className="flex items-center justify-between px-4 py-3 border-b border-th-border">
               <h3 className="text-base font-semibold text-primary">Template Diff — {field}</h3>
@@ -111,8 +111,10 @@ export function TemplateFieldActions({
                   <span
                     key={index}
                     className={clsx(
-                      part.removed && 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300',
-                      part.added && 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300',
+                      part.removed &&
+                        'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-800 dark:text-status-danger-300',
+                      part.added &&
+                        'bg-status-success-100 dark:bg-status-success-900/30 text-status-success-800 dark:text-status-success-300',
                       !part.added && !part.removed && 'text-primary'
                     )}
                   >
@@ -126,7 +128,7 @@ export function TemplateFieldActions({
                 <button
                   onClick={handleRevert}
                   disabled={isReverting}
-                  className="tau-button text-sm bg-amber-600 text-white px-4 py-1.5 rounded font-medium hover:bg-amber-700 disabled:opacity-50"
+                  className="tau-button text-sm bg-status-attention-600 text-on-strong px-4 py-1.5 rounded font-medium hover:bg-status-attention-700 disabled:opacity-50"
                 >
                   Revert Field
                 </button>

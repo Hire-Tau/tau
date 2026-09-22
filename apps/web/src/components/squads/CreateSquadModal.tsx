@@ -238,7 +238,7 @@ export function CreateSquadModal({ isOpen, onClose }: Props) {
         )}
 
         {mutation.isError && (
-          <p className="text-sm text-red-600 dark:text-red-400">
+          <p className="text-sm text-status-danger-600 dark:text-status-danger-400">
             {mutation.error instanceof Error ? mutation.error.message : 'Failed to create squad'}
           </p>
         )}

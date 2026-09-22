@@ -186,7 +186,7 @@ export function AmtpSection() {
                         if (confirm(`Remove peer ${p.localAlias}? This cannot be undone.`)) remove.mutate(p.id)
                       }}
                       disabled={remove.isPending}
-                      className="tau-button text-sm font-medium text-red-600 hover:text-red-800 disabled:opacity-50 dark:text-red-400 dark:hover:text-red-300"
+                      className="tau-button text-sm font-medium text-status-danger-600 hover:text-status-danger-800 disabled:opacity-50 dark:text-status-danger-400 dark:hover:text-status-danger-300"
                     >
                       Remove
                     </button>
@@ -252,7 +252,7 @@ export function AmtpSection() {
                 className="tau-field w-full rounded border border-th-border bg-surface-secondary px-2 py-1 font-mono text-sm text-primary placeholder:text-placeholder  focus:ring-1 focus:ring-accent"
               />
             </div>
-            {addError && <p className="text-xs text-red-600 dark:text-red-400">{addError}</p>}
+            {addError && <p className="text-xs text-status-danger-600 dark:text-status-danger-400">{addError}</p>}
             <button
               type="submit"
               disabled={add.isPending || !form.localAlias || !form.instanceId || !form.baseUrl || !form.publicKeyPem}

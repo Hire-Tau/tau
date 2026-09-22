@@ -49,7 +49,7 @@ sentinels when inheriting Tau, support numeric fractional channels, and retain
 intrinsic-opacity metadata. Completeness alone does not establish contrast.
 The phase-5 gate checks the defined critical pairs for every built-in, including
 code comments. Arbitrary ANSI/terminal combinations (including terminal black),
-legacy utility islands and authored artifacts are not accessibility-certified.
+arbitrary utility tone combinations and authored artifacts are not accessibility-certified. There are no remaining un-tokenized utility islands; see [complete coverage](../../../../docs/theme/complete-coverage.md).
 
 ## Verification
 

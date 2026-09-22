@@ -84,7 +84,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
         <div className="max-w-7xl mx-auto py-2.5 md:py-3 px-4 md:px-6 flex items-center gap-4">
           {/* Left: Logo */}
           <h1 className="text-xl md:text-2xl font-bold text-primary">
-            <Link to="/" className="flex items-center gap-2 hover:text-blue-600 transition-colors">
+            <Link to="/" className="flex items-center gap-2 hover:text-status-progress-600 transition-colors">
               <TauLogo />
               Tau
             </Link>
@@ -119,7 +119,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
                     {showActionBadge && (
                       <span
                         aria-label={actionsError ? 'Action Center unavailable' : undefined}
-                        className="absolute -top-1 -right-1 bg-amber-500 text-amber-950 text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1"
+                        className="absolute -top-1 -right-1 bg-status-attention-500 text-status-attention-950 text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1"
                       >
                         {actionsError ? '!' : (actionCount ?? 0) > 99 ? '99+' : actionCount}
                       </span>
@@ -181,7 +181,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
             >
               <InboxIcon className="w-5 h-5" />
               {unreadInboxCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
+                <span className="absolute -top-0.5 -right-0.5 bg-status-danger-500 text-on-strong text-[10px] font-bold rounded-full min-w-[16px] h-4 flex items-center justify-center px-1">
                   {unreadInboxCount > 99 ? '99+' : unreadInboxCount}
                 </span>
               )}
@@ -273,7 +273,9 @@ export function MobileBottomNav({
                   aria-label={showActionBadge && actionsError ? 'Action Center unavailable' : undefined}
                   className={clsx(
                     'absolute top-1.5 left-1/2 translate-x-1/2 text-[10px] font-bold rounded-full min-w-[1rem] h-4 flex items-center justify-center px-1',
-                    showActionBadge ? 'bg-amber-500 text-amber-950' : 'bg-red-500 text-white'
+                    showActionBadge
+                      ? 'bg-status-attention-500 text-status-attention-950'
+                      : 'bg-status-danger-500 text-on-strong'
                   )}
                 >
                   {typeof badgeCount === 'number' && badgeCount > 99 ? '99+' : badgeCount}
@@ -318,7 +320,7 @@ export function MobileBottomNav({
                       'tau-button',
                       'flex items-center gap-3 w-full px-4 py-3 text-sm',
                       isActive
-                        ? 'text-accent-light bg-blue-50 dark:bg-blue-900/20'
+                        ? 'text-accent-light bg-status-progress-50 dark:bg-status-progress-900/20'
                         : 'text-primary hover:bg-surface-hover'
                     )}
                   >

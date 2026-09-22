@@ -179,7 +179,7 @@ function AgentErrorSection({
         </div>
       )}
       {mutation.isError && (
-        <p role="alert" className="mb-2 text-xs text-red-600">
+        <p role="alert" className="mb-2 text-xs text-status-danger-600">
           {actionErrorMessage(mutation.error)}
         </p>
       )}

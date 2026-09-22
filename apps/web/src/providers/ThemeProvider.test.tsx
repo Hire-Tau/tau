@@ -186,3 +186,30 @@ describe('ThemeProvider (themeId × appearance application)', () => {
     expect(localStorage.getItem('tau-appearance')).toBe('system')
   })
 })
+
+test('custom brand tile updates the OS tile metadata, not only the logo', async () => {
+  const { dom } = await installThemeDom()
+  document.head.innerHTML = '<meta name="msapplication-TileColor" content="#7c3aed" />'
+  localStorage.setItem(
+    'tau-custom-theme',
+    JSON.stringify({
+      format: 'tau-custom-theme',
+      version: 1,
+      name: 'Tile',
+      base: 'tau',
+      appearance: 'light',
+      overrides: { '--brand-tile': '#123456' },
+    })
+  )
+  const { root } = dom.createRoot()
+  await act(async () => {
+    root.render(
+      <ThemeProvider>
+        <ThemeProbe />
+      </ThemeProvider>
+    )
+  })
+  expect(document.querySelector('meta[name="msapplication-TileColor"]')?.getAttribute('content')).toBe(
+    'rgb(18, 52, 86)'
+  )
+})

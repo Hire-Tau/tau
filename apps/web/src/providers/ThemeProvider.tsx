@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { type CustomThemeDocument, type AppearanceSetting } from '@tau/shared'
 import { findWebTheme, resolveWebTheme } from '../theme/registry'
+import { tokenColor } from '../theme/tokenReader'
 import { applyResolvedTheme } from '../theme/apply'
 import { getThemeStorage, persistSurfaceSnapshot, persistThemeSelection } from '../theme/storage'
 
@@ -124,6 +125,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         return
       }
     }
+    const tile = tokenColor(window.getComputedStyle(root).getPropertyValue('--brand-tile').trim())
+    if (tile) document.querySelector('meta[name="msapplication-TileColor"]')?.setAttribute('content', tile)
     persistThemeSelection(getThemeStorage(), selection)
 
     // Store the resolved surface color so the flash-prevention script can use

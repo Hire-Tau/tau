@@ -197,18 +197,18 @@ export function RemoteHostsSettings({ squadId }: Props) {
                     'w-full px-3 py-2 text-sm rounded-md border bg-surface text-primary',
                     'placeholder:text-placeholder',
                     ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
-                    name && !NAME_RE.test(name) ? 'border-red-500' : 'border-th-border'
+                    name && !NAME_RE.test(name) ? 'border-status-danger-500' : 'border-th-border'
                   )}
                 />
                 {name && !NAME_RE.test(name) && (
-                  <p className="text-xs text-red-500 mt-1">Lowercase letters, digits, and hyphens only</p>
+                  <p className="text-xs text-status-danger-500 mt-1">Lowercase letters, digits, and hyphens only</p>
                 )}
               </div>
 
               <div className="flex flex-col sm:flex-row gap-3">
                 <div className="flex-1">
                   <label className="block text-xs font-medium text-secondary mb-1">
-                    Host <span className="text-red-500">*</span>
+                    Host <span className="text-status-danger-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -231,14 +231,14 @@ export function RemoteHostsSettings({ squadId }: Props) {
                       'w-full px-3 py-2 text-sm rounded-md border bg-surface text-primary',
                       'placeholder:text-placeholder',
                       ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
-                      sshPort && !isPortValid(sshPort) ? 'border-red-500' : 'border-th-border'
+                      sshPort && !isPortValid(sshPort) ? 'border-status-danger-500' : 'border-th-border'
                     )}
                   />
-                  {sshPort && !isPortValid(sshPort) && <p className="text-xs text-red-500 mt-1">1-65535</p>}
+                  {sshPort && !isPortValid(sshPort) && <p className="text-xs text-status-danger-500 mt-1">1-65535</p>}
                 </div>
                 <div className="w-32">
                   <label className="block text-xs font-medium text-secondary mb-1">
-                    User <span className="text-red-500">*</span>
+                    User <span className="text-status-danger-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -289,7 +289,9 @@ export function RemoteHostsSettings({ squadId }: Props) {
           </div>
 
           {addMutation.isError && (
-            <p className="text-xs text-red-500 mt-2">Failed to add host: {(addMutation.error as Error).message}</p>
+            <p className="text-xs text-status-danger-500 mt-2">
+              Failed to add host: {(addMutation.error as Error).message}
+            </p>
           )}
 
           {added && (
@@ -370,8 +372,8 @@ function RemoteHostRow({
             onConfirm={onRevoke}
             label="Revoke"
             confirmLabel="Confirm?"
-            className="tau-button px-2 py-1 text-xs rounded border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-            confirmClassName="px-2 py-1 text-xs rounded border border-red-500 bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 transition-colors"
+            className="tau-button px-2 py-1 text-xs rounded border border-status-danger-300 dark:border-status-danger-800 text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/20 transition-colors"
+            confirmClassName="px-2 py-1 text-xs rounded border border-status-danger-500 bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 transition-colors"
             disabled={revoking}
           />
         )}
@@ -400,7 +402,9 @@ function CheckControl({ squadId, hostId }: { squadId: string; hostId: string }) 
         <span
           className={clsx(
             'text-xs',
-            result.reachable ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+            result.reachable
+              ? 'text-status-success-600 dark:text-status-success-400'
+              : 'text-status-danger-600 dark:text-status-danger-400'
           )}
         >
           {result.reachable ? 'Reachable' : `Unreachable${result.error ? `: ${result.error}` : ''}`}

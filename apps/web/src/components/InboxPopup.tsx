@@ -103,7 +103,7 @@ export function InboxPopup() {
   return (
     <>
       {/* Backdrop */}
-      {isOpen && <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setIsOpen(false)} />}
+      {isOpen && <div className="fixed inset-0 bg-chrome-scrim/20 z-40" onClick={() => setIsOpen(false)} />}
 
       {/* Popover dropdown */}
       <Presence

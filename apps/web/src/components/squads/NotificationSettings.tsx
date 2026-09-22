@@ -172,7 +172,7 @@ export function NotificationSettings({ squadId }: Props) {
           return (
             <div
               key={provider.key}
-              className={clsx('py-4 border-b last:border-b-0', error ? 'border-red-500' : 'border-th-border')}
+              className={clsx('py-4 border-b last:border-b-0', error ? 'border-status-danger-500' : 'border-th-border')}
             >
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
@@ -182,7 +182,7 @@ export function NotificationSettings({ squadId }: Props) {
                 {cfg?.instanceId && (
                   <button
                     onClick={() => clearProvider(provider.key)}
-                    className="tau-button text-xs text-muted hover:text-red-500"
+                    className="tau-button text-xs text-muted hover:text-status-danger-500"
                   >
                     Clear
                   </button>
@@ -211,7 +211,7 @@ export function NotificationSettings({ squadId }: Props) {
 
                   {cfg?.instanceId && (
                     <div>
-                      <label className={clsx('text-xs block mb-1', error ? 'text-red-500' : 'text-muted')}>
+                      <label className={clsx('text-xs block mb-1', error ? 'text-status-danger-500' : 'text-muted')}>
                         {provider.idLabel} {error && <span className="font-normal">— {error}</span>}
                       </label>
                       <input
@@ -222,7 +222,9 @@ export function NotificationSettings({ squadId }: Props) {
                         className={clsx(
                           'tau-field',
                           'w-full px-2 py-1.5 text-sm rounded border bg-surface text-primary  focus:ring-1',
-                          error ? 'border-red-500 focus:ring-red-500/50' : 'border-th-border focus:ring-accent/50'
+                          error
+                            ? 'border-status-danger-500 focus:ring-status-danger-500/50'
+                            : 'border-th-border focus:ring-accent/50'
                         )}
                       />
                     </div>
@@ -235,7 +237,7 @@ export function NotificationSettings({ squadId }: Props) {
       </div>
 
       {updateMutation.isError && (
-        <p className="text-xs text-red-500 mt-2">Failed to save: {String(updateMutation.error)}</p>
+        <p className="text-xs text-status-danger-500 mt-2">Failed to save: {String(updateMutation.error)}</p>
       )}
     </div>
   )

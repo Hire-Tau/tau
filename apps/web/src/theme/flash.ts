@@ -39,6 +39,8 @@ try {
       ? tokenColor(root.style.getPropertyValue('--color-bg-surface'))
       : readSurfaceSnapshot(storage, resolved.theme.id, resolved.appearance)) ||
     surfaces[resolved.theme.id]![resolved.appearance]!
+  const tile = tokenColor(root.style.getPropertyValue('--brand-tile'))
+  if (tile) document.querySelector('meta[name="msapplication-TileColor"]')?.setAttribute('content', tile)
   root.style.backgroundColor = surface
   const meta = document.querySelector('meta[name="theme-color"]')
   meta?.setAttribute('content', surface)

@@ -99,7 +99,7 @@ export function SpawnAgentModal({ squadId, onClose, onSpawned }: SpawnAgentModal
             </div>
 
             {error && (
-              <div className="p-2 text-sm text-red-600 bg-red-50 dark:bg-red-900/30 dark:text-red-400 rounded border border-red-200 dark:border-red-800">
+              <div className="p-2 text-sm text-status-danger-600 bg-status-danger-50 dark:bg-status-danger-900/30 dark:text-status-danger-400 rounded border border-status-danger-200 dark:border-status-danger-800">
                 {error}
               </div>
             )}

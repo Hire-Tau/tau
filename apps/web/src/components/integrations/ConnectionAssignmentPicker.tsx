@@ -67,7 +67,7 @@ export function ConnectionAssignmentPicker({
     )
   if (selection.isError)
     return (
-      <p role="alert" className="mt-3 text-sm text-red-600">
+      <p role="alert" className="mt-3 text-sm text-status-danger-600">
         Unable to load squad connection selection.
       </p>
     )
@@ -100,7 +100,7 @@ export function ConnectionAssignmentPicker({
             </button>
           )}
           {inheritMutation.isError && (
-            <p role="alert" className="text-red-500">
+            <p role="alert" className="text-status-danger-500">
               Could not restore the global default.
             </p>
           )}
@@ -192,7 +192,7 @@ export function ConnectionAssignmentPicker({
         </div>
       )}
       {(mutation.isError || accountMutation.isError) && (
-        <p role="alert" className="mt-2 text-sm text-red-600">
+        <p role="alert" className="mt-2 text-sm text-status-danger-600">
           Unable to update the squad connection.
         </p>
       )}

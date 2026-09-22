@@ -114,7 +114,7 @@ export function WorkStreamPauseControls({ stream }: { stream: WorkStream }) {
         </>
       )}
       {action.error && (
-        <p role="alert" className="text-sm text-red-400">
+        <p role="alert" className="text-sm text-status-danger-400">
           {action.error.message}
         </p>
       )}

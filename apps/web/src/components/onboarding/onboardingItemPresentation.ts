@@ -14,6 +14,6 @@ export const STATE_LABEL: Record<OnboardingItemState, string> = {
 
 export const STATE_BADGE_CLASS: Record<OnboardingItemState, string> = {
   todo: 'bg-surface-secondary text-muted',
-  done: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300',
+  done: 'bg-status-success-100 dark:bg-status-success-900/30 text-status-success-700 dark:text-status-success-300',
   skipped: 'bg-surface-secondary text-muted',
 }

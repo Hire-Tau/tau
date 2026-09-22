@@ -70,7 +70,7 @@ export function MobileChatOptionsSheet({
     <Presence
       open={open}
       ref={layerRef}
-      className="mobile-chat-options md:hidden fixed inset-x-0 z-[70] flex items-end bg-black/40"
+      className="mobile-chat-options md:hidden fixed inset-x-0 z-[70] flex items-end bg-chrome-scrim/40"
       onClick={(event) => {
         event.stopPropagation()
         if (event.target === event.currentTarget) onClose()

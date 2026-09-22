@@ -158,7 +158,7 @@ export function EventRulePreview({
       </details>
       <div aria-live="polite" className="space-y-2 text-sm">
         {error && (
-          <p role="alert" className="text-red-500">
+          <p role="alert" className="text-status-danger-500">
             {error}
           </p>
         )}

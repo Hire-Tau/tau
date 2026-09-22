@@ -77,3 +77,47 @@ test('Terminal wires initial and live theme reads independently of session setup
   )
   expect(source).not.toContain('useTheme(')
 })
+
+test('read-only logs retain their distinct palette and repaint from log tokens', async () => {
+  const harness = await acquireDomHarness({ url: 'https://tau.test' })
+  let dispose: (() => void) | undefined
+  try {
+    const { document } = harness.window
+    const root = document.documentElement
+    root.style.setProperty('--log-bg', '40 44 52')
+    root.style.setProperty('--log-red', '204 0 0')
+    root.style.setProperty('--term-bg', '1 2 3')
+    const container = document.createElement('div')
+    document.body.append(container)
+    const terminal = {
+      options: {
+        theme: readTerminalTheme(harness.window.getComputedStyle(root) as unknown as CSSStyleDeclaration, 'log'),
+      },
+    }
+    expect(terminal.options.theme.background).toBe('rgb(40, 44, 52)')
+    expect(terminal.options.theme.red).toBe('rgb(204, 0, 0)')
+    dispose = observeTerminalTheme(terminal, container as unknown as HTMLElement, 'log')
+    root.style.setProperty('--log-red', '1 2 3 / 0.5')
+    await harness.window.happyDOM.waitUntilComplete()
+    expect(terminal.options.theme.red).toBe('rgba(1, 2, 3, 0.5)')
+  } finally {
+    dispose?.()
+    await harness.cleanup()
+  }
+})
+
+test('all log scopes preserve the pre-migration xterm 5.5 palette and both viewers own their observer', async () => {
+  const { default: legacy } = await import('./fixtures/legacy-log-colors.json')
+  const { palettes } = await import('./test/builtins')
+  for (const palette of palettes) {
+    for (const [token, channels] of Object.entries(legacy)) expect(palette.tokens[token]).toBe(channels)
+  }
+  for (const file of ['settings/SystemLogsSection.tsx', 'squads/SandboxLogs.tsx']) {
+    const source = readFileSync(new URL(`../components/${file}`, import.meta.url), 'utf8')
+    expect(source).toContain("theme: readTerminalTheme(window.getComputedStyle(document.documentElement), 'log')")
+    expect(source.indexOf("observeTerminalTheme(term, containerRef.current, 'log')")).toBeLessThan(
+      source.indexOf('term.open(')
+    )
+    expect(source.indexOf('stopThemeObserver()')).toBeLessThan(source.indexOf('term.dispose()'))
+  }
+})

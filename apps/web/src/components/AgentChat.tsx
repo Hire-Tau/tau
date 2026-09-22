@@ -257,10 +257,12 @@ export function AgentChat({
           </div>
         </div>
       ) : (
-        <div className="mx-auto w-full max-w-[95%] md:max-w-[90%] rounded-lg border-2 border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20 p-3 md:p-4">
+        <div className="mx-auto w-full max-w-[95%] md:max-w-[90%] rounded-lg border-2 border-status-human-wait-200 dark:border-status-human-wait-800 bg-status-human-wait-50 dark:bg-status-human-wait-900/20 p-3 md:p-4">
           <div className="flex items-center gap-2 mb-3">
-            <span className="text-purple-500 text-lg">?</span>
-            <p className="text-sm font-medium text-purple-700 dark:text-purple-400">Agent needs your input</p>
+            <span className="text-status-human-wait-500 text-lg">?</span>
+            <p className="text-sm font-medium text-status-human-wait-700 dark:text-status-human-wait-400">
+              Agent needs your input
+            </p>
           </div>
           <QuestionInput
             questionData={agent.questionData}
@@ -275,13 +277,13 @@ export function AgentChat({
     ) : undefined
 
   const terminatedNotice = isTerminated ? (
-    <div className="mx-auto w-full max-w-[95%] md:max-w-[90%] rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50 p-3 text-sm text-gray-600 dark:text-gray-400 text-center">
+    <div className="mx-auto w-full max-w-[95%] md:max-w-[90%] rounded-lg border border-status-neutral-300 dark:border-status-neutral-600 bg-status-neutral-50 dark:bg-status-neutral-800/50 p-3 text-sm text-status-neutral-600 dark:text-status-neutral-400 text-center">
       This agent was terminated and can no longer receive messages. You can still view the conversation history.
     </div>
   ) : null
 
   const dormantNotice = isDormant ? (
-    <div className="mx-auto w-full max-w-[95%] md:max-w-[90%] rounded-lg border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50 p-3 text-sm text-gray-600 dark:text-gray-400 text-center">
+    <div className="mx-auto w-full max-w-[95%] md:max-w-[90%] rounded-lg border border-status-neutral-300 dark:border-status-neutral-600 bg-status-neutral-50 dark:bg-status-neutral-800/50 p-3 text-sm text-status-neutral-600 dark:text-status-neutral-400 text-center">
       This agent is dormant. Sending a message will wake it.
     </div>
   ) : null
