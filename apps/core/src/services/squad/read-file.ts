@@ -14,13 +14,18 @@ export const squadFileReadSchema = z.object({
   offset: z.number().int().min(0).default(0),
   limit: z.number().int().min(1).max(20000).default(12000),
 })
-/** Bounded read under the user's workspace permission; never a shell command or privileged helper. */
+/**
+ * Bounded read under the same permission as the matching HTTP route: memory:read for the memory
+ * vault, workspace:read for the workspace. Never a shell command or privileged helper.
+ */
 export async function readSquadFile(identity: Identity, request: unknown) {
   const input = squadFileReadSchema.parse(request)
-  if (!(await hasPermission(identity, 'workspace:read', input.squadId))) throw new Error('Squad not found')
+  const memory = input.path.startsWith('/memory/')
+  if (!(await hasPermission(identity, memory ? 'memory:read' : 'workspace:read', input.squadId)))
+    throw new Error('Squad not found')
   const squad = await Squad.find(input.squadId)
   if (!squad) throw new Error('Squad not found')
-  if (input.path.startsWith('/memory/')) {
+  if (memory) {
     const result = await WriteService.instance().read(squad.id, input.path)
     if (!result.success) throw new Error('File not found')
     return {
