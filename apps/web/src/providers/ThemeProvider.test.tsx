@@ -240,3 +240,45 @@ test('a storage-driven rerender never writes an older selection over another tab
   })
   expect(document.documentElement.dataset.theme).toBe('tau')
 })
+
+test('live custom surface alpha is serialized consistently for root, metadata and reload snapshot', async () => {
+  const { dom } = await installThemeDom()
+  const sheet = document.createElement('style')
+  sheet.textContent = ':root { --color-bg-surface: 255 255 255; }'
+  document.head.append(sheet)
+  let theme!: ReturnType<typeof useTheme>
+  function Controls() {
+    theme = useTheme()
+    return null
+  }
+  const { root } = dom.createRoot()
+  await act(async () => {
+    root.render(
+      <ThemeProvider>
+        <Controls />
+      </ThemeProvider>
+    )
+  })
+  for (const alpha of ['0.0000001', '0.5', '0.0000002']) {
+    await act(async () => {
+      theme.applyCustom({
+        format: 'tau-custom-theme',
+        version: 1,
+        name: 'Surface',
+        base: 'tau',
+        appearance: 'light',
+        overrides: { '--color-bg-surface': `rgba(10,20,30,${alpha})` },
+      })
+    })
+    const expected = `rgba(10, 20, 30, ${alpha})`
+    expect(document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe(expected)
+    expect(JSON.parse(localStorage.getItem('tau-theme-surface')!).surface).toBe(expected)
+    expect(document.documentElement.style.backgroundColor).not.toBe('rgb(255, 255, 255)')
+  }
+  await act(async () => {
+    theme.resetTheme()
+  })
+  expect(document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('rgb(255, 255, 255)')
+  expect(JSON.parse(localStorage.getItem('tau-theme-surface')!).surface).toBe('rgb(255, 255, 255)')
+  expect(localStorage.getItem('tau-custom-theme')).toBeNull()
+})

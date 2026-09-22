@@ -78,7 +78,7 @@ for (const theme of BUILT_IN_THEMES)
         const resolved =
           theme.kind === 'unified' ? 'constant' : appearance === 'system' ? (dark ? 'dark' : 'light') : appearance
         const palette = palettes.find((p) => p.id === theme.id && p.appearance === resolved)!
-        const surface = `rgb(${resolveToken(palette.tokens, '--color-bg-surface')})`
+        const surface = `rgb(${resolveToken(palette.tokens, '--color-bg-surface').split(/\s+/).join(', ')})`
         expect(document.documentElement.style.backgroundColor).toBe(surface)
         expect(document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')!.content).toBe(surface)
         expect(JSON.parse(localStorage.getItem('tau-theme-surface')!)).toEqual({
