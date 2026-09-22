@@ -80,6 +80,12 @@ interface SendOpts {
   deliveryMode?: DeliveryMode
 }
 
+// Query cache pages can outlive a hook or be shared by multiple mounted views.
+// Use one runtime clock/owner, not restartable per-hook counters, for read causality.
+// The symbol is deliberately absent after JSON dehydration; those rows need a new read.
+const collectionRequestGenerationRef = { current: 0 }
+const collectionRequestOwner = Symbol('conversation-history')
+
 let pendingCounter = 0
 function nextClientId(): string {
   pendingCounter += 1
@@ -87,12 +93,15 @@ function nextClientId(): string {
 }
 
 type PendingAction =
+  | { type: 'reset' }
   | { type: 'add'; item: PendingItem }
   | { type: 'status'; clientId: string; status: PendingItem['status']; queued?: boolean }
   | { type: 'remove'; clientIds: string[] }
 
 function pendingReducer(state: PendingItem[], action: PendingAction): PendingItem[] {
   switch (action.type) {
+    case 'reset':
+      return []
     case 'add':
       return [...state.filter((item) => item.clientId !== action.item.clientId), action.item]
     case 'status':
@@ -124,11 +133,26 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     setResolvedAgentId(options.agentId)
   }, [options.agentId])
 
+  const storeIdentityRef = useRef(resolvedAgentId)
+  const conversationIdentityRef = useRef({ requested: options.agentId, resolved: resolvedAgentId })
+  conversationIdentityRef.current = { requested: options.agentId, resolved: resolvedAgentId }
+  const recoveryAttemptsRef = useRef(new Map<string, number>())
+  const subscriptionGenerationRef = useRef(0)
+  // Timer ownership must change even when a replacement stream delivers no events.
+  const [subscriptionGeneration, setSubscriptionGeneration] = useState(0)
+  const createGenerationRef = useRef(0)
+  useEffect(
+    () => () => {
+      createGenerationRef.current += 1
+    },
+    []
+  )
+
   // 1. Stream → StreamGroupStore. The store is mutable; we bump a tick to re-render.
   const storeRef = useRef<StreamGroupStore | null>(null)
   if (storeRef.current === null) storeRef.current = new StreamGroupStore()
   const store = storeRef.current
-  const [, bumpTick] = useReducer((n: number) => n + 1, 0)
+  const [streamTick, bumpTick] = useReducer((n: number) => n + 1, 0)
   const [streamStatus, setStreamStatus] = useState<StreamStatus>('live')
   // Bumped to force a fresh agent-stream subscription when a new execution starts. The per-execution
   // worker stream closes on a turn's 'done', so without re-subscribing only the first turn streams.
@@ -140,6 +164,8 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
   // Execution status and usage
   const [executionStatus, setExecutionStatus] = useState<ExecutionStatus | null>(null)
   const highestExecutionVersionRef = useRef(new Map<string, number>())
+  const terminalExecutionStatusesRef = useRef(new Map<string, ExecutionStatus>())
+  const announcedExecutionIdRef = useRef<string | null>(null)
   const executionStatusRef = useRef<ExecutionStatus | null>(null)
   // True while the server has signaled (via execution_phase:waiting_sandbox) that backend-reported
   // blocking sandbox setup/reconciliation outlasted its debounce — distinct from generic
@@ -276,7 +302,8 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     new Map<string, CreatedMessageBarrier>()
   )
   const messageRequestGenerationsRef = useRef(new MessageRequestGenerations())
-  const collectionRequestGenerationRef = useRef(0)
+  // Starting a refresh is not completion evidence for its old cached rows.
+  const terminalHistoryAfterRef = useRef(new Map<string, number>())
   const liveMessageCollectionGenerationsRef = useRef(new Map<string, number>())
   const capReconciliationRef = useRef<{
     agentId: string | undefined
@@ -293,6 +320,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     if (!resolvedAgentId || !subscribeToAgentEvents) return
     let active = true
     const unsubscribe = subscribeToAgentEvents(resolvedAgentId, (entry) => {
+      if (!active) return
       if (entry.event !== 'message.created' && entry.event !== 'message.updated') return
       const data = entry.data as Record<string, unknown> | null
       if (
@@ -381,25 +409,70 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     onDoneRef.current?.(event.response, event.metadata ?? null, event.messageId)
   }, [])
 
+  const confirmTerminalHistory = useCallback(
+    (executionId: string) => {
+      if (terminalHistoryAfterRef.current.has(executionId)) return
+      terminalHistoryAfterRef.current.set(executionId, collectionRequestGenerationRef.current)
+      invalidateConversationQueries()
+    },
+    [invalidateConversationQueries]
+  )
+
   // Keep executionStatus in sync with the live stream (both the agent stream and the create-flow
   // chat stream) so the activity indicator clears on turn end. Without this it would otherwise be
   // seeded once on mount and stick at 'running'.
   const applyExecStatus = useCallback(
     (event: import('@tau/shared').StreamEvent) => {
       lastStreamAtRef.current = Date.now()
+      if (event.type === 'agent') announcedExecutionIdRef.current = event.executionId ?? null
+      const executionId = announcedExecutionIdRef.current
+      // Runner done with saved row IDs is emitted after persistence (including
+      // stop's aborted-tool update). A subsequent read can reconcile missed tool_end.
+      if (
+        event.type === 'done' &&
+        executionId &&
+        (event.messageId || event.messageIds?.length) &&
+        storeRef
+          .current!.snapshot()
+          .some(
+            (group) =>
+              (group.executionId === executionId || group.streamGroupId === event.streamGroupId) &&
+              group.blocks.some((block) => block.type === 'tool_use' && block._done === false)
+          )
+      )
+        confirmTerminalHistory(executionId)
+      const terminal = executionId ? terminalExecutionStatusesRef.current.get(executionId) : undefined
+      if (event.type !== 'execution_snapshot' && terminal) {
+        if (event.type === 'done' || event.type === 'error') streamedExecIdRef.current = null
+        setExecutionStatusLocal(terminal)
+        return
+      }
       if (event.type === 'execution_snapshot') {
         const highest = highestExecutionVersionRef.current.get(event.executionId) ?? -1
         if (event.executionVersion < highest) return
         highestExecutionVersionRef.current.set(event.executionId, event.executionVersion)
+        announcedExecutionIdRef.current = event.executionId
+        if (['completed', 'failed', 'stopped'].includes(event.status)) {
+          terminalExecutionStatusesRef.current.set(event.executionId, event.status)
+          confirmTerminalHistory(event.executionId)
+        } else {
+          terminalExecutionStatusesRef.current.delete(event.executionId)
+          terminalHistoryAfterRef.current.delete(event.executionId)
+        }
         streamedExecIdRef.current = ['completed', 'failed', 'stopped'].includes(event.status) ? null : event.executionId
         setExecutionStatusLocal(event.status)
       } else if (event.type === 'done') {
+        if (executionId) terminalExecutionStatusesRef.current.set(executionId, 'completed')
         streamedExecIdRef.current = null
         setExecutionStatusLocal('completed')
       } else if (event.type === 'error') {
-        streamedExecIdRef.current = null
-        setExecutionStatusLocal('failed')
+        // The proxy uses the same event for connection failures as runner errors.
+        // Keep an identified execution's status/pin until exact reconciliation;
+        // neither English message text nor this event proves terminal failure.
+        setStreamStatus('reconnecting')
+        if (!executionId && !streamedExecIdRef.current) setExecutionStatusLocal('failed')
       } else if (event.type === 'agent' && event.executionStatus) {
+        setStreamStatus('live')
         setExecutionStatusLocal(event.executionStatus)
       } else if (event.type === 'execution_phase') {
         if (event.phase === 'sandbox_recovery_wait') setExecutionStatusLocal('waiting-sandbox')
@@ -414,26 +487,41 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
       ) {
         // Any content event (agent/text/thinking/tool_*) means the turn is actively running — and,
         // if it arrived, the sandbox is definitely up, so the waiting label can't still apply.
+        setStreamStatus('live')
         setExecutionStatusLocal('running')
         setWaitingForSandbox(false)
       }
     },
-    [setExecutionStatusLocal]
+    [setExecutionStatusLocal, confirmTerminalHistory]
   )
 
   // Reset store state when the conversation identity changes (new agent) — NOT on a re-subscribe for
   // a follow-up turn, which must preserve the accumulated history. Skipped on the create-flow handoff
   // so streaming items ingested via chat survive the transition to the agent stream.
   useEffect(() => {
-    if (!resolvedAgentId) return
+    storeIdentityRef.current = resolvedAgentId
     if (!createdViaFlowRef.current) {
       storeRef.current!.reset()
       firedDoneRef.current.clear()
       setSendQueueStates(new Map())
+      dispatch({ type: 'reset' })
       streamedExecIdRef.current = null
       createFlowHandedOffRef.current = false
+      createGenerationRef.current += 1
+      highestExecutionVersionRef.current.clear()
+      terminalHistoryAfterRef.current.clear()
+      terminalExecutionStatusesRef.current.clear()
+      announcedExecutionIdRef.current = null
+      recoveryAttemptsRef.current.clear()
+      previousLiveStatusRef.current = null
+      lastStreamAtRef.current = 0
+      deferredReconnectRef.current = false
+      deferredRefreshRef.current = false
+      setExecutionStatusLocal(null)
+      setUsage(null)
     }
     createdViaFlowRef.current = false
+    if (!resolvedAgentId) return
     return () => {
       storeRef.current!.reset()
       firedDoneRef.current.clear()
@@ -448,13 +536,68 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
   useEffect(() => {
     if (!resolvedAgentId) return
     const store = storeRef.current!
+    if (streamedExecIdRef.current) announcedExecutionIdRef.current = streamedExecIdRef.current
+    const generation = ++subscriptionGenerationRef.current
+    setSubscriptionGeneration(generation)
+    const requestedIdentity = options.agentId
+    let active = true
+    const isCurrent = () =>
+      active &&
+      subscriptionGenerationRef.current === generation &&
+      conversationIdentityRef.current.resolved === resolvedAgentId &&
+      conversationIdentityRef.current.requested === requestedIdentity
     setStreamStatus('live')
+    let reconciliationStarted = false
+    const onTransportEnd = () => {
+      if (!isCurrent()) return
+      setStreamStatus('ended')
+      const executionId = streamedExecIdRef.current
+      const status = executionStatusRef.current
+      // Parked executions deliberately close their transport; their resume query
+      // already reconnects them. Terminal done/snapshots also need no recovery.
+      if (!executionId || !['running', 'queued', 'stopping'].includes(status ?? '') || reconciliationStarted) return
+      reconciliationStarted = true
+      const attempts = recoveryAttemptsRef.current.get(executionId) ?? 0
+      if (attempts >= 2) return
+      recoveryAttemptsRef.current.set(executionId, attempts + 1)
+      invalidateConversationQueries()
+      void client.agents
+        .getExecution(resolvedAgentId, executionId)
+        .then((execution) => {
+          if (
+            !isCurrent() ||
+            streamedExecIdRef.current !== executionId ||
+            execution.executionId !== executionId ||
+            execution.agentId !== resolvedAgentId
+          )
+            return
+          const highest = highestExecutionVersionRef.current.get(executionId) ?? -1
+          if (execution.executionVersion < highest) return
+          highestExecutionVersionRef.current.set(executionId, execution.executionVersion)
+          if (['completed', 'failed', 'stopped'].includes(execution.status)) {
+            terminalExecutionStatusesRef.current.set(executionId, execution.status)
+            confirmTerminalHistory(executionId)
+          }
+          setExecutionStatusLocal(execution.status)
+          // Busy executions can replay missed events. Terminal exact streams only
+          // send a status snapshot; their missing text/tools come from the durable
+          // post-confirmation history refresh, not a final worker replay.
+          bumpStreamEpoch()
+        })
+        .catch(() => {
+          // Remain visibly interrupted. A failed request is not successful completion.
+        })
+    }
 
     const unsubscribe = client.agents.subscribeToAgentStream(
       resolvedAgentId,
       {
         onEvent: (event) => {
-          store.ingest(event)
+          if (!isCurrent()) return
+          // Identified stream errors are transport-ambiguous. Do not mark the
+          // live group terminal/retireable before exact execution truth arrives.
+          if (event.type !== 'error' || !(streamedExecIdRef.current || announcedExecutionIdRef.current))
+            store.ingest(event)
           if (event.type === 'agent' && event.executionId) streamedExecIdRef.current = event.executionId
           if (event.type === 'done') handleDone(event)
           applyExecStatus(event)
@@ -462,7 +605,13 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
           bumpTick()
         },
         onCatchup: (events) => {
-          store.applyCatchup(events)
+          if (!isCurrent()) return
+          const identified = !!(
+            streamedExecIdRef.current ||
+            announcedExecutionIdRef.current ||
+            events.some((event) => event.type === 'execution_snapshot' || (event.type === 'agent' && event.executionId))
+          )
+          store.applyCatchup(identified ? events.filter((event) => event.type !== 'error') : events)
           // Catchup replays the turn's events as one batch (on subscribe and every reconnect). It must
           // drive executionStatus exactly like live events — otherwise a turn whose 'done' lands in a
           // catchup batch never terminalizes and the activity indicator sticks at running.
@@ -474,22 +623,38 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
           if (events.some((event) => event.type === 'done' || event.type === 'error')) flushDeferredReconnect()
           bumpTick()
         },
-        onDisconnect: () => setStreamStatus('reconnecting'),
-        onReconnect: () => setStreamStatus('live'),
-        onError: () => setStreamStatus('ended'),
-        onDone: () => setStreamStatus('ended'),
+        onDisconnect: () => {
+          if (isCurrent()) setStreamStatus('reconnecting')
+        },
+        onReconnect: () => {
+          if (isCurrent()) setStreamStatus('live')
+        },
+        onError: onTransportEnd,
+        onDone: onTransportEnd,
       },
       streamedExecIdRef.current ?? undefined
     )
-    return () => unsubscribe()
-  }, [resolvedAgentId, streamEpoch, client, handleDone, applyExecStatus, flushDeferredReconnect])
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [
+    resolvedAgentId,
+    options.agentId,
+    streamEpoch,
+    confirmTerminalHistory,
+    client,
+    handleDone,
+    applyExecStatus,
+    flushDeferredReconnect,
+    invalidateConversationQueries,
+    setExecutionStatusLocal,
+  ])
 
   // Reconnect the SSE stream when the app/window regains focus. While backgrounded the
   // OS may pause the fetch without closing it, so events that landed during that
   // window (including the terminal 'done') are never delivered. Re-subscribing forces
-  // a fresh connection whose server-side catchup replay reconciles any gap. During an
-  // active stream, defer the reconnect until terminal stream events so a stale catchup
-  // snapshot cannot race and replace optimistic live content.
+  // a fresh connection whose server-side catchup replay reconciles any gap.
   const wasFocusedRef = useRef(true)
   useEffect(() => {
     if (!resolvedAgentId) return
@@ -513,7 +678,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     queryFn: async ({ pageParam }) => {
       const generation = ++collectionRequestGenerationRef.current
       const page = await client.agents.getMessages(resolvedAgentId!, { cursor: pageParam, limit: 50 })
-      return { ...page, __collectionRequestGeneration: generation }
+      return { ...page, __collectionRequestGeneration: generation, __collectionRequestOwner: collectionRequestOwner }
     },
     getNextPageParam: (last) => (last.pagination.hasMore ? last.pagination.nextCursor : undefined),
     refetchOnWindowFocus: () => !isStreamLive(),
@@ -659,12 +824,60 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
       executionStatus === 'waiting-maintenance' ||
       executionStatus === 'stopping'
     if (serverDone && localBusy) {
+      let active = true
+      const generation = subscriptionGenerationRef.current
       const timer = setTimeout(() => {
-        if (Date.now() - lastStreamAtRef.current >= STREAM_QUIET_MS) setExecutionStatusLocal(liveStatus ?? 'completed')
+        if (Date.now() - lastStreamAtRef.current < STREAM_QUIET_MS) return
+        const executionId = streamedExecIdRef.current
+        if (!executionId || !resolvedAgentId) {
+          // Legacy streams have no exact identity to query.
+          setExecutionStatusLocal(liveStatus ?? 'completed')
+          invalidateConversationQueries()
+          return
+        }
+        void client.agents
+          .getExecution(resolvedAgentId, executionId)
+          .then((execution) => {
+            if (
+              !active ||
+              subscriptionGenerationRef.current !== generation ||
+              streamedExecIdRef.current !== executionId ||
+              execution.executionId !== executionId ||
+              execution.agentId !== resolvedAgentId
+            )
+              return
+            const highest = highestExecutionVersionRef.current.get(executionId) ?? -1
+            if (execution.executionVersion < highest) return
+            highestExecutionVersionRef.current.set(executionId, execution.executionVersion)
+            if (['completed', 'failed', 'stopped'].includes(execution.status))
+              terminalExecutionStatusesRef.current.set(executionId, execution.status)
+            setExecutionStatusLocal(execution.status)
+            if (['completed', 'failed', 'stopped'].includes(execution.status)) {
+              confirmTerminalHistory(executionId)
+              bumpStreamEpoch()
+            }
+          })
+          .catch(() => {
+            /* Failed reconciliation is not evidence of completion. */
+          })
       }, STREAM_QUIET_MS)
-      return () => clearTimeout(timer)
+      return () => {
+        active = false
+        clearTimeout(timer)
+      }
     }
-  }, [serverActive, liveStatus, executionStatus, setExecutionStatusLocal])
+  }, [
+    serverActive,
+    liveStatus,
+    executionStatus,
+    streamTick,
+    subscriptionGeneration,
+    confirmTerminalHistory,
+    resolvedAgentId,
+    client,
+    invalidateConversationQueries,
+    setExecutionStatusLocal,
+  ])
 
   // 3. Pending store. An echo acknowledges an optimistic row permanently; merely
   // hiding it in combine() would resurrect it when Clear queue deletes the saved row.
@@ -698,6 +911,12 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
   const fireCreate = useCallback(
     (item: PendingItem): Promise<void> => {
       createFlowHandedOffRef.current = false
+      const generation = ++createGenerationRef.current
+      const requestedIdentity = options.agentId
+      const isCurrent = () =>
+        createGenerationRef.current === generation &&
+        conversationIdentityRef.current.requested === requestedIdentity &&
+        !createFlowHandedOffRef.current
       return client.chat.sendChatMessage(
         {
           message: item.content,
@@ -709,6 +928,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
         },
         {
           onEvent: (event) => {
+            if (!isCurrent()) return
             // The agent event resolves the agentId and triggers the agent-stream subscription.
             // From this point the agent stream is authoritative (its catchup replays the entire
             // turn), so the chat stream must stop ingesting to avoid double delivery.
@@ -720,7 +940,6 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
               setResolvedAgentId(event.agentId)
               return
             }
-            if (createFlowHandedOffRef.current) return
             storeRef.current!.ingest(event)
             if (event.type === 'done') handleDone(event)
             applyExecStatus(event)
@@ -728,7 +947,7 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
             bumpTick()
           },
           onCatchup: (events) => {
-            if (createFlowHandedOffRef.current) return
+            if (!isCurrent()) return
             storeRef.current!.applyCatchup(events)
             // Drive executionStatus from the replayed batch too (see agent-stream onCatchup).
             for (const event of events) {
@@ -739,10 +958,10 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
             bumpTick()
           },
           onDone: () => {
-            if (!createFlowHandedOffRef.current) setStreamStatus('ended')
+            if (isCurrent()) setStreamStatus('ended')
           },
           onError: () => {
-            if (createFlowHandedOffRef.current) return
+            if (!isCurrent()) return
             if (sentPageContexts.current.get('__new__')?.clientId === item.clientId)
               sentPageContexts.current.delete('__new__')
             dispatch({ type: 'status', clientId: item.clientId, status: 'failed' })
@@ -751,7 +970,15 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
         }
       )
     },
-    [client, options.scope, handleDone, applyExecStatus, flushDeferredReconnect, setExecutionStatusLocal]
+    [
+      client,
+      options.scope,
+      options.agentId,
+      handleDone,
+      applyExecStatus,
+      flushDeferredReconnect,
+      setExecutionStatusLocal,
+    ]
   )
 
   const beginSend = useCallback(
@@ -909,11 +1136,46 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
   }, [resolvedAgentId, client])
 
   // 4. Combine → items (memoized on inputs).
-  const session: CombineSession = useMemo(
-    () => ({ agentId: resolvedAgentId ?? '', streamStatus, executionStatus, waitingForSandbox }),
-    [resolvedAgentId, streamStatus, executionStatus, waitingForSandbox]
+  // Identity changes render before their teardown effect. Never expose the old
+  // store/status under the new identity during that intermediate render.
+  const identityReady = storeIdentityRef.current === resolvedAgentId || createdViaFlowRef.current
+  const groups = identityReady ? store.snapshot() : []
+  const groupById = new Map(groups.map((group) => [group.streamGroupId, group]))
+  const freshRows = new Map(
+    (messagesQuery.data?.pages ?? [])
+      .filter((page) => page.__collectionRequestOwner === collectionRequestOwner)
+      .flatMap((page) =>
+        page.messages
+          .filter((message) => !liveMessages.has(message.id))
+          .map((message) => [message.id, page.__collectionRequestGeneration] as const)
+      )
   )
-  const groups = store.snapshot()
+  const authoritativeCompletedGroupIds = new Set(
+    history.flatMap((turn) => {
+      if (!turn.streamGroupId) return []
+      const group = groupById.get(turn.streamGroupId)
+      const executionId = group?.executionId ?? turn.message.metadata?.executionId
+      const after = executionId ? terminalHistoryAfterRef.current.get(executionId) : undefined
+      return after !== undefined &&
+        turn.mergedFrom.every(
+          (row) =>
+            (!row.metadata?.executionId || row.metadata.executionId === executionId) &&
+            (freshRows.get(row.id) ?? -1) > after
+        )
+        ? [turn.streamGroupId]
+        : []
+    })
+  )
+  const session: CombineSession = useMemo(
+    () => ({
+      agentId: resolvedAgentId ?? '',
+      streamStatus,
+      executionStatus,
+      waitingForSandbox,
+      authoritativeCompletedGroupIds,
+    }),
+    [resolvedAgentId, streamStatus, executionStatus, waitingForSandbox, authoritativeCompletedGroupIds]
+  )
   const visibleGroups = useMemo(
     () =>
       groups.filter(
@@ -922,8 +1184,8 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     [groups, createdBarriers]
   )
   const items = useMemo(
-    () => combine(history, visibleGroups, pending, session, store.systemMessages()),
-    [history, visibleGroups, pending, session]
+    () => (identityReady ? combine(history, visibleGroups, pending, session, store.systemMessages()) : []),
+    [identityReady, history, visibleGroups, pending, session]
   )
 
   // Single source of truth for the clear-queue control: only genuinely queued interrupts/follow-ups
@@ -949,11 +1211,11 @@ export function useAgentConversation(options: UseAgentConversationOptions): UseA
     items,
     streamStatus,
     agentId: resolvedAgentId,
-    executionStatus,
-    waitingForSandbox,
+    executionStatus: identityReady ? executionStatus : null,
+    waitingForSandbox: identityReady && waitingForSandbox,
     queuedCount,
-    usage,
-    compactionState: store.compactionState(),
+    usage: identityReady ? usage : null,
+    compactionState: identityReady ? store.compactionState() : null,
     isLoading: messagesQuery.isLoading,
     hasOlder: messagesQuery.hasNextPage ?? false,
     isFetchingOlder: messagesQuery.isFetchingNextPage,

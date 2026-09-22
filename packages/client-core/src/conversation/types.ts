@@ -126,6 +126,9 @@ export type CompactionState = { reason: 'auto' | 'manual' } | null
 
 /** Session/connection inputs to the combiner. */
 export interface CombineSession {
+  /** Groups whose saved rows were read after identified execution completion was confirmed.
+   * Only this causal authority may replace a differing provisional tool result. */
+  authoritativeCompletedGroupIds?: ReadonlySet<string>
   agentId: string
   streamStatus: StreamStatus
   /**

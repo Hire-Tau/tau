@@ -71,32 +71,48 @@ export function groupPersisted(messages: Message[]): PersistedTurn[] {
   return turns.sort((a, b) => compareByKey(a.sortAt, a.id, b.sortAt, b.id))
 }
 
-/** Do these two blocks represent the same streamed content once committed? */
-function blockContentMatches(streamed: StreamGroupSnapshot['blocks'][number], persisted: ContentBlock): boolean {
+/** Does a committed block cover this streamed content (including missed final text deltas)? */
+function blockContentMatches(
+  streamed: StreamGroupSnapshot['blocks'][number],
+  persisted: ContentBlock,
+  authoritativeCompletion: boolean
+): boolean {
   if (streamed.type !== persisted.type) return false
   switch (streamed.type) {
     case 'thinking':
     case 'text':
-      return persisted.type === streamed.type && persisted.content === streamed.content
+      return persisted.type === streamed.type && persisted.content.startsWith(streamed.content)
     case 'tool_use':
       return (
         persisted.type === 'tool_use' &&
         persisted.toolCall.toolCallId === streamed.toolCall.toolCallId &&
         persisted.toolCall.toolName === streamed.toolCall.toolName &&
-        persisted.toolCall.args === streamed.toolCall.args &&
-        persisted.toolCall.result === streamed.toolCall.result &&
-        persisted.toolCall.isError === streamed.toolCall.isError
+        // Matching identity/args alone also describes the pre-tool saved row.
+        // A differing provisional result needs a read begun after exact terminal
+        // confirmation. Finalized tools (and legacy blocks) always require equality.
+        (streamed._done === false
+          ? persisted.toolCall.args.startsWith(streamed.toolCall.args) &&
+            (authoritativeCompletion ||
+              (persisted.toolCall.result === streamed.toolCall.result &&
+                persisted.toolCall.isError === streamed.toolCall.isError))
+          : persisted.toolCall.args === streamed.toolCall.args &&
+            persisted.toolCall.result === streamed.toolCall.result &&
+            persisted.toolCall.isError === streamed.toolCall.isError)
       )
   }
 }
 
 /** Does the persisted turn contain every streamed block in order? */
-function persistedTurnIncludesStreamedBlocks(group: StreamGroupSnapshot, turn: PersistedTurn): boolean {
+function persistedTurnIncludesStreamedBlocks(
+  group: StreamGroupSnapshot,
+  turn: PersistedTurn,
+  authoritativeCompletion: boolean
+): boolean {
   let persistedIndex = 0
   for (const streamedBlock of group.blocks) {
     let found = false
     while (persistedIndex < turn.blocks.length) {
-      if (blockContentMatches(streamedBlock, turn.blocks[persistedIndex])) {
+      if (blockContentMatches(streamedBlock, turn.blocks[persistedIndex], authoritativeCompletion)) {
         found = true
         persistedIndex += 1
         break
@@ -114,13 +130,21 @@ function persistedTurnIncludesStreamedBlocks(group: StreamGroupSnapshot, turn: P
  * content; keep the streamed copy visible until committed history includes the same content so it
  * does not flicker out between back-to-back streams.
  */
-function persistedTurnComplete(group: StreamGroupSnapshot, turn: PersistedTurn | undefined): boolean {
+function persistedTurnComplete(
+  group: StreamGroupSnapshot,
+  turn: PersistedTurn | undefined,
+  session: CombineSession
+): boolean {
   if (!turn) return false
   if (group.doneMessageIds && group.doneMessageIds.length > 0) {
     const have = new Set(turn.mergedFrom.map((m) => m.id))
     if (!group.doneMessageIds.every((id) => have.has(id))) return false
   }
-  return persistedTurnIncludesStreamedBlocks(group, turn)
+  return persistedTurnIncludesStreamedBlocks(
+    group,
+    turn,
+    session.authoritativeCompletedGroupIds?.has(group.streamGroupId) ?? false
+  )
 }
 
 /** Decide whether a stream group should still render (vs. having swapped to persisted). */
@@ -130,16 +154,20 @@ function streamingStatusFor(
   session: CombineSession
 ): StreamingItemStatus | null {
   // Swap to persisted once the complete persisted turn is present.
-  if (group.done && persistedTurnComplete(group, turn)) return null
+  if (group.done && persistedTurnComplete(group, turn, session)) return null
 
-  // Ended without done: swap if anything was committed, else keep as interrupted.
+  // Transport/lifecycle termination does not prove the saved fragment covers the live tail.
   if (!group.done && session.streamStatus === 'ended') {
-    if (turn) return null
+    const stillBusy = ['queued', 'running', 'stopping', 'waiting-sandbox', 'waiting-maintenance'].includes(
+      session.executionStatus ?? ''
+    )
+    if (stillBusy && !group.flushed && !group.errored) return 'interrupted'
+    if (persistedTurnComplete(group, turn, session)) return null
     return 'interrupted'
   }
 
-  if (group.errored) return turn ? null : 'interrupted'
-  if (group.flushed) return turn ? null : 'flushed'
+  if (group.errored) return persistedTurnComplete(group, turn, session) ? null : 'interrupted'
+  if (group.flushed) return persistedTurnComplete(group, turn, session) ? null : 'flushed'
   return 'streaming'
 }
 
