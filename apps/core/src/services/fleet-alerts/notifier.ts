@@ -1,5 +1,8 @@
 import { SYSTEM_RECIPIENT_ID } from '@tau/shared'
+import { eq } from 'drizzle-orm'
+import { agents, db, squads } from '../../db'
 import { InboxMessage } from '../../entities/InboxMessage'
+import { renderFleetIncidentMessage, type FleetIncidentNames } from './message'
 import {
   bindFleetIncidentManagerTarget,
   claimDueFleetIncidentNotifications,
@@ -7,6 +10,33 @@ import {
   retryFleetIncidentNotification,
   type FleetIncidentNotificationClaim,
 } from './store'
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Sandbox scopes are `sandbox:squad_<id>` or `sandbox:agent_<id>`; names are looked up now, not stored. */
+async function loadFleetIncidentNames(claim: FleetIncidentNotificationClaim): Promise<FleetIncidentNames> {
+  const sandbox = claim.incidentKind === 'sandbox_degraded' ? /^sandbox:(squad|agent)_(.+)$/.exec(claim.scopeKey) : null
+  const agentId = sandbox?.[1] === 'agent' && UUID.test(sandbox[2]!) ? sandbox[2]! : undefined
+  const [agent] = agentId
+    ? await db
+        .select({ metadata: agents.metadata, agentTypeId: agents.agentTypeId, squadId: agents.squadId })
+        .from(agents)
+        .where(eq(agents.id, agentId))
+    : []
+  const squadId =
+    claim.squadId ??
+    (sandbox?.[1] === 'squad' && UUID.test(sandbox[2]!) ? sandbox[2] : undefined) ??
+    agent?.squadId ??
+    undefined
+  const [squad] = squadId ? await db.select({ name: squads.name }).from(squads).where(eq(squads.id, squadId)) : []
+  const agentName = (agent?.metadata as { name?: unknown } | null)?.name
+  return {
+    ...(squad ? { squadName: squad.name } : {}),
+    ...(agent
+      ? { agentName: typeof agentName === 'string' && agentName.trim() ? agentName.trim() : agent.agentTypeId }
+      : {}),
+  }
+}
 
 export interface FleetIncidentNotifierAdapter {
   /** Test-only crash seam after durable sendOnce and before token-gated settlement. */
@@ -48,7 +78,7 @@ export class FleetIncidentNotifier {
               recipientId: claim.recipientId ?? SYSTEM_RECIPIENT_ID,
               idempotencyKey: claim.idempotencyKey ?? `fleet-incident:${claim.incidentId}:${claim.phase}:human:system`,
             }
-      const input = this.messageInput(claim, target.recipientId)
+      const input = await this.messageInput(claim, target.recipientId, now)
       const existing = await InboxMessage.findByIdempotencyKey(target.idempotencyKey)
       message = existing ?? (await InboxMessage.sendOnce(input, target.idempotencyKey)).message
       this.assertDurableWinner(message, claim, target.recipientId)
@@ -68,24 +98,14 @@ export class FleetIncidentNotifier {
     })
   }
 
-  private messageInput(claim: FleetIncidentNotificationClaim, recipientId: string) {
-    const scope =
-      claim.incidentKind === 'sandbox_degraded'
-        ? claim.scopeKey.replace(/^sandbox:/, 'sandbox ')
-        : claim.squadId
-          ? `squad ${claim.squadId}`
-          : `provider ${claim.provider ?? 'unknown'}`
-    const phase = claim.phase === 'alert' ? 'alert' : 'recovery'
-    const subject = `Fleet ${phase}: ${scope}`
-    const remediation = claim.remediation ? `\n\nRemediation: ${claim.remediation}` : ''
+  private async messageInput(claim: FleetIncidentNotificationClaim, recipientId: string, now: Date) {
+    const rendered = renderFleetIncidentMessage(claim, await loadFleetIncidentNames(claim), now)
+    const subject = rendered.subject
     const managerInstruction =
       claim.audience === 'manager' && claim.phase === 'alert'
         ? '\n\nDiagnose this incident, attempt safe recovery or rerouting, and escalate only when credentials, approval, billing, or other external/operator action is required.'
         : ''
-    const content =
-      `${claim.phase === 'alert' ? 'A fleet incident requires attention.' : 'A fleet incident has recovered.'}\n\n` +
-      `Scope: ${scope}\n` +
-      `Cause: ${claim.causeSummary}${remediation}${managerInstruction}`
+    const content = `${rendered.content}${managerInstruction}`
 
     if (claim.audience === 'manager') {
       return {
@@ -121,6 +141,7 @@ export class FleetIncidentNotifier {
         phase: claim.phase,
         squadId: claim.squadId,
         provider: claim.provider,
+        push: rendered.push,
       },
     }
   }

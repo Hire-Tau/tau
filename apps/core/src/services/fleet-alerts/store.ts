@@ -381,6 +381,7 @@ export async function observeDeadFleet(
     const [providerIncident] = await tx
       .select({
         id: fleetIncidents.id,
+        provider: fleetIncidents.provider,
         causeCode: fleetIncidents.causeCode,
         causeSummary: fleetIncidents.causeSummary,
         remediation: fleetIncidents.remediation,
@@ -427,10 +428,17 @@ export async function observeDeadFleet(
           remediation: explaining.remediation,
         }
       : describeStall(input.demandCount, input.firstDemandAt, input.now, input.lastRunStartedAt)
+    // Structured facts let delivery name the provider and phrase reasons and durations for readers.
     const details = {
       demandCount: input.demandCount,
-      ...(providerIncident ? { providerIncidentId: providerIncident.id } : {}),
-      ...(sandboxIncident ? { sandboxIncidentId: sandboxIncident.id } : {}),
+      oldestDemandAt: input.firstDemandAt.toISOString(),
+      ...(providerIncident
+        ? {
+            providerIncidentId: providerIncident.id,
+            ...(providerIncident.provider ? { provider: providerIncident.provider } : {}),
+          }
+        : {}),
+      ...(sandboxIncident ? { sandboxIncidentId: sandboxIncident.id, sandboxReasons } : {}),
     }
     const audiencePlan = planFleetAlert({
       kind: 'squad_dead_fleet',
@@ -637,6 +645,7 @@ export interface FleetIncidentNotificationClaim {
   claimToken: string
   attempts: number
   incidentResolvedAt: Date | null
+  incidentStartedAt: Date
   incidentKind: 'provider_unhealthy' | 'squad_dead_fleet' | 'sandbox_degraded'
   squadId?: string | undefined
   provider?: string | undefined
@@ -644,6 +653,8 @@ export interface FleetIncidentNotificationClaim {
   causeCode: string
   causeSummary: string
   remediation?: string | undefined
+  /** Structured facts for rendering; readers must allowlist the keys they use. */
+  details: Record<string, unknown>
 }
 
 export interface FleetIncidentDeliveryTarget {
@@ -738,6 +749,7 @@ export async function claimDueFleetIncidentNotifications(input: {
         claimToken: fleetIncidentNotifications.claimToken,
         attempts: fleetIncidentNotifications.attempts,
         incidentResolvedAt: fleetIncidents.resolvedAt,
+        incidentStartedAt: fleetIncidents.startedAt,
         incidentKind: fleetIncidents.kind,
         squadId: fleetIncidents.squadId,
         provider: fleetIncidents.provider,
@@ -745,6 +757,7 @@ export async function claimDueFleetIncidentNotifications(input: {
         causeCode: fleetIncidents.causeCode,
         causeSummary: fleetIncidents.causeSummary,
         remediation: fleetIncidents.remediation,
+        details: fleetIncidents.details,
       })
       .from(fleetIncidentNotifications)
       .innerJoin(fleetIncidents, eq(fleetIncidents.id, fleetIncidentNotifications.incidentId))
@@ -768,6 +781,7 @@ export async function claimDueFleetIncidentNotifications(input: {
         squadId: row.squadId ?? undefined,
         provider: row.provider ?? undefined,
         remediation: row.remediation ?? undefined,
+        details: (row.details ?? {}) as Record<string, unknown>,
       }
     })
   })

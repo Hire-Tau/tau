@@ -805,7 +805,7 @@ describe('fleet incident notifier', () => {
     ownedSquadIds.push(squadId)
     await db.insert(squads).values({
       id: squadId,
-      name: `Notifier ${squadId}`,
+      name: `Notifier ${squadId.slice(0, 8)}`,
       purpose: 'Fleet notifier test',
       status: 'active',
     })
@@ -827,38 +827,88 @@ describe('fleet incident notifier', () => {
       .where(inArray(inbox.idempotencyKey, [alert.idempotencyKey!, recovery.idempotencyKey!]))
     expect(rows).toHaveLength(2)
     const byKey = new Map(rows.map((row) => [row.idempotencyKey, row]))
-    expect(byKey.get(alert.idempotencyKey)?.metadata).toEqual({
-      source: 'fleet-alert',
-      audience: 'human',
-      incidentId: incident.id,
-      incidentKind: 'squad_dead_fleet',
-      phase: 'alert',
-      squadId,
-      wakeEligible: false,
-    })
-    expect(byKey.get(recovery.idempotencyKey)?.metadata).toEqual({
-      source: 'fleet-alert',
-      audience: 'human',
-      incidentId: incident.id,
-      incidentKind: 'squad_dead_fleet',
-      phase: 'recovery',
-      squadId,
-      wakeEligible: false,
-    })
-    expect(byKey.get(alert.idempotencyKey)?.content).toContain('requires attention')
-    expect(byKey.get(recovery.idempotencyKey)?.content).toContain('has recovered')
-    for (const idempotencyKey of [alert.idempotencyKey!, recovery.idempotencyKey!]) {
-      const row = byKey.get(idempotencyKey)!
+    const squadName = `Notifier ${squadId.slice(0, 8)}`
+    for (const [key, phase, interruptionLevel] of [
+      [alert.idempotencyKey!, 'alert', 'active'],
+      [recovery.idempotencyKey!, 'recovery', 'passive'],
+    ] as const) {
+      const row = byKey.get(key)!
+      expect(row.metadata).toEqual({
+        source: 'fleet-alert',
+        audience: 'human',
+        incidentId: incident.id,
+        incidentKind: 'squad_dead_fleet',
+        phase,
+        squadId,
+        wakeEligible: false,
+        push: {
+          title: row.subject,
+          body: row.content.split('\n')[0],
+          subtitle: squadName,
+          collapseKey: `fleet:${incident.id}`,
+          threadKey: 'fleet',
+          interruptionLevel,
+        },
+      })
       expect(row.recipientType).toBe('system')
       expect(row.recipientId).toBe(SYSTEM_RECIPIENT_ID)
-      expect(row.content).toContain('OAuth refresh credential expired or was revoked.')
-      expect(row.content).toContain('Run `tau pa login openai-codex` to authenticate again.')
+      // Readers see the squad's name; its ID stays in metadata for routing.
+      expect(`${row.subject}\n${row.content}`).not.toContain(squadId)
       expect(row.content).not.toContain('credential-token-must-not-leak')
     }
+    const alertRow = byKey.get(alert.idempotencyKey)!
+    expect(alertRow.subject).toBe(`Squad ${squadName} stalled`)
+    expect(alertRow.content).toBe(
+      `Work in squad ${squadName} has been stalled for 1h.\n\n` +
+        'Cause: OAuth refresh credential expired or was revoked.\n' +
+        'Fix: Run `tau pa login openai-codex` to authenticate again.'
+    )
+    const recoveryRow = byKey.get(recovery.idempotencyKey)!
+    expect(recoveryRow.subject).toBe(`Squad ${squadName} is running again`)
+    // A recovery reports the past cause and duration, never the stall's live remediation.
+    expect(recoveryRow.content).toBe(
+      `Work in squad ${squadName} is running again after being stalled for 1h.\n\n` +
+        'Earlier cause: OAuth refresh credential expired or was revoked.'
+    )
     const persisted = await db
       .select()
       .from(fleetIncidentNotifications)
       .where(inArray(fleetIncidentNotifications.id, [alert.id, recovery.id]))
     expect(persisted.map((row) => row.status).sort()).toEqual(['delivered', 'delivered'])
+  })
+  test('names an agent sandbox by the agent and its squad at delivery time', async () => {
+    const squadId = crypto.randomUUID()
+    ownedSquadIds.push(squadId)
+    await db.insert(squads).values({ id: squadId, name: `${prefix} squad`, purpose: 'Fleet names', status: 'active' })
+    const [agent] = await db
+      .insert(agents)
+      .values({ agentTypeId: 'worker', squadId, metadata: { name: 'reviewer' } })
+      .returning()
+    ownedAgentIds.push(agent!.id)
+    const id = crypto.randomUUID()
+    ownedIncidentIds.push(id)
+    await db.insert(fleetIncidents).values({
+      id,
+      kind: 'sandbox_degraded',
+      scopeKey: `sandbox:agent_${agent!.id}`,
+      startedAt: new Date(NOW.getTime() - 20 * 60_000),
+      alertAfter: NOW,
+      lastObservedAt: NOW,
+      causeCode: 'sandbox-setup-degraded',
+      causeSummary: 'VM sandbox best-effort setup remains degraded.',
+      remediation: 'Inspect VM sandbox transport and setup reconciliation logs.',
+      details: { sandboxId: `agent_${agent!.id}`, reasons: ['callback_transport_degraded'] },
+      updatedAt: NOW,
+    })
+    const alert = await addNotification(id, 'alert')
+
+    await new FleetIncidentNotifier().drain({ now: NOW, incidentIds: [id] })
+
+    const [row] = await db.select().from(inbox).where(eq(inbox.idempotencyKey, alert.idempotencyKey!))
+    expect(row!.subject).toBe(`The sandbox for reviewer in squad ${prefix} squad is degraded`)
+    expect(row!.content).toContain('Cause: VM sandbox setup is degraded: callback connection degraded.')
+    expect(row!.content).toContain('Started: 20m ago')
+    expect(`${row!.subject}\n${row!.content}`).not.toContain(agent!.id)
+    expect((row!.metadata as { push?: { subtitle?: string } }).push?.subtitle).toBe(`${prefix} squad`)
   })
 })
