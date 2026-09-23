@@ -56,7 +56,11 @@ export const slackRelayProvider: HostedRelayProvider<SlackRelayInterest, SlackRe
  * until it either recovers or fails afresh.
  */
 export function createManagedSlackRelayResolver(
-  resolveConnection: typeof resolveManagedSlackConnection = resolveManagedSlackConnection
+  resolveConnection: (
+    id: string
+  ) => Promise<
+    { connection: { id: string; materialRevision: string }; credential: { accessToken: string } } | undefined
+  > = resolveManagedSlackConnection
 ) {
   let unresolvable = false
   return async (id: string) => {

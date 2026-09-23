@@ -225,7 +225,12 @@ describe('SlackClient', () => {
     await expect(operation).rejects.toEqual(new SlackClientError('invalid_auth'))
   })
 
-  test.each([{ error: 'token_revoked' }, { error: 'account_inactive' }, { error: 'token_expired' }, { error: 'not_authed' }])(
+  test.each([
+    { error: 'token_revoked' },
+    { error: 'account_inactive' },
+    { error: 'token_expired' },
+    { error: 'not_authed' },
+  ])(
     'authTest on a revoked/expired token ($error) is classified as invalid_auth and non-retryable, not retried forever',
     async ({ error }) => {
       const client = new SlackClient({ fetch: mock(async () => json({ ok: false, error }, 200)) })

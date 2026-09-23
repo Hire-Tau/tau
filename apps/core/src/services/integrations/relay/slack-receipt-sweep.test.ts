@@ -46,7 +46,9 @@ describe('sweepCompletedSlackDispatchReceipts', () => {
     const remaining = await db
       .select({ eventKey: integrationEventPollingDispatches.eventKey })
       .from(integrationEventPollingDispatches)
-      .where(inArray(integrationEventPollingDispatches.eventKey, [staleSlack, freshSlack, uncompletedSlack, staleGithub]))
+      .where(
+        inArray(integrationEventPollingDispatches.eventKey, [staleSlack, freshSlack, uncompletedSlack, staleGithub])
+      )
 
     expect(remaining.map((row) => row.eventKey).sort()).toEqual([freshSlack, staleGithub, uncompletedSlack].sort())
   })

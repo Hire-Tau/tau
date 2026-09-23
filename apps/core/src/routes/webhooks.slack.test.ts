@@ -112,7 +112,14 @@ describe('Slack direct webhook event_callback dedup', () => {
       type: 'event_callback',
       team_id: TEAM_ID,
       event_id: eventId,
-      event: { type: 'message', channel_type: 'channel', channel: 'C1', text: 'unrelated chatter', user: 'U1', ts: '100.1' },
+      event: {
+        type: 'message',
+        channel_type: 'channel',
+        channel: 'C1',
+        text: 'unrelated chatter',
+        user: 'U1',
+        ts: '100.1',
+      },
     }
     const res = await post(payload)
     expect(res.status).toBe(200)

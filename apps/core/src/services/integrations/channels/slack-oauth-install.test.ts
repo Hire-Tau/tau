@@ -163,6 +163,7 @@ function harness(fetchImpl: typeof fetch) {
           validatedAt: null,
           validationExpiresAt: null,
           lastErrorCode: null,
+          updatedAt: new Date(),
         }
         return { id: created.id }
       },

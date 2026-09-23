@@ -23,6 +23,7 @@ const connection: AssignedIntegrationConnectionRecord = {
   validatedAt: now,
   validationExpiresAt: new Date(now.getTime() + 60_000),
   lastErrorCode: null,
+  updatedAt: now,
 }
 
 function setup(

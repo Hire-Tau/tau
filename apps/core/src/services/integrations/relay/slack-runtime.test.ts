@@ -204,7 +204,11 @@ describe('createSlackRelayDispatcher', () => {
     const conn = connection()
     const { base, calls } = deps({
       resolveConnection: async () => conn,
-      receipts: { claim: async () => ({ status: 'busy' as const }), complete: async () => undefined, release: async () => undefined },
+      receipts: {
+        claim: async () => ({ status: 'busy' as const }),
+        complete: async () => undefined,
+        release: async () => undefined,
+      },
     })
     const dispatch = createSlackRelayDispatcher(base)
     await expect(
