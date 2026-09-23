@@ -46,15 +46,39 @@ export const slackRelayProvider: HostedRelayProvider<SlackRelayInterest, SlackRe
   matchesDelivery: (interest, delivery) => interest.teamId === delivery.resourceId,
 }
 
+/**
+ * Wraps `resolveManagedSlackConnection` for the relay runner's `resolve` hook.
+ * The snapshot (`slackRelayInterests`) can keep advertising an interest while
+ * the live, revision-fenced lookup returns nothing — e.g. mid degraded
+ * revalidation. That's expected to self-heal on its own and shouldn't spam a
+ * log on every ~2s tick, but a stall that never recovers needs to be
+ * diagnosable: log once on the transition into "unresolvable", not again
+ * until it either recovers or fails afresh.
+ */
+export function createManagedSlackRelayResolver(
+  resolveConnection: typeof resolveManagedSlackConnection = resolveManagedSlackConnection
+) {
+  let unresolvable = false
+  return async (id: string) => {
+    const resolved = await resolveConnection(id)
+    if (!resolved) {
+      if (!unresolvable) {
+        log.warn(
+          `Managed Slack connection ${id} is advertised but not currently resolvable; relay delivery is stalled for it`
+        )
+        unresolvable = true
+      }
+      return undefined
+    }
+    unresolvable = false
+    return { id, revision: resolved.connection.materialRevision, accessToken: resolved.credential.accessToken }
+  }
+}
+
 export const hostedSlackRelayRuntime = new HostedIntegrationRelayRunner(slackRelayProvider, {
   managed: isPlatformManaged,
   interests: slackRelayInterests,
-  resolve: async (id) => {
-    const resolved = await resolveManagedSlackConnection(id)
-    return (
-      resolved && { id, revision: resolved.connection.materialRevision, accessToken: resolved.credential.accessToken }
-    )
-  },
+  resolve: createManagedSlackRelayResolver(),
   request: platformRequest,
   dispatch: (delivery, interests) => dispatchHostedSlackDelivery(delivery, interests),
   onError: (code) => log.warn(`Hosted Slack delivery deferred: ${code}`),

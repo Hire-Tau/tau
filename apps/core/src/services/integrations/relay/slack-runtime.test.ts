@@ -17,6 +17,7 @@ import { ChannelInstance } from '../../../entities/ChannelInstance'
 import type { ChannelProvider } from '../../../channels/provider'
 import type { HandlerResult } from '../../../channels/handler'
 import {
+  createManagedSlackRelayResolver,
   createSlackRelayDispatcher,
   defaultDispatchWebhook,
   type ManagedSlackConnection,
@@ -616,5 +617,42 @@ describe('managed connection revocation falls back the live ChannelConnections t
     // row is no longer usable, so the transport falls back (here, to nothing local).
     expect(connections.get('slack')).toBeUndefined()
     expect(connections.storedManaged('slack')?.authState).toBe('reauthorization_required')
+  })
+})
+
+describe('createManagedSlackRelayResolver', () => {
+  test('logs once on the transition into unresolvable, not on every subsequent tick', async () => {
+    const warn = spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      let live = false
+      const resolver = createManagedSlackRelayResolver(async (id) =>
+        live
+          ? {
+              connection: { id, materialRevision: 'rev-1' },
+              configuration: { version: 1, teamId: TEAM_ID },
+              credential: { accessToken: 'xoxb-live' } as any,
+            }
+          : undefined
+      )
+
+      // Still advertised by the snapshot, but not (yet) live-resolvable.
+      expect(await resolver('conn-1')).toBeUndefined()
+      expect(await resolver('conn-1')).toBeUndefined()
+      expect(await resolver('conn-1')).toBeUndefined()
+      expect(warn).toHaveBeenCalledTimes(1)
+
+      // Recovers: no further warning while it stays resolvable.
+      live = true
+      expect(await resolver('conn-1')).toEqual({ id: 'conn-1', revision: 'rev-1', accessToken: 'xoxb-live' })
+      expect(await resolver('conn-1')).toEqual({ id: 'conn-1', revision: 'rev-1', accessToken: 'xoxb-live' })
+      expect(warn).toHaveBeenCalledTimes(1)
+
+      // Fails again: a fresh transition, diagnosable again.
+      live = false
+      expect(await resolver('conn-1')).toBeUndefined()
+      expect(warn).toHaveBeenCalledTimes(2)
+    } finally {
+      warn.mockRestore()
+    }
   })
 })

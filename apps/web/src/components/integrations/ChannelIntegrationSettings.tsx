@@ -118,7 +118,8 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
       {managedActive && (
         <p className="text-sm text-muted">
           Tau's Slack app is connected and handling messages. Your own app's credentials are kept but unused while it's
-          connected.
+          connected. Turn off your own app's event subscriptions and slash command while Tau's app is connected — Slack
+          will still send it signed requests, and they'll be rejected.
         </p>
       )}
 

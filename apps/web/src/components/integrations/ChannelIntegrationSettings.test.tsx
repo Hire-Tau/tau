@@ -176,6 +176,10 @@ test('hosted with an active managed connection shows workspace, hides the reques
   expect(container.querySelector('code')).toBeNull()
   expect(container.textContent).toContain('Events arrive through Tau Cloud')
   expect(container.textContent).toContain("Your own app's credentials are kept but unused")
+  expect(container.textContent).toContain('Turn off')
+  expect(container.textContent).toContain('event subscriptions')
+  expect(container.textContent).toContain('slash command')
+  expect(container.textContent).toContain('rejected')
   // Default squad routing shows for the managed-only connection (no manual identity at all).
   expect(container.querySelector('#slack-default-squad')).not.toBeNull()
 
