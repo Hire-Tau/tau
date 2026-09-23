@@ -17,6 +17,7 @@ import { AppHeader, MobileBottomNav, DesktopFooter } from './components/AppNav'
 import { LoginPage } from './components/LoginPage'
 import { DemoAccessPage } from './components/auth/DemoAccessPage'
 import { TokenRegisterPage } from './components/auth/TokenRegisterPage'
+import { FinishAdminSetupPage } from './components/auth/FinishAdminSetupPage'
 import { InboxPopup } from './components/InboxPopup'
 import { ActionsPage } from './components/ActionsPage'
 import { InboxPage } from './components/InboxPage'
@@ -36,7 +37,16 @@ export default function App() {
   useVisualViewportShell(shellRef)
   // Inside Tau Desktop with an inset title bar, the header doubles as the window's title bar.
   useDesktopShellChrome()
-  const { authRequired, authStatus, isAuthenticated, needsFirstAdminSetup, loginWithToken } = useAuth()
+  const {
+    authRequired,
+    authStatus,
+    isAuthenticated,
+    needsFirstAdminSetup,
+    needsAdminCompletion,
+    session,
+    loginWithToken,
+    logout,
+  } = useAuth()
   const location = useLocation()
 
   // Still checking auth status
@@ -60,6 +70,19 @@ export default function App() {
   // the same funnel even when authenticated: the bootstrap instance password is a
   // valid identity, so a refresh mid-setup would otherwise render an adminless shell.
   if (authRequired && (!isAuthenticated || needsFirstAdminSetup)) return <LoginPage />
+
+  // Signed in with the bootstrap instance password while an account still waits for
+  // its first admin passkey. That session is nobody, so the shell would half-work
+  // (person-scoped actions like connecting GitHub fail); finish setup first.
+  if (needsAdminCompletion && session?.firstAdmin) {
+    return (
+      <FinishAdminSetupPage
+        accounts={session.firstAdmin.accounts}
+        onSuccess={(firstAdmin) => loginWithToken(firstAdmin)}
+        onSignOut={() => void logout()}
+      />
+    )
+  }
 
   if (location.pathname === '/voice') {
     return (

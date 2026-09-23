@@ -10,7 +10,7 @@ import { client } from '../api/clientInstance'
 import { LoadingShapeScopeProvider } from '../hooks/useLoadingShapeCount'
 
 export function AuthenticatedProviders({ children }: { children: ReactNode }) {
-  const { isAuthenticated, authRequired, needsFirstAdminSetup } = useAuth()
+  const { isAuthenticated, authRequired, needsFirstAdminSetup, needsAdminCompletion } = useAuth()
 
   // Resolve the WS URL per connection. When auth is required, exchange the
   // session for a single-use ticket so the long-lived session bearer never
@@ -25,8 +25,8 @@ export function AuthenticatedProviders({ children }: { children: ReactNode }) {
 
   // Stay on the lightweight tree during first-admin setup too: a bootstrap-password
   // session is authenticated, but the app (and its socket) has nothing to show until
-  // an admin exists.
-  if (!isAuthenticated || needsFirstAdminSetup) {
+  // an admin exists — or, once an account exists, until it has a passkey.
+  if (!isAuthenticated || needsFirstAdminSetup || needsAdminCompletion) {
     return <ConversationClientProvider client={client}>{children}</ConversationClientProvider>
   }
 

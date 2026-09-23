@@ -8,7 +8,7 @@ import { apiFetch } from './client'
 import { client } from './clientInstance'
 import type { AuthUser } from '@tau/client-core'
 
-export type { AuthStatus, AuthUser, AuthSettings } from '@tau/client-core'
+export type { AuthStatus, AuthUser, AuthSettings, AuthValidation, PendingAdminAccount } from '@tau/client-core'
 
 // ── Cross-platform (shared client-core) ─────────────────────────────────────
 export const getAuthStatus = client.auth.getAuthStatus
@@ -87,7 +87,7 @@ export async function verifyTokenRegistration(
   response: unknown,
   displayName?: string,
   credentialName?: string
-): Promise<{ ok: boolean; token: string; user: AuthUser }> {
+): Promise<{ ok: boolean; token: string; user: AuthUser; firstAdmin?: boolean }> {
   return apiFetch('/auth/register/token/verify', {
     method: 'POST',
     body: JSON.stringify({ token, response, displayName, credentialName }),

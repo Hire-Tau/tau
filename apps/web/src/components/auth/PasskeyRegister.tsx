@@ -5,10 +5,12 @@ import { useAuthApi } from './authApi'
 
 interface Props {
   onSuccess: (firstAdmin: boolean) => void
+  /** Called after a failed registration attempt, once the error is on screen. */
+  onFailure?: () => void
   isBootstrap?: boolean
 }
 
-export function PasskeyRegister({ onSuccess, isBootstrap = false }: Props) {
+export function PasskeyRegister({ onSuccess, onFailure, isBootstrap = false }: Props) {
   const { getRegistrationOptions, sendVerificationEmail, verifyRegistration } = useAuthApi()
   const [step, setStep] = useState<'email' | 'verify' | 'passkey'>('email')
   const [email, setEmail] = useState('')
@@ -65,6 +67,7 @@ export function PasskeyRegister({ onSuccess, isBootstrap = false }: Props) {
       }
     } catch (err) {
       setError((err as Error).message)
+      onFailure?.()
     } finally {
       setLoading(false)
     }

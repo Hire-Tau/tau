@@ -7,9 +7,17 @@ import { acquireDomHarness } from '../test/domHarness'
 let authStatus: AuthStatus
 let loginWithTokenCalls: unknown[][] = []
 let capturedRegistrationSuccess: ((firstAdmin: boolean) => void) | undefined
+let capturedRegistrationFailure: (() => void) | undefined
 
-function PasskeyRegisterFixture({ onSuccess }: { onSuccess: (firstAdmin: boolean) => void }) {
+function PasskeyRegisterFixture({
+  onSuccess,
+  onFailure,
+}: {
+  onSuccess: (firstAdmin: boolean) => void
+  onFailure?: () => void
+}) {
   capturedRegistrationSuccess = onSuccess
+  capturedRegistrationFailure = onFailure
   return <div>Passkey registration fixture</div>
 }
 
@@ -34,6 +42,7 @@ describe('LoginPage first-registration wiring', () => {
     })
     loginWithTokenCalls = []
     capturedRegistrationSuccess = undefined
+    capturedRegistrationFailure = undefined
     globalThis.fetch = (async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
       if (url.includes('/auth/register/email')) {
@@ -104,6 +113,30 @@ describe('LoginPage first-registration wiring', () => {
 
     expect(loginWithTokenCalls.length).toBe(1)
     expect(loginWithTokenCalls[0]).toEqual([false])
+  })
+
+  test('a failed bootstrap passkey step re-reads the session so the finish-setup screen can take over', async () => {
+    authStatus = { authEnabled: true, mode: 'passkey', hasUsers: false, hasAdminUser: false, canSelfRegister: true }
+    const refreshSession = mock(async () => {})
+    await dom.act(async () => {
+      root.render(
+        <LoginPage
+          dependencies={{ PasskeyRegisterComponent: PasskeyRegisterFixture }}
+          auth={{
+            authStatus,
+            isAuthenticated: false,
+            login: async () => {},
+            loginWithToken: async () => {},
+            refreshSession,
+          }}
+        />
+      )
+    })
+
+    expect(capturedRegistrationFailure).toBeFunction()
+    await dom.act(async () => capturedRegistrationFailure!())
+
+    expect(refreshSession).toHaveBeenCalledTimes(1)
   })
 
   function getButton(label: string): HTMLButtonElement {

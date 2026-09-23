@@ -12,9 +12,14 @@ import { PasskeyRecoveryRequest } from './auth/PasskeyRecoveryRequest'
 // Referer to any third-party resource the page loads. A fragment is neither.
 const BOOTSTRAP_FRAGMENT_PATTERN = /^#setup=(.+)$/
 
-type LoginPageAuth = Pick<ReturnType<typeof useAuth>, 'authStatus' | 'isAuthenticated' | 'login' | 'loginWithToken'>
+type LoginPageAuth = Pick<ReturnType<typeof useAuth>, 'authStatus' | 'isAuthenticated' | 'login' | 'loginWithToken'> &
+  Partial<Pick<ReturnType<typeof useAuth>, 'refreshSession'>>
 type LoginPageDependencies = {
-  PasskeyRegisterComponent?: ComponentType<{ onSuccess: (firstAdmin: boolean) => void; isBootstrap?: boolean }>
+  PasskeyRegisterComponent?: ComponentType<{
+    onSuccess: (firstAdmin: boolean) => void
+    onFailure?: () => void
+    isBootstrap?: boolean
+  }>
 }
 
 export function LoginPage({ auth, dependencies }: { auth?: LoginPageAuth; dependencies?: LoginPageDependencies } = {}) {
@@ -31,7 +36,7 @@ function LoginPageWithAuth({ dependencies }: { dependencies?: LoginPageDependenc
 
 function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; dependencies?: LoginPageDependencies }) {
   const PasskeyRegisterComponent = dependencies?.PasskeyRegisterComponent ?? PasskeyRegister
-  const { authStatus, isAuthenticated, login, loginWithToken } = auth
+  const { authStatus, isAuthenticated, login, loginWithToken, refreshSession } = auth
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -242,7 +247,15 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
           ) : (
             <>
               <p className="text-sm text-secondary mb-4">Create the first admin account.</p>
-              <PasskeyRegisterComponent onSuccess={loginWithToken} isBootstrap />
+              {/* A failed passkey step can leave the new account behind (its row is
+                  created before the ceremony). Re-reading the session then hands
+                  over to the finish-setup screen, which can retry without a new
+                  verification code. */}
+              <PasskeyRegisterComponent
+                onSuccess={loginWithToken}
+                onFailure={refreshSession ? () => void refreshSession() : undefined}
+                isBootstrap
+              />
             </>
           )}
         </div>

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import type { AuthStatus } from '../api/auth'
+import type { AuthStatus, AuthValidation } from '../api/auth'
 import { apiUrl, authFetch, clearStoredToken, getApiHost } from '../api/client'
 
 interface AuthContextValue {
@@ -16,6 +16,21 @@ interface AuthContextValue {
    */
   needsFirstAdminSetup: boolean
   authStatus: AuthStatus | null
+  /** What GET /auth/validate said about the current credential; null until known. */
+  session: AuthValidation | null
+  /**
+   * Signed in with the bootstrap instance password while an account is waiting to
+   * become the first admin with a passkey — a first-admin registration whose
+   * passkey step never finished, or an admin whose passkeys were lost. That
+   * session belongs to nobody, so the app shows the finish-setup screen instead
+   * of the shell until a passkey turns it into a real account session.
+   */
+  needsAdminCompletion: boolean
+  /**
+   * Re-read the auth status and the current session cookie, adopting the cookie
+   * when it is valid (e.g. after the server reports unfinished admin setup).
+   */
+  refreshSession: () => Promise<void>
   login: (password: string) => Promise<void>
   /**
    * For passkey flow — marks user as authenticated after the passkey component
@@ -38,18 +53,26 @@ export function useAuth(): AuthContextValue {
   return ctx
 }
 
+/** The auth context when rendered inside AuthProvider, otherwise null (for components also used standalone). */
+// eslint-disable-next-line react-refresh/only-export-components
+export function useOptionalAuth(): AuthContextValue | null {
+  return useContext(AuthContext)
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [authRequired, setAuthRequired] = useState<boolean | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null)
+  const [session, setSession] = useState<AuthValidation | null>(null)
 
   const forceLogout = useCallback(() => {
     clearStoredToken()
     // Drop all cached query data so the next user can't read the prior user's
     // cached permissions / users / roles on a shared device.
     queryClient.clear()
+    setSession(null)
     setIsAuthenticated(false)
     setAuthRequired(true)
   }, [queryClient])
@@ -65,6 +88,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return false
     }
   }, [])
+
+  /** Validates the current cookie. Returns the session, or null when it is not valid. */
+  const readSession = useCallback(async (): Promise<AuthValidation | null> => {
+    const res = await authFetch('/auth/validate')
+    if (!res.ok) return null
+    try {
+      return (await res.json()) as AuthValidation
+    } catch {
+      // A server that answers without a body still validated the credential.
+      return { valid: true }
+    }
+  }, [])
+
+  const refreshSession = useCallback(async () => {
+    await refreshAuthStatus()
+    try {
+      const next = await readSession()
+      if (!next) return
+      setSession(next)
+      // The first-admin funnel signs in with the instance password without flipping
+      // global auth (LoginPage.tsx); once asked, adopt the cookie it set.
+      setIsAuthenticated(true)
+    } catch {
+      // Keep the prior session: a failed refresh must not sign anyone out.
+    }
+  }, [readSession, refreshAuthStatus])
 
   useEffect(() => {
     ;(async () => {
@@ -84,8 +133,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Purge any pre-cookie token left in localStorage (auth is now an HttpOnly
         // cookie sent automatically with credentials), then validate via the cookie.
         clearStoredToken()
-        const validateRes = await authFetch('/auth/validate')
-        if (validateRes.ok) {
+        const validated = await readSession()
+        if (validated) {
+          setSession(validated)
           setIsAuthenticated(true)
         }
       } catch {
@@ -95,7 +145,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsAuthenticated(false)
       }
     })()
-  }, [])
+  }, [readSession])
 
   // Global 401 interceptor — force logout when any same-host API call returns 401.
   useEffect(() => {
@@ -107,7 +157,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (res.status === 401) {
         const url = typeof args[0] === 'string' ? args[0] : args[0] instanceof Request ? args[0].url : ''
         const host = getApiHost()
-        if (url.includes('/api/') && (!host || url.includes(host))) {
+        // A 401 from a passkey-registration ceremony (a failed WebAuthn verify, a
+        // dead link) says nothing about THIS session — and signing out there would
+        // strand someone finishing admin setup with the instance password.
+        const registrationCeremony = url.includes('/api/auth/register/')
+        if (url.includes('/api/') && !registrationCeremony && (!host || url.includes(host))) {
           forceLogout()
         }
       }
@@ -146,9 +200,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(message)
       }
       queryClient.clear()
+      // Learn whose session this is before the app renders: the bootstrap password
+      // may need to finish admin setup rather than open the shell.
+      setSession(await readSession().catch(() => null))
       setIsAuthenticated(true)
     },
-    [queryClient]
+    [queryClient, readSession]
   )
 
   const loginWithToken = useCallback(
@@ -162,12 +219,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!refreshed) {
         setAuthStatus((prev) => (prev ? { ...prev, hasUsers: true } : prev))
       }
+      // A passkey registration replaces the bootstrap session with a person's.
+      setSession(await readSession().catch(() => null))
       setIsAuthenticated(true)
       if (isFirstRegistration) {
         navigate('/onboarding', { replace: true })
       }
     },
-    [queryClient, refreshAuthStatus, navigate]
+    [queryClient, refreshAuthStatus, readSession, navigate]
   )
 
   const logout = useCallback(async () => {
@@ -178,12 +237,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     clearStoredToken()
     queryClient.clear()
+    setSession(null)
     setIsAuthenticated(false)
   }, [queryClient])
 
   // No users means no admin (the first user is auto-promoted), so the instance is
   // unusable until one is created. Auth-disabled instances never funnel.
   const needsFirstAdminSetup = authRequired === true && authStatus !== null && !authStatus.hasUsers
+  const needsAdminCompletion =
+    authRequired === true &&
+    isAuthenticated &&
+    !needsFirstAdminSetup &&
+    session?.identityType === 'legacy' &&
+    (session.firstAdmin?.accounts.length ?? 0) > 0
 
   return (
     <AuthContext.Provider
@@ -192,6 +258,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated,
         needsFirstAdminSetup,
         authStatus,
+        session,
+        needsAdminCompletion,
+        refreshSession,
         login,
         loginWithToken,
         logout,
