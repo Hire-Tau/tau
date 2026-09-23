@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { db, desktopNotifications } from '../../db'
+import { deviceTokens } from '../../db/schema'
 import { cleanupTestRbac, createTestUser, type TestUser } from '../../test-utils'
 import { UserNotificationPreferences } from '../../entities/UserNotificationPreferences'
 import { enqueueDesktopNotifications, listDesktopNotifications } from './desktop'
+import { createDeviceToken, revokeDeviceToken } from '../auth/device-tokens'
 import { Hono } from 'hono'
 import { pushRouter } from '../../routes/push'
 
@@ -44,26 +46,43 @@ test('desktop alerts are user scoped, bounded by retention, and obey current pri
   expect(await listDesktopNotifications(other.id)).toHaveLength(1)
   expect(await db.select().from(desktopNotifications).where(eq(desktopNotifications.userId, user.id))).toHaveLength(2)
 })
-test('enqueue is managed-only and deduplicates a repeated notification event', async () => {
+test('enqueue targets managed desktop homes and users with a paired desktop device, once per event', async () => {
   const previous = process.env.TAU_DESKTOP_MANAGED
-  const event = {
+  const event = (title: string) => ({
     type: 'inbox',
     messageId: crypto.randomUUID(),
-    title: 'Once',
+    title,
     body: 'An update',
     timestamp: new Date(),
-  }
+  })
+  const titles = async (id: string) => (await listDesktopNotifications(id)).map((row) => row.title)
   try {
+    // The previous test left user.id's push preferences disabled; restore defaults so
+    // listDesktopNotifications actually reflects what this test enqueues.
+    await UserNotificationPreferences.upsert(user.id, { pushEnabled: true, mutedEvents: [], showPreviews: true })
     delete process.env.TAU_DESKTOP_MANAGED
-    await enqueueDesktopNotifications([other.id], event, 'inbox.messageReceived', 'message')
-    expect((await listDesktopNotifications(other.id)).filter((row) => row.title === 'Once')).toHaveLength(0)
+    await enqueueDesktopNotifications([user.id, other.id], event('Unpaired'), 'inbox.messageReceived', 'message')
+    expect(await titles(user.id)).not.toContain('Unpaired')
+
+    const paired = await createDeviceToken({ userId: user.id, name: 'Mac', platform: 'desktop' })
+    await createDeviceToken({ userId: other.id, name: 'CLI', platform: 'cli' })
+    const once = event('Paired')
+    await enqueueDesktopNotifications([user.id, other.id], once, 'inbox.messageReceived', 'message')
+    await enqueueDesktopNotifications([user.id], once, 'inbox.messageReceived', 'message')
+    expect((await titles(user.id)).filter((t) => t === 'Paired')).toHaveLength(1)
+    expect(await titles(other.id)).not.toContain('Paired')
+
+    await revokeDeviceToken(user.id, paired.id)
+    await enqueueDesktopNotifications([user.id], event('Revoked'), 'inbox.messageReceived', 'message')
+    expect(await titles(user.id)).not.toContain('Revoked')
+
     process.env.TAU_DESKTOP_MANAGED = '1'
-    await enqueueDesktopNotifications([other.id, other.id], event, 'inbox.messageReceived', 'message')
-    await enqueueDesktopNotifications([other.id], event, 'inbox.messageReceived', 'message')
-    expect((await listDesktopNotifications(other.id)).filter((row) => row.title === 'Once')).toHaveLength(1)
+    await enqueueDesktopNotifications([other.id], event('Managed'), 'inbox.messageReceived', 'message')
+    expect(await titles(other.id)).toContain('Managed')
   } finally {
     if (previous === undefined) delete process.env.TAU_DESKTOP_MANAGED
     else process.env.TAU_DESKTOP_MANAGED = previous
+    await db.delete(deviceTokens).where(inArray(deviceTokens.userId, [user.id, other.id]))
   }
 })
 test('desktop notification endpoint derives its user from the human session, never query parameters', async () => {

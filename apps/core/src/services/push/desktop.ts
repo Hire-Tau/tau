@@ -1,18 +1,34 @@
 import { createHash } from 'node:crypto'
-import { and, desc, eq, gt, lt, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm'
 import type { PushCategory } from '@tau/shared'
 import type { NotificationEvent } from '../../channels/provider'
 import { db, desktopNotifications } from '../../db'
+import { deviceTokens } from '../../db/schema'
 import { UserNotificationPreferences } from '../../entities/UserNotificationPreferences'
 
-/** OS alerts are a bounded view of durable work/inbox state; reading never acknowledges the underlying work. */
+/** Managed desktop homes get every alert; everyone else only gets one once they've paired a Tau Desktop device. */
+async function desktopRecipients(userIds: string[]): Promise<string[]> {
+  const unique = [...new Set(userIds)]
+  if (!unique.length || process.env.TAU_DESKTOP_MANAGED === '1') return unique
+  const rows = await db
+    .selectDistinct({ userId: deviceTokens.userId })
+    .from(deviceTokens)
+    .where(
+      and(inArray(deviceTokens.userId, unique), eq(deviceTokens.platform, 'desktop'), isNull(deviceTokens.revokedAt))
+    )
+  return rows.map((row) => row.userId)
+}
+
+/** OS alerts are a bounded view of durable work/inbox state; reading never acknowledges the underlying work.
+ *  Queued for Desktop-managed homes and for users who have paired a Tau Desktop device. */
 export async function enqueueDesktopNotifications(
   userIds: string[],
   event: NotificationEvent,
   eventType: string,
   category: PushCategory
 ): Promise<void> {
-  if (process.env.TAU_DESKTOP_MANAGED !== '1' || !userIds.length) return
+  const recipients = await desktopRecipients(userIds)
+  if (!recipients.length) return
   const eventKey = createHash('sha256')
     .update(
       JSON.stringify([
@@ -26,7 +42,7 @@ export async function enqueueDesktopNotifications(
   await db
     .insert(desktopNotifications)
     .values(
-      [...new Set(userIds)].map((userId) => ({
+      recipients.map((userId) => ({
         userId,
         eventKey,
         eventType,
