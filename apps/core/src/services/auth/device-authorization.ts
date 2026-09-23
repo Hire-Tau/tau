@@ -17,7 +17,11 @@ export type DeviceTokenPollResult =
   | { status: 'invalid' }
   | { status: 'authorized'; token: string; deviceId: string; user: PairedUser }
 
-export async function createDeviceAuthorization(input: { name: string }) {
+export type DeviceAuthorizationPlatform = 'cli' | 'desktop'
+const DEFAULT_NAMES: Record<DeviceAuthorizationPlatform, string> = { cli: 'Tau CLI', desktop: 'Tau Desktop' }
+
+export async function createDeviceAuthorization(input: { name: string; platform?: DeviceAuthorizationPlatform }) {
+  const platform = input.platform ?? 'cli'
   const now = new Date()
   await db.delete(deviceAuthorizations).where(lt(deviceAuthorizations.expiresAt, now))
   const deviceCode = secret()
@@ -26,11 +30,11 @@ export async function createDeviceAuthorization(input: { name: string }) {
   await db.insert(deviceAuthorizations).values({
     deviceCodeHash: hash(deviceCode),
     verificationCodeHash: hash(verificationCode),
-    name: input.name.trim().slice(0, 200) || 'Tau CLI',
-    platform: 'cli',
+    name: input.name.trim().slice(0, 200) || DEFAULT_NAMES[platform],
+    platform,
     expiresAt,
   })
-  return { deviceCode, verificationCode, expiresAt }
+  return { deviceCode, verificationCode, expiresAt, platform }
 }
 
 export async function inspectDeviceAuthorization(verificationCode: string) {
@@ -109,7 +113,10 @@ export async function exchangeDeviceAuthorization(deviceCode: string): Promise<D
     if (!user || user.disabledAt) throw new Error('Approved user is unavailable')
     // Mint through the shared helper (inside this transaction) so device-auth tokens are
     // byte-for-byte the same shape as pairing-minted ones and share their revoke/resolve path.
-    const { token, id: deviceId } = await createDeviceToken({ userId: user.id, name: grant.name, platform: 'cli' }, tx)
+    const { token, id: deviceId } = await createDeviceToken(
+      { userId: user.id, name: grant.name, platform: grant.platform },
+      tx
+    )
     return {
       status: 'authorized' as const,
       token,

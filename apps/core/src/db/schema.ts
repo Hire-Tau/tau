@@ -2452,7 +2452,7 @@ export const deviceTokens = pgTable('device_tokens', {
     .references(() => users.id, { onDelete: 'cascade' }),
   tokenHash: text('token_hash').notNull().unique(),
   name: varchar('name', { length: 200 }).notNull(), // e.g. "iPhone 15"
-  platform: varchar('platform', { length: 20 }).notNull(), // 'ios' | 'android' | 'cli'
+  platform: varchar('platform', { length: 20 }).notNull(), // 'ios' | 'android' | 'cli' | 'desktop'
   createdAt: timestamp('created_at').notNull().defaultNow(),
   lastUsedAt: timestamp('last_used_at'),
   revokedAt: timestamp('revoked_at'),
