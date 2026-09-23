@@ -108,7 +108,12 @@ export function useAssistantPosition(
       const dock = dockAssistant(corner, viewport, rect.width, rect.height)
       setPoint({
         ...dock,
-        maxHeight: corner === 'center' ? viewport.top + viewport.height - dock.top - gutter : undefined,
+        // Bottom docks need the full available height as their cap, not the
+        // current measured height, so they can grow again after keyboard close.
+        maxHeight: Math.max(
+          0,
+          corner === 'center' ? viewport.top + viewport.height - dock.top - gutter : viewport.height - 2 * gutter
+        ),
       })
     }
     update()
@@ -153,15 +158,17 @@ export function useAssistantPosition(
     setDragging(true)
     const viewport = currentViewport(),
       rect = event.currentTarget.getBoundingClientRect()
+    const top = Math.max(
+      viewport.top + gutter,
+      Math.min(viewport.top + viewport.height - rect.height - gutter, start.top + event.clientY - start.y)
+    )
     setPoint({
       left: Math.max(
         viewport.left + gutter,
         Math.min(viewport.left + viewport.width - rect.width - gutter, start.left + event.clientX - start.x)
       ),
-      top: Math.max(
-        viewport.top + gutter,
-        Math.min(viewport.top + viewport.height - rect.height - gutter, start.top + event.clientY - start.y)
-      ),
+      top,
+      maxHeight: Math.max(0, viewport.top + viewport.height - top - gutter),
     })
   }
   const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
@@ -177,7 +184,13 @@ export function useAssistantPosition(
     const next = snapAssistant(viewport, rect)
     setCorner(next)
     const dock = dockAssistant(next, viewport, rect.width, rect.height)
-    setPoint({ ...dock, maxHeight: next === 'center' ? viewport.top + viewport.height - dock.top - gutter : undefined })
+    setPoint({
+      ...dock,
+      maxHeight: Math.max(
+        0,
+        next === 'center' ? viewport.top + viewport.height - dock.top - gutter : viewport.height - 2 * gutter
+      ),
+    })
   }
   const style: CSSProperties = point
     ? {
