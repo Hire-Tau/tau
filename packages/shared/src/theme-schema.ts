@@ -561,7 +561,7 @@ export interface StoredThemeSelectionInput {
   readonly themeId: string | null | undefined
   /** Value of `tau-appearance` (new key), if any. */
   readonly appearance: string | null | undefined
-  /** Value of the legacy `tau-theme` key ('light' | 'dark' | 'system'), if any. */
+  /** Value of the legacy `tau-theme` key ('light' | 'dark'), if any. */
   readonly legacyTheme: string | null | undefined
   /** Registry ids considered known; defaults to just the default theme. */
   readonly knownThemeIds?: readonly string[]
@@ -583,7 +583,7 @@ export function normalizeStoredThemeSelection(input: StoredThemeSelectionInput):
     input.themeId != null && (known as readonly string[]).includes(input.themeId) ? input.themeId : DEFAULT_THEME_ID
   const appearance = isAppearanceSetting(input.appearance)
     ? input.appearance
-    : isAppearanceSetting(input.legacyTheme)
+    : input.legacyTheme === 'light' || input.legacyTheme === 'dark'
       ? input.legacyTheme
       : (input.defaultAppearance ?? DEFAULT_APPEARANCE)
   return { themeId, appearance }

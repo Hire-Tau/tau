@@ -124,11 +124,6 @@ describe('pre-paint flash script: default appearance by host', () => {
     )
     expect((await runFlashScript({ systemPrefersDark: false, appearance: 'dark' })).dataAppearance).toBe('dark')
   })
-
-  test("a legacy 'system' choice keeps following the OS", async () => {
-    expect((await runFlashScript({ legacyTheme: 'system', systemPrefersDark: true })).dataAppearance).toBe('dark')
-    expect((await runFlashScript({ legacyTheme: 'system', systemPrefersDark: false })).dataAppearance).toBe('light')
-  })
 })
 
 describe('pre-paint flash script (cold load, every stored state)', () => {
