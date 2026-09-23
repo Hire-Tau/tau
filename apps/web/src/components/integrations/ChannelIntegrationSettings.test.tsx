@@ -227,6 +227,44 @@ test('hosted with an active managed connection shows workspace, hides the reques
   expect(deleted).toContain('/integrations/connections/managed-1')
 })
 
+test('a freshly connected workspace offers the default squad picker before any routing entry exists', async () => {
+  let saved: unknown
+  fetchHandler = async (input, init) => {
+    if (String(input).includes('/channel-settings') && init?.method === 'PUT') saved = JSON.parse(String(init.body))
+    return Response.json(slackView())
+  }
+  await renderCard(
+    'slack',
+    slackView({
+      setup: { state: 'configured', issues: [] },
+      managedApp: {
+        available: true,
+        active: true,
+        connection: {
+          id: 'managed-1',
+          authState: 'authenticated',
+          healthState: 'healthy',
+          lastErrorCode: null,
+          teamId: 'T0123',
+          teamName: 'Acme Corp',
+        },
+      },
+      webhook: { url: 'http://localhost/api/webhooks/channels/slack', secretConfigured: false, delivery: 'relay' },
+      routing: null,
+      routable: true,
+    })
+  )
+  await flushEffects()
+
+  const select = container.querySelector<HTMLSelectElement>('#slack-default-squad')
+  expect(select).not.toBeNull()
+  await harness.act(async () => {
+    fireEvent.change(select!, { target: { value: '' } })
+  })
+  await flushEffects()
+  expect(saved).toEqual({ defaultSquadId: null })
+})
+
 test('reauthorization required shows Reconnect and starts authorization with the connection id', async () => {
   let started: { body: unknown } | undefined
   fetchHandler = async (input, init) => {

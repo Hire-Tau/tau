@@ -129,6 +129,11 @@ export interface ChannelSettingsView {
     delivery: 'direct' | 'relay'
   }
   routing: { instanceId: string; defaultSquadId: string | null } | null
+  /**
+   * Whether the active connection has the identity routing keys on, so a default squad can be
+   * chosen. True before any channel instance exists: choosing the squad is what creates it.
+   */
+  routable: boolean
   /** Discord only: servers the bot is in; routing needs exactly one, or a chosen `guildId`. */
   guilds?: { id: string; name: string }[]
   /** Slack only: the "Add to Slack" managed-app connection, offered alongside manual entry on hosted instances. */
@@ -451,7 +456,7 @@ export class ChannelConnections {
           }
         : null,
       enabled: this.isEnabled(provider),
-      setup: this.#setup(provider, fields, stored),
+      setup: managedAppActive ? { state: 'configured', issues: [] } : this.#setup(provider, fields, stored),
       webhook: {
         url: this.webhookUrl(provider),
         secretConfigured:
@@ -463,6 +468,7 @@ export class ChannelConnections {
         delivery: managedAppActive ? 'relay' : 'direct',
       },
       routing: routing ? { instanceId: routing.id, defaultSquadId: routing.defaultSquadId } : null,
+      routable: !!this.#activeRouting(provider, stored),
     }
     if (provider === 'discord' && stored)
       view.guilds = await this.#discordGuilds(stored as ChannelConnectionState<'discord'>)
