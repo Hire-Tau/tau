@@ -73,3 +73,26 @@ test('GitHub callbacks also remove token exchange material before bootstrap', ()
   expect(window.location.search).toBe('')
   expect(readPreparedOAuthCallback()).toEqual({ kind: 'local', body: { state: HANDLE, code: 'github-code' } })
 })
+
+test('a broker callback carries the sessionStorage provider hint into the persisted (reload-surviving) history state', () => {
+  window.sessionStorage.setItem('tauOAuthProviderHint', 'slack')
+
+  prepareOAuthCallbackHistory()
+
+  expect(readPreparedOAuthCallback()).toEqual({
+    kind: 'broker',
+    body: { localFlowId: FLOW, handle: HANDLE },
+    provider: 'slack',
+  })
+  // Consumed once, same as before: an abandoned later flow cannot inherit it.
+  expect(window.sessionStorage.getItem('tauOAuthProviderHint')).toBeNull()
+})
+
+test('a broker callback with no provider hint carries none (defaults are unaffected)', () => {
+  prepareOAuthCallbackHistory()
+
+  expect(readPreparedOAuthCallback()).toEqual({
+    kind: 'broker',
+    body: { localFlowId: FLOW, handle: HANDLE },
+  })
+})

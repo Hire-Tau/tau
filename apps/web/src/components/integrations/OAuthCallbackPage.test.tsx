@@ -161,6 +161,32 @@ test('reload recovers the same completion payload after a retryable failure', as
   ])
 })
 
+test('a reload after a retryable failure keeps completing against the hinted provider (slack), not the notion default', async () => {
+  window.sessionStorage.setItem('tauOAuthProviderHint', 'slack')
+  const paths: string[] = []
+  globalThis.fetch = (async (input) => {
+    paths.push(String(input))
+    if (paths.length === 1) return Response.json({ error: 'broker_unavailable' }, { status: 503 })
+    return new Promise<Response>(() => {})
+  }) as typeof fetch
+
+  await renderPage()
+  await flushEffects()
+  expect(container.textContent).toContain('try again')
+  // The one-shot sessionStorage hint is gone after the first render...
+  expect(window.sessionStorage.getItem('tauOAuthProviderHint')).toBeNull()
+
+  // ...but a reload (fresh mount, same persisted history state) must still
+  // know this is the slack flow, not silently fall back to notion.
+  await harness.act(async () => root.unmount())
+  ;({ root, container } = harness.createRoot())
+  await renderPage()
+  await flushEffects()
+
+  expect(paths.every((path) => path.includes('/integrations/providers/slack/authorization/complete'))).toBe(true)
+  expect(container.textContent).toContain('Connecting Slack')
+})
+
 test('BrowserRouter reload metadata preserves and resends the exact hosted completion payload', async () => {
   window.history.replaceState(
     { tauOAuthCompletion: { localFlowId: FLOW, handle: HANDLE } },

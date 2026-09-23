@@ -4,7 +4,6 @@ import { ApiError } from '../../api/client'
 import { callbackIntegrationAuthorization, completeIntegrationAuthorization } from '../../api/integrations'
 import {
   clearPreparedOAuthCallback,
-  consumeOAuthProviderHint,
   readPreparedOAuthCallback,
   type BrokerCompletionPayload,
   type LocalCallbackPayload,
@@ -36,16 +35,16 @@ function isTerminalCompletionFailure(error: unknown): boolean {
 
 export function OAuthCallbackPage() {
   // Only GitHub's callback URL carries a path suffix; every other broker/local
-  // flow shares this path, so the initiating component's sessionStorage hint
-  // disambiguates. Read (and clear) it once so a later render cannot re-read
-  // an already-consumed value.
-  const [provider] = useState<'github' | 'notion' | 'slack'>(() =>
-    window.location.pathname.endsWith('/oauth/callback/github')
-      ? 'github'
-      : consumeOAuthProviderHint() === 'slack'
-        ? 'slack'
-        : 'notion'
-  )
+  // flow shares this path, so `prepareOAuthCallbackHistory` carries the
+  // initiating component's provider hint in the same reload-surviving history
+  // state as the completion payload (see oauthCallbackBootstrap.ts) — reading
+  // it here, rather than consuming a one-shot sessionStorage value, means a
+  // reload after a retryable failure still knows the right provider.
+  const [provider] = useState<'github' | 'notion' | 'slack'>(() => {
+    if (window.location.pathname.endsWith('/oauth/callback/github')) return 'github'
+    const prepared = readPreparedOAuthCallback()
+    return prepared?.kind === 'broker' && prepared.provider === 'slack' ? 'slack' : 'notion'
+  })
   const queryClient = useQueryClient()
   const initialized = useRef(false)
   const request = useRef<CompletionRequest | undefined>(undefined)

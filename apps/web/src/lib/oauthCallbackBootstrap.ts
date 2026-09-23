@@ -6,11 +6,12 @@ const LOCAL_STATE_KEY = 'tauOAuthLocalCallback'
 const OUTCOME_STATE_KEY = 'tauOAuthCallbackOutcome'
 const ROUTER_HISTORY_KEYS = new Set(['idx', 'key', 'usr'])
 const PROVIDER_HINT_KEY = 'tauOAuthProviderHint'
+const PROVIDER_STATE_KEY = 'tauOAuthCallbackProvider'
 
 export type BrokerCompletionPayload = { localFlowId: string; handle: string }
 export type LocalCallbackPayload = { state: string; code?: string; denied?: true }
 export type PreparedOAuthCallback =
-  | { kind: 'broker'; body: BrokerCompletionPayload }
+  | { kind: 'broker'; body: BrokerCompletionPayload; provider?: 'notion' | 'slack' }
   | { kind: 'local'; body: LocalCallbackPayload }
   | { kind: 'cancelled' }
   | { kind: 'terminal' }
@@ -35,6 +36,10 @@ function validLocalPayload(value: unknown): value is LocalCallbackPayload {
   const keys = Object.keys(value).sort().join(',')
   if (keys === 'denied,state') return value.denied === true
   return keys === 'code,state' && typeof value.code === 'string' && value.code.length >= 1 && value.code.length <= 4_096
+}
+
+function validProviderHintValue(value: unknown): value is 'notion' | 'slack' {
+  return value === 'notion' || value === 'slack'
 }
 
 function validRouterHistoryMetadata(key: string, value: unknown): boolean {
@@ -72,7 +77,16 @@ export function prepareOAuthCallbackHistory(): void {
     }
     const payload = { localFlowId: params.get('flow'), handle: params.get('handle') }
     if (status === 'ok' && validBrokerPayload(payload)) {
-      replaceCallbackState({ [BROKER_STATE_KEY]: payload })
+      // Read (and clear) the initiating component's sessionStorage hint now,
+      // and carry it in the same reload-surviving history state as the
+      // payload. Consuming it only once, at first render, would lose it on a
+      // later reload (e.g. retrying after a retryable completion failure),
+      // silently falling back to the wrong provider.
+      const providerHint = consumeOAuthProviderHint()
+      replaceCallbackState({
+        [BROKER_STATE_KEY]: payload,
+        ...(validProviderHintValue(providerHint) ? { [PROVIDER_STATE_KEY]: providerHint } : {}),
+      })
       return
     }
     replaceCallbackState({ [OUTCOME_STATE_KEY]: 'terminal' })
@@ -101,10 +115,19 @@ export function readPreparedOAuthCallback(): PreparedOAuthCallback | undefined {
   const preparedKeys = [BROKER_STATE_KEY, LOCAL_STATE_KEY, OUTCOME_STATE_KEY].filter((key) => key in state)
   if (preparedKeys.length !== 1) return undefined
   for (const [key, value] of Object.entries(state)) {
-    if (!preparedKeys.includes(key) && !validRouterHistoryMetadata(key, value)) return undefined
+    if (preparedKeys.includes(key)) continue
+    if (key === PROVIDER_STATE_KEY && validProviderHintValue(value)) continue
+    if (!validRouterHistoryMetadata(key, value)) return undefined
   }
 
-  if (validBrokerPayload(state[BROKER_STATE_KEY])) return { kind: 'broker', body: state[BROKER_STATE_KEY] }
+  if (validBrokerPayload(state[BROKER_STATE_KEY])) {
+    const provider = state[PROVIDER_STATE_KEY]
+    return {
+      kind: 'broker',
+      body: state[BROKER_STATE_KEY],
+      ...(validProviderHintValue(provider) ? { provider } : {}),
+    }
+  }
   if (validLocalPayload(state[LOCAL_STATE_KEY])) return { kind: 'local', body: state[LOCAL_STATE_KEY] }
   if (state[OUTCOME_STATE_KEY] === 'cancelled') return { kind: 'cancelled' }
   if (state[OUTCOME_STATE_KEY] === 'terminal') return { kind: 'terminal' }
