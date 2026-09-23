@@ -77,7 +77,7 @@ describe('dead fleet reconciliation', () => {
     await reconcileDeadFleet({ now: at(WINDOW + 60_000), demand: demand(4, START) })
 
     expect(await incidents()).toHaveLength(1)
-    expect((await incidents())[0]?.details).toEqual({ demandCount: 4 })
+    expect((await incidents())[0]?.details).toEqual({ demandCount: 4, oldestDemandAt: START.toISOString() })
     const deliveries = await notifications(pending.id)
     const byAudience = new Map(deliveries.map((row) => [row.audience, row]))
     expect(byAudience.get('manager')).toMatchObject({ status: 'pending', nextAttemptAt: at(WINDOW) })
@@ -444,7 +444,12 @@ describe('dead fleet reconciliation', () => {
       causeSummary: 'OAuth refresh credential expired or was revoked.',
       remediation: 'Run `tau pa login openai-codex` to authenticate again.',
     })
-    expect(deadFleet.details).toEqual({ demandCount: 2, providerIncidentId: expectedId })
+    expect(deadFleet.details).toEqual({
+      demandCount: 2,
+      oldestDemandAt: START.toISOString(),
+      providerIncidentId: expectedId,
+      provider: 'openai-codex',
+    })
     expect(JSON.stringify(deadFleet)).not.toContain('secret')
     expect(JSON.stringify(deadFleet)).not.toContain(olderId)
     expect(JSON.stringify(deadFleet)).not.toContain(resolvedNewerId)
@@ -479,7 +484,7 @@ describe('dead fleet reconciliation', () => {
     expect(incident).toMatchObject({
       causeCode: 'sandbox-setup-degraded',
       remediation: 'Inspect VM sandbox transport and setup reconciliation logs.',
-      details: { sandboxIncidentId: sandboxId },
+      details: { sandboxIncidentId: sandboxId, sandboxReasons: ['callback_transport_degraded'] },
     })
     // The concrete reason is surfaced, not just the generic summary.
     expect(incident.causeSummary).toContain('callback_transport_degraded')
