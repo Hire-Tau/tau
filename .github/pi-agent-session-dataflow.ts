@@ -90,7 +90,7 @@ function exactRegularRoleGuard(node: ts.Expression): boolean {
   const visit = (expression: ts.Expression): boolean => {
     if (ts.isBinaryExpression(expression) && expression.operatorToken.kind === ts.SyntaxKind.BarBarToken)
       return visit(expression.left) && visit(expression.right)
-    for (const role of ['user', 'assistant', 'toolResult']) {
+    for (const role of ['user', 'assistant', 'toolResult', 'system']) {
       if (exactStringEquality(expression, 'event.message.role', role)) {
         roles.push(role)
         return true
@@ -98,7 +98,7 @@ function exactRegularRoleGuard(node: ts.Expression): boolean {
     }
     return false
   }
-  return visit(node) && roles.sort().join(',') === 'assistant,toolResult,user'
+  return visit(node) && roles.sort().join(',') === 'assistant,system,toolResult,user'
 }
 
 function messageEndGuard(statement: ts.Statement): statement is ts.IfStatement {
@@ -283,20 +283,49 @@ export function verifyAgentSessionDataflow(source: string, fileName: string): vo
 
   const persistenceGuard = statements[persistence] as ts.IfStatement
   if (!ts.isBlock(persistenceGuard.thenStatement)) throw new Error('persistence guard must be a block')
-  const customBranch = persistenceGuard.thenStatement.statements[0]
+  const guardBody = persistenceGuard.thenStatement.statements
+  // Upstream 0.87 hoists the shared entry ID ahead of the role branches so both
+  // arms and the post-branch WeakMap bookkeeping share one binding.
+  const sharedEntryId = guardBody[0]
+  const sharedEntryIdDeclaration =
+    sharedEntryId && ts.isVariableStatement(sharedEntryId) && sharedEntryId.declarationList.declarations.length === 1
+      ? sharedEntryId.declarationList.declarations[0]!
+      : undefined
+  if (
+    !sharedEntryIdDeclaration ||
+    !(sharedEntryId!.declarationList.flags & ts.NodeFlags.Let) ||
+    !ts.isIdentifier(sharedEntryIdDeclaration.name) ||
+    sharedEntryIdDeclaration.name.text !== 'entryId' ||
+    sharedEntryIdDeclaration.initializer !== undefined
+  )
+    throw new Error('persistence guard must open with an uninitialized shared entry ID')
+  const customBranch = guardBody[1]
+  const customFirst =
+    customBranch && ts.isIfStatement(customBranch) && ts.isBlock(customBranch.thenStatement)
+      ? customBranch.thenStatement.statements[0]
+      : undefined
+  // Upstream 0.87 assigns into the shared entry ID instead of declaring locally.
+  const customAssignment =
+    customFirst && ts.isExpressionStatement(customFirst) && ts.isBinaryExpression(customFirst.expression)
+      ? customFirst.expression
+      : undefined
+  const customCall =
+    customAssignment &&
+    customAssignment.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+    ts.isIdentifier(customAssignment.left) &&
+    customAssignment.left.text === 'entryId' &&
+    ts.isCallExpression(customAssignment.right)
+      ? customAssignment.right
+      : undefined
   if (
     !customBranch ||
     !ts.isIfStatement(customBranch) ||
     !exactStringEquality(customBranch.expression, 'event.message.role', 'custom') ||
     !ts.isBlock(customBranch.thenStatement) ||
     customBranch.thenStatement.statements.length !== 1 ||
-    !ts.isExpressionStatement(customBranch.thenStatement.statements[0]!) ||
-    !ts.isCallExpression(customBranch.thenStatement.statements[0]!.expression) ||
-    !invokesSink(
-      customBranch.thenStatement.statements[0]!.expression,
-      'this.sessionManager',
-      'appendCustomMessageEntry'
-    ) ||
+    !customAssignment ||
+    !customCall ||
+    !invokesSink(customCall, 'this.sessionManager', 'appendCustomMessageEntry') ||
     !customBranch.elseStatement ||
     !ts.isIfStatement(customBranch.elseStatement) ||
     !exactRegularRoleGuard(customBranch.elseStatement.expression) ||
@@ -306,15 +335,16 @@ export function verifyAgentSessionDataflow(source: string, fileName: string): vo
   const regularStatements = customBranch.elseStatement.thenStatement.statements
   const current = regularStatements[0]
   const next = regularStatements[1]
-  const entry =
-    current && ts.isVariableStatement(current) && current.declarationList.declarations.length === 1
-      ? current.declarationList.declarations[0]!
+  const entryAssignment =
+    current && ts.isExpressionStatement(current) && ts.isBinaryExpression(current.expression)
+      ? current.expression
       : undefined
   if (
-    !entry ||
-    !ts.isIdentifier(entry.name) ||
-    entry.name.text !== 'entryId' ||
-    !exactCall(entry.initializer, 'this.sessionManager', 'appendMessage', 'event.message') ||
+    !entryAssignment ||
+    entryAssignment.operatorToken.kind !== ts.SyntaxKind.EqualsToken ||
+    !ts.isIdentifier(entryAssignment.left) ||
+    entryAssignment.left.text !== 'entryId' ||
+    !exactCall(entryAssignment.right, 'this.sessionManager', 'appendMessage', 'event.message') ||
     !next ||
     !ts.isExpressionStatement(next) ||
     !ts.isCallExpression(next.expression) ||
