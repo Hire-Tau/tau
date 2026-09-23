@@ -22,6 +22,8 @@
     "./oauth-providers/types": "./src/oauth-providers/types.ts",
     "./oauth-providers/notion/client": "./src/oauth-providers/notion/client.ts",
     "./oauth-providers/notion/config": "./src/oauth-providers/notion/config.ts",
+    "./oauth-providers/slack/client": "./src/oauth-providers/slack/client.ts",
+    "./oauth-providers/slack/config": "./src/oauth-providers/slack/config.ts",
     "./oauth-providers/github/app": "./src/oauth-providers/github/app.ts",
     "./oauth-providers/github/client": "./src/oauth-providers/github/client.ts",
     "./oauth-providers/github/config": "./src/oauth-providers/github/config.ts",

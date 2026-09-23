@@ -37,19 +37,39 @@ export const relaySubscribeRequest = z
 export const relayUnsubscribeRequest = z.object({ connectionId, connectionRevision }).strict()
 export const relaySuccessResponse = z.object({ ok: z.literal(true) }).strict()
 export const relayPullRequest = z.object({ connectionId, connectionRevision, accessToken }).strict()
-export const relayDelivery = z
-  .object({
-    id: z.string().uuid(),
-    leaseToken: z.string().uuid(),
-    connectionId,
-    connectionRevision,
-    deliveryId: z.string().min(1).max(100),
-    resourceId: z.string().regex(/^[1-9][0-9]{0,19}$/),
-    resourceKey: githubRepositoryKey,
-    eventType: z.string().regex(/^[a-z_]{1,64}$/),
-    payload: z.record(z.unknown()),
-  })
-  .strict()
+
+/**
+ * Shared shape for a leased delivery envelope, parameterized by provider-specific
+ * resource identity and event-type schemas. `relayDelivery` (GitHub) and
+ * `slackRelayDelivery` are both instances of this factory; every other field
+ * (id/leaseToken/connectionId/connectionRevision/deliveryId/payload) is identical
+ * across providers.
+ */
+function relayDeliveryEnvelope<
+  ResourceId extends z.ZodTypeAny,
+  ResourceKey extends z.ZodTypeAny,
+  EventType extends z.ZodTypeAny,
+>(resourceId: ResourceId, resourceKey: ResourceKey, eventType: EventType) {
+  return z
+    .object({
+      id: z.string().uuid(),
+      leaseToken: z.string().uuid(),
+      connectionId,
+      connectionRevision,
+      deliveryId: z.string().min(1).max(100),
+      resourceId,
+      resourceKey,
+      eventType,
+      payload: z.record(z.unknown()),
+    })
+    .strict()
+}
+
+export const relayDelivery = relayDeliveryEnvelope(
+  z.string().regex(/^[1-9][0-9]{0,19}$/),
+  githubRepositoryKey,
+  z.string().regex(/^[a-z_]{1,64}$/)
+)
 export const relayPullResponse = z.object({ deliveries: z.array(relayDelivery).max(RELAY_BATCH_SIZE) }).strict()
 export const relayAckRequest = z
   .object({
@@ -61,3 +81,46 @@ export const relayAckRequest = z
   })
   .strict()
 export type RelayDelivery = z.infer<typeof relayDelivery>
+
+/** Provider keys accepted at `/api/integration-relay/<provider>/...` route paths. */
+export const RELAY_PROVIDER_KEYS = ['github', 'slack'] as const
+export type RelayProviderKey = (typeof RELAY_PROVIDER_KEYS)[number]
+
+// ---- Slack -----------------------------------------------------------------
+//
+// Slack workspace ("team") ids, e.g. `T0123ABCD`. Used as both the relay
+// resourceId (there is exactly one team per connection) and resourceKey (all
+// events for a connection share that team).
+export const slackTeamId = z.string().regex(/^T[A-Z0-9]{2,30}$/)
+
+/**
+ * The platform derives the team identity from the token itself (via
+ * `auth.test`) and proves the token belongs to our app (via `bots.info`)
+ * rather than trusting a client-declared team id or repository-style list.
+ */
+export const slackRelaySubscribeRequest = z.object({ connectionId, connectionRevision, accessToken }).strict()
+
+/** Identical shape to the GitHub pull request; reused rather than duplicated. */
+export const slackRelayPullRequest = relayPullRequest
+
+export const SLACK_RELAY_EVENT_TYPES = ['event_callback', 'slash_command', 'app_uninstalled', 'tokens_revoked'] as const
+export type SlackRelayEventType = (typeof SLACK_RELAY_EVENT_TYPES)[number]
+
+/**
+ * Delivery envelope for Slack events relayed through the platform.
+ *
+ * - `event_callback`: `payload` is Slack's JSON Events API envelope
+ *   (`{type: 'event_callback', event: {...}, ...}`); `deliveryId` is Slack's
+ *   `event_id`.
+ * - `slash_command`: `payload` is the form-decoded slash command fields as a
+ *   string record (command, text, user_id, channel_id, response_url, ...);
+ *   `deliveryId` is Slack's `trigger_id`.
+ * - `app_uninstalled` / `tokens_revoked`: lifecycle events with no meaningful
+ *   payload beyond identifying the team; the relay delivers these so the
+ *   tenant disables the connection rather than leaving a dead one active.
+ */
+export const slackRelayDelivery = relayDeliveryEnvelope(slackTeamId, slackTeamId, z.enum(SLACK_RELAY_EVENT_TYPES))
+export const slackRelayPullResponse = z
+  .object({ deliveries: z.array(slackRelayDelivery).max(RELAY_BATCH_SIZE) })
+  .strict()
+export type SlackRelayDelivery = z.infer<typeof slackRelayDelivery>

@@ -6,7 +6,7 @@ describe('oauth provider registry', () => {
   test('resolves first-party OAuth providers', () => {
     expect(getOAuthProviderAdapter('notion')?.key).toBe('notion')
     expect(getOAuthProviderAdapter('nope')).toBeUndefined()
-    expect(oauthProviderKeys()).toEqual(['github', 'notion'])
+    expect(oauthProviderKeys()).toEqual(['github', 'notion', 'slack'])
   })
 
   test('prototype keys do not resolve an adapter', () => {
@@ -20,7 +20,7 @@ describe('oauth provider registry', () => {
     const restore = registerOAuthProviderAdapterForTest(fake)
     try {
       expect(getOAuthProviderAdapter('fake')).toBe(fake)
-      expect(oauthProviderKeys()).toEqual(['fake', 'github', 'notion'])
+      expect(oauthProviderKeys()).toEqual(['fake', 'github', 'notion', 'slack'])
     } finally {
       restore()
     }
@@ -33,7 +33,7 @@ describe('oauth provider registry', () => {
     expect(getOAuthProviderAdapter('constructor')).toBe(fake)
     restore()
     expect(getOAuthProviderAdapter('constructor')).toBeUndefined()
-    expect(oauthProviderKeys()).toEqual(['github', 'notion'])
+    expect(oauthProviderKeys()).toEqual(['github', 'notion', 'slack'])
   })
 
   test('notion declares its authorize host and builds a url only on that host', () => {
@@ -45,6 +45,20 @@ describe('oauth provider registry', () => {
       state: 'S'.repeat(43),
     })
     expect(url.host).toBe('api.notion.com')
+    expect(url.searchParams.get('state')).toBe('S'.repeat(43))
+    expect(url.searchParams.get('redirect_uri')).toBe('https://app.example/cb')
+    expect(url.toString()).not.toContain('client_secret')
+  })
+
+  test('slack declares its authorize host and builds a url only on that host', () => {
+    const adapter = getOAuthProviderAdapter('slack')!
+    expect(adapter.authorizeHosts).toEqual(['slack.com'])
+    const url = adapter.buildAuthorizationUrl({
+      clientId: 'cid',
+      redirectUri: 'https://app.example/cb',
+      state: 'S'.repeat(43),
+    })
+    expect(url.host).toBe('slack.com')
     expect(url.searchParams.get('state')).toBe('S'.repeat(43))
     expect(url.searchParams.get('redirect_uri')).toBe('https://app.example/cb')
     expect(url.toString()).not.toContain('client_secret')
