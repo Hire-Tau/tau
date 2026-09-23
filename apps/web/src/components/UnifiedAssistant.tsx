@@ -12,6 +12,7 @@ import { assistantQueries } from '../queryOptions'
 import { useAssistantActivity } from '../hooks/useAssistantActivity'
 import { formatAssistantUpdateTime, summarizeAssistantTasks } from '../lib/assistantActivityPresentation'
 import { AgentChat } from './AgentChat'
+import { ChatFullscreenContext } from './ChatFullscreenContext'
 import { AssistantCommandCenter } from './AssistantCommandCenter'
 import type { AssistantConversationLink } from '../lib/assistantConversationLinks'
 import type { CommandDestination } from '../lib/commandCenterSearch'
@@ -19,11 +20,21 @@ import { AssistantConversationView, type AssistantViewControls } from './Assista
 import { AssistantPositionControl } from './AssistantPositionControl'
 import { SparklesIcon, CloseIcon, MicIcon, MinimizeIcon, PlusIcon } from './icons'
 
-export function UnifiedAssistant({
-  dependencies,
-}: {
+interface UnifiedAssistantProps {
   dependencies?: { ConversationComponent?: typeof AssistantConversationView; ChatComponent?: typeof AgentChat }
-} = {}) {
+}
+
+export function UnifiedAssistant(props: UnifiedAssistantProps = {}) {
+  // This modal already follows the keyboard viewport. Keep every nested chat
+  // inside it, including retained Assistant conversations and agent previews.
+  return (
+    <ChatFullscreenContext value={false}>
+      <UnifiedAssistantPanel {...props} />
+    </ChatFullscreenContext>
+  )
+}
+
+function UnifiedAssistantPanel({ dependencies }: UnifiedAssistantProps) {
   const ConversationComponent = dependencies?.ConversationComponent ?? AssistantConversationView
   const [state, setState] = useURLStringState<'closed' | 'open' | 'expanded'>('chat', 'closed', [
     'closed',

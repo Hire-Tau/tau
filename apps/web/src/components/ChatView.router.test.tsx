@@ -7,6 +7,7 @@ import type { RenderItem } from '@tau/client-react'
 import { PermissionsProvider } from '../hooks/usePermissions'
 import { acquireDomHarness } from '../test/domHarness'
 import { ChatView } from './ChatView'
+import { ChatFullscreenContext } from './ChatFullscreenContext'
 
 const permissions = () => ({
   permissions: ['agents:write'],
@@ -219,8 +220,9 @@ for (const enableFullscreen of [true, false]) {
 }
 
 for (const scenario of [
-  { name: 'desktop', width: 768, alreadyFullscreen: false },
-  { name: 'an existing phone fullscreen modal', width: 390, alreadyFullscreen: true },
+  { name: 'desktop', width: 768, alreadyFullscreen: false, context: null },
+  { name: 'an existing phone fullscreen modal', width: 390, alreadyFullscreen: true, context: null },
+  { name: 'the assistant modal', width: 390, alreadyFullscreen: false, context: false as const },
 ]) {
   test(`composer tap does not expand in ${scenario.name}`, async () => {
     const dom = await acquireDomHarness({
@@ -232,9 +234,11 @@ for (const scenario of [
         {
           path: '/chat/:agentId',
           element: (
-            <div className={scenario.alreadyFullscreen ? 'mobile-chat-modal' : undefined}>
-              <ChatView dependencies={dependencies} items={[]} onSend={() => undefined} enableFullscreen />
-            </div>
+            <ChatFullscreenContext value={scenario.context}>
+              <div className={scenario.alreadyFullscreen ? 'mobile-chat-modal' : undefined}>
+                <ChatView dependencies={dependencies} items={[]} onSend={() => undefined} enableFullscreen />
+              </div>
+            </ChatFullscreenContext>
           ),
         },
       ],
