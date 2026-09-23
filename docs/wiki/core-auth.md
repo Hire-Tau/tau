@@ -10,6 +10,14 @@ User identities resolve permissions from role assignments, including squad-scope
 
 Password login and password bearer authentication stop working once an admin has a passkey. They remain available when admin records exist but no admin has a passkey, such as a restore that removed origin-bound credentials.
 
+### Finishing first-admin setup
+
+The bootstrap password resolves to a `legacy` identity. It passes administrator permission checks but belongs to no person. `GET /api/auth/validate` returns the caller's `identityType`. For the bootstrap identity it also returns `firstAdmin`: whether an admin record exists, and which enabled accounts without a passkey are waiting to become the first administrator with a passkey. When an admin record exists, only admins without a passkey are listed. Otherwise every account without a passkey is listed, including the account created by a first-admin registration whose passkey step failed.
+
+While that list is not empty, the web app shows a finish-setup screen instead of the app. The screen creates a one-time registration link for the chosen account (`POST /api/users/:id/invite?delivery=link`). It then completes the normal link ceremony (`/api/auth/register/token/*`) in the same window. If no admin exists and the verify request carries the bootstrap identity, the account gets the admin role, as it would through `/api/auth/register/verify`. A link redeemed without the bootstrap identity grants no role. A failed passkey ceremony does not spend the link, so a retry can reuse it. After the passkey is registered, the browser holds a user session and the bootstrap password stops working.
+
+Some routes act for one person, such as connecting accounts, subscriptions, session management, linked chat accounts and external export. They answer `403` with `code: first_admin_incomplete` for the bootstrap identity while no administrator has a passkey. Other identities that are not people get `code: user_session_required`.
+
 ## Identity Middleware
 
 `apps/core/src/middleware/identity.ts` resolves credentials through `apps/core/src/services/auth/resolve-token.ts`. Credential extraction uses this order:

@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { cleanupTestRbac, createTestAdmin, createTestCredential, createTestUser } from '../../test-utils/rbac'
 import { db } from '../../db'
-import { userCredentials } from '../../db/schema'
+import { userCredentials, users } from '../../db/schema'
 import { eq } from 'drizzle-orm'
-import { adminHasPasskey, hasAdminUsers } from './admin-users'
+import { adminHasPasskey, hasAdminUsers, pendingAdminSetup } from './admin-users'
 
 const PREFIX = 'admin-users-test'
 
@@ -43,5 +43,30 @@ describe('adminHasPasskey', () => {
 
     await db.delete(userCredentials).where(eq(userCredentials.id, credId))
     expect(await adminHasPasskey()).toBe(false)
+  })
+})
+
+describe('pendingAdminSetup', () => {
+  const mine = async () =>
+    (await pendingAdminSetup()).accounts.filter((account) => account.email.startsWith(`${PREFIX}-`))
+
+  test('with no admin yet: every enabled account without a passkey, oldest first', async () => {
+    const first = await createTestUser({ prefix: PREFIX })
+    const second = await createTestUser({ prefix: PREFIX })
+    const joined = await createTestUser({ prefix: PREFIX })
+    await createTestCredential({ userId: joined.id })
+    const disabled = await createTestUser({ prefix: PREFIX })
+    await db.update(users).set({ disabledAt: new Date() }).where(eq(users.id, disabled.id))
+
+    expect((await pendingAdminSetup()).adminExists).toBe(false)
+    expect((await mine()).map((account) => account.id)).toEqual([first.id, second.id])
+  })
+
+  test('once an admin row exists: only the passkey-less admins', async () => {
+    const admin = await createTestAdmin({ prefix: PREFIX, canonicalAdmin: true })
+    await createTestUser({ prefix: PREFIX })
+
+    expect((await pendingAdminSetup()).adminExists).toBe(true)
+    expect(await mine()).toEqual([{ id: admin.id, email: admin.email, displayName: admin.displayName }])
   })
 })

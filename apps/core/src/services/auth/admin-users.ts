@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { and, asc, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { roles, roleAssignments, userCredentials, users } from '../../db/schema'
 
@@ -59,4 +59,54 @@ export async function adminHasPasskey(): Promise<boolean> {
     .limit(1)
 
   return result.length > 0
+}
+
+/** An account the bootstrap session may finish setting up as the first passkey-holding admin. */
+export interface PendingAdminAccount {
+  id: string
+  email: string
+  displayName: string | null
+}
+
+export interface PendingAdminSetup {
+  /** An enabled admin row exists (none holds a passkey, or password auth would be off). */
+  adminExists: boolean
+  /** Oldest first. Empty when nobody is waiting, e.g. before the first account exists. */
+  accounts: PendingAdminAccount[]
+}
+
+/**
+ * Who is waiting to become the instance's first passkey-holding admin, for the
+ * bootstrap `TAU_PASSWORD` session to finish setting up. Only meaningful while
+ * `adminHasPasskey()` is false.
+ *
+ * - An admin row exists (a restore stripped its credentials, or its passkey
+ *   ceremony never finished): those admins. None holds a passkey, by definition.
+ * - No admin yet: first-admin registration creates the account row before the
+ *   passkey ceremony and grants the admin role only once a passkey verifies, so a
+ *   failed ceremony leaves an enabled account with no passkey and no role. Every
+ *   such account is a candidate.
+ */
+export async function pendingAdminSetup(): Promise<PendingAdminSetup> {
+  const adminExists = await hasAdminUsers()
+  const withoutPasskey = await db
+    .select({ id: users.id, email: users.email, displayName: users.displayName })
+    .from(users)
+    .leftJoin(userCredentials, eq(userCredentials.userId, users.id))
+    .where(and(isNull(users.disabledAt), isNull(userCredentials.id)))
+    .orderBy(asc(users.createdAt), asc(users.id))
+  if (!adminExists) return { adminExists, accounts: withoutPasskey }
+
+  const adminIds = await systemAdminUserIds()
+  return { adminExists, accounts: withoutPasskey.filter((account) => adminIds.has(account.id)) }
+}
+
+/** Ids of every user holding the system-scoped `admin` role, enabled or not. */
+export async function systemAdminUserIds(): Promise<Set<string>> {
+  const rows = await db
+    .select({ userId: roleAssignments.subjectId })
+    .from(roleAssignments)
+    .innerJoin(roles, eq(roles.id, roleAssignments.roleId))
+    .where(and(eq(roleAssignments.subjectType, 'user'), eq(roleAssignments.scope, 'system'), eq(roles.slug, 'admin')))
+  return new Set(rows.map((row) => row.userId))
 }
