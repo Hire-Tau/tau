@@ -39,7 +39,20 @@ const ENTERPRISE_ID_PATTERN = /^E[A-Z0-9]{2,30}$/
 // Slack maps failures onto a small set of documented `error` strings rather than
 // HTTP status codes (oauth.v2.access itself replies HTTP 200 even on failure).
 const GRANT_ERROR_CODES = new Set(['invalid_code', 'code_already_used', 'bad_redirect_uri'])
-const AUTH_ERROR_CODES = new Set(['invalid_client_id', 'bad_client_secret', 'invalid_auth'])
+// `token_revoked`/`account_inactive`/`token_expired`/`not_authed` are the same
+// "this token is dead" family as `invalid_auth` — auth.test (and any other
+// call) returns them for a revoked or expired token. Classified as
+// non-retryable (see adapter.ts's classifySlackError) so a stale token is a
+// terminal reauthorization, not something retried on every revalidation tick.
+const AUTH_ERROR_CODES = new Set([
+  'invalid_client_id',
+  'bad_client_secret',
+  'invalid_auth',
+  'token_revoked',
+  'account_inactive',
+  'token_expired',
+  'not_authed',
+])
 // The broker's Slack revoke path treats these as "already revoked" successes,
 // mirroring how invalid_auth is already tolerated for other providers.
 const ALREADY_REVOKED_ERROR_CODES = new Set(['invalid_auth', 'token_revoked', 'account_inactive', 'not_authed'])

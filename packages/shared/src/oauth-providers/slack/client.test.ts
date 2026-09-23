@@ -211,12 +211,28 @@ describe('SlackClient', () => {
     }
   )
 
-  test.each([{ error: 'invalid_client_id' }, { error: 'bad_client_secret' }, { error: 'invalid_auth' }])(
-    'maps auth errors ($error) to invalid_auth',
+  test.each([
+    { error: 'invalid_client_id' },
+    { error: 'bad_client_secret' },
+    { error: 'invalid_auth' },
+    { error: 'token_revoked' },
+    { error: 'account_inactive' },
+    { error: 'token_expired' },
+    { error: 'not_authed' },
+  ])('maps auth errors ($error) to invalid_auth', async ({ error }) => {
+    const client = new SlackClient({ fetch: mock(async () => json({ ok: false, error }, 200)) })
+    const operation = client.refresh({ refreshToken: 'r', clientId: 'id', clientSecret: 'secret' })
+    await expect(operation).rejects.toEqual(new SlackClientError('invalid_auth'))
+  })
+
+  test.each([{ error: 'token_revoked' }, { error: 'account_inactive' }, { error: 'token_expired' }, { error: 'not_authed' }])(
+    'authTest on a revoked/expired token ($error) is classified as invalid_auth and non-retryable, not retried forever',
     async ({ error }) => {
       const client = new SlackClient({ fetch: mock(async () => json({ ok: false, error }, 200)) })
-      const operation = client.refresh({ refreshToken: 'r', clientId: 'id', clientSecret: 'secret' })
+      const operation = client.authTest({ accessToken: 'xoxb-stale' })
       await expect(operation).rejects.toEqual(new SlackClientError('invalid_auth'))
+      const caught = await operation.catch((thrown) => thrown)
+      expect(classifySlackError(caught)).toEqual({ code: 'invalid_auth', retryable: false })
     }
   )
 
