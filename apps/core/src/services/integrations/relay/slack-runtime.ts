@@ -74,8 +74,8 @@ export interface SlackRelayDispatchDependencies {
   provider: ChannelProvider
   /** `slackProvider.parseWebhook` → ignore null/challenge → `dispatchParsedChannelEvent`, the same chain the direct webhook runs. */
   dispatchWebhook(provider: ChannelProvider, payload: Record<string, unknown>): Promise<HandlerResult | undefined>
-  /** Durable dedup, claimed before side effects and completed after. */
-  receipts: Pick<DbEventPollingDispatchStore, 'claim' | 'complete'>
+  /** Durable dedup, claimed before side effects, released on failure, completed after success. */
+  receipts: Pick<DbEventPollingDispatchStore, 'claim' | 'complete' | 'release'>
   /** POSTs a slash command's synchronous response body to Slack's `response_url`. */
   postResponseUrl(responseUrl: string, body: unknown): Promise<void>
   markReauthorizationRequired(input: { id: string; materialRevision: string; code: string }): Promise<boolean>
@@ -146,9 +146,15 @@ async function handleSlackRelayDelivery(
       await deps.dispatchWebhook(deps.provider, delivery.payload)
       return
     }
-    case 'slash_command':
+    case 'slash_command': {
+      const payload = delivery.payload as { team_id?: string }
+      if (payload.team_id !== delivery.resourceId || payload.team_id !== live.configuration.teamId) {
+        log.warn('Dropping Slack slash_command for a team that does not match the delivery or the connection')
+        return
+      }
       await handleSlashCommandDelivery(deps, delivery.payload as Record<string, unknown>)
       return
+    }
     case 'app_uninstalled':
       await markConnectionRevoked(deps, live, 'provider_access_revoked')
       return
@@ -184,8 +190,16 @@ export function createSlackRelayDispatcher(deps: SlackRelayDispatchDependencies)
     if (claim.status === 'busy') throw new Error('relay_receipt_busy')
     if (claim.status === 'completed') return
 
-    await handleSlackRelayDelivery(deps, delivery, live)
-    await deps.receipts.complete('slack', key, claim.leaseToken)
+    try {
+      await handleSlackRelayDelivery(deps, delivery, live)
+      await deps.receipts.complete('slack', key, claim.leaseToken)
+    } catch (error) {
+      // A transient handler failure must not strand the claim for the rest of
+      // its 120s lease: the relay's own redelivery of this deliveryId needs to
+      // see this as reclaimable, or the event is silently lost forever.
+      await deps.receipts.release('slack', key, claim.leaseToken)
+      throw error
+    }
   }
 }
 

@@ -182,9 +182,17 @@ webhooksRouter.post('/channels/:provider', async (c) => {
         // The first delivery is still in flight; Slack does not need another
         // retry queued behind it, and this 200 does not affect that attempt.
         if (claim.status === 'busy') return c.json({ ok: true })
-        const response = await dispatchChannelWebhook(c, provider, providerName, payload, headers)
-        await channelWebhookReceipts.complete('slack', key, claim.leaseToken)
-        return response
+        try {
+          const response = await dispatchChannelWebhook(c, provider, providerName, payload, headers)
+          await channelWebhookReceipts.complete('slack', key, claim.leaseToken)
+          return response
+        } catch (error) {
+          // A transient handler failure must not strand the claim for the rest
+          // of its 120s lease: Slack's own retry (same event_id) needs to see
+          // this as reclaimable, or the event is silently lost forever.
+          await channelWebhookReceipts.release('slack', key, claim.leaseToken)
+          throw error
+        }
       }
     }
 

@@ -86,6 +86,21 @@ describe('Slack direct webhook event_callback dedup', () => {
     expect(findInstance).toHaveBeenCalledTimes(2)
   })
 
+  it('releases the receipt on a handler failure, so a retry with the same event_id is processed (not lost forever)', async () => {
+    const eventId = `Ev${crypto.randomUUID()}`
+    findInstance.mockRejectedValueOnce(new Error('transient handler failure'))
+    const first = await post(eventCallback(eventId))
+    expect(first.status).toBe(500)
+    expect(findInstance).toHaveBeenCalledTimes(1)
+
+    // Slack retries after the 500. If the claim was never released, this retry
+    // would see the claim as still `busy` (120s lease) and the event would be
+    // dropped with a 200 that never actually redelivered it.
+    const retry = await post(eventCallback(eventId), { 'x-slack-retry-num': '1', 'x-slack-retry-reason': 'timeout' })
+    expect(retry.status).toBe(200)
+    expect(findInstance).toHaveBeenCalledTimes(2)
+  })
+
   it('does not dedup slash commands (Slack never retries them)', async () => {
     const rawBody = new URLSearchParams({
       command: '/tau',

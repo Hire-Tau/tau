@@ -60,6 +60,7 @@ function deps(overrides: Partial<SlackRelayDispatchDependencies> = {}) {
     markReauthorizationRequired: [] as { id: string; materialRevision: string; code: string }[],
     refreshChannelConnections: 0,
     audit: [] as { connectionId: string; action: string; outcome: string; code?: string }[],
+    release: [] as { providerKey: string; eventKey: string }[],
   }
   const base: SlackRelayDispatchDependencies = {
     resolveConnection: async () => connection(),
@@ -71,6 +72,9 @@ function deps(overrides: Partial<SlackRelayDispatchDependencies> = {}) {
     receipts: {
       claim: async () => ({ status: 'claimed' as const, leaseToken: crypto.randomUUID() }),
       complete: async () => undefined,
+      release: async (providerKey, eventKey) => {
+        calls.release.push({ providerKey, eventKey })
+      },
     },
     postResponseUrl: async (url, body) => {
       calls.postResponseUrl.push({ url, body })
@@ -123,6 +127,42 @@ describe('createSlackRelayDispatcher', () => {
     expect(calls.dispatchWebhook).toEqual([])
   })
 
+  test('a cross-team slash_command payload is dropped, never reaching the handler', async () => {
+    const conn = connection({ teamId: TEAM_ID })
+    const { base, calls } = deps({ resolveConnection: async () => conn })
+    const dispatch = createSlackRelayDispatcher(base)
+    const payload = { command: '/tau', team_id: 'T99999999', response_url: 'https://hooks.slack.com/commands/T1/1/abc' }
+    await dispatch(
+      delivery({
+        connectionId: conn.connection.id,
+        connectionRevision: conn.connection.materialRevision,
+        eventType: 'slash_command',
+        payload,
+      }),
+      interestFor(conn)
+    )
+    expect(calls.dispatchWebhook).toEqual([])
+    expect(calls.postResponseUrl).toEqual([])
+  })
+
+  test('a slash_command payload missing team_id is dropped, never reaching the handler', async () => {
+    const conn = connection({ teamId: TEAM_ID })
+    const { base, calls } = deps({ resolveConnection: async () => conn })
+    const dispatch = createSlackRelayDispatcher(base)
+    const payload = { command: '/tau', response_url: 'https://hooks.slack.com/commands/T1/1/abc' }
+    await dispatch(
+      delivery({
+        connectionId: conn.connection.id,
+        connectionRevision: conn.connection.materialRevision,
+        eventType: 'slash_command',
+        payload,
+      }),
+      interestFor(conn)
+    )
+    expect(calls.dispatchWebhook).toEqual([])
+    expect(calls.postResponseUrl).toEqual([])
+  })
+
   test('a matching event_callback is forwarded to the shared webhook handler with its raw payload', async () => {
     const conn = connection({ teamId: TEAM_ID })
     const { base, calls } = deps({ resolveConnection: async () => conn })
@@ -139,7 +179,7 @@ describe('createSlackRelayDispatcher', () => {
     const conn = connection()
     const { base, calls } = deps({
       resolveConnection: async () => conn,
-      receipts: { claim: async () => ({ status: 'busy' as const }), complete: async () => undefined },
+      receipts: { claim: async () => ({ status: 'busy' as const }), complete: async () => undefined, release: async () => undefined },
     })
     const dispatch = createSlackRelayDispatcher(base)
     await expect(
@@ -155,7 +195,11 @@ describe('createSlackRelayDispatcher', () => {
     const conn = connection()
     const { base, calls } = deps({
       resolveConnection: async () => conn,
-      receipts: { claim: async () => ({ status: 'completed' as const }), complete: async () => undefined },
+      receipts: {
+        claim: async () => ({ status: 'completed' as const }),
+        complete: async () => undefined,
+        release: async () => undefined,
+      },
     })
     const dispatch = createSlackRelayDispatcher(base)
     await dispatch(
@@ -179,7 +223,7 @@ describe('createSlackRelayDispatcher', () => {
         connectionId: conn.connection.id,
         connectionRevision: conn.connection.materialRevision,
         eventType: 'slash_command',
-        payload: { command: '/tau', response_url: responseUrl },
+        payload: { command: '/tau', team_id: TEAM_ID, response_url: responseUrl },
       }),
       interestFor(conn)
     )
@@ -201,7 +245,7 @@ describe('createSlackRelayDispatcher', () => {
           connectionRevision: conn.connection.materialRevision,
           eventType: 'slash_command',
           deliveryId: crypto.randomUUID(),
-          payload: { command: '/tau', response_url: bad },
+          payload: { command: '/tau', team_id: TEAM_ID, response_url: bad },
         }),
         interestFor(conn)
       )
@@ -221,7 +265,7 @@ describe('createSlackRelayDispatcher', () => {
         connectionId: conn.connection.id,
         connectionRevision: conn.connection.materialRevision,
         eventType: 'slash_command',
-        payload: { command: '/tau', response_url: 'https://hooks.slack.com/commands/T1/1/abc' },
+        payload: { command: '/tau', team_id: TEAM_ID, response_url: 'https://hooks.slack.com/commands/T1/1/abc' },
       }),
       interestFor(conn)
     )
@@ -347,6 +391,41 @@ describe('createSlackRelayDispatcher — DB-backed receipt durability', () => {
         .where(eq(integrationEventPollingDispatches.eventKey, `relay:${conn.connection.id}:${d.deliveryId}`))
     }
   })
+
+  test('a handler failure releases the claim, so redelivery of the same deliveryId is not stuck behind relay_receipt_busy', async () => {
+    const conn = connection()
+    const receipts = new DbEventPollingDispatchStore()
+    let attempts = 0
+    const { base, calls } = deps({
+      resolveConnection: async () => conn,
+      receipts,
+      dispatchWebhook: async (_provider, payload) => {
+        attempts += 1
+        if (attempts === 1) throw new Error('transient handler failure')
+        calls.dispatchWebhook.push(payload)
+        return { response: { ok: true }, emptyResponse: true }
+      },
+    })
+    const dispatch = createSlackRelayDispatcher(base)
+    const d = delivery({
+      connectionId: conn.connection.id,
+      connectionRevision: conn.connection.materialRevision,
+      payload: { type: 'event_callback', team_id: TEAM_ID, event_id: 'Ev1' },
+    })
+    try {
+      await expect(dispatch(d, interestFor(conn))).rejects.toThrow('transient handler failure')
+      // The relay redelivers the same deliveryId after the failed attempt. If
+      // the claim were never released, this would throw `relay_receipt_busy`
+      // instead of actually reprocessing the event.
+      await dispatch(d, interestFor(conn))
+      expect(calls.dispatchWebhook).toHaveLength(1)
+      expect(attempts).toBe(2)
+    } finally {
+      await db
+        .delete(integrationEventPollingDispatches)
+        .where(eq(integrationEventPollingDispatches.eventKey, `relay:${conn.connection.id}:${d.deliveryId}`))
+    }
+  })
 })
 
 describe('production webhook dispatch (real slackProvider + real handleChannelEvent)', () => {
@@ -384,7 +463,6 @@ describe('production webhook dispatch (real slackProvider + real handleChannelEv
 
 describe('managed connection revocation falls back the live ChannelConnections transport', () => {
   const priorEnv = new Map<string, string | undefined>()
-  let startedAt: Date
 
   async function wipe() {
     const refs = await db
@@ -406,7 +484,6 @@ describe('managed connection revocation falls back the live ChannelConnections t
       priorEnv.set(key, process.env[key])
     }
     process.env.TAU_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
-    startedAt = new Date()
     await wipe()
     resetSecretStore()
     resetSettingsStore()
@@ -424,7 +501,6 @@ describe('managed connection revocation falls back the live ChannelConnections t
   })
 
   test('app_uninstalled through the real repository flips authState, and a refreshed ChannelConnections stops offering the managed row', async () => {
-    void startedAt
     // A fake `auth.test` keyed by bearer token, so validate()/enable() never touch the network
     // (same approach `channels/connections.test.ts` uses for the same managed-row shape).
     const fetchImpl = (async (input: string | URL | Request, init?: RequestInit) => {
