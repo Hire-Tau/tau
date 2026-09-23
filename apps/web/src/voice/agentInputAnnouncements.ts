@@ -16,7 +16,8 @@ function formatQuestion(question: QuestionItem, index: number): string {
   const options = question.options?.map((option) => option.label ?? option.value).filter(Boolean)
   const optionText = options?.length ? ` Options: ${options.join(', ')}.` : ''
   const optionalText = question.optional ? ' Optional.' : ''
-  return `${index + 1}. ${question.question}${optionText}${optionalText}`
+  const contextText = question.context?.trim() ? ` Context: ${question.context.trim()}` : ''
+  return `${index + 1}. ${question.question}${contextText}${optionText}${optionalText}`
 }
 
 export function buildAgentWaitingInputPrompt(agent: Agent): string {

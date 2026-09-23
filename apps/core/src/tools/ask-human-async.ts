@@ -3,6 +3,8 @@ import type { ToolDefinition, AgentToolResult } from '@earendil-works/pi-coding-
 import type { QuestionItem, QuestionType } from '@tau/shared'
 import { createAgentQuestion } from '../services/agents/questions'
 
+const QUESTION_CONTEXT_MAX_LENGTH = 2000
+
 const QuestionOptionSchema = Type.Object({
   value: Type.String({ description: 'The value returned when this option is selected' }),
   label: Type.Optional(Type.String({ description: 'Display label (defaults to value if not provided)' })),
@@ -15,16 +17,28 @@ const QuestionItemSchema = Type.Object({
       description: "The type of input expected. Defaults to 'text'",
     })
   ),
-  question: Type.String({ description: 'The question text to display' }),
+  question: Type.String({ description: 'The question text to display. Keep it to one clear ask.' }),
+  context: Type.Optional(
+    Type.String({
+      maxLength: QUESTION_CONTEXT_MAX_LENGTH,
+      description:
+        'Background shown under the question: what you are working on, what you found, and what each answer ' +
+        'would lead to. The human usually answers from the Feed or a notification without your conversation. ' +
+        'Markdown is allowed.',
+    })
+  ),
   options: Type.Optional(
-    Type.Array(QuestionOptionSchema, { description: 'Options for select/multi-select questions.' })
+    Type.Array(QuestionOptionSchema, {
+      description:
+        'Choices for select/multi-select questions. For text questions, suggested answers the human can pick and edit.',
+    })
   ),
   default: Type.Optional(Type.Union([Type.String(), Type.Array(Type.String())])),
   optional: Type.Optional(Type.Boolean({ description: 'If true, this question can be left unanswered' })),
 })
 
 const QuestionsSchema = Type.Array(QuestionItemSchema, {
-  description: 'One or more questions to ask. Each has an id, type, question text, and optional options.',
+  description: 'One or more questions to ask. Each has an id, type, question text, and optional context and options.',
 })
 
 /** Managers and assistants: the question is always asynchronous; no wait can be opened. */
@@ -56,6 +70,7 @@ type AskParams = {
     id: string
     type?: QuestionType
     question: string
+    context?: string
     options?: { value: string; label?: string }[]
     default?: string | string[]
     optional?: boolean
@@ -98,7 +113,9 @@ const COMMON_DESCRIPTION =
   'the watchers of your squad). The tool returns immediately; the answer arrives later in your inbox. '
 const DESCRIPTION_TAIL =
   'An answer does not approve a workflow approval gate. ' +
-  "For simple questions use type 'text'; for choices " +
+  'Humans usually answer from the Feed or a notification, away from your conversation, so make each question ' +
+  'stand alone and give it context: what you are doing, what you found, and the consequence of each answer. ' +
+  "For simple questions use type 'text', optionally with options as suggested answers; for choices " +
   "use 'select' or 'multi-select' (with options)."
 
 const BLOCKING_DESCRIPTION =
@@ -146,10 +163,16 @@ export function createAsyncAskHumanTool(
           errors.push(`Question '${q.id}': options are required for ${type} questions`)
           continue
         }
+        const context = typeof q.context === 'string' ? q.context.trim() : ''
+        if (context.length > QUESTION_CONTEXT_MAX_LENGTH) {
+          errors.push(`Question '${q.id}': context must be at most ${QUESTION_CONTEXT_MAX_LENGTH} characters`)
+          continue
+        }
         items.push({
           id: q.id,
           type,
           question: q.question,
+          ...(context ? { context } : {}),
           options: q.options,
           default: q.default,
           optional: q.optional,

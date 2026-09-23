@@ -7,6 +7,7 @@ import { useVoiceKeyboardShortcuts } from '../hooks/useVoiceKeyboardShortcuts'
 import { useStableRef } from '../hooks/useStableRef'
 import { transcribeAudio } from '../api/transcribe'
 import { VoiceMicButton } from './VoiceMicButton'
+import { MarkdownContent } from './MarkdownContent'
 
 interface QuestionInputProps {
   questionData: QuestionData
@@ -356,6 +357,8 @@ function QuestionField({
   const isMac = typeof navigator !== 'undefined' && navigator.platform.includes('Mac')
 
   const [meFocused, setMeFocused] = useState(false)
+  const localTextarea = useRef<HTMLTextAreaElement | null>(null)
+  const suggestions = question.type === 'text' ? (question.options ?? []) : []
 
   return (
     <div className="space-y-2">
@@ -382,10 +385,44 @@ function QuestionField({
         )}
       </div>
 
+      {question.context && (
+        <MarkdownContent className="text-xs text-muted prose-p:my-1">{question.context}</MarkdownContent>
+      )}
+
+      {suggestions.length > 0 && (
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Suggested answers">
+          {suggestions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              aria-pressed={textValue === option.value}
+              disabled={disabled}
+              onClick={() => {
+                // A suggestion fills the answer; the text stays editable before submitting.
+                onChange(option.value)
+                localTextarea.current?.focus()
+              }}
+              className={clsx(
+                'rounded-full border px-2.5 py-1 text-xs transition-colors cursor-pointer disabled:cursor-default disabled:opacity-60',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                textValue === option.value
+                  ? 'border-selection-border bg-selection text-primary'
+                  : 'border-th-border text-secondary hover:border-th-border-hover hover:bg-surface-hover'
+              )}
+            >
+              {option.label ?? option.value}
+            </button>
+          ))}
+        </div>
+      )}
+
       {question.type === 'text' && (
         <>
           <textarea
-            ref={textareaRef}
+            ref={(el) => {
+              localTextarea.current = el
+              textareaRef?.(el)
+            }}
             value={textValue}
             onChange={(e) => onChange(e.target.value)}
             placeholder="Type your answer..."

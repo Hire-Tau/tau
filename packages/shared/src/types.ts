@@ -27,6 +27,13 @@ export interface QuestionItem {
   id: string
   type: QuestionType
   question: string
+  /**
+   * Background the human needs to answer without the agent's conversation: what the agent is
+   * working on, what it found, and what each answer would lead to. Questions are usually answered
+   * out of band (Feed, notifications, phone).
+   */
+  context?: string
+  /** Choices for select/multi-select; suggestions the human can pick and edit for text. */
   options?: QuestionOption[]
   default?: string | string[]
   optional?: boolean
