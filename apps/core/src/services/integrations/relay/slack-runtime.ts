@@ -185,6 +185,16 @@ export function createSlackRelayDispatcher(deps: SlackRelayDispatchDependencies)
     // The connection moved on (rotated/re-authorized) since this delivery was queued: stale, ack without dispatch.
     if (live.connection.materialRevision !== delivery.connectionRevision) return
 
+    if (delivery.eventType === 'event_callback') {
+      // Parse before claiming: most relayed events are filtered out here as
+      // non-actionable and would otherwise insert a durable receipt row for
+      // nothing (mirrors the same rule in routes/webhooks.ts for the direct
+      // webhook path). The team cross-check still happens in
+      // `handleSlackRelayDelivery` below, once there is something to dispatch.
+      const parsed = await deps.provider.parseWebhook(delivery.payload, {})
+      if (!parsed || ('type' in parsed && (parsed.type === 'pong' || parsed.type === 'challenge'))) return
+    }
+
     const key = `relay:${delivery.connectionId}:${delivery.deliveryId}`
     const claim = await deps.receipts.claim('slack', key, 120_000)
     if (claim.status === 'busy') throw new Error('relay_receipt_busy')

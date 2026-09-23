@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { createHmac } from 'node:crypto'
+import { and, eq } from 'drizzle-orm'
 import { Hono } from 'hono'
 import { webhooksRouter } from './webhooks'
 import { slackProvider } from '../channels/slack'
 import { ChannelInstance } from '../entities/ChannelInstance'
 import * as settings from '../services/integrations/channels/settings'
+import { db, integrationEventPollingDispatches } from '../db'
 
 // Exercises the real signature verification, parser and handler; only the
 // channel-instance lookup and the Slack bot-identity call are replaced, the
@@ -99,6 +101,33 @@ describe('Slack direct webhook event_callback dedup', () => {
     const retry = await post(eventCallback(eventId), { 'x-slack-retry-num': '1', 'x-slack-retry-reason': 'timeout' })
     expect(retry.status).toBe(200)
     expect(findInstance).toHaveBeenCalledTimes(2)
+  })
+
+  it('never claims a durable receipt for a non-actionable event (nothing for the bot to act on)', async () => {
+    const eventId = `Ev${crypto.randomUUID()}`
+    // A plain channel message, not a mention/DM/thread reply: `parseWebhook`
+    // returns null for it — there is no handler work to dedup in the first
+    // place, so the claim must never be taken (and the row must never exist).
+    const payload = {
+      type: 'event_callback',
+      team_id: TEAM_ID,
+      event_id: eventId,
+      event: { type: 'message', channel_type: 'channel', channel: 'C1', text: 'unrelated chatter', user: 'U1', ts: '100.1' },
+    }
+    const res = await post(payload)
+    expect(res.status).toBe(200)
+    expect(findInstance).not.toHaveBeenCalled()
+
+    const rows = await db
+      .select({ eventKey: integrationEventPollingDispatches.eventKey })
+      .from(integrationEventPollingDispatches)
+      .where(
+        and(
+          eq(integrationEventPollingDispatches.providerKey, 'slack'),
+          eq(integrationEventPollingDispatches.eventKey, `webhook:${TEAM_ID}:${eventId}`)
+        )
+      )
+    expect(rows).toHaveLength(0)
   })
 
   it('does not dedup slash commands (Slack never retries them)', async () => {

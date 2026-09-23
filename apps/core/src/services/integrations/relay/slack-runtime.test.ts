@@ -61,16 +61,24 @@ function deps(overrides: Partial<SlackRelayDispatchDependencies> = {}) {
     refreshChannelConnections: 0,
     audit: [] as { connectionId: string; action: string; outcome: string; code?: string }[],
     release: [] as { providerKey: string; eventKey: string }[],
+    claim: [] as { providerKey: string; eventKey: string }[],
   }
   const base: SlackRelayDispatchDependencies = {
     resolveConnection: async () => connection(),
-    provider: {} as ChannelProvider,
+    // A minimal actionable stand-in for the real slackProvider.parseWebhook:
+    // enough for the pre-claim actionability check to treat every default
+    // fixture event_callback as dispatchable. Tests that need a specific
+    // parse outcome (null/challenge/pong) override `provider` themselves.
+    provider: { parseWebhook: async () => ({ type: 'mention' }) } as unknown as ChannelProvider,
     dispatchWebhook: async (_provider, payload) => {
       calls.dispatchWebhook.push(payload)
       return { response: { ok: true }, emptyResponse: true }
     },
     receipts: {
-      claim: async () => ({ status: 'claimed' as const, leaseToken: crypto.randomUUID() }),
+      claim: async (providerKey, eventKey) => {
+        calls.claim.push({ providerKey, eventKey })
+        return { status: 'claimed' as const, leaseToken: crypto.randomUUID() }
+      },
       complete: async () => undefined,
       release: async (providerKey, eventKey) => {
         calls.release.push({ providerKey, eventKey })
@@ -161,6 +169,22 @@ describe('createSlackRelayDispatcher', () => {
     )
     expect(calls.dispatchWebhook).toEqual([])
     expect(calls.postResponseUrl).toEqual([])
+  })
+
+  test('a non-actionable event_callback is dropped before ever claiming a receipt', async () => {
+    const conn = connection({ teamId: TEAM_ID })
+    const { base, calls } = deps({
+      resolveConnection: async () => conn,
+      provider: { parseWebhook: async () => null } as unknown as ChannelProvider,
+    })
+    const dispatch = createSlackRelayDispatcher(base)
+    const payload = { type: 'event_callback', team_id: TEAM_ID, event_id: 'Ev-non-actionable' }
+    await dispatch(
+      delivery({ connectionId: conn.connection.id, connectionRevision: conn.connection.materialRevision, payload }),
+      interestFor(conn)
+    )
+    expect(calls.dispatchWebhook).toEqual([])
+    expect(calls.claim).toEqual([])
   })
 
   test('a matching event_callback is forwarded to the shared webhook handler with its raw payload', async () => {
@@ -370,6 +394,29 @@ describe('createSlackRelayDispatcher', () => {
 })
 
 describe('createSlackRelayDispatcher — DB-backed receipt durability', () => {
+  test('a non-actionable event_callback never inserts a durable receipt row', async () => {
+    const conn = connection()
+    const receipts = new DbEventPollingDispatchStore()
+    const { base, calls } = deps({
+      resolveConnection: async () => conn,
+      receipts,
+      provider: { parseWebhook: async () => null } as unknown as ChannelProvider,
+    })
+    const dispatch = createSlackRelayDispatcher(base)
+    const d = delivery({
+      connectionId: conn.connection.id,
+      connectionRevision: conn.connection.materialRevision,
+      payload: { type: 'event_callback', team_id: TEAM_ID, event_id: 'Ev-non-actionable' },
+    })
+    await dispatch(d, interestFor(conn))
+    expect(calls.dispatchWebhook).toEqual([])
+    const rows = await db
+      .select({ eventKey: integrationEventPollingDispatches.eventKey })
+      .from(integrationEventPollingDispatches)
+      .where(eq(integrationEventPollingDispatches.eventKey, `relay:${conn.connection.id}:${d.deliveryId}`))
+    expect(rows).toHaveLength(0)
+  })
+
   test('a duplicate deliveryId is dispatched exactly once, durably', async () => {
     const conn = connection()
     const receipts = new DbEventPollingDispatchStore()

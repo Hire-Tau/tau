@@ -176,6 +176,14 @@ webhooksRouter.post('/channels/:provider', async (c) => {
       const teamId = payload.team_id
       const eventId = payload.event_id
       if (typeof teamId === 'string' && typeof eventId === 'string') {
+        // Parse before claiming: every channel message the bot sees would
+        // otherwise insert a durable receipt row, even the vast majority
+        // `parseWebhook` filters out as non-actionable. Claim only once there
+        // is real handler work to dedup.
+        const parsed = await provider.parseWebhook(payload, headers)
+        if (!parsed || ('type' in parsed && (parsed.type === 'pong' || parsed.type === 'challenge'))) {
+          return respondToParsedChannelWebhook(c, provider, providerName, payload, parsed)
+        }
         const key = `webhook:${teamId}:${eventId}`
         const claim = await channelWebhookReceipts.claim('slack', key, 120_000)
         if (claim.status === 'completed') return c.json({ ok: true })
@@ -183,7 +191,7 @@ webhooksRouter.post('/channels/:provider', async (c) => {
         // retry queued behind it, and this 200 does not affect that attempt.
         if (claim.status === 'busy') return c.json({ ok: true })
         try {
-          const response = await dispatchChannelWebhook(c, provider, providerName, payload, headers)
+          const response = await respondToParsedChannelWebhook(c, provider, providerName, payload, parsed)
           await channelWebhookReceipts.complete('slack', key, claim.leaseToken)
           return response
         } catch (error) {
@@ -213,7 +221,17 @@ async function dispatchChannelWebhook(
   headers: Record<string, string>
 ) {
   const parsed = await provider.parseWebhook(payload, headers)
+  return respondToParsedChannelWebhook(c, provider, providerName, payload, parsed)
+}
 
+/** Provider-specific acks (pong/challenge/Discord slash) plus the actual dispatch, given an already-parsed event. */
+async function respondToParsedChannelWebhook(
+  c: Context,
+  provider: ChannelProvider,
+  providerName: string,
+  payload: Record<string, unknown>,
+  parsed: Awaited<ReturnType<ChannelProvider['parseWebhook']>>
+) {
   if (!parsed) {
     log.info(`[${providerName}] Non-actionable event, ignoring`)
     return c.json({ ok: true })
