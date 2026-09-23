@@ -16,14 +16,18 @@ import { AnsiText } from '../AnsiText'
 import { getUpdateLoaderMessage } from './SystemUpdateSection.loader'
 import { usePermissions } from '../../hooks/usePermissions'
 import { FormSkeleton } from '../loading/Skeleton'
-import { desktopUpdates } from '../../lib/desktop'
+import { desktopInstance, desktopUpdates } from '../../lib/desktop'
 import { DesktopUpdatePanel } from './DesktopUpdatePanel'
 
 export function SystemUpdateSection() {
-  // Inside Tau Desktop the app owns updates natively; the git updater endpoints refuse all actions there.
+  // Inside Tau Desktop the bundled local instance owns updates natively; the git
+  // updater endpoints refuse all actions there. An attached or remote instance
+  // still updates like any other server, so it keeps the git updater section.
   const updates = desktopUpdates()
+  const kind = desktopInstance()?.kind
   const { can, isLoading: permissionsLoading } = usePermissions()
-  if (updates) return <DesktopUpdatePanel updates={updates} canWrite={!permissionsLoading && can('updates:write')} />
+  if (updates && (kind === undefined || kind === 'local'))
+    return <DesktopUpdatePanel updates={updates} canWrite={!permissionsLoading && can('updates:write')} />
   return <GitUpdateSection />
 }
 

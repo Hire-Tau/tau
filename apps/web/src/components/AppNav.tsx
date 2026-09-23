@@ -7,6 +7,7 @@ import { useQuery } from '@tanstack/react-query'
 import { SettingsIcon, PencilIcon, InboxIcon, MoreIcon } from './icons'
 import { TauLogo } from './TauLogo'
 import { pendingActionsPresentation, usePendingActions } from '../hooks/usePendingActions'
+import { desktopInstance } from '../lib/desktop'
 import { queries } from '../queryOptions'
 import { VoiceCompanionButton } from '../voice/VoiceCompanionWidget'
 import { getTabNavigationTarget, recordTabPath } from '../hooks/useTabHistory'
@@ -53,6 +54,9 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
   const actionCount = pendingPresentation.count
   // Durable Assistant activity is discovered independently of whether the command bar is open.
   const assistantActivity = useAssistantActivity()
+  // Only visible in the desktop inset title bar (see .tau-app-header-instance in index.css); a
+  // paired remote instance's name disambiguates which Mac this window is showing.
+  const instance = desktopInstance()
 
   useEffect(() => {
     recordTabPath(location.pathname + location.search)
@@ -90,6 +94,14 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
             <Link to="/" className="flex items-center gap-2 hover:text-status-progress-600 transition-colors">
               <TauLogo />
               Tau
+              {instance && (
+                <span
+                  data-testid="desktop-instance-label"
+                  className="tau-app-header-instance ml-2 text-sm font-normal text-muted truncate max-w-[12rem]"
+                >
+                  {instance.name}
+                </span>
+              )}
             </Link>
           </h1>
 

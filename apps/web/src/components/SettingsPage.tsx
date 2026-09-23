@@ -15,6 +15,7 @@ import { ThemeControl } from './settings/ThemeControl'
 import { useTheme } from '../providers/ThemeProvider'
 import { usePermissions } from '../hooks/usePermissions'
 import { useOnboarding } from '../hooks/useOnboarding'
+import { desktopInstance } from '../lib/desktop'
 import { useRestartPolling } from './settings/useRestartPolling'
 import { mergeDefined } from '../api/mergeDefined'
 import {
@@ -474,6 +475,8 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
   const { authRequired, logout, authStatus } = dependencies.useAuth()
   const queryClient = useQueryClient()
   const isPasskeyMode = authStatus?.mode === 'passkey'
+  const instance = desktopInstance()
+  const remoteInstance = instance?.kind === 'remote' && instance.disconnect ? instance : undefined
 
   const { data: user } = useQuery({
     ...queries.auth.me(),
@@ -784,16 +787,30 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
         </div>
       )}
 
-      {/* Logout */}
+      {/* Logout, or Disconnect when this window is a paired remote instance */}
       <div className="tau-section py-5">
         <div className="flex items-center justify-between">
-          <p className="text-sm text-muted">Sign out of this device</p>
-          <button
-            onClick={logout}
-            className="tau-button px-4 py-2.5 md:py-2 bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300 rounded-md text-sm font-medium min-h-[44px] md:min-h-0"
-          >
-            Logout
-          </button>
+          {remoteInstance ? (
+            <>
+              <p className="text-sm text-muted">Disconnect this Mac from {remoteInstance.name}</p>
+              <button
+                onClick={() => void remoteInstance.disconnect!()}
+                className="tau-button px-4 py-2.5 md:py-2 bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300 rounded-md text-sm font-medium min-h-[44px] md:min-h-0"
+              >
+                Disconnect
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-muted">Sign out of this device</p>
+              <button
+                onClick={logout}
+                className="tau-button px-4 py-2.5 md:py-2 bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300 rounded-md text-sm font-medium min-h-[44px] md:min-h-0"
+              >
+                Logout
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

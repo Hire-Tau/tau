@@ -1432,6 +1432,17 @@
   height: 1.375rem;
 }
 
+/* The instance label (which Desktop instance this window shows) only makes
+   sense next to the compact inset title-bar logo; a full-width web masthead
+   never needs it. */
+.tau-app-header-instance {
+  display: none;
+}
+
+:root[data-desktop-shell='inset'] .tau-app-header-instance {
+  display: inline;
+}
+
 /* Everything interactive in the title bar, and any overlay that can cover it,
    must stay clickable rather than drag the window. */
 :root[data-desktop-shell='inset']

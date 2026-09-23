@@ -32,6 +32,12 @@ export interface DesktopShell {
   fullscreen(): Promise<boolean>
   onFullscreenChange(listener: (fullscreen: boolean) => void): () => void
 }
+export type DesktopInstanceKind = 'local' | 'attached' | 'remote'
+export interface DesktopInstance {
+  kind: DesktopInstanceKind
+  name: string
+  disconnect?(): Promise<void>
+}
 /**
  * The Tau Desktop preload bridge. Members added after the first release are
  * optional: older and newer desktop builds keep `version: 1`, so feature-detect
@@ -44,6 +50,8 @@ export interface DesktopBridge {
   setNotificationsEnabled?(enabled: boolean): Promise<boolean>
   updates?: DesktopUpdates
   shell?: DesktopShell
+  instance?: DesktopInstance
+  notificationsPolledByShell?: boolean
 }
 declare global {
   interface Window {
@@ -78,4 +86,14 @@ export function desktopShell(): DesktopShell | undefined {
 export function desktopNotificationToggle(): ((enabled: boolean) => Promise<boolean>) | undefined {
   const bridge = desktopBridge()
   return typeof bridge?.setNotificationsEnabled === 'function' ? bridge.setNotificationsEnabled.bind(bridge) : undefined
+}
+
+const DESKTOP_INSTANCE_KINDS = new Set<DesktopInstanceKind>(['local', 'attached', 'remote'])
+
+/** Which Desktop instance this window shows, when this desktop build reports it. */
+export function desktopInstance(): DesktopInstance | undefined {
+  const instance = desktopBridge()?.instance
+  return instance && DESKTOP_INSTANCE_KINDS.has(instance.kind) && typeof instance.name === 'string'
+    ? instance
+    : undefined
 }

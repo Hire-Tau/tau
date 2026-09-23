@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import type { ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -324,6 +324,39 @@ describe('navigation keyboard shortcuts', () => {
     expect(reachable).not.toContain('/chat')
     expect(reachable).not.toContain('/schedules')
     expect(reachable.filter(Boolean).sort()).toEqual(['/', '/activity', '/settings', '/squads'])
+  })
+})
+
+describe('desktop instance label', () => {
+  beforeEach(() => {
+    resetTabHistory()
+    permissions = new Set<string>()
+    permissionsLoading = false
+    voiceStatus = { enabled: true }
+  })
+
+  afterEach(() => {
+    delete window.tauDesktopApp
+  })
+
+  test('shows the paired instance name in the inset title bar', () => {
+    window.tauDesktopApp = {
+      version: 1,
+      notificationsEnabled: async () => false,
+      deliverNotifications: async () => {},
+      instance: { kind: 'remote', name: 'noah' },
+    }
+
+    const html = renderWithProviders(<AppHeader usePendingActions={useFixturePendingActions} />)
+
+    expect(html).toContain('data-testid="desktop-instance-label"')
+    expect(html).toMatch(/data-testid="desktop-instance-label"[^>]*>noah</)
+  })
+
+  test('omits the instance label without a desktop bridge', () => {
+    const html = renderWithProviders(<AppHeader usePendingActions={useFixturePendingActions} />)
+
+    expect(html).not.toContain('data-testid="desktop-instance-label"')
   })
 })
 
