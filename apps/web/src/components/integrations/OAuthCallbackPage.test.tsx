@@ -73,6 +73,44 @@ for (const provider of ['github', 'notion'] as const) {
   })
 }
 
+test('slack callback (hinted via sessionStorage at authorization start) completes against the slack provider', async () => {
+  window.sessionStorage.setItem('tauOAuthProviderHint', 'slack')
+  let path = ''
+  globalThis.fetch = (async (input) => {
+    path = String(input)
+    return Response.json({ returnTo: '/settings' })
+  }) as typeof fetch
+  const redirect = spyOn(window.location, 'replace').mockImplementation(() => {})
+  try {
+    await renderPage()
+    await flushEffects()
+    expect(path).toContain('/integrations/providers/slack/authorization/complete')
+    expect(redirect).toHaveBeenCalledWith('/settings?section=integrations&setting=integration-slack')
+    expect(window.sessionStorage.getItem('tauOAuthProviderHint')).toBeNull()
+  } finally {
+    redirect.mockRestore()
+  }
+})
+
+test('a github-suffixed path wins over a stale provider hint left by an abandoned flow', async () => {
+  window.history.replaceState(null, '', CALLBACK.replace('/callback?', '/callback/github?'))
+  window.sessionStorage.setItem('tauOAuthProviderHint', 'slack')
+  let path = ''
+  globalThis.fetch = (async (input) => {
+    path = String(input)
+    return Response.json({ returnTo: '/settings' })
+  }) as typeof fetch
+  const redirect = spyOn(window.location, 'replace').mockImplementation(() => {})
+  try {
+    await renderPage()
+    await flushEffects()
+    expect(path).toContain('/integrations/providers/github/authorization/complete')
+    expect(redirect).toHaveBeenCalledWith('/settings?section=integrations&setting=integration-github')
+  } finally {
+    redirect.mockRestore()
+  }
+})
+
 test('strips the completion handle from the URL before any network call', async () => {
   const order: string[] = []
   const replaceState = window.history.replaceState.bind(window.history)

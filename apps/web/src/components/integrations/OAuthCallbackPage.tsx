@@ -4,6 +4,7 @@ import { ApiError } from '../../api/client'
 import { callbackIntegrationAuthorization, completeIntegrationAuthorization } from '../../api/integrations'
 import {
   clearPreparedOAuthCallback,
+  consumeOAuthProviderHint,
   readPreparedOAuthCallback,
   type BrokerCompletionPayload,
   type LocalCallbackPayload,
@@ -34,7 +35,17 @@ function isTerminalCompletionFailure(error: unknown): boolean {
 }
 
 export function OAuthCallbackPage() {
-  const provider = window.location.pathname.endsWith('/oauth/callback/github') ? 'github' : 'notion'
+  // Only GitHub's callback URL carries a path suffix; every other broker/local
+  // flow shares this path, so the initiating component's sessionStorage hint
+  // disambiguates. Read (and clear) it once so a later render cannot re-read
+  // an already-consumed value.
+  const [provider] = useState<'github' | 'notion' | 'slack'>(() =>
+    window.location.pathname.endsWith('/oauth/callback/github')
+      ? 'github'
+      : consumeOAuthProviderHint() === 'slack'
+        ? 'slack'
+        : 'notion'
+  )
   const queryClient = useQueryClient()
   const initialized = useRef(false)
   const request = useRef<CompletionRequest | undefined>(undefined)
@@ -90,7 +101,9 @@ export function OAuthCallbackPage() {
 
   return (
     <section className="mx-auto max-w-lg rounded-lg border border-th-border bg-surface p-6 text-center">
-      <h1 className="text-lg font-semibold">Connecting {provider === 'github' ? 'GitHub' : 'Notion'}</h1>
+      <h1 className="text-lg font-semibold">
+        Connecting {provider === 'github' ? 'GitHub' : provider === 'slack' ? 'Slack' : 'Notion'}
+      </h1>
       {pageState === 'cancelled' ? (
         <p role="status" aria-live="polite" className="mt-2 text-sm text-muted">
           Authorization cancelled. You can return to Settings.

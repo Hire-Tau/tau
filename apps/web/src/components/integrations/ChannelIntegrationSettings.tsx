@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   configureChannelIntegration,
+  removeIntegration,
   slackAppManifestUrl,
+  startIntegrationAuthorization,
   type ChannelIntegrationSettings as View,
 } from '../../api/integrations'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -12,6 +14,9 @@ import { ProviderChannelRouting } from './ProviderChannelRouting'
 import type { ProviderId } from '../settings/channelFormHelpers'
 import { useSquadsApi } from '../settings/squadsApi'
 import { IntegrationCredentialSettings } from './IntegrationCredentialSettings'
+import { integrationAuthorizationReturnPath } from '../../lib/integrationReturnPath'
+import { rememberOAuthProviderHint } from '../../lib/oauthCallbackBootstrap'
+import { integrationErrorMessage } from '../../lib/integrationErrorMessage'
 
 const identityLabels: Record<string, string> = {
   botId: 'Bot ID',
@@ -49,6 +54,8 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
   const data = view.data as View | undefined
   const [guildId, setGuildId] = useState('')
   useEffect(() => setGuildId(data?.identity?.guildId ?? ''), [data?.identity?.guildId])
+  const [authError, setAuthError] = useState('')
+  const [disconnectArmed, setDisconnectArmed] = useState(false)
 
   const invalidate = () =>
     Promise.all([
@@ -60,12 +67,44 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
     onSuccess: () => invalidate(),
   })
 
+  const managedApp = provider === 'slack' ? data?.managedApp : undefined
+  const managedAvailable = !!managedApp?.available
+  const managedConnection = managedApp?.connection ?? null
+  const managedActive = !!managedApp?.active
+  const managedReconnectNeeded =
+    !!managedConnection &&
+    (managedConnection.authState === 'reauthorization_required' || managedConnection.authState === 'invalid')
+  const authorizeManaged = useMutation({
+    mutationFn: (connectionId?: string) =>
+      startIntegrationAuthorization('slack', {
+        returnTo: integrationAuthorizationReturnPath(),
+        ...(connectionId ? { connectionId } : {}),
+      }),
+    onMutate: () => setAuthError(''),
+    onSuccess: (result) => {
+      if ('authorizationUrl' in result) {
+        rememberOAuthProviderHint('slack')
+        window.location.assign(result.authorizationUrl)
+      }
+    },
+    onError: (failure) => setAuthError(integrationErrorMessage(failure, "Couldn't start Slack login.")),
+  })
+  const disconnectManaged = useMutation({
+    mutationFn: (connectionId: string) => removeIntegration(connectionId),
+    onMutate: () => setDisconnectArmed(false),
+    onSuccess: () => invalidate(),
+  })
+
   const hint = providerHints[provider]
   const connected = data?.connection?.source === 'connection' && data.connection.authState === 'authenticated'
-  const routingReady = !!data?.identity && (provider !== 'discord' || !!data.identity.guildId)
+  // Whichever connection is actually active for the provider (a usable managed
+  // Slack connection wins over the manual one) is what `routing` reflects, so
+  // keying off it — rather than the manual-only `identity` — shows the default
+  // squad picker for a managed-only Slack connection too.
+  const routingReady = !!data?.routing
 
-  return (
-    <div className="space-y-6">
+  const manualSetupSection = (
+    <>
       <div className="space-y-1 text-sm">
         <p className="text-muted">{hint.where}</p>
         <p className="text-muted">{hint.what}</p>
@@ -75,6 +114,13 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
           </a>
         )}
       </div>
+
+      {managedActive && (
+        <p className="text-sm text-muted">
+          Tau's Slack app is connected and handling messages. Your own app's credentials are kept but unused while it's
+          connected.
+        </p>
+      )}
 
       <IntegrationCredentialSettings provider={provider} canWrite={canWrite} />
 
@@ -110,10 +156,115 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
               <div className="text-muted">
                 {provider === 'discord' ? 'Interactions Endpoint URL' : 'Request URL (slash commands and events)'}
               </div>
-              <code className="block font-mono text-xs text-primary break-all select-all">{data.webhook.url}</code>
+              {data.webhook.delivery === 'relay' ? (
+                <p className="text-muted">Events arrive through Tau Cloud while the Tau Slack app is connected.</p>
+              ) : (
+                <code className="block font-mono text-xs text-primary break-all select-all">{data.webhook.url}</code>
+              )}
             </div>
           )}
         </section>
+      )}
+    </>
+  )
+
+  return (
+    <div className="space-y-6">
+      {provider === 'slack' && managedAvailable && (
+        <section className="space-y-3 text-sm" aria-label="Tau Slack app">
+          <h4 className="font-medium text-primary">Tau Slack app</h4>
+          {!managedConnection ? (
+            <>
+              <p className="text-muted">
+                Connect Tau's Slack app to your workspace — no app to create, no secrets to paste.
+              </p>
+              {canWrite && (
+                <button
+                  type="button"
+                  className="tau-button tau-button-primary px-3 py-2 text-sm"
+                  disabled={authorizeManaged.isPending}
+                  onClick={() => authorizeManaged.mutate(undefined)}
+                >
+                  Add to Slack
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <div>
+                <p className="text-sm font-medium text-primary">
+                  {managedConnection.teamName ?? managedConnection.teamId ?? 'Slack workspace'}
+                </p>
+                <p className="text-xs text-muted">
+                  {managedConnection.teamId && `${managedConnection.teamId} · `}
+                  {managedConnection.authState === 'authenticated'
+                    ? managedConnection.healthState
+                    : 'Reconnect required'}
+                  {managedConnection.lastErrorCode && ` (${managedConnection.lastErrorCode})`}
+                </p>
+              </div>
+              {canWrite && (
+                <div className="flex flex-wrap gap-2">
+                  {managedReconnectNeeded && (
+                    <button
+                      type="button"
+                      className="tau-button text-xs"
+                      disabled={authorizeManaged.isPending}
+                      onClick={() => authorizeManaged.mutate(managedConnection.id)}
+                    >
+                      Reconnect
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="tau-button text-xs"
+                    disabled={disconnectManaged.isPending}
+                    onClick={() => {
+                      if (!disconnectArmed) {
+                        setDisconnectArmed(true)
+                        return
+                      }
+                      disconnectManaged.mutate(managedConnection.id)
+                    }}
+                  >
+                    {disconnectArmed ? 'Confirm disconnect' : 'Disconnect'}
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+          {authError && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <p role="alert" className="text-danger">
+                {authError}
+              </p>
+              {canWrite && (
+                <button
+                  type="button"
+                  className="tau-button px-3 py-1.5 text-xs"
+                  disabled={authorizeManaged.isPending}
+                  onClick={() => authorizeManaged.mutate(authorizeManaged.variables)}
+                >
+                  Retry
+                </button>
+              )}
+            </div>
+          )}
+          {disconnectManaged.isError && (
+            <p role="alert" className="text-danger">
+              {disconnectManaged.error.message}
+            </p>
+          )}
+        </section>
+      )}
+
+      {provider === 'slack' && managedAvailable ? (
+        <details className="space-y-3">
+          <summary className="cursor-pointer text-sm font-medium text-primary">Use your own Slack app</summary>
+          <div className="mt-3 space-y-6">{manualSetupSection}</div>
+        </details>
+      ) : (
+        manualSetupSection
       )}
 
       {data && (

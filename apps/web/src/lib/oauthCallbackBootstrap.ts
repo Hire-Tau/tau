@@ -5,6 +5,7 @@ const BROKER_STATE_KEY = 'tauOAuthCompletion'
 const LOCAL_STATE_KEY = 'tauOAuthLocalCallback'
 const OUTCOME_STATE_KEY = 'tauOAuthCallbackOutcome'
 const ROUTER_HISTORY_KEYS = new Set(['idx', 'key', 'usr'])
+const PROVIDER_HINT_KEY = 'tauOAuthProviderHint'
 
 export type BrokerCompletionPayload = { localFlowId: string; handle: string }
 export type LocalCallbackPayload = { state: string; code?: string; denied?: true }
@@ -112,4 +113,31 @@ export function readPreparedOAuthCallback(): PreparedOAuthCallback | undefined {
 
 export function clearPreparedOAuthCallback(): void {
   window.history.replaceState(null, '', window.location.pathname)
+}
+
+/**
+ * Only GitHub's callback URL carries a path suffix identifying its provider;
+ * every other broker/local flow (Notion, Slack, …) shares one callback path,
+ * so the initiating component records which provider it started in
+ * sessionStorage right before leaving the page. Not sensitive material — just
+ * a provider key — so sessionStorage (rather than history state) is fine.
+ * Always overwrite on start so an abandoned flow's hint cannot mislabel a
+ * later one; the callback page consumes (and clears) it once.
+ */
+export function rememberOAuthProviderHint(provider: string): void {
+  try {
+    window.sessionStorage.setItem(PROVIDER_HINT_KEY, provider)
+  } catch {
+    // Storage may be unavailable (private browsing); the callback page falls back to its default.
+  }
+}
+
+export function consumeOAuthProviderHint(): string | undefined {
+  try {
+    const value = window.sessionStorage.getItem(PROVIDER_HINT_KEY)
+    window.sessionStorage.removeItem(PROVIDER_HINT_KEY)
+    return value ?? undefined
+  } catch {
+    return undefined
+  }
 }

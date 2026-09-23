@@ -5,7 +5,7 @@ import {
   integrationSettingsPath,
 } from './integrationReturnPath'
 
-for (const provider of ['github', 'notion'] as const) {
+for (const provider of ['github', 'notion', 'slack'] as const) {
   test(`${provider} authorization opens its integration card at root and mounted deployments`, () => {
     for (const base of ['/', '/tau-gh-smoke/']) {
       const destination = `${base}settings?section=integrations&setting=integration-${provider}`

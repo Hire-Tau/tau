@@ -1,4 +1,4 @@
-type OAuthProvider = 'github' | 'notion'
+type OAuthProvider = 'github' | 'notion' | 'slack'
 
 /** Authorization accepts paths only. The callback restores the integration query parameters. */
 export function integrationAuthorizationReturnPath(baseUrl = import.meta.env?.BASE_URL ?? '/') {
