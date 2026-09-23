@@ -114,7 +114,10 @@ describe('external export routes', () => {
     })
 
     expect(response.status).toBe(403)
-    expect(await response.json()).toEqual({ error: 'Human user identity required' })
+    expect(await response.json()).toEqual({
+      error: 'Sign in with your Tau account to turn on external export.',
+      code: 'user_session_required',
+    })
     expect(enable).not.toHaveBeenCalled()
   })
 

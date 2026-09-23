@@ -30,6 +30,7 @@ import type { SafeOAuthAppSettings } from '../services/integrations/authorizatio
 import { describeGitHubAuthorizationError } from '../services/integrations/authorization/github-errors'
 import { GitHubOAuthError } from '@tau/shared/oauth-providers/github/client'
 import { createLogger } from '../lib/infra/logger'
+import { userSessionRequired } from '../services/auth/user-session-required'
 import type { SafeIntegrationCatalogEntry } from '../services/integrations/plugin'
 import type {
   IntegrationAuthorizationStart,
@@ -327,7 +328,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       const denied = await authorize(c, 'integrations:write:linear')
       if (denied) return denied
       const identity = c.get('identity') as Identity | undefined
-      if (identity?.type !== 'user') return c.json({ error: 'User authorization required' }, 403)
+      if (identity?.type !== 'user') return userSessionRequired(c, identity, 'configure Linear webhooks')
       if (!service.linearWebhook) return c.json({ error: 'Webhook configuration unavailable' }, 404)
       try {
         return c.json(await service.linearWebhook.configure(await c.req.json(), `user:${identity.userId}`))
@@ -345,7 +346,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       const denied = await authorize(c, 'integrations:write:github')
       if (denied) return denied
       const identity = c.get('identity') as Identity | undefined
-      if (identity?.type !== 'user') return c.json({ error: 'User authorization required' }, 403)
+      if (identity?.type !== 'user') return userSessionRequired(c, identity, 'configure GitHub webhooks')
       if (!service.githubWebhook) return c.json({ error: 'Webhook configuration unavailable' }, 404)
       try {
         return c.json(await service.githubWebhook.configure(await c.req.json(), `user:${identity.userId}`))
@@ -367,7 +368,8 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       const denied = await authorize(c, `integrations:write:${providerKey}`)
       if (denied) return denied
       const identity = c.get('identity') as Identity | undefined
-      if (identity?.type !== 'user') return c.json({ error: 'User authorization required' }, 403)
+      if (identity?.type !== 'user')
+        return userSessionRequired(c, identity, `configure the ${integrationLabel(providerKey)} app`)
       if (!service.oauthApp) return c.json({ error: 'OAuth application unavailable' }, 404)
       try {
         if (service.oauthApp.get(providerKey).authority === 'platform_broker') {
@@ -384,7 +386,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       const denied = await authorize(c, `integrations:write:${providerKey}`)
       if (denied) return denied
       const identity = c.get('identity') as Identity | undefined
-      if (identity?.type !== 'user') return c.json({ error: 'User authorization required' }, 403)
+      if (identity?.type !== 'user') return userSessionRequired(c, identity, `connect ${integrationLabel(providerKey)}`)
       if (!service.authorization) return c.json({ error: 'Authorization unavailable' }, 503)
       const body = c.req.valid('json')
       try {
@@ -404,7 +406,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       const denied = await authorize(c, 'integrations:write:github')
       if (denied) return denied
       const identity = c.get('identity') as Identity | undefined
-      if (identity?.type !== 'user') return c.json({ error: 'User authorization required' }, 403)
+      if (identity?.type !== 'user') return userSessionRequired(c, identity, 'connect GitHub')
       const id = z.string().uuid().safeParse(c.req.param('id'))
       if (!id.success) return c.json({ error: 'Invalid authorization' }, 400)
       if (!service.authorization?.pollDevice) return c.json({ error: 'Authorization unavailable' }, 503)
@@ -418,7 +420,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       const denied = await authorize(c, 'integrations:write:github')
       if (denied) return denied
       const identity = c.get('identity') as Identity | undefined
-      if (identity?.type !== 'user') return c.json({ error: 'User authorization required' }, 403)
+      if (identity?.type !== 'user') return userSessionRequired(c, identity, 'connect GitHub')
       const id = z.string().uuid().safeParse(c.req.param('id'))
       if (!id.success) return c.json({ error: 'Invalid authorization' }, 400)
       if (!service.authorization?.cancelDevice) return c.json({ error: 'Authorization unavailable' }, 503)
@@ -435,7 +437,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       const denied = await authorize(c, `integrations:write:${providerKey}`)
       if (denied) return denied
       const identity = c.get('identity') as Identity | undefined
-      if (identity?.type !== 'user') return c.json({ error: 'User authorization required' }, 403)
+      if (identity?.type !== 'user') return userSessionRequired(c, identity, `connect ${integrationLabel(providerKey)}`)
       if (!service.authorization) return c.json({ error: 'Authorization unavailable' }, 503)
       const body = c.req.valid('json')
       try {
@@ -458,7 +460,7 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       const denied = await authorize(c, `integrations:write:${providerKey}`)
       if (denied) return denied
       const identity = c.get('identity') as Identity | undefined
-      if (identity?.type !== 'user') return c.json({ error: 'User authorization required' }, 403)
+      if (identity?.type !== 'user') return userSessionRequired(c, identity, `connect ${integrationLabel(providerKey)}`)
       if (!service.authorization) return c.json({ error: 'Authorization unavailable' }, 503)
       const body = c.req.valid('json')
       try {
@@ -741,6 +743,18 @@ function redactSummary(connection: IntegrationConnectionSummary): IntegrationCon
     enabled: connection.enabled,
     healthState: connection.healthState,
   }
+}
+
+/** Names a provider in a sentence ("connect GitHub"); unknown keys stay generic. */
+const INTEGRATION_LABELS: Record<string, string> = {
+  bigbrain: 'Bigbrain',
+  github: 'GitHub',
+  linear: 'Linear',
+  notion: 'Notion',
+}
+
+function integrationLabel(providerKey: string): string {
+  return INTEGRATION_LABELS[providerKey] ?? 'this integration'
 }
 
 function parseProviderParam(value: string): string | null {

@@ -71,6 +71,7 @@ import { computeDerivedStates } from '../services/work-streams/derived-state'
 import { listWaitHistory, toWaitJson } from '../services/work-streams/waits'
 import { db, workStreamFlowRuns } from '../db'
 import { inArray } from 'drizzle-orm'
+import { userSessionRequired } from '../services/auth/user-session-required'
 import { ciNotificationSchema, settleCiNotification } from '../services/work-streams/ci-notifications'
 import {
   cleanupExpiredWorkStreamOrderSnapshots,
@@ -959,7 +960,7 @@ export const workStreamsRouter = new Hono()
     async (c) => {
       const id = await routeWorkStreamId(c)
       const identity = await resolveActingUser(c.get('identity'))
-      if (identity?.type !== 'user') return c.json({ error: 'Only users can subscribe' }, 403)
+      if (identity?.type !== 'user') return userSessionRequired(c, c.get('identity'), 'follow work streams')
       const stream = await WorkStream.find(id)
       if (!stream) return c.json({ error: 'Work stream not found' }, 404)
       const body = await parseOptionalJsonObjectBody(c, {} as Record<string, unknown>)
@@ -976,7 +977,7 @@ export const workStreamsRouter = new Hono()
     async (c) => {
       const id = await routeWorkStreamId(c)
       const identity = await resolveActingUser(c.get('identity'))
-      if (identity?.type !== 'user') return c.json({ error: 'Only users can unsubscribe' }, 403)
+      if (identity?.type !== 'user') return userSessionRequired(c, c.get('identity'), 'follow work streams')
       const stream = await WorkStream.find(id)
       if (!stream) return c.json({ error: 'Work stream not found' }, 404)
       await unsubscribeFromWorkStream(id, identity.userId)

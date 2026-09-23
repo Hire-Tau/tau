@@ -3,6 +3,7 @@ import { and, eq, gt, isNull } from 'drizzle-orm'
 import { db, users, channelIdentityLinks, channelLinkChallenges, channelInstances } from '../db'
 import type { Identity } from '../services/rbac'
 import { startChannelLink, confirmChannelLink } from '../services/channel-access'
+import { userSessionRequired } from '../services/auth/user-session-required'
 
 export const channelLinksRouter = new Hono<{
   Variables: { userId: string; identity: Identity; authzChecked: boolean }
@@ -10,7 +11,7 @@ export const channelLinksRouter = new Hono<{
   .use('*', async (c, next) => {
     const identity = c.get('identity')
     c.set('authzChecked', true)
-    if (identity?.type !== 'user') return c.json({ error: 'Sign in to a Tau account to manage linked accounts.' }, 403)
+    if (identity?.type !== 'user') return userSessionRequired(c, identity, 'manage linked accounts')
     const [user] = await db
       .select({ id: users.id })
       .from(users)

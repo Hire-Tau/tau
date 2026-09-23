@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import type { Identity } from '../services/rbac'
+import { userSessionRequired } from '../services/auth/user-session-required'
 import type { ExportConsentService, EligibleExportAgent } from '../services/integrations/export/consent-service'
 
 const enableSchema = z
@@ -40,7 +41,7 @@ export function createExternalExportRouter(dependencies: ExternalExportRoutes): 
     })
     .post('/:id/external-export', zValidator('json', enableSchema), async (c) => {
       const identity = c.get('identity') as Identity | undefined
-      if (identity?.type !== 'user') return c.json({ error: 'Human user identity required' }, 403)
+      if (identity?.type !== 'user') return userSessionRequired(c, identity, 'turn on external export')
       const agent = await dependencies.findAgent(c.req.param('id'))
       if (!agent?.squadId) return c.json({ error: 'Agent not found' }, 404)
       c.set('authzChecked', true)
