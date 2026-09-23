@@ -13,7 +13,7 @@ const secondaryButton = clsx(
 const primaryButton = clsx(
   'tau-button',
   'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
-  'bg-accent text-white hover:bg-accent-hover active:bg-accent-active',
+  'bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-active',
   'disabled:opacity-50 disabled:cursor-not-allowed'
 )
 

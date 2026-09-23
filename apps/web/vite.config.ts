@@ -471,7 +471,11 @@ export default defineConfig(({ mode, command }) => {
         injectRegister: false,
         strategies: 'injectManifest',
         injectManifest: {
-          maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+          // The app chunk has been precached near this size for a while (the
+          // theme token system plus ordinary main growth pushed it just past
+          // 4 MiB). Keep offline behavior unchanged by allowing a little more
+          // headroom instead of dropping the app chunk from the precache.
+          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
           // The link-preview image is for crawlers, not the offline shell.
           globIgnores: ['**/voice/dtln/dtln.js', '**/social-preview.png'],
         },
