@@ -1339,5 +1339,6 @@ function map(row: typeof integrationConnections.$inferSelect): IntegrationConnec
     validatedAt: row.validatedAt,
     validationExpiresAt: row.validationExpiresAt,
     lastErrorCode: row.lastErrorCode,
+    updatedAt: row.updatedAt,
   }
 }

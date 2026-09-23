@@ -23,6 +23,7 @@ export interface IntegrationConnectionRecord<C = unknown> {
   validatedAt: Date | null
   validationExpiresAt: Date | null
   lastErrorCode: string | null
+  updatedAt: Date
 }
 
 /** A global connection resolved in a squad assignment context for runtime use. */

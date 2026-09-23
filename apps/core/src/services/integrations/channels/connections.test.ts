@@ -132,6 +132,7 @@ async function createManagedSlackConnection(
     teamName?: string
     appId?: string
     enable?: boolean
+    displayName?: string
   } = {}
 ) {
   const repository = new DbIntegrationConnectionRepository()
@@ -149,7 +150,7 @@ async function createManagedSlackConnection(
   const created = await service.create({
     providerKey: 'slack',
     adapterVersion: 1,
-    displayName: 'Acme (managed)',
+    displayName: options.displayName ?? 'Acme (managed)',
     configuration: {
       version: 1,
       teamId: options.teamId ?? 'T-managed',
@@ -373,6 +374,36 @@ test("manual configure() never rotates the managed row, even when it is the conn
   const rows = await db.select().from(integrationConnections).where(eq(integrationConnections.providerKey, 'slack'))
   expect(rows).toHaveLength(2)
   expect(rows.map((row) => row.clientAuthority).sort()).toEqual(['local', 'platform_broker'])
+})
+
+test('a duplicate managed broker row is broken by most-recently-updated, not by a random materialRevision', async () => {
+  const connections = make({ authority: 'platform_broker' })
+  const older = await createManagedSlackConnection(connections.plugins, {
+    teamId: 'T-older',
+    botUserId: 'U-older',
+    displayName: 'Acme (managed) — older',
+  })
+  const newer = await createManagedSlackConnection(connections.plugins, {
+    teamId: 'T-newer',
+    botUserId: 'U-newer',
+    displayName: 'Acme (managed) — newer',
+  })
+  // materialRevision is a random UUID with no relationship to recency. Force the
+  // *older* row's revision to sort after the *newer* row's, so a comparator that
+  // (wrongly) orders by materialRevision would still pick the older row here —
+  // only ordering by updatedAt picks the row that was actually written last.
+  await db
+    .update(integrationConnections)
+    .set({ materialRevision: 'ffffffff-ffff-ffff-ffff-ffffffffffff', updatedAt: new Date(Date.now() - 60_000) })
+    .where(eq(integrationConnections.id, older.id))
+  await db
+    .update(integrationConnections)
+    .set({ materialRevision: '00000000-0000-0000-0000-000000000000', updatedAt: new Date() })
+    .where(eq(integrationConnections.id, newer.id))
+
+  await connections.refresh()
+  expect(connections.get('slack')).toMatchObject({ configuration: { teamId: 'T-newer' } })
+  expect(connections.storedManaged('slack')).toMatchObject({ configuration: { teamId: 'T-newer' } })
 })
 
 test('view() exposes managedApp: availability, identity, health and whether it is what the transport uses', async () => {

@@ -18,7 +18,7 @@ import { channelPlugins, type SlackConfiguration } from './plugins'
  * your own app") Slack connection is never a relay target, regardless of
  * this instance's current OAuth authority.
  */
-export async function resolveManagedSlackConnection(connectionId?: string) {
+export async function resolveManagedSlackConnection(connectionId: string) {
   const rows = await db
     .select()
     .from(integrationConnections)
@@ -33,7 +33,7 @@ export async function resolveManagedSlackConnection(connectionId?: string) {
         eq(integrationConnections.healthState, 'healthy'),
         eq(integrationConnections.validatedRevision, integrationConnections.materialRevision),
         gt(integrationConnections.validationExpiresAt, sql`clock_timestamp()`),
-        connectionId ? eq(integrationConnections.id, connectionId) : undefined
+        eq(integrationConnections.id, connectionId)
       )
     )
     .limit(2)

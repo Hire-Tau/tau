@@ -330,13 +330,23 @@ export class ChannelConnections {
     return this.#loaded
   }
 
+  /**
+   * `materialRevision` is a random UUID with no relationship to recency — sorting
+   * by it picks an arbitrary row, not the most recently written one. Break ties
+   * by `updatedAt` instead so an interrupted save (or an accidental duplicate
+   * broker row) always resolves to whichever row was actually touched last.
+   */
+  #newestByUpdatedAt(rows: readonly IntegrationConnectionRecord[]): IntegrationConnectionRecord | undefined {
+    return [...rows].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0]
+  }
+
   /** The manually-configured ("bring your own app") row: the only one `configure()`/`migrateLegacy()` ever touch. */
   async #localRow(provider: ChannelProviderKey): Promise<IntegrationConnectionRecord | undefined> {
     const rows = (await this.#repository.list(provider)).filter(
       (row) => row.adapterVersion === 1 && row.clientAuthority === 'local'
     )
     // Newest wins if an interrupted save ever left two behind.
-    return rows.sort((a, b) => b.materialRevision.localeCompare(a.materialRevision))[0]
+    return this.#newestByUpdatedAt(rows)
   }
 
   /** The broker-issued "Add to Slack" row, only ever offered under broker authority. Slack only, for now. */
@@ -347,7 +357,8 @@ export class ChannelConnections {
     const rows = (await this.#repository.list(provider)).filter(
       (row) => row.adapterVersion === 1 && row.clientAuthority === authority
     )
-    return rows.sort((a, b) => b.materialRevision.localeCompare(a.materialRevision))[0]
+    // Newest wins if a connect intent ever left more than one broker row behind.
+    return this.#newestByUpdatedAt(rows)
   }
 
   async #load<K extends ChannelProviderKey>(provider: K): Promise<ChannelConnectionState<K> | undefined> {
