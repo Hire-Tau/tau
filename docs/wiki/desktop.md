@@ -21,3 +21,7 @@ The web app detects the desktop preload bridge (`window.tauDesktopApp`, `version
 - `updates` replaces the git updater on Settings → Updates with the app's native update status and **Restart to update**.
 - `setNotificationsEnabled` adds the **Desktop notifications** switch to Settings → Notification Rules (see [Desktop notifications](desktop-notifications.md)).
 - `shell.insetTitleBar` marks the document `data-desktop-shell="inset"` while the window is not fullscreen. The app header then becomes the title bar: 56px tall, a window drag region with interactive controls and overlays excluded, and the logo kept clear of the window controls. Browsers never receive the mark.
+
+The bridge's presence also changes some web app behavior:
+
+- An invite link for a pending admin in **Settings → Users** also offers **Open in Tau**. It opens passkey setup in the current window, because a passkey created in an external browser cannot be used in the desktop app. Links for other invitees are copied as usual.

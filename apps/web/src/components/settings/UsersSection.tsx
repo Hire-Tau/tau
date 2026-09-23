@@ -19,6 +19,7 @@ import { seatUsageLine } from './seatPricing'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton, LoadingSurface, SkeletonBlock, SkeletonRows } from '../loading/Skeleton'
 import { InviteUserForm } from './InviteUserForm'
+import { InviteLinkPanel, type IssuedInviteLink } from './InviteLinkPanel'
 
 export function UsersSection() {
   const queryClient = useQueryClient()
@@ -40,7 +41,7 @@ export function UsersSection() {
   // type and can't be held by a person, so they never belong in a human picker.
   const assignableRoles = roles.filter(isUserAssignableRole)
   const [showInvite, setShowInvite] = useState(false)
-  const [inviteLink, setInviteLink] = useState<string | null>(null)
+  const [inviteLink, setInviteLink] = useState<IssuedInviteLink | null>(null)
   const [expandedUser, setExpandedUser] = useState<string | null>(null)
   const deleteMutation = useMutation({
     mutationFn: deleteUser,
@@ -86,33 +87,13 @@ export function UsersSection() {
       {showInvite && <InviteUserForm onCancel={() => setShowInvite(false)} />}
 
       {inviteLink && (
-        <div className="tau-section py-4 space-y-2 border-green-300 dark:border-green-700">
-          <p className="text-sm font-medium text-primary">Invite link created</p>
-          <p className="text-xs text-muted">
-            Email isn’t configured, so share this one-time link with the invitee. It takes them straight to passkey
-            setup and works once (valid 7 days):
-          </p>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 px-2 py-1.5 text-xs bg-surface-secondary rounded border border-th-border break-all">
-              {inviteLink}
-            </code>
-            <button
-              onClick={() => navigator.clipboard?.writeText(inviteLink)}
-              className="tau-button px-2 py-1.5 text-xs font-medium text-secondary bg-surface-secondary rounded hover:bg-surface-hover shrink-0"
-            >
-              Copy
-            </button>
-          </div>
-          <button
-            onClick={() => {
-              setInviteLink(null)
-              setShowInvite(false)
-            }}
-            className="tau-button text-xs text-muted hover:text-primary"
-          >
-            Done
-          </button>
-        </div>
+        <InviteLinkPanel
+          invite={inviteLink}
+          onDone={() => {
+            setInviteLink(null)
+            setShowInvite(false)
+          }}
+        />
       )}
 
       <div className="tau-section overflow-hidden">
@@ -171,7 +152,7 @@ function UserRow({
   onToggleExpand: () => void
   onDelete: () => void
   isDeleting: boolean
-  onInviteLink: (url: string) => void
+  onInviteLink: (invite: IssuedInviteLink) => void
   onToggleDisable: () => void
 }) {
   const queryClient = useQueryClient()
@@ -226,7 +207,7 @@ function UserRow({
     onSuccess: (result) => {
       // The list carries the invite's expiry, and the resend moved it.
       queryClient.invalidateQueries({ queryKey: queryKeys.users.all })
-      if (result.inviteUrl) onInviteLink(result.inviteUrl)
+      if (result.inviteUrl) onInviteLink({ url: result.inviteUrl, forAdmin: user.isAdmin === true })
     },
   })
   const resendFeedback = resendInviteFeedback(resendMutation)
