@@ -513,8 +513,8 @@
 /* Tau Desktop inset title bar (html[data-desktop-shell='inset'], set by
    useDesktopShellChrome only inside the desktop app while windowed). The macOS
    window controls sit over the top-left of the page, so the app header becomes
-   the title bar: exactly 56px tall, a window drag region, and its logo never
-   starts left of x=80px. Browsers and mobile never get the attribute. */
+   the title bar: exactly 56px tall, a window drag region, with a compact logo 24px after
+   the window controls. Browsers and mobile never get the attribute. */
 :root[data-desktop-shell='inset'] .tau-app-header {
   height: 56px;
   padding-top: 0;
@@ -525,10 +525,24 @@
   height: 100%;
   padding-top: 0;
   padding-bottom: 0;
-  /* 80px clears the window controls. The bar is centered at max-w-7xl (80rem),
-     so on windows wide enough that its centering offset already clears them,
-     keep the usual 1.5rem gutter aligned with the page content. */
-  padding-left: max(1.5rem, calc(80px - max(0px, (100vw - 80rem) / 2)));
+  /* Title-bar chrome spans the window like a native toolbar: the logo sits a
+     fixed 24px after the window controls (which end near x=72px) at every
+     width instead of drifting with the page's centered content column. */
+  max-width: none;
+  padding-left: 96px;
+  padding-right: 1rem;
+}
+
+/* A compact app mark rather than a web page masthead. */
+:root[data-desktop-shell='inset'] .tau-app-header-logo {
+  font-size: 1rem;
+  line-height: 1.5rem;
+  font-weight: 600;
+}
+
+:root[data-desktop-shell='inset'] .tau-app-header-logo svg {
+  width: 1.375rem;
+  height: 1.375rem;
 }
 
 /* Everything interactive in the title bar, and any overlay that can cover it,
