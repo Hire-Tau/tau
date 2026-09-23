@@ -83,7 +83,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
       <header className="tau-app-header tau-glass relative border-b border-panel-border shrink-0 z-10 safe-area-pt safe-area-status-bar-scrim">
         <div className="tau-app-header-bar max-w-7xl mx-auto py-2.5 md:py-3 px-4 md:px-6 flex items-center gap-4">
           {/* Left: Logo */}
-          <h1 className="text-xl md:text-2xl font-bold text-primary">
+          <h1 className="tau-app-header-logo text-xl md:text-2xl font-bold text-primary">
             <Link to="/" className="flex items-center gap-2 hover:text-blue-600 transition-colors">
               <TauLogo />
               Tau
