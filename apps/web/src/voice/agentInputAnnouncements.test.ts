@@ -157,3 +157,12 @@ describe('createHandleAgentWaitingInputEvent', () => {
     expect(getState().spokenWaitingInputAgentIds).toEqual([])
   })
 })
+
+test('spoken waiting-input prompts include each question’s context', async () => {
+  const { buildAgentWaitingInputPrompt } = await import('./agentInputAnnouncements')
+  const agent = waitingAgent('a1')
+  agent.questionData = {
+    questions: [{ id: 'q1', type: 'text', question: 'Deploy now?', context: 'Tests passed on main.' }],
+  }
+  expect(buildAgentWaitingInputPrompt(agent)).toContain('1. Deploy now? Context: Tests passed on main.')
+})

@@ -197,6 +197,12 @@ retries, followed by Tau's existing provider failover handling.
 1. Agent calls `ask_human` tool → execution completes, agent goes to `waiting-input`
 2. Human answers → new execution queued with answer as message, agent goes to `idle → active`
 
+Each question has an `id`, a `type` (`text`, `select`, or `multi-select`), the `question`, and optional
+`context`, `options`, `default`, and `optional` fields. Questions are usually answered from the Feed, a
+notification, or a phone rather than the agent's conversation, so `context` (Markdown, up to 2,000
+characters) carries the background shown beneath the question. On `text` questions, `options` are
+suggested answers: the answer form shows them as chips that fill the editable answer.
+
 ## How Each Use Case Works
 
 ### Chat queue display

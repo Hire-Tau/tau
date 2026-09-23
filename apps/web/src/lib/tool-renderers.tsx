@@ -404,6 +404,7 @@ const askHumanRenderer: ToolRenderer = {
       id: string
       type?: string
       question: string
+      context?: string
       options?: { value: string; label?: string }[]
       optional?: boolean
     }> = Array.isArray(args.questions) ? args.questions : []
@@ -436,6 +437,9 @@ const askHumanRenderer: ToolRenderer = {
                   {q.optional && <span className="text-[10px] text-muted italic">optional</span>}
                 </div>
                 <p className="text-sm text-primary mt-1">{q.question}</p>
+                {typeof q.context === 'string' && q.context.trim() && (
+                  <p className="text-xs text-muted mt-1 whitespace-pre-wrap">{q.context.trim()}</p>
+                )}
                 {q.options && q.options.length > 0 && (
                   <div className="mt-1.5 flex flex-wrap gap-1">
                     {q.options.map((opt) => (

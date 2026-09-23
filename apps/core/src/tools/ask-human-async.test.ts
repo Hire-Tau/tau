@@ -159,4 +159,71 @@ describe('async ask_human without blocking (managers and assistants)', () => {
     expect(JSON.stringify(tool.parameters)).toMatch(/blocking/)
     expect(tool.description).toContain('Set blocking true')
   })
+  test('records trimmed context and text suggestions, and asks agents to give context', async () => {
+    const createQuestion = mock(async (_origin: unknown, _data: unknown, _options: unknown) => ({
+      ...record,
+      openedWaitWorkStreamIds: [],
+    }))
+    const tool = createAsyncAskHumanTool(
+      { agentId: 'agent-1', executionId: 'execution-1', flushPersistence: async () => {} },
+      { createQuestion }
+    )
+    await tool.execute(
+      'call-1',
+      {
+        questions: [
+          {
+            id: 'branch',
+            question: 'Which branch should I deploy?',
+            context: '  The release build passed on both branches.  ',
+            options: [{ value: 'main' }, { value: 'release/1.4', label: 'Release 1.4' }],
+          },
+          { id: 'notes', question: 'Anything else?', context: '   ' },
+        ],
+      },
+      undefined,
+      undefined,
+      {} as any
+    )
+    expect(createQuestion.mock.calls[0]?.[1]).toEqual({
+      questions: [
+        {
+          id: 'branch',
+          type: 'text',
+          question: 'Which branch should I deploy?',
+          context: 'The release build passed on both branches.',
+          options: [{ value: 'main' }, { value: 'release/1.4', label: 'Release 1.4' }],
+          default: undefined,
+          optional: undefined,
+        },
+        {
+          id: 'notes',
+          type: 'text',
+          question: 'Anything else?',
+          options: undefined,
+          default: undefined,
+          optional: undefined,
+        },
+      ],
+    })
+    expect(tool.description).toContain('give it context')
+    expect(JSON.stringify(tool.parameters)).toContain('suggested answers the human can pick and edit')
+  })
+
+  test('rejects context longer than the display limit', async () => {
+    const createQuestion = mock(async () => ({ ...record, openedWaitWorkStreamIds: [] }))
+    const tool = createAsyncAskHumanTool(
+      { agentId: 'agent-1', executionId: 'execution-1', flushPersistence: async () => {} },
+      { createQuestion }
+    )
+    const result = await tool.execute(
+      'call-1',
+      { questions: [{ id: 'long', question: 'Proceed?', context: 'x'.repeat(2001) }] },
+      undefined,
+      undefined,
+      {} as any
+    )
+    expect(result.details).toEqual({ error: "Question 'long': context must be at most 2000 characters" })
+    expect(createQuestion).not.toHaveBeenCalled()
+  })
 })
