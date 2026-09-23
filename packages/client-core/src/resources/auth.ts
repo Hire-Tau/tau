@@ -68,7 +68,7 @@ export interface VerificationResult {
   code?: string
 }
 
-export type DevicePlatform = 'ios' | 'android' | 'cli'
+export type DevicePlatform = 'ios' | 'android' | 'cli' | 'desktop'
 
 export interface DeviceAuthorizationPreview {
   name: string
