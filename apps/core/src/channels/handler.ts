@@ -23,7 +23,7 @@ const log = createLogger('channel-handler')
 // Types
 // =============================================================================
 
-interface HandlerResult {
+export interface HandlerResult {
   /** Response to return to the webhook caller */
   response: unknown
   /** Whether to return empty body (provider posted response via API) */
@@ -144,6 +144,30 @@ export async function handleChannelEvent(
   }
 
   return { response: { ok: true } }
+}
+
+/**
+ * The tail shared by every caller that has already parsed a webhook payload
+ * into a `ChannelEvent`: resolve the platform id and run `handleChannelEvent`,
+ * or reply with a safe configuration error when the platform id is missing.
+ * Used by both the direct channel webhook route and the hosted Slack relay
+ * dispatcher so their handling of a parsed event never drifts apart.
+ */
+export async function dispatchParsedChannelEvent(
+  provider: ChannelProvider,
+  payload: Record<string, unknown>,
+  parsed: ChannelEvent
+): Promise<HandlerResult> {
+  const platformId = provider.extractPlatformId(payload)
+  if (!platformId) {
+    log.warn(`${provider.name}: No platform ID found`)
+    if (provider.sendsResponseViaApi) {
+      await sendChannelConfigurationError(provider, parsed)
+      return { response: null, emptyResponse: true }
+    }
+    return { response: provider.formatErrorResponse('Invalid request') }
+  }
+  return handleChannelEvent(provider, parsed, platformId)
 }
 
 // =============================================================================

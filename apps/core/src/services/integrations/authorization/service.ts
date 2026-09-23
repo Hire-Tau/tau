@@ -7,6 +7,7 @@ import type { AuthorizationFlowReceiptRepository } from './flow-repository'
 import { OAuthTransportError, type OAuthTransport } from './transport'
 import { PlatformRequestError } from '../../platform/instance-client'
 import { BrokerUnconfiguredError } from './authority'
+import { oauthPluginView, type OAuthPluginView } from '../oauth-plugin-view'
 
 const STATE_TTL_MS = 10 * 60 * 1_000
 export const BROKER_COMPLETION_HANDLE_PATTERN = /^[A-Za-z0-9_-]{43}$/
@@ -293,14 +294,11 @@ export class IntegrationAuthorizationService {
     return { returnTo: state.returnTo }
   }
 
-  #requireOAuthPlugin(providerKey: string): RegisteredPlugin & {
-    authorization: Extract<RegisteredPlugin['authorization'], { kind: 'oauth2' }>
-  } {
+  #requireOAuthPlugin(providerKey: string): OAuthPluginView<unknown> {
     const plugin = this.#dependencies.resolvePlugin(providerKey)
-    if (!plugin || plugin.authorization.kind !== 'oauth2') throw new AuthorizationFlowError('unsupported_provider')
-    return plugin as RegisteredPlugin & {
-      authorization: Extract<RegisteredPlugin['authorization'], { kind: 'oauth2' }>
-    }
+    const view = plugin && oauthPluginView(plugin, this.#dependencies.transport.authority)
+    if (!view) throw new AuthorizationFlowError('unsupported_provider')
+    return view
   }
 
   async #audit(

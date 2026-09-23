@@ -34,7 +34,17 @@ function isTerminalCompletionFailure(error: unknown): boolean {
 }
 
 export function OAuthCallbackPage() {
-  const provider = window.location.pathname.endsWith('/oauth/callback/github') ? 'github' : 'notion'
+  // Only GitHub's callback URL carries a path suffix; every other broker/local
+  // flow shares this path, so `prepareOAuthCallbackHistory` carries the
+  // initiating component's provider hint in the same reload-surviving history
+  // state as the completion payload (see oauthCallbackBootstrap.ts) — reading
+  // it here, rather than consuming a one-shot sessionStorage value, means a
+  // reload after a retryable failure still knows the right provider.
+  const [provider] = useState<'github' | 'notion' | 'slack'>(() => {
+    if (window.location.pathname.endsWith('/oauth/callback/github')) return 'github'
+    const prepared = readPreparedOAuthCallback()
+    return prepared?.kind === 'broker' && prepared.provider === 'slack' ? 'slack' : 'notion'
+  })
   const queryClient = useQueryClient()
   const initialized = useRef(false)
   const request = useRef<CompletionRequest | undefined>(undefined)
@@ -90,7 +100,9 @@ export function OAuthCallbackPage() {
 
   return (
     <section className="mx-auto max-w-lg rounded-lg border border-th-border bg-surface p-6 text-center">
-      <h1 className="text-lg font-semibold">Connecting {provider === 'github' ? 'GitHub' : 'Notion'}</h1>
+      <h1 className="text-lg font-semibold">
+        Connecting {provider === 'github' ? 'GitHub' : provider === 'slack' ? 'Slack' : 'Notion'}
+      </h1>
       {pageState === 'cancelled' ? (
         <p role="status" aria-live="polite" className="mt-2 text-sm text-muted">
           Authorization cancelled. You can return to Settings.

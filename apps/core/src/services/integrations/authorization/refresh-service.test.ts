@@ -33,6 +33,7 @@ const connection: IntegrationConnectionRecord = {
   validatedAt: new Date(),
   validationExpiresAt: new Date(Date.now() + 60_000),
   lastErrorCode: null,
+  updatedAt: new Date(),
 }
 
 function initialCredential(overrides: Partial<OAuthCredentialBundleV1> = {}): OAuthCredentialBundleV1 {

@@ -3,6 +3,8 @@ import { serializeOAuthCredential } from './credential-bundle'
 import { IntegrationRevocationWorker, type IntegrationRevocationRepository } from './revocation-worker'
 import { OAuthTransportError } from './transport'
 import { PlatformRequestError } from '../../platform/instance-client'
+import { oauthPluginView } from '../oauth-plugin-view'
+import type { IntegrationPluginV1, ManagedOAuthDriver } from '../plugin'
 
 function createHarness(error?: Error) {
   const job = {
@@ -193,5 +195,111 @@ describe('IntegrationRevocationWorker', () => {
     expect(await harness.worker.runOnce()).toBe(true)
     expect(harness.cleanup).toEqual(['__integration-credential:test'])
     expect(harness.completed).toEqual(['job-1'])
+  })
+
+  test('a manual+managed provider (Slack-shaped) broker row resolves through the OAuth view and revokes', async () => {
+    // Mirrors the real wiring in runtime.ts: resolvePlugin runs the registered
+    // plugin through oauthPluginView(plugin, job.clientAuthority) so a manual
+    // plugin's managed driver still gets its remote revoke call for a
+    // broker-authority job, while its "kind" everywhere else stays 'manual'.
+    const managed: ManagedOAuthDriver<{ version: 1 }> = {
+      kind: 'oauth2',
+      adapter: 'slack',
+      authorities: ['platform_broker'],
+      identity: () => ({ teamId: 'T1' }),
+      validate: async () => ({ ok: true, grantedScopes: [] }),
+    }
+    const manualWithManagedPlugin: IntegrationPluginV1<{ version: 1 }, { botToken: string }> = {
+      manifestVersion: 1,
+      key: 'slack',
+      adapterVersion: 1,
+      presentation: {
+        label: 'Slack',
+        description: 'Slack',
+        icon: 'slack',
+        connectionMode: 'channel',
+        assignable: false,
+        requiredCapabilities: [],
+      },
+      connection: {
+        parseConfiguration: (value) => value as { version: 1 },
+        safeConfiguration: (value) => value,
+        credential: { parse: (value) => value as { botToken: string }, serialize: (value) => JSON.stringify(value) },
+      },
+      authorization: { kind: 'manual', managed },
+      runtime: {
+        provider: {
+          key: 'slack',
+          adapterVersion: 1,
+          parseConfig: (value) => value as { version: 1 },
+          validate: async () => ({ ok: true, grantedScopes: [] }),
+          capabilities: {},
+        },
+      },
+      sandbox: {
+        packages: [],
+        setupSteps: [],
+        initHooks: [],
+        readiness: [],
+        skills: [],
+        extensions: [],
+        protectedBindings: [],
+      },
+      lifecycle: { refresh: false, revoke: false },
+      classifyError: () => ({ code: 'provider_unavailable', retryable: true }),
+    }
+    const resolvedAuthorities: string[] = []
+    let completed = false
+    const revokeCalls: Array<{ providerKey: string; credentialRef: string; token: string }> = []
+    const repository: IntegrationRevocationRepository = {
+      claim: async () => ({
+        id: 'job-slack-managed',
+        providerKey: 'slack',
+        adapterVersion: 1,
+        clientAuthority: 'platform_broker',
+        credentialRef: '__integration-credential:slack-managed',
+        authorizationFlowId: null,
+        attempts: 0,
+        leaseToken: 'lease-slack-managed',
+      }),
+      complete: async () => void (completed = true),
+      fail: async () => undefined,
+      failTerminal: async () => undefined,
+    }
+    const worker = new IntegrationRevocationWorker({
+      repository,
+      credentials: {
+        refreshKey: async () => undefined,
+        get: () =>
+          serializeOAuthCredential({
+            version: 1,
+            accessToken: 'xoxb-managed-token',
+            refreshToken: null,
+            expiresAt: null,
+            tokenRevision: 1,
+          }),
+      },
+      resolvePlugin: (providerKey, adapterVersion, clientAuthority) => {
+        resolvedAuthorities.push(clientAuthority)
+        return providerKey === 'slack' && adapterVersion === 1
+          ? oauthPluginView(manualWithManagedPlugin, clientAuthority)
+          : undefined
+      },
+      revocationTransports: {
+        resolve: () => ({
+          authority: 'platform_broker',
+          revoke: async (input) => {
+            revokeCalls.push(input)
+          },
+        }),
+      },
+    })
+
+    expect(await worker.runOnce()).toBe(true)
+    expect(resolvedAuthorities).toEqual(['platform_broker'])
+    expect(revokeCalls).toEqual([
+      { providerKey: 'slack', credentialRef: '__integration-credential:slack-managed', token: 'xoxb-managed-token' },
+    ])
+    expect(completed).toBe(true)
   })
 })

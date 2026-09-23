@@ -1,5 +1,6 @@
 import { isPlatformManaged } from '../../secrets/managed'
-import { platformRequest } from '../../platform/instance-client'
+import { platformRequest, PlatformRequestError } from '../../platform/instance-client'
+import { relayPullResponse } from '@tau/shared/integration-relay'
 import {
   resolveGitHubConnection,
   resolveGitHubRelayAssignment,
@@ -13,13 +14,28 @@ import { extractGitHubPrDispatchFact } from '../../squad-activity/github-pr-fact
 import { materializeGitHubDispatch } from '../../squad-activity/materialize'
 import { createLogger } from '../../../lib/infra/logger'
 import { discoverGitHubRelayInterests } from './github-interests'
-import { HostedIntegrationRelayRunner } from './runner'
+import { HostedIntegrationRelayRunner, type HostedRelayProvider } from './runner'
 import type { RelayDelivery } from '@tau/shared/integration-relay'
 import type { RepositoryInterest } from './github-interests'
 
 const log = createLogger('hosted-integration-relay')
 const receipts = new DbEventPollingDispatchStore()
-export const hostedIntegrationRelayRuntime = new HostedIntegrationRelayRunner({
+
+export const githubRelayProvider: HostedRelayProvider<RepositoryInterest, RelayDelivery> = {
+  key: 'github',
+  runnerName: 'hosted-integration-relay',
+  intervalMs: 5_000,
+  pullResponseSchema: relayPullResponse,
+  subscribeExtra: (interests) => {
+    const repositories = [...new Set(interests.map((interest) => interest.repository))].sort()
+    // Fail closed instead of silently watching an arbitrary subset.
+    if (repositories.length > 100) throw new PlatformRequestError('repository_limit', false)
+    return { repositories }
+  },
+  matchesDelivery: (interest, delivery) => interest.repository === delivery.resourceKey,
+}
+
+export const hostedIntegrationRelayRuntime = new HostedIntegrationRelayRunner(githubRelayProvider, {
   managed: isPlatformManaged,
   interests: () =>
     discoverGitHubRelayInterests({

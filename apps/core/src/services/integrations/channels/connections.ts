@@ -14,12 +14,15 @@ import { DbIntegrationConnectionRepository } from '../db-connection-repository'
 import { DbIntegrationAuditRecorder } from '../db-audit'
 import type { IntegrationSetupStatus } from '../plugin'
 import { credentialSetupStatus } from '../setup-status'
+import { resolveOAuthAuthority, type OAuthAuthority } from '../authorization/authority'
+import { parseOAuthCredential } from '../authorization/credential-bundle'
 import {
   channelPlugins,
   createChannelPlugins,
   isChannelProviderKey,
   type ChannelPlugin,
   type ChannelProviderKey,
+  type SlackConfiguration,
 } from './plugins'
 
 const log = createLogger('channel-connections')
@@ -66,6 +69,15 @@ export const enabledSettingKey = (provider: ChannelProviderKey) => `__integratio
 type PluginOf<K extends ChannelProviderKey> = (typeof channelPlugins)[K]
 type ConfigurationOf<K extends ChannelProviderKey> = ReturnType<PluginOf<K>['connection']['parseConfiguration']>
 type CredentialOf<K extends ChannelProviderKey> = ReturnType<PluginOf<K>['connection']['credential']['parse']>
+/**
+ * What a transport actually reads off the state. Identical to the manual
+ * codec's shape except that a managed Slack connection normalizes to a bare
+ * bot token (no signing secret: its events arrive over the relay, never the
+ * direct webhook) — the manual codec itself stays strict.
+ */
+type TransportCredentialOf<K extends ChannelProviderKey> = K extends 'slack'
+  ? { botToken: string; signingSecret?: string }
+  : CredentialOf<K>
 
 export interface ChannelConnectionState<K extends ChannelProviderKey = ChannelProviderKey> {
   provider: K
@@ -79,7 +91,9 @@ export interface ChannelConnectionState<K extends ChannelProviderKey = ChannelPr
   healthState: IntegrationConnectionRecord['healthState'] | 'legacy'
   lastErrorCode: string | null
   configuration: ConfigurationOf<K>
-  credential: CredentialOf<K>
+  credential: TransportCredentialOf<K>
+  /** Which client owns this material: a pasted app (`local`) or a broker-issued grant (`platform_broker`). */
+  authority: OAuthAuthority
 }
 
 /** The routing key each provider's channel instances are looked up by. */
@@ -108,10 +122,30 @@ export interface ChannelSettingsView {
   /** Whether the provider switch is on; credentials are retained while off. */
   enabled: boolean
   setup: IntegrationSetupStatus
-  webhook: { url: string; secretConfigured: boolean }
+  webhook: {
+    url: string
+    secretConfigured: boolean
+    /** A managed-active Slack connection never receives the direct webhook: its events arrive over the relay. */
+    delivery: 'direct' | 'relay'
+  }
   routing: { instanceId: string; defaultSquadId: string | null } | null
   /** Discord only: servers the bot is in; routing needs exactly one, or a chosen `guildId`. */
   guilds?: { id: string; name: string }[]
+  /** Slack only: the "Add to Slack" managed-app connection, offered alongside manual entry on hosted instances. */
+  managedApp?: {
+    /** Whether hosted managed OAuth is offered at all (broker authority + adapter support). */
+    available: boolean
+    connection: {
+      id: string
+      authState: IntegrationConnectionRecord['authState']
+      healthState: IntegrationConnectionRecord['healthState']
+      lastErrorCode: string | null
+      teamId: string | null
+      teamName: string | null
+    } | null
+    /** Whether this managed connection is what the transport currently uses. */
+    active: boolean
+  }
 }
 
 type ChannelConnectionRepository = IntegrationConnectionRepository & Pick<IntegrationAssignmentRepository, 'usage'>
@@ -123,6 +157,7 @@ export interface ChannelConnectionsDependencies {
   now?: () => Date
   webOrigin?: () => string
   randomSecret?: () => string
+  resolveAuthority?: () => OAuthAuthority
 }
 
 const configureInputSchema = z
@@ -152,7 +187,10 @@ export class ChannelConnections {
   readonly #webOrigin: () => string
   readonly #randomSecret: () => string
   readonly #service: IntegrationConnectionService
+  readonly #resolveAuthority: () => OAuthAuthority
   readonly #snapshot = new Map<ChannelProviderKey, ChannelConnectionState | undefined>()
+  /** Slack only, for now: the broker-issued "Add to Slack" connection, tracked alongside the manual one. */
+  readonly #managedSnapshot = new Map<ChannelProviderKey, ChannelConnectionState | undefined>()
   readonly #listeners = new Set<Listener>()
   #loaded = false
 
@@ -163,6 +201,7 @@ export class ChannelConnections {
     this.#now = dependencies.now ?? (() => new Date())
     this.#webOrigin = dependencies.webOrigin ?? primaryWebOrigin
     this.#randomSecret = dependencies.randomSecret ?? (() => randomBytes(32).toString('hex'))
+    this.#resolveAuthority = dependencies.resolveAuthority ?? resolveOAuthAuthority
     this.#service = new IntegrationConnectionService({
       repository: this.#repository,
       assignments: this.#repository,
@@ -195,14 +234,22 @@ export class ChannelConnections {
   /**
    * The connection a transport should use right now, or undefined when the
    * provider is switched off or nothing usable is configured. Synchronous:
-   * served from the last refresh, with the legacy keys as the fallback.
+   * served from the last refresh, with the legacy keys as the fallback. A
+   * usable managed connection (Slack only, for now) wins over the manual one.
    */
   get<K extends ChannelProviderKey>(provider: K): ChannelConnectionState<K> | undefined {
     if (!this.isEnabled(provider)) return undefined
+    const managed = this.#managedSnapshot.get(provider) as ChannelConnectionState<K> | undefined
+    if (managed && managed.connectionEnabled && managed.authState === 'authenticated') return managed
     const state = this.#snapshot.get(provider) as ChannelConnectionState<K> | undefined
     if (state && state.source === 'connection' && state.connectionEnabled && state.authState === 'authenticated')
       return state
     return this.#legacy(provider)
+  }
+
+  /** The managed (broker-issued) connection regardless of usability, or undefined when none exists. Slack only. */
+  storedManaged<K extends ChannelProviderKey>(provider: K): ChannelConnectionState<K> | undefined {
+    return this.#managedSnapshot.get(provider) as ChannelConnectionState<K> | undefined
   }
 
   /** The stored connection regardless of usability — what the settings card shows. */
@@ -224,7 +271,7 @@ export class ChannelConnections {
       if (value) credential[field] = value
     }
     if (!credential.botToken) return undefined
-    const credentialValue = credential as CredentialOf<K>
+    const credentialValue = credential as ChannelConnectionState<K>['credential']
     const configuration: Record<string, string> = {}
     for (const [field, key] of Object.entries(keys.configuration)) {
       const value = store.get(key)?.trim()
@@ -245,6 +292,7 @@ export class ChannelConnections {
         ...configuration,
       }) as ConfigurationOf<K>,
       credential: credentialValue,
+      authority: 'local',
     }
   }
 
@@ -266,6 +314,7 @@ export class ChannelConnections {
   async refresh(): Promise<void> {
     for (const provider of Object.keys(this.#plugins) as ChannelProviderKey[]) {
       this.#snapshot.set(provider, await this.#load(provider))
+      this.#managedSnapshot.set(provider, await this.#loadManaged(provider))
     }
     this.#loaded = true
     for (const listener of this.#listeners) {
@@ -281,16 +330,39 @@ export class ChannelConnections {
     return this.#loaded
   }
 
-  async #row(provider: ChannelProviderKey): Promise<IntegrationConnectionRecord | undefined> {
+  /**
+   * `materialRevision` is a random UUID with no relationship to recency — sorting
+   * by it picks an arbitrary row, not the most recently written one. Break ties
+   * by `updatedAt` instead so an interrupted save (or an accidental duplicate
+   * broker row) always resolves to whichever row was actually touched last.
+   */
+  #newestByUpdatedAt(rows: readonly IntegrationConnectionRecord[]): IntegrationConnectionRecord | undefined {
+    return [...rows].sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0]
+  }
+
+  /** The manually-configured ("bring your own app") row: the only one `configure()`/`migrateLegacy()` ever touch. */
+  async #localRow(provider: ChannelProviderKey): Promise<IntegrationConnectionRecord | undefined> {
     const rows = (await this.#repository.list(provider)).filter(
       (row) => row.adapterVersion === 1 && row.clientAuthority === 'local'
     )
     // Newest wins if an interrupted save ever left two behind.
-    return rows.sort((a, b) => b.materialRevision.localeCompare(a.materialRevision))[0]
+    return this.#newestByUpdatedAt(rows)
+  }
+
+  /** The broker-issued "Add to Slack" row, only ever offered under broker authority. Slack only, for now. */
+  async #managedRow(provider: ChannelProviderKey): Promise<IntegrationConnectionRecord | undefined> {
+    if (provider !== 'slack') return undefined
+    const authority = this.#resolveAuthority()
+    if (authority !== 'platform_broker') return undefined
+    const rows = (await this.#repository.list(provider)).filter(
+      (row) => row.adapterVersion === 1 && row.clientAuthority === authority
+    )
+    // Newest wins if a connect intent ever left more than one broker row behind.
+    return this.#newestByUpdatedAt(rows)
   }
 
   async #load<K extends ChannelProviderKey>(provider: K): Promise<ChannelConnectionState<K> | undefined> {
-    const row = await this.#row(provider)
+    const row = await this.#localRow(provider)
     if (!row) return undefined
     const plugin = this.#plugins[provider] as ChannelPlugin<unknown, unknown, unknown>
     const raw = getSecretStore().get(row.credentialRef)
@@ -306,10 +378,38 @@ export class ChannelConnections {
         healthState: row.healthState,
         lastErrorCode: row.lastErrorCode,
         configuration: plugin.connection.parseConfiguration(row.configuration) as ConfigurationOf<K>,
-        credential: plugin.connection.credential.parse(raw) as CredentialOf<K>,
+        credential: plugin.connection.credential.parse(raw) as ChannelConnectionState<K>['credential'],
+        authority: 'local',
       }
     } catch (error) {
       log.warn(`Stored ${provider} connection ${row.id} is unreadable: ${String(error)}`)
+      return undefined
+    }
+  }
+
+  async #loadManaged<K extends ChannelProviderKey>(provider: K): Promise<ChannelConnectionState<K> | undefined> {
+    const row = await this.#managedRow(provider)
+    if (!row) return undefined
+    const plugin = this.#plugins[provider] as ChannelPlugin<unknown, unknown, unknown>
+    const raw = getSecretStore().get(row.credentialRef)
+    if (!raw) return undefined
+    try {
+      const bundle = parseOAuthCredential(raw)
+      return {
+        provider,
+        id: row.id,
+        revision: row.materialRevision,
+        source: 'connection',
+        connectionEnabled: row.enabled,
+        authState: row.authState,
+        healthState: row.healthState,
+        lastErrorCode: row.lastErrorCode,
+        configuration: plugin.connection.parseConfiguration(row.configuration) as ConfigurationOf<K>,
+        credential: { botToken: bundle.accessToken } as ChannelConnectionState<K>['credential'],
+        authority: 'platform_broker',
+      }
+    } catch (error) {
+      log.warn(`Stored managed ${provider} connection ${row.id} is unreadable: ${String(error)}`)
       return undefined
     }
   }
@@ -331,6 +431,12 @@ export class ChannelConnections {
       Object.entries(configuration).filter(([key, value]) => key !== 'version' && typeof value === 'string')
     ) as Record<string, string>
     const routing = await this.#routing(provider, stored)
+    const managedAppRow = provider === 'slack' ? this.storedManaged('slack') : undefined
+    const managedAppActive = !!(
+      managedAppRow &&
+      managedAppRow.connectionEnabled &&
+      managedAppRow.authState === 'authenticated'
+    )
     const view: ChannelSettingsView = {
       provider,
       fields,
@@ -354,11 +460,29 @@ export class ChannelConnections {
             : provider === 'slack'
               ? !!(stored?.credential as { signingSecret?: string } | undefined)?.signingSecret
               : !!identity.publicKey,
+        delivery: managedAppActive ? 'relay' : 'direct',
       },
       routing: routing ? { instanceId: routing.id, defaultSquadId: routing.defaultSquadId } : null,
     }
     if (provider === 'discord' && stored)
       view.guilds = await this.#discordGuilds(stored as ChannelConnectionState<'discord'>)
+    if (provider === 'slack') {
+      const slackConfiguration = managedAppRow?.configuration as SlackConfiguration | undefined
+      view.managedApp = {
+        available: this.#resolveAuthority() === 'platform_broker',
+        connection: managedAppRow
+          ? {
+              id: managedAppRow.id,
+              authState: managedAppRow.authState as IntegrationConnectionRecord['authState'],
+              healthState: managedAppRow.healthState as IntegrationConnectionRecord['healthState'],
+              lastErrorCode: managedAppRow.lastErrorCode,
+              teamId: slackConfiguration?.teamId ?? null,
+              teamName: slackConfiguration?.teamName ?? null,
+            }
+          : null,
+        active: managedAppActive,
+      }
+    }
     return view
   }
 
@@ -380,11 +504,33 @@ export class ChannelConnections {
   }
 
   async #routing(provider: ChannelProviderKey, stored: ChannelConnectionState | undefined) {
-    const key = channelRoutingKey[provider]
-    const identifier = (stored?.configuration as Record<string, unknown> | undefined)?.[key]
-    if (typeof identifier !== 'string' || !identifier) return null
+    const active = this.#activeRouting(provider, stored)
+    if (!active) return null
     const { ChannelInstance } = await channelInstances()
-    return ChannelInstance.findByProvider(provider, identifier)
+    return ChannelInstance.findByProvider(provider, active.identifier)
+  }
+
+  /**
+   * Routing follows whichever connection is actually active for the provider
+   * (a usable managed Slack connection wins over the manual one), so the
+   * default-squad card and `#setDefaultSquad` agree with what the transport uses.
+   */
+  #activeRouting(
+    provider: ChannelProviderKey,
+    stored: ChannelConnectionState | undefined
+  ): { identifier: string; configuration: Record<string, unknown> } | undefined {
+    const key = channelRoutingKey[provider]
+    if (provider === 'slack') {
+      const managed = this.storedManaged('slack')
+      if (managed?.connectionEnabled && managed.authState === 'authenticated') {
+        const configuration = managed.configuration as Record<string, unknown>
+        const identifier = configuration[key]
+        if (typeof identifier === 'string' && identifier) return { identifier, configuration }
+      }
+    }
+    const configuration = (stored?.configuration ?? {}) as Record<string, unknown>
+    const identifier = configuration[key]
+    return typeof identifier === 'string' && identifier ? { identifier, configuration } : undefined
   }
 
   async #discordGuilds(state: ChannelConnectionState<'discord'>): Promise<{ id: string; name: string }[]> {
@@ -449,9 +595,14 @@ export class ChannelConnections {
 
     const needsConnection = stored?.source !== 'connection' || credentialChanged || configurationChanged
     if (needsConnection && !Object.keys(credentialInput).length) {
-      throw new Error(`${plugin.channel.credentialFields[0]!.label} is required.`)
-    }
-    if (needsConnection) {
+      // A routing-only update (defaultSquadId, with no pasted credential) is
+      // fine without ever having a local ("bring your own app") row, as long
+      // as some connection — a usable managed one, for Slack — is already
+      // active to route against.
+      if (!this.#activeRouting(provider, stored)) {
+        throw new Error(`${plugin.channel.credentialFields[0]!.label} is required.`)
+      }
+    } else if (needsConnection) {
       const credential = plugin.connection.credential.parse(credentialInput)
       let identity: Record<string, string> = {}
       try {
@@ -476,7 +627,7 @@ export class ChannelConnections {
     actor: string
   ): Promise<void> {
     const plugin = this.#plugins[provider] as ChannelPlugin<unknown, unknown, unknown>
-    const previous = await this.#row(provider)
+    const previous = await this.#localRow(provider)
     if (previous) {
       // Rotate atomically on the existing row. Creating its replacement first
       // collides with the provider/name uniqueness constraint and loses routing.
@@ -525,12 +676,13 @@ export class ChannelConnections {
   async #setDefaultSquad(provider: ChannelProviderKey, defaultSquadId: string | null): Promise<void> {
     const stored = this.stored(provider)
     const key = channelRoutingKey[provider]
-    const identifier = (stored?.configuration as Record<string, unknown> | undefined)?.[key]
-    if (typeof identifier !== 'string' || !identifier) {
+    const active = this.#activeRouting(provider, stored)
+    if (!active) {
       if (provider === 'discord')
         throw new Error('Choose the Discord server first: the bot is in several servers, or none yet.')
       throw new Error('Save a valid credential before choosing a default squad.')
     }
+    const { identifier, configuration: identity } = active
     const { ChannelInstance } = await channelInstances()
     const existing = await ChannelInstance.findByProvider(provider, identifier)
     if (existing) {
@@ -539,7 +691,6 @@ export class ChannelConnections {
     }
     if (!defaultSquadId) return
     const label = this.#plugins[provider].presentation.label
-    const identity = (stored?.configuration ?? {}) as Record<string, unknown>
     const displayName =
       typeof identity.teamName === 'string'
         ? identity.teamName
@@ -569,7 +720,7 @@ export class ChannelConnections {
       if (this.#managed(provider)) continue
       const legacy = this.#legacy(provider)
       if (!legacy) continue
-      if (await this.#row(provider)) continue
+      if (await this.#localRow(provider)) continue
       const plugin = this.#plugins[provider] as ChannelPlugin<
         Record<string, unknown>,
         Record<string, unknown>,

@@ -9,6 +9,7 @@ import {
 } from '../../api/integrations'
 import { integrationQueries } from '../../queryOptions'
 import { integrationAuthorizationReturnPath } from '../../lib/integrationReturnPath'
+import { rememberOAuthProviderHint } from '../../lib/oauthCallbackBootstrap'
 import { integrationQueryKeys } from '../../queryKeys'
 
 export function NotionIntegrationSettings({
@@ -52,7 +53,10 @@ export function NotionIntegrationSettings({
         ...(connectionId ? { connectionId } : {}),
       }),
     onSuccess: (result) => {
-      if ('authorizationUrl' in result) window.location.assign(result.authorizationUrl)
+      if ('authorizationUrl' in result) {
+        rememberOAuthProviderHint('notion')
+        window.location.assign(result.authorizationUrl)
+      }
     },
   })
   const lifecycle = useMutation({

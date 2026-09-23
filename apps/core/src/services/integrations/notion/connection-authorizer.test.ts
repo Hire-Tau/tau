@@ -33,6 +33,7 @@ function integrationRecord(overrides: Partial<IntegrationConnectionRecord> = {})
     validatedAt: null,
     validationExpiresAt: null,
     lastErrorCode: null,
+    updatedAt: new Date(),
     ...overrides,
   }
 }

@@ -298,9 +298,22 @@ export interface ChannelIntegrationSettings {
   } | null
   enabled?: boolean
   setup?: { state: 'configured' | 'needs_setup' | 'needs_attention'; issues: string[] }
-  webhook?: { url: string; secretConfigured: boolean }
+  webhook?: { url: string; secretConfigured: boolean; delivery?: 'direct' | 'relay' }
   routing?: { instanceId: string; defaultSquadId: string | null } | null
   guilds?: { id: string; name: string }[]
+  /** Slack only: the "Add to Slack" managed-app connection, offered alongside manual entry on hosted instances. */
+  managedApp?: {
+    available: boolean
+    connection: {
+      id: string
+      authState: string
+      healthState: string
+      lastErrorCode: string | null
+      teamId: string | null
+      teamName: string | null
+    } | null
+    active: boolean
+  }
 }
 export const slackAppManifestUrl = '/api/integrations/providers/slack/channel-settings/manifest'
 export const getChannelIntegrationSettings = (provider: string) =>

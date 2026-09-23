@@ -97,7 +97,7 @@ test('each invocation observes token rotation and refuses disabled or expired au
 test('relay retains its queued delivery across validation expiry without using stale credentials', async () => {
   const { discoverGitHubRelayInterests } = await import('../relay/github-interests')
   const { HostedIntegrationRelayRunner } = await import('../relay/runner')
-  const { dispatchHostedGitHubDelivery } = await import('../relay/runtime')
+  const { githubRelayProvider, dispatchHostedGitHubDelivery } = await import('../relay/runtime')
   const squadId = crypto.randomUUID()
   await db.insert(squads).values({ id: squadId, name: 'Relay validation gap', purpose: 'test' })
   const fixture = await createTestGitHubConnection({ squadId })
@@ -119,7 +119,7 @@ test('relay retains its queued delivery across validation expiry without using s
       dispatched: string[] = []
     let queued = true,
       now = 0
-    const runner = new HostedIntegrationRelayRunner({
+    const runner = new HostedIntegrationRelayRunner(githubRelayProvider, {
       managed: () => true,
       interests: () =>
         discoverGitHubRelayInterests({
