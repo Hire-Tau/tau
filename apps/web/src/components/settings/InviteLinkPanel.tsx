@@ -61,8 +61,8 @@ export function InviteLinkPanel({ invite, onDone }: { invite: IssuedInviteLink; 
           </button>
           <p className="text-xs text-muted">
             {inDesktop
-              ? 'Set up this admin’s passkey here. A passkey created in another browser can’t be used in Tau Desktop.'
-              : 'Set up this admin’s passkey in this window to finish signing in.'}
+              ? 'Sets up this admin’s passkey here and signs this window in as them. A passkey created in another browser can’t be used in Tau Desktop.'
+              : 'Sets up this admin’s passkey here and signs this window in as them.'}
           </p>
         </div>
       )}
