@@ -25,3 +25,4 @@ The web app detects the desktop preload bridge (`window.tauDesktopApp`, `version
 The bridge's presence also changes some web app behavior:
 
 - An invite link for a pending admin in **Settings → Users** also offers **Open in Tau**. It opens passkey setup in the current window, because a passkey created in an external browser cannot be used in the desktop app. Links for other invitees are copied as usual.
+- With no stored theme choice, the app follows the operating system's light or dark appearance, like the desktop app's own setup screens. A choice made in **Settings** or on the setup page still wins. Browsers keep the light default.

@@ -24,7 +24,7 @@ Inside Tau Desktop, System Updates shows the app's native updater instead of the
 
 ### App & Appearance
 
-**Theme** — Switch between dark and light mode.
+**Theme** — Switch between dark and light mode. The setup page (**Set up Tau**) also has an **Appearance** control with **System**, **Light** and **Dark**; **System** follows the operating system's appearance. The choice is stored per browser. With no stored choice, browsers use light and Tau Desktop uses **System**.
 
 **App Installation** — PWA install prompt. Shows platform-appropriate instructions (iOS share sheet, Chrome install button). Displays an "Update Available" banner when a new service worker is ready.
 

@@ -22,6 +22,7 @@ import { FirstSquadStep, pickMostRecentlyCreated } from './FirstSquadStep'
 import { STATE_BADGE_CLASS, STATE_LABEL } from './onboardingItemPresentation'
 import { ChevronDownIcon, CheckIcon } from '../icons'
 import { LoadingSurface, SkeletonBlock, SkeletonCard, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
+import { ThemePreferenceControl } from '../ThemePreferenceControl'
 
 export interface OnboardingItemMeta {
   id: OnboardingItemId
@@ -108,13 +109,16 @@ export function OnboardingPage() {
 
   return (
     <div className="mx-auto w-full min-w-0 max-w-2xl space-y-6">
-      <div>
-        <h1 className="text-lg font-semibold text-primary">Set up Tau</h1>
-        <p className="text-sm text-muted mt-1">
-          {status.ready
-            ? 'Your workspace is ready. You can revisit any step below.'
-            : 'Connect your AI, choose your tools, and create a squad.'}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
+        <div className="min-w-0">
+          <h1 className="text-lg font-semibold text-primary">Set up Tau</h1>
+          <p className="text-sm text-muted mt-1">
+            {status.ready
+              ? 'Your workspace is ready. You can revisit any step below.'
+              : 'Connect your AI, choose your tools, and create a squad.'}
+          </p>
+        </div>
+        <ThemePreferenceControl />
       </div>
 
       {(() => {
