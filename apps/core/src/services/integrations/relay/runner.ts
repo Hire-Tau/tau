@@ -1,32 +1,66 @@
 import { createPeriodicRunner, type PeriodicRunner } from '@tau/shared'
-import {
-  RELAY_MAX_RESPONSE_BYTES,
-  relayStatusResponse,
-  relaySuccessResponse,
-  relayPullResponse,
-  type RelayDelivery,
-} from '@tau/shared/integration-relay'
+import { RELAY_MAX_RESPONSE_BYTES, relayStatusResponse, relaySuccessResponse } from '@tau/shared/integration-relay'
+import type { ZodType } from 'zod'
 import { PlatformRequestError, type platformRequest } from '../../platform/instance-client'
-import type { RepositoryInterest } from './github-interests'
 
 export interface RelayConnection {
   id: string
   revision: string
   accessToken: string
 }
-export interface HostedRelayDependencies {
+
+/** Common envelope fields every provider's relay delivery shares; provider-specific identity/eventType/payload shapes vary. */
+export interface RelayDeliveryLike {
+  id: string
+  leaseToken: string
+  connectionId: string
+  connectionRevision: string
+}
+
+/**
+ * What varies between a GitHub-flavored relay and a Slack-flavored one: the
+ * route segment, poll cadence, wire schema for pulled deliveries, the
+ * provider-specific fields a subscribe request adds beyond the shared
+ * connectionId/connectionRevision/accessToken, and how a delivery is matched
+ * against a declared interest. Everything else — discovery cadence, lease
+ * lifecycle, revision fencing, orphan cleanup, backoff — is provider-agnostic
+ * and lives in `HostedIntegrationRelayRunner` below.
+ */
+export interface HostedRelayProvider<Interest extends { connectionId: string }, Delivery extends RelayDeliveryLike> {
+  /** Requests go to `/api/integration-relay/<key>/<op>`. */
+  key: string
+  runnerName: string
+  intervalMs: number
+  pullResponseSchema: ZodType<{ deliveries: Delivery[] }>
+  /**
+   * Extra subscribe-body fields for this connection's current interests
+   * (e.g. GitHub's `repositories`; Slack has none). May throw to fail closed
+   * instead of silently watching an arbitrary/unbounded subset.
+   */
+  subscribeExtra(interests: readonly Interest[]): Record<string, unknown>
+  /** Whether a delivery belongs to the given declared interest. */
+  matchesDelivery(interest: Interest, delivery: Delivery): boolean
+}
+
+export interface HostedRelayDependencies<
+  Interest extends { connectionId: string },
+  Delivery extends RelayDeliveryLike,
+> {
   managed(): boolean
-  interests(): Promise<RepositoryInterest[]>
+  interests(): Promise<Interest[]>
   resolve(connectionId: string): Promise<RelayConnection | undefined>
   request: typeof platformRequest
-  dispatch(delivery: RelayDelivery, interests: RepositoryInterest[]): Promise<void>
+  dispatch(delivery: Delivery, interests: Interest[]): Promise<void>
   now?(): number
   onError(code: string): void
 }
 const RENEW_MS = 5 * 60_000
 
 /** Ephemeral discovery cache; durable ownership, queue and leases remain on Platform. */
-export class HostedIntegrationRelayRunner {
+export class HostedIntegrationRelayRunner<
+  Interest extends { connectionId: string },
+  Delivery extends RelayDeliveryLike,
+> {
   private runner: PeriodicRunner | undefined
   private controller = new AbortController()
   private renewAt = new Map<string, { key: string; at: number }>()
@@ -36,11 +70,18 @@ export class HostedIntegrationRelayRunner {
   private enabled = false
   private offset = 0
   private scan: Promise<void> | undefined
-  constructor(private readonly deps: HostedRelayDependencies) {}
+  constructor(
+    private readonly provider: HostedRelayProvider<Interest, Delivery>,
+    private readonly deps: HostedRelayDependencies<Interest, Delivery>
+  ) {}
   start() {
     if (!this.deps.managed() || this.runner) return
     this.controller = new AbortController()
-    this.runner = createPeriodicRunner({ name: 'hosted-integration-relay', intervalMs: 5_000, task: () => this.tick() })
+    this.runner = createPeriodicRunner({
+      name: this.provider.runnerName,
+      intervalMs: this.provider.intervalMs,
+      task: () => this.tick(),
+    })
     this.runner.start()
   }
   async stop() {
@@ -65,7 +106,7 @@ export class HostedIntegrationRelayRunner {
     timeoutMs = 30_000
   ) {
     return this.deps.request({
-      path: `/api/integration-relay/github/${path}`,
+      path: `/api/integration-relay/${this.provider.key}/${path}`,
       body,
       schema,
       signal: this.controller.signal,
@@ -85,7 +126,7 @@ export class HostedIntegrationRelayRunner {
       }
       if (!this.enabled) return
       const interests = await this.deps.interests()
-      const groups = new Map<string, RepositoryInterest[]>()
+      const groups = new Map<string, Interest[]>()
       for (const interest of interests)
         groups.set(interest.connectionId, [...(groups.get(interest.connectionId) ?? []), interest])
       for (const connection of this.remote) {
@@ -106,10 +147,8 @@ export class HostedIntegrationRelayRunner {
         try {
           const connection = await this.deps.resolve(id)
           if (!connection) continue
-          const repositories = [...new Set(groups.get(id)!.map((interest) => interest.repository))].sort()
-          // Fail closed instead of silently watching an arbitrary subset.
-          if (repositories.length > 100) throw new PlatformRequestError('repository_limit', false)
-          const revisionKey = JSON.stringify([id, connection.revision, repositories])
+          const extra = this.provider.subscribeExtra(groups.get(id)!)
+          const revisionKey = JSON.stringify([id, connection.revision, extra])
           if (this.renewAt.get(id)?.key !== revisionKey || this.renewAt.get(id)!.at <= now) {
             await this.call(
               'subscribe',
@@ -117,7 +156,7 @@ export class HostedIntegrationRelayRunner {
                 connectionId: id,
                 connectionRevision: connection.revision,
                 accessToken: connection.accessToken,
-                repositories,
+                ...extra,
               },
               relaySuccessResponse,
               180_000
@@ -128,7 +167,7 @@ export class HostedIntegrationRelayRunner {
           const result = await this.call(
             'pull',
             { ...owner, accessToken: connection.accessToken },
-            relayPullResponse,
+            this.provider.pullResponseSchema,
             60_000
           )
           const acknowledgments: { id: string; leaseToken: string }[] = []
@@ -140,7 +179,7 @@ export class HostedIntegrationRelayRunner {
             const live = await this.deps.resolve(id)
             if (!live || live.revision !== connection.revision) break
             const current = (await this.deps.interests()).filter(
-              (interest) => interest.connectionId === id && interest.repository === delivery.resourceKey
+              (interest) => interest.connectionId === id && this.provider.matchesDelivery(interest, delivery)
             )
             if (current.length) await this.deps.dispatch(delivery, current)
             acknowledgments.push({ id: delivery.id, leaseToken: delivery.leaseToken })

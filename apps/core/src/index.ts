@@ -639,6 +639,17 @@ const subsystems: Subsystem[] = [
       await hostedIntegrationRelayRuntime.stop()
     }
   ),
+  subsystem(
+    'hosted-slack-relay',
+    async () => {
+      const { hostedSlackRelayRuntime } = await import('./services/integrations/relay/slack-runtime')
+      hostedSlackRelayRuntime.start()
+    },
+    async () => {
+      const { hostedSlackRelayRuntime } = await import('./services/integrations/relay/slack-runtime')
+      await hostedSlackRelayRuntime.stop()
+    }
+  ),
   // Catch-all: stop any registered periodic runner (settings/secrets cache
   // refresh, embedding worker, etc.) the explicit list above doesn't cover.
   // stop() is idempotent, so the explicit stops above (which also clear

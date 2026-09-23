@@ -20,17 +20,25 @@ import {
   markWebhookProcessed,
   markWebhookError,
 } from '../services/webhooks'
-import { getProvider, hasProvider, handleChannelEvent, InteractionResponseType } from '../channels'
+import { getProvider, hasProvider, InteractionResponseType } from '../channels'
 import { handleDiscordInteraction } from '../channels/discord/interactions'
-import { sendChannelConfigurationError } from '../channels/handler'
+import { dispatchParsedChannelEvent } from '../channels/handler'
+import type { ChannelProvider } from '../channels/provider'
+import type { Context } from 'hono'
 import { Schedule } from '../entities/Schedule'
 import { createLogger } from '../lib/infra/logger'
 import { requirePermission } from '../middleware/require-permission'
 import type { WebhookTriggerRequest, WebhookTriggerResult } from '@tau/shared'
 import { ScheduleExecutionError } from '../services/scheduling/failure-classifier'
 import { materializeGitHubWebhook, materializeWebhookActivity } from '../services/squad-activity/materialize'
+import { DbEventPollingDispatchStore } from '../services/integrations/db-event-polling-dispatch-store'
 
 const log = createLogger('webhooks')
+// Durable receipts shared with the hosted Slack relay dispatcher (see
+// services/integrations/relay/slack-runtime.ts): `webhook:<team>:<event>` for
+// deliveries retried by Slack itself, `relay:<connectionId>:<deliveryId>` for
+// deliveries retried by the platform relay. Different key prefixes, one table.
+const channelWebhookReceipts = new DbEventPollingDispatchStore()
 
 export const webhooksRouter = new Hono()
 export const webhooksStatusRouter = new Hono()
@@ -160,55 +168,74 @@ webhooksRouter.post('/channels/:provider', async (c) => {
       return c.json({ error: 'Invalid signature' }, 401)
     }
 
-    // Parse webhook
-    const parsed = await provider.parseWebhook(payload, headers)
-
-    if (!parsed) {
-      log.info(`[${providerName}] Non-actionable event, ignoring`)
-      return c.json({ ok: true })
-    }
-
-    // Handle pong (Discord ping verification)
-    if ('type' in parsed && parsed.type === 'pong') {
-      log.info(`[${providerName}] Responding to PING`)
-      return c.json({ type: InteractionResponseType.PONG })
-    }
-
-    // Handle challenge (Slack URL verification)
-    if ('type' in parsed && parsed.type === 'challenge') {
-      log.info(`[${providerName}] URL verification challenge`)
-      return c.json({ challenge: parsed.value })
-    }
-
-    if (providerName === 'discord' && parsed.type === 'slash_command') {
-      await handleDiscordInteraction(payload, parsed)
-      return c.body(null, 202)
-    }
-
-    // Handle event
-    const platformId = provider.extractPlatformId(payload)
-    if (!platformId) {
-      log.warn(`[${providerName}] No platform ID found`)
-      if (provider.sendsResponseViaApi) {
-        await sendChannelConfigurationError(provider, parsed)
-        return c.body(null, 200)
+    // Slack retries an Events API delivery (same event_id) on anything but a
+    // fast 2xx. Dedup so a retry can never run the handler — and any agent
+    // work it queues — a second time. Slash commands are not retried by
+    // Slack and go through the ordinary path below unchanged.
+    if (providerName === 'slack' && payload.type === 'event_callback') {
+      const teamId = payload.team_id
+      const eventId = payload.event_id
+      if (typeof teamId === 'string' && typeof eventId === 'string') {
+        const key = `webhook:${teamId}:${eventId}`
+        const claim = await channelWebhookReceipts.claim('slack', key, 120_000)
+        if (claim.status === 'completed') return c.json({ ok: true })
+        // The first delivery is still in flight; Slack does not need another
+        // retry queued behind it, and this 200 does not affect that attempt.
+        if (claim.status === 'busy') return c.json({ ok: true })
+        const response = await dispatchChannelWebhook(c, provider, providerName, payload, headers)
+        await channelWebhookReceipts.complete('slack', key, claim.leaseToken)
+        return response
       }
-      return c.json(provider.formatErrorResponse('Invalid request'))
     }
 
-    const result = await handleChannelEvent(provider, parsed, platformId)
-
-    if (result.emptyResponse) {
-      return c.body(null, 200)
-    }
-
-    return c.json(result.response)
+    return dispatchChannelWebhook(c, provider, providerName, payload, headers)
   }
 
   // Unknown provider
   log.warn(`Unknown channel provider: ${providerName}`)
   return c.json({ error: 'Unknown channel provider' }, 404)
 })
+
+/** The verified-webhook pipeline shared by every provider: parse, handle provider-specific acks, then dispatch the event. */
+async function dispatchChannelWebhook(
+  c: Context,
+  provider: ChannelProvider,
+  providerName: string,
+  payload: Record<string, unknown>,
+  headers: Record<string, string>
+) {
+  const parsed = await provider.parseWebhook(payload, headers)
+
+  if (!parsed) {
+    log.info(`[${providerName}] Non-actionable event, ignoring`)
+    return c.json({ ok: true })
+  }
+
+  // Handle pong (Discord ping verification)
+  if ('type' in parsed && parsed.type === 'pong') {
+    log.info(`[${providerName}] Responding to PING`)
+    return c.json({ type: InteractionResponseType.PONG })
+  }
+
+  // Handle challenge (Slack URL verification)
+  if ('type' in parsed && parsed.type === 'challenge') {
+    log.info(`[${providerName}] URL verification challenge`)
+    return c.json({ challenge: parsed.value })
+  }
+
+  if (providerName === 'discord' && parsed.type === 'slash_command') {
+    await handleDiscordInteraction(payload, parsed)
+    return c.body(null, 202)
+  }
+
+  const result = await dispatchParsedChannelEvent(provider, payload, parsed)
+
+  if (result.emptyResponse) {
+    return c.body(null, 200)
+  }
+
+  return c.json(result.response)
+}
 
 /**
  * GET /webhooks/channels/:provider/status
