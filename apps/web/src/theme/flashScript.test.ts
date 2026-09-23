@@ -49,6 +49,8 @@ interface FlashScenario {
   systemPrefersDark?: boolean
   /** Pre-seeds a stale dark class, as a bfcache-restored document may carry. */
   staleDarkClass?: boolean
+  /** Runs inside Tau Desktop, whose preload defines window.tauDesktopApp first. */
+  desktop?: boolean
 }
 
 interface FlashResult {
@@ -78,6 +80,7 @@ async function runFlashScript(scenario: FlashScenario): Promise<FlashResult> {
         removeEventListener: () => undefined,
       })
       ;(window as unknown as { matchMedia: typeof matchMedia }).matchMedia = matchMedia
+      if (scenario.desktop) (window as unknown as { tauDesktopApp: { version: 1 } }).tauDesktopApp = { version: 1 }
     },
   })
   try {
@@ -102,6 +105,31 @@ async function runFlashScript(scenario: FlashScenario): Promise<FlashResult> {
     await dom.cleanup()
   }
 }
+
+describe('pre-paint flash script: default appearance by host', () => {
+  test('Tau Desktop with no stored choice follows the OS appearance', async () => {
+    expect((await runFlashScript({ desktop: true, systemPrefersDark: true })).dataAppearance).toBe('dark')
+    expect((await runFlashScript({ desktop: true, systemPrefersDark: false })).dataAppearance).toBe('light')
+  })
+
+  test('a browser with no stored choice keeps light', async () => {
+    const result = await runFlashScript({ systemPrefersDark: true })
+    expect(result.dataAppearance).toBe('light')
+    expect(result.hasDarkClass).toBe(false)
+  })
+
+  test('a stored choice wins everywhere', async () => {
+    expect((await runFlashScript({ desktop: true, systemPrefersDark: true, appearance: 'light' })).dataAppearance).toBe(
+      'light'
+    )
+    expect((await runFlashScript({ systemPrefersDark: false, appearance: 'dark' })).dataAppearance).toBe('dark')
+  })
+
+  test("a legacy 'system' choice keeps following the OS", async () => {
+    expect((await runFlashScript({ legacyTheme: 'system', systemPrefersDark: true })).dataAppearance).toBe('dark')
+    expect((await runFlashScript({ legacyTheme: 'system', systemPrefersDark: false })).dataAppearance).toBe('light')
+  })
+})
 
 describe('pre-paint flash script (cold load, every stored state)', () => {
   test('legacy dark: applies the dark class, attribute state, and the legacy surface snapshot', async () => {

@@ -33,7 +33,7 @@ export function InviteLinkPanel({ invite, onDone }: { invite: IssuedInviteLink; 
   const openHere = invite.forAdmin && token !== null && (inDesktop || viewerIsBootstrap)
 
   return (
-    <div className="tau-section py-4 space-y-2 border-green-300 dark:border-green-700">
+    <div className="tau-section py-4 space-y-2 border-status-success-300 dark:border-status-success-700">
       <p className="text-sm font-medium text-primary">Invite link created</p>
       <p className="text-xs text-muted">
         Email isn’t configured, so share this one-time link with the invitee. It takes them straight to passkey setup
@@ -55,7 +55,7 @@ export function InviteLinkPanel({ invite, onDone }: { invite: IssuedInviteLink; 
           <button
             type="button"
             onClick={() => navigate(`/register?token=${encodeURIComponent(token)}`)}
-            className="tau-button tau-button-primary px-3 py-1.5 bg-accent text-white rounded-md text-xs font-medium hover:bg-accent-hover shrink-0"
+            className="tau-button tau-button-primary px-3 py-1.5 bg-accent text-on-accent rounded-md text-xs font-medium hover:bg-accent-hover shrink-0"
           >
             Open in Tau
           </button>

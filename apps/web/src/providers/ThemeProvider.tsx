@@ -64,6 +64,12 @@ export function useTheme(): ThemeContextValue {
   return ctx
 }
 
+/** The theme context inside ThemeProvider, otherwise null (for components also rendered standalone). */
+// eslint-disable-next-line react-refresh/only-export-components
+export function useOptionalTheme(): ThemeContextValue | null {
+  return useContext(ThemeContext)
+}
+
 /** Reads the OS color-scheme preference once; light when unavailable. */
 function readSystemPrefersDark(): boolean {
   try {

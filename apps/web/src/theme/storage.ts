@@ -1,5 +1,6 @@
 import {
   normalizeStoredThemeSelection,
+  type AppearanceSetting,
   type EffectiveAppearance,
   type StoredThemeSelection,
 } from '@tau/shared/theme-schema'
@@ -51,7 +52,9 @@ export function getThemeStorage(): ThemeStorage | null {
  * never throws.
  */
 export function readThemeSelection(storage: ThemeStorage | null): StoredThemeSelection {
-  if (!storage) return normalizeStoredThemeSelection({ themeId: null, appearance: null, legacyTheme: null })
+  const defaultAppearance = hostDefaultAppearance()
+  if (!storage)
+    return normalizeStoredThemeSelection({ themeId: null, appearance: null, legacyTheme: null, defaultAppearance })
   let themeId: string | null = null
   let appearance: string | null = null
   let legacyTheme: string | null = null
@@ -62,7 +65,29 @@ export function readThemeSelection(storage: ThemeStorage | null): StoredThemeSel
   } catch {
     // Unreadable storage behaves like empty storage: defaults.
   }
-  return normalizeStoredThemeSelection({ themeId, appearance, legacyTheme, knownThemeIds: KNOWN_THEME_IDS })
+  return normalizeStoredThemeSelection({
+    themeId,
+    appearance,
+    legacyTheme,
+    knownThemeIds: KNOWN_THEME_IDS,
+    defaultAppearance,
+  })
+}
+
+/**
+ * The appearance before anyone chooses one. Tau Desktop's own setup and startup
+ * screens follow the OS appearance, so inside it the app does too instead of
+ * flashing to light (its preload defines `window.tauDesktopApp` before page
+ * scripts run, so the pre-paint script sees it). Browsers keep the light default.
+ */
+function hostDefaultAppearance(): AppearanceSetting | undefined {
+  try {
+    if (typeof window === 'undefined') return undefined
+    const bridge = (window as unknown as { tauDesktopApp?: { version?: unknown } }).tauDesktopApp
+    return bridge?.version === 1 ? 'system' : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /**
