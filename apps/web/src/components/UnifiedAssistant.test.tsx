@@ -1,3 +1,5 @@
+import { useContext } from 'react'
+import { ChatFullscreenContext } from './ChatFullscreenContext'
 import { useAssistantPageNavigation } from '../hooks/useAssistantPageNavigation'
 import { expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -132,7 +134,11 @@ test('assistant links keep parent and recipient drafts through Back, Escape, ref
     parentProps = props
     return (
       <div>
-        <input aria-label="Assistant draft" defaultValue="Unsent assistant question" />
+        <input
+          aria-label="Assistant draft"
+          data-auto-expand={String(useContext(ChatFullscreenContext))}
+          defaultValue="Unsent assistant question"
+        />
         <button onClick={() => props.onOpenConversation?.({ agentId: 'manager', squadId: 'tau', label: 'Morgan' })}>
           Open manager
         </button>
@@ -141,7 +147,13 @@ test('assistant links keep parent and recipient drafts through Back, Escape, ref
   }
   function Chat(props: any) {
     chatProps = props
-    return <input aria-label="Manager draft" defaultValue="Unsent manager question" />
+    return (
+      <input
+        aria-label="Manager draft"
+        data-auto-expand={String(useContext(ChatFullscreenContext))}
+        defaultValue="Unsent manager question"
+      />
+    )
   }
   function Probe() {
     search = useLocation().search
@@ -176,6 +188,8 @@ test('assistant links keep parent and recipient drafts through Back, Escape, ref
     expect(chatProps.agentId).toBe('manager')
     expect(chatProps.inputDisabled).toBe(false)
     const managerInput = document.querySelector<HTMLInputElement>('[aria-label="Manager draft"]')!
+    expect(parentInput.dataset.autoExpand).toBe('false')
+    expect(managerInput.dataset.autoExpand).toBe('false')
     expect(new URLSearchParams(search).get('section')).toBe('workflows')
     expect(new URLSearchParams(search).get('commandStack')).toContain('parent')
     await dom.act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Back to Assistant"]')!.click())

@@ -580,7 +580,12 @@ export function ChatView({
 
   const expandMobileComposer = (event: React.MouseEvent<HTMLTextAreaElement>) => {
     const textarea = event.currentTarget
-    if (isFullscreen || !window.matchMedia('(max-width: 767px)').matches || textarea.closest('.mobile-chat-modal'))
+    if (
+      expandParentChat === false ||
+      isFullscreen ||
+      !window.matchMedia('(max-width: 767px)').matches ||
+      textarea.closest('.mobile-chat-modal')
+    )
       return
 
     const { selectionStart, selectionEnd, selectionDirection } = textarea
