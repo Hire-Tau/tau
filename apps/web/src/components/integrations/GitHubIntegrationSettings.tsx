@@ -17,7 +17,8 @@ import {
 } from '../../api/integrations'
 import { integrationQueries } from '../../queryOptions'
 import { integrationAuthorizationReturnPath } from '../../lib/integrationReturnPath'
-import { integrationErrorMessage } from '../../lib/integrationErrorMessage'
+import { integrationErrorMessage, isFirstAdminIncomplete } from '../../lib/integrationErrorMessage'
+import { useOptionalAuth } from '../../providers/AuthProvider'
 import { integrationQueryKeys, onboardingQueryKeys } from '../../queryKeys'
 
 type DeviceLogin = Extract<IntegrationAuthorizationStart, { kind: 'device' }>
@@ -30,13 +31,18 @@ export function GitHubIntegrationSettings({
   canWrite,
   embedded = false,
   onboarding = false,
+  onFinishAdminSetup,
 }: {
   canRead: boolean
   canWrite: boolean
   embedded?: boolean
   onboarding?: boolean
+  /** Opens the finish-admin-setup screen. Defaults to re-reading the session, which switches the app to it. */
+  onFinishAdminSetup?: () => void
 }) {
   const client = useQueryClient()
+  const refreshSession = useOptionalAuth()?.refreshSession
+  const finishAdminSetup = onFinishAdminSetup ?? (refreshSession ? () => void refreshSession() : undefined)
   const pool = useQuery({ ...integrationQueries.pool('github'), enabled: canRead })
   const catalog = useQuery({ ...integrationQueries.catalog(), enabled: canRead && onboarding })
   const githubEnabled = catalog.data?.integrations?.find((integration) => integration.key === 'github')?.enabled
@@ -52,6 +58,9 @@ export function GitHubIntegrationSettings({
     : 0
   const [notice, setNotice] = useState('')
   const [error, setError] = useState('')
+  // The failure came from the instance-password session before the first admin
+  // has a passkey: offer to finish that setup instead of a Retry that can't work.
+  const [adminSetupRequired, setAdminSetupRequired] = useState(false)
   const [clientId, setClientId] = useState('')
   const [clientSecret, setClientSecret] = useState('')
   const [acknowledged, setAcknowledged] = useState(false)
@@ -77,20 +86,28 @@ export function GitHubIntegrationSettings({
     },
     onMutate: () => {
       setError('')
+      setAdminSetupRequired(false)
       setNotice('')
     },
     onSuccess: (result) => {
       if ('authorizationUrl' in result) window.location.assign(result.authorizationUrl)
       else setDevice(result)
     },
-    onError: (failure) => setError(integrationErrorMessage(failure, "Couldn't start GitHub login.")),
+    onError: (failure) => {
+      setError(integrationErrorMessage(failure, "Couldn't start GitHub login."))
+      setAdminSetupRequired(isFirstAdminIncomplete(failure))
+    },
   })
   // Each action replaces the previous failure, including a stale login failure and its Retry.
   const clearFailure = () => {
     setError('')
+    setAdminSetupRequired(false)
     authorize.reset()
   }
-  const reportFailure = (fallback: string) => (failure: unknown) => setError(integrationErrorMessage(failure, fallback))
+  const reportFailure = (fallback: string) => (failure: unknown) => {
+    setError(integrationErrorMessage(failure, fallback))
+    setAdminSetupRequired(isFirstAdminIncomplete(failure))
+  }
   const useConnected = useMutation({
     mutationFn: () => setIntegrationEnabled('github', true),
     onMutate: clearFailure,
@@ -460,15 +477,26 @@ export function GitHubIntegrationSettings({
           <p role="alert" className="text-sm text-red-600">
             {failure}
           </p>
-          {authorize.isError && canWrite && (
+          {adminSetupRequired && finishAdminSetup ? (
             <button
               type="button"
-              className="tau-button px-3 py-1.5 text-sm"
-              disabled={authorize.isPending || !!device}
-              onClick={() => authorize.mutate(authorize.variables)}
+              className="tau-button tau-button-primary px-3 py-1.5 text-sm"
+              onClick={finishAdminSetup}
             >
-              Retry
+              Finish admin setup
             </button>
+          ) : (
+            authorize.isError &&
+            canWrite && (
+              <button
+                type="button"
+                className="tau-button px-3 py-1.5 text-sm"
+                disabled={authorize.isPending || !!device}
+                onClick={() => authorize.mutate(authorize.variables)}
+              >
+                Retry
+              </button>
+            )
           )}
         </div>
       )}

@@ -442,6 +442,37 @@ test('a failed login shows the server reason and Retry starts a new login', asyn
   expect(button('Retry')).toBeUndefined()
 })
 
+test('connecting from the instance password session offers to finish admin setup instead of Retry', async () => {
+  globalThis.fetch = (async () =>
+    Response.json(
+      { error: 'Finish setting up your admin account to connect GitHub.', code: 'first_admin_incomplete' },
+      { status: 403 }
+    )) as typeof fetch
+  let finishCalls = 0
+  const { root, container } = harness.createRoot()
+  await harness.act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <GitHubIntegrationSettings canRead canWrite onFinishAdminSetup={() => finishCalls++} />
+      </QueryClientProvider>
+    )
+  )
+  const button = (text: string) => [...container.querySelectorAll('button')].find((item) => item.textContent === text)
+  await harness.act(async () => {
+    fireEvent.click(button('Connect account')!)
+  })
+  await waitFor(() =>
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      'Finish setting up your admin account to connect GitHub.'
+    )
+  )
+  expect(button('Retry')).toBeUndefined()
+  await harness.act(async () => {
+    fireEvent.click(button('Finish admin setup')!)
+  })
+  expect(finishCalls).toBe(1)
+})
+
 test('failed app settings and account changes report the server reason instead of fixed text', async () => {
   client.setQueryData(integrationQueryKeys.pool('github'), [
     {
