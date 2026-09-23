@@ -449,6 +449,13 @@ access logs.
 4. Once that admin holds a passkey, `TAU_PASSWORD` stops being accepted as a
    login — human sign-in is passkeys only from then on.
 
+If the passkey step fails, the account is created but has no passkey. The
+browser is still signed in with the instance password. Tau then shows **Finish
+creating your admin account** instead of the app. Choose **Create passkey** or
+**Retry** to register the passkey in the same window. You do not need a new
+verification code. Tau then signs you in to that account. See
+[Finishing first-admin setup](core-auth.md#finishing-first-admin-setup).
+
 Then point the CLI at it:
 
 ```bash

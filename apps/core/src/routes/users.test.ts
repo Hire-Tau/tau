@@ -196,6 +196,18 @@ describe('GET /api/users onboarding state', () => {
     }
   })
 
+  it('marks system admins so a pending admin invite can be handled differently', async () => {
+    const pfx = `${prefix}-pending-admin`
+    const pendingAdmin = await createTestAdmin({ prefix: pfx, canonicalAdmin: true })
+    const invitee = await createTestUser({ prefix: pfx })
+    try {
+      expect((await listEntry(pendingAdmin.id)).isAdmin).toBe(true)
+      expect((await listEntry(invitee.id)).isAdmin).toBe(false)
+    } finally {
+      await cleanupTestRbac(pfx)
+    }
+  })
+
   it('reports a user with a passkey as set up', async () => {
     const pfx = `${prefix}-joined`
     const joined = await createTestUser({ prefix: pfx })
@@ -253,6 +265,7 @@ describe('GET /api/users onboarding state', () => {
           'hasPasskey',
           'id',
           'inviteExpiresAt',
+          'isAdmin',
           'passkeyCount',
           'updatedAt',
         ].sort()

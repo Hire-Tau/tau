@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { acquireDomHarness } from './test/domHarness'
-import type { AuthStatus } from './api/auth'
+import type { AuthStatus, AuthValidation } from './api/auth'
 
 /**
  * Top-level gate: which of {nothing, login/setup, app shell} App renders for a given
@@ -11,6 +11,7 @@ import type { AuthStatus } from './api/auth'
 
 let status: AuthStatus
 let validSession: boolean
+let validation: AuthValidation = { valid: true }
 
 const baseStatus: AuthStatus = {
   authEnabled: true,
@@ -49,7 +50,7 @@ describe('App auth gate', () => {
         return Response.json(status)
       }
       if (url.includes('/auth/validate')) {
-        return validSession ? Response.json({ valid: true }) : Response.json({ error: 'nope' }, { status: 401 })
+        return validSession ? Response.json(validation) : Response.json({ error: 'nope' }, { status: 401 })
       }
       // Everything the app shell fetches on mount: empty collections.
       return Response.json([])
@@ -86,6 +87,34 @@ describe('App auth gate', () => {
   afterEach(async () => {
     await dom.cleanup()
     queryClient = null
+    validation = { valid: true }
+  })
+
+  test('the bootstrap session with an unfinished admin renders the finish screen, not the shell', async () => {
+    // The first-admin passkey step failed after its account was created: users exist,
+    // no admin has a passkey, and the instance password cookie is still valid.
+    status = { ...baseStatus, hasUsers: true }
+    validSession = true
+    validation = {
+      valid: true,
+      identityType: 'legacy',
+      firstAdmin: { adminExists: false, accounts: [{ id: 'u1', email: 'owner@example.com', displayName: null }] },
+    }
+    await render('/settings')
+
+    expect(container.textContent).toContain('Finish creating your admin account')
+    expect(container.textContent).toContain('owner@example.com')
+    expect(container.querySelector('[data-testid="app-shell"]')).toBeNull()
+  })
+
+  test("the bootstrap session with nobody waiting keeps today's shell", async () => {
+    status = { ...baseStatus, hasUsers: true }
+    validSession = true
+    validation = { valid: true, identityType: 'legacy', firstAdmin: { adminExists: false, accounts: [] } }
+    await render()
+
+    expect(container.querySelector('[data-testid="app-shell"]')).not.toBeNull()
+    expect(container.textContent).not.toContain('Finish creating your admin account')
   })
 
   test('authenticated bootstrap session with zero users renders first-admin setup', async () => {

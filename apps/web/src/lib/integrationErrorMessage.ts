@@ -13,6 +13,31 @@ const CODE_MESSAGES: Record<string, string> = {
 }
 
 /**
+ * Codes for a caller that is not a person. Core's message for these names the
+ * action ("Finish setting up your admin account to connect GitHub."), so it wins;
+ * these texts only cover a body without one.
+ */
+const SESSION_CODE_MESSAGES: Record<string, string> = {
+  first_admin_incomplete: 'Finish setting up your admin account to continue.',
+  user_session_required: 'Sign in with your Tau account to continue.',
+}
+
+function errorCode(error: unknown): string | undefined {
+  if (!(error instanceof ApiError) || !error.payload || typeof error.payload !== 'object') return undefined
+  const payload = error.payload as Record<string, unknown>
+  return typeof payload.code === 'string' && CODE_PATTERN.test(payload.code) ? payload.code : undefined
+}
+
+/**
+ * Whether a request failed because the browser is signed in with the instance
+ * password while the first admin account still has no passkey. The app offers to
+ * finish that setup rather than a plain Retry.
+ */
+export function isFirstAdminIncomplete(error: unknown): boolean {
+  return errorCode(error) === 'first_admin_incomplete'
+}
+
+/**
  * Describe a failed integration request using the server's error body.
  *
  * Core answers `{ error: message, code }` for provider failures and
@@ -32,5 +57,6 @@ export function integrationErrorMessage(error: unknown, fallback: string): strin
         : undefined
   if (code && CODE_MESSAGES[code]) return CODE_MESSAGES[code]
   if (detail && detail !== code) return detail.slice(0, MAX_MESSAGE_LENGTH)
+  if (code && SESSION_CODE_MESSAGES[code]) return SESSION_CODE_MESSAGES[code]
   return code ? `${fallback} (${code})` : fallback
 }

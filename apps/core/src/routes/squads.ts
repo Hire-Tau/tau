@@ -71,6 +71,7 @@ import { normalizeToolchain } from '../services/sandbox/toolchain/config'
 import { mergeSandboxStatus, resolveToolchainStatus } from '../services/sandbox/status'
 import * as sandboxPrewarm from '../services/sandbox/prewarm'
 import { requireSandboxRuntime } from '../services/sandbox/runtime'
+import { userSessionRequired } from '../services/auth/user-session-required'
 import {
   FileSource,
   ThreadSource,
@@ -315,7 +316,7 @@ export const squadsRouter = new Hono()
   .post('/:id/subscribe', requireSquadPermission('squads:read'), async (c) => {
     const squadId = c.req.param('id')
     const identity = await resolveActingUser(c.get('identity'))
-    if (identity?.type !== 'user') return c.json({ error: 'Only users can subscribe' }, 403)
+    if (identity?.type !== 'user') return userSessionRequired(c, c.get('identity'), 'follow squads')
     if (!(await Squad.find(squadId))) return c.json({ error: 'Squad not found' }, 404)
     const body = await parseOptionalJsonObjectBody(c, {} as Record<string, unknown>)
     // Omitted attention means "watch, but never reset levels I already chose".
@@ -332,7 +333,7 @@ export const squadsRouter = new Hono()
   .delete('/:id/subscribe', requireSquadPermission('squads:read'), async (c) => {
     const squadId = c.req.param('id')
     const identity = await resolveActingUser(c.get('identity'))
-    if (identity?.type !== 'user') return c.json({ error: 'Only users can unsubscribe' }, 403)
+    if (identity?.type !== 'user') return userSessionRequired(c, c.get('identity'), 'follow squads')
     await unsubscribeFromSquad(squadId, identity.userId)
     return c.json({ subscribed: false, count: await countSquadSubscribers(squadId), attention: DEFAULT_ATTENTION })
   })

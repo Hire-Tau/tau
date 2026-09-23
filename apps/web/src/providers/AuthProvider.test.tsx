@@ -75,7 +75,9 @@ describe('AuthProvider first-admin funnel', () => {
     authRequired: boolean | null
     isAuthenticated: boolean
     needsFirstAdminSetup: boolean
+    needsAdminCompletion: boolean
     loginWithToken: (isFirstRegistration?: boolean) => Promise<void>
+    refreshSession: () => Promise<void>
   }
   let seenPathname: string
 
@@ -201,6 +203,101 @@ describe('AuthProvider first-admin funnel', () => {
     })
 
     expect(seen.needsFirstAdminSetup).toBe(false)
+  })
+
+  const pendingOwner = { id: 'u1', email: 'owner@example.com', displayName: null }
+  const legacyWithPendingAdmin = {
+    valid: true,
+    identityType: 'legacy',
+    firstAdmin: { adminExists: false, accounts: [pendingOwner] },
+  }
+
+  test('the bootstrap session with an account waiting for its passkey needs admin completion', async () => {
+    respond = (url) => {
+      if (url.includes('/auth/status')) return { body: { ...baseStatus, hasUsers: true } }
+      if (url.includes('/auth/validate')) return { body: legacyWithPendingAdmin }
+      return { body: {} }
+    }
+    await mount()
+
+    expect(seen.isAuthenticated).toBe(true)
+    expect(seen.needsFirstAdminSetup).toBe(false)
+    expect(seen.needsAdminCompletion).toBe(true)
+  })
+
+  test('a person session never needs admin completion', async () => {
+    respond = (url) => {
+      if (url.includes('/auth/status')) return { body: { ...baseStatus, hasUsers: true } }
+      if (url.includes('/auth/validate')) return { body: { valid: true, identityType: 'user' } }
+      return { body: {} }
+    }
+    await mount()
+
+    expect(seen.needsAdminCompletion).toBe(false)
+  })
+
+  test('finishing the passkey swaps the bootstrap session for the person and ends admin completion', async () => {
+    let validation: unknown = legacyWithPendingAdmin
+    respond = (url) => {
+      if (url.includes('/auth/status')) return { body: { ...baseStatus, hasUsers: true } }
+      if (url.includes('/auth/validate')) return { body: validation }
+      return { body: {} }
+    }
+    await mount()
+    expect(seen.needsAdminCompletion).toBe(true)
+
+    validation = { valid: true, identityType: 'user' }
+    await act(async () => {
+      await seen.loginWithToken(true)
+    })
+
+    expect(seen.needsAdminCompletion).toBe(false)
+    expect(seenPathname).toBe('/onboarding')
+  })
+
+  test('refreshSession adopts the bootstrap cookie a failed first-admin passkey step left behind', async () => {
+    // LoginPage signs in with the instance password without flipping global auth,
+    // then the passkey ceremony fails after the account row exists.
+    let status: AuthStatus = { ...baseStatus }
+    let cookie = false
+    respond = (url) => {
+      if (url.includes('/auth/status')) return { body: status }
+      if (url.includes('/auth/validate')) return cookie ? { body: legacyWithPendingAdmin } : { status: 401, body: {} }
+      return { body: {} }
+    }
+    await mount()
+    expect(seen.isAuthenticated).toBe(false)
+
+    status = { ...baseStatus, hasUsers: true }
+    cookie = true
+    await act(async () => {
+      await seen.refreshSession()
+    })
+
+    expect(seen.isAuthenticated).toBe(true)
+    expect(seen.needsFirstAdminSetup).toBe(false)
+    expect(seen.needsAdminCompletion).toBe(true)
+  })
+
+  test('a 401 from a passkey-registration ceremony does not sign the session out', async () => {
+    respond = (url) => {
+      if (url.includes('/auth/status')) return { body: { ...baseStatus, hasUsers: true } }
+      if (url.includes('/auth/validate')) return { body: legacyWithPendingAdmin }
+      return { status: 401, body: { error: 'Verification failed' } }
+    }
+    // The interceptor wraps window.fetch; route it through this test's stub.
+    window.fetch = globalThis.fetch
+    await mount()
+
+    await act(async () => {
+      await window.fetch('http://localhost/api/auth/register/token/verify', { method: 'POST' })
+    })
+    expect(seen.isAuthenticated).toBe(true)
+
+    await act(async () => {
+      await window.fetch('http://localhost/api/squads')
+    })
+    expect(seen.isAuthenticated).toBe(false)
   })
 
   test('status fetch failure fails closed to the login page', async () => {

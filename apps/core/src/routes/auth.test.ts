@@ -1219,6 +1219,143 @@ describe('first-run stays ungated with no TAU_PASSWORD (bare local install)', ()
   })
 })
 
+describe('finishing first-admin setup from the bootstrap session', () => {
+  let originalPw: string | undefined
+
+  beforeEach(() => {
+    originalPw = process.env.TAU_PASSWORD
+    process.env.TAU_PASSWORD = TEST_PASSWORD
+  })
+
+  afterEach(() => {
+    if (originalPw !== undefined) process.env.TAU_PASSWORD = originalPw
+    else delete process.env.TAU_PASSWORD
+  })
+
+  async function validate(token: string) {
+    const res = await buildApp().request('/api/auth/validate', { headers: bearerHeader(token) })
+    expect(res.status).toBe(200)
+    return res.json()
+  }
+
+  function mockPasskeyVerification() {
+    return spyOn(webauthn, 'verifyRegResponse').mockImplementation(
+      async () =>
+        ({
+          verified: true,
+          registrationInfo: {
+            credential: { id: crypto.randomUUID(), publicKey: new Uint8Array([1, 2, 3]), counter: 0 },
+          },
+        }) as Awaited<ReturnType<typeof webauthn.verifyRegResponse>>
+    )
+  }
+
+  async function redeem(token: string, headers: Record<string, string> = {}) {
+    return buildApp().request('/api/auth/register/token/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify({ token, response: {} }),
+    })
+  }
+
+  async function roleAssignmentsOf(userId: string) {
+    return db.select({ id: roleAssignments.id }).from(roleAssignments).where(eq(roleAssignments.subjectId, userId))
+  }
+
+  it('validate names the identity type, and reports nobody waiting before the first account exists', async () => {
+    const body = await validate(TEST_PASSWORD)
+    expect(body).toEqual({ valid: true, identityType: 'legacy', firstAdmin: { adminExists: false, accounts: [] } })
+  })
+
+  it('validate reports the account a failed first-admin ceremony left behind', async () => {
+    // /register/options creates the account; the admin role only follows a verified passkey.
+    const pending = await createTestUser({ prefix: 'first-admin-pending' })
+    const body = await validate(TEST_PASSWORD)
+    expect(body.firstAdmin).toEqual({
+      adminExists: false,
+      accounts: [{ id: pending.id, email: pending.email, displayName: pending.displayName }],
+    })
+  })
+
+  it('validate reports only passkey-less admins once an admin row exists (restore state)', async () => {
+    const admin = await createTestAdmin({ prefix: 'first-admin-restore', canonicalAdmin: true })
+    await createTestUser({ prefix: 'first-admin-invitee' })
+    const body = await validate(TEST_PASSWORD)
+    expect(body.firstAdmin.adminExists).toBe(true)
+    expect(body.firstAdmin.accounts.map((account: { id: string }) => account.id)).toEqual([admin.id])
+  })
+
+  it('validate carries no setup details for a person', async () => {
+    const user = await createTestUser({ prefix: 'first-admin-person' })
+    expect(await validate(user.token)).toEqual({ valid: true, identityType: 'user' })
+  })
+
+  it('the bootstrap session redeeming a registration link makes the pending account the first admin', async () => {
+    const existingRole = await db.select().from(roles).where(eq(roles.slug, 'admin'))
+    const adminRole = existingRole[0] ?? (await createTestRole({ slug: 'admin', permissions: ['*'] }))
+    const pending = await createTestUser({ prefix: 'first-admin-finish' })
+    const { issueEmailChallenge } = await import('../services/auth/email')
+    const { token } = await issueEmailChallenge(pending.email)
+    const verification = mockPasskeyVerification()
+    try {
+      const res = await redeem(token, bearerHeader(TEST_PASSWORD))
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.firstAdmin).toBe(true)
+      expect(body.user.id).toBe(pending.id)
+      // The browser now holds a real person's session…
+      expect(res.headers.get('set-cookie')).toContain(body.token)
+      expect(await validate(body.token)).toEqual({ valid: true, identityType: 'user' })
+      const assignments = await db
+        .select({ roleId: roleAssignments.roleId })
+        .from(roleAssignments)
+        .where(eq(roleAssignments.subjectId, pending.id))
+      expect(assignments.map((row) => row.roleId)).toEqual([adminRole.id])
+      // …and the bootstrap password stops working, exactly as after /register/verify.
+      const legacy = await buildApp().request('/api/protected', { headers: bearerHeader(TEST_PASSWORD) })
+      expect(legacy.status).toBe(401)
+    } finally {
+      verification.mockRestore()
+      if (!existingRole.length) {
+        await db.delete(roleAssignments).where(eq(roleAssignments.roleId, adminRole.id))
+        await db.delete(roles).where(eq(roles.id, adminRole.id))
+      }
+    }
+  })
+
+  it('a registration link redeemed without the bootstrap session grants no admin role', async () => {
+    const pending = await createTestUser({ prefix: 'first-admin-elsewhere' })
+    const { issueEmailChallenge } = await import('../services/auth/email')
+    const { token } = await issueEmailChallenge(pending.email)
+    const verification = mockPasskeyVerification()
+    try {
+      const res = await redeem(token)
+      expect(res.status).toBe(200)
+      expect((await res.json()).firstAdmin).toBe(false)
+      expect(await roleAssignmentsOf(pending.id)).toEqual([])
+    } finally {
+      verification.mockRestore()
+    }
+  })
+
+  it('a failed ceremony leaves the link usable for a retry', async () => {
+    const pending = await createTestUser({ prefix: 'first-admin-retry' })
+    const { issueEmailChallenge, peekVerificationToken } = await import('../services/auth/email')
+    const { token } = await issueEmailChallenge(pending.email)
+    const failed = spyOn(webauthn, 'verifyRegResponse').mockRejectedValueOnce(new Error('challenge expired'))
+    try {
+      const res = await redeem(token, bearerHeader(TEST_PASSWORD))
+      expect(res.status).toBe(401)
+      expect(await roleAssignmentsOf(pending.id)).toEqual([])
+      expect(await peekVerificationToken(token)).not.toBeNull()
+      // The bootstrap session still resolves, so the retry can still finish setup.
+      expect((await validate(TEST_PASSWORD)).identityType).toBe('legacy')
+    } finally {
+      failed.mockRestore()
+    }
+  })
+})
+
 // ── Credential Management (security-path coverage) ────────────────────────────
 
 describe('PATCH /api/auth/me', () => {

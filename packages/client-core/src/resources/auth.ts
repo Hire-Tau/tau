@@ -26,6 +26,25 @@ export type AuthIdentity =
   | { type: 'legacy' }
   | { type: 'system'; systemTokenId: string; name: string; scopes: string[] }
 
+/** An account the bootstrap session may finish setting up as the first admin with a passkey. */
+export interface PendingAdminAccount {
+  id: string
+  email: string
+  displayName: string | null
+}
+
+/** GET /auth/validate: the credential is valid, and whose it is. */
+export interface AuthValidation {
+  valid: boolean
+  /** Absent on servers that predate it. */
+  identityType?: AuthIdentity['type']
+  /**
+   * Only for the bootstrap password identity: who is waiting to become the first
+   * admin with a passkey. `accounts` is empty before the first account exists.
+   */
+  firstAdmin?: { adminExists: boolean; accounts: PendingAdminAccount[] }
+}
+
 export interface AuthUser {
   id: string
   email: string
@@ -85,7 +104,7 @@ export function authResource(t: Transport) {
     getAuthSettings: (): Promise<AuthSettings> => t.request('/auth/settings'),
     updateAuthSettings: (settings: Partial<AuthSettings>): Promise<AuthSettings> =>
       t.request('/auth/settings', { method: 'PUT', body: settings }),
-    validateAuth: (): Promise<{ valid: boolean }> => t.request('/auth/validate'),
+    validateAuth: (): Promise<AuthValidation> => t.request('/auth/validate'),
     /** Mint a single-use, short-lived ticket for authenticating a WebSocket connection. */
     fetchWsTicket: (): Promise<{ ticket: string }> => t.request('/auth/ws-ticket', { method: 'POST' }),
     getCurrentUser: (): Promise<AuthUser> => t.request('/auth/me'),

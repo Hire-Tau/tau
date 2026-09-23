@@ -73,15 +73,41 @@
     <!-- Prevent telephone number detection on iOS -->
     <meta name="format-detection" content="telephone=no" />
 
-    <!-- Flash prevention script for dark mode -->
+    <!-- Flash prevention script for dark mode. Mirrors src/lib/theme.ts: the
+         stored preference, else "system" inside Tau Desktop (its preload injects
+         window.tauDesktopApp before page scripts run) and "light" in a browser. -->
     <script>
       ;(function () {
-        var theme = localStorage.getItem('tau-theme')
-        if (theme === 'dark') {
+        var storage
+        try {
+          storage = window.localStorage
+        } catch (e) {
+          storage = null
+        }
+        function read(key) {
+          try {
+            return storage ? storage.getItem(key) : null
+          } catch (e) {
+            return null
+          }
+        }
+        var preference = read('tau-theme')
+        if (preference !== 'light' && preference !== 'dark' && preference !== 'system') {
+          var bridge = window.tauDesktopApp
+          preference = bridge && bridge.version === 1 ? 'system' : 'light'
+        }
+        var dark =
+          preference === 'dark' ||
+          (preference === 'system' &&
+            typeof window.matchMedia === 'function' &&
+            window.matchMedia('(prefers-color-scheme: dark)').matches)
+        if (dark) {
           document.documentElement.classList.add('dark')
         }
-        var surface = localStorage.getItem('tau-surface-color')
-        if (surface) {
+        // Only reuse last session's surface color when it belongs to this theme.
+        var surface = read('tau-surface-color')
+        var surfaceTheme = read('tau-surface-theme')
+        if (surface && (surfaceTheme ? surfaceTheme === (dark ? 'dark' : 'light') : preference !== 'system')) {
           document.documentElement.style.backgroundColor = surface
           var meta = document.querySelector("meta[name='theme-color']")
           if (meta) meta.setAttribute('content', surface)

@@ -17,6 +17,7 @@ import {
   VERIFICATION_RATE_LIMIT,
 } from '../services/auth/email'
 import { createLogger } from '../lib/infra/logger'
+import { systemAdminUserIds } from '../services/auth/admin-users'
 import { getSeatPricingConfig, summarizeSeatPricing } from '../services/platform/seat-pricing'
 import { notifyOnboardingChanged } from '../services/onboarding/events'
 import { eventEmitter } from '../lib/infra/event-emitter'
@@ -133,12 +134,16 @@ usersRouter.get('/', requirePermission('users:read'), async (c) => {
   // at least one passkey is what "finished setup" means on this instance, and
   // the outstanding registration challenge says whether the invite is still
   // redeemable. Counts and timestamps only — never the code or its hash.
-  const rows = await User.findAllWithOnboarding()
+  //
+  // `isAdmin` marks system admins: a pending admin's invite link has to be opened
+  // where that admin will sign in, which the web app says when it shows the link.
+  const [rows, adminIds] = await Promise.all([User.findAllWithOnboarding(), systemAdminUserIds()])
   return c.json(
     rows.map(({ user, passkeyCount, inviteExpiresAt }) => ({
       ...user.toJSON(),
       passkeyCount,
       hasPasskey: passkeyCount > 0,
+      isAdmin: adminIds.has(user.id),
       inviteExpiresAt: inviteExpiresAt?.toISOString() ?? null,
     }))
   )

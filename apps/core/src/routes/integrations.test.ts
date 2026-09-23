@@ -476,6 +476,27 @@ describe('integration routes', () => {
       body: JSON.stringify({ returnTo: '/settings/integrations' }),
     })
     expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({
+      error: 'Sign in with your Tau account to connect Notion.',
+      code: 'user_session_required',
+    })
+    expect(calls.authorizationStart).not.toHaveBeenCalled()
+  })
+
+  test('the bootstrap password session is told to finish admin setup before connecting an account', async () => {
+    // No admin holds a passkey in this suite's database, so TAU_PASSWORD is still a
+    // live identity: it passes admin RBAC, but there is no person to connect for.
+    const { app, calls } = createApp({ type: 'legacy' })
+    const response = await app.request('/api/integrations/providers/github/authorization/start', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ returnTo: '/settings/integrations' }),
+    })
+    expect(response.status).toBe(403)
+    expect(await response.json()).toEqual({
+      error: 'Finish setting up your admin account to connect GitHub.',
+      code: 'first_admin_incomplete',
+    })
     expect(calls.authorizationStart).not.toHaveBeenCalled()
   })
 

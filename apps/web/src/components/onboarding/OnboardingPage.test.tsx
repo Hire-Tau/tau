@@ -608,3 +608,85 @@ describe('OnboardingPage — skip/unskip interactions', () => {
     return buttons[0]
   }
 })
+
+describe('OnboardingPage — appearance control', () => {
+  let oldFetch: typeof globalThis.fetch
+  let dom: Awaited<ReturnType<typeof acquireDomHarness>>
+  let container: HTMLDivElement
+  let root: ReturnType<typeof dom.createRoot>['root']
+  let queryClient: QueryClient
+
+  beforeEach(async () => {
+    oldFetch = globalThis.fetch
+    dom = await acquireDomHarness({ url: 'http://localhost/onboarding' })
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (url.includes('/permissions')) return Response.json({ permissions: ['settings:read'] })
+      if (url.includes('/onboarding/status')) return Response.json(mixedStatus())
+      if (url.endsWith('/squads') || url.endsWith('/squad-presets')) return Response.json([])
+      return Response.json({})
+    }) as typeof fetch
+    ;({ container, root } = dom.createRoot())
+  })
+
+  afterEach(async () => {
+    await queryClient?.cancelQueries()
+    queryClient?.clear()
+    delete window.tauDesktopApp
+    document.documentElement.classList.remove('dark')
+    await dom.cleanup()
+    globalThis.fetch = oldFetch
+  })
+
+  async function render() {
+    const { ThemeProvider } = await import('../../providers/ThemeProvider')
+    queryClient = seededQueryClient(['settings:read'], mixedStatus())
+    await dom.act(async () =>
+      root.render(
+        <ThemeProvider>
+          <QueryClientProvider client={queryClient}>
+            <MemoryRouter initialEntries={['/onboarding']}>
+              <OnboardingPage />
+            </MemoryRouter>
+          </QueryClientProvider>
+        </ThemeProvider>
+      )
+    )
+  }
+
+  const option = (label: string) =>
+    [...container.querySelectorAll<HTMLInputElement>('[role="radiogroup"][aria-label="Appearance"] input')].find(
+      (input) => input.parentElement?.textContent === label
+    )!
+
+  test('switching to Dark applies and remembers the theme; System follows the OS', async () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: (query: string) => ({ matches: query === '(prefers-color-scheme: dark)', media: query }),
+    })
+    await render()
+    // A browser with no stored choice keeps the light default.
+    expect(option('Light').checked).toBe(true)
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
+
+    await dom.act(async () => fireEvent.click(option('Dark')))
+    expect(option('Dark').checked).toBe(true)
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
+    expect(localStorage.getItem('tau-theme')).toBe('dark')
+
+    await dom.act(async () => fireEvent.click(option('Light')))
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
+
+    await dom.act(async () => fireEvent.click(option('System')))
+    expect(localStorage.getItem('tau-theme')).toBe('system')
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
+  })
+
+  test('inside Tau Desktop with no stored choice, System is selected and nothing is stored', async () => {
+    window.tauDesktopApp = { version: 1, notificationsEnabled: async () => false, deliverNotifications: async () => {} }
+    await render()
+
+    expect(option('System').checked).toBe(true)
+    expect(localStorage.getItem('tau-theme')).toBeNull()
+  })
+})

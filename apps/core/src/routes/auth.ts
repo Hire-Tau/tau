@@ -37,7 +37,7 @@ import { identityMiddleware } from '../middleware/identity'
 import { requirePermission } from '../middleware/require-permission'
 import { resolvePermissions, resolveRoleSummaries, type Identity } from '../services/rbac'
 import { createWsTicket } from '../services/auth/ws-ticket'
-import { hasAdminUsers, adminHasPasskey } from '../services/auth/admin-users'
+import { hasAdminUsers, adminHasPasskey, pendingAdminSetup } from '../services/auth/admin-users'
 import { createPairingCode, claimPairingCode } from '../services/auth/pairing'
 import { buildMobilePairingServerUrl } from '../lib/mobilePairingUrl'
 import { listDeviceTokens, revokeDeviceToken } from '../services/auth/device-tokens'
@@ -87,12 +87,52 @@ async function requireBootstrapAuthForFirstUser(c: Context): Promise<Response | 
   const tauPassword = getSecretStore().get('TAU_PASSWORD')
   if (!tauPassword) return null // bare local install — first-run stays ungated
 
-  const token = extractSessionToken(c)
-  if (token) {
-    const identity = await resolveToken(token)
-    if (identity?.type === 'legacy') return null // authenticated as the bootstrap identity
-  }
+  if (await holdsBootstrapSession(c)) return null // authenticated as the bootstrap identity
   return c.json({ error: 'Bootstrap authentication required. Sign in with the instance password first.' }, 401)
+}
+
+/** Whether this request carries the bootstrap `TAU_PASSWORD` identity (only resolvable while no admin has a passkey). */
+async function holdsBootstrapSession(c: Context): Promise<boolean> {
+  const token = extractSessionToken(c)
+  if (!token) return false
+  return (await resolveToken(token))?.type === 'legacy'
+}
+
+/**
+ * Make `userId` the system admin if no enabled admin exists yet. Returns whether
+ * it did. Callers must already have established that this request may mint the
+ * first admin (see requireBootstrapAuthForFirstUser).
+ */
+async function assignFirstAdminIfNone(userId: string): Promise<boolean> {
+  if (await hasAdminUsers()) return false
+  return db.transaction(async (tx) => {
+    // Serialize concurrent first-user bootstraps so two simultaneous
+    // registrations can't both become system admin under READ COMMITTED
+    // (the per-subject unique indexes don't stop two distinct users each
+    // inserting an admin assignment). The lock auto-releases at commit.
+    await tx.execute(sql`select pg_advisory_xact_lock(${ADMIN_BOOTSTRAP_LOCK_KEY})`)
+    // Double-check inside transaction
+    const adminCheck = await tx
+      .select({ id: roleAssignments.id })
+      .from(roleAssignments)
+      .innerJoin(roles, eq(roles.id, roleAssignments.roleId))
+      .where(and(eq(roleAssignments.subjectType, 'user'), eq(roleAssignments.scope, 'system'), eq(roles.slug, 'admin')))
+      .limit(1)
+    if (adminCheck.length > 0) return false
+
+    // Admin role must exist (created by config sync)
+    const adminRole = await Role.findBySlug('admin')
+    if (!adminRole) {
+      throw new Error('Admin role not found. System is misconfigured — ensure config sync has run.')
+    }
+    await tx.insert(roleAssignments).values({
+      subjectType: 'user',
+      subjectId: userId,
+      roleId: adminRole.id,
+      scope: 'system',
+    })
+    return true
+  })
 }
 
 function normalizeDisplayName(displayName: string | undefined): string | undefined {
@@ -333,44 +373,8 @@ authRouter.post('/register/verify', async (c) => {
     displayName: resolveCredentialName(credentialName, c.req.header('User-Agent')),
   })
 
-  // First user auto-admin: use transaction to check and assign atomically
-  const hasAdmin = await hasAdminUsers()
-  let firstAdmin = false
-  if (!hasAdmin) {
-    firstAdmin = await db.transaction(async (tx) => {
-      // Serialize concurrent first-user bootstraps so two simultaneous
-      // registrations can't both become system admin under READ COMMITTED
-      // (the per-subject unique indexes don't stop two distinct users each
-      // inserting an admin assignment). The lock auto-releases at commit.
-      await tx.execute(sql`select pg_advisory_xact_lock(${ADMIN_BOOTSTRAP_LOCK_KEY})`)
-      // Double-check inside transaction
-      const adminCheck = await tx
-        .select({ id: roleAssignments.id })
-        .from(roleAssignments)
-        .innerJoin(roles, eq(roles.id, roleAssignments.roleId))
-        .where(
-          and(eq(roleAssignments.subjectType, 'user'), eq(roleAssignments.scope, 'system'), eq(roles.slug, 'admin'))
-        )
-        .limit(1)
-
-      if (adminCheck.length === 0) {
-        // Admin role must exist (created by config sync)
-        const adminRole = await Role.findBySlug('admin')
-        if (!adminRole) {
-          throw new Error('Admin role not found. System is misconfigured — ensure config sync has run.')
-        }
-
-        await tx.insert(roleAssignments).values({
-          subjectType: 'user',
-          subjectId: user.id,
-          roleId: adminRole.id,
-          scope: 'system',
-        })
-        return true
-      }
-      return false
-    })
-  }
+  // First user auto-admin: check and assign atomically
+  const firstAdmin = await assignFirstAdminIfNone(user.id)
 
   // Create session
   const token = await user.createSession({
@@ -440,6 +444,13 @@ authRouter.post('/register/token/verify', async (c) => {
   if (resolved instanceof Response) return resolved
   const { user } = resolved
 
+  // Finishing first-admin setup: while no admin exists, the bootstrap session may
+  // redeem a registration link for the account whose first-admin ceremony never
+  // completed, and that account becomes the admin — exactly what /register/verify
+  // grants the same session. Read before the credential is added below, because
+  // the bootstrap password stops resolving the moment an admin holds a passkey.
+  const bootstrapCaller = !(await hasAdminUsers()) && (await holdsBootstrapSession(c))
+
   // Verify the WebAuthn response BEFORE spending the token: a failed ceremony
   // (wrong authenticator, expired challenge) must leave the invite usable.
   // verifyRegResponse throws on a missing/expired challenge — that's a failed
@@ -475,6 +486,7 @@ authRouter.post('/register/token/verify', async (c) => {
   if (consumed.purpose === 'recovery') {
     await replaceCredentialsAfterRecovery(user.id, verification.registrationInfo.credential.id)
   }
+  const firstAdmin = consumed.purpose === 'register' && bootstrapCaller && (await assignFirstAdminIfNone(user.id))
 
   const sessionToken = await user.createSession({
     userAgent: c.req.header('User-Agent'),
@@ -482,7 +494,7 @@ authRouter.post('/register/token/verify', async (c) => {
   })
   setSessionCookie(c, sessionToken)
 
-  return c.json({ ok: true, token: sessionToken, user: user.toJSON() })
+  return c.json({ ok: true, token: sessionToken, user: user.toJSON(), firstAdmin })
 })
 
 // ── POST /recover/passkey ───────────────────────────────────────────────────
@@ -614,7 +626,12 @@ authRouter.put('/settings', identityMiddleware, requirePermission('settings:writ
 // is still valid without making a full login request.
 
 authRouter.get('/validate', identityMiddleware, async (c) => {
-  return c.json({ valid: true })
+  const identity = c.get('identity')
+  if (identity.type !== 'legacy') return c.json({ valid: true, identityType: identity.type })
+  // The bootstrap password session belongs to no person. While an account is
+  // waiting to become the first passkey-holding admin, the web app shows the
+  // finish-setup screen instead of the app (see pendingAdminSetup).
+  return c.json({ valid: true, identityType: identity.type, firstAdmin: await pendingAdminSetup() })
 })
 
 // ── POST /logout ──────────────────────────────────────────────────────────────

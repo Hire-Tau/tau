@@ -16,6 +16,8 @@ export interface UserListEntry extends AuthUser {
   /** At least one passkey registered — i.e. registration was completed. */
   hasPasskey: boolean
   passkeyCount: number
+  /** Holds the system admin role. Absent on servers that predate it. */
+  isAdmin?: boolean
   /**
    * Expiry of the newest unconsumed registration challenge, or null when there
    * is none. A value in the past means the invite lapsed unused.
