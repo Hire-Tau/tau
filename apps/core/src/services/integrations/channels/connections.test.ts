@@ -240,7 +240,11 @@ test('the provider switch hides the transport credential without discarding it',
 test('a default squad creates the routing entry from the discovered identity, once', async () => {
   const connections = make()
   await expect(connections.configure('telegram', { defaultSquadId: squadId }, 'test')).rejects.toThrow('required')
-  const view = await connections.configure('telegram', { botToken: '111:good', defaultSquadId: squadId }, 'test')
+  expect((await connections.view('telegram')).routable).toBe(false)
+  const saved = await connections.configure('telegram', { botToken: '111:good' }, 'test')
+  expect(saved.routing).toBeNull()
+  expect(saved.routable).toBe(true)
+  const view = await connections.configure('telegram', { defaultSquadId: squadId }, 'test')
   expect(view.routing).toEqual({ instanceId: 'telegram-111', defaultSquadId: squadId })
   const rows = await db.select().from(channelInstances).where(eq(channelInstances.provider, 'telegram'))
   expect(rows).toHaveLength(1)
@@ -408,6 +412,7 @@ test('a duplicate managed broker row is broken by most-recently-updated, not by 
 
 test('view() exposes managedApp: availability, identity, health and whether it is what the transport uses', async () => {
   const localAuthorityConnections = make()
+  expect((await localAuthorityConnections.view('slack')).routable).toBe(false)
   expect((await localAuthorityConnections.view('slack')).managedApp).toMatchObject({
     available: false,
     connection: null,
@@ -437,6 +442,10 @@ test('view() exposes managedApp: availability, identity, health and whether it i
     },
   })
   expect(view.webhook.delivery).toBe('relay')
+  // Connected and routable before any channel instance exists: choosing a default squad creates it.
+  expect(view.setup.state).toBe('configured')
+  expect(view.routing).toBeNull()
+  expect(view.routable).toBe(true)
 
   // Without any manual credential, the manual-facing `fields`/`connection` sections stay empty:
   // the managed connection is a distinct concept from the "bring your own app" one.

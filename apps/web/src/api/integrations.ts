@@ -300,6 +300,7 @@ export interface ChannelIntegrationSettings {
   setup?: { state: 'configured' | 'needs_setup' | 'needs_attention'; issues: string[] }
   webhook?: { url: string; secretConfigured: boolean; delivery?: 'direct' | 'relay' }
   routing?: { instanceId: string; defaultSquadId: string | null } | null
+  routable?: boolean
   guilds?: { id: string; name: string }[]
   /** Slack only: the "Add to Slack" managed-app connection, offered alongside manual entry on hosted instances. */
   managedApp?: {

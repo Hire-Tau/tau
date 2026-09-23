@@ -97,11 +97,10 @@ export function ChannelIntegrationSettings({ provider, canWrite }: { provider: P
 
   const hint = providerHints[provider]
   const connected = data?.connection?.source === 'connection' && data.connection.authState === 'authenticated'
-  // Whichever connection is actually active for the provider (a usable managed
-  // Slack connection wins over the manual one) is what `routing` reflects, so
-  // keying off it — rather than the manual-only `identity` — shows the default
-  // squad picker for a managed-only Slack connection too.
-  const routingReady = !!data?.routing
+  // `routable` follows whichever connection is active (a usable managed Slack
+  // connection wins over the manual one). Choosing a squad is what creates the
+  // channel instance, so the picker must show before `routing` exists.
+  const routingReady = !!data?.routing || !!data?.routable
 
   const manualSetupSection = (
     <>
