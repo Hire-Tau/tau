@@ -67,7 +67,7 @@ export interface ConnectionServiceDependencies {
   now?: () => Date
   uuid?: () => string
   audit?: IntegrationAuditRecorder
-  requiresRemoteRevocation?: (providerKey: string, adapterVersion: number) => boolean
+  requiresRemoteRevocation?: (providerKey: string, adapterVersion: number, clientAuthority: OAuthAuthority) => boolean
   deproject?: (input: { squadIds: readonly string[]; providerKey: string }) => Promise<void>
   allowsManualCredential?: (providerKey: string) => boolean
   safeConfiguration?: (providerKey: string, configuration: unknown) => unknown
@@ -93,7 +93,11 @@ export class IntegrationConnectionService {
   readonly #now: () => Date
   readonly #uuid: () => string
   readonly #auditRecorder?: IntegrationAuditRecorder
-  readonly #requiresRemoteRevocation: (providerKey: string, adapterVersion: number) => boolean
+  readonly #requiresRemoteRevocation: (
+    providerKey: string,
+    adapterVersion: number,
+    clientAuthority: OAuthAuthority
+  ) => boolean
   readonly #deproject?: ConnectionServiceDependencies['deproject']
   readonly #allowsManualCredential: (providerKey: string) => boolean
   readonly #safeConfiguration: (providerKey: string, configuration: unknown) => unknown
@@ -330,7 +334,11 @@ export class IntegrationConnectionService {
     const removeWhileLeased = async () => {
       const connection = await this.#mustGet(id)
       const usage = await this.#assignments.usage(id)
-      const requiresRevocation = this.#requiresRemoteRevocation(connection.providerKey, connection.adapterVersion)
+      const requiresRevocation = this.#requiresRemoteRevocation(
+        connection.providerKey,
+        connection.adapterVersion,
+        connection.clientAuthority
+      )
       if (requiresRevocation && !this.#repository.deleteWithRevocation) {
         throw new Error('Remote revocation is unavailable')
       }

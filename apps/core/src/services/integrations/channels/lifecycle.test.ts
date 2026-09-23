@@ -53,6 +53,7 @@ const telegram = (revision: string, botToken = '111:tok'): ChannelConnectionStat
   lastErrorCode: null,
   configuration: { version: 1, botId: '111' },
   credential: { botToken, webhookSecret: 'secret-1' },
+  authority: 'local',
 })
 
 const discord = (revision: string, guildId?: string): ChannelConnectionState<'discord'> => ({
@@ -66,6 +67,7 @@ const discord = (revision: string, guildId?: string): ChannelConnectionState<'di
   lastErrorCode: null,
   configuration: { version: 1, applicationId: 'app-1', publicKey: 'pk', ...(guildId ? { guildId } : {}) },
   credential: { botToken: 'bot-tok' },
+  authority: 'local',
 })
 
 describe('ChannelLifecycle', () => {

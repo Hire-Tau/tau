@@ -265,6 +265,7 @@ class SlackApi {
 let apiInstance: SlackApi | null = null
 let apiToken: string | undefined
 let cachedBotUserId: string | null = null
+let cachedBotUserIdToken: string | undefined
 const userLabelCache = new Map<string, string>()
 const userLabelPendingCache = new Map<string, Promise<string>>()
 
@@ -637,13 +638,18 @@ export const slackProvider: ChannelProvider = {
   },
 
   async getBotUserId(): Promise<string | null> {
-    if (!hasToken()) return null
-    if (cachedBotUserId) return cachedBotUserId
+    const token = getChannelIntegrationValue('SLACK_BOT_TOKEN')
+    if (!token) return null
+    // Keyed on the active token: a workspace switch (manual reconfigure, or
+    // the managed connection becoming active/inactive) must not keep serving
+    // the previous workspace's bot user id.
+    if (cachedBotUserId && cachedBotUserIdToken === token) return cachedBotUserId
 
     try {
       const api = getApi()
       const result = await api.authTest()
       cachedBotUserId = result.userId
+      cachedBotUserIdToken = token
       log.info(`Slack bot user ID: ${cachedBotUserId}`)
       return cachedBotUserId
     } catch (e) {

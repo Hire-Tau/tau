@@ -27,6 +27,7 @@ function setup(
     postCreateReadFails?: boolean
     deleteCommitsThenThrows?: boolean
     currentOAuthAuthority?: (providerKey: string) => 'local' | 'platform_broker' | undefined
+    requiresRemoteRevocation?: (providerKey: string, adapterVersion: number, clientAuthority: string) => boolean
     operatorAlertFails?: boolean
     authorityCasLoses?: boolean
   } = {}
@@ -187,7 +188,7 @@ function setup(
       },
       capabilities: {},
     }),
-    requiresRemoteRevocation: (providerKey) => providerKey === 'notion',
+    requiresRemoteRevocation: options.requiresRemoteRevocation ?? ((providerKey) => providerKey === 'notion'),
     allowsManualCredential: options.allowsManualCredential,
     refreshAuthenticationFailure: options.refreshAuthenticationFailure,
     safeConfiguration: options.safeConfiguration,
@@ -593,6 +594,71 @@ describe('IntegrationConnectionService', () => {
     expect(secrets.get(credentialRef)).toBe('oauth-bundle')
     expect(scheduledCleanup).toEqual([])
     expect(scheduledRevocation).toEqual([{ providerKey: 'notion', adapterVersion: 1, credentialRef }])
+  })
+
+  test('a manual+managed provider (Slack-shaped) schedules revocation only for its broker-authority row', async () => {
+    // Mirrors the real wiring: manual+managed plugins require remote revocation
+    // only when the row's own clientAuthority is the broker's — a manual
+    // (`local`) row for the same provider key must never schedule it.
+    const requiresRemoteRevocation = (providerKey: string, _version: number, clientAuthority: string) =>
+      providerKey === 'slack' && clientAuthority === 'platform_broker'
+
+    const managed = setup({ requiresRemoteRevocation })
+    const managedConnection = await managed.service.create({
+      providerKey: 'slack',
+      adapterVersion: 1,
+      displayName: 'Acme',
+      configuration: { version: 1 },
+      credential: 'oauth-bundle',
+      actor: 'user:user-1',
+      authorizationGrant: true,
+      clientAuthority: 'platform_broker',
+    })
+    const managedCredentialRef = managed.getRow()!.credentialRef
+    await managed.service.remove(managedConnection.id)
+    expect(managed.getRow()).toBeNull()
+    expect(managed.scheduledRevocation).toEqual([
+      { providerKey: 'slack', adapterVersion: 1, credentialRef: managedCredentialRef },
+    ])
+    expect(managed.secrets.get(managedCredentialRef)).toBe('oauth-bundle')
+
+    const manual = setup({ requiresRemoteRevocation, allowsManualCredential: () => true })
+    const manualConnection = await manual.service.create({
+      providerKey: 'slack',
+      adapterVersion: 1,
+      displayName: 'Bring-your-own Slack app',
+      configuration: { version: 1 },
+      credential: 'manual-bot-token',
+      actor: 'user:user-1',
+    })
+    const manualCredentialRef = manual.getRow()!.credentialRef
+    await manual.service.remove(manualConnection.id)
+    expect(manual.getRow()).toBeNull()
+    expect(manual.scheduledRevocation).toEqual([])
+    // A manual removal cleans up its own credential immediately (no revocation job owns it).
+    expect(manual.secrets.has(manualCredentialRef)).toBe(false)
+  })
+
+  test('a manual+managed provider (Slack-shaped) is never reconciled for authority mismatch: it stays manual', async () => {
+    // currentOAuthAuthority mirrors the real wiring too: it only ever returns
+    // an authority for `kind: 'oauth2'` plugins. Slack's authorization.kind
+    // stays 'manual' even with a managed driver, so this must return
+    // undefined for it — meaning #reconcileAuthority is always a no-op here,
+    // regardless of the deployment's current OAuth authority.
+    const { service, getRow } = setup({
+      currentOAuthAuthority: (providerKey) => (providerKey === 'notion' ? 'platform_broker' : undefined),
+    })
+    const connection = await service.create({
+      providerKey: 'slack',
+      adapterVersion: 1,
+      displayName: 'Bring-your-own Slack app',
+      configuration: { version: 1 },
+      credential: 'manual-bot-token',
+      actor: 'user:user-1',
+    })
+    expect(getRow()!.clientAuthority).toBe('local')
+    await service.validate(connection.id)
+    expect(getRow()).toMatchObject({ authState: 'authenticated', clientAuthority: 'local' })
   })
 
   test('OAuth removal reconciles a committed delete acknowledgement loss without duplicating ownership', async () => {

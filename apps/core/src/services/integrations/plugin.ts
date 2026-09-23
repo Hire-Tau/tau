@@ -1,12 +1,10 @@
 import type { IntegrationProvider, ProviderValidation, RuntimeConnection, SanitizedConversationRecord } from './types'
+import type { OAuthAuthority } from './authorization/authority'
+import type { OAuthCredentialBundleV1 } from './authorization/credential-bundle'
 
 export interface CredentialCodec<Credential> {
   parse(value: unknown): Credential
   serialize(value: Credential): string
-}
-
-export interface ManualCredentialDriver {
-  readonly kind: 'manual'
 }
 
 export interface AuthorizationGrant<C, Credential> {
@@ -27,6 +25,21 @@ export interface OAuth2Authorization<C, Credential> {
   resolveGrantIdentity?(credential: Credential): Promise<{ configuration: C; displayName: string }>
   /** Bearer-only validation stays with Core, which owns the connection identity. */
   validate(input: { configuration: C; credential: Credential; signal?: AbortSignal }): Promise<ProviderValidation>
+}
+
+/**
+ * A same-provider OAuth install offered alongside manual credential entry
+ * (e.g. hosted "Add to Slack" next to bring-your-own-app). Scoped to the
+ * `authorities` it is valid under so a later phase can widen it (self-hosted
+ * instances borrowing a Cloud connection) without touching this shape.
+ */
+export interface ManagedOAuthDriver<C> extends OAuth2Authorization<C, OAuthCredentialBundleV1> {
+  readonly authorities: readonly OAuthAuthority[]
+}
+
+export interface ManualCredentialDriver<C = unknown> {
+  readonly kind: 'manual'
+  readonly managed?: ManagedOAuthDriver<C>
 }
 
 export interface IntegrationSandboxProjection {
@@ -103,7 +116,7 @@ export interface IntegrationPluginV1<
     safeConfiguration(configuration: C): unknown
     readonly credential: CredentialCodec<Credential>
   }
-  readonly authorization: ManualCredentialDriver | OAuth2Authorization<C, Credential>
+  readonly authorization: ManualCredentialDriver<C> | OAuth2Authorization<C, Credential>
   readonly runtime: {
     readonly provider: IntegrationProvider<C>
     readonly agentTools?: AgentTools

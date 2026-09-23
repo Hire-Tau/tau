@@ -423,3 +423,43 @@ describe('slackProvider.sendNotification', () => {
     )
   })
 })
+
+describe('slackProvider.getBotUserId', () => {
+  const originalEnv = process.env.SLACK_BOT_TOKEN
+  const originalFetch = globalThis.fetch
+
+  beforeEach(() => {
+    delete process.env.SLACK_BOT_TOKEN
+    globalThis.fetch = originalFetch
+  })
+
+  afterEach(() => {
+    if (originalEnv === undefined) delete process.env.SLACK_BOT_TOKEN
+    else process.env.SLACK_BOT_TOKEN = originalEnv
+    globalThis.fetch = originalFetch
+  })
+
+  it('resolves a fresh bot user id when the active token changes, instead of serving a stale cached one', async () => {
+    // A workspace switch — the manual token replaced, or the managed
+    // connection becoming/ceasing to be active — must not keep answering
+    // with the previous workspace's bot user id.
+    const usersByToken: Record<string, string> = {
+      'xoxb-cache-workspace-a': 'U-CACHE-WORKSPACE-A',
+      'xoxb-cache-workspace-b': 'U-CACHE-WORKSPACE-B',
+    }
+    globalThis.fetch = (async (_url: string, opts?: RequestInit) => {
+      const auth = new Headers(opts?.headers).get('Authorization') ?? ''
+      const token = auth.replace('Bearer ', '')
+      const userId = usersByToken[token]
+      return Response.json(userId ? { ok: true, user_id: userId } : { ok: false, error: 'invalid_auth' })
+    }) as unknown as typeof fetch
+
+    process.env.SLACK_BOT_TOKEN = 'xoxb-cache-workspace-a'
+    expect(await slackProvider.getBotUserId()).toBe('U-CACHE-WORKSPACE-A')
+    // A second call with the same token is served from cache: exactly one auth.test so far.
+    expect(await slackProvider.getBotUserId()).toBe('U-CACHE-WORKSPACE-A')
+
+    process.env.SLACK_BOT_TOKEN = 'xoxb-cache-workspace-b'
+    expect(await slackProvider.getBotUserId()).toBe('U-CACHE-WORKSPACE-B')
+  })
+})

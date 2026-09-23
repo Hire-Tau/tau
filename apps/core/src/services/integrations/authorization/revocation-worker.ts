@@ -241,7 +241,11 @@ interface RevocationPlugin {
 export interface IntegrationRevocationDependencies {
   repository: IntegrationRevocationRepository
   credentials: { get(key: string): string | undefined; refreshKey(key: string): Promise<void> }
-  resolvePlugin(providerKey: string, adapterVersion: number): RevocationPlugin | undefined
+  resolvePlugin(
+    providerKey: string,
+    adapterVersion: number,
+    clientAuthority: RevocationJob['clientAuthority']
+  ): RevocationPlugin | undefined
   revocationTransports: OAuthRevocationTransportResolver
   audit?: IntegrationAuditRecorder
   now?: () => Date
@@ -265,7 +269,7 @@ export class IntegrationRevocationWorker {
     const leaseToken = this.#uuid()
     const job = await this.#dependencies.repository.claim(now, new Date(now.getTime() + LEASE_MS), leaseToken)
     if (!job) return false
-    const plugin = this.#dependencies.resolvePlugin(job.providerKey, job.adapterVersion)
+    const plugin = this.#dependencies.resolvePlugin(job.providerKey, job.adapterVersion, job.clientAuthority)
     await this.#dependencies.credentials.refreshKey(job.credentialRef)
     const raw = this.#dependencies.credentials.get(job.credentialRef)
     if (!raw) return this.#finish(job, 'credential_already_removed')

@@ -1,6 +1,7 @@
 import { z } from 'zod'
-import type { IntegrationPluginV1 } from '../plugin'
+import type { IntegrationPluginV1, ManagedOAuthDriver } from '../plugin'
 import type { ProviderValidation } from '../types'
+import { parseOAuthCredential } from '../authorization/credential-bundle'
 
 /**
  * Channel integrations as first-class connections: one Discord app, Slack
@@ -51,12 +52,35 @@ export const slackConfigurationSchema = z
     teamId: z.string().min(1).optional(),
     botUserId: z.string().min(1).optional(),
     teamName: z.string().min(1).optional(),
+    /** Only ever set by a managed (broker) install; a manual save never types it. */
+    appId: z.string().min(1).optional(),
   })
   .strict()
+/** The broker's grant configuration allows a null team name; Core's schema only ever omits it. */
+const parseSlackConfigurationInput = (value: unknown): SlackConfiguration => {
+  if (
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    (value as Record<string, unknown>).teamName === null
+  ) {
+    const { teamName: _teamName, ...rest } = value as Record<string, unknown>
+    return slackConfigurationSchema.parse(rest)
+  }
+  return slackConfigurationSchema.parse(value)
+}
 export const slackCredentialSchema = z.object({ botToken: secret, signingSecret: secret }).strict()
 export type SlackConfiguration = z.infer<typeof slackConfigurationSchema>
 export type SlackCredential = z.infer<typeof slackCredentialSchema>
 export type SlackIdentity = Pick<SlackConfiguration, 'teamId' | 'botUserId' | 'teamName'>
+
+/** Accepts a manual `{botToken, signingSecret}` credential or an OAuth bundle; both hold the bot token. */
+function slackBotTokenFromCredential(raw: string): string {
+  const parsed: unknown = JSON.parse(raw)
+  const manual = slackCredentialSchema.safeParse(parsed)
+  if (manual.success) return manual.data.botToken
+  return parseOAuthCredential(raw).accessToken
+}
 
 export const discordConfigurationSchema = z
   .object({
@@ -145,12 +169,12 @@ export function createChannelPlugins(options: ChannelPluginOptions = {}) {
   }
 
   // Slack ─ auth.test answers { ok, error? , team_id, user_id, team }.
-  const slackAuthTest = async (credential: SlackCredential, signal?: AbortSignal) => {
+  const slackAuthTest = async (botToken: string, signal?: AbortSignal) => {
     let response: Response
     try {
       response = await fetchImpl(`${slackApi}/auth.test`, {
         method: 'POST',
-        headers: { authorization: `Bearer ${credential.botToken}` },
+        headers: { authorization: `Bearer ${botToken}` },
         signal: timeout(signal),
       })
     } catch {
@@ -224,6 +248,25 @@ export function createChannelPlugins(options: ChannelPluginOptions = {}) {
     },
   }
 
+  // Managed OAuth: "Add to Slack" through the platform broker, offered
+  // alongside manual entry so hosted tenants can bring their own app instead.
+  const slackManaged: ManagedOAuthDriver<SlackConfiguration> = {
+    kind: 'oauth2',
+    adapter: 'slack',
+    authorities: ['platform_broker'],
+    identity: (configuration) => ({ teamId: configuration.teamId ?? '' }),
+    validate: async ({ configuration, credential, signal }) => {
+      try {
+        const me = await slackAuthTest(credential.accessToken, signal)
+        return me.team_id === configuration.teamId && me.user_id === configuration.botUserId
+          ? { ok: true, grantedScopes: [] }
+          : { ok: false, code: 'workspace_identity_mismatch' }
+      } catch (error) {
+        return { ok: false, code: error instanceof ProviderAuthError ? error.code : 'provider_unavailable' }
+      }
+    },
+  }
+
   const slack: ChannelPlugin<SlackConfiguration, SlackCredential, SlackIdentity> = {
     manifestVersion: 1,
     key: 'slack',
@@ -233,19 +276,19 @@ export function createChannelPlugins(options: ChannelPluginOptions = {}) {
       'Connect a Slack app, route conversations to squads, and deliver notifications.'
     ),
     connection: {
-      parseConfiguration: (value) => slackConfigurationSchema.parse(value),
+      parseConfiguration: (value) => parseSlackConfigurationInput(value),
       safeConfiguration: (configuration) => configuration,
       credential: jsonCodec(slackCredentialSchema),
     },
-    authorization: { kind: 'manual' },
+    authorization: { kind: 'manual', managed: slackManaged },
     runtime: {
       provider: {
         key: 'slack',
         adapterVersion: 1,
-        parseConfig: (value) => slackConfigurationSchema.parse(value),
+        parseConfig: (value) => parseSlackConfigurationInput(value),
         validate: ({ credential, signal }) =>
           validation(async () => {
-            await slackAuthTest(slackCredentialSchema.parse(JSON.parse(credential)), signal)
+            await slackAuthTest(slackBotTokenFromCredential(credential), signal)
           }),
         capabilities: {},
       },
@@ -265,7 +308,7 @@ export function createChannelPlugins(options: ChannelPluginOptions = {}) {
         },
       ],
       identity: async (credential, signal) => {
-        const me = await slackAuthTest(credential, signal)
+        const me = await slackAuthTest(credential.botToken, signal)
         return {
           ...(me.team_id ? { teamId: me.team_id } : {}),
           ...(me.user_id ? { botUserId: me.user_id } : {}),

@@ -1,12 +1,14 @@
 import { createHash } from 'crypto'
 import { beforeEach, describe, expect, test } from 'bun:test'
 import type { IntegrationAuditEvent } from '../audit'
-import type { IntegrationPluginV1 } from '../plugin'
+import type { IntegrationPluginV1, ManagedOAuthDriver } from '../plugin'
 import type { NewOAuthStateRecord, OAuthStateRecord, OAuthStateRepository } from './state-repository'
 import { AuthorizationFlowError, IntegrationAuthorizationService } from './service'
 import { createLocalTransport, type OAuthTransport } from './transport'
 import { BrokerUnconfiguredError } from './authority'
 import { PlatformRequestError } from '../../platform/instance-client'
+import { registerOAuthProviderAdapterForTest } from '@tau/shared/oauth-providers'
+import { createFakeAdapter } from '@tau/shared/oauth-providers/fake'
 
 class MemoryStateRepository implements OAuthStateRepository {
   readonly rows = new Map<string, OAuthStateRecord>()
@@ -995,5 +997,148 @@ describe('IntegrationAuthorizationService', () => {
       })
       .catch((error) => expectFlowCode(error, 'unsafe_return_target'))
     expect(states.rows.size).toBe(0)
+  })
+})
+
+describe('IntegrationAuthorizationService: manual+managed provider (Slack-shaped)', () => {
+  function createManualWithManagedPlugin(): IntegrationPluginV1<{ version: 1; teamId?: string }, string> {
+    const managed: ManagedOAuthDriver<{ version: 1; teamId?: string }> = {
+      kind: 'oauth2',
+      adapter: 'slack',
+      authorities: ['platform_broker'],
+      identity: (configuration) => ({ teamId: configuration.teamId ?? '' }),
+      async validate() {
+        return { ok: true, grantedScopes: [] }
+      },
+    }
+    return {
+      manifestVersion: 1,
+      key: 'slack',
+      adapterVersion: 1,
+      presentation: {
+        label: 'Slack',
+        description: 'Slack',
+        icon: 'slack',
+        connectionMode: 'channel',
+        assignable: false,
+        requiredCapabilities: [],
+      },
+      connection: {
+        parseConfiguration: (value) => value as { version: 1; teamId?: string },
+        safeConfiguration: (value) => value,
+        credential: { parse: String, serialize: String },
+      },
+      authorization: { kind: 'manual', managed },
+      runtime: {
+        provider: {
+          key: 'slack',
+          adapterVersion: 1,
+          parseConfig: (value) => value as { version: 1; teamId?: string },
+          validate: async () => ({ ok: true, grantedScopes: [] }),
+          capabilities: {},
+        },
+      },
+      sandbox: {
+        packages: [],
+        setupSteps: [],
+        initHooks: [],
+        readiness: [],
+        skills: [],
+        extensions: [],
+        protectedBindings: [],
+      },
+      lifecycle: { refresh: false, revoke: false },
+      classifyError: () => ({ code: 'provider_unavailable', retryable: true }),
+    }
+  }
+
+  test('local authority: starting Slack fails cleanly — no managed offer, no state row created', async () => {
+    const states = new MemoryStateRepository()
+    const plugin = createManualWithManagedPlugin()
+    const transport: OAuthTransport = {
+      authority: 'local',
+      async authorizationUrl() {
+        throw new Error('must not be reached: no OAuth flow is offered on local authority')
+      },
+      async completeAuthorization() {
+        throw new Error('unused')
+      },
+      async refresh() {
+        throw new Error('unused')
+      },
+      async revoke() {},
+    }
+    const service = new IntegrationAuthorizationService({
+      states,
+      resolvePlugin: (key) => (key === 'slack' ? plugin : undefined),
+      transport,
+      callbackUrl: () => 'https://tau.example/settings/integrations/oauth/callback',
+      installGrant: async () => {
+        throw new Error('must not be reached')
+      },
+      randomBytes: () => Buffer.alloc(32, 7),
+    })
+    await service
+      .start({
+        providerKey: 'slack',
+        userId: 'user-1',
+        returnTo: '/settings/integrations',
+        intent: { kind: 'connect' },
+      })
+      .then(() => {
+        throw new Error('expected local-authority Slack start to fail')
+      })
+      .catch((error) => expectFlowCode(error, 'unsupported_provider'))
+    expect(states.rows.size).toBe(0)
+  })
+
+  test('platform_broker authority: starting Slack succeeds through the managed driver', async () => {
+    const restoreAdapter = registerOAuthProviderAdapterForTest(
+      createFakeAdapter({ responses: [], revoked: [], calls: [] }, 'slack')
+    )
+    try {
+      const states = new MemoryStateRepository()
+      const plugin = createManualWithManagedPlugin()
+      const transport: OAuthTransport = {
+        authority: 'platform_broker',
+        async authorizationUrl(input) {
+          return {
+            authorizationUrl: `https://fake.test/oauth/authorize?state=${input.localFlowId}`,
+            expiresAt: '2026-08-29T00:10:00.000Z',
+          }
+        },
+        async completeAuthorization() {
+          throw new Error('unused')
+        },
+        async refresh() {
+          throw new Error('unused')
+        },
+        async revoke() {},
+      }
+      const service = new IntegrationAuthorizationService({
+        states,
+        resolvePlugin: (key) => (key === 'slack' ? plugin : undefined),
+        transport,
+        callbackUrl: () => 'https://tau.example/settings/integrations/oauth/callback',
+        installGrant: async () => {
+          throw new Error('unused')
+        },
+        randomBytes: () => Buffer.alloc(32, 7),
+        uuid: () => '80000000-0000-4000-8000-000000000099',
+      })
+      const result = await service.start({
+        providerKey: 'slack',
+        userId: 'user-1',
+        returnTo: '/settings/integrations',
+        intent: { kind: 'connect' },
+      })
+      expect(result.authorizationUrl).toBe(
+        'https://fake.test/oauth/authorize?state=80000000-0000-4000-8000-000000000099'
+      )
+      expect(states.rows.size).toBe(1)
+      expect([...states.rows.values()][0]).toMatchObject({ providerKey: 'slack', authority: 'platform_broker' })
+    } finally {
+      restoreAdapter()
+    }
   })
 })

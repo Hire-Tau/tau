@@ -160,11 +160,104 @@ describe('channel plugins', () => {
     for (const plugin of Object.values(plugins)) {
       expect(plugin.presentation.connectionMode).toBe('channel')
       expect(plugin.presentation.assignable).toBe(false)
-      expect(plugin.authorization).toEqual({ kind: 'manual' })
+      expect(plugin.authorization.kind).toBe('manual')
       expect(plugin.channel.credentialFields.every((field) => field.secret)).toBe(true)
     }
+    expect(plugins.telegram.authorization).toEqual({ kind: 'manual' })
+    expect(plugins.discord.authorization).toEqual({ kind: 'manual' })
     expect(plugins.telegram.channel.credentialFields.map((f) => f.key)).toEqual(['botToken'])
     expect(plugins.slack.channel.credentialFields.map((f) => f.key)).toEqual(['botToken', 'signingSecret'])
     expect(plugins.discord.channel.credentialFields.map((f) => f.key)).toEqual(['botToken'])
+  })
+
+  test('Slack additionally offers a managed OAuth driver scoped to the platform broker, alongside manual entry', () => {
+    const { slack } = createChannelPlugins({ fetch: fakeFetch({}).fetchImpl })
+    expect(slack.authorization.kind).toBe('manual')
+    if (slack.authorization.kind !== 'manual') throw new Error('unreachable')
+    const managed = slack.authorization.managed
+    expect(managed).toBeDefined()
+    expect(managed?.kind).toBe('oauth2')
+    expect(managed?.adapter).toBe('slack')
+    expect(managed?.authorities).toEqual(['platform_broker'])
+    expect(managed?.identity?.({ version: 1, teamId: 'T1' })).toEqual({ teamId: 'T1' })
+  })
+
+  test('Slack provider validate accepts a manual credential or an OAuth bundle, both by bot token', async () => {
+    const { fetchImpl } = fakeFetch({
+      'auth.test': (_url, init) =>
+        header(init, 'authorization') === 'Bearer xoxb-manual' ||
+        header(init, 'authorization') === 'Bearer xoxb-managed'
+          ? Response.json({ ok: true, team_id: 'T1', user_id: 'U1', team: 'Acme' })
+          : Response.json({ ok: false, error: 'invalid_auth' }),
+    })
+    const { slack } = createChannelPlugins({ fetch: fetchImpl })
+    const manualCredential = slack.connection.credential.serialize({ botToken: 'xoxb-manual', signingSecret: 'sig' })
+    expect(
+      await slack.runtime.provider.validate({ credential: manualCredential, configuration: { version: 1 } } as never)
+    ).toEqual({ ok: true, grantedScopes: [] })
+
+    const bundleCredential = JSON.stringify({
+      version: 1,
+      accessToken: 'xoxb-managed',
+      refreshToken: null,
+      expiresAt: null,
+      tokenRevision: 1,
+    })
+    expect(
+      await slack.runtime.provider.validate({ credential: bundleCredential, configuration: { version: 1 } } as never)
+    ).toEqual({ ok: true, grantedScopes: [] })
+  })
+
+  test('Slack managed validate mismatch reports workspace_identity_mismatch, mirroring the notion pattern', async () => {
+    const { fetchImpl } = fakeFetch({
+      'auth.test': Response.json({ ok: true, team_id: 'T-actual', user_id: 'U-actual', team: 'Acme' }),
+    })
+    const { slack } = createChannelPlugins({ fetch: fetchImpl })
+    if (slack.authorization.kind !== 'manual') throw new Error('unreachable')
+    const managed = slack.authorization.managed!
+    const bundle = {
+      version: 1 as const,
+      accessToken: 'xoxb-managed',
+      refreshToken: null,
+      expiresAt: null,
+      tokenRevision: 1,
+    }
+
+    expect(
+      await managed.validate({
+        configuration: { version: 1, teamId: 'T-actual', botUserId: 'U-actual' },
+        credential: bundle,
+      })
+    ).toEqual({ ok: true, grantedScopes: [] })
+
+    expect(
+      await managed.validate({
+        configuration: { version: 1, teamId: 'T-different', botUserId: 'U-actual' },
+        credential: bundle,
+      })
+    ).toEqual({ ok: false, code: 'workspace_identity_mismatch' })
+
+    expect(
+      await managed.validate({
+        configuration: { version: 1, teamId: 'T-actual', botUserId: 'U-different' },
+        credential: bundle,
+      })
+    ).toEqual({ ok: false, code: 'workspace_identity_mismatch' })
+  })
+
+  test('Slack configuration accepts the broker-issued appId and a null team name', () => {
+    const { slack } = createChannelPlugins({ fetch: fakeFetch({}).fetchImpl })
+    expect(
+      slack.connection.parseConfiguration({
+        version: 1,
+        teamId: 'T1',
+        teamName: null,
+        botUserId: 'U1',
+        appId: 'A1',
+      })
+    ).toEqual({ version: 1, teamId: 'T1', botUserId: 'U1', appId: 'A1' })
+    expect(
+      slack.connection.parseConfiguration({ version: 1, teamId: 'T1', teamName: 'Acme', botUserId: 'U1', appId: 'A1' })
+    ).toEqual({ version: 1, teamId: 'T1', teamName: 'Acme', botUserId: 'U1', appId: 'A1' })
   })
 })

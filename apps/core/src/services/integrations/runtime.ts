@@ -69,6 +69,8 @@ import { getSecretStore } from '../secrets'
 import { IntegrationRegistry } from './registry'
 import { resolveOAuthAuthority } from './authorization/authority'
 import { firstPartyIntegrationPlugins } from './first-party-plugins'
+import { oauthPluginView } from './oauth-plugin-view'
+import { channelConnections } from './channels/connections'
 import { OAuthConnectionAuthorizer } from './authorization/connection-authorizer'
 import { DbIntegrationConnectionRepository } from './db-connection-repository'
 import { IntegrationConnectionService } from './connection-service'
@@ -309,9 +311,10 @@ export const integrationRevocationWorker = new IntegrationRevocationWorker({
     get: (key) => getSecretStore().get(key),
     refreshKey: (key) => getSecretStore().refreshKey(key),
   },
-  resolvePlugin: (providerKey, adapterVersion) => {
+  resolvePlugin: (providerKey, adapterVersion, clientAuthority) => {
     const plugin = integrationRegistry.plugin(providerKey)
-    return plugin?.adapterVersion === adapterVersion ? plugin : undefined
+    if (!plugin || plugin.adapterVersion !== adapterVersion) return undefined
+    return oauthPluginView(plugin, clientAuthority)
   },
   revocationTransports: oauthRevocationTransports,
   audit: integrationAuditRecorder,
@@ -366,6 +369,9 @@ const installOAuthGrant: AuthorizationServiceDependencies['installGrant'] = asyn
     },
   })
   await authorizer.install({ intent: state, exchange, userId })
+  // Channel transports read a synchronous snapshot (30s timer refresh otherwise);
+  // a managed Slack install should take effect as soon as it lands.
+  if (plugin.key === 'slack') await channelConnections.refresh()
 }
 export const integrationAuthorizationService = new IntegrationAuthorizationService({
   states: oauthStates,
@@ -465,9 +471,11 @@ export const integrationConnectionService = new IntegrationConnectionService({
       ? plugin.connection.safeConfiguration(plugin.connection.parseConfiguration(configuration))
       : configuration
   },
-  requiresRemoteRevocation: (key, version) => {
+  requiresRemoteRevocation: (key, version, clientAuthority) => {
     const plugin = integrationRegistry.plugin(key)
-    return plugin?.adapterVersion === version && plugin.authorization.kind === 'oauth2'
+    if (!plugin || plugin.adapterVersion !== version) return false
+    if (plugin.authorization.kind === 'oauth2') return true
+    return Boolean(plugin.authorization.managed?.authorities.includes(clientAuthority))
   },
   deproject: async ({ squadIds, providerKey }) => {
     for (const squadId of squadIds) {
