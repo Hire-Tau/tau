@@ -3484,6 +3484,89 @@ describe('silent-open liveness', () => {
     }
   })
 
+  test.each(
+    (['completed', 'failed', 'stopped'] as const).flatMap((status) =>
+      (['success', 'error', 'repeat', 'offline', 'foreground'] as const).map((mode) => ({ status, mode }))
+    )
+  )('idle manual refresh after exact $status binds only its own history request ($mode)', async ({ status, mode }) => {
+    const clock = reconciliationClock()
+    let wallNow = Date.now()
+    const wallClock = spyOn(Date, 'now').mockImplementation(() => wallNow)
+    let rejectHistory = false
+    const m = makeMockClient({
+      activeExecution: { active: true, status: 'running', executionId: 'e' },
+      getMessages: () => {
+        if (rejectHistory) throw new Error('history unavailable')
+        return { messages: [], pagination: { hasMore: false, totalCount: 0 } }
+      },
+    })
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    let reads = 0
+    m.client.agents.getExecution = async () => {
+      reads++
+      return { agentId: 'a', executionId: 'e', executionVersion: 2, status, active: false }
+    }
+    const hook = await renderHook(() => useAgentConversation({ agentId: 'a' }), {
+      wrapper: wrapWith(queryClient, m.client),
+    })
+    try {
+      await waitFor(() => expect(m.subscribedExecutionIds.at(-1)).toBe('e'))
+      act(() => m.emit({ type: 'text', text: 'retained prefix', streamGroupId: 'S' }))
+      const subscriptions = m.subscribeCount()
+      await clock.advance(15000)
+      await waitFor(() => expect(hook.result.current.executionStatus).toBe(status))
+      const query = queryClient.getQueryCache().find({ queryKey: queryKeys.agents.messagesInfinite('a') })!
+      await waitFor(() => expect(query.state.fetchStatus).toBe('idle'))
+      expect(m.subscribeCount()).toBe(subscriptions) // Automatic recovery is not a reconnect.
+      await clock.advance(5000)
+      wallNow += 20_000
+      if (mode === 'foreground') {
+        act(() => focusManager.setFocused(false))
+        act(() => focusManager.setFocused(true))
+        await waitFor(() => expect(query.state.fetchStatus).toBe('idle'))
+      }
+      if (mode === 'offline') act(() => onlineManager.setOnline(false))
+      rejectHistory = mode === 'error'
+      const history = m.getMessagesCount()
+      const oldPromise = query.promise
+      const items = hook.result.current.items
+      const currentSubscriptions = m.subscribeCount()
+      const presses = mode === 'repeat' ? 2 : 1
+      act(() => {
+        let previousPromise = oldPromise
+        for (let press = 1; press <= presses; press++) {
+          hook.result.current.refresh()
+          // A mobile caller binds synchronously, never by waiting for the next fetch.
+          expect(m.getMessagesCount()).toBe(history + (mode === 'offline' ? 0 : press))
+          expect(query.state.fetchStatus).toBe(mode === 'offline' ? 'paused' : 'fetching')
+          expect(query.promise).not.toBe(previousPromise)
+          previousPromise = query.promise
+        }
+      })
+      if (mode === 'offline') {
+        // A paused request is not feedback-worthy dispatch. No deferred Core intent
+        // may later claim the online-triggered fetch as a new explicit invocation.
+        act(() => onlineManager.setOnline(true))
+      }
+      await waitFor(() => expect(query.state.fetchStatus).toBe('idle'))
+      if (mode === 'error') expect(query.state.status).toBe('error')
+      expect(hook.result.current.executionStatus).toBe(status)
+      expect(hook.result.current.items).toEqual(items) // Empty/error history cannot retire uncovered content.
+      expect(reads).toBe(1)
+      expect(m.subscribeCount()).toBe(currentSubscriptions)
+      expect(m.subscribedExecutionIds.at(-1)).toBe('e')
+      await clock.advance(30000)
+      expect(m.getMessagesCount()).toBe(history + presses) // No deferred duplicate.
+      expect(reads).toBe(1)
+    } finally {
+      hook.unmount()
+      onlineManager.setOnline(true)
+      focusManager.setFocused(true)
+      wallClock.mockRestore()
+      clock.restore()
+    }
+  })
+
   test('one early manual press drains at quiet without a terminal event; repeated presses coalesce', async () => {
     const clock = reconciliationClock()
     const m = makeMockClient()
