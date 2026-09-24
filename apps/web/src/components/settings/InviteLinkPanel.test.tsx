@@ -37,6 +37,15 @@ describe('InviteLinkPanel', () => {
     }
   }
 
+  function useRemoteDesktop() {
+    window.tauDesktopApp = {
+      version: 1,
+      notificationsEnabled: async () => false,
+      deliverNotifications: async () => {},
+      instance: { kind: 'remote', name: 'noah' },
+    }
+  }
+
   async function render(invite: IssuedInviteLink) {
     await dom.act(async () => {
       root.render(
@@ -73,6 +82,14 @@ describe('InviteLinkPanel', () => {
   test('inside Tau Desktop, an ordinary invite keeps only Copy', async () => {
     useDesktop()
     await render({ url: LINK, forAdmin: false })
+
+    expect(button('Copy')).toBeDefined()
+    expect(button('Open in Tau')).toBeUndefined()
+  })
+
+  test('for a remote Desktop instance, a pending admin invite keeps only Copy', async () => {
+    useRemoteDesktop()
+    await render({ url: LINK, forAdmin: true })
 
     expect(button('Copy')).toBeDefined()
     expect(button('Open in Tau')).toBeUndefined()

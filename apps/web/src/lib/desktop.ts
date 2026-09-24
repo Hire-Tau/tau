@@ -93,7 +93,18 @@ const DESKTOP_INSTANCE_KINDS = new Set<DesktopInstanceKind>(['local', 'attached'
 /** Which Desktop instance this window shows, when this desktop build reports it. */
 export function desktopInstance(): DesktopInstance | undefined {
   const instance = desktopBridge()?.instance
-  return instance && DESKTOP_INSTANCE_KINDS.has(instance.kind) && typeof instance.name === 'string'
-    ? instance
-    : undefined
+  if (
+    !instance ||
+    !DESKTOP_INSTANCE_KINDS.has(instance.kind) ||
+    typeof instance.name !== 'string' ||
+    !instance.name.trim()
+  ) {
+    return undefined
+  }
+  // Drop a malformed non-function `disconnect` from an untrusted/older bridge rather than
+  // exposing it; otherwise keep the instance (and its optional disconnect) as reported.
+  if (instance.disconnect !== undefined && typeof instance.disconnect !== 'function') {
+    return { kind: instance.kind, name: instance.name }
+  }
+  return instance
 }

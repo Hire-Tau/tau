@@ -54,8 +54,9 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
   const actionCount = pendingPresentation.count
   // Durable Assistant activity is discovered independently of whether the command bar is open.
   const assistantActivity = useAssistantActivity()
-  // Only visible in the desktop inset title bar (see .tau-app-header-instance in index.css); a
-  // paired remote instance's name disambiguates which Mac this window is showing.
+  // Only visible in the desktop inset (windowed) title bar (see .tau-app-header-instance in
+  // index.css); the label shows this window's Desktop instance name for every instance kind
+  // (local, attached, or remote), disambiguating which instance this window is showing.
   const instance = desktopInstance()
 
   useEffect(() => {
