@@ -76,7 +76,10 @@ function branchChangeRequests(pulls: Array<Record<string, any>>): BranchChangeRe
     return [
       {
         number,
-        merged: pull?.merged === true,
+        // The list endpoint returns the simple shape: no `merged` field, but `merged_at` is set
+        // for merged pull requests. Reading only `merged` would classify every merged delivery
+        // pull request as closed-unmerged and drop it.
+        merged: pull?.merged === true || (typeof pull?.merged_at === 'string' && pull.merged_at !== ''),
         state: String(pull?.state ?? ''),
         headBranch,
         baseBranch,

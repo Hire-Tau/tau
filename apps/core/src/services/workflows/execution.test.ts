@@ -901,11 +901,11 @@ describe('parallel dispatch and pause', () => {
           },
         })
         .where(eq(workStreams.id, id))
-      api.mockImplementation((path: string) => Promise.resolve(path.includes('pulls?head=') ? [] : null))
+      api.mockImplementation(((path: string) => Promise.resolve(path.includes('pulls?head=') ? [] : null)) as any)
       missing = await finishFlow(id, 2, actor).catch((error: Error) => error.message)
       expect(missing).toContain("No pull request was found for branch 'feature' in example/repo")
       expect(missing).toContain('owner-namespace head lookup excludes fork pull requests')
-      api.mockImplementation((path: string) =>
+      api.mockImplementation(((path: string) =>
         Promise.resolve(
           path.includes('pulls?head=')
             ? [
@@ -925,11 +925,10 @@ describe('parallel dispatch and pause', () => {
                 },
               ]
             : null
-        )
-      )
+        )) as any)
       missing = await finishFlow(id, 2, actor).catch((error: Error) => error.message)
       expect(missing).toContain("Branch 'feature' does not identify one delivery pull request (candidates #1, #2)")
-      api.mockImplementation((path: string) => Promise.resolve(path.includes('pulls?head=') ? null : null))
+      api.mockImplementation(((path: string) => Promise.resolve(path.includes('pulls?head=') ? null : null)) as any)
       missing = await finishFlow(id, 2, actor).catch((error: Error) => error.message)
       expect(missing).toContain("pull requests for branch 'feature' could not be read through the github integration")
       // A legacy github-repo stream is told to bind github.pr, never a partial codeHost.
@@ -943,7 +942,7 @@ describe('parallel dispatch and pause', () => {
           },
         })
         .where(eq(workStreams.id, id))
-      api.mockImplementation((path: string) => Promise.resolve(path.includes('pulls?head=') ? [] : null))
+      api.mockImplementation(((path: string) => Promise.resolve(path.includes('pulls?head=') ? [] : null)) as any)
       missing = await finishFlow(id, 2, actor).catch((error: Error) => error.message)
       expect(missing).toContain(`tau workstream set-meta ${id} github.pr '{"number":<pr-number>,"url":"<pr-url>"}'`)
       // (c) the binding exists but cannot be verified at all, distinct from not-merged.
@@ -990,7 +989,7 @@ describe('parallel dispatch and pause', () => {
         })
         .where(eq(workStreams.id, id))
       // One open pull request on the branch: it is bound and persisted, then verified unmerged.
-      api.mockImplementation((path: string) =>
+      api.mockImplementation(((path: string) =>
         Promise.resolve(
           path.includes('pulls?head=')
             ? [
@@ -1004,8 +1003,7 @@ describe('parallel dispatch and pause', () => {
                 },
               ]
             : { merged: false, base: { ref: 'main' }, head: { ref: 'feature' } }
-        )
-      )
+        )) as any)
       await expect(finishFlow(id, 2, actor)).rejects.toThrow('The change request must be merged before completion')
       const bound = ((await WorkStream.mustFind(id)).metadata as Record<string, any>).codeHost
       expect(bound).toEqual({
@@ -1015,7 +1013,7 @@ describe('parallel dispatch and pause', () => {
       })
       expect((await WorkStream.mustFind(id)).status).toBe('active')
       // Once merged, the same persisted binding finishes the flow.
-      api.mockImplementation((path: string) =>
+      api.mockImplementation(((path: string) =>
         Promise.resolve(
           path.includes('pulls?head=')
             ? [
@@ -1028,8 +1026,7 @@ describe('parallel dispatch and pause', () => {
                 },
               ]
             : { merged: true, base: { ref: 'main' }, head: { ref: 'feature', sha: 'a'.repeat(40) } }
-        )
-      )
+        )) as any)
       expect((await finishFlow(id, 2, actor)).status).toBe('done')
       const [cleanup] = await db.select().from(worktreeCleanupJobs).where(eq(worktreeCleanupJobs.workStreamId, id))
       expect(cleanup).toHaveProperty('deliveredHead', 'a'.repeat(40))

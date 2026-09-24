@@ -21,8 +21,8 @@ export interface CodeHostingAdapter {
   ): Promise<{ merged: boolean; headBranch: string; baseBranch: string; headSha?: string } | null>
   /**
    * The pull requests a provider reports for one head branch (`state=all`). The GitHub filter is
-n   * owner-namespace scoped, so forks reusing the branch name never appear. Null means the lookup
-n   * itself failed; an empty array means the branch genuinely has no pull requests.
+   * owner-namespace scoped, so forks reusing the branch name never appear. Null means the lookup
+   * itself failed; an empty array means the branch genuinely has no pull requests.
    */
   changeRequestsByHead(
     reference: CodeHostReference,
