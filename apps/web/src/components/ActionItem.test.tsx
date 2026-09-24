@@ -688,7 +688,7 @@ test('a flow-owned wait opens its decision controls instead of exposing generic 
         </MemoryRouter>
       )
     )
-    expect(dom.window.document.body.textContent).toContain('Review flow decision')
+    expect(dom.window.document.body.textContent).toContain('Review and decide')
     expect(dom.window.document.querySelector('input[placeholder="Your response..."]')).toBeNull()
   } finally {
     await dom.cleanup()

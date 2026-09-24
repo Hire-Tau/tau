@@ -301,6 +301,19 @@ function requestReturn(
   startAttempt(state, targetStepId, attempt.branch, false, [attempt.id])
 }
 
+/** The delivery agent attempt a completion-ready flow sends back to when rework is requested. */
+export function workflowReworkAttempt(run: WorkflowRun): WorkflowAttempt | undefined {
+  const target = run.definition.completion.changeEventsTo
+  return [...run.attempts]
+    .reverse()
+    .find(
+      (attempt) =>
+        attempt.status === 'completed' &&
+        (attempt.step ?? stepById(run, attempt.stepId)).kind === 'agent' &&
+        (!target || target === 'delivery-owner' || attempt.stepId === target.step)
+    )
+}
+
 /**
  * Pure transition kernel. The server must authorize the active step's actor and
  * atomically persist the result plus dispatch intent using expectedVersion.
@@ -311,15 +324,7 @@ export function advanceWorkflowRun(previous: WorkflowRun, input: unknown): Workf
   if (command.expectedVersion !== previous.version) throw new Error('Stale workflow version')
   if (command.action === 'rework') {
     if (previous.status !== 'completion-ready') throw new Error('Rework requires a completion-ready flow')
-    const target = previous.definition.completion.changeEventsTo
-    const last = [...previous.attempts]
-      .reverse()
-      .find(
-        (attempt) =>
-          attempt.status === 'completed' &&
-          (attempt.step ?? stepById(previous, attempt.stepId)).kind === 'agent' &&
-          (!target || target === 'delivery-owner' || attempt.stepId === target.step)
-      )
+    const last = workflowReworkAttempt(previous)
     if (!last || last.id !== command.attemptId)
       throw new Error('Rework must reference the latest completed delivery agent attempt')
     const state = structuredClone(previous)

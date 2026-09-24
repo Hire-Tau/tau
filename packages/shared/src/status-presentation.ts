@@ -117,12 +117,30 @@ export const WORK_STREAM_WAIT_STATE = {
   manual: 'blocked',
 } as const satisfies Record<WorkStreamWaitType, WorkStreamDerivedState>
 
+export interface WorkStreamWaitDisplayFacts {
+  type: WorkStreamWaitType
+  resolutionHandler?: 'workflow'
+  flowAttemptId?: number | null
+}
+
+/**
+ * The wait type a stream presents. A workflow human-approval gate is stored as
+ * a manual wait the workflow resolves, pinned to its attempt; it is a review
+ * waiting on a person, not a blocked stream. Delivery and attempt-limit waits
+ * are whole-stream (no attempt) and keep their stored type.
+ */
+export function workStreamWaitDisplayType(wait: WorkStreamWaitDisplayFacts): WorkStreamWaitType {
+  return wait.type === 'manual' && wait.resolutionHandler === 'workflow' && wait.flowAttemptId != null
+    ? 'review'
+    : wait.type
+}
+
 export interface WorkStreamPresentationFacts {
   delivery?: WorkStreamDeliveryPresentation
   pause?: unknown
   status: WorkStreamStatus
   derivedState?: WorkStreamDerivedState
-  openWaits?: ReadonlyArray<{ type: WorkStreamWaitType; id?: string }>
+  openWaits?: ReadonlyArray<WorkStreamWaitDisplayFacts & { id?: string }>
 }
 
 /**
@@ -145,7 +163,7 @@ export function selectWorkStreamPresentationState(
     const waitType = WORK_STREAM_WAIT_DISPLAY_PRECEDENCE.find((type) =>
       workStream.openWaits!.some(
         (wait) =>
-          wait.type === type &&
+          workStreamWaitDisplayType(wait) === type &&
           !(
             deliveryState === 'delivery_approval' &&
             wait.type === 'manual' &&
@@ -179,7 +197,10 @@ export function workStreamNeedsHumanAttention(workStream: WorkStreamPresentation
   // Explicit wait facts distinguish a manual wait from dependency blocking.
   // Older payloads omitted waits, so their historical `blocked` fallback is
   // retained until all producers provide the authoritative list.
-  return workStream.openWaits === undefined || workStream.openWaits.some((wait) => wait.type === 'manual')
+  return (
+    workStream.openWaits === undefined ||
+    workStream.openWaits.some((wait) => workStreamWaitDisplayType(wait) === 'manual')
+  )
 }
 
 export interface SandboxPresentationFacts {
