@@ -190,6 +190,27 @@ and interaction patterns for the webapp.
 
 - Use `clsx` for conditional class names.
 
+### Theme colors
+
+Every color in `apps/web` comes from theme tokens, so it follows the selected
+theme (Tau, Harbor, Ember, High contrast, or a custom theme) in light and dark.
+
+- Use semantic token utilities and the `tau-*` component classes (`bg-surface`,
+  `text-primary`, `text-on-accent`, `border-th-border`,
+  `text-status-danger-600`, ...). Never use Tailwind palette utilities
+  (`text-red-600`, `bg-white`, `text-black`), literal colors (`#fff`, `rgb()`)
+  or unreviewed inline color styles in components, CSS or canvas code.
+- `apps/web/src/no-raw-colors.test.ts` fails the web test gate on any of these.
+  Fix the color; do not add an exception. Its few exceptions cover content and
+  definitions only and are capped at their current matches.
+- A new color is a new token: add it to `THEME_TOKEN_FAMILIES` in
+  `packages/shared/src/theme-schema.ts` and define it for every built-in theme
+  and appearance (`apps/web/src/index.css`, `apps/web/src/theme/builtins.css`).
+  The token coverage and parity tests in `apps/web/src/theme/` enforce this.
+- Read colors in JS (charts, graphs, canvas, terminal) through
+  `useThemeColors` / `tokenReader`, never hard-coded values.
+- Details: [web themes](docs/wiki/theme/README.md).
+
 ### Stable Refs
 
 Use `useStableRef` from `hooks/useStableRef` whenever you need to read a

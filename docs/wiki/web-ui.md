@@ -24,9 +24,9 @@ Glass belongs on app framing and sidebars. Use an approximately 88% surface fill
 
 ## Tokens and implementation
 
-`src/index.css` defines semantic colors; `tailwind.config.js` exposes them to components; `src/design-system.css` contains explicit shared component roles. Change these tokens before introducing local colors.
+Colors are theme tokens. `packages/shared/src/theme-schema.ts` lists them; `src/index.css` and `src/theme/builtins.css` define them for every built-in theme and appearance; `tailwind.config.js` exposes them to components; `src/design-system.css` contains explicit shared component roles. Add or change a token before introducing a color; palette utilities and literal colors fail `src/no-raw-colors.test.ts`. See [web themes](theme/README.md).
 
-The light canvas is nearly white (`#faf9fc`), with a white reading surface and muted lavender-neutral secondary fill. Dark mode uses a near-black canvas (`#090a12`), a subtle navy-neutral surface, and lighter control fills. Purple remains the primary action and selection color. Use the light accent token for foreground links in dark mode; filled controls keep white text.
+In the default Tau theme the light canvas is nearly white, with a white reading surface and muted lavender-neutral secondary fill. Dark mode uses a near-black canvas, a subtle navy-neutral surface, and lighter control fills. Purple is Tau's primary action and selection color; other themes supply their own. Use the light accent token for foreground links in dark mode; filled controls use `text-on-accent`.
 
 Use `tau-field`, `tau-button`, `tau-button-primary`, `tau-nav-item`, and `tau-table` for their corresponding roles. These classes define appearance; layout utilities remain local. Ordinary `shadow-theme` is disabled. Reserve elevation for overlays and transient drag affordances.
 
