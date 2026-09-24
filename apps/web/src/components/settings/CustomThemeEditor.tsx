@@ -109,17 +109,28 @@ function toSwatchHex(value: string): string {
 
 /** A seed-color field: a native color-picker swatch alongside the hex/rgb()/
  * rgba() text field (the source of truth — the closed grammar and alpha stay
- * text-only), with an optional Clear action for unset-able (non-Primary) seeds. */
+ * text-only), with an optional Clear action for unset-able (non-Primary) seeds.
+ *
+ * The swatch and the text field commit differently for undo coalescing
+ * purposes: a swatch pick is a discrete, non-typing action (its own undo
+ * step, via `onSwatchChange`), while the text field is typed and coalesces
+ * with adjacent edits to the same field (via `onChange` + `onBlur` ending the
+ * session early). `onSwatchChange` defaults to `onChange` for callers that
+ * don't need the distinction. */
 function ColorField({
   label,
   value,
   onChange,
+  onSwatchChange,
   onClear,
+  onBlur,
 }: {
   label: string
   value: string
   onChange: (next: string) => void
+  onSwatchChange?: (next: string) => void
   onClear?: () => void
+  onBlur?: () => void
 }) {
   // Explicit htmlFor/id (text field) + explicit aria-label (color swatch) —
   // deliberately not one <label> wrapping both controls, which would give
@@ -133,7 +144,7 @@ function ColorField({
           type="color"
           aria-label={`${label} color swatch`}
           value={toSwatchHex(value)}
-          onChange={(event) => onChange(event.target.value)}
+          onChange={(event) => (onSwatchChange ?? onChange)(event.target.value)}
           className="h-9 w-9 shrink-0 cursor-pointer rounded border border-th-border bg-transparent p-0"
         />
         <input
@@ -142,6 +153,7 @@ function ColorField({
           className="tau-field px-3 py-2 flex-1"
           value={value}
           onChange={(event) => onChange(event.target.value)}
+          onBlur={onBlur}
           placeholder={onClear ? 'Not set' : 'Hex, rgb() or rgba()'}
         />
       </div>
@@ -165,6 +177,9 @@ export function CustomThemeEditor({
   onClose,
   assistantDependencies,
   focusAssistant,
+  idleCoalesceMs,
+  scheduleIdleTimeout,
+  cancelIdleTimeout,
 }: {
   value: ReturnType<typeof useTheme>
   /** The library preset being edited, or null when authoring a brand-new one. */
@@ -175,6 +190,13 @@ export function CustomThemeEditor({
   assistantDependencies?: Parameters<typeof PageEditorAssistant>[0]['conversationDependencies']
   /** "New theme with assistant": move DOM focus to the assistant panel on mount. */
   focusAssistant?: boolean
+  /** How long a typed-field undo session stays open with no further keystroke
+   * before the next keystroke opens a new step. Defaults to 800ms. */
+  idleCoalesceMs?: number
+  /** Injected scheduler for the idle-coalescing timer (mirrors
+   * createInvalidationCoalescer's injectable clock) — defaults to real timers. */
+  scheduleIdleTimeout?: (callback: () => void, ms: number) => ReturnType<typeof setTimeout>
+  cancelIdleTimeout?: (handle: ReturnType<typeof setTimeout>) => void
 }) {
   const { setPreview } = useThemePreview()
   const cache = useQueryClient()
@@ -195,17 +217,64 @@ export function CustomThemeEditor({
 
   // Shared undo/redo (assistant edits and manual edits, like WorkflowEditor):
   // `revision` and the past/future stacks back the assistant draft envelope
-  // below. `updateDraft` is the one path manual handlers use to change the
-  // document so every change is undoable the same way.
+  // below. `commitDraft`/`commitTypedDraft` are the two paths manual handlers
+  // use to change the document so every change is undoable the same way.
   const [revision, setRevision] = useState(0)
   const [past, setPast] = useState<CustomThemeDocument[]>([])
   const [future, setFuture] = useState<CustomThemeDocument[]>([])
-  const updateDraft = (next: CustomThemeDocument) => {
+
+  const idleMs = idleCoalesceMs ?? 800
+  const scheduleTimeout = scheduleIdleTimeout ?? ((callback: () => void, ms: number) => setTimeout(callback, ms))
+  const cancelTimeout = cancelIdleTimeout ?? ((handle: ReturnType<typeof setTimeout>) => clearTimeout(handle))
+  // An in-progress typed-field coalescing session: consecutive keystrokes in
+  // the SAME field collapse into the one undo step opened when the session
+  // started, until the field changes, the input blurs, the idle timer fires,
+  // or a non-typing commit (commitDraft) closes it first.
+  const typingSession = useRef<{ field: string; timer: ReturnType<typeof setTimeout> } | null>(null)
+  const closeTypingSession = () => {
+    if (typingSession.current) cancelTimeout(typingSession.current.timer)
+    typingSession.current = null
+  }
+  // Cancels a stray idle timer if the editor unmounts mid-session. Runs its
+  // cleanup only on unmount — `closeTypingSession` is intentionally excluded
+  // (it's a fresh closure every render, same as the `focusAssistant` effect
+  // below).
+  useEffect(() => closeTypingSession, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** The one path every NON-typing draft change uses (color-picker swatches,
+   * toggles, the base-theme select, per-token Preview/Remove/safe-value
+   * buttons): always its own undo step, and closes any in-progress typed
+   * session first so a later keystroke in the same field starts fresh rather
+   * than merging across the boundary. */
+  const commitDraft = (next: CustomThemeDocument) => {
+    closeTypingSession()
     if (JSON.stringify(next) === JSON.stringify(draft)) return
     setPast((items) => [...items.slice(-49), draft])
     setFuture([])
     setDraft(next)
     setRevision((r) => r + 1)
+  }
+
+  /** Typed-field edits (theme name, palette hex/rgb text fields): consecutive
+   * edits to the SAME field coalesce into the one undo step opened when that
+   * field's session started. The revision still bumps on every keystroke —
+   * only the undo-history granularity changes. */
+  const commitTypedDraft = (field: string, next: CustomThemeDocument) => {
+    if (JSON.stringify(next) === JSON.stringify(draft)) return
+    const session = typingSession.current
+    if (session) cancelTimeout(session.timer)
+    if (!session || session.field !== field) {
+      setPast((items) => [...items.slice(-49), draft])
+      setFuture([])
+    }
+    setDraft(next)
+    setRevision((r) => r + 1)
+    typingSession.current = {
+      field,
+      timer: scheduleTimeout(() => {
+        typingSession.current = null
+      }, idleMs),
+    }
   }
   const [insights, setInsights] = useState<Partial<Record<VariantTab, ThemeInsightsVariant>>>({})
   const assistantPanel = useRef<HTMLDivElement>(null)
@@ -217,15 +286,22 @@ export function CustomThemeEditor({
 
   /** Setting a primary color starts derivation; clearing it removes the whole
    * palette (a preset created from a built-in with no palette is pure explicit
-   * overrides, exactly like before). */
-  const setPalette = (patch: Partial<ThemePalette> | null) => {
+   * overrides, exactly like before). Pure — callers choose whether the
+   * resulting document commits as a typed (coalesced) or immediate step. */
+  const paletteDraft = (patch: Partial<ThemePalette> | null): CustomThemeDocument => {
     if (patch === null) {
       const { palette: _drop, ...rest } = draft
-      updateDraft(rest)
-      return
+      return rest
     }
-    updateDraft({ ...draft, palette: { primary: palette?.primary ?? '', ...palette, ...patch } })
+    return { ...draft, palette: { primary: palette?.primary ?? '', ...palette, ...patch } }
   }
+  /** A palette hex/rgb TEXT field's onChange: coalesces with other edits to
+   * the same seed while the user keeps typing. */
+  const setPaletteTyped = (field: string, patch: Partial<ThemePalette> | null) =>
+    commitTypedDraft(`palette.${field}`, paletteDraft(patch))
+  /** A palette seed's color-picker swatch or Clear button: always its own
+   * step, per the coalescing spec's "non-typing action" list. */
+  const setPaletteImmediate = (patch: Partial<ThemePalette> | null) => commitDraft(paletteDraft(patch))
 
   // Assistant draft envelope + shared undo/redo delivery, mirroring
   // WorkflowBuilder's applyAssistantEdit: a stable ref holds the latest state
@@ -234,6 +310,10 @@ export function CustomThemeEditor({
   // past/future stacks as assistant edits.
   const current = useStableRef({ draft, revision, past, future, insights, tab, preset })
   const applyAssistantEdit = (proposal: AssistantEditorProposal): AssistantEditorSync | undefined => {
+    // An assistant proposal (or an Undo/Redo click, which also routes through
+    // here) is always its own step — never merged with an in-progress typed
+    // session, so a keystroke resumed afterward starts fresh.
+    closeTypingSession()
     const latest = current.current
     const target = latest.preset ? { presetId: latest.preset.id } : {}
     if (proposal.historyAction) {
@@ -394,12 +474,12 @@ export function CustomThemeEditor({
       }
     }
     next[name] = nextColor
-    updateDraft(withVariantOverrides(draft, tab, next))
+    commitDraft(withVariantOverrides(draft, tab, next))
   }
   const removeOverride = (name: string) => {
     const next = { ...overrides }
     for (const key of STATUS_TOKENS.includes(name) ? STATUS_TOKENS : [name]) delete next[key]
-    updateDraft(withVariantOverrides(draft, tab, next))
+    commitDraft(withVariantOverrides(draft, tab, next))
   }
   const download = () => {
     try {
@@ -516,7 +596,8 @@ export function CustomThemeEditor({
               className="tau-field px-3 py-2"
               value={draft.name}
               maxLength={40}
-              onChange={(event) => updateDraft({ ...draft, name: event.target.value })}
+              onChange={(event) => commitTypedDraft('name', { ...draft, name: event.target.value })}
+              onBlur={closeTypingSession}
             />
           </label>
           <div className="rounded-lg border border-th-border p-3 flex flex-col gap-3">
@@ -530,10 +611,9 @@ export function CustomThemeEditor({
             <ColorField
               label="Primary"
               value={palette?.primary ?? ''}
-              onChange={(next) => {
-                if (!next) setPalette(null)
-                else setPalette({ primary: next })
-              }}
+              onChange={(next) => setPaletteTyped('primary', next ? { primary: next } : null)}
+              onSwatchChange={(next) => setPaletteImmediate(next ? { primary: next } : null)}
+              onBlur={closeTypingSession}
             />
             {palette && (
               <>
@@ -541,20 +621,26 @@ export function CustomThemeEditor({
                   <ColorField
                     label="Secondary"
                     value={palette.secondary ?? ''}
-                    onChange={(next) => setPalette({ secondary: next || undefined })}
-                    onClear={() => setPalette({ secondary: undefined })}
+                    onChange={(next) => setPaletteTyped('secondary', { secondary: next || undefined })}
+                    onSwatchChange={(next) => setPaletteImmediate({ secondary: next || undefined })}
+                    onClear={() => setPaletteImmediate({ secondary: undefined })}
+                    onBlur={closeTypingSession}
                   />
                   <ColorField
                     label="Tertiary"
                     value={palette.tertiary ?? ''}
-                    onChange={(next) => setPalette({ tertiary: next || undefined })}
-                    onClear={() => setPalette({ tertiary: undefined })}
+                    onChange={(next) => setPaletteTyped('tertiary', { tertiary: next || undefined })}
+                    onSwatchChange={(next) => setPaletteImmediate({ tertiary: next || undefined })}
+                    onClear={() => setPaletteImmediate({ tertiary: undefined })}
+                    onBlur={closeTypingSession}
                   />
                   <ColorField
                     label="Neutral"
                     value={palette.neutral ?? ''}
-                    onChange={(next) => setPalette({ neutral: next || undefined })}
-                    onClear={() => setPalette({ neutral: undefined })}
+                    onChange={(next) => setPaletteTyped('neutral', { neutral: next || undefined })}
+                    onSwatchChange={(next) => setPaletteImmediate({ neutral: next || undefined })}
+                    onClear={() => setPaletteImmediate({ neutral: undefined })}
+                    onBlur={closeTypingSession}
                   />
                 </div>
                 <div role="radiogroup" aria-label="Contrast" className="flex items-center gap-1">
@@ -569,7 +655,7 @@ export function CustomThemeEditor({
                         'tau-button min-h-[36px] px-3 py-1',
                         (palette.contrast ?? 'standard') === level ? 'tau-button-primary' : 'tau-button-secondary'
                       )}
-                      onClick={() => setPalette({ contrast: level })}
+                      onClick={() => setPaletteImmediate({ contrast: level })}
                     >
                       {level === 'standard' ? 'Standard' : 'High'}
                     </button>
@@ -587,7 +673,7 @@ export function CustomThemeEditor({
                         'tau-button min-h-[36px] px-3 py-1',
                         (palette.status ?? 'static') === mode ? 'tau-button-primary' : 'tau-button-secondary'
                       )}
-                      onClick={() => setPalette({ status: mode })}
+                      onClick={() => setPaletteImmediate({ status: mode })}
                     >
                       {mode === 'static' ? 'Static' : 'Harmonized'}
                     </button>
@@ -612,7 +698,7 @@ export function CustomThemeEditor({
                     value={draft.base}
                     onChange={(event) => {
                       const next = reshapeForBase(draft, event.target.value)
-                      updateDraft(next)
+                      commitDraft(next)
                       setTab(findWebTheme(next.base).kind === 'unified' ? 'constant' : valueRef.current.theme)
                     }}
                   >
@@ -725,6 +811,7 @@ export function CustomThemeEditor({
               className="tau-button min-h-[44px] px-3 py-2 tau-button-primary"
               disabled={!validation.ok || !!previewError || saving}
               onClick={() => {
+                closeTypingSession()
                 if (!validation.ok) return
                 if (preset) update.mutate({ id: preset.id, revision: preset.revision, document: validation.document })
                 else create.mutate(validation.document)
@@ -737,6 +824,7 @@ export function CustomThemeEditor({
                 className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary"
                 disabled={!validation.ok || saving}
                 onClick={() => {
+                  closeTypingSession()
                   if (validation.ok) create.mutate(validation.document)
                 }}
               >
