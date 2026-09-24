@@ -39,7 +39,13 @@
  * inheriting from the base theme's CSS cascade exactly as today.
  */
 import { oklchToSrgb, srgbToOklch, type Oklch } from './color-oklch'
-import { STATUS_TOKENS, customColorChannels, themeTokenFamily, type EffectiveAppearance } from './theme-schema'
+import {
+  STATUS_ROLES,
+  STATUS_TOKENS,
+  customColorChannels,
+  themeTokenFamily,
+  type EffectiveAppearance,
+} from './theme-schema'
 
 export interface ThemePalette {
   primary: string
@@ -51,18 +57,6 @@ export interface ThemePalette {
   /** 'static' (default) keeps status-role colors exactly as the base theme defines them. */
   status?: 'static' | 'harmonized'
 }
-
-const STATUS_ROLES = [
-  'progress',
-  'queue',
-  'review',
-  'human-wait',
-  'external-wait',
-  'attention',
-  'danger',
-  'success',
-  'neutral',
-] as const
 
 function isThemePaletteShape(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value)
@@ -256,19 +250,85 @@ export function deriveThemeOverrides({ baseTokens, palette }: DeriveOptions): Re
     }
   }
 
-  // --on-accent-fg: black or white by contrast against the just-derived primary.
-  const derivedPrimary = overrides['--color-primary'] ? parseChannels(overrides['--color-primary']!) : null
-  if (derivedPrimary) {
-    const black: [number, number, number] = [0, 0, 0]
-    const white: [number, number, number] = [255, 255, 255]
-    overrides['--on-accent-fg'] =
-      wcagContrast(black, derivedPrimary.rgb) >= wcagContrast(white, derivedPrimary.rgb) ? '#000000' : '#ffffff'
-  }
-
   if (palette.status === 'harmonized') Object.assign(overrides, harmonizeStatus(baseTokens, seeds))
 
-  contrastPass(overrides, baseTokens, palette.contrast === 'high' ? 7 : 4.5, palette.contrast === 'high' ? 4.5 : 3)
+  const textMinRatio = palette.contrast === 'high' ? 7 : 4.5
+  const uiMinRatio = palette.contrast === 'high' ? 4.5 : 3
+  const statusContrastPairs: Array<[fg: string, bg: string]> =
+    palette.status === 'harmonized'
+      ? STATUS_ROLES.flatMap((role) => [
+          [`--status-${role}-fg`, `--status-${role}-surface`],
+          [`--status-${role}-badge-fg`, `--status-${role}-badge-surface`],
+        ])
+      : []
+  contrastPass(overrides, baseTokens, textMinRatio, uiMinRatio, statusContrastPairs)
+
+  // --on-accent-fg: black or white by contrast against the FINAL primary —
+  // i.e. AFTER the contrast pass above may have nudged --color-primary's
+  // lightness. Choosing this against the pre-pass primary (the previous
+  // ordering) picks ink for a color that never actually ships: the CSS pairs
+  // --on-accent-fg with the post-pass --color-primary, so a stale choice can
+  // under-shoot the target against what's really on screen.
+  chooseInk(overrides, textMinRatio)
   return overrides
+}
+
+/** Chooses --on-accent-fg (black or white) by contrast against the FINAL
+ * --color-primary, and must run after `contrastPass`. For any fixed
+ * background, the better of pure black/white text always clears ~4.58:1
+ * (the minimum, at the luminance where both candidates tie) — comfortably
+ * above the 'standard' 4.5:1 target by construction, no nudge ever needed.
+ * The 'high' (7:1) target is NOT guaranteed by construction, so when neither
+ * candidate reaches it, this nudges --color-primary's lightness (hue/chroma
+ * held fixed, same bisection shape as `contrastPass`) toward whichever
+ * extreme makes one of them pass, picking whichever candidate needs the
+ * smaller move from the current lightness. If even the sRGB gamut extreme
+ * can't reach the target (rare, high-chroma edge case), it falls back to
+ * whichever of black/white is best against the un-nudged final primary. */
+function chooseInk(overrides: Record<string, string>, textMinRatio: number) {
+  const primaryValue = overrides['--color-primary']
+  if (!primaryValue) return
+  const primary = toOklch(primaryValue)
+  if (!primary) return
+  const black: [number, number, number] = [0, 0, 0]
+  const white: [number, number, number] = [255, 255, 255]
+  const primaryRgb = parseChannels(primaryValue)!.rgb
+  const contrastBlack = wcagContrast(black, primaryRgb)
+  const contrastWhite = wcagContrast(white, primaryRgb)
+  if (Math.max(contrastBlack, contrastWhite) >= textMinRatio) {
+    overrides['--on-accent-fg'] = contrastBlack >= contrastWhite ? '#000000' : '#ffffff'
+    return
+  }
+  const nudgedL = (ink: readonly [number, number, number]): number | null => {
+    // Black ink needs a lighter bg; white ink needs a darker bg.
+    const extreme = ink[0] === 0 ? 1 : 0
+    const passes = (l: number) =>
+      wcagContrast(ink, oklchToSrgb({ l, c: primary.oklch.c, h: primary.oklch.h })) >= textMinRatio
+    if (!passes(extreme)) return null
+    let near = primary.oklch.l
+    let far = extreme
+    for (let i = 0; i < 30; i++) {
+      const mid = (near + far) / 2
+      if (passes(mid)) far = mid
+      else near = mid
+    }
+    return far
+  }
+  const candidates = (
+    [
+      { l: nudgedL(black), ink: '#000000' as const },
+      { l: nudgedL(white), ink: '#ffffff' as const },
+    ] as Array<{ l: number | null; ink: '#000000' | '#ffffff' }>
+  ).filter((c): c is { l: number; ink: '#000000' | '#ffffff' } => c.l !== null)
+  if (candidates.length === 0) {
+    overrides['--on-accent-fg'] = contrastBlack >= contrastWhite ? '#000000' : '#ffffff'
+    return
+  }
+  const chosen = candidates.reduce((best, c) =>
+    Math.abs(c.l - primary.oklch.l) < Math.abs(best.l - primary.oklch.l) ? c : best
+  )
+  overrides['--color-primary'] = serialize({ l: chosen.l, c: primary.oklch.c, h: primary.oklch.h }, primary.alpha)
+  overrides['--on-accent-fg'] = chosen.ink
 }
 
 function harmonizeStatus(baseTokens: Record<string, string>, seeds: readonly Oklch[]): Record<string, string> {
@@ -319,17 +379,24 @@ function harmonizeStatus(baseTokens: Record<string, string>, seeds: readonly Okl
  * accent (buttons, borders, icons), not body text, and text-level contrast
  * for readable content ON it is `--on-accent-fg`'s job, computed separately.
  * A text-level target here would force a bright, valid seed color to darken
- * far more than a user choosing it as their brand color would expect. */
+ * far more than a user choosing it as their brand color would expect.
+ *
+ * `statusPairs` are the harmonized-mode-only status fg/surface and
+ * badge-fg/badge-surface pairs (empty in 'static' mode, whose status tokens
+ * are absent from `overrides` and untouched) — held to `textMinRatio` like
+ * body text, since these fg tokens ARE rendered as text on their surface. */
 function contrastPass(
   overrides: Record<string, string>,
   baseTokens: Record<string, string>,
   textMinRatio: number,
-  uiMinRatio: number
+  uiMinRatio: number,
+  statusPairs: Array<[fg: string, bg: string]> = []
 ) {
   const pairs: Array<[fg: string, bg: string, minRatio: number]> = [
     ['--color-text-primary', '--color-bg-surface', textMinRatio],
     ['--color-text-secondary', '--color-bg-surface', textMinRatio],
     ['--color-primary', '--color-bg-page', uiMinRatio],
+    ...statusPairs.map(([fg, bg]): [string, string, number] => [fg, bg, textMinRatio]),
   ]
   for (const [fgToken, bgToken, minRatio] of pairs) {
     const fgValue = overrides[fgToken] ?? baseTokens[fgToken]

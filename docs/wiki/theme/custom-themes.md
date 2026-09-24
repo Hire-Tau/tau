@@ -80,7 +80,7 @@ into one of these buckets, keyed off `THEME_TOKEN_FAMILIES`:
 | --- | --- | --- |
 | Neutral/chrome | Backgrounds, text, borders, inputs, shadows, overlays, scrims, terminal/log **backgrounds** | Hue/chroma replaced by the neutral tint; **lightness and alpha preserved** from the base token, so the base theme's own contrast structure carries over. |
 | Primary/accent | `--color-primary(-hover/-active/-light)`, selection bg/border, focus ring | Derived from the `primary` seed with a **lightness offset** and **chroma ratio** modeled on how that same token differs from the base theme's own `--color-primary` (so "hover" stays proportionally lighter than the seed the same way it is in Tau). |
-| Ink | `--on-accent-fg` | Chosen as pure black or white by contrast against the *derived* primary, not hue-derived. |
+| Ink | `--on-accent-fg` | Chosen as pure black or white by contrast against the *final* primary (after the contrast pass below, not before — see there), not hue-derived. |
 | Brand/voice | Brand gradient/tile/ink, voice-material glows | Hue interpolated primary → secondary across the family; base lightness/chroma preserved. |
 | Categorical | agent-type, badge-decoration, graph chart categories/links, a curated syntax-accent subset, utility-decoration | Hue picked from primary/secondary/tertiary by slot index; base lightness/chroma preserved. |
 | Status (`static`, default) | The 162-token status grid | **Untouched** — absent from the derived overrides, so it keeps inheriting the base theme's own values. Semantic meaning (danger=red, success=green, ...) is never reassigned by a palette. |
@@ -103,13 +103,29 @@ against the fixed background:
   color would expect (a saturated sky blue against a near-white page could
   come out murky and washed-out). A regression test holds this pair to its
   own (lower) floor and asserts it never gets pulled toward the text floor.
-- Harmonized status fg/surface pairs — the text target, same as body text.
+- Harmonized status `fg`/`surface` and `badge-fg`/`badge-surface` pairs (all
+  nine roles) — the text target, same as body text. `static` mode leaves
+  these tokens out of the overrides entirely, so this pass never touches
+  them there.
 
-`--on-accent-fg`'s black/white choice already clears 4.5:1 for any input
-color by construction (the minimum achievable max-contrast of that binary
-choice is ≈4.58:1). A property-style test sweeps dozens of seed colors, in
-both appearances, and asserts every built-in critical pair still clears its
-target.
+`--on-accent-fg` (black or white) is chosen **after** the contrast pass
+above, against the **final**, possibly-nudged `--color-primary` — not the
+freshly-derived, pre-pass value. Picking it earlier was an earlier bug: the
+pass can still move `--color-primary`'s lightness for its own (UI) floor
+after ink was already chosen, leaving the ink stale against what actually
+ships (observed as low as 3.97:1 for a real base + seed + `contrast: 'high'`
+combination, against a >5:1 achievable value). For any *fixed* background,
+the better of pure black/white text always clears ≈4.58:1 (the minimum,
+at the luminance where both candidates tie) — comfortably over the
+**standard** 4.5:1 target by construction, so no further nudge is ever
+needed there. The **high** (7:1) target is not guaranteed by construction:
+when neither black nor white reaches it against the final primary, this
+additionally nudges `--color-primary`'s lightness (hue/chroma held fixed,
+same bisection shape as the pass above) toward whichever extreme lets one
+of them pass, preferring whichever candidate needs the smaller move. A
+property-style test sweeps dozens of seed colors, in both appearances, and
+asserts every built-in critical pair — including this real ember/dark
+regression case — still clears its target.
 
 Derivation needs the base theme's own resolved token values (to preserve
 lightness/chroma/alpha), which only exist in the CSS cascade — matching the
@@ -206,7 +222,7 @@ The editor reuses the built-in contrast computation and critical-pair inventory 
 
 ## Regression coverage
 
-- Shared: closed grammar/rejection, byte/count caps (including the worst-case-pair measurement), unknown-name and pre-inheritance coherence per variant, v1→v2 normalization, `compileCustomTheme`'s resolved-variant selection, OKLCH round-trip fidelity (`color-oklch.test.ts`), derivation buckets + harmonized-status bounding + the multi-seed contrast-pass property test, including a dedicated regression test holding the primary/page pair to the non-text (3:1) floor rather than the text (4.5:1) one (`theme-derivation.test.ts`), preset request-schema/cap tests (`theme-preset.test.ts`).
+- Shared: closed grammar/rejection, byte/count caps (including the worst-case-pair measurement), unknown-name and pre-inheritance coherence per variant, v1→v2 normalization, `compileCustomTheme`'s resolved-variant selection, OKLCH round-trip fidelity (`color-oklch.test.ts`), derivation buckets + harmonized-status bounding + the multi-seed contrast-pass property test in both a light and a dark real-base fixture, including a dedicated regression test holding the primary/page pair to the non-text (3:1) floor rather than the text (4.5:1) one, a concrete real-base (ember/dark) regression for `--on-accent-fg` being chosen against the final (post-pass) primary rather than a stale pre-pass one, and harmonized status fg/surface + badge-fg/badge-surface pairs actually being included in the contrast pass (`theme-derivation.test.ts`), preset request-schema/cap and per-owner-race/non-UUID-:id tests (`theme-preset.test.ts`, `theme-presets.test.ts`).
 - Core: owner-scoped preset CRUD (`GET/POST /theme-presets`, `GET/PUT/DELETE /theme-presets/:id`) — isolation, revision conflicts (409), validation (422), per-user cap (409), cascade on user deletion, and the generated `theme_presets` migration.
 - Web: custom preview isolation and complete inheritance, invalid-document fallback, export round trip (import now lives once, in the library), partial-application cleanup, graph/xterm observer repaint and reset, a real-CSS-cascade palette-derivation integration test (explicit overrides still win over derived values), the resolved-snapshot round trip and staleness rules (matching doc+appearance applies pre-paint; an edited doc or the other appearance falls back; a full palette+harmonized-status snapshot stays well under budget) in both `theme/custom.test.ts` and `theme/flashScript.test.ts` (the shipped script, not just the source), a `ThemeProvider` test that a real root paint persists a snapshot matching the applied document and clears it on deactivation, the editor's whole-app live preview (open/tab-switch/Cancel/unmount all repaint or restore correctly, including the mount-ordering fix above), color-field accessibility (swatch and text field are independently addressable, not ambiguously co-labelled), the preset library's New/Duplicate/Rename/Delete/Use/Export/Import flows, a real-built-in-CSS test that a palette-only preset's library swatch and quick-picker circle both resolve a recognizably-derived color (not empty, not the plain base), and `ThemeQuickPicker` rendering one circle per saved preset (in addition to the built-ins) with a selection ring keyed on the active preset id.
 - Actual generated utility substitution covers all mapped tokens with custom alpha and intrinsic/utility opacity; built-in palette parity and contrast gates remain unchanged.

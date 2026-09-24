@@ -199,6 +199,18 @@ test('caps UTF-8 document bytes before parsing and override count before ignorin
   })
 })
 
+test('the byte cap is measured in UTF-8 bytes, not JS string (UTF-16 code unit) length', () => {
+  // A supplementary-plane emoji is 2 UTF-16 code units (counted by .length) but
+  // 4 UTF-8 bytes. Padding with it keeps .length comfortably under the cap
+  // while pushing the real UTF-8 byte size well over it — this would slip past
+  // a cap check that used raw.length instead of TextEncoder byte length.
+  const emoji = '\u{1F3A8}'
+  const raw = emoji.repeat(10000)
+  expect(raw.length).toBeLessThan(CUSTOM_THEME_MAX_BYTES)
+  expect(new TextEncoder().encode(raw).length).toBeGreaterThan(CUSTOM_THEME_MAX_BYTES)
+  expect(validateCustomTheme(raw, builtins).ok).toBe(false)
+})
+
 test('a full light+dark override of every active token (worst-case pair) fits the byte cap', () => {
   // Justifies the raised cap: a v1 single-variant document only ever needed one
   // side of the grid; a v2 pair can carry BOTH sides at once. #rrggbbaa (9 chars)
@@ -264,9 +276,10 @@ test('compileCustomTheme resolves the requested variant and computes custom-rgb/
     '--custom-rgb-graph-bg': '18 52 86',
     '--custom-alpha-graph-bg': '1',
   })
-  // 'system' is never a compile-time appearance; callers resolve it first. A dual
-  // document compiled with a non-dark request falls back to 'light'.
-  expect(compileCustomTheme(result.document, 'light' as never)).toEqual(compileCustomTheme(result.document, 'light'))
+  // 'system' is never a compile-time appearance; callers resolve it first. If one
+  // ever slipped through anyway (bypassing the type system), a dual document
+  // must still fall back to 'light' rather than throw or silently pick 'dark'.
+  expect(compileCustomTheme(result.document, 'system' as never)).toEqual(compileCustomTheme(result.document, 'light'))
 })
 
 test('compileCustomTheme on a unified document always resolves the constant variant', () => {

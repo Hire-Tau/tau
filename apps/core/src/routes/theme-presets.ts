@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { bodyLimit } from 'hono/body-limit'
+import { z } from 'zod'
 import {
   CUSTOM_THEME_MAX_BYTES,
   createThemePresetRequestSchema,
@@ -27,11 +28,21 @@ import {
 // rethrows a generic 400 "Malformed JSON" HTTPException, masking the real
 // oversized-body status. Parsing the body manually (as /api/user-preferences
 // does) keeps the bodyLimit middleware's 413 intact.
+const uuidParam = z.string().uuid()
+
 export const themePresetsRouter = new Hono()
 themePresetsRouter.use('*', bodyLimit({ maxSize: CUSTOM_THEME_MAX_BYTES + 1024 }))
 themePresetsRouter.onError((error, c) => {
   if (error instanceof ThemePresetError) return c.json({ error: error.message }, error.status)
   throw error
+})
+// A malformed :id (not a UUID) would otherwise reach postgres as a raw query
+// parameter and come back as an unhandled driver error (500). It is not a
+// different preset than a well-formed-but-missing UUID from this caller's
+// point of view, so it gets the exact same 404 — never a DB error leak.
+themePresetsRouter.use('/:id', async (c, next) => {
+  if (!uuidParam.safeParse(c.req.param('id')).success) return c.json({ error: 'Theme preset not found' }, 404)
+  await next()
 })
 
 themePresetsRouter.get('/', async (c) => {

@@ -111,6 +111,37 @@ test('rejects invalid documents (422) and enforces the per-user cap (409)', asyn
   for (const id of ids) await remove(a, id, 1)
 })
 
+test('a non-UUID :id is a 404, never a raw DB error', async () => {
+  for (const bad of ['not-a-uuid', '123', 'DROP TABLE theme_presets', '00000000-0000-0000-0000-00000000000z']) {
+    expect((await get(a, bad)).status).toBe(404)
+    expect((await update(a, bad, 1, doc())).status).toBe(404)
+    expect((await remove(a, bad, 1)).status).toBe(404)
+  }
+})
+
+test('the per-user cap is race-safe: concurrent creates from 49 land exactly 1 more, never over 50', async () => {
+  const c = await createTestUser({ prefix })
+  const seeded: string[] = []
+  for (let i = 0; i < THEME_PRESET_MAX_PER_USER - 1; i++) {
+    const response = await create(c, doc(`Seed ${i}`))
+    expect(response.status).toBe(201)
+    seeded.push((await response.json()).id)
+  }
+  expect(await db.select().from(themePresets).where(eq(themePresets.ownerUserId, c.id))).toHaveLength(
+    THEME_PRESET_MAX_PER_USER - 1
+  )
+  // Fire several concurrent creates at once (racing the count-then-insert
+  // window); without a per-owner lock, more than one could observe the same
+  // pre-insert count and all pass the cap check.
+  const raceCount = 20
+  const responses = await Promise.all(Array.from({ length: raceCount }, (_, i) => create(c, doc(`Race ${i}`))))
+  const statuses = responses.map((r) => r.status).sort()
+  expect(statuses).toEqual([201, ...Array(raceCount - 1).fill(409)])
+  const rows = await db.select().from(themePresets).where(eq(themePresets.ownerUserId, c.id))
+  expect(rows).toHaveLength(THEME_PRESET_MAX_PER_USER)
+  for (const row of rows) await remove(c, row.id, row.revision)
+})
+
 test('body limit rejects an oversized request', async () => {
   const response = await app.request('/theme-presets', {
     method: 'POST',

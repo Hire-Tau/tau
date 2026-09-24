@@ -130,7 +130,7 @@ const CHROME_TOKENS: readonly string[] = [
 ]
 
 /** The nine platform-neutral status roles (see `status-presentation.ts`). */
-const STATUS_ROLES: readonly string[] = [
+export const STATUS_ROLES: readonly string[] = [
   'progress',
   'queue',
   'review',

@@ -1,4 +1,4 @@
-import { and, count, eq } from 'drizzle-orm'
+import { and, count, eq, sql } from 'drizzle-orm'
 import { THEME_PRESET_MAX_PER_USER, validateThemePresetDocument, type ThemePreset } from '@tau/shared'
 import { db, themePresets, type DbTx } from '../db'
 
@@ -48,7 +48,11 @@ export async function getOwnedThemePreset(
   return row ?? null
 }
 
-/** Same as `getOwnedThemePreset`, but locks the row for a revision-checked mutation. */
+/** Same as `getOwnedThemePreset`, but locks the row for a revision-checked
+ * mutation. The owner filter is baked into the SAME select the lock is taken
+ * on — never lock first and check ownership after — so another user's row is
+ * simply never selected/locked, matching the owner-only 404 (not 403)
+ * contract everywhere else in this file. */
 async function getOwnedThemePresetForUpdate(ownerUserId: string, id: string, tx: DbTx): Promise<ThemePresetRow | null> {
   const [row] = await tx
     .select()
@@ -62,6 +66,13 @@ export async function createThemePreset(ownerUserId: string, rawDocument: unknow
   const result = validateThemePresetDocument(rawDocument)
   if (!result.ok) throw new ThemePresetError(result.error, 422)
   return db.transaction(async (tx) => {
+    // count-then-insert is not exclusive on its own: two concurrent creates
+    // from the same owner can both read the same pre-insert count and both
+    // pass the cap check (reproduced under real concurrency in the route
+    // test). A per-owner transaction-scoped advisory lock serializes callers
+    // for the SAME owner only (released automatically at commit/rollback,
+    // never held across pool work) — other owners' creates are unaffected.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`theme-presets:owner:${ownerUserId}`}))`)
     const [{ value: existing }] = await tx
       .select({ value: count() })
       .from(themePresets)
