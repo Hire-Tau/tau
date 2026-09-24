@@ -136,7 +136,49 @@ export function colorFunctionIsTokenOnly(source: string, parenIndex: number): bo
   // runtime values — typically a token read via getComputedStyle — so there is
   // no literal to guard against here.
   if (args.includes('${')) return true
+  const relative = /^\s*from\s+/.exec(args)
+  if (relative) return relativeColorIsTokenOnly(args.slice(relative[0].length))
   return splitTopLevel(args, ',').every((part) => colorPartIsTokenOnly(part))
+}
+
+const RELATIVE_CHANNEL_WORDS = new Set([
+  'l',
+  'c',
+  'h',
+  'a',
+  'r',
+  'g',
+  'b',
+  's',
+  'w',
+  'x',
+  'y',
+  'z',
+  'alpha',
+  'none',
+  'calc',
+])
+
+/**
+ * Relative color syntax (a color function whose arguments start with
+ * `from <origin>`, then channel expressions like `l c calc(h + 45)`) derives a
+ * color from its origin, so it is token-only when the origin is and the
+ * channel expressions use only channel keywords, numbers and `var()` tokens.
+ */
+function relativeColorIsTokenOnly(rest: string): boolean {
+  const trimmed = rest.trimStart()
+  const call = /^[a-z-]+\(/i.exec(trimmed)
+  let origin: string
+  if (call) {
+    const inner = balancedArguments(trimmed, call[0].length - 1)
+    origin = trimmed.slice(0, call[0].length + inner.length + 1)
+  } else {
+    origin = trimmed.split(/\s+/)[0] ?? ''
+  }
+  if (!origin || !colorPartIsTokenOnly(origin)) return false
+  const channels = trimmed.slice(origin.length).replace(/var\(--[\w-]+\)/g, '0')
+  if (!/^[\s\w.%+\-*/()]*$/.test(channels)) return false
+  return (channels.match(/[a-z]+/gi) ?? []).every((word) => RELATIVE_CHANNEL_WORDS.has(word))
 }
 
 /** Extracts a JSX style object body starting at the '{' after `style=`. */
