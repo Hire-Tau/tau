@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { desktopBridge } from '../../lib/desktop'
+import { desktopBridge, desktopInstance } from '../../lib/desktop'
 import { useOptionalAuth } from '../../providers/AuthProvider'
 
 export interface IssuedInviteLink {
@@ -28,9 +28,15 @@ function inviteToken(url: string): string | null {
 export function InviteLinkPanel({ invite, onDone }: { invite: IssuedInviteLink; onDone: () => void }) {
   const navigate = useNavigate()
   const inDesktop = desktopBridge() !== undefined
+  // A local or attached instance's passkey lives on this machine, so setting it up here is
+  // correct. A remote instance's passkey would be created on the viewer's machine, not the
+  // paired Mac, so the invite must be copied there instead. An older build that doesn't report
+  // an instance kind is treated like local/attached (its known desktop behavior).
+  const instance = desktopInstance()
+  const desktopSupportsOpenHere = inDesktop && (instance === undefined || instance.kind !== 'remote')
   const viewerIsBootstrap = useOptionalAuth()?.session?.identityType === 'legacy'
   const token = inviteToken(invite.url)
-  const openHere = invite.forAdmin && token !== null && (inDesktop || viewerIsBootstrap)
+  const openHere = invite.forAdmin && token !== null && (desktopSupportsOpenHere || viewerIsBootstrap)
 
   return (
     <div className="tau-section py-4 space-y-2 border-status-success-300 dark:border-status-success-700">

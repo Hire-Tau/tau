@@ -1,8 +1,10 @@
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterEach, afterAll, describe, expect, it, test } from 'bun:test'
 import { createHash } from 'crypto'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import { deviceAuthorizations, users } from '../../db/schema'
+import { cleanupTestRbac, createTestUser } from '../../test-utils/rbac'
+import { listDeviceTokens } from './device-tokens'
 import {
   approveDeviceAuthorization,
   createDeviceAuthorization,
@@ -13,6 +15,7 @@ import {
 } from './device-authorization'
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex')
+const prefix = 'device-auth-service'
 
 describe('device authorization grants', () => {
   const userIds: string[] = []
@@ -87,5 +90,27 @@ describe('device authorization grants', () => {
       .where(eq(deviceAuthorizations.deviceCodeHash, hash(grant.deviceCode)))
     expect(await inspectDeviceAuthorization(grant.verificationCode)).toBeNull()
     expect(await exchangeDeviceAuthorization(grant.deviceCode)).toEqual({ status: 'invalid' })
+  })
+
+  afterAll(() => cleanupTestRbac(prefix))
+
+  test('a desktop grant mints a desktop device token and defaults its name', async () => {
+    const user = await createTestUser({ prefix })
+    const grant = await createDeviceAuthorization({ name: '  ', platform: 'desktop' })
+    grantHashes.push(hash(grant.deviceCode))
+    expect(await approveDeviceAuthorization(grant.verificationCode, user.id)).toBe(true)
+    const result = await exchangeDeviceAuthorization(grant.deviceCode)
+    expect(result.status).toBe('authorized')
+    const devices = await listDeviceTokens(user.id)
+    expect(devices.find((d) => d.id === (result as { deviceId: string }).deviceId)).toMatchObject({
+      name: 'Tau Desktop',
+      platform: 'desktop',
+    })
+  })
+
+  test('an unspecified platform stays a CLI grant', async () => {
+    const grant = await createDeviceAuthorization({ name: '' })
+    grantHashes.push(hash(grant.deviceCode))
+    expect(await inspectDeviceAuthorization(grant.verificationCode)).toMatchObject({ name: 'Tau CLI', platform: 'cli' })
   })
 })

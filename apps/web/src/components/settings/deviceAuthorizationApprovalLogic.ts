@@ -2,6 +2,7 @@ export function devicePlatformLabel(platform: string): string {
   if (platform === 'ios') return 'iOS'
   if (platform === 'android') return 'Android'
   if (platform === 'cli') return 'Tau CLI'
+  if (platform === 'desktop') return 'Tau Desktop'
   return 'Device'
 }
 
@@ -24,6 +25,8 @@ export async function approveDeviceRequest(input: {
   input.clearFragment()
 }
 
-export function deviceApprovalErrorMessage(_error: unknown): string {
-  return 'Approval failed because this request is expired or already used. Run tau auth login again to create a new request.'
+export function deviceApprovalErrorMessage(_error: unknown, platform?: string): string {
+  const retry =
+    platform === 'desktop' ? 'Start again from Tau Desktop.' : 'Run tau auth login again to create a new request.'
+  return `Approval failed because this request is expired or already used. ${retry}`
 }

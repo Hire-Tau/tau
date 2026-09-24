@@ -47,6 +47,7 @@ import {
   DEVICE_AUTH_POLL_INTERVAL_SECONDS,
   exchangeDeviceAuthorization,
   inspectDeviceAuthorization,
+  type DeviceAuthorizationPlatform,
 } from '../services/auth/device-authorization'
 import { deviceAuthorizationStartLimiter } from '../services/auth/device-auth-rate-limit'
 import { setSessionCookie, clearSessionCookie, extractSessionToken } from '../services/auth/session-cookie'
@@ -683,8 +684,12 @@ authRouter.post('/device/start', async (c) => {
   if (!deviceAuthorizationStartLimiter.take(clientAddress, 10, 60_000)) {
     return c.json({ error: 'rate_limited' }, 429, { ...deviceAuthHeaders, 'Retry-After': '60' })
   }
-  const body = await parseOptionalJsonObjectBody(c, {} as { name?: unknown })
+  const body = await parseOptionalJsonObjectBody(c, {} as { name?: unknown; platform?: unknown })
   const name = typeof body.name === 'string' ? body.name.trim().slice(0, 200) : ''
+  if (body.platform !== undefined && body.platform !== 'cli' && body.platform !== 'desktop') {
+    return c.json({ error: 'invalid_platform' }, 400, deviceAuthHeaders)
+  }
+  const platform = (body.platform as DeviceAuthorizationPlatform | undefined) ?? 'cli'
   // The verification URI points at /settings, a WEB route, so the configured browser origin
   // is the right base — and it must NOT be derived from the request. A CLI sends no Origin,
   // and core never terminates TLS (it sits behind caddy/nginx on plain 127.0.0.1), so
@@ -694,7 +699,7 @@ authRouter.post('/device/start', async (c) => {
   if (!isSecureDeviceAuthOrigin(webOrigin)) {
     return c.json({ error: 'HTTPS is required' }, 400, deviceAuthHeaders)
   }
-  const grant = await createDeviceAuthorization({ name: name || 'Tau CLI' })
+  const grant = await createDeviceAuthorization({ name, platform })
   const verificationUri = `${webOrigin}/settings?section=devices#device_request=${grant.verificationCode}`
   return c.json(
     {
@@ -702,6 +707,10 @@ authRouter.post('/device/start', async (c) => {
       verificationUri,
       expiresAt: grant.expiresAt.toISOString(),
       interval: DEVICE_AUTH_POLL_INTERVAL_SECONDS,
+      // Desktop pairing is supported only when this field comes back exactly 'desktop'; an
+      // older server ignores `platform` in the request and always issues a CLI grant, so
+      // callers must check the value and discard the grant otherwise.
+      platform: grant.platform,
     },
     200,
     deviceAuthHeaders

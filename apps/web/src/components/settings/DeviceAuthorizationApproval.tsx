@@ -12,7 +12,9 @@ export function DeviceAuthorizationApproval(props: {
 }) {
   return (
     <div className="rounded-lg border border-accent bg-surface p-4 space-y-2">
-      <h3 className="text-sm font-medium text-primary">Approve Tau CLI login</h3>
+      <h3 className="text-sm font-medium text-primary">
+        {props.preview?.platform === 'desktop' ? 'Approve Tau Desktop sign-in' : 'Approve Tau CLI login'}
+      </h3>
       {props.isLoading ? (
         <LoadingSurface label="Loading authorization request" className="space-y-3 py-1">
           <SkeletonLine className="w-4/5" />

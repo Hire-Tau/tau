@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createElement } from 'react'
@@ -11,6 +11,15 @@ import { SystemUpdateSection } from './SystemUpdateSection'
 import { getUpdateLoaderMessage } from './SystemUpdateSection.loader'
 
 const source = readFileSync(join(import.meta.dir, 'SystemUpdateSection.tsx'), 'utf8')
+
+function stubDesktopUpdates() {
+  return {
+    state: async () => ({ appVersion: '1.0.0', coreCommit: 'abc123', supported: true, phase: 'idle' as const }),
+    check: async () => ({ appVersion: '1.0.0', coreCommit: 'abc123', supported: true, phase: 'idle' as const }),
+    install: async () => {},
+    subscribe: () => () => {},
+  }
+}
 
 function renderSystemUpdateSection(
   latest: LocalUpdateRun | null = null,
@@ -76,6 +85,71 @@ describe('SystemUpdateSection deployment flavor', () => {
     expect(html).not.toContain('Auto-update this instance')
     expect(html).not.toContain('Manual rebuild')
     expect(html).not.toContain('Update now')
+  })
+})
+
+describe('SystemUpdateSection instance kind', () => {
+  afterEach(() => {
+    delete window.tauDesktopApp
+  })
+
+  test('a remote instance updates like a server, not with the app', () => {
+    window.tauDesktopApp = {
+      version: 1,
+      notificationsEnabled: async () => false,
+      deliverNotifications: async () => {},
+      updates: stubDesktopUpdates(),
+      instance: { kind: 'remote', name: 'noah' },
+    }
+
+    const html = renderSystemUpdateSection(null, { source: 'git-checkout', supervisor: 'pm2', sandboxRuntime: 'k3d' })
+
+    expect(html).toContain('Auto-update this instance')
+    expect(html).not.toContain('Tau Desktop updates')
+  })
+
+  test('an attached instance updates like a server, not with the app', () => {
+    window.tauDesktopApp = {
+      version: 1,
+      notificationsEnabled: async () => false,
+      deliverNotifications: async () => {},
+      updates: stubDesktopUpdates(),
+      instance: { kind: 'attached', name: 'x' },
+    }
+
+    const html = renderSystemUpdateSection(null, { source: 'git-checkout', supervisor: 'pm2', sandboxRuntime: 'k3d' })
+
+    expect(html).toContain('Auto-update this instance')
+    expect(html).not.toContain('Tau Desktop updates')
+  })
+
+  test('the bundled local instance keeps native Desktop update controls', () => {
+    window.tauDesktopApp = {
+      version: 1,
+      notificationsEnabled: async () => false,
+      deliverNotifications: async () => {},
+      updates: stubDesktopUpdates(),
+      instance: { kind: 'local', name: 'noah' },
+    }
+
+    const html = renderSystemUpdateSection()
+
+    expect(html).toContain('Tau Desktop updates')
+    expect(html).not.toContain('Auto-update this instance')
+  })
+
+  test('no instance reported (older Desktop builds) still gets native Desktop update controls', () => {
+    window.tauDesktopApp = {
+      version: 1,
+      notificationsEnabled: async () => false,
+      deliverNotifications: async () => {},
+      updates: stubDesktopUpdates(),
+    }
+
+    const html = renderSystemUpdateSection()
+
+    expect(html).toContain('Tau Desktop updates')
+    expect(html).not.toContain('Auto-update this instance')
   })
 })
 

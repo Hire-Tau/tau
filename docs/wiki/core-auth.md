@@ -59,18 +59,20 @@ These live under `/api/auth` (mounted before the global auth middleware — see 
 
 The mobile-side UX — QR scan, the `tau://pair` deep link, web auto-detection, and sign-out revoke — is documented in [Mobile App → Pairing & authentication](mobile-app.md#pairing--authentication).
 
-### CLI browser authorization
+### CLI and Tau Desktop browser authorization
 
-`tau auth login` bootstraps a revocable CLI device token without requiring an existing credential. It creates two independent 256-bit capabilities: a verification secret carried only in the browser URL fragment and a polling secret sent only in JSON request bodies. Core stores only SHA-256 hashes. Grants expire after five minutes, enforce a durable five-second polling interval, and are consumed once.
+`tau auth login` and Tau Desktop pairing both bootstrap a revocable device token without requiring an existing credential, using the same device-authorization flow. It creates two independent 256-bit capabilities: a verification secret carried only in the browser URL fragment and a polling secret sent only in JSON request bodies. Core stores only SHA-256 hashes. Grants expire after five minutes, enforce a durable five-second polling interval, and are consumed once.
 
-| Method | Endpoint                   | Auth                      | Purpose                                         |
-| ------ | -------------------------- | ------------------------- | ----------------------------------------------- |
-| `POST` | `/api/auth/device/start`   | public, rate limited      | Create a pending CLI grant                      |
-| `POST` | `/api/auth/device/inspect` | authenticated user        | Preview the requesting CLI                      |
-| `POST` | `/api/auth/device/approve` | authenticated user + CSRF | Explicitly approve the request                  |
-| `POST` | `/api/auth/device/token`   | polling capability        | Atomically mint and return one `tau_dev_` token |
+| Method | Endpoint                   | Auth                      | Purpose                                            |
+| ------ | -------------------------- | ------------------------- | -------------------------------------------------- |
+| `POST` | `/api/auth/device/start`   | public, rate limited      | Create a pending CLI or Tau Desktop grant          |
+| `POST` | `/api/auth/device/inspect` | authenticated user        | Preview the requesting CLI or Tau Desktop instance |
+| `POST` | `/api/auth/device/approve` | authenticated user + CSRF | Explicitly approve the request                     |
+| `POST` | `/api/auth/device/token`   | polling capability        | Atomically mint and return one `tau_dev_` token    |
 
-The raw token is returned exactly once, stored in the CLI auth store with mode `0600`, and listed with mobile tokens under Paired Devices. Platforms are `ios`, `android`, or `cli`; unknown historical values render generically. Web revocation and default CLI logout both revoke the token. Existing mobile QR payloads and `/pair/start` plus `/pair/claim` contracts are unchanged.
+`/device/start` accepts an optional `platform: 'cli' | 'desktop'` in its JSON body (default `cli`); any other value answers `400 invalid_platform`. The response echoes `platform` back, and it is a desktop-pairing support signal only when it comes back exactly `'desktop'` — an older server ignores `platform` in the request and always issues a CLI grant, so a caller must check the echoed value and discard the grant when it isn't `'desktop'` rather than treating its mere presence as support. A desktop-initiated grant defaults its device name to "Tau Desktop" when the caller sends none, the same way a CLI grant defaults to "Tau CLI".
+
+The raw token is returned exactly once, stored in the CLI auth store with mode `0600`, and listed with mobile tokens under Paired Devices. Platforms are `ios`, `android`, `cli`, or `desktop`; unknown historical values render generically. Paired Devices labels a `desktop` token "Tau Desktop", and the approval screen reads "Approve Tau Desktop sign-in" for a desktop-originated request instead of the CLI wording. Web revocation and default CLI logout both revoke the token. Existing mobile QR payloads and `/pair/start` plus `/pair/claim` contracts are unchanged.
 
 The verification URI a user is told to open is built from `TAU_WEB_ORIGIN` (via `primaryWebOrigin()`), never from the request. Core never terminates TLS — every HTTPS deployment fronts it with caddy/nginx on plain `127.0.0.1` — so deriving the origin from the request would see `http:` and reject its own CLI; and a caller-supplied `Origin` must never be echoed into a URL a human is asked to trust. If `TAU_WEB_ORIGIN` is missing or is not a secure origin, `/device/start` answers `400`.
 

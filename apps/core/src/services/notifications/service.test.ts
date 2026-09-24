@@ -13,6 +13,7 @@ import { registerApnsDevice, getApnsDevicesByUser } from '../push/apns-devices'
 import { registerPushSubscription } from '../push/subscriptions'
 import { resetSecretStore } from '../secrets'
 import * as apnsModule from '../push/apns'
+import * as desktopPushModule from '../push/desktop'
 import * as questionsModule from '../agents/questions'
 import { UserNotificationPreferences } from '../../entities/UserNotificationPreferences'
 
@@ -560,6 +561,7 @@ describe('NotificationService', () => {
       const resolveSpy = spyOn(service as any, 'resolveEnabledPushUserIds').mockResolvedValue(['owner-user'])
       const webSpy = spyOn(service as any, 'sendWebPush').mockImplementation(async () => {})
       const apnsSpy = spyOn(service as any, 'sendApnsPush').mockImplementation(async () => {})
+      const desktopSpy = spyOn(desktopPushModule, 'enqueueDesktopNotifications').mockResolvedValue()
 
       try {
         await callSendPushNotifications(service, event, { questionId: 'q1' }, 'agent-question.created')
@@ -572,6 +574,7 @@ describe('NotificationService', () => {
         resolveSpy.mockRestore()
         webSpy.mockRestore()
         apnsSpy.mockRestore()
+        desktopSpy.mockRestore()
       }
     })
 

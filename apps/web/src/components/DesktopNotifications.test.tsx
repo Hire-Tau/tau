@@ -5,6 +5,46 @@ import { desktopQueryKeys } from '../queryKeys'
 import { DesktopNotifications } from './DesktopNotifications'
 import type { DesktopNotificationBatch } from '../lib/desktop'
 
+test('a desktop build that already polls notifications itself is never polled again by the web app', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  // No react-query cache is seeded here (unlike the test below): a disabled query still
+  // returns any cached value, so the only way to prove the web app never polls is to
+  // start from an empty cache and confirm nothing gets fetched or delivered into it.
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  const delivered: DesktopNotificationBatch[] = []
+  const requestedUrls: string[] = []
+  const previousFetch = globalThis.fetch
+  try {
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      requestedUrls.push(String(input))
+      return Response.json(null)
+    }) as typeof globalThis.fetch
+    window.tauDesktopApp = {
+      version: 1,
+      notificationsEnabled: async () => true,
+      deliverNotifications: async (value) => {
+        delivered.push(value)
+      },
+      notificationsPolledByShell: true,
+    }
+    const { root } = dom.createRoot()
+    await dom.act(async () =>
+      root.render(
+        <QueryClientProvider client={client}>
+          <DesktopNotifications />
+        </QueryClientProvider>
+      )
+    )
+    expect(delivered).toEqual([])
+    expect(requestedUrls.some((url) => url.includes('/api/push/desktop'))).toBe(false)
+  } finally {
+    await dom.cleanup()
+    delete window.tauDesktopApp
+    client.clear()
+    globalThis.fetch = previousFetch
+  }
+})
+
 test('only an enabled desktop bridge receives cached or newly fetched alerts, without marking inbox items read', async () => {
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
   const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })

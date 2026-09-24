@@ -198,4 +198,22 @@ describe('device authorization routes', () => {
       expect(response.status).toBe(400)
     })
   })
+
+  it('starts desktop grants, echoes the platform, and rejects unknown platforms', async () => {
+    await withWebOrigin('https://tau.example.test', async () => {
+      const start = await app.request('/api/auth/device/start', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'MacBook', platform: 'desktop' }),
+      })
+      expect(start.status).toBe(200)
+      expect(((await start.json()) as { platform: string }).platform).toBe('desktop')
+      const bad = await app.request('/api/auth/device/start', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ platform: 'toaster' }),
+      })
+      expect(bad.status).toBe(400)
+    })
+  })
 })

@@ -95,7 +95,11 @@ export function DevicesSection() {
           invalid={authorization.isError}
           isPending={approveMutation.isPending}
           isSuccess={approveMutation.isSuccess}
-          error={approveMutation.isError ? deviceApprovalErrorMessage(approveMutation.error) : null}
+          error={
+            approveMutation.isError
+              ? deviceApprovalErrorMessage(approveMutation.error, authorization.data?.platform)
+              : null
+          }
           onApprove={() => approveMutation.mutate()}
         />
       )}
