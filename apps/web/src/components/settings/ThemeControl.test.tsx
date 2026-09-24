@@ -45,7 +45,8 @@ async function renderControl(
     customTheme?: { name: string; base: string }
     presetId?: string
     presetOwnerId?: string
-    minePresets?: ThemePreset[]
+    /** `'loading'` leaves the caller's own library query pending. */
+    minePresets?: ThemePreset[] | 'loading'
   } = {}
 ) {
   const dom = await acquireDomHarness({
@@ -80,7 +81,12 @@ async function renderControl(
     .join('\n')
   document.head.appendChild(sheet)
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  queryClient.setQueryData(themePresetQueryKeys.list('mine'), custom.minePresets ?? [])
+  if (custom.minePresets === 'loading')
+    void queryClient.prefetchQuery({
+      queryKey: themePresetQueryKeys.list('mine'),
+      queryFn: () => new Promise(() => {}),
+    })
+  else queryClient.setQueryData(themePresetQueryKeys.list('mine'), custom.minePresets ?? [])
   const { root, container } = dom.createRoot()
   await act(async () => {
     root.render(
@@ -199,6 +205,17 @@ test("someone else's shared preset active: Color theme shows '<name> (shared)' s
   })
   const theme = getByLabelText(container, 'Color theme') as HTMLSelectElement
   expect(theme.selectedOptions[0]!.textContent).toBe('Solstice (shared)')
+})
+
+test('an own preset is not labelled "(shared)" while the library is still loading', async () => {
+  const container = await renderControl('harbor', 'dark', false, true, {
+    customTheme: { name: 'Midnight', base: 'harbor' },
+    presetId: 'p1',
+    presetOwnerId: 'u1',
+    minePresets: 'loading',
+  })
+  const theme = getByLabelText(container, 'Color theme') as HTMLSelectElement
+  expect(theme.selectedOptions[0]!.textContent).toBe('Custom: Midnight')
 })
 
 test('a detached custom theme (no presetId): Color theme shows "Custom: <name>" selected', async () => {

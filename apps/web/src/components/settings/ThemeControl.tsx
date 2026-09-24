@@ -54,7 +54,7 @@ export function ThemeControl({
   const { themeId, appearance, setThemeId, setAppearance, theme, toggleTheme, customTheme, presetId } = value
   const selected = findWebTheme(themeId)
   const auth = useOptionalAuth()
-  const { data: minePresets = EMPTY_PRESETS } = useQuery({
+  const { data: minePresets = EMPTY_PRESETS, isSuccess: mineLoaded } = useQuery({
     ...queries.themePresets.list('mine'),
     enabled: selfServiceQueryEnabled(auth),
   })
@@ -62,9 +62,10 @@ export function ThemeControl({
   // A preset id present but absent from the caller's own library is someone
   // else's shared preset (see ThemeProvider's presetOwnerId doc comment) —
   // the same "not in my list" test ThemeQuickPicker's activeForeignPreset uses.
-  const ownPreset = !!presetId && minePresets.some((preset) => preset.id === presetId)
+  // Until the library has loaded, don't guess: an own preset would flash "(shared)".
+  const foreignPreset = !!presetId && mineLoaded && !minePresets.some((preset) => preset.id === presetId)
   const customOptionLabel = customTheme
-    ? presetId && !ownPreset
+    ? foreignPreset
       ? `${customTheme.name} (shared)`
       : `Custom: ${customTheme.name}`
     : ''
