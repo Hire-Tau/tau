@@ -1,5 +1,5 @@
 import { WorktreeCleanupSettings } from './WorktreeCleanupSettings'
-import { workStreamTitle } from '@tau/shared'
+import { workStreamTitle, workStreamWaitDisplayType } from '@tau/shared'
 import { WORK_STREAM_STATUS_ROLE } from '@tau/shared'
 import { webStatus } from '../lib/statusPresentation'
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
@@ -9,6 +9,7 @@ import { getGithubInfo } from '../lib/workStreamGithub'
 export { getGithubInfo } from '../lib/workStreamGithub'
 import { WorkStreamPauseControls } from './WorkStreamPauseControls'
 import { WorkflowRunPanel } from './WorkflowRunPanel'
+import { WorkflowReviewCallout } from './WorkflowReviewCallout'
 import clsx from 'clsx'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -311,6 +312,12 @@ export function WorkStreamDetailModal({
             This focused action is no longer pending.
           </p>
         )}
+        <WorkflowReviewCallout
+          key={`review:${focusWaitId ?? workStream.id}`}
+          stream={workStream}
+          focusWaitId={focusWaitId}
+          onOpenAgent={onClose}
+        />
         {needsResponse && (
           <div className="p-4 rounded-xl bg-surface-secondary">
             <div className="flex items-center gap-2 mb-1.5">
@@ -802,7 +809,9 @@ export function WorkStreamDetailModal({
               {remainingWaits.map((wait) => (
                 <li key={wait.id} className={clsx('text-xs rounded-lg p-3 bg-surface-secondary')}>
                   <div className="flex items-center gap-2">
-                    <Badge color={WAIT_TYPE_BADGE_COLORS[wait.type]}>{WAIT_TYPE_LABELS[wait.type]}</Badge>
+                    <Badge color={WAIT_TYPE_BADGE_COLORS[workStreamWaitDisplayType(wait)]}>
+                      {WAIT_TYPE_LABELS[workStreamWaitDisplayType(wait)]}
+                    </Badge>
                     {wait.flowAttemptId != null && <span className="text-muted">Attempt {wait.flowAttemptId}</span>}
                     {wait.type === 'review' && workStream.reviewRounds != null && (
                       <span className="text-muted">Round {workStream.reviewRounds + 1}</span>

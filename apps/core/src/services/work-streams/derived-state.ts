@@ -2,6 +2,7 @@ import { and, desc, inArray, isNotNull } from 'drizzle-orm'
 import {
   WORK_STREAM_WAIT_DISPLAY_PRECEDENCE,
   WORK_STREAM_WAIT_STATE,
+  workStreamWaitDisplayType,
   selectWorkStreamPresentationState,
   type WorkStreamDeliveryPresentation,
   type WorkStreamDerivedState,
@@ -51,7 +52,8 @@ export interface DerivedStreamInfo {
 export function sortWaitsByDisplayPrecedence(waits: WorkStreamWait[]): WorkStreamWait[] {
   return [...waits].sort((a, b) => {
     const rank =
-      WORK_STREAM_WAIT_DISPLAY_PRECEDENCE.indexOf(a.type) - WORK_STREAM_WAIT_DISPLAY_PRECEDENCE.indexOf(b.type)
+      WORK_STREAM_WAIT_DISPLAY_PRECEDENCE.indexOf(workStreamWaitDisplayType(a)) -
+      WORK_STREAM_WAIT_DISPLAY_PRECEDENCE.indexOf(workStreamWaitDisplayType(b))
     if (rank !== 0) return rank
     return b.openedAt.localeCompare(a.openedAt)
   })
@@ -176,7 +178,7 @@ export async function computeDerivedStates(
     } else if (stream.pause) {
       derivedState = 'paused'
     } else if (openWaits.length > 0) {
-      derivedState = WORK_STREAM_WAIT_STATE[openWaits[0].type]
+      derivedState = WORK_STREAM_WAIT_STATE[workStreamWaitDisplayType(openWaits[0])]
     } else if (stream.status === 'active') {
       const agentIds = collectWorkStreamAgentIds(stream)
       if (agentIds.some((id) => busyAgents.has(id))) {

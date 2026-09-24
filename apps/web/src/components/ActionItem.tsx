@@ -305,7 +305,9 @@ function ActionSubtitle({ action }: { action: PendingAction }) {
         <p className="text-xs text-muted truncate">
           {data.squadName}
           {data.wait.resolutionHandler === 'workflow'
-            ? ' · workflow decision'
+            ? data.wait.flowAttemptId != null
+              ? ' · review needed'
+              : ' · workflow decision'
             : assignee
               ? ` · ${assignee} needs input`
               : ' · needs input'}
@@ -720,7 +722,7 @@ function WorkStreamBlockedActionContent({
           onClick={() => setShowWsModal(true)}
           className="tau-button min-h-10 px-3 py-2 text-sm text-muted hover:text-primary hover:bg-surface-hover"
         >
-          {flowControlled ? 'Review flow decision' : 'View'}
+          {flowControlled ? 'Review and decide' : 'View'}
         </button>
       )}
 

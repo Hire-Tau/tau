@@ -328,10 +328,15 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
   const canRevise = await hasPermission(identity, 'workstreams:revise-flow', streamBefore.squadId)
   const canRespond = await hasPermission(identity, 'workstreams:respond', streamBefore.squadId)
   const canReview = identity.type === 'user' && (await isWorkflowReviewer(identity.userId, streamBefore.squadId))
+  const canUpdate = await hasPermission(identity, 'workstreams:update', streamBefore.squadId)
+  // A human who may approve delivery (finishFlow) may also send it back.
+  const canDecideDelivery = identity.type === 'user' && (canRespond || canUpdate)
   if (
-    command.action === 'revise' || command.action === 'rework'
+    command.action === 'revise'
       ? !canRevise && !(identity.type === 'agent' && canRespond)
-      : !canReview && !canRespond && !(await hasPermission(identity, 'workstreams:update', streamBefore.squadId))
+      : command.action === 'rework'
+        ? !canRevise && !canDecideDelivery && !(identity.type === 'agent' && canRespond)
+        : !canReview && !canRespond && !canUpdate
   )
     throw new WorkflowError('Forbidden', 403)
   const actor = actorKey(identity)
@@ -381,11 +386,17 @@ export async function advanceFlow(id: string, input: unknown, requestId: string,
     )
       throw new WorkflowError('Only the active participant of an adaptive flow can revise future work', 403)
     if (command.action === 'rework') {
+      const decidingDelivery =
+        canDecideDelivery && (await listOpenWaits(tx, id)).some((wait) => isDeliveryApprovalWait(id, wait))
       if (
         !canRevise &&
+        !decidingDelivery &&
         (identity.type !== 'agent' || run.attemptAgents[String(command.attemptId)] !== identity.agentId)
       )
-        throw new WorkflowError('Only the delivery participant or a flow manager can request rework', 403)
+        throw new WorkflowError(
+          'Only the delivery participant, a delivery approver, or a flow manager can request rework',
+          403
+        )
     } else if (command.action !== 'revise') {
       if (step?.kind === 'human-approval') {
         if (

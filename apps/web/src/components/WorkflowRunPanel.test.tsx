@@ -7,6 +7,7 @@ import { acquireDomHarness } from '../test/domHarness'
 import { client } from '../api/clientInstance'
 import { modelTierQueryKeys, queryKeys } from '../queryKeys'
 import { WorkflowRunPanel } from './WorkflowRunPanel'
+import { WorkflowReviewCallout } from './WorkflowReviewCallout'
 import { WorkflowEditor } from './squads/WorkflowEditor'
 
 const preset = workflowPresetSchema.parse(
@@ -78,10 +79,11 @@ test('human outcomes require evidence and send the displayed version and attempt
   const f = await fixture(run(true), ['workstreams:review'])
   const advance = spyOn(client.workflows, 'advance').mockRejectedValue(new Error('The flow changed; reload'))
   try {
-    await f.render()
-    const button = [...f.dom.window.document.querySelectorAll('button')].find(
-      (node) => node.textContent === 'approved'
+    await f.render(<WorkflowReviewCallout stream={stream} />)
+    const button = [...f.dom.window.document.querySelectorAll('button')].find((node) =>
+      node.textContent?.startsWith('Approved')
     )!
+    expect(button.textContent).toContain('Finishes the flow')
     expect(button.disabled).toBe(true)
     const input = f.dom.window.document.querySelector('textarea')!
     await f.dom.act(async () => {
@@ -125,6 +127,10 @@ test('read-only viewers can inspect human work without approval or revision cont
     expect(f.dom.window.document.querySelector('textarea')).toBeNull()
     expect(f.dom.window.document.body.textContent).toContain('Human approval')
     expect(f.dom.window.document.body.textContent).not.toContain('Revise flow')
+    await f.render(<WorkflowReviewCallout stream={stream} />)
+    expect(f.dom.window.document.querySelector('textarea')).toBeNull()
+    expect(f.dom.window.document.body.textContent).toContain('Approve this draft')
+    expect(f.dom.window.document.body.textContent).toContain('You need review permission in this squad to decide.')
   } finally {
     await f.cleanup()
   }
@@ -195,7 +201,7 @@ test('new work leaves the source unset so Core applies the configured squad defa
 test('review permission exposes human decisions without requiring squad editing or wait-response access', async () => {
   const f = await fixture(run(true), ['squads:update', 'workstreams:respond'])
   try {
-    await f.render()
+    await f.render(<WorkflowReviewCallout stream={stream} />)
     expect(f.dom.window.document.querySelector('[aria-label="Decision and evidence"]') === null).toBe(true)
     await f.dom.act(async () => {
       f.queryClient.setQueryData(queryKeys.auth.permissions(stream.squadId), {
@@ -203,7 +209,7 @@ test('review permission exposes human decisions without requiring squad editing 
         identity: { type: 'user', userId: 'reviewer' },
       })
     })
-    await f.render()
+    await f.render(<WorkflowReviewCallout stream={stream} />)
     expect(f.dom.window.document.querySelector('[aria-label="Decision and evidence"]') !== null).toBe(true)
   } finally {
     await f.cleanup()
@@ -220,10 +226,14 @@ test('assigned reviewer filters restrict a nonempty list and allow reviewers whe
   try {
     await f.render()
     expect(f.dom.window.document.body.textContent).toContain('anyone with review permission can decide.')
+    await f.render(<WorkflowReviewCallout stream={stream} />)
     expect(f.dom.window.document.querySelector('[aria-label="Decision and evidence"]') !== null).toBe(true)
-    await f.render(<WorkflowRunPanel stream={{ ...stream, assignedReviewerIds: ['someone-else'] }} />)
+    await f.render(<WorkflowReviewCallout stream={{ ...stream, assignedReviewerIds: ['someone-else'] }} />)
     expect(f.dom.window.document.querySelector('[aria-label="Decision and evidence"]') === null).toBe(true)
-    await f.render(<WorkflowRunPanel stream={{ ...stream, assignedReviewerIds: ['reviewer'] }} />)
+    expect(f.dom.window.document.body.textContent).toContain(
+      'Only the reviewers assigned to this work stream can decide.'
+    )
+    await f.render(<WorkflowReviewCallout stream={{ ...stream, assignedReviewerIds: ['reviewer'] }} />)
     expect(f.dom.window.document.querySelector('[aria-label="Decision and evidence"]') !== null).toBe(true)
   } finally {
     await f.cleanup()
@@ -271,7 +281,10 @@ test('an action-center wait opens the matching parallel human attempt', async ()
   try {
     await f.render(<WorkflowRunPanel stream={stream} focusWaitId="focused" />)
     expect(f.dom.window.document.querySelector('select')?.value).toBe('2')
-    expect(f.dom.window.document.body.textContent).toContain('Decide the second branch')
+    await f.render(<WorkflowReviewCallout stream={stream} focusWaitId="focused" />)
+    const gates = [...f.dom.window.document.querySelectorAll('section')]
+    expect(gates.map((gate) => gate.getAttribute('aria-label'))).toEqual(['Review second', 'Review execute'])
+    expect(gates[0]!.textContent).toContain('Decide the second branch')
   } finally {
     await f.cleanup()
   }
@@ -383,6 +396,129 @@ test('reviewer visibility follows effective definition revisions without changin
     expect(assign).not.toHaveBeenCalled()
   } finally {
     assign.mockRestore()
+    await f.cleanup()
+  }
+})
+
+async function type(f: Awaited<ReturnType<typeof fixture>>, input: HTMLTextAreaElement, value: string) {
+  await f.dom.act(async () => {
+    Object.getOwnPropertyDescriptor(f.dom.window.HTMLTextAreaElement.prototype, 'value')!.set!.call(input, value)
+    input.dispatchEvent(new f.dom.window.Event('input', { bubbles: true }))
+  })
+}
+async function click(f: Awaited<ReturnType<typeof fixture>>, label: string) {
+  const button = [...f.dom.window.document.querySelectorAll('button')].find((node) => node.textContent === label)!
+  await f.dom.act(async () => {
+    button.click()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+  })
+  return button
+}
+
+// A delivered solo flow waiting on human delivery approval.
+function deliveryRun(): WorkflowRunDetail {
+  const value = run()
+  value.state.definition.completion.mode = 'review-approval'
+  value.state.status = 'completion-ready'
+  Object.assign(value.state.attempts[0]!, {
+    status: 'completed',
+    outcome: 'completed',
+    evidence: 'Built the export; the full suite passes.',
+  })
+  value.attemptAgents = { '1': 'builder-agent' }
+  return value
+}
+const deliveredStream = {
+  ...stream,
+  metadata: { github: { repo: 'Hire-Tau/tau', pr: { number: 12 } } },
+} as unknown as WorkStream
+
+test('delivery approval sits in the review callout with the pull request, the delivered evidence, and both decisions', async () => {
+  const f = await fixture(deliveryRun(), ['workstreams:respond'])
+  const finish = spyOn(client.workflows, 'finish').mockResolvedValue(undefined as never)
+  const advance = spyOn(client.workflows, 'advance').mockResolvedValue(undefined as never)
+  try {
+    await f.render(<WorkflowRunPanel stream={deliveredStream} />)
+    expect(f.dom.window.document.body.textContent).not.toContain('Complete delivery')
+
+    await f.render(<WorkflowReviewCallout stream={deliveredStream} />)
+    const text = f.dom.window.document.body.textContent
+    expect(text).toContain('Approve delivery')
+    expect(text).toContain('Built the export; the full suite passes.')
+    const pr = f.dom.window.document.querySelector<HTMLAnchorElement>(
+      'a[href="https://github.com/Hire-Tau/tau/pull/12"]'
+    )
+    expect(pr?.textContent).toContain('Pull request #12')
+    expect(f.dom.window.document.querySelector('a[aria-label="Open execute attempt 1 agent chat"]')).not.toBeNull()
+
+    await click(f, 'Send back')
+    const feedback = f.dom.window.document.querySelector<HTMLTextAreaElement>('[aria-label="Send-back feedback"]')!
+    const submit = [...f.dom.window.document.querySelectorAll('button')].find(
+      (node) => node.textContent === 'Send back'
+    )!
+    expect(submit.disabled).toBe(true)
+    await type(f, feedback, 'Handle an empty export')
+    await click(f, 'Send back')
+    expect(advance.mock.calls[0]!.slice(0, 2)).toEqual([
+      stream.id,
+      { action: 'rework', expectedVersion: 0, attemptId: 1, feedback: 'Handle an empty export' },
+    ])
+
+    await click(f, 'Approve and complete')
+    expect(finish).toHaveBeenCalledWith(stream.id, 0)
+  } finally {
+    finish.mockRestore()
+    advance.mockRestore()
+    await f.cleanup()
+  }
+})
+
+test('delivery approval explains missing permission and is absent for other completion modes', async () => {
+  const f = await fixture(deliveryRun())
+  try {
+    await f.render(<WorkflowReviewCallout stream={deliveredStream} />)
+    expect(f.dom.window.document.body.textContent).toContain('You need permission to respond')
+    expect(f.dom.window.document.querySelector('button')).toBeNull()
+    const other = deliveryRun()
+    other.state.definition.completion.mode = 'deliverable'
+    f.queryClient.setQueryData(queryKeys.workflows.run(stream.id), other)
+    await f.render(<WorkflowReviewCallout stream={deliveredStream} />)
+    expect(f.dom.window.document.body.textContent).toBe('')
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('a human gate shows the handoff it reviews and labels each outcome with where it sends the work', async () => {
+  const value = run()
+  const definition = value.state.definition
+  definition.steps[0]!.outcomes.completed = { next: 'sign-off' }
+  const gate = {
+    id: 'sign-off',
+    name: 'Product sign-off',
+    kind: 'human-approval' as const,
+    approver: 'reviewers' as const,
+    instructions: 'Check the copy before release',
+    output: 'Decision',
+    outcomes: { 'request-changes': { returnTo: 'execute' }, approve: { next: 'finish' } },
+  }
+  definition.steps.push(gate)
+  Object.assign(value.state.attempts[0]!, { status: 'completed', outcome: 'completed', evidence: 'Draft copy ready' })
+  value.state.attempts.push({ id: 2, stepId: 'sign-off', status: 'running', step: gate, sourceAttemptIds: [1] })
+  const f = await fixture(value, ['workstreams:review'])
+  try {
+    await f.render(<WorkflowReviewCallout stream={stream} />)
+    const section = f.dom.window.document.querySelector('section[aria-label="Review Product sign-off"]')!
+    expect(section.textContent).toContain('Draft copy ready')
+    const buttons = [...section.querySelectorAll('button')]
+    expect(buttons.map((button) => button.textContent)).toEqual([
+      'Request changesSends back to execute',
+      'ApproveFinishes the flow',
+    ])
+    // The forward outcome is the primary action even when a rework outcome is declared first.
+    expect(buttons[1]!.className).toContain('tau-button-primary')
+    expect(buttons[0]!.className).not.toContain('tau-button-primary')
+  } finally {
     await f.cleanup()
   }
 })

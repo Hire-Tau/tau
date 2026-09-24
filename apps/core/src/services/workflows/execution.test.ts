@@ -11,6 +11,7 @@ import {
   createBlankWorkflow,
   workflowStepSchema,
   activeWorkflowAttempts,
+  workflowReworkAttempt,
 } from '@tau/shared'
 import {
   db,
@@ -24,6 +25,7 @@ import {
   inbox,
   executions,
   messages as chatMessages,
+  workStreamWaits,
 } from '../../db'
 import { Agent } from '../../entities/Agent'
 import { WorkStream } from '../../entities/WorkStream'
@@ -1394,6 +1396,42 @@ test('completion-ready rework is authorized, idempotent, tracked, and respects u
   await advance(id, 'approved')
   expect((await getFlow(id))!.state.status).toBe('completion-ready')
   expect(await listOpenWaits(db, id)).toHaveLength(1)
+})
+
+test('a human who can approve delivery can send it back, but only while delivery approval is open', async () => {
+  const user = await createTestUser({ prefix })
+  const role = await createTestRole({ prefix, permissions: ['workstreams:respond'] })
+  await assignRole({ userId: user.id, roleId: role.id, scope: 'squad', squadId })
+  const approver = { type: 'user' as const, userId: user.id }
+  const readyFlow = async (mode: WorkflowDefinition['completion']['mode']) => {
+    const definition = structuredClone(flow)
+    definition.completion.mode = mode
+    const id = await create('active', definition)
+    await advance(id, 'completed')
+    await advance(id, 'approved')
+    const ready = (await getFlow(id))!
+    const command = {
+      action: 'rework',
+      expectedVersion: ready.version,
+      attemptId: workflowReworkAttempt(ready.state)!.id,
+      feedback: 'The summary misses the migration risk',
+    }
+    return { id, command }
+  }
+
+  const unreviewed = await readyFlow('deliverable')
+  await expect(advanceFlow(unreviewed.id, unreviewed.command, randomUUID(), approver)).rejects.toThrow(
+    'delivery approver'
+  )
+
+  const reviewed = await readyFlow('review-approval')
+  const [delivery] = await listOpenWaits(db, reviewed.id)
+  expect(delivery!.resolutionHandler).toBe('workflow')
+  const result = await advanceFlow(reviewed.id, reviewed.command, randomUUID(), approver)
+  expect(result.stateStatus).toBe('running')
+  expect(await listOpenWaits(db, reviewed.id)).toHaveLength(0)
+  const [closed] = await db.select().from(workStreamWaits).where(eq(workStreamWaits.id, delivery!.id))
+  expect(closed).toMatchObject({ resolution: 'sent_back', resolutionNote: 'The summary misses the migration risk' })
 })
 
 test('parked completion-ready rework clears delivery review but waits for capacity admission', async () => {

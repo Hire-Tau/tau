@@ -29,9 +29,8 @@ export function WorkflowRunPanel({
 }) {
   const { slugFor } = useSquadSlugs()
   const { data: run, error } = useQuery(queries.workflows.run(stream.id))
-  const { can, identity } = usePermissions(stream.squadId)
+  const { can } = usePermissions(stream.squadId)
   const queryClient = useQueryClient()
-  const [evidenceByAttempt, setEvidenceByAttempt] = useState<Record<number, string>>({})
   const [selectedAttempt, setSelectedAttempt] = useState<number>()
   const [presetId, setPresetId] = useState('')
   const [editing, setEditing] = useState(false)
@@ -46,7 +45,6 @@ export function WorkflowRunPanel({
   const advance = useMutation({
     mutationFn: (command: WorkflowCommand) => client.workflows.advance(stream.id, command, crypto.randomUUID()),
     onSuccess: () => {
-      setEvidence('')
       setEditing(false)
       refresh()
     },
@@ -74,10 +72,6 @@ export function WorkflowRunPanel({
     (wait) => wait.id === focusWaitId
   )?.flowAttemptId
   const attempt = activeAttempts.find((entry) => entry.id === (selectedAttempt ?? focusedAttempt)) ?? activeAttempts[0]
-  const evidence = attempt ? (evidenceByAttempt[attempt.id] ?? '') : ''
-  const setEvidence = (value: string) => {
-    if (attempt) setEvidenceByAttempt((current) => ({ ...current, [attempt.id]: value }))
-  }
   const step = attempt?.step ?? run.state.definition.steps.find((entry) => entry.id === attempt?.stepId)
   const terminal = ['done', 'canceled'].includes(stream.status)
   const waits = run.openWaits ?? stream.openWaits ?? []
@@ -85,11 +79,6 @@ export function WorkflowRunPanel({
     activeAttempts.some(
       (a) => a.stepId === stepId && waits.some((w) => w.flowAttemptId == null || w.flowAttemptId === a.id)
     )
-  const decisionBlocked = waits.some(
-    (w) =>
-      (w.flowAttemptId == null || w.flowAttemptId === attempt?.id) &&
-      !(w.resolutionHandler === 'workflow' && w.flowAttemptId === attempt?.id)
-  )
   function revise() {
     if (!draft || draft.kind !== 'inline') return
     const definition = workflowDefinitionSchema.parse(draft.definition)
@@ -235,50 +224,11 @@ export function WorkflowRunPanel({
         <p className="text-sm text-secondary">Attempt limit reached for {run.state.pauseReason.stepId}.</p>
       )}
 
-      {!terminal &&
-        !stream.pause &&
-        run.state.status === 'running' &&
-        step?.kind === 'human-approval' &&
-        can('workstreams:review') &&
-        (step.approver !== 'assigned-reviewers' ||
-          !stream.assignedReviewerIds?.length ||
-          (identity?.type === 'user' && (stream.assignedReviewerIds ?? []).includes(identity.userId))) && (
-          <div className="space-y-2">
-            <p className="text-sm">{step.instructions}</p>
-            <textarea
-              aria-label="Decision and evidence"
-              placeholder="Decision and evidence"
-              value={evidence}
-              onChange={(e) => setEvidence(e.target.value)}
-              className="tau-field w-full p-2 border border-th-border rounded-md"
-            />
-            <div className="flex gap-2">
-              {Object.keys(step.outcomes).map((outcome) => (
-                <button
-                  key={outcome}
-                  type="button"
-                  className="px-3 py-2 text-sm rounded-md border border-th-border"
-                  disabled={advance.isPending || !evidence.trim() || decisionBlocked}
-                  onClick={() =>
-                    advance.mutate({
-                      action: 'complete',
-                      expectedVersion: run.version,
-                      attemptId: attempt!.id,
-                      outcome,
-                      evidence,
-                      resume: false,
-                    })
-                  }
-                >
-                  {outcome.replaceAll('-', ' ')}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
+      {/* Human decisions and delivery approval render in WorkflowReviewCallout at the top of the detail. */}
       {!terminal &&
         !stream.pause &&
         run.state.status === 'completion-ready' &&
+        run.state.definition.completion.mode !== 'review-approval' &&
         (can('workstreams:update') || can('workstreams:respond')) && (
           <button
             type="button"
