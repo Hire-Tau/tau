@@ -56,14 +56,21 @@ describe('App auth gate', () => {
       return Response.json([])
     }) as typeof fetch
 
-    const [{ default: App }, { AuthProvider }, { WebSocketContext }, { QueryClient, QueryClientProvider }, router] =
-      await Promise.all([
-        import('./App'),
-        import('./providers/AuthProvider'),
-        import('./hooks/useWebSocket'),
-        import('@tanstack/react-query'),
-        import('react-router-dom'),
-      ])
+    const [
+      { default: App },
+      { AuthProvider },
+      { WebSocketContext },
+      { QueryClient, QueryClientProvider },
+      router,
+      { ThemeProvider },
+    ] = await Promise.all([
+      import('./App'),
+      import('./providers/AuthProvider'),
+      import('./hooks/useWebSocket'),
+      import('@tanstack/react-query'),
+      import('react-router-dom'),
+      import('./providers/ThemeProvider'),
+    ])
     const { MemoryRouter } = router
     ;({ container, root } = dom.createRoot())
     render = async (path = '/') => {
@@ -72,11 +79,13 @@ describe('App auth gate', () => {
         root.render(
           <QueryClientProvider client={queryClient}>
             <MemoryRouter initialEntries={[path]}>
-              <AuthProvider>
-                <WebSocketContext.Provider value={{ subscribe: () => () => {}, isConnected: true }}>
-                  <App />
-                </WebSocketContext.Provider>
-              </AuthProvider>
+              <ThemeProvider>
+                <AuthProvider>
+                  <WebSocketContext.Provider value={{ subscribe: () => () => {}, isConnected: true }}>
+                    <App />
+                  </WebSocketContext.Provider>
+                </AuthProvider>
+              </ThemeProvider>
             </MemoryRouter>
           </QueryClientProvider>
         )

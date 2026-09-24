@@ -39,6 +39,23 @@
     background: rgb(var(--color-bg-surface-secondary));
   }
 
+  /* ThemeQuickPicker swirl swatch. One static rule: the actual colors come
+     from whichever [data-theme-scope][data-theme=…] element the swatch sits
+     inside, so a single class paints every theme circle correctly without any
+     per-instance inline color (see no-raw-colors guard). */
+  .theme-quick-picker-swatch {
+    background: conic-gradient(
+      rgb(var(--color-primary)) 0deg 120deg,
+      rgb(var(--color-primary-hover)) 120deg 240deg,
+      rgb(var(--color-bg-surface-secondary)) 240deg 360deg
+    );
+    border: 1px solid
+      rgb(
+        var(--custom-rgb-color-panel-border, var(--color-panel-border)) /
+          calc(var(--custom-alpha-color-panel-border, 1) * var(--opacity-panel-border))
+      );
+  }
+
   .tau-section-title {
     color: rgb(var(--color-text-secondary));
     font-size: 12px;

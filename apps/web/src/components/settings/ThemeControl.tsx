@@ -4,6 +4,33 @@ import type { AppearanceSetting } from '@tau/shared'
 import type { useTheme } from '../../providers/ThemeProvider'
 import { BUILT_IN_THEMES, findWebTheme, THEME_PICKER_ENABLED } from '../../theme/registry'
 
+/** Shared with ThemeQuickPicker so both entry points explain a unified theme identically. */
+export const THEME_CONSTANT_HINT =
+  'High contrast has one appearance. Your appearance preference is kept for other themes.'
+
+/** Shared account-sync/device-override notice, identical on both the Settings picker and the header quick picker. */
+export function ThemeSyncNotice({
+  value,
+}: {
+  value: Pick<ReturnType<typeof useTheme>, 'syncAvailable' | 'localOverride' | 'adoptSynced'>
+}) {
+  if (!value.syncAvailable) return null
+  return (
+    <div className="mt-3 text-sm text-muted">
+      <p>
+        {value.localOverride
+          ? 'This device overrides your synced theme. Changes here also update your account theme.'
+          : 'Following your account theme.'}
+      </p>
+      {value.localOverride && (
+        <button className="tau-button tau-button-secondary min-h-[44px] px-3 py-2 mt-2" onClick={value.adoptSynced}>
+          Use synced theme
+        </button>
+      )}
+    </div>
+  )
+}
+
 export function ThemeControl({
   value,
   enabled = THEME_PICKER_ENABLED,
@@ -51,7 +78,7 @@ export function ThemeControl({
           </label>
           {selected.kind === 'unified' && (
             <p id="theme-constant-hint" className="text-sm text-muted self-end">
-              High contrast has one appearance. Your appearance preference is kept for other themes.
+              {THEME_CONSTANT_HINT}
             </p>
           )}
         </div>
@@ -60,20 +87,7 @@ export function ThemeControl({
           {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
         </button>
       )}
-      {value.syncAvailable && (
-        <div className="mt-3 text-sm text-muted">
-          <p>
-            {value.localOverride
-              ? 'This device overrides your synced theme. Changes here also update your account theme.'
-              : 'Following your account theme.'}
-          </p>
-          {value.localOverride && (
-            <button className="tau-button tau-button-secondary min-h-[44px] px-3 py-2 mt-2" onClick={value.adoptSynced}>
-              Use synced theme
-            </button>
-          )}
-        </div>
-      )}
+      <ThemeSyncNotice value={value} />
       {value.customTheme && (
         <p className="mt-3 text-sm text-secondary">
           Custom theme: {value.customTheme.name} ({value.customTheme.appearance})

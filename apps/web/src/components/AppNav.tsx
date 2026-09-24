@@ -13,6 +13,8 @@ import { getTabNavigationTarget, recordTabPath } from '../hooks/useTabHistory'
 import { usePermissions } from '../hooks/usePermissions'
 import { useAssistantActivity } from '../hooks/useAssistantActivity'
 import { AssistantActivityBadge } from './AssistantActivityBadge'
+import { ThemeQuickPicker } from './ThemeQuickPicker'
+import { useTheme } from '../providers/ThemeProvider'
 import {
   isNavItemAllowed,
   moreMenuItems,
@@ -33,6 +35,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
   const isChat = location.pathname.startsWith('/chat')
   const [inboxPopupOpen, setInboxPopupOpen] = useState(false)
   const { can, isLoading: permissionsLoading } = usePermissions()
+  const theme = useTheme()
 
   // Query for inbox unread count (desktop inbox icon badge): personal + shared system (if permitted)
   const canSystem = can('inbox:system')
@@ -169,6 +172,8 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
             >
               <SettingsIcon className="w-5 h-5" />
             </NavLink>
+
+            <ThemeQuickPicker value={theme} />
 
             <button
               onClick={() => window.dispatchEvent(new Event('open-inbox-popup'))}
