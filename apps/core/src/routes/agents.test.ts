@@ -1440,6 +1440,41 @@ describe('agent sandbox stop/restart', () => {
     expect((await sub.json()).controllable).toBe(false)
   })
 
+  it("manages an own-box agent's processes and refuses one that shares its parent's box", async () => {
+    const signalled: unknown[][] = []
+    const client = {
+      listProcesses: async () => ({ pressure: null, processes: [], containers: { available: false, reason: 'x' } }),
+      signalProcess: async (pid: number, signal: string) => {
+        signalled.push([pid, signal])
+        return { pid, signal, command: 'sleep 60' }
+      },
+    }
+    const managerSpy = spyOn(sandboxFactory, 'getSandboxManager').mockReturnValue({
+      getOrAttachClient: async () => client,
+    } as never)
+    try {
+      const listed = await app.request(`/api/agents/${soloAgent.id}/sandbox/processes`, {
+        headers: authHeaders(admin.token),
+      })
+      expect(listed.status).toBe(200)
+      expect((await listed.json()).processes).toEqual([])
+      const sent = await app.request(`/api/agents/${soloAgent.id}/sandbox/processes/4242/signal`, {
+        method: 'POST',
+        headers: authHeaders(admin.token),
+      })
+      expect(sent.status).toBe(200)
+      expect(signalled).toEqual([[4242, 'TERM']])
+
+      const shared = await app.request(`/api/agents/${subAgent.id}/sandbox/processes`, {
+        headers: authHeaders(admin.token),
+      })
+      expect(shared.status).toBe(403)
+      expect((await shared.json()).error).toContain('manage its processes through the squad')
+    } finally {
+      managerSpy.mockRestore()
+    }
+  })
+
   it('stops a solo agent sandbox', async () => {
     const res = await app.request(`/api/agents/${soloAgent.id}/sandbox/stop`, {
       method: 'POST',

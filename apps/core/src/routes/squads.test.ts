@@ -1626,6 +1626,106 @@ describe('squads routes', () => {
     })
   })
 
+  describe('squad sandbox process management', () => {
+    function fakeBoxClient(calls: unknown[][]) {
+      return {
+        listProcesses: async () => ({
+          pressure: { cpus: 4, load: [22.7, 31.9, 30.5], memTotalMb: 7941, memAvailableMb: 3614 },
+          processes: [
+            {
+              pid: 2838629,
+              ppid: 1,
+              cpuPercent: 187,
+              memRssMb: 2116,
+              ageSeconds: 9300,
+              state: 'R',
+              command: 'bun tsc -p apps/core',
+              protected: false,
+            },
+          ],
+          containers: { available: true, containers: [] },
+        }),
+        signalProcess: async (pid: number, signal: string) => {
+          calls.push(['signal', pid, signal])
+          return { pid, signal, command: 'bun tsc -p apps/core' }
+        },
+        stopContainer: async (id: string) => {
+          calls.push(['stop', id])
+          return { id }
+        },
+      }
+    }
+
+    it("lists the squad box's processes and stops one, for someone who can update the squad", async () => {
+      const squad = await Squad.create({ name: `${testPrefix} Processes`, purpose: 'Testing box processes' })
+      const calls: unknown[][] = []
+      const client = fakeBoxClient(calls)
+      const managerSpy = spyOn(sandboxFactory, 'getSandboxManager').mockReturnValue({
+        getOrAttachClient: async (sandboxId: string) => (sandboxId === squad.sandboxId ? client : null),
+      } as never)
+      try {
+        const listed = await app.request(`/api/squads/${squad.id}/sandbox/processes`, {
+          headers: authHeaders(admin.token),
+        })
+        expect(listed.status).toBe(200)
+        expect((await listed.json()).processes[0].command).toBe('bun tsc -p apps/core')
+
+        const signalled = await app.request(`/api/squads/${squad.id}/sandbox/processes/2838629/signal`, {
+          method: 'POST',
+          headers: { ...authHeaders(admin.token), 'content-type': 'application/json' },
+          body: JSON.stringify({ signal: 'kill' }),
+        })
+        expect(signalled.status).toBe(200)
+        const stopped = await app.request(`/api/squads/${squad.id}/sandbox/containers/tau-core-tsc/stop`, {
+          method: 'POST',
+          headers: authHeaders(admin.token),
+        })
+        expect(stopped.status).toBe(200)
+        expect(calls).toEqual([
+          ['signal', 2838629, 'KILL'],
+          ['stop', 'tau-core-tsc'],
+        ])
+
+        const invalid = await app.request(`/api/squads/${squad.id}/sandbox/processes/1/signal`, {
+          method: 'POST',
+          headers: authHeaders(admin.token),
+        })
+        expect(invalid.status).toBe(400)
+      } finally {
+        managerSpy.mockRestore()
+      }
+    })
+
+    it('requires squads:update, since command lines can carry secrets, and reports a stopped box', async () => {
+      const squad = await Squad.create({ name: `${testPrefix} Processes RBAC`, purpose: 'Testing box processes' })
+      const member = await createTestUser({ prefix: testPrefix })
+      const role = await createTestRole({ prefix: testPrefix, permissions: ['squads:read'] })
+      await assignRole({ userId: member.id, roleId: role.id, scope: 'squad', squadId: squad.id })
+      const managerSpy = spyOn(sandboxFactory, 'getSandboxManager').mockReturnValue({
+        getOrAttachClient: async () => null,
+      } as never)
+      try {
+        for (const [method, path] of [
+          ['GET', 'processes'],
+          ['POST', 'processes/4242/signal'],
+          ['POST', 'containers/abc/stop'],
+        ]) {
+          const res = await app.request(`/api/squads/${squad.id}/sandbox/${path}`, {
+            method,
+            headers: authHeaders(member.token),
+          })
+          expect(res.status).toBe(403)
+        }
+        const stopped = await app.request(`/api/squads/${squad.id}/sandbox/processes`, {
+          headers: authHeaders(admin.token),
+        })
+        expect(stopped.status).toBe(409)
+      } finally {
+        managerSpy.mockRestore()
+      }
+    })
+  })
+
   describe('GET /api/squads/:id/sandbox/status', () => {
     it('returns not_found when no sandbox is running (docker mode)', async () => {
       const squad = await Squad.create({

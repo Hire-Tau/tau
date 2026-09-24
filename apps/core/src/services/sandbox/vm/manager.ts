@@ -35,6 +35,7 @@
 import { createHash } from 'crypto'
 import { relative } from 'path'
 import type { IPty } from 'bun-pty'
+import type { SandboxPressure } from '@tau/shared'
 import {
   getSquadIdFromSandbox,
   type ISandboxManager,
@@ -542,6 +543,8 @@ export interface VmSandboxStatus {
    * up) backing the VM sandbox UI's status — see {@link BoxChainHealth}.
    */
   chain?: BoxChainHealth
+  /** Load and memory from the box's last health check; absent for an idle box. */
+  pressure?: SandboxPressure
 }
 
 function lifecycleGenerationFromVmSpecHash(specHash: string | null | undefined): string | null {
@@ -1497,6 +1500,7 @@ export class VmSandboxManager implements ISandboxManager {
         // unchanged.
         const idle = chain?.boxServer === 'idle'
         let liveDevboxReady = idle
+        let pressure: SandboxPressure | undefined
         let repairReason: VmSetupReasonCode = 'transport_recovery_failed'
         const statusClient = idle ? null : await this.getOrAttachClient(sandboxId)
         if (statusClient) {
@@ -1511,6 +1515,7 @@ export class VmSandboxManager implements ISandboxManager {
               sleep: (ms) => Bun.sleep(ms),
             })
             liveDevboxReady = health.healthy && health.devboxReady
+            pressure = health.pressure
             this.observeHealth(sandboxId, health.uptimeSeconds)
             repairReason = 'devbox_unavailable'
           } catch {
@@ -1536,6 +1541,7 @@ export class VmSandboxManager implements ISandboxManager {
             readiness: 'ready_degraded',
             devboxReady: liveDevboxReady && !projected.reasons.includes('devbox_unavailable'),
             chain,
+            ...(pressure ? { pressure } : {}),
             degradation: {
               reasons: projected.reasons,
               attemptCount: projected.attemptCount,
@@ -1556,6 +1562,7 @@ export class VmSandboxManager implements ISandboxManager {
             readiness: 'ready_degraded',
             devboxReady: false,
             chain,
+            ...(pressure ? { pressure } : {}),
             degradation: {
               reasons: projected.reasons.includes(repairReason) ? projected.reasons : [repairReason],
               attemptCount: projected.attemptCount,
@@ -1563,7 +1570,7 @@ export class VmSandboxManager implements ISandboxManager {
             },
           }
         }
-        return { status: 'running', readiness: 'ready', devboxReady: true, chain }
+        return { status: 'running', readiness: 'ready', devboxReady: true, chain, ...(pressure ? { pressure } : {}) }
       }
       case 'starting':
         // Non-terminal: box mid-(re-)provision, or its machine is up but the

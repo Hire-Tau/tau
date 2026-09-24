@@ -37,6 +37,7 @@ export const queryKeys = {
     context: (agentId: string) => [...queryKeys.agents.all, agentId, 'context'] as const,
     scopes: (agentId: string) => [...queryKeys.agents.detail(agentId), 'scopes'] as const,
     sandboxStatus: (agentId: string) => [...queryKeys.agents.all, agentId, 'sandboxStatus'] as const,
+    sandboxProcesses: (agentId: string) => [...queryKeys.agents.all, agentId, 'sandboxProcesses'] as const,
     children: (parentId: string) => [...queryKeys.agents.all, 'children', parentId] as const,
     /**
      * Every parent's children list. An agent event carries no parent id, so a
@@ -237,6 +238,7 @@ export const queryKeys = {
   sandbox: {
     all: ['sandbox'] as const,
     status: (squadId: string) => [...queryKeys.sandbox.all, 'status', squadId] as const,
+    processes: (squadId: string) => [...queryKeys.sandbox.all, 'processes', squadId] as const,
   },
   secrets: {
     all: ['secrets'] as const,

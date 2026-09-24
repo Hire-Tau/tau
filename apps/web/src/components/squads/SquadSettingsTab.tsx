@@ -15,6 +15,7 @@ import { WorkspaceIndexingSettings } from './WorkspaceIndexingSettings'
 import { NotificationSettings } from './NotificationSettings'
 import { SandboxSettings } from './SandboxSettings'
 import { SandboxLogs } from './SandboxLogs'
+import { SandboxProcesses } from '../sandbox/SandboxProcesses'
 import { IntegrationSettings } from './IntegrationSettings'
 import { DirectMergePolicySettings } from './DirectMergePolicySettings'
 import { queries } from '../../queryOptions'
@@ -135,6 +136,9 @@ export function SquadSettingsTab({
           {activeSection === 'workspace' && sandboxSectionReady && (
             <div className="mb-8 space-y-8">
               <SandboxSettings squadId={squadId} />
+              <Can permission="squads:update" squadId={squadId}>
+                <SandboxProcesses target={{ kind: 'squad', squadId }} />
+              </Can>
               <Can permission="sandbox:logs" squadId={squadId}>
                 <SandboxLogs squadId={squadId} />
               </Can>

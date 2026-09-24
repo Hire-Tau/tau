@@ -334,6 +334,35 @@ Deep docs: [k8s/deployment.md](k8s/deployment.md) (cluster setup; Appendix A
 is the full env-var reference) and
 [k8s/local-dev-k3d.md](k8s/local-dev-k3d.md) (day-to-day k3d).
 
+## Seeing and stopping what a sandbox runs
+
+A runaway job in a sandbox (a detached full build, a forgotten test database)
+can slow every agent that uses it until tool calls and toolchain checks time
+out. On a `vm` machine, one box can starve the others on the same machine.
+Sandbox status includes the box's load and memory, and the web app flags a
+sandbox whose one-minute load is at least twice its CPU count as overloaded.
+
+To find and stop the cause without restarting the sandbox:
+
+```bash
+tau squad sandbox-ps <squadId>                        # load, processes by current CPU, containers
+tau squad sandbox-kill <squadId> <pid> [--signal KILL] # TERM by default
+tau squad sandbox-stop-container <squadId> <container>
+```
+
+The same commands exist under `tau agent` for an agent's own sandbox. A squad
+member's work runs in the squad sandbox, so use the squad commands for it. In
+the web app, the squad's Workspace settings and an agent's own-sandbox controls
+have a **Processes** section.
+
+These need `squads:update` for a squad sandbox, or permission to run the agent.
+Listing needs it too, because command lines can contain secrets. The sandbox
+server runs as the sandbox's own user, so it can only see and signal that
+user's processes and its own containers. It refuses to signal itself and the
+processes that run it. Processes inside containers can run as other users, so
+stop the container instead. Every signal and container stop is logged with the
+caller.
+
 ## Squad sandbox toolchains
 
 Declare packages and an optional idempotent setup hook for every sandbox owned

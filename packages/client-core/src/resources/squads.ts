@@ -7,6 +7,7 @@ import type {
   SquadActivityKind,
   SquadActivityPage,
   ResolveWorkStreamWaitInput,
+  SandboxPressure,
   WorkStream,
   WorkStreamStatus,
   WorkStreamWait,
@@ -79,6 +80,8 @@ export interface SandboxStatus {
    * not offer start/stop.
    */
   runtime?: 'docker' | 'k8s' | 'vm' | 'host'
+  /** Load and memory from the sandbox's last health check (VM runtime). */
+  pressure?: SandboxPressure
 }
 
 /** The caller's attention for a squad: stored levels when subscribed, otherwise the default. */

@@ -4,7 +4,7 @@
  * API functions for the task workspace file browser and terminal sessions.
  */
 
-import type { LocalDeployment } from '@tau/shared'
+import type { LocalDeployment, SandboxPressure, SandboxProcesses, SandboxProcessSignal } from '@tau/shared'
 import { apiFetch, apiUrl, authFetch } from './client'
 
 export type { LocalDeployment, LocalDeploymentStatus } from '@tau/shared'
@@ -203,6 +203,8 @@ export interface SandboxStatus {
   }
   /** VM runtime only — see {@link SandboxChainHealth}. */
   chain?: SandboxChainHealth
+  /** Load and memory from the sandbox's last health check (VM runtime). */
+  pressure?: SandboxPressure
 }
 
 /**
@@ -224,6 +226,22 @@ export async function startSandbox(squadId: string): Promise<void> {
  */
 export async function stopSandbox(squadId: string): Promise<void> {
   await apiFetch(`/squads/${squadId}/sandbox/stop`, { method: 'POST' })
+}
+
+/** What the squad's sandbox is running (samples CPU for about a second). */
+export async function getSandboxProcesses(squadId: string): Promise<SandboxProcesses> {
+  return apiFetch<SandboxProcesses>(`/squads/${squadId}/sandbox/processes`)
+}
+
+export async function signalSandboxProcess(squadId: string, pid: number, signal: SandboxProcessSignal): Promise<void> {
+  await apiFetch(`/squads/${squadId}/sandbox/processes/${pid}/signal`, {
+    method: 'POST',
+    body: JSON.stringify({ signal }),
+  })
+}
+
+export async function stopSandboxContainer(squadId: string, containerId: string): Promise<void> {
+  await apiFetch(`/squads/${squadId}/sandbox/containers/${encodeURIComponent(containerId)}/stop`, { method: 'POST' })
 }
 
 export async function applySquadToolchain(squadId: string): Promise<void> {

@@ -53,6 +53,14 @@ import {
   handleDeleteMaterializedAttachment,
 } from './services/filesystem'
 import {
+  BoxProcessError,
+  listBoxContainers,
+  listBoxProcesses,
+  readPressure,
+  signalBoxProcess,
+  stopBoxContainer,
+} from './services/processes'
+import {
   cacheManagedToolchainEnv,
   ManagedToolchainTimeoutError,
   prepareDevboxShellEnv,
@@ -121,6 +129,9 @@ const MAX_BODY = 100 * 1024 * 1024 // 100MB
 const INVALID_JSON_BODY_MESSAGE = 'Invalid JSON body'
 const JSON_BODY_PATHS = new Set([
   '/toolchain-ready',
+  '/processes',
+  '/processes/signal',
+  '/containers/stop',
   '/bash',
   '/bash/cancel',
   '/read',
@@ -319,6 +330,26 @@ async function main(): Promise<void> {
                   return Response.json({ error: error.message, code: 'timeout' }, { status: 504 })
                 }
                 return Response.json({ error: 'Managed toolchain activation failed' }, { status: 500 })
+              }
+            case '/processes':
+              return Response.json({
+                pressure: readPressure(),
+                processes: await listBoxProcesses(),
+                containers: await listBoxContainers(),
+              })
+            case '/processes/signal':
+            case '/containers/stop':
+              try {
+                return Response.json(
+                  pathname === '/processes/signal'
+                    ? signalBoxProcess(body.pid, body.signal)
+                    : await stopBoxContainer(body.id)
+                )
+              } catch (error) {
+                if (error instanceof BoxProcessError) {
+                  return Response.json({ error: error.message }, { status: error.status })
+                }
+                throw error
               }
             case '/bash': {
               await bashReady

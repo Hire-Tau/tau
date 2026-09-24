@@ -4,7 +4,7 @@ import { chatPagePathSchema } from '@tau/shared'
 import { getModelCatalog } from '../services/model-selection/model-catalog'
 import { withChatQueueState } from '../services/chat/queued-messages'
 import { withDeviceStreamRevocation } from '../services/streaming/device-revocation'
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { parseOptionalJsonObjectBody } from '../middleware/json-body-errors'
 import { streamSSE } from 'hono/streaming'
 import { z } from 'zod'
@@ -52,6 +52,15 @@ import { listPendingActionsForIdentity } from '../services/agents/actions'
 import { User } from '../entities/User'
 import { Squad } from '../entities/Squad'
 import { mergeSandboxStatus, resolveToolchainStatus } from '../services/sandbox/status'
+import {
+  listSandboxProcesses,
+  parseContainerId,
+  parseProcessId,
+  parseProcessSignal,
+  sandboxProcessesErrorResponse,
+  signalSandboxProcess,
+  stopSandboxContainer,
+} from '../services/sandbox/processes'
 import { InvalidAttachmentError } from '../services/attachments/agent-scope'
 import { ChatIdempotencyConflictError } from '../services/chat/consultant-idempotency'
 
@@ -82,6 +91,26 @@ async function agentOwnerUserId(agentId: string): Promise<string | null> {
  * in-flight execution so the agent doesn't keep streaming against a box that no
  * longer exists. Mirrors the cleanup in the sandbox-status endpoint.
  */
+/**
+ * Run a process-management call against an agent's OWN box. A squad member
+ * shares the squad box, whose processes are managed through the squad.
+ */
+async function ownAgentSandbox(c: Context, run: (sandboxId: string) => Promise<unknown>): Promise<Response> {
+  const agent = await Agent.find(c.req.param('id'))
+  if (!agent) return c.json({ error: 'Agent not found' }, 404)
+  const sandboxId = await agent.getSandboxId()
+  if (sandboxId !== agent.getAgentWorkspaceSandboxId()) {
+    return c.json({ error: "This agent shares its squad's sandbox; manage its processes through the squad" }, 403)
+  }
+  try {
+    return c.json(await run(sandboxId))
+  } catch (err) {
+    const failure = sandboxProcessesErrorResponse(err)
+    if (failure) return c.json(failure.body, failure.status)
+    throw err
+  }
+}
+
 async function failActiveSessionForStoppedSandbox(agent: Agent, sandboxId: string): Promise<void> {
   if (!isSessionActive(agent.id)) return
   removeSession(agent.id)
@@ -1092,6 +1121,38 @@ export const agentsRouter = new Hono()
         return c.json({ error: 'Failed to stop sandbox' }, 500)
       }
     }
+  )
+  // GET/POST /api/agents/:id/sandbox/processes... - What this agent's own box is
+  // running, and stopping it. A squad member shares the squad box, whose
+  // processes are managed through the squad.
+  .get(
+    '/:id/sandbox/processes',
+    requireEntityPermission('agents:run', async (c) => agentSquadId(c.req.param('id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')),
+    }),
+    async (c) => ownAgentSandbox(c, (sandboxId) => listSandboxProcesses(sandboxId))
+  )
+  .post(
+    '/:id/sandbox/processes/:pid/signal',
+    requireEntityPermission('agents:run', async (c) => agentSquadId(c.req.param('id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')),
+    }),
+    async (c) =>
+      ownAgentSandbox(c, async (sandboxId) => {
+        const body = (await c.req.json().catch(() => ({}))) as { signal?: unknown }
+        const pid = parseProcessId(c.req.param('pid'))
+        return signalSandboxProcess(sandboxId, pid, parseProcessSignal(body.signal), c.get('identity')!)
+      })
+  )
+  .post(
+    '/:id/sandbox/containers/:containerId/stop',
+    requireEntityPermission('agents:run', async (c) => agentSquadId(c.req.param('id')), {
+      loadOwnerUserId: async (c) => agentOwnerUserId(c.req.param('id')),
+    }),
+    async (c) =>
+      ownAgentSandbox(c, (sandboxId) =>
+        stopSandboxContainer(sandboxId, parseContainerId(c.req.param('containerId')), c.get('identity')!)
+      )
   )
   // POST /api/agents/:id/sandbox/restart - Stop and re-provision this agent's sandbox
   .post(

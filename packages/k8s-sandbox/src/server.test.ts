@@ -181,7 +181,54 @@ describe('server auth gate (subprocess)', () => {
     // The gate also covers the /shell WS upgrade path (same fetch handler).
     const shellNoAuth = await fetch(`${server.base}/shell`)
     expect(shellNoAuth.status).toBe(401)
+
+    // Process listing and control are execution surface: always authenticated.
+    for (const path of ['/processes', '/processes/signal', '/containers/stop']) {
+      const response = await fetch(`${server.base}${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ pid: 2, id: 'x' }),
+      })
+      expect(response.status).toBe(401)
+    }
   }, 30_000)
+
+  // The process view reads /proc, which only Linux (where boxes run) provides.
+  it.skipIf(process.platform !== 'linux')(
+    'stops an owned process and refuses to signal the server itself',
+    async () => {
+      const token = 'process-token'
+      const server = await startServer({ EXECUTOR_AUTH_TOKEN: token, EXECUTOR_BIND: '127.0.0.1' })
+      const headers = { 'content-type': 'application/json', authorization: `Bearer ${token}` }
+      const target = Bun.spawn(['sleep', '60'])
+      try {
+        const listed = (await (
+          await fetch(`${server.base}/processes`, { method: 'POST', headers, body: '{}' })
+        ).json()) as { processes: Array<{ pid: number; protected: boolean }>; pressure: unknown }
+        expect(listed.pressure).toBeTruthy()
+        expect(listed.processes.some((p) => p.pid === target.pid && !p.protected)).toBe(true)
+
+        const signalled = await fetch(`${server.base}/processes/signal`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ pid: target.pid, signal: 'TERM' }),
+        })
+        expect(signalled.status).toBe(200)
+        expect(await target.exited).not.toBe(0)
+
+        const self = listed.processes.find((p) => p.protected)!
+        const refused = await fetch(`${server.base}/processes/signal`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ pid: self.pid }),
+        })
+        expect(refused.status).toBe(403)
+      } finally {
+        target.kill()
+      }
+    },
+    30_000
+  )
 
   it('fails closed on malformed JSON only for authenticated body-consuming routes', async () => {
     const token = 'malformed-json-token'
