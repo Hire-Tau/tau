@@ -53,7 +53,7 @@ describe('PullToRefresh', () => {
 
     expect(html).toContain('data-testid="feed-pull-to-refresh"')
     expect(html).toContain('data-testid="pull-to-refresh-indicator"')
-    expect(html).toContain('#7c3aed')
+    expect(html).toContain('var(--brand-gradient-to)')
     expect(html).toContain('Pull to refresh Feed')
   })
 

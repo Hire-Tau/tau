@@ -1,0 +1,264 @@
+import postcss from 'postcss'
+import { expect, test } from 'bun:test'
+import { readFileSync } from 'node:fs'
+import { ACTIVE_THEME_TOKENS, type CustomThemeDocument } from '@tau/shared'
+import { acquireDomHarness } from '../test/domHarness'
+import {
+  applyCustomTheme,
+  clearCustomTheme,
+  CUSTOM_THEME_KEY,
+  exportCustomTheme,
+  importCustomTheme,
+  loadCustomTheme,
+  persistCustomTheme,
+  removeCustomProperties,
+} from './custom'
+import { palettes, resolveToken } from './test/builtins'
+import { applyResolvedTheme } from './apply'
+import { findWebTheme } from './registry'
+import { createTokenReader } from './tokenReader'
+import { observeTerminalTheme, readTerminalTheme } from './terminal'
+import { generateThemeFlash } from '../../scripts/generate-theme-flash'
+import type { ThemeStorage } from './storage'
+
+export const custom: CustomThemeDocument = {
+  format: 'tau-custom-theme',
+  version: 1,
+  name: 'Test theme',
+  base: 'ember',
+  appearance: 'dark',
+  overrides: { '--color-bg-surface': '#123456', '--term-bg': '#123456', '--graph-bg': '#234567' },
+}
+function storageFor(raw: string | null): ThemeStorage {
+  const map = new Map<string, string>([
+    ['tau-theme-id', 'harbor'],
+    ['tau-appearance', 'dark'],
+    ['tau-theme-surface', 'stale'],
+  ])
+  if (raw !== null) map.set(CUSTOM_THEME_KEY, raw)
+  return {
+    getItem: (key) => map.get(key) ?? null,
+    setItem: (key, value) => void map.set(key, value),
+    removeItem: (key) => void map.delete(key),
+  }
+}
+
+test('every authored built-in scope also defines the nested preview base (no copied runtime palette)', () => {
+  for (const p of palettes) {
+    const css = postcss.parse(
+      readFileSync(new URL(p.id === 'tau' ? '../index.css' : './builtins.css', import.meta.url), 'utf8')
+    )
+    const expected = `[data-theme-scope][data-theme="${p.id}"]${p.appearance === 'constant' ? '' : `[data-appearance="${p.appearance}"]`}`
+    let matches = 0
+    css.walkRules((rule) => {
+      const selectors = rule.selectors.map((selector) => selector.replaceAll("'", '"'))
+      if (!selectors.includes(p.selector)) return
+      expect(selectors).toContain(expected)
+      matches++
+    })
+    expect(matches).toBe(1)
+  }
+})
+
+test('recovery matrix: invalid documents clear storage/snapshots, retain a known base, never reload', () => {
+  for (const raw of [
+    '{broken',
+    'null',
+    ' '.repeat(8193),
+    JSON.stringify({ ...custom, version: 9 }),
+    JSON.stringify({ ...custom, overrides: { '--term-bg': 'url(x)' } }),
+    JSON.stringify({ ...custom, base: 'unknown' }),
+    JSON.stringify({ ...custom, overrides: { '--status-danger-fg': '#fff' } }),
+  ]) {
+    const storage = storageFor(raw)
+    const state = loadCustomTheme(storage)
+    expect(state.custom).toBeNull()
+    expect(state.error).toContain('Custom theme removed')
+    expect(storage.getItem(CUSTOM_THEME_KEY)).toBeNull()
+    expect(storage.getItem('tau-theme-surface')).toBeNull()
+    expect(state.selection.themeId).toBe(raw.includes('"base":"ember"') ? 'ember' : 'harbor')
+    expect(loadCustomTheme(storage).error).toBeNull()
+  }
+  expect(loadCustomTheme(storageFor(JSON.stringify(custom))).custom).toEqual(custom)
+  expect(loadCustomTheme(null).custom).toBeNull()
+  const denied = {
+    getItem() {
+      throw new Error('denied')
+    },
+    setItem() {
+      throw new Error('denied')
+    },
+    removeItem() {
+      throw new Error('denied')
+    },
+  }
+  expect(loadCustomTheme(denied).custom).toBeNull()
+  expect(persistCustomTheme(denied, custom)).toBe(false)
+  expect(() => clearCustomTheme(denied)).not.toThrow()
+})
+
+test('import/export round trip is bounded, rejects malicious files before reading oversize data', async () => {
+  const json = exportCustomTheme(custom)
+  expect(await importCustomTheme({ size: json.length, text: async () => json })).toEqual({
+    ok: true,
+    document: custom,
+    warnings: [],
+  })
+  expect(
+    (
+      await importCustomTheme({
+        size: 8193,
+        text: async () => {
+          throw new Error('must not read')
+        },
+      })
+    ).ok
+  ).toBe(false)
+  expect((await importCustomTheme({ size: 1, text: async () => ' '.repeat(8193) })).ok).toBe(false)
+  expect(() => exportCustomTheme({ ...custom, overrides: { '--color-primary': 'url(x)' } })).toThrow()
+  const storage = storageFor(null)
+  expect(persistCustomTheme(storage, custom)).toBe(true)
+  expect(storage.getItem(CUSTOM_THEME_KEY)).toBe(json)
+})
+
+test('preview isolation, inheritance, alpha/fractions/sentinels, graph/xterm live updates and reset', async () => {
+  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  let dispose: (() => void) | undefined
+  let unsubscribe: (() => void) | undefined
+  try {
+    const root = document.documentElement
+    // Flatten test CSS because the DOM emulator does not implement CSS layers.
+    const style = document.createElement('style')
+    style.textContent = palettes
+      .map((p) => {
+        const attributes = `[data-theme="${p.id}"]${p.appearance === 'constant' ? '' : `[data-appearance="${p.appearance}"]`}`
+        return `:root${attributes}, [data-theme-scope]${attributes} { ${Object.entries(p.tokens)
+          .map(([name]) => `${name}: ${resolveToken(p.tokens, name)};`)
+          .join(' ')} }`
+      })
+      .join('\n')
+    document.head.append(style)
+    applyResolvedTheme(root, findWebTheme('tau'), 'light')
+    const preview = document.createElement('div')
+    preview.setAttribute('data-theme-scope', '')
+    document.body.append(preview)
+    const before = root.outerHTML.split('<head>')[0]
+    applyCustomTheme(preview, custom)
+    expect(root.outerHTML.split('<head>')[0]).toBe(before)
+    expect(preview.style.getPropertyValue('--term-bg')).toBe('18 52 86')
+    const get = (token: string) => window.getComputedStyle(preview).getPropertyValue(token).trim()
+    const base = palettes.find((p) => p.id === custom.base && p.appearance === custom.appearance)!
+    for (const token of ACTIVE_THEME_TOKENS.filter((t) => !(t in custom.overrides)))
+      expect(get(token)).toBe(resolveToken(base.tokens, token))
+    expect(get('--opacity-status-danger-surface')).toBe(base.tokens['--opacity-status-danger-surface']!)
+    expect(get('--term-selection-foreground')).toBe('none')
+    expect(get('--term-scrollbar-thumb')).toBe('auto')
+    expect(get('--syntax-property')).toContain('.')
+    const reader = createTokenReader(root)
+    let paints = 0
+    unsubscribe = reader.subscribe(() => paints++)
+    const container = document.createElement('div')
+    document.body.append(container)
+    const terminal = { options: { theme: readTerminalTheme(window.getComputedStyle(root)) } }
+    dispose = observeTerminalTheme(terminal, container)
+    applyCustomTheme(root, custom)
+    applyCustomTheme(preview, { ...custom, overrides: {} })
+    expect(preview.style.getPropertyValue('--custom-rgb-term-bg')).toBe('initial')
+    expect(window.getComputedStyle(preview).getPropertyValue('--term-bg').trim()).toBe(
+      resolveToken(base.tokens, '--term-bg')
+    )
+    await dom.window.happyDOM.waitUntilComplete()
+    expect(reader.getSnapshot()['--graph-bg']).toBe('rgb(35, 69, 103)')
+    expect(paints).toBeGreaterThan(0)
+    expect(terminal.options.theme.background).toBe('rgb(18, 52, 86)')
+    removeCustomProperties(root)
+    applyResolvedTheme(root, findWebTheme('tau'), 'light')
+    await dom.window.happyDOM.waitUntilComplete()
+    expect(terminal.options.theme.background).not.toBe('rgb(18, 52, 86)')
+    expect(reader.getSnapshot()['--graph-bg']).not.toBe('rgb(35, 69, 103)')
+    expect(root.style.getPropertyValue('--graph-bg')).toBe('')
+  } finally {
+    dispose?.()
+    unsubscribe?.()
+    await dom.cleanup()
+  }
+})
+
+test('application revalidates, rejects injection before any mutation, cleans partially applied properties on throw', async () => {
+  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  try {
+    const element = document.createElement('div')
+    for (const overrides of [{ '--term-bg': 'url(https://evil.test)' }, { '--status-danger-fg': '#fff' }]) {
+      expect(() => applyCustomTheme(element, { ...custom, overrides })).toThrow()
+      expect(element.attributes.length).toBe(0)
+    }
+    const original = element.style.setProperty.bind(element.style)
+    element.style.setProperty = (name, value, priority) => {
+      if (name === '--term-bg') throw new Error('application failure')
+      original(name, value, priority)
+    }
+    expect(() => applyCustomTheme(element, custom)).toThrow('application failure')
+    expect(element.getAttribute('data-theme')).toBe('ember')
+    for (const name of ACTIVE_THEME_TOKENS) expect(element.style.getPropertyValue(name)).toBe('')
+  } finally {
+    await dom.cleanup()
+  }
+})
+
+test('security contract: custom runtime never writes HTML/CSS text, inline bootstrap shares current validator/compiler', async () => {
+  for (const file of [
+    'custom.ts',
+    'flash.ts',
+    '../components/settings/CustomThemeEditor.tsx',
+    '../providers/ThemeProvider.tsx',
+  ]) {
+    const source = readFileSync(new URL(file, import.meta.url), 'utf8')
+    expect(source).not.toMatch(/innerHTML|insertAdjacentHTML|cssText|textContent\s*=|createElement\(['"]style/)
+  }
+  const html = readFileSync(new URL('../../index.html', import.meta.url), 'utf8')
+  expect(html.match(/<script data-tau-theme-flash>([\s\S]*?)<\/script>/)![1]).toBe(await generateThemeFlash())
+})
+
+test('shipped pre-paint custom matrix and broken-document fallback run before React/CSS', async () => {
+  const script = readFileSync(new URL('../../index.html', import.meta.url), 'utf8').match(
+    /<script data-tau-theme-flash>([\s\S]*?)<\/script>/
+  )![1]!
+  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  try {
+    for (const p of palettes) {
+      const doc = {
+        ...custom,
+        base: p.id,
+        appearance: p.appearance,
+        overrides: { ...custom.overrides, '--brand-tile': '#123456' },
+      }
+      for (const broken of [false, true]) {
+        const storage = storageFor(JSON.stringify(broken ? { ...doc, overrides: { '--term-bg': 'url(x)' } } : doc))
+        removeCustomProperties(document.documentElement)
+        document.head.innerHTML = '<meta name="msapplication-TileColor" content="#7c3aed" />'
+        new Function('window', 'document', 'localStorage', script)(window, document, storage)
+        expect(document.documentElement.getAttribute('data-theme')).toBe(p.id)
+        expect(document.documentElement.getAttribute('data-appearance')).toBe(
+          p.appearance === 'constant' ? null : p.appearance
+        )
+        expect(document.documentElement.style.getPropertyValue('--term-bg')).toBe(broken ? '' : '18 52 86')
+        expect(storage.getItem(CUSTOM_THEME_KEY) === null).toBe(broken)
+        expect(document.querySelector('meta[name="msapplication-TileColor"]')?.getAttribute('content')).toBe(
+          broken ? '#7c3aed' : 'rgb(18, 52, 86)'
+        )
+        expect(document.documentElement.style.backgroundColor).toBe(
+          broken ? `rgb(${resolveToken(p.tokens, '--color-bg-surface')})` : 'rgb(18, 52, 86)'
+        )
+      }
+    }
+  } finally {
+    await dom.cleanup()
+  }
+})
+
+test('pre-paint bundle stays independent of unrelated shared runtime exports', async () => {
+  const { generateThemeFlash } = await import('../../scripts/generate-theme-flash')
+  // Theme-only code fits comfortably here; the shared barrel pulled in Zod and
+  // workflow schemas (~100 KiB) before any page could paint.
+  expect(new TextEncoder().encode(await generateThemeFlash()).length).toBeLessThan(30000)
+})

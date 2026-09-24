@@ -14,7 +14,7 @@ export function MigrateReasonNote({ result }: { result: MigrateResult | undefine
   if (!result || result.moved) return null
   const count = result.activeExecutionCount
   return (
-    <span className="text-xs text-red-600 dark:text-red-400">
+    <span className="text-xs text-status-danger-600 dark:text-status-danger-400">
       refused: {result.reason ?? 'failed'}
       {count === undefined ? '' : ` (${count} active executions)`}
     </span>
@@ -112,7 +112,9 @@ export function MigrateControl({
       </button>
       {mutation.data && <MigrateReasonNote result={mutation.data} />}
       {mutation.error && (
-        <span className="text-xs text-red-600 dark:text-red-400">{(mutation.error as Error).message}</span>
+        <span className="text-xs text-status-danger-600 dark:text-status-danger-400">
+          {(mutation.error as Error).message}
+        </span>
       )}
     </span>
   )

@@ -558,8 +558,8 @@ export function SquadAgentThreads({
           'tau-button',
           'ml-2 shrink-0 rounded p-1 transition-colors',
           isConfirming
-            ? 'bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-400 dark:hover:bg-red-900/60'
-            : 'text-muted hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/30'
+            ? 'bg-status-danger-100 text-status-danger-600 hover:bg-status-danger-200 dark:bg-status-danger-900/40 dark:text-status-danger-400 dark:hover:bg-status-danger-900/60'
+            : 'text-muted hover:bg-status-danger-50 hover:text-status-danger-600 dark:hover:bg-status-danger-900/30'
         )}
         title={isConfirming ? 'Click again to confirm' : 'Archive all'}
       >
@@ -624,7 +624,8 @@ export function SquadAgentThreads({
             className={clsx(
               'tau-button',
               'absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-2 text-secondary transition-opacity hover:bg-surface-hover hover:text-primary focus-visible:opacity-100',
-              isConfirmingThis && 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-400'
+              isConfirmingThis &&
+                'bg-status-danger-100 text-status-danger-600 dark:bg-status-danger-900/40 dark:text-status-danger-400'
             )}
             title={isConfirmingThis ? 'Click again to archive' : 'Archive conversation'}
           >
@@ -841,7 +842,10 @@ export function SquadAgentThreads({
                   title={`${stableName} · ${agent.agentTypeId} · ${agent.id}`}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full shrink-0 bg-gray-300 dark:bg-gray-600" aria-hidden />
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0 bg-status-neutral-300 dark:bg-status-neutral-600"
+                      aria-hidden
+                    />
                     <span className="text-sm font-medium truncate text-secondary">{agentName}</span>
                   </div>
                   <div className="ml-4 mt-1 flex items-center justify-between gap-2 text-[11px] text-secondary">
@@ -1090,7 +1094,7 @@ export function SquadAgentThreads({
                 <button
                   type="button"
                   onClick={() => setShowMobilePicker(true)}
-                  className="tau-button tau-button-primary md:hidden mt-1 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white"
+                  className="tau-button tau-button-primary md:hidden mt-1 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent"
                 >
                   Choose agent
                 </button>

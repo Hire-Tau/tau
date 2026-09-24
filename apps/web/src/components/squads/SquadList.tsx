@@ -32,9 +32,9 @@ import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonBlock, SkeletonCard, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
 
 const STATUS_BADGE_COLORS: Record<string, BadgeColor> = {
-  active: 'green',
-  paused: 'yellow',
-  archived: 'gray',
+  active: 'success',
+  paused: 'review',
+  archived: 'neutral',
 }
 
 // Detect if we're on a touch device (mobile/tablet)
@@ -238,13 +238,13 @@ function SquadCardContent({
               title="Agent activity in progress"
               aria-label="Agent activity in progress"
             >
-              <span className="absolute inline-flex h-full w-full rounded-full bg-blue-500 opacity-75 animate-ping" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-blue-500" />
+              <span className="absolute inline-flex h-full w-full rounded-full bg-status-progress-500 opacity-75 animate-ping" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-status-progress-500" />
             </span>
           )}
         </div>
         {squad.status !== 'active' && (
-          <Badge color={STATUS_BADGE_COLORS[squad.status] || 'green'}>{squad.status}</Badge>
+          <Badge color={STATUS_BADGE_COLORS[squad.status] || 'success'}>{squad.status}</Badge>
         )}
       </div>
       <p className="text-sm text-secondary line-clamp-2 mb-3">{squad.purpose}</p>

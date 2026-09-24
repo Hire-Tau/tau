@@ -65,7 +65,7 @@ export function CreateGrantForm({ sourceSquadId, onClose }: Props) {
       </div>
 
       {createMutation.isError && (
-        <p className="text-sm text-red-600 dark:text-red-400">
+        <p className="text-sm text-status-danger-600 dark:text-status-danger-400">
           {createMutation.error instanceof Error ? createMutation.error.message : 'Failed to create grant'}
         </p>
       )}
@@ -74,7 +74,7 @@ export function CreateGrantForm({ sourceSquadId, onClose }: Props) {
         <button
           onClick={() => createMutation.mutate()}
           disabled={createMutation.isPending || !granteeSquadId}
-          className="tau-button tau-button-primary px-4 py-2 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+          className="tau-button tau-button-primary px-4 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
         >
           {createMutation.isPending ? 'Creating...' : 'Create grant'}
         </button>

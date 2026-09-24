@@ -98,11 +98,14 @@ export function MemorySettings({ squadId }: Props) {
           <div
             className={clsx(
               'w-8 h-8 rounded flex items-center justify-center',
-              memoryConfig.enabled ? 'bg-green-100 dark:bg-green-900/30' : 'bg-surface-secondary'
+              memoryConfig.enabled ? 'bg-status-success-100 dark:bg-status-success-900/30' : 'bg-surface-secondary'
             )}
           >
             <svg
-              className={clsx('w-4 h-4', memoryConfig.enabled ? 'text-green-600 dark:text-green-400' : 'text-muted')}
+              className={clsx(
+                'w-4 h-4',
+                memoryConfig.enabled ? 'text-status-success-600 dark:text-status-success-400' : 'text-muted'
+              )}
               fill="none"
               viewBox="0 0 24 24"
               stroke="currentColor"
@@ -128,12 +131,12 @@ export function MemorySettings({ squadId }: Props) {
           className={clsx(
             'tau-button',
             'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out  focus:ring-2 focus:ring-accent focus:ring-offset-2',
-            memoryConfig.enabled ? 'bg-accent' : 'bg-gray-200 dark:bg-gray-700'
+            memoryConfig.enabled ? 'bg-accent' : 'bg-status-neutral-200 dark:bg-status-neutral-700'
           )}
         >
           <span
             className={clsx(
-              'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+              'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-chrome-toggle-thumb shadow ring-0 transition duration-200 ease-in-out',
               memoryConfig.enabled ? 'translate-x-5' : 'translate-x-0'
             )}
           />
@@ -183,7 +186,7 @@ export function MemorySettings({ squadId }: Props) {
                   <button
                     onClick={handleSave}
                     disabled={updateMutation.isPending || !canWriteMemory}
-                    className="tau-button tau-button-primary px-3 py-1.5 text-sm rounded-md bg-accent text-white hover:bg-accent/90"
+                    className="tau-button tau-button-primary px-3 py-1.5 text-sm rounded-md bg-accent text-on-accent hover:bg-accent/90"
                   >
                     {updateMutation.isPending ? 'Saving...' : 'Save'}
                   </button>
@@ -249,7 +252,7 @@ export function MemorySettings({ squadId }: Props) {
               </button>
             </div>
             {reindexMutation.isSuccess && (
-              <p className="text-xs text-green-600 dark:text-green-400 mt-2">
+              <p className="text-xs text-status-success-600 dark:text-status-success-400 mt-2">
                 ✓ Indexed {reindexMutation.data.filesIndexed} memory files
                 {reindexMutation.data.workspaceFilesScanned > 0 && (
                   <>, scanned {reindexMutation.data.workspaceFilesScanned} workspace files</>
@@ -260,7 +263,7 @@ export function MemorySettings({ squadId }: Props) {
               </p>
             )}
             {reindexMutation.isError && (
-              <p className="text-xs text-red-500 mt-2">Failed to reindex: {String(reindexMutation.error)}</p>
+              <p className="text-xs text-status-danger-500 mt-2">Failed to reindex: {String(reindexMutation.error)}</p>
             )}
           </div>
         </>

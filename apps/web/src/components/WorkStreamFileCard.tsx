@@ -30,15 +30,15 @@ function getFileIcon(name: string): string {
 }
 
 const iconColors: Record<string, string> = {
-  doc: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400',
-  json: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400',
-  csv: 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400',
-  yml: 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400',
-  html: 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400',
-  code: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400',
-  sql: 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-400',
-  sh: 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300',
-  img: 'bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400',
+  doc: 'bg-status-progress-100 dark:bg-status-progress-900/30 text-status-progress-600 dark:text-status-progress-400',
+  json: 'bg-status-review-100 dark:bg-status-review-900/30 text-status-review-700 dark:text-status-review-400',
+  csv: 'bg-status-success-100 dark:bg-status-success-900/30 text-status-success-700 dark:text-status-success-400',
+  yml: 'bg-status-human-wait-100 dark:bg-status-human-wait-900/30 text-status-human-wait-600 dark:text-status-human-wait-400',
+  html: 'bg-status-external-wait-100 dark:bg-status-external-wait-900/30 text-status-external-wait-600 dark:text-status-external-wait-400',
+  code: 'bg-decoration-8-100 dark:bg-decoration-8-900/30 text-decoration-8-600 dark:text-decoration-8-400',
+  sql: 'bg-status-queue-100 dark:bg-status-queue-900/30 text-status-queue-700 dark:text-status-queue-400',
+  sh: 'bg-status-neutral-200 dark:bg-status-neutral-700 text-status-neutral-600 dark:text-status-neutral-300',
+  img: 'bg-decoration-9-100 dark:bg-decoration-9-900/30 text-decoration-9-600 dark:text-decoration-9-400',
   file: 'bg-surface-secondary text-muted',
 }
 
@@ -150,7 +150,7 @@ export function WorkStreamFileCard({ filePath, squadId }: WorkStreamFileCardProp
           {iconLabels[iconType]}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-medium text-primary truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+          <p className="text-xs font-medium text-primary truncate group-hover:text-status-progress-600 dark:group-hover:text-status-progress-400 transition-colors">
             {fileName}
           </p>
           <p className="text-[10px] text-placeholder truncate">{filePath}</p>
@@ -167,12 +167,12 @@ export function WorkStreamFileCard({ filePath, squadId }: WorkStreamFileCardProp
       >
         {isLoading && <DocumentSkeleton label="Loading work stream file" lines={10} className="min-h-64" />}
         {error && (
-          <div className="flex items-center justify-center py-12 text-red-500">
+          <div className="flex items-center justify-center py-12 text-status-danger-500">
             <span>Failed to load file</span>
           </div>
         )}
         {data && !data.error && isImageFile(fileName) && (
-          <div className="grow overflow-auto flex items-center justify-center p-4 bg-[#1e1e1e] min-h-[200px]">
+          <div className="grow overflow-auto flex items-center justify-center p-4 bg-[rgb(var(--syntax-image-bg))] min-h-[200px]">
             <SquadWorkspaceImageViewer squadId={squadId} filePath={filePath} />
           </div>
         )}

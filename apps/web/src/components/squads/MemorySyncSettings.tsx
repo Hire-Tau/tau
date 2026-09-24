@@ -233,7 +233,7 @@ export function MemorySyncSettings({ squadId }: Props) {
         {!showAddProvider && editingIndex === null && canWriteMemory && (
           <button
             onClick={() => setShowAddProvider(true)}
-            className="tau-button tau-button-primary px-3 py-1.5 text-sm rounded-md font-medium bg-accent text-white hover:bg-accent/90 transition-colors"
+            className="tau-button tau-button-primary px-3 py-1.5 text-sm rounded-md font-medium bg-accent text-on-accent hover:bg-accent/90 transition-colors"
           >
             Add Provider
           </button>
@@ -250,7 +250,10 @@ export function MemorySyncSettings({ squadId }: Props) {
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <div
-                    className={clsx('w-2 h-2 rounded-full', provider.initialized ? 'bg-green-500' : 'bg-yellow-500')}
+                    className={clsx(
+                      'w-2 h-2 rounded-full',
+                      provider.initialized ? 'bg-status-success-500' : 'bg-status-review-500'
+                    )}
                   />
                   <span className="text-sm font-medium text-primary capitalize">{provider.type} Provider</span>
                 </div>
@@ -265,7 +268,7 @@ export function MemorySyncSettings({ squadId }: Props) {
                   <button
                     onClick={() => removeProviderMutation.mutate(index)}
                     disabled={removeProviderMutation.isPending || !canWriteMemory}
-                    className="tau-button text-xs text-red-500 hover:underline"
+                    className="tau-button text-xs text-status-danger-500 hover:underline"
                   >
                     Remove
                   </button>
@@ -275,7 +278,7 @@ export function MemorySyncSettings({ squadId }: Props) {
                 <div>Last Pull: {formatDate(provider.lastPull)}</div>
                 <div>Last Push: {formatDate(provider.lastPush)}</div>
               </div>
-              {provider.error && <p className="text-xs text-red-500 mt-2">{provider.error}</p>}
+              {provider.error && <p className="text-xs text-status-danger-500 mt-2">{provider.error}</p>}
             </div>
           ))}
 
@@ -310,18 +313,22 @@ export function MemorySyncSettings({ squadId }: Props) {
           </div>
 
           {pullMutation.isSuccess && (
-            <p className="text-xs text-green-600 dark:text-green-400">
+            <p className="text-xs text-status-success-600 dark:text-status-success-400">
               ✓ Pulled {pullMutation.data.filesChanged || 0} files
               {pullMutation.data.conflicts?.length ? ` (${pullMutation.data.conflicts.length} conflicts)` : ''}
             </p>
           )}
-          {pullMutation.isError && <p className="text-xs text-red-500">Pull failed: {String(pullMutation.error)}</p>}
+          {pullMutation.isError && (
+            <p className="text-xs text-status-danger-500">Pull failed: {String(pullMutation.error)}</p>
+          )}
           {pushMutation.isSuccess && (
-            <p className="text-xs text-green-600 dark:text-green-400">
+            <p className="text-xs text-status-success-600 dark:text-status-success-400">
               ✓ Pushed {pushMutation.data.filesPushed || 0} files
             </p>
           )}
-          {pushMutation.isError && <p className="text-xs text-red-500">Push failed: {String(pushMutation.error)}</p>}
+          {pushMutation.isError && (
+            <p className="text-xs text-status-danger-500">Push failed: {String(pushMutation.error)}</p>
+          )}
         </div>
       ) : !showAddProvider ? (
         <div className="text-sm text-muted py-4 text-center border border-dashed border-th-border rounded-lg mb-4">
@@ -344,7 +351,9 @@ export function MemorySyncSettings({ squadId }: Props) {
                 className={clsx(
                   'tau-button',
                   'px-3 py-1.5 text-sm rounded-md font-medium transition-colors',
-                  providerType === 'git' ? 'bg-accent text-white' : 'bg-surface text-secondary hover:bg-surface-hover'
+                  providerType === 'git'
+                    ? 'bg-accent text-on-accent'
+                    : 'bg-surface text-secondary hover:bg-surface-hover'
                 )}
               >
                 Git
@@ -354,7 +363,9 @@ export function MemorySyncSettings({ squadId }: Props) {
                 className={clsx(
                   'tau-button',
                   'px-3 py-1.5 text-sm rounded-md font-medium transition-colors',
-                  providerType === 's3' ? 'bg-accent text-white' : 'bg-surface text-secondary hover:bg-surface-hover'
+                  providerType === 's3'
+                    ? 'bg-accent text-on-accent'
+                    : 'bg-surface text-secondary hover:bg-surface-hover'
                 )}
               >
                 S3
@@ -366,7 +377,7 @@ export function MemorySyncSettings({ squadId }: Props) {
             <form onSubmit={handleSubmitGitProvider} className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-secondary mb-1">
-                  Repository URL <span className="text-red-500">*</span>
+                  Repository URL <span className="text-status-danger-500">*</span>
                 </label>
                 <input
                   type="text"
@@ -390,7 +401,7 @@ export function MemorySyncSettings({ squadId }: Props) {
 
               <div>
                 <label className="block text-xs font-medium text-secondary mb-1">
-                  SSH Key <span className="text-red-500">*</span>
+                  SSH Key <span className="text-status-danger-500">*</span>
                 </label>
                 {sshKeys.length > 0 ? (
                   <select
@@ -457,7 +468,7 @@ export function MemorySyncSettings({ squadId }: Props) {
                     'tau-button',
                     'px-4 py-1.5 text-sm rounded-md font-medium transition-colors',
                     gitRepoUrl && gitSshKeyName && canWriteMemory
-                      ? 'bg-accent text-white hover:bg-accent/90'
+                      ? 'bg-accent text-on-accent hover:bg-accent/90'
                       : 'bg-surface-secondary text-muted cursor-not-allowed'
                   )}
                 >
@@ -472,10 +483,12 @@ export function MemorySyncSettings({ squadId }: Props) {
               </div>
 
               {addProviderMutation.isError && (
-                <p className="text-xs text-red-500 mt-2">Failed to add provider: {String(addProviderMutation.error)}</p>
+                <p className="text-xs text-status-danger-500 mt-2">
+                  Failed to add provider: {String(addProviderMutation.error)}
+                </p>
               )}
               {updateProviderMutation.isError && (
-                <p className="text-xs text-red-500 mt-2">
+                <p className="text-xs text-status-danger-500 mt-2">
                   Failed to update provider: {String(updateProviderMutation.error)}
                 </p>
               )}

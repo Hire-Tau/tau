@@ -135,9 +135,9 @@ function GitUpdateSection() {
         </label>
       </div>
       {loaderMessage && (
-        <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
-          <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full shrink-0" />
-          <p className="text-sm text-blue-800 dark:text-blue-200">{loaderMessage}</p>
+        <div className="flex items-center gap-3 p-3 bg-status-progress-50 dark:bg-status-progress-900/20 border border-status-progress-200 dark:border-status-progress-800 rounded-md">
+          <div className="animate-spin h-4 w-4 border-2 border-status-progress-500 border-t-transparent rounded-full shrink-0" />
+          <p className="text-sm text-status-progress-800 dark:text-status-progress-200">{loaderMessage}</p>
         </div>
       )}
       <div className="flex gap-2">
@@ -157,7 +157,7 @@ function GitUpdateSection() {
           className={clsx(
             'tau-button',
             'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
-            'bg-accent text-white hover:bg-accent-hover active:bg-accent-active',
+            'bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-active',
             'disabled:opacity-50 disabled:cursor-not-allowed'
           )}
           onClick={() => apply.mutate()}
@@ -190,7 +190,7 @@ function GitUpdateSection() {
           className={clsx(
             'tau-button',
             'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
-            'bg-accent text-white hover:bg-accent-hover active:bg-accent-active',
+            'bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-active',
             'disabled:opacity-50 disabled:cursor-not-allowed'
           )}
           onClick={() => rebuild.mutate(Array.from(selectedTargets))}

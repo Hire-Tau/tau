@@ -211,12 +211,14 @@ export function NotificationsConfigSection() {
         <button
           onClick={() => createMutation.mutate()}
           disabled={!canWrite || createMutation.isPending}
-          className="tau-button tau-button-primary px-4 py-2 text-sm bg-accent text-white rounded-md hover:bg-accent/90 disabled:opacity-50 font-medium"
+          className="tau-button tau-button-primary px-4 py-2 text-sm bg-accent text-on-accent rounded-md hover:bg-accent/90 disabled:opacity-50 font-medium"
         >
           {createMutation.isPending ? 'Creating…' : 'Set up notifications'}
         </button>
         {createMutation.isError && (
-          <p className="text-xs text-red-600 dark:text-red-400">{(createMutation.error as Error).message}</p>
+          <p className="text-xs text-status-danger-600 dark:text-status-danger-400">
+            {(createMutation.error as Error).message}
+          </p>
         )}
       </div>
     )

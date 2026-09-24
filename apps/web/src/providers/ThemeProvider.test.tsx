@@ -1,0 +1,284 @@
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { act } from 'react'
+import { ThemeProvider, useTheme } from './ThemeProvider'
+import { acquireDomHarness } from '../test/domHarness'
+
+// Provider-level coverage for phase 0: <html> data-theme/data-appearance
+// application (keeping the .dark migration class), localStorage migration of
+// the legacy 'tau-theme' key, and the live system-preference listener.
+
+let cleanupDom: (() => Promise<void>) | null = null
+
+function ThemeProbe({ onToggle }: { onToggle?: () => void }) {
+  const { themeId, appearance, theme, toggleTheme } = useTheme()
+  return (
+    <div>
+      <output data-testid="probe" data-theme-id={themeId} data-appearance={appearance} data-resolved={theme} />
+      {onToggle ? <button data-testid="toggle" onClick={() => onToggle()} /> : null}
+      <button data-testid="toggle-theme" onClick={toggleTheme} />
+    </div>
+  )
+}
+
+/** Installs the DOM harness with a controllable prefers-color-scheme stub. */
+async function installThemeDom() {
+  let systemMatches = false
+  let listeners: Array<(event: { matches: boolean }) => void> = []
+  const dom = await acquireDomHarness({
+    url: 'http://localhost/',
+    configureWindow: (window) => {
+      const matchMedia = (query: string): MediaQueryList =>
+        ({
+          media: query,
+          get matches() {
+            return systemMatches
+          },
+          addEventListener: (_type: string, listener: unknown) => {
+            listeners.push(listener as (event: { matches: boolean }) => void)
+          },
+          removeEventListener: (_type: string, listener: unknown) => {
+            listeners = listeners.filter((entry) => entry !== listener)
+          },
+        }) as MediaQueryList
+      ;(window as unknown as { matchMedia: typeof matchMedia }).matchMedia = matchMedia
+      ;(globalThis as unknown as { matchMedia: typeof matchMedia }).matchMedia = matchMedia
+    },
+  })
+  const setSystemPrefersDark = async (matches: boolean) => {
+    systemMatches = matches
+    await act(async () => {
+      for (const listener of [...listeners]) listener({ matches })
+    })
+  }
+  cleanupDom = () => dom.cleanup()
+  return { dom, setSystemPrefersDark }
+}
+
+beforeEach(() => {
+  cleanupDom = null
+})
+
+afterEach(async () => {
+  await cleanupDom?.()
+})
+
+describe('ThemeProvider (themeId × appearance application)', () => {
+  test('applies data-theme/data-appearance and the .dark class for a stored dark choice', async () => {
+    const { dom } = await installThemeDom()
+    localStorage.setItem('tau-theme', 'dark')
+    const { root } = dom.createRoot()
+
+    await act(async () => {
+      root.render(
+        <ThemeProvider>
+          <ThemeProbe />
+        </ThemeProvider>
+      )
+    })
+
+    const rootEl = document.documentElement
+    expect(rootEl.getAttribute('data-theme')).toBe('tau')
+    expect(rootEl.getAttribute('data-appearance')).toBe('dark')
+    expect(rootEl.classList.contains('dark')).toBe(true)
+
+    const probe = document.querySelector('[data-testid="probe"]')!
+    expect(probe.getAttribute('data-theme-id')).toBe('tau')
+    expect(probe.getAttribute('data-appearance')).toBe('dark')
+    expect(probe.getAttribute('data-resolved')).toBe('dark')
+  })
+
+  test('legacy tau-theme values migrate to the new keys and clear the legacy key', async () => {
+    const { dom } = await installThemeDom()
+    localStorage.setItem('tau-theme', 'dark')
+    const { root } = dom.createRoot()
+
+    await act(async () => {
+      root.render(
+        <ThemeProvider>
+          <ThemeProbe />
+        </ThemeProvider>
+      )
+    })
+
+    expect(localStorage.getItem('tau-theme-id')).toBe('tau')
+    expect(localStorage.getItem('tau-appearance')).toBe('dark')
+    expect(localStorage.getItem('tau-theme')).toBeNull()
+  })
+
+  test('unreadable stored values fall back to the default light pair', async () => {
+    const { dom } = await installThemeDom()
+    localStorage.setItem('tau-theme', 'mauve')
+    localStorage.setItem('tau-theme-id', 'atlantis')
+    localStorage.setItem('tau-appearance', 'solarized')
+    const { root } = dom.createRoot()
+
+    await act(async () => {
+      root.render(
+        <ThemeProvider>
+          <ThemeProbe />
+        </ThemeProvider>
+      )
+    })
+
+    expect(document.documentElement.getAttribute('data-appearance')).toBe('light')
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
+    // The normalized selection is persisted back, repairing the storage.
+    expect(localStorage.getItem('tau-theme-id')).toBe('tau')
+    expect(localStorage.getItem('tau-appearance')).toBe('light')
+  })
+
+  test('toggleTheme flips the resolved appearance and the .dark class', async () => {
+    const { dom } = await installThemeDom()
+    const { root } = dom.createRoot()
+    await act(async () => {
+      root.render(
+        <ThemeProvider>
+          <ThemeProbe />
+        </ThemeProvider>
+      )
+    })
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
+
+    await act(async () => {
+      ;(document.querySelector('[data-testid="toggle-theme"]') as HTMLElement).click()
+    })
+    expect(document.documentElement.getAttribute('data-appearance')).toBe('dark')
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
+    expect(localStorage.getItem('tau-appearance')).toBe('dark')
+
+    await act(async () => {
+      ;(document.querySelector('[data-testid="toggle-theme"]') as HTMLElement).click()
+    })
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
+    expect(localStorage.getItem('tau-appearance')).toBe('light')
+  })
+
+  test("a 'system' appearance follows live OS scheme changes without a reload", async () => {
+    const { dom, setSystemPrefersDark } = await installThemeDom()
+    localStorage.setItem('tau-theme-id', 'tau')
+    localStorage.setItem('tau-appearance', 'system')
+    const { root } = dom.createRoot()
+
+    await act(async () => {
+      root.render(
+        <ThemeProvider>
+          <ThemeProbe />
+        </ThemeProvider>
+      )
+    })
+    // OS preference is light: resolved light, no dark class.
+    expect(document.documentElement.getAttribute('data-appearance')).toBe('light')
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
+
+    // The OS flips to dark while the app is open.
+    await setSystemPrefersDark(true)
+    expect(document.documentElement.getAttribute('data-appearance')).toBe('dark')
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
+    const probe = document.querySelector('[data-testid="probe"]')!
+    expect(probe.getAttribute('data-resolved')).toBe('dark')
+    expect(probe.getAttribute('data-appearance')).toBe('system')
+
+    // And back to light.
+    await setSystemPrefersDark(false)
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
+
+    // The stored setting stays 'system' — only the resolution follows the OS.
+    expect(localStorage.getItem('tau-appearance')).toBe('system')
+  })
+})
+
+test('custom brand tile updates the OS tile metadata, not only the logo', async () => {
+  const { dom } = await installThemeDom()
+  document.head.innerHTML = '<meta name="msapplication-TileColor" content="#7c3aed" />'
+  localStorage.setItem(
+    'tau-custom-theme',
+    JSON.stringify({
+      format: 'tau-custom-theme',
+      version: 1,
+      name: 'Tile',
+      base: 'tau',
+      appearance: 'light',
+      overrides: { '--brand-tile': '#123456' },
+    })
+  )
+  const { root } = dom.createRoot()
+  await act(async () => {
+    root.render(
+      <ThemeProvider>
+        <ThemeProbe />
+      </ThemeProvider>
+    )
+  })
+  expect(document.querySelector('meta[name="msapplication-TileColor"]')?.getAttribute('content')).toBe(
+    'rgb(18, 52, 86)'
+  )
+})
+
+test('a storage-driven rerender never writes an older selection over another tab update', async () => {
+  const { dom } = await installThemeDom()
+  localStorage.setItem('tau-theme-id', 'high-contrast')
+  localStorage.setItem('tau-appearance', 'light')
+  localStorage.setItem('tau-theme-local-override', '0')
+  const { root } = dom.createRoot()
+  await act(async () => {
+    root.render(
+      <ThemeProvider>
+        <ThemeProbe />
+      </ThemeProvider>
+    )
+  })
+  await act(async () => {
+    // Another tab writes its override flag before its selection. This document
+    // receives that first event while a later selection write is already queued.
+    localStorage.setItem('tau-theme-local-override', '1')
+    dom.window.dispatchEvent(new dom.window.StorageEvent('storage', { key: 'tau-theme-local-override', newValue: '1' }))
+    localStorage.setItem('tau-theme-id', 'tau')
+  })
+  expect(localStorage.getItem('tau-theme-id')).toBe('tau')
+  await act(async () => {
+    dom.window.dispatchEvent(new dom.window.StorageEvent('storage', { key: 'tau-theme-id', newValue: 'tau' }))
+  })
+  expect(document.documentElement.dataset.theme).toBe('tau')
+})
+
+test('live custom surface alpha is serialized consistently for root, metadata and reload snapshot', async () => {
+  const { dom } = await installThemeDom()
+  const sheet = document.createElement('style')
+  sheet.textContent = ':root { --color-bg-surface: 255 255 255; }'
+  document.head.append(sheet)
+  let theme!: ReturnType<typeof useTheme>
+  function Controls() {
+    theme = useTheme()
+    return null
+  }
+  const { root } = dom.createRoot()
+  await act(async () => {
+    root.render(
+      <ThemeProvider>
+        <Controls />
+      </ThemeProvider>
+    )
+  })
+  for (const alpha of ['0.0000001', '0.5', '0.0000002']) {
+    await act(async () => {
+      theme.applyCustom({
+        format: 'tau-custom-theme',
+        version: 1,
+        name: 'Surface',
+        base: 'tau',
+        appearance: 'light',
+        overrides: { '--color-bg-surface': `rgba(10,20,30,${alpha})` },
+      })
+    })
+    const expected = `rgba(10, 20, 30, ${alpha})`
+    expect(document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe(expected)
+    expect(JSON.parse(localStorage.getItem('tau-theme-surface')!).surface).toBe(expected)
+    expect(document.documentElement.style.backgroundColor).not.toBe('rgb(255, 255, 255)')
+  }
+  await act(async () => {
+    theme.resetTheme()
+  })
+  expect(document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('rgb(255, 255, 255)')
+  expect(JSON.parse(localStorage.getItem('tau-theme-surface')!).surface).toBe('rgb(255, 255, 255)')
+  expect(localStorage.getItem('tau-custom-theme')).toBeNull()
+})

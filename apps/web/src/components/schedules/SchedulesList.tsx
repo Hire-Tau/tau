@@ -43,16 +43,16 @@ const ACTION_LABELS: Record<string, string> = {
 }
 
 const HEALTH_BADGE: Record<Schedule['healthStatus'], { label: string; color: BadgeColor }> = {
-  never_run: { label: 'Never run', color: 'gray' },
-  healthy: { label: 'Healthy', color: 'green' },
-  failing: { label: 'Failing', color: 'red' },
-  automatically_disabled: { label: 'Automatically disabled', color: 'red' },
+  never_run: { label: 'Never run', color: 'neutral' },
+  healthy: { label: 'Healthy', color: 'success' },
+  failing: { label: 'Failing', color: 'danger' },
+  automatically_disabled: { label: 'Automatically disabled', color: 'danger' },
 }
 
 const ACTION_BADGE_COLORS: Record<string, BadgeColor> = {
-  spawn_agent: 'blue',
-  inbox_message: 'purple',
-  create_work_stream: 'green',
+  spawn_agent: 'accent-2',
+  inbox_message: 'accent-1',
+  create_work_stream: 'accent-3',
 }
 
 function actionCreatesWorkStream(action: Schedule['action']): boolean {
@@ -487,7 +487,7 @@ function ScopeBadge({
     const squad = squadMap.get(schedule.scopeId)
     const name = squad?.name || schedule.scopeId.slice(0, 8)
     return (
-      <Badge to={`/squads/${schedule.scopeId}`} color="amber" onClick={onClick} className={className}>
+      <Badge to={`/squads/${schedule.scopeId}`} color="accent-6" onClick={onClick} className={className}>
         {name}
       </Badge>
     )
@@ -495,7 +495,7 @@ function ScopeBadge({
 
   // Agent scope - no link for now
   return (
-    <Badge color="cyan" className={className}>
+    <Badge color="accent-7" className={className}>
       Agent: {schedule.scopeId.slice(0, 8)}
     </Badge>
   )
@@ -536,7 +536,7 @@ function ScheduleCard({
         )}
 
         {/* Action type badge - shorter on mobile */}
-        <Badge color={ACTION_BADGE_COLORS[schedule.action.type] || 'gray'}>
+        <Badge color={ACTION_BADGE_COLORS[schedule.action.type] || 'neutral'}>
           <span className="hidden sm:inline">{ACTION_LABELS[schedule.action.type] || schedule.action.type}</span>
           <span className="sm:hidden">
             {schedule.action.type === 'inbox_message' ? '✉️' : schedule.action.type === 'spawn_agent' ? '🤖' : '📋'}
@@ -561,13 +561,13 @@ function ScheduleCard({
           className={clsx(
             'tau-button',
             'relative w-9 h-5 rounded-full transition-colors shrink-0',
-            schedule.enabled ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'
+            schedule.enabled ? 'bg-status-success-500' : 'bg-status-neutral-300 dark:bg-status-neutral-600'
           )}
           title={schedule.enabled ? 'Disable' : 'Enable'}
         >
           <span
             className={clsx(
-              'absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full transition-transform',
+              'absolute top-0.5 left-0.5 w-4 h-4 bg-chrome-toggle-thumb rounded-full transition-transform',
               schedule.enabled ? 'translate-x-4' : 'translate-x-0'
             )}
           />
@@ -729,7 +729,7 @@ function ScheduleDetailModal({
     <div className="flex items-center justify-between flex-1">
       <div className="flex items-center gap-2">
         {showScope && <ScopeBadge schedule={schedule} squads={squads} />}
-        <Badge color={ACTION_BADGE_COLORS[schedule.action.type] || 'gray'}>
+        <Badge color={ACTION_BADGE_COLORS[schedule.action.type] || 'neutral'}>
           {ACTION_LABELS[schedule.action.type] || schedule.action.type}
         </Badge>
       </div>
@@ -783,11 +783,16 @@ function ScheduleDetailModal({
                 'tau-button',
                 'flex items-center gap-2 px-2 py-1 rounded-md transition-colors',
                 schedule.enabled
-                  ? 'bg-green-100 dark:bg-green-900/30 hover:bg-green-200 dark:hover:bg-green-900/50'
-                  : 'bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700'
+                  ? 'bg-status-success-100 dark:bg-status-success-900/30 hover:bg-status-success-200 dark:hover:bg-status-success-900/50'
+                  : 'bg-status-neutral-100 dark:bg-status-neutral-800 hover:bg-status-neutral-200 dark:hover:bg-status-neutral-700'
               )}
             >
-              <span className={clsx('w-2 h-2 rounded-full', schedule.enabled ? 'bg-green-500' : 'bg-gray-400')} />
+              <span
+                className={clsx(
+                  'w-2 h-2 rounded-full',
+                  schedule.enabled ? 'bg-status-success-500' : 'bg-status-neutral-400'
+                )}
+              />
               <span className="text-primary text-xs font-medium">{schedule.enabled ? 'Enabled' : 'Disabled'}</span>
             </button>
           </DetailRow>
@@ -806,7 +811,7 @@ function ScheduleDetailModal({
                       'tau-button',
                       'px-2 py-0.5 text-xs rounded',
                       editState.scheduleType === 'interval'
-                        ? 'bg-accent text-white'
+                        ? 'bg-accent text-on-accent'
                         : 'bg-surface-secondary text-muted hover:text-primary'
                     )}
                   >
@@ -818,7 +823,7 @@ function ScheduleDetailModal({
                       'tau-button',
                       'px-2 py-0.5 text-xs rounded',
                       editState.scheduleType === 'cron'
-                        ? 'bg-accent text-white'
+                        ? 'bg-accent text-on-accent'
                         : 'bg-surface-secondary text-muted hover:text-primary'
                     )}
                   >
@@ -830,7 +835,7 @@ function ScheduleDetailModal({
                       'tau-button',
                       'px-2 py-0.5 text-xs rounded',
                       editState.scheduleType === 'runAt'
-                        ? 'bg-accent text-white'
+                        ? 'bg-accent text-on-accent'
                         : 'bg-surface-secondary text-muted hover:text-primary'
                     )}
                   >
@@ -843,7 +848,7 @@ function ScheduleDetailModal({
                         'tau-button',
                         'px-2 py-0.5 text-xs rounded',
                         editState.scheduleType === 'webhookOnly'
-                          ? 'bg-accent text-white'
+                          ? 'bg-accent text-on-accent'
                           : 'bg-surface-secondary text-muted hover:text-primary'
                       )}
                     >
@@ -966,7 +971,7 @@ function ScheduleDetailModal({
         </div>
 
         {(schedule.healthStatus === 'failing' || schedule.healthStatus === 'automatically_disabled') && (
-          <div className="rounded border border-red-300 bg-red-50 dark:bg-red-950/30 p-3 text-sm text-red-800 dark:text-red-200">
+          <div className="rounded border border-status-danger-300 bg-status-danger-50 dark:bg-status-danger-950/30 p-3 text-sm text-status-danger-800 dark:text-status-danger-200">
             <p className="font-medium">{schedule.lastErrorCode || 'Schedule failure'}</p>
             {schedule.lastErrorSummary && <p>{schedule.lastErrorSummary}</p>}
             {schedule.automaticDisableReason && <p>{schedule.automaticDisableReason}</p>}
@@ -1009,7 +1014,7 @@ function ScheduleDetailModal({
             <button
               onClick={saveEdits}
               disabled={updateMutation.isPending}
-              className="tau-button tau-button-primary px-3 py-1.5 bg-accent text-white text-xs font-medium rounded hover:bg-accent-hover disabled:opacity-50"
+              className="tau-button tau-button-primary px-3 py-1.5 bg-accent text-on-accent text-xs font-medium rounded hover:bg-accent-hover disabled:opacity-50"
             >
               {updateMutation.isPending ? 'Saving...' : 'Save'}
             </button>
@@ -1021,7 +1026,7 @@ function ScheduleDetailModal({
               Cancel
             </button>
             {(updateMutation.isError || editError) && (
-              <span className="text-xs text-red-500">{editError || 'Failed to save'}</span>
+              <span className="text-xs text-status-danger-500">{editError || 'Failed to save'}</span>
             )}
           </div>
         )}
@@ -1094,8 +1099,8 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
               className={clsx(
                 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium',
                 schedule.webhookEnabled
-                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
-                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
+                  ? 'bg-status-success-100 dark:bg-status-success-900/30 text-status-success-700 dark:text-status-success-300'
+                  : 'bg-status-neutral-100 dark:bg-status-neutral-800 text-status-neutral-600 dark:text-status-neutral-400'
               )}
             >
               <LinkIcon className="w-3 h-3" />
@@ -1125,7 +1130,7 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
                 <button
                   onClick={() => disableMutation.mutate()}
                   disabled={disableMutation.isPending || !canUpdateSchedules}
-                  className="tau-button text-xs text-red-500 hover:text-red-600 disabled:opacity-50"
+                  className="tau-button text-xs text-status-danger-500 hover:text-status-danger-600 disabled:opacity-50"
                 >
                   {disableMutation.isPending ? 'Disabling...' : 'Disable'}
                 </button>
@@ -1135,12 +1140,12 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
 
           {/* Token display (only shown once after enable/regenerate) */}
           {showToken && (
-            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded p-2 space-y-1">
-              <p className="text-xs text-yellow-700 dark:text-yellow-300 font-medium">
+            <div className="bg-status-review-50 dark:bg-status-review-900/20 border border-status-review-200 dark:border-status-review-800 rounded p-2 space-y-1">
+              <p className="text-xs text-status-review-700 dark:text-status-review-300 font-medium">
                 ⚠️ Save this token - it will not be shown again!
               </p>
               <div className="flex items-center gap-2">
-                <code className="flex-1 text-xs font-mono bg-white dark:bg-gray-900 px-2 py-1 rounded border border-yellow-200 dark:border-yellow-800 text-primary overflow-x-auto">
+                <code className="flex-1 text-xs font-mono bg-chrome-toggle-thumb dark:bg-status-neutral-900 px-2 py-1 rounded border border-status-review-200 dark:border-status-review-800 text-primary overflow-x-auto">
                   {showToken}
                 </code>
                 <button
@@ -1151,7 +1156,7 @@ function WebhookSection({ schedule, onUpdate }: { schedule: Schedule; onUpdate: 
                   <ClipboardIcon className="w-4 h-4" />
                 </button>
               </div>
-              {copied && <p className="text-xs text-green-600 dark:text-green-400">Copied!</p>}
+              {copied && <p className="text-xs text-status-success-600 dark:text-status-success-400">Copied!</p>}
             </div>
           )}
 
@@ -1285,7 +1290,7 @@ function EditActionFields({
                   'tau-button',
                   'px-2 py-0.5 text-xs rounded',
                   editState.inboxTarget === 'agent'
-                    ? 'bg-accent text-white'
+                    ? 'bg-accent text-on-accent'
                     : 'bg-surface-secondary text-muted hover:text-primary'
                 )}
               >
@@ -1297,7 +1302,7 @@ function EditActionFields({
                   'tau-button',
                   'px-2 py-0.5 text-xs rounded',
                   editState.inboxTarget === 'squad_manager'
-                    ? 'bg-accent text-white'
+                    ? 'bg-accent text-on-accent'
                     : 'bg-surface-secondary text-muted hover:text-primary'
                 )}
               >

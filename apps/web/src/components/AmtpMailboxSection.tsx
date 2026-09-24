@@ -57,14 +57,14 @@ export function AmtpMailboxSection({ agentId, squadId }: AmtpMailboxSectionProps
           <span className="text-muted">·</span>
           <span className="text-primary">{status.inboundOpen ? 'Inbound open' : 'Inbound closed'}</span>
           {status.allowsInbound && (
-            <span className="rounded bg-green-100 px-1.5 py-0.5 text-xs text-green-700 dark:bg-green-900/30 dark:text-green-400">
+            <span className="rounded bg-status-success-100 px-1.5 py-0.5 text-xs text-status-success-700 dark:bg-status-success-900/30 dark:text-status-success-400">
               Allows inbound
             </span>
           )}
         </div>
 
         {status.signingIdentity.status !== 'ready' && (
-          <div className="rounded border border-yellow-500/30 bg-yellow-500/10 p-2 text-xs text-yellow-700 dark:text-yellow-300">
+          <div className="rounded border border-status-review-500/30 bg-status-review-500/10 p-2 text-xs text-status-review-700 dark:text-status-review-300">
             <strong>
               {status.signingIdentity.status === 'unsupported'
                 ? 'Federation unsupported'
@@ -101,7 +101,7 @@ export function AmtpMailboxSection({ agentId, squadId }: AmtpMailboxSectionProps
                 <button
                   onClick={() => revoke.mutate()}
                   disabled={isBusy}
-                  className="tau-button rounded bg-red-600/15 px-2 py-0.5 text-xs font-medium text-red-600 hover:bg-red-600/25 disabled:opacity-50 dark:text-red-400"
+                  className="tau-button rounded bg-status-danger-600/15 px-2 py-0.5 text-xs font-medium text-status-danger-600 hover:bg-status-danger-600/25 disabled:opacity-50 dark:text-status-danger-400"
                 >
                   Revoke
                 </button>
@@ -124,7 +124,7 @@ export function AmtpMailboxSection({ agentId, squadId }: AmtpMailboxSectionProps
                   <button
                     type="submit"
                     disabled={!handle || isBusy}
-                    className="tau-button tau-button-primary rounded bg-accent px-2 py-0.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+                    className="tau-button tau-button-primary rounded bg-accent px-2 py-0.5 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:opacity-50"
                   >
                     Register
                   </button>
@@ -144,7 +144,7 @@ export function AmtpMailboxSection({ agentId, squadId }: AmtpMailboxSectionProps
                   <button
                     onClick={() => open.mutate()}
                     disabled={isBusy}
-                    className="tau-button rounded bg-blue-600/15 px-2 py-0.5 text-xs font-medium text-blue-600 hover:bg-blue-600/25 disabled:opacity-50 dark:text-blue-400"
+                    className="tau-button rounded bg-status-progress-600/15 px-2 py-0.5 text-xs font-medium text-status-progress-600 hover:bg-status-progress-600/25 disabled:opacity-50 dark:text-status-progress-400"
                   >
                     Open
                   </button>

@@ -166,29 +166,29 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
     return (
       <Modal isOpen={isOpen} onClose={onClose} title="Webhook Schedule Created">
         <div className="space-y-4">
-          <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded p-3">
-            <p className="text-sm text-green-700 dark:text-green-300 font-medium">
+          <div className="bg-status-success-50 dark:bg-status-success-900/20 border border-status-success-200 dark:border-status-success-800 rounded p-3">
+            <p className="text-sm text-status-success-700 dark:text-status-success-300 font-medium">
               ✓ Webhook-only schedule created successfully!
             </p>
           </div>
 
-          <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded p-3 space-y-2">
-            <p className="text-sm text-yellow-700 dark:text-yellow-300 font-medium">
+          <div className="bg-status-review-50 dark:bg-status-review-900/20 border border-status-review-200 dark:border-status-review-800 rounded p-3 space-y-2">
+            <p className="text-sm text-status-review-700 dark:text-status-review-300 font-medium">
               ⚠️ Save this token - it will not be shown again!
             </p>
             <div className="flex items-center gap-2">
-              <code className="flex-1 text-xs font-mono bg-white dark:bg-gray-900 px-2 py-1.5 rounded border border-yellow-200 dark:border-yellow-800 text-primary overflow-x-auto">
+              <code className="flex-1 text-xs font-mono bg-chrome-toggle-thumb dark:bg-status-neutral-900 px-2 py-1.5 rounded border border-status-review-200 dark:border-status-review-800 text-primary overflow-x-auto">
                 {webhookResult.token}
               </code>
               <button
                 onClick={() => copyToClipboard(webhookResult.token)}
-                className="tau-button p-1.5 text-muted hover:text-primary bg-white dark:bg-gray-900 rounded border border-yellow-200 dark:border-yellow-800"
+                className="tau-button p-1.5 text-muted hover:text-primary bg-chrome-toggle-thumb dark:bg-status-neutral-900 rounded border border-status-review-200 dark:border-status-review-800"
                 title="Copy token"
               >
                 <ClipboardIcon className="w-4 h-4" />
               </button>
             </div>
-            {copied && <p className="text-xs text-green-600 dark:text-green-400">Copied!</p>}
+            {copied && <p className="text-xs text-status-success-600 dark:text-status-success-400">Copied!</p>}
           </div>
 
           <div>
@@ -220,7 +220,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
           <div className="flex justify-end pt-2">
             <button
               onClick={onClose}
-              className="tau-button tau-button-primary px-4 py-2 bg-accent text-white rounded hover:bg-accent-hover transition-colors"
+              className="tau-button tau-button-primary px-4 py-2 bg-accent text-on-accent rounded hover:bg-accent-hover transition-colors"
             >
               Done
             </button>
@@ -524,7 +524,9 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
 
         {/* Error */}
         {createMutation.error && (
-          <div className="text-red-500 dark:text-red-400 text-sm">{(createMutation.error as Error).message}</div>
+          <div className="text-status-danger-500 dark:text-status-danger-400 text-sm">
+            {(createMutation.error as Error).message}
+          </div>
         )}
 
         {/* Submit */}
@@ -539,7 +541,7 @@ export function CreateScheduleModal({ isOpen, onClose, defaultScope }: Props) {
           <button
             type="submit"
             disabled={createMutation.isPending}
-            className="tau-button tau-button-primary px-4 py-2 bg-accent text-white rounded hover:bg-accent-hover disabled:opacity-50 transition-colors"
+            className="tau-button tau-button-primary px-4 py-2 bg-accent text-on-accent rounded hover:bg-accent-hover disabled:opacity-50 transition-colors"
           >
             {createMutation.isPending ? 'Creating...' : 'Create Schedule'}
           </button>

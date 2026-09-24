@@ -1,3 +1,4 @@
+import { observeTerminalTheme, readTerminalTheme } from '../../theme/terminal'
 /**
  * SystemLogsSection — read-only live tail of Tau's system logs (API/worker).
  *
@@ -17,13 +18,6 @@ import '@xterm/xterm/css/xterm.css'
 
 type Status = 'idle' | 'connecting' | 'connected' | 'error' | 'closed'
 type Component = 'api' | 'worker' | 'all'
-
-const theme = {
-  background: '#282c34',
-  foreground: '#abb2bf',
-  cursor: '#282c34',
-  selectionBackground: '#3e4451',
-}
 
 export function SystemLogsSection() {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -108,7 +102,7 @@ export function SystemLogsSection() {
   useEffect(() => {
     if (!containerRef.current) return
     const term = new XTerm({
-      theme,
+      theme: readTerminalTheme(window.getComputedStyle(document.documentElement), 'log'),
       fontFamily: '"JetBrains Mono", monospace',
       fontSize: 12,
       disableStdin: true,
@@ -120,6 +114,7 @@ export function SystemLogsSection() {
     const searchAddon = new SearchAddon()
     term.loadAddon(fit)
     term.loadAddon(searchAddon)
+    const stopThemeObserver = observeTerminalTheme(term, containerRef.current, 'log')
     term.open(containerRef.current)
     fit.fit()
     termRef.current = term
@@ -128,6 +123,7 @@ export function SystemLogsSection() {
     ro.observe(containerRef.current)
     return () => {
       ro.disconnect()
+      stopThemeObserver()
       term.dispose()
       termRef.current = null
     }
@@ -226,9 +222,9 @@ export function SystemLogsSection() {
             <span
               className={
                 status === 'connected'
-                  ? 'text-xs text-green-500'
+                  ? 'text-xs text-status-success-500'
                   : status === 'error'
-                    ? 'text-xs text-red-500'
+                    ? 'text-xs text-status-danger-500'
                     : 'text-xs text-muted'
               }
             >
@@ -236,7 +232,7 @@ export function SystemLogsSection() {
             </span>
           </div>
         </div>
-        <div ref={containerRef} className="w-full h-96 bg-[#282c34] rounded-lg overflow-hidden" />
+        <div ref={containerRef} className="w-full h-96 bg-[rgb(var(--log-bg))] rounded-lg overflow-hidden" />
       </div>
     </div>
   )

@@ -96,7 +96,9 @@ function CodeBlock({ children, isError, autoScroll }: { children: string; isErro
       ref={ref}
       className={clsx(
         'rounded p-1.5 text-[11px] whitespace-pre-wrap break-all overflow-hidden max-h-48 overflow-y-auto',
-        isError ? 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300' : 'bg-code-bg text-code-text'
+        isError
+          ? 'bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300'
+          : 'bg-code-bg text-code-text'
       )}
     >
       {children}
@@ -116,8 +118,10 @@ function DiffCodeBlock({ children }: { children: string }) {
             key={index}
             className={clsx(
               'block min-h-[1em]',
-              isAddition && 'bg-green-50 text-green-800 dark:bg-green-900/30 dark:text-green-300',
-              isDeletion && 'bg-red-50 text-red-800 dark:bg-red-900/30 dark:text-red-300'
+              isAddition &&
+                'bg-status-success-50 text-status-success-800 dark:bg-status-success-900/30 dark:text-status-success-300',
+              isDeletion &&
+                'bg-status-danger-50 text-status-danger-800 dark:bg-status-danger-900/30 dark:text-status-danger-300'
             )}
           >
             {line}
@@ -215,7 +219,9 @@ function BashCodeBlock({
         onTouchMove={markUserScrolling}
         className={clsx(
           'rounded p-1.5 text-[11px] whitespace-pre-wrap break-all overflow-hidden max-h-48 overflow-y-auto',
-          isError ? 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300' : 'bg-code-bg text-code-text'
+          isError
+            ? 'bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300'
+            : 'bg-code-bg text-code-text'
         )}
       >
         <AnsiText>{children}</AnsiText>
@@ -226,7 +232,7 @@ function BashCodeBlock({
             setLocalAutoScroll(true)
             if (ref.current) ref.current.scrollTop = ref.current.scrollHeight
           }}
-          className="tau-button absolute bottom-2 right-2 p-1 rounded bg-accent/90 hover:bg-accent text-white text-[10px] shadow-sm"
+          className="tau-button absolute bottom-2 right-2 p-1 rounded bg-accent/90 hover:bg-accent text-on-accent text-[10px] shadow-sm"
           title="Resume auto-scroll"
         >
           ↓ Follow
@@ -239,7 +245,7 @@ function BashCodeBlock({
 const bashRenderer: ToolRenderer = {
   summary: (args) => truncate(args.command ?? '', 60),
   ArgsView: ({ args }) => (
-    <div className="bg-gray-800 dark:bg-gray-900 text-gray-300 rounded p-1.5 text-[11px] font-mono whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
+    <div className="bg-status-neutral-800 dark:bg-status-neutral-900 text-status-neutral-300 rounded p-1.5 text-[11px] font-mono whitespace-pre-wrap break-all max-h-32 overflow-y-auto">
       <span className="text-muted select-none">$ </span>
       {args.command ?? ''}
     </div>
@@ -261,14 +267,14 @@ const editRenderer: ToolRenderer = {
       <InlineCode>{args.path ?? 'unknown'}</InlineCode>
       {args.oldText && (
         <LabeledField label="Old">
-          <pre className="bg-red-50 dark:bg-red-900/30 text-red-800 dark:text-red-300 rounded p-1 text-[11px] whitespace-pre-wrap break-all max-h-24 overflow-y-auto">
+          <pre className="bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-800 dark:text-status-danger-300 rounded p-1 text-[11px] whitespace-pre-wrap break-all max-h-24 overflow-y-auto">
             {args.oldText}
           </pre>
         </LabeledField>
       )}
       {args.newText && (
         <LabeledField label="New">
-          <pre className="bg-green-50 dark:bg-green-900/30 text-green-800 dark:text-green-300 rounded p-1 text-[11px] whitespace-pre-wrap break-all max-h-24 overflow-y-auto">
+          <pre className="bg-status-success-50 dark:bg-status-success-900/30 text-status-success-800 dark:text-status-success-300 rounded p-1 text-[11px] whitespace-pre-wrap break-all max-h-24 overflow-y-auto">
             {args.newText}
           </pre>
         </LabeledField>
@@ -283,7 +289,7 @@ const editRenderer: ToolRenderer = {
       if (parsed?.details?.diff) {
         return (
           <div className="space-y-1">
-            <div className="text-green-600 dark:text-green-400 text-[11px]">{text}</div>
+            <div className="text-status-success-600 dark:text-status-success-400 text-[11px]">{text}</div>
             {isError ? (
               <CodeBlock isError={isError}>{parsed.details.diff}</CodeBlock>
             ) : (
@@ -318,7 +324,7 @@ const writeRenderer: ToolRenderer = {
     return isError ? (
       <CodeBlock isError>{text}</CodeBlock>
     ) : (
-      <div className="text-green-600 dark:text-green-400 text-[11px]">{text}</div>
+      <div className="text-status-success-600 dark:text-status-success-400 text-[11px]">{text}</div>
     )
   },
 }
@@ -478,10 +484,10 @@ const navigateRenderer: ToolRenderer = {
       <div className="flex items-center gap-2">
         <Link
           to={path}
-          className="inline-flex items-center gap-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:underline text-[12px] font-medium"
+          className="inline-flex items-center gap-1 text-status-progress-600 dark:text-status-progress-400 hover:text-status-progress-800 dark:hover:text-status-progress-300 hover:underline text-[12px] font-medium"
         >
           {isPrompt ? 'Go to ' : ''}
-          <code className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 rounded text-[11px]">
+          <code className="bg-status-progress-50 dark:bg-status-progress-900/30 text-status-progress-700 dark:text-status-progress-300 px-1.5 py-0.5 rounded text-[11px]">
             {path}
           </code>
           {isPrompt && <span aria-hidden="true">&rarr;</span>}
@@ -492,7 +498,11 @@ const navigateRenderer: ToolRenderer = {
   },
   ResultView: ({ result, isError }) => {
     const text = extractResultText(result)
-    return isError ? <CodeBlock isError>{text}</CodeBlock> : <div className="text-blue-600 text-[11px]">{text}</div>
+    return isError ? (
+      <CodeBlock isError>{text}</CodeBlock>
+    ) : (
+      <div className="text-status-progress-600 text-[11px]">{text}</div>
+    )
   },
 }
 
@@ -501,7 +511,7 @@ const requestNextBeatRenderer: ToolRenderer = {
   ArgsView: ({ args }) => (
     <div className="space-y-1">
       <div className="flex items-center gap-2">
-        <span className="text-red-500 dark:text-red-400 text-[11px]">⏱</span>
+        <span className="text-status-danger-500 dark:text-status-danger-400 text-[11px]">⏱</span>
         <InlineCode>{args.delay ?? '?'}</InlineCode>
       </div>
       {args.reason && <div className="text-[11px] text-muted">{args.reason}</div>}
@@ -514,13 +524,19 @@ const requestNextBeatRenderer: ToolRenderer = {
       if (parsed?.nextBeatAt) {
         const d = new Date(parsed.nextBeatAt)
         return (
-          <div className="text-green-600 dark:text-green-400 text-[11px]">Next beat at {d.toLocaleTimeString()}</div>
+          <div className="text-status-success-600 dark:text-status-success-400 text-[11px]">
+            Next beat at {d.toLocaleTimeString()}
+          </div>
         )
       }
     } catch {
       /* fall through */
     }
-    return <div className="text-green-600 dark:text-green-400 text-[11px]">{extractResultText(result)}</div>
+    return (
+      <div className="text-status-success-600 dark:text-status-success-400 text-[11px]">
+        {extractResultText(result)}
+      </div>
+    )
   },
 }
 
@@ -531,9 +547,10 @@ const notifyContactRenderer: ToolRenderer = {
   },
   ArgsView: ({ args }) => {
     const urgencyColors: Record<string, string> = {
-      info: 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
-      warning: 'bg-yellow-50 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300',
-      action_needed: 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300',
+      info: 'bg-status-progress-50 dark:bg-status-progress-900/30 text-status-progress-700 dark:text-status-progress-300',
+      warning: 'bg-status-review-50 dark:bg-status-review-900/30 text-status-review-700 dark:text-status-review-300',
+      action_needed:
+        'bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300',
     }
     const colorClass = urgencyColors[args.urgency] ?? urgencyColors.info
     return (
@@ -555,7 +572,7 @@ const notifyContactRenderer: ToolRenderer = {
     return isError ? (
       <CodeBlock isError>{text}</CodeBlock>
     ) : (
-      <div className="text-green-600 dark:text-green-400 text-[11px]">{text}</div>
+      <div className="text-status-success-600 dark:text-status-success-400 text-[11px]">{text}</div>
     )
   },
 }
@@ -908,7 +925,9 @@ export function ToolResultView({
       <pre
         className={clsx(
           'rounded p-1 text-[11px] whitespace-pre-wrap break-all overflow-hidden max-h-32 overflow-y-auto',
-          isError ? 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300' : 'bg-code-bg text-code-text'
+          isError
+            ? 'bg-status-danger-50 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300'
+            : 'bg-code-bg text-code-text'
         )}
       >
         {result}

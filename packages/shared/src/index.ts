@@ -31,6 +31,7 @@ export * from './image-attachments'
 export * from './work-stream-priority'
 export * from './work-stream-order'
 export * from './status-presentation'
+export * from './theme-schema'
 export * from './periodic-runner'
 export * from './platform-updates'
 export * from './maintenance-compatibility'
@@ -82,3 +83,5 @@ export type {
 
 export * from './assistant-agent-types'
 export * from './entity-reference'
+export * from './custom-theme'
+export * from './theme-preferences'

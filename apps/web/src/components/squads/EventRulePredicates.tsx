@@ -129,7 +129,7 @@ export function EventRulePredicates({
         )
       })}
       {!validation.success && (
-        <p role="alert" className="text-xs text-red-500">
+        <p role="alert" className="text-xs text-status-danger-500">
           {validation.error.issues.map((issue) => issue.message).join('; ')}
         </p>
       )}

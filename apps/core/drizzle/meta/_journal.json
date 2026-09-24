@@ -1317,6 +1317,13 @@
       "when": 1790104398443,
       "tag": "0187_red_dagger",
       "breakpoints": true
+    },
+    {
+      "idx": 188,
+      "version": "7",
+      "when": 1790105919780,
+      "tag": "0188_salty_micromax",
+      "breakpoints": true
     }
   ]
 }

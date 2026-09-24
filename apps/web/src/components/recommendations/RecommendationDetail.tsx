@@ -6,9 +6,9 @@ import {
 import { Badge, type BadgeColor } from '../Badge'
 
 const CONFIDENCE_COLORS: Record<string, BadgeColor> = {
-  high: 'red',
-  medium: 'amber',
-  low: 'gray',
+  high: 'danger',
+  medium: 'attention',
+  low: 'neutral',
 }
 
 /** Detail body — rendered inside the shared Modal, which owns the title bar. */
@@ -24,7 +24,7 @@ export function RecommendationDetail({
   return (
     <section className="space-y-4">
       <div className="flex items-center gap-2">
-        <Badge color={CONFIDENCE_COLORS[item.confidence] ?? 'gray'} className="capitalize">
+        <Badge color={CONFIDENCE_COLORS[item.confidence] ?? 'neutral'} className="capitalize">
           {item.confidence} confidence
         </Badge>
         <Badge className="capitalize">{item.status}</Badge>

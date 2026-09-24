@@ -1,3 +1,6 @@
+import { useGraphModulesReady } from './useGraphModulesReady'
+import { agentGraphColor, graphColor } from '../../theme/graph'
+import { useThemeColors } from '../../theme/useThemeColors'
 import clsx from 'clsx'
 import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -35,7 +38,6 @@ interface AgentNode {
   name: string
   type: string
   status: string
-  color: string
   val: number
   x?: number
   y?: number
@@ -48,20 +50,15 @@ interface GraphData {
 }
 
 export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Props) {
+  const colors = useThemeColors()
   const [, setSearchParams] = useSearchParams()
   const [is3D, setIs3D] = useState(false)
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null)
   const [showInbox, setShowInbox] = useState(false)
   const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 0, height: 400 })
-  const [spriteTextLoaded, setSpriteTextLoaded] = useState(!!SpriteText && !!ThreeGroup)
+  const spriteTextLoaded = useGraphModulesReady(is3D, spriteTextReady)
   const fgRef = useRef<any>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  // Load SpriteText when 3D mode is activated
-  useEffect(() => {
-    if (is3D && !SpriteText) {
-      spriteTextReady.then(() => setSpriteTextLoaded(true))
-    }
-  }, [is3D])
 
   // Build graph data
   const graphData = useMemo<GraphData>(() => {
@@ -72,7 +69,6 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
       name: getAgentPrimaryLabel(agent),
       type: agent.agentTypeId,
       status: agent.status,
-      color: webStatus(AGENT_STATUS_ROLE[agent.status]).markerHex,
       val: agent.status === 'active' ? 12 : 8,
     }))
 
@@ -111,7 +107,7 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
         const pulseRadius = radius + 4 + Math.sin(Date.now() / 200) * 2
         ctx.beginPath()
         ctx.arc(x, y, pulseRadius, 0, 2 * Math.PI)
-        ctx.strokeStyle = webStatus(AGENT_STATUS_ROLE.active).markerHex
+        ctx.strokeStyle = agentGraphColor(colors, 'active')
         ctx.lineWidth = 2 / globalScale
         ctx.stroke()
       }
@@ -121,7 +117,7 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
         const pulseRadius = radius + 4 + Math.sin(Date.now() / 400) * 3
         ctx.beginPath()
         ctx.arc(x, y, pulseRadius, 0, 2 * Math.PI)
-        ctx.strokeStyle = webStatus(AGENT_STATUS_ROLE['waiting-input']).markerHex
+        ctx.strokeStyle = agentGraphColor(colors, 'waiting-input')
         ctx.lineWidth = 2 / globalScale
         ctx.stroke()
       }
@@ -130,7 +126,7 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
       if (selectedAgent?.id === node.id) {
         ctx.beginPath()
         ctx.arc(x, y, radius + 6, 0, 2 * Math.PI)
-        ctx.strokeStyle = '#6366F1'
+        ctx.strokeStyle = graphColor(colors, '--graph-node-selected')
         ctx.lineWidth = 3 / globalScale
         ctx.stroke()
       }
@@ -138,9 +134,9 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
       // Node circle
       ctx.beginPath()
       ctx.arc(x, y, radius, 0, 2 * Math.PI)
-      ctx.fillStyle = node.color
+      ctx.fillStyle = agentGraphColor(colors, node.status)
       ctx.fill()
-      ctx.strokeStyle = 'rgba(255,255,255,0.35)'
+      ctx.strokeStyle = graphColor(colors, '--graph-node-border')
       ctx.lineWidth = 1.5 / globalScale
       ctx.stroke()
 
@@ -159,17 +155,17 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
       ctx.font = `bold ${fontSize}px Sans-Serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'top'
-      ctx.fillStyle = '#fff'
+      ctx.fillStyle = graphColor(colors, '--graph-label')
       const displayName = node.name.length > 14 ? node.name.slice(0, 12) + '…' : node.name
       ctx.fillText(displayName, x, y + radius + 3)
 
       // Agent type (below name)
       ctx.font = `${fontSize * 0.8}px Sans-Serif`
-      ctx.fillStyle = 'rgba(255,255,255,0.5)'
+      ctx.fillStyle = graphColor(colors, '--graph-label-muted')
       const displayType = node.type.length > 14 ? node.type.slice(0, 12) + '…' : node.type
       ctx.fillText(displayType, x, y + radius + 3 + fontSize * 1.1)
     },
-    [selectedAgent, agents.length]
+    [selectedAgent, agents.length, colors]
   )
 
   // Configure forces for better spacing, then fit to view
@@ -233,7 +229,7 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
               onClick={() => setIs3D(false)}
               className={clsx(
                 'tau-button',
-                `px-3 py-1 text-sm rounded ${!is3D ? 'bg-accent text-white' : 'text-muted hover:text-primary'}`
+                `px-3 py-1 text-sm rounded ${!is3D ? 'bg-accent text-on-accent' : 'text-muted hover:text-primary'}`
               )}
             >
               2D
@@ -242,7 +238,7 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
               onClick={() => setIs3D(true)}
               className={clsx(
                 'tau-button',
-                `px-3 py-1 text-sm rounded ${is3D ? 'bg-accent text-white' : 'text-muted hover:text-primary'}`
+                `px-3 py-1 text-sm rounded ${is3D ? 'bg-accent text-on-accent' : 'text-muted hover:text-primary'}`
               )}
             >
               3D
@@ -252,7 +248,7 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
           {/* Graph */}
           <div
             ref={containerRef}
-            className="border border-th-border rounded-lg overflow-hidden bg-gray-900"
+            className="border border-th-border rounded-lg overflow-hidden bg-[rgb(var(--graph-bg))]"
             style={{ height: 400 }}
           >
             {dimensions.width === 0 ? (
@@ -267,13 +263,18 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
                       height={dimensions.height}
                       graphData={graphData}
                       nodeLabel={(node: any) => `${node.name} (${node.type})\nStatus: ${node.status}`}
-                      nodeColor={(node: any) => (selectedAgent?.id === node.id ? '#FFFFFF' : node.color)}
+                      nodeColor={(node: any) =>
+                        selectedAgent?.id === node.id
+                          ? graphColor(colors, '--graph-node-selected-3d')
+                          : agentGraphColor(colors, node.status)
+                      }
                       nodeVal={(node: any) => (selectedAgent?.id === node.id ? (node.val ?? 8) * 2 : node.val)}
                       nodeOpacity={0.9}
-                      linkColor={() => 'rgba(255,255,255,0.2)'}
+                      linkOpacity={1}
+                      linkColor={() => graphColor(colors, '--graph-link-4')}
                       linkWidth={1}
                       onNodeClick={handleNodeClick}
-                      backgroundColor="#111827"
+                      backgroundColor={graphColor(colors, '--graph-bg')}
                       showNavInfo={false}
                       {...(spriteTextLoaded && SpriteText && ThreeGroup
                         ? {
@@ -281,12 +282,12 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
                             nodeThreeObject: (node: any) => {
                               const group = new ThreeGroup()
                               const nameLabel = new SpriteText(node.name)
-                              nameLabel.color = '#FFFFFF'
+                              nameLabel.color = graphColor(colors, '--graph-label')
                               nameLabel.textHeight = 3
                               nameLabel.position.y = -10
                               group.add(nameLabel)
                               const typeLabel = new SpriteText(node.type)
-                              typeLabel.color = 'rgba(255,255,255,0.5)'
+                              typeLabel.color = graphColor(colors, '--graph-label-muted')
                               typeLabel.textHeight = 2.2
                               typeLabel.position.y = -14
                               group.add(typeLabel)
@@ -313,10 +314,10 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
                         ctx.arc(node.x, node.y, 15, 0, 2 * Math.PI)
                         ctx.fill()
                       }}
-                      linkColor={() => 'rgba(255,255,255,0.2)'}
+                      linkColor={() => graphColor(colors, '--graph-link-4')}
                       linkWidth={1}
                       onNodeClick={handleNodeClick}
-                      backgroundColor="#111827"
+                      backgroundColor={graphColor(colors, '--graph-bg')}
                       d3VelocityDecay={0.3}
                       d3AlphaDecay={0.02}
                     />
@@ -328,11 +329,11 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
           {/* Legend */}
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3 text-xs text-muted">
             <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-full bg-gray-400" />
+              <span className="w-3 h-3 rounded-full bg-[rgb(var(--graph-legend-idle))]" />
               <span>Idle</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded-full bg-blue-500" />
+              <span className="w-3 h-3 rounded-full bg-status-progress-solid" />
               <span>Active</span>
             </div>
             <div className="flex items-center gap-1.5">
@@ -363,7 +364,7 @@ export function AgentVisualization({ agents, squadId: _squadId, isLoading }: Pro
           <div className="mt-4 space-y-2">
             <button
               onClick={() => setShowInbox(true)}
-              className="tau-button tau-button-primary w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-hover"
+              className="tau-button tau-button-primary w-full flex items-center justify-center gap-2 px-3 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover"
             >
               <InboxIcon className="w-4 h-4" />
               View Inbox

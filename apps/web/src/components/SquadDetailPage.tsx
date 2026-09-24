@@ -36,9 +36,9 @@ import { countableSquadAgents } from '../lib/agentDisplay'
 import { LoadingContent, SkeletonBlock, SkeletonText } from './loading/Skeleton'
 
 const STATUS_BADGE_COLORS: Record<string, BadgeColor> = {
-  active: 'green',
-  paused: 'yellow',
-  archived: 'gray',
+  active: 'success',
+  paused: 'review',
+  archived: 'neutral',
 }
 
 const TAB_PATHS = TABS.map((t) => t.path)
@@ -316,7 +316,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
                 </LoadingContent>
               </h1>
               {squad && squad.status !== 'active' && (
-                <Badge color={STATUS_BADGE_COLORS[squad.status] || 'green'}>{squad.status}</Badge>
+                <Badge color={STATUS_BADGE_COLORS[squad.status] || 'success'}>{squad.status}</Badge>
               )}
             </div>
             {(!squad || squad.purpose) && (
@@ -354,7 +354,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
                       setHeaderMenuOpen(false)
                       setShowDeleteModal(true)
                     }}
-                    className="tau-button w-full px-3 py-2 text-left text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
+                    className="tau-button w-full px-3 py-2 text-left text-xs font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/20"
                   >
                     Archive
                   </button>
@@ -395,7 +395,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
                   </LoadingContent>
                 </h1>
                 {squad && squad.status !== 'active' && (
-                  <Badge color={STATUS_BADGE_COLORS[squad.status] || 'green'}>{squad.status}</Badge>
+                  <Badge color={STATUS_BADGE_COLORS[squad.status] || 'success'}>{squad.status}</Badge>
                 )}
               </div>
               {(!squad || squad.purpose) && (
@@ -413,7 +413,7 @@ export function SquadDetailPage({ dependencies = {} }: SquadDetailPageProps) {
           {canDeleteSquad && (
             <button
               onClick={() => setShowDeleteModal(true)}
-              className="tau-button shrink-0 px-2.5 py-1 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
+              className="tau-button shrink-0 px-2.5 py-1 text-xs font-medium text-status-danger-600 dark:text-status-danger-400 hover:bg-status-danger-50 dark:hover:bg-status-danger-900/20 rounded-md transition-colors"
             >
               Archive
             </button>

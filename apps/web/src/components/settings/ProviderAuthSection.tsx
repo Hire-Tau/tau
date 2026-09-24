@@ -505,13 +505,13 @@ function ProviderGroupStatus({
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
       {entry.disabled && (
-        <span className="rounded bg-gray-200 px-1.5 py-0.5 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+        <span className="rounded bg-status-neutral-200 px-1.5 py-0.5 text-status-neutral-600 dark:bg-status-neutral-700 dark:text-status-neutral-300">
           Disabled{suffix}
         </span>
       )}
       {exhausted && (
         <>
-          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+          <span className="rounded bg-status-attention-100 px-1.5 py-0.5 text-status-attention-700 dark:bg-status-attention-900/30 dark:text-status-attention-400">
             Exhausted{suffix}
           </span>
           {detail && <span className="text-muted">{detail}</span>}
@@ -887,10 +887,10 @@ export function ProviderAccountsList({
                       !account.enabled
                         ? 'text-muted'
                         : account.health === 'exhausted'
-                          ? 'text-amber-700 dark:text-amber-400'
+                          ? 'text-status-attention-700 dark:text-status-attention-400'
                           : account.kind === 'openai-compatible' && !account.capabilities
                             ? 'text-muted'
-                            : 'text-green-700 dark:text-green-400'
+                            : 'text-status-success-700 dark:text-status-success-400'
                     )}
                   >
                     {!account.enabled
@@ -910,7 +910,7 @@ export function ProviderAccountsList({
                     <span
                       className={clsx(
                         'px-1.5 py-0.5 rounded',
-                        account.capabilities.tools ? 'text-green-700' : 'text-red-700'
+                        account.capabilities.tools ? 'text-status-success-700' : 'text-status-danger-700'
                       )}
                     >
                       {account.capabilities.tools ? 'Tools supported' : 'No tool support'}
@@ -989,7 +989,7 @@ export function ProviderAccountsList({
                             if (confirm(`Delete account ${account.label || account.id}?`))
                               deleteMutation.mutate(account.id)
                           }}
-                          className="tau-button text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+                          className="tau-button text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300"
                         >
                           Delete
                         </button>
@@ -1055,14 +1055,16 @@ function ApiKeyForm({
       <button
         onClick={() => mutation.mutate(value)}
         disabled={!value || mutation.isPending}
-        className="tau-button tau-button-primary text-xs bg-accent text-white px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+        className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
       >
         {mutation.isPending ? 'Saving...' : 'Save'}
       </button>
       <button onClick={onCancel} className="tau-button text-xs text-muted hover:text-primary">
         Cancel
       </button>
-      {mutation.isError && <span className="text-xs text-red-600 dark:text-red-400">Failed to save</span>}
+      {mutation.isError && (
+        <span className="text-xs text-status-danger-600 dark:text-status-danger-400">Failed to save</span>
+      )}
     </div>
   )
 }
@@ -1268,7 +1270,7 @@ export function SelectStep({
         <button
           onClick={() => onSelect(deviceOption.id)}
           disabled={isPending}
-          className="tau-button tau-button-primary text-xs bg-accent text-white px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
         >
           Device code login (recommended)
         </button>
@@ -1304,7 +1306,7 @@ export function SelectStep({
             key={option.id}
             onClick={() => onSelect(option.id)}
             disabled={isPending}
-            className="tau-button tau-button-primary text-xs bg-accent text-white px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+            className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
           >
             {option.label}
           </button>
@@ -1366,7 +1368,7 @@ export function CodeStep({
         <button
           onClick={onSubmit}
           disabled={!code.trim() || isSubmitting}
-          className="tau-button tau-button-primary text-xs bg-accent text-white px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
         >
           {isSubmitting ? 'Submitting...' : 'Submit'}
         </button>
@@ -1445,7 +1447,9 @@ export function DeviceCodeStep({
         </button>
       </div>
       {copyFailed && (
-        <p className="text-xs text-red-600 dark:text-red-400">Couldn&apos;t copy — select the code manually.</p>
+        <p className="text-xs text-status-danger-600 dark:text-status-danger-400">
+          Couldn&apos;t copy — select the code manually.
+        </p>
       )}
       <div className="min-h-4 text-xs">
         {need ? (
@@ -1499,7 +1503,7 @@ export function ErrorStep({
 }) {
   return (
     <div className="space-y-2">
-      <p className="text-sm text-red-600 dark:text-red-400">Login failed: {message}</p>
+      <p className="text-sm text-status-danger-600 dark:text-status-danger-400">Login failed: {message}</p>
       <div className="flex gap-2">
         <button onClick={onRetry} className="tau-button text-xs text-accent-light hover:text-accent-hover font-medium">
           Try Again
@@ -1686,7 +1690,7 @@ export function CompatibleProviderSetup({ canWrite }: { canWrite: boolean }) {
         <button
           disabled={!baseUrl || !providerId || !model || !canWrite}
           onClick={verify}
-          className="tau-button tau-button-primary rounded bg-accent px-3 py-2 text-sm text-white disabled:opacity-50"
+          className="tau-button tau-button-primary rounded bg-accent px-3 py-2 text-sm text-on-accent disabled:opacity-50"
         >
           Verify capabilities
         </button>
@@ -1751,7 +1755,7 @@ export function CompatibleProviderSetup({ canWrite }: { canWrite: boolean }) {
           <button
             onClick={save}
             disabled={!selectedTiers.length || !canWrite}
-            className="tau-button tau-button-primary rounded bg-accent px-3 py-2 text-white disabled:opacity-50"
+            className="tau-button tau-button-primary rounded bg-accent px-3 py-2 text-on-accent disabled:opacity-50"
           >
             Add provider and assign tiers
           </button>

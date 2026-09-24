@@ -110,7 +110,7 @@ function AgentTypesTab({ tierFilter, onClearTierFilter }: { tierFilter?: string;
           <button
             onClick={() => setIsAdding(true)}
             disabled={isAdding}
-            className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-white rounded-md hover:bg-accent/90 disabled:opacity-50 shrink-0"
+            className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md hover:bg-accent/90 disabled:opacity-50 shrink-0"
           >
             New agent type
           </button>
@@ -305,7 +305,7 @@ function AddAgentTypeForm({ onClose, onCreated }: { onClose: () => void; onCreat
         <button
           onClick={handleCreate}
           disabled={createMutation.isPending}
-          className="tau-button tau-button-primary text-sm bg-accent text-white px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="tau-button tau-button-primary text-sm bg-accent text-on-accent px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
         >
           {createMutation.isPending ? 'Creating…' : 'Create'}
         </button>
@@ -313,7 +313,9 @@ function AddAgentTypeForm({ onClose, onCreated }: { onClose: () => void; onCreat
           Cancel
         </button>
         {createMutation.isError && (
-          <span className="text-xs text-red-600 dark:text-red-400">{(createMutation.error as Error).message}</span>
+          <span className="text-xs text-status-danger-600 dark:text-status-danger-400">
+            {(createMutation.error as Error).message}
+          </span>
         )}
       </div>
     </div>
@@ -419,17 +421,17 @@ function AgentTypeRow({
             <span className="font-semibold text-primary">{agentType.name}</span>
 
             {agentType.disabled && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+              <span className="text-xs px-1.5 py-0.5 rounded bg-status-neutral-100 dark:bg-status-neutral-800 text-status-neutral-600 dark:text-status-neutral-400">
                 Disabled
               </span>
             )}
             {agentType.yamlFieldOverrides.length > 0 && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400">
+              <span className="text-xs px-1.5 py-0.5 rounded bg-status-review-100 dark:bg-status-review-900/30 text-status-review-700 dark:text-status-review-400">
                 Modified
               </span>
             )}
             {!agentType.hasTemplate && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
+              <span className="text-xs px-1.5 py-0.5 rounded bg-status-progress-100 dark:bg-status-progress-900/30 text-status-progress-700 dark:text-status-progress-400">
                 Custom
               </span>
             )}
@@ -506,7 +508,7 @@ function AgentTypeRow({
                 <button
                   onClick={() => toggleDisableMutation.mutate()}
                   disabled={toggleDisableMutation.isPending}
-                  className="tau-button text-xs text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 font-medium"
+                  className="tau-button text-xs text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 font-medium"
                 >
                   {agentType.disabled ? 'Enable' : 'Disable'}
                 </button>
@@ -515,7 +517,7 @@ function AgentTypeRow({
                 <button
                   onClick={handleDelete}
                   disabled={deleteMutation.isPending}
-                  className="tau-button text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 font-medium"
+                  className="tau-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium"
                 >
                   Delete
                 </button>
@@ -606,13 +608,15 @@ function AgentTypeRow({
                 <button
                   onClick={handleSave}
                   disabled={!canUpdate || updateMutation.isPending}
-                  className="tau-button tau-button-primary text-sm bg-accent text-white px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+                  className="tau-button tau-button-primary text-sm bg-accent text-on-accent px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
                 >
                   {updateMutation.isPending ? 'Saving…' : 'Save'}
                 </button>
-                {updateMutation.isSuccess && <span className="text-xs text-green-600 dark:text-green-400">Saved!</span>}
+                {updateMutation.isSuccess && (
+                  <span className="text-xs text-status-success-600 dark:text-status-success-400">Saved!</span>
+                )}
                 {updateMutation.isError && (
-                  <span className="text-xs text-red-600 dark:text-red-400">
+                  <span className="text-xs text-status-danger-600 dark:text-status-danger-400">
                     {(updateMutation.error as Error).message}
                   </span>
                 )}
@@ -670,7 +674,7 @@ function ResolvedPromptPreview({ agentTypeId }: { agentTypeId: string }) {
           </button>
         </div>
         {error ? (
-          <p className="text-xs text-red-600 dark:text-red-400">
+          <p className="text-xs text-status-danger-600 dark:text-status-danger-400">
             Couldn&apos;t load the resolved prompt: {(error as Error).message}
           </p>
         ) : (
@@ -787,7 +791,7 @@ function ModelSpecListEditor({
             <button
               type="button"
               onClick={() => removeSpec(i)}
-              className="tau-button text-muted hover:text-red-500 dark:hover:text-red-400 shrink-0 px-1"
+              className="tau-button text-muted hover:text-status-danger-500 dark:hover:text-status-danger-400 shrink-0 px-1"
               title="Remove"
             >
               <TrashIcon className="w-4 h-4" />
@@ -1346,7 +1350,7 @@ function ModelTiersTab({ onUsedBy }: { onUsedBy: (slug: string) => void }) {
               usedByCount: 0,
             })
         }}
-        className="tau-button tau-button-primary rounded bg-accent px-3 py-2 text-white"
+        className="tau-button tau-button-primary rounded bg-accent px-3 py-2 text-on-accent"
       >
         Add custom tier
       </button>

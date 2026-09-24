@@ -171,7 +171,7 @@ export function SkillsSection() {
               Import
             </button>
             <button
-              className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-white rounded-md"
+              className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md"
               onClick={() =>
                 editSkill({
                   id: '',
@@ -208,14 +208,16 @@ export function SkillsSection() {
               onChange={(e) => setImportContent(e.target.value)}
             />
             <button
-              className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-white rounded-md disabled:opacity-50"
+              className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md disabled:opacity-50"
               disabled={!importContent.trim() || importer.isPending}
               onClick={() => importer.mutate()}
             >
               {importer.isPending ? 'Importing…' : 'Import Markdown'}
             </button>
             {importer.isError && (
-              <span className="ml-2 text-xs text-red-600 dark:text-red-400">{(importer.error as Error).message}</span>
+              <span className="ml-2 text-xs text-status-danger-600 dark:text-status-danger-400">
+                {(importer.error as Error).message}
+              </span>
             )}
           </div>
         </Modal>
@@ -322,7 +324,7 @@ export function SkillsSection() {
                       />
                       <button
                         type="button"
-                        className="tau-button text-sm text-red-600"
+                        className="tau-button text-sm text-status-danger-600"
                         onClick={() => removeSupportFile(path)}
                       >
                         Remove
@@ -340,7 +342,7 @@ export function SkillsSection() {
 
             <div className="flex items-center gap-2">
               <button
-                className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-white rounded-md"
+                className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md"
                 disabled={save.isPending}
               >
                 Save
@@ -353,7 +355,9 @@ export function SkillsSection() {
                 Cancel
               </button>
               {save.isError && (
-                <span className="text-xs text-red-600 dark:text-red-400">{(save.error as Error).message}</span>
+                <span className="text-xs text-status-danger-600 dark:text-status-danger-400">
+                  {(save.error as Error).message}
+                </span>
               )}
             </div>
           </form>
@@ -400,7 +404,7 @@ export function SkillsSection() {
                 </button>
               )}
               {canWriteSkills && !skill.hasTemplate && (
-                <button className="tau-button text-sm text-red-600" onClick={() => remove.mutate(skill.id)}>
+                <button className="tau-button text-sm text-status-danger-600" onClick={() => remove.mutate(skill.id)}>
                   Delete
                 </button>
               )}

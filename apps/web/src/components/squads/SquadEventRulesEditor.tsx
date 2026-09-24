@@ -46,7 +46,7 @@ export function SquadEventRulesEditor({
         </p>
       </div>
       {catalog.isError && (
-        <p role="alert" className="text-sm text-red-500">
+        <p role="alert" className="text-sm text-status-danger-500">
           Unable to load events.
         </p>
       )}
@@ -86,7 +86,7 @@ export function SquadEventRulesEditor({
               </button>
               <button
                 type="button"
-                className="tau-button text-red-500"
+                className="tau-button text-status-danger-500"
                 onClick={() => onChange(value.filter((_, i) => i !== index))}
                 aria-label={`Remove rule ${index + 1}`}
               >

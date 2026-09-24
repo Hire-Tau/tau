@@ -108,11 +108,11 @@ export function OAuthCallbackPage() {
           Authorization cancelled. You can return to Settings.
         </p>
       ) : pageState === 'terminal_failure' ? (
-        <p role="alert" className="mt-2 text-sm text-red-600">
+        <p role="alert" className="mt-2 text-sm text-status-danger-600">
           Authorization could not be completed. Return to Settings and start again.
         </p>
       ) : pageState === 'retryable_failure' ? (
-        <div className="mt-2 text-sm text-red-600">
+        <div className="mt-2 text-sm text-status-danger-600">
           <p role="alert">Authorization could not be completed. Please try again.</p>
           <button
             type="button"

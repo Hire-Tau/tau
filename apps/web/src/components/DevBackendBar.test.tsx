@@ -57,7 +57,7 @@ describe('DevBackendBarContent', () => {
       backends,
     })
     expect(html).toContain('Writes enabled')
-    expect(html).toContain('bg-red-950')
+    expect(html).toContain('bg-status-danger-950')
     expect(html).toContain('checked=""')
   })
 })

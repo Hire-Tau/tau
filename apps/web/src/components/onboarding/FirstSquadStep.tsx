@@ -187,7 +187,7 @@ export function FirstSquadStep({ meta, item, embedded, onSquadCreated }: ItemRow
               <button
                 type="submit"
                 disabled={kickoffMutation.isPending}
-                className="tau-button tau-button-primary px-4 py-2 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+                className="tau-button tau-button-primary px-4 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
               >
                 {kickoffMutation.isPending ? 'Sending…' : 'Send'}
               </button>
@@ -278,7 +278,7 @@ export function FirstSquadStep({ meta, item, embedded, onSquadCreated }: ItemRow
           )}
           <ReposField value={repos} onChange={setRepos} idPrefix="first-squad-create" />
           {createMutation.isError && (
-            <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+            <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
               {createMutation.error instanceof Error ? createMutation.error.message : 'Failed to create the squad.'}
             </p>
           )}
@@ -291,7 +291,7 @@ export function FirstSquadStep({ meta, item, embedded, onSquadCreated }: ItemRow
                 !name.trim() ||
                 createHostWorkspacePathError(hostWorkspacePath.trim()) !== null
               }
-              className="tau-button tau-button-primary px-4 py-2 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
+              className="tau-button tau-button-primary px-4 py-2 text-sm font-medium text-on-accent bg-accent rounded-md hover:bg-accent-hover disabled:opacity-50"
             >
               {createMutation.isPending ? 'Creating…' : 'Create squad & send kickoff'}
             </button>
@@ -347,7 +347,9 @@ function KickoffFeedback({
   if (isError) {
     return (
       <div role="alert" className="mt-2 flex items-center gap-2">
-        <p className="text-sm text-red-600 dark:text-red-400">Failed to send the kickoff message.</p>
+        <p className="text-sm text-status-danger-600 dark:text-status-danger-400">
+          Failed to send the kickoff message.
+        </p>
         <button type="button" onClick={onRetry} className="tau-button text-sm text-accent-light hover:underline">
           Retry
         </button>
@@ -355,7 +357,11 @@ function KickoffFeedback({
     )
   }
   if (isSuccess) {
-    return <p className="text-sm text-green-700 dark:text-green-300 mt-2">Sent — your squad is getting started.</p>
+    return (
+      <p className="text-sm text-status-success-700 dark:text-status-success-300 mt-2">
+        Sent — your squad is getting started.
+      </p>
+    )
   }
   return null
 }

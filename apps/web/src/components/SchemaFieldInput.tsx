@@ -25,8 +25,8 @@ export function SchemaFieldInput({
 
   const label = name.charAt(0).toUpperCase() + name.slice(1)
   const inputClasses = clsx(
-    'block w-full rounded-md border-input-border bg-input-bg text-primary focus:border-blue-500 focus:ring-blue-500 px-3 py-2.5 md:py-2 border text-base md:text-sm transition-shadow',
-    highlighted && 'ring-2 ring-blue-200 dark:ring-blue-700'
+    'block w-full rounded-md border-input-border bg-input-bg text-primary focus:border-status-progress-500 focus:ring-status-progress-500 px-3 py-2.5 md:py-2 border text-base md:text-sm transition-shadow',
+    highlighted && 'ring-2 ring-status-progress-200 dark:ring-status-progress-700'
   )
 
   if (schema.type === 'boolean') {
@@ -39,11 +39,11 @@ export function SchemaFieldInput({
             onChange={(e) => onChange(e.target.checked)}
             className={clsx(
               'rounded border-input-border text-accent-light focus:ring-accent w-4 h-4 transition-shadow',
-              highlighted && 'ring-2 ring-blue-200 dark:ring-blue-700'
+              highlighted && 'ring-2 ring-status-progress-200 dark:ring-status-progress-700'
             )}
           />
           {label}
-          {schema.required && <span className="text-red-500 dark:text-red-400">*</span>}
+          {schema.required && <span className="text-status-danger-500 dark:text-status-danger-400">*</span>}
         </label>
         {schema.description && <p className="mt-1 text-sm text-muted">{schema.description}</p>}
       </div>
@@ -55,7 +55,7 @@ export function SchemaFieldInput({
       <div>
         <label className="block text-sm font-medium text-secondary mb-1">
           {label}
-          {schema.required && <span className="text-red-500 dark:text-red-400 ml-1">*</span>}
+          {schema.required && <span className="text-status-danger-500 dark:text-status-danger-400 ml-1">*</span>}
         </label>
         <input
           type="number"
@@ -86,7 +86,7 @@ export function SchemaFieldInput({
     <div>
       <label className="block text-sm font-medium text-secondary mb-1">
         {label}
-        {schema.required && <span className="text-red-500 dark:text-red-400 ml-1">*</span>}
+        {schema.required && <span className="text-status-danger-500 dark:text-status-danger-400 ml-1">*</span>}
       </label>
       <input
         type="text"

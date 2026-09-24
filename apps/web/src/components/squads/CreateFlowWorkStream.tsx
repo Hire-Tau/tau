@@ -58,14 +58,14 @@ export function CreateFlowWorkStream({ squadId }: { squadId: string }) {
           </label>
           <WorkflowEditor squadId={squadId} value={source} onChange={setSource} disabled={create.isPending} />
           {create.error && (
-            <p role="alert" className="text-sm text-red-400">
+            <p role="alert" className="text-sm text-status-danger-400">
               {create.error.message}
             </p>
           )}
           <button
             type="submit"
             disabled={create.isPending || !title.trim()}
-            className="px-3 py-2 text-sm rounded-md bg-accent text-white"
+            className="px-3 py-2 text-sm rounded-md bg-accent text-on-accent"
           >
             Create work stream
           </button>

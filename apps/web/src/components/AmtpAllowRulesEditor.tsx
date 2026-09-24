@@ -73,7 +73,7 @@ export function AmtpAllowRulesEditor({ agentId, canWrite }: AmtpAllowRulesEditor
               }}
               disabled={deleteRule.isPending}
               aria-label="Delete allow rule"
-              className="tau-button shrink-0 text-xs font-medium text-red-600 hover:text-red-800 disabled:opacity-50 dark:text-red-400 dark:hover:text-red-300"
+              className="tau-button shrink-0 text-xs font-medium text-status-danger-600 hover:text-status-danger-800 disabled:opacity-50 dark:text-status-danger-400 dark:hover:text-status-danger-300"
             >
               Delete
             </button>
@@ -121,13 +121,13 @@ export function AmtpAllowRulesEditor({ agentId, canWrite }: AmtpAllowRulesEditor
           <button
             type="submit"
             disabled={!canSubmit}
-            className="tau-button tau-button-primary rounded bg-accent px-3 py-1 text-xs font-medium text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+            className="tau-button tau-button-primary rounded bg-accent px-3 py-1 text-xs font-medium text-on-accent hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
           >
             {addRule.isPending ? 'Adding…' : 'Add rule'}
           </button>
         </form>
         {addRule.isError && (
-          <p role="alert" className="text-xs text-red-600 dark:text-red-400">
+          <p role="alert" className="text-xs text-status-danger-600 dark:text-status-danger-400">
             {(addRule.error as Error)?.message || 'Failed to add rule'}
           </p>
         )}

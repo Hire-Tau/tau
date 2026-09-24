@@ -11,6 +11,7 @@ import { useOfflineCache } from '../hooks/useOfflineCache'
 import { usePushNotifications } from '../hooks/usePushNotifications'
 import { usePWA } from '../hooks/usePWA'
 import { useAuth } from '../providers/AuthProvider'
+import { ThemeControl } from './settings/ThemeControl'
 import { useTheme } from '../providers/ThemeProvider'
 import { usePermissions } from '../hooks/usePermissions'
 import { useOnboarding } from '../hooks/useOnboarding'
@@ -29,7 +30,7 @@ import { setAdminPause } from '../api/system'
 import { integrationQueries, queries } from '../queryOptions'
 import { queryKeys } from '../queryKeys'
 import { maintenanceControlDisabled, maintenanceStatusText } from './maintenance-status'
-import { CheckIcon, ShareIcon, WifiOffIcon, SunIcon, MoonIcon } from './icons'
+import { CheckIcon, ShareIcon, WifiOffIcon } from './icons'
 import { ConfirmButton } from './ConfirmButton'
 import { SecretsSection } from './settings/SecretsSection'
 import { ProviderAuthSection } from './settings/ProviderAuthSection'
@@ -202,49 +203,6 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
 }
 
 // =============================================================================
-// Theme control
-// =============================================================================
-
-function ThemeControl({ dependencies }: { dependencies: SettingsPageDependencies }) {
-  const { theme, toggleTheme } = dependencies.useTheme()
-
-  return (
-    <section data-setting-target="appearance" aria-label="Theme" className="tau-section py-5">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <p data-setting-target="dark-mode" className="font-medium text-primary">
-            Theme
-          </p>
-          <p className="text-sm text-muted">{theme === 'dark' ? 'Dark theme is active.' : 'Light theme is active.'}</p>
-        </div>
-        <button
-          onClick={toggleTheme}
-          className={clsx(
-            'tau-button',
-            'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0 flex items-center gap-2',
-            theme === 'dark'
-              ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 hover:bg-amber-200 dark:hover:bg-amber-900/50'
-              : 'bg-slate-800 text-white hover:bg-slate-900'
-          )}
-        >
-          {theme === 'dark' ? (
-            <>
-              <SunIcon className="w-4 h-4" />
-              Light Mode
-            </>
-          ) : (
-            <>
-              <MoonIcon className="w-4 h-4" />
-              Dark Mode
-            </>
-          )}
-        </button>
-      </div>
-    </section>
-  )
-}
-
-// =============================================================================
 // Notifications Section
 // =============================================================================
 
@@ -296,17 +254,17 @@ function NotificationsSection({ dependencies }: { dependencies: SettingsPageDepe
                   'tau-button',
                   'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
                   isSubscribed
-                    ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50 active:bg-red-300'
+                    ? 'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300'
                     : permission === 'denied'
                       ? 'bg-surface-secondary text-placeholder cursor-not-allowed'
-                      : 'bg-accent text-white hover:bg-accent-hover active:bg-accent-active'
+                      : 'bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-active'
                 )}
               >
                 {isSubscribed ? 'Disable' : 'Enable'}
               </button>
             </div>
 
-            {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+            {error && <p className="text-sm text-status-danger-600 dark:text-status-danger-400">{error}</p>}
 
             {subscriptions.length > 0 && (
               <div className="mt-6">
@@ -321,14 +279,16 @@ function NotificationsSection({ dependencies }: { dependencies: SettingsPageDepe
                         <p className="text-sm font-medium text-primary truncate">
                           {sub.userAgent ? parseUserAgent(sub.userAgent) : 'Unknown device'}
                           {sub.id === currentSubscriptionId && (
-                            <span className="ml-2 text-xs text-blue-600 dark:text-blue-400">(this device)</span>
+                            <span className="ml-2 text-xs text-status-progress-600 dark:text-status-progress-400">
+                              (this device)
+                            </span>
                           )}
                         </p>
                         <p className="text-xs text-muted">Added {new Date(sub.createdAt).toLocaleDateString()}</p>
                       </div>
                       <button
                         onClick={() => removeSubscription(sub.id)}
-                        className="tau-button text-sm text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 py-2 sm:py-0 font-medium"
+                        className="tau-button text-sm text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 py-2 sm:py-0 font-medium"
                       >
                         Remove
                       </button>
@@ -367,8 +327,8 @@ function NotificationsSection({ dependencies }: { dependencies: SettingsPageDepe
               'tau-button',
               'px-4 py-2.5 md:py-2 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 shrink-0',
               notificationSound.enabled
-                ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50 active:bg-red-300'
-                : 'bg-accent text-white hover:bg-accent-hover active:bg-accent-active'
+                ? 'bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300'
+                : 'bg-accent text-on-accent hover:bg-accent-hover active:bg-accent-active'
             )}
           >
             {notificationSound.enabled ? 'Disable' : 'Enable'}
@@ -385,6 +345,7 @@ function NotificationsSection({ dependencies }: { dependencies: SettingsPageDepe
 
 function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }) {
   const pwa = dependencies.usePWA()
+  const theme = dependencies.useTheme()
   const { cacheStats, clearCache } = dependencies.useOfflineCache()
   const [isClearing, setIsClearing] = useState(false)
 
@@ -400,7 +361,7 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
         <h3 className="text-lg font-semibold text-primary">App & Appearance</h3>
       </div>
 
-      <ThemeControl dependencies={dependencies} />
+      <ThemeControl value={theme} />
 
       {/* PWA Installation */}
       <div className="tau-section py-5">
@@ -409,7 +370,7 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
         </h4>
         <div className="space-y-4">
           {pwa.isStandalone ? (
-            <div className="flex items-center gap-3 text-green-700 dark:text-green-400">
+            <div className="flex items-center gap-3 text-status-success-700 dark:text-status-success-400">
               <CheckIcon />
               <span>Tau is installed on your device</span>
             </div>
@@ -421,7 +382,7 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
               </div>
               <button
                 onClick={pwa.promptInstall}
-                className="tau-button tau-button-primary px-4 py-2.5 md:py-2 bg-accent text-white rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0"
+                className="tau-button tau-button-primary px-4 py-2.5 md:py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0"
               >
                 Install
               </button>
@@ -443,14 +404,16 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
           )}
 
           {pwa.updateAvailable && (
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-status-progress-50 dark:bg-status-progress-900/20 rounded-md">
               <div>
-                <p className="font-medium text-blue-900 dark:text-blue-200">Update Available</p>
-                <p className="text-sm text-blue-700 dark:text-blue-300">A new version of Tau is ready to install.</p>
+                <p className="font-medium text-status-progress-900 dark:text-status-progress-200">Update Available</p>
+                <p className="text-sm text-status-progress-700 dark:text-status-progress-300">
+                  A new version of Tau is ready to install.
+                </p>
               </div>
               <button
                 onClick={pwa.applyUpdate}
-                className="tau-button tau-button-primary px-4 py-2.5 md:py-2 bg-accent text-white rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0"
+                className="tau-button tau-button-primary px-4 py-2.5 md:py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0"
               >
                 Update Now
               </button>
@@ -458,7 +421,7 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
           )}
 
           {!pwa.isOnline && (
-            <div className="flex items-center gap-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-md text-yellow-800 dark:text-yellow-200">
+            <div className="flex items-center gap-3 p-3 bg-status-review-50 dark:bg-status-review-900/20 rounded-md text-status-review-800 dark:text-status-review-200">
               <WifiOffIcon />
               <span>You are currently offline. Some features may be limited.</span>
             </div>
@@ -492,7 +455,7 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
             <button
               onClick={handleClearCache}
               disabled={isClearing || (cacheStats?.entryCount ?? 0) === 0}
-              className="tau-button px-4 py-2.5 md:py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50 active:bg-red-300 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="tau-button px-4 py-2.5 md:py-2 bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isClearing ? 'Clearing...' : 'Clear Offline Cache'}
             </button>
@@ -668,13 +631,17 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
                 <button
                   type="submit"
                   disabled={profileMutation.isPending}
-                  className="tau-button tau-button-primary px-4 py-2.5 md:py-2 bg-accent text-white rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="tau-button tau-button-primary px-4 py-2.5 md:py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {profileMutation.isPending ? 'Saving...' : 'Save display name'}
                 </button>
               </div>
-              {profileSaved && <p className="text-xs text-green-600 dark:text-green-400">Display name saved.</p>}
-              {profileError && <p className="text-xs text-red-600 dark:text-red-400">{profileError}</p>}
+              {profileSaved && (
+                <p className="text-xs text-status-success-600 dark:text-status-success-400">Display name saved.</p>
+              )}
+              {profileError && (
+                <p className="text-xs text-status-danger-600 dark:text-status-danger-400">{profileError}</p>
+              )}
             </form>
             {user.createdAt && (
               <div className="flex items-center justify-between">
@@ -721,7 +688,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
                           <button
                             type="submit"
                             disabled={renameMutation.isPending}
-                            className="tau-button tau-button-primary px-3 py-1.5 bg-accent text-white rounded-md text-xs font-medium hover:bg-accent-hover disabled:opacity-50"
+                            className="tau-button tau-button-primary px-3 py-1.5 bg-accent text-on-accent rounded-md text-xs font-medium hover:bg-accent-hover disabled:opacity-50"
                           >
                             {renameMutation.isPending ? 'Saving…' : 'Save'}
                           </button>
@@ -737,7 +704,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
                           </button>
                         </div>
                         {renameError && (
-                          <p role="alert" className="text-xs text-red-600 dark:text-red-400">
+                          <p role="alert" className="text-xs text-status-danger-600 dark:text-status-danger-400">
                             {renameError}
                           </p>
                         )}
@@ -771,9 +738,9 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
                             'text-sm font-medium py-2 sm:py-0',
                             credentials.length <= 1
                               ? 'text-placeholder cursor-not-allowed'
-                              : 'text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300'
+                              : 'text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300'
                           )}
-                          confirmClassName="text-sm font-medium py-2 sm:py-0 text-red-700 dark:text-red-300 underline"
+                          confirmClassName="text-sm font-medium py-2 sm:py-0 text-status-danger-700 dark:text-status-danger-300 underline"
                           title={credentials.length <= 1 ? 'Cannot remove your only passkey' : 'Remove passkey'}
                         />
                       </div>
@@ -803,13 +770,13 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
               <button
                 onClick={handleAddPasskey}
                 disabled={isAdding}
-                className="tau-button tau-button-primary px-4 py-2.5 md:py-2 bg-accent text-white rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="tau-button tau-button-primary px-4 py-2.5 md:py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover active:bg-accent-active min-h-[44px] md:min-h-0 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isAdding ? 'Adding…' : 'Add Passkey'}
               </button>
             </div>
             {addError && (
-              <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+              <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
                 {addError}
               </p>
             )}
@@ -823,7 +790,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
           <p className="text-sm text-muted">Sign out of this device</p>
           <button
             onClick={logout}
-            className="tau-button px-4 py-2.5 md:py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50 active:bg-red-300 rounded-md text-sm font-medium min-h-[44px] md:min-h-0"
+            className="tau-button px-4 py-2.5 md:py-2 bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300 rounded-md text-sm font-medium min-h-[44px] md:min-h-0"
           >
             Logout
           </button>
@@ -898,7 +865,7 @@ function SystemSection() {
                   : ''}
               </p>
             )}
-            {pauseError && <p className="text-red-600 dark:text-red-400">{pauseError}</p>}
+            {pauseError && <p className="text-status-danger-600 dark:text-status-danger-400">{pauseError}</p>}
             {canPauseSystem && (
               <button
                 role="switch"
@@ -911,7 +878,7 @@ function SystemSection() {
                     pauseMutation.mutate(active)
                   }
                 }}
-                className="tau-button px-4 py-2 rounded-md bg-amber-100 text-amber-900 hover:bg-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:hover:bg-amber-900/50 disabled:opacity-50"
+                className="tau-button px-4 py-2 rounded-md bg-status-attention-100 text-status-attention-900 hover:bg-status-attention-200 dark:bg-status-attention-900/30 dark:text-status-attention-200 dark:hover:bg-status-attention-900/50 disabled:opacity-50"
               >
                 {pauseMutation.isPending
                   ? 'Updating…'
@@ -936,9 +903,9 @@ function SystemSection() {
           </p>
 
           {isRestarting && (
-            <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md">
-              <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full shrink-0" />
-              <p className="text-sm text-blue-800 dark:text-blue-200">
+            <div className="flex items-center gap-3 p-3 bg-status-progress-50 dark:bg-status-progress-900/20 border border-status-progress-200 dark:border-status-progress-800 rounded-md">
+              <div className="animate-spin h-4 w-4 border-2 border-status-progress-500 border-t-transparent rounded-full shrink-0" />
+              <p className="text-sm text-status-progress-800 dark:text-status-progress-200">
                 {restartState === 'restarting' && 'Sending restart signal…'}
                 {restartState === 'waiting-down' && 'Waiting for server to shut down…'}
                 {restartState === 'waiting-up' && 'Waiting for server to come back online…'}
@@ -953,7 +920,7 @@ function SystemSection() {
                 restartMutation.mutate()
               }}
               disabled={isRestarting}
-              className="tau-button px-4 py-2.5 md:py-2 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50 active:bg-red-300 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="tau-button px-4 py-2.5 md:py-2 bg-status-danger-100 dark:bg-status-danger-900/30 text-status-danger-700 dark:text-status-danger-300 hover:bg-status-danger-200 dark:hover:bg-status-danger-900/50 active:bg-status-danger-300 rounded-md text-sm font-medium min-h-[44px] md:min-h-0 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isRestarting ? 'Restarting…' : 'Restart System'}
             </button>

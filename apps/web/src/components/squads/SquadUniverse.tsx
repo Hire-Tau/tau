@@ -1,3 +1,6 @@
+import { useGraphModulesReady } from './useGraphModulesReady'
+import { agentGraphColor, squadGraphColor, relationshipGraphColor, graphColor } from '../../theme/graph'
+import { useThemeColors } from '../../theme/useThemeColors'
 import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense } from 'react'
 import { useQueries } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -33,7 +36,6 @@ interface UniverseNode {
   name: string
   type: 'squad' | 'agent'
   status: string
-  color: string
   val: number
   squadId?: string
   purpose?: string
@@ -52,7 +54,6 @@ interface UniverseLink {
   target: string
   type: 'squad-relationship' | 'agent-to-squad'
   relationshipType?: string
-  color: string
   width: number
 }
 
@@ -61,33 +62,15 @@ interface GraphData {
   links: UniverseLink[]
 }
 
-const SQUAD_COLORS: Record<string, string> = {
-  active: '#22C55E',
-  paused: '#F59E0B',
-  archived: '#6B7280',
-}
-
-const RELATIONSHIP_COLORS: Record<string, string> = {
-  reports_to: '#6B7280',
-  collaborates: '#3B82F6',
-  depends_on: '#10B981',
-}
-
 export function SquadUniverse({ squads, relationships }: Props) {
+  const colors = useThemeColors()
   const navigate = useNavigate()
   const { slugFor } = useSquadSlugs()
-  const [spriteTextLoaded, setSpriteTextLoaded] = useState(!!SpriteText && !!ThreeGroup)
+  const spriteTextLoaded = useGraphModulesReady(true, spriteTextReady)
   const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 0, height: 600 })
   const fgRef = useRef<any>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [hoveredNode, setHoveredNode] = useState<UniverseNode | null>(null)
-
-  // Load SpriteText for 3D labels
-  useEffect(() => {
-    if (!SpriteText) {
-      spriteTextReady.then(() => setSpriteTextLoaded(true))
-    }
-  }, [])
 
   // Fetch agents for all squads
   const agentQueries = useQueries({
@@ -127,7 +110,6 @@ export function SquadUniverse({ squads, relationships }: Props) {
         status: squad.status,
         purpose: squad.purpose,
         agentCount: squadAgents.length,
-        color: SQUAD_COLORS[squad.status] || SQUAD_COLORS.active,
         val: 40 + squadAgents.length * 5,
       })
     })
@@ -141,7 +123,6 @@ export function SquadUniverse({ squads, relationships }: Props) {
         status: agent.status,
         squadId,
         agentTypeId: agent.agentTypeId,
-        color: webStatus(AGENT_STATUS_ROLE[agent.status]).markerHex,
         val: agent.status === 'active' ? 8 : 5,
       })
 
@@ -150,7 +131,6 @@ export function SquadUniverse({ squads, relationships }: Props) {
         source: agent.id,
         target: squadId,
         type: 'agent-to-squad',
-        color: 'rgba(255,255,255,0.1)',
         width: 0.5,
       })
     })
@@ -167,7 +147,6 @@ export function SquadUniverse({ squads, relationships }: Props) {
         target: rel.targetSquadId,
         type: 'squad-relationship',
         relationshipType: rel.relationshipType,
-        color: RELATIONSHIP_COLORS[rel.relationshipType] || '#6B7280',
         width: 3,
       })
     })
@@ -254,7 +233,15 @@ export function SquadUniverse({ squads, relationships }: Props) {
       {hoveredNode && (
         <div className="absolute top-4 left-4 z-10 bg-surface/95 border border-th-border rounded-lg p-3 max-w-xs pointer-events-none">
           <div className="flex items-center gap-2 mb-2">
-            <span className="w-3 h-3 rounded-full" style={{ backgroundColor: hoveredNode.color }} />
+            <span
+              className="w-3 h-3 rounded-full"
+              style={{
+                backgroundColor:
+                  hoveredNode.type === 'squad'
+                    ? squadGraphColor(colors, hoveredNode.status)
+                    : agentGraphColor(colors, hoveredNode.status as Agent['status']),
+              }}
+            />
             <span className="font-semibold text-primary">{hoveredNode.name}</span>
             <span className="text-xs text-muted px-1.5 py-0.5 bg-surface-secondary rounded">{hoveredNode.type}</span>
           </div>
@@ -274,22 +261,22 @@ export function SquadUniverse({ squads, relationships }: Props) {
         <div className="text-xs font-medium text-muted mb-2">Squads</div>
         <div className="flex gap-3 mb-3">
           <div className="flex items-center gap-1">
-            <span className="w-3 h-3 rounded-full bg-green-500" />
+            <span className="w-3 h-3 rounded-full bg-status-success-solid" />
             <span className="text-xs text-muted">Active</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="w-3 h-3 rounded-full bg-yellow-500" />
+            <span className="w-3 h-3 rounded-full bg-[rgb(var(--graph-legend-paused))]" />
             <span className="text-xs text-muted">Paused</span>
           </div>
         </div>
         <div className="text-xs font-medium text-muted mb-2">Agents</div>
         <div className="flex gap-3 mb-3">
           <div className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-gray-400" />
+            <span className="w-2 h-2 rounded-full bg-[rgb(var(--graph-legend-idle))]" />
             <span className="text-xs text-muted">Idle</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-blue-500" />
+            <span className="w-2 h-2 rounded-full bg-status-progress-solid" />
             <span className="text-xs text-muted">Active</span>
           </div>
           <div className="flex items-center gap-1">
@@ -300,15 +287,15 @@ export function SquadUniverse({ squads, relationships }: Props) {
         <div className="text-xs font-medium text-muted mb-2">Relationships</div>
         <div className="flex gap-3">
           <div className="flex items-center gap-1">
-            <span className="w-3 h-0.5 bg-gray-500" />
+            <span className="w-3 h-0.5 bg-status-neutral-solid" />
             <span className="text-xs text-muted">Reports</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="w-3 h-0.5 bg-blue-500" />
+            <span className="w-3 h-0.5 bg-status-progress-solid" />
             <span className="text-xs text-muted">Collab</span>
           </div>
           <div className="flex items-center gap-1">
-            <span className="w-3 h-0.5 bg-green-500" />
+            <span className="w-3 h-0.5 bg-status-success-solid" />
             <span className="text-xs text-muted">Depends</span>
           </div>
         </div>
@@ -322,7 +309,10 @@ export function SquadUniverse({ squads, relationships }: Props) {
       </div>
 
       {/* 3D Graph */}
-      <div ref={containerRef} className="w-full h-full rounded-lg overflow-hidden border border-th-border bg-slate-900">
+      <div
+        ref={containerRef}
+        className="w-full h-full rounded-lg overflow-hidden border border-th-border bg-[rgb(var(--graph-loading-bg))]"
+      >
         {dimensions.width === 0 ? (
           <CanvasSkeleton label="Preparing squad universe" className="h-full" />
         ) : (
@@ -335,10 +325,17 @@ export function SquadUniverse({ squads, relationships }: Props) {
               nodeLabel={(node: any) =>
                 node.type === 'squad' ? `${node.name}\n${node.purpose || ''}` : `${node.name}\n${node.type}`
               }
-              nodeColor={(node: any) => node.color}
+              nodeColor={(node: any) =>
+                node.type === 'squad' ? squadGraphColor(colors, node.status) : agentGraphColor(colors, node.status)
+              }
               nodeVal={(node: any) => node.val ?? 5}
               nodeOpacity={0.9}
-              linkColor={(link: any) => link.color}
+              linkOpacity={1}
+              linkColor={(link: any) =>
+                link.type === 'agent-to-squad'
+                  ? graphColor(colors, '--graph-link-5')
+                  : relationshipGraphColor(colors, link.relationshipType)
+              }
               linkWidth={(link: any) => link.width}
               linkDirectionalArrowLength={(link: any) => (link.type === 'squad-relationship' ? 6 : 0)}
               linkDirectionalArrowRelPos={1}
@@ -346,7 +343,7 @@ export function SquadUniverse({ squads, relationships }: Props) {
               onNodeHover={handleNodeHover}
               onEngineStop={handleEngineStop}
               cooldownTicks={200}
-              backgroundColor="#111827"
+              backgroundColor={graphColor(colors, '--graph-bg')}
               showNavInfo={false}
               d3AlphaDecay={0.02}
               d3VelocityDecay={0.3}
@@ -356,14 +353,14 @@ export function SquadUniverse({ squads, relationships }: Props) {
                     nodeThreeObject: (node: any) => {
                       const group = new ThreeGroup()
                       const nameLabel = new SpriteText(node.name)
-                      nameLabel.color = '#FFFFFF'
+                      nameLabel.color = graphColor(colors, '--graph-label')
                       nameLabel.textHeight = 3
                       nameLabel.position.y = -10
                       group.add(nameLabel)
                       const subLabel = new SpriteText(
                         node.type === 'squad' ? node.purpose || '' : node.agentTypeId || 'agent'
                       )
-                      subLabel.color = 'rgba(255,255,255,0.5)'
+                      subLabel.color = graphColor(colors, '--graph-label-muted')
                       subLabel.textHeight = 2.2
                       subLabel.position.y = -14
                       group.add(subLabel)

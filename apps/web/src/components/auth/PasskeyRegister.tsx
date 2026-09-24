@@ -124,7 +124,7 @@ export function PasskeyRegister({ onSuccess, onFailure, isBootstrap = false }: P
         <button
           type="submit"
           disabled={!email || loading}
-          className="tau-button tau-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-white font-medium text-sm disabled:opacity-50"
+          className="tau-button tau-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
         >
           {loading ? 'Sending...' : isBootstrap ? 'Create Admin Account' : 'Send Verification Code'}
         </button>
@@ -197,14 +197,14 @@ export function PasskeyRegister({ onSuccess, onFailure, isBootstrap = false }: P
           <button
             type="submit"
             disabled={!code || !email || loading}
-            className="tau-button tau-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-white font-medium text-sm disabled:opacity-50"
+            className="tau-button tau-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
           >
             {loading ? 'Registering...' : 'Register with Passkey'}
           </button>
         </>
       )}
       {error && (
-        <p role="alert" className="text-red-600 dark:text-red-400 text-sm">
+        <p role="alert" className="text-status-danger-600 dark:text-status-danger-400 text-sm">
           {error}
         </p>
       )}

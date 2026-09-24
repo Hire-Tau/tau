@@ -25,12 +25,12 @@ interface LocalDeploymentsPanelProps {
 type LocalDeploymentStatusFilter = 'all' | LocalDeploymentStatus
 
 const STATUS_COLORS: Record<LocalDeployment['status'], BadgeColor> = {
-  starting: 'yellow',
-  running: 'green',
-  restarting: 'blue',
-  unhealthy: 'orange',
-  crashed: 'red',
-  stopped: 'gray',
+  starting: 'review',
+  running: 'success',
+  restarting: 'progress',
+  unhealthy: 'externalWait',
+  crashed: 'danger',
+  stopped: 'neutral',
 }
 
 const STATUS_FILTERS: LocalDeploymentStatusFilter[] = [
@@ -147,7 +147,7 @@ export function LocalDeploymentsPanel({ squadId }: LocalDeploymentsPanelProps) {
         {STATUS_FILTERS.map((filter) => (
           <Badge
             key={filter}
-            color={filter === 'all' ? 'gray' : STATUS_COLORS[filter]}
+            color={filter === 'all' ? 'neutral' : STATUS_COLORS[filter]}
             onClick={() => setStatusFilter(filter)}
             className={clsx(
               'capitalize cursor-pointer border',
@@ -305,7 +305,7 @@ function LocalDeploymentRows({
                     <ClipboardIcon className="h-4 w-4" />
                   </button>
                   {copiedLocalDeploymentId === localDeployment.id && (
-                    <span className="text-xs text-green-600 dark:text-green-400">Copied</span>
+                    <span className="text-xs text-status-success-600 dark:text-status-success-400">Copied</span>
                   )}
                   <button
                     type="button"
@@ -336,7 +336,7 @@ function LocalDeploymentRows({
                     type="button"
                     onClick={() => onStop(localDeployment)}
                     disabled={!canWriteDeployments || !canStop}
-                    className="tau-button p-1.5 rounded text-red-600 dark:text-red-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="tau-button p-1.5 rounded text-status-danger-600 dark:text-status-danger-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     title="Stop local app"
                   >
                     <StopIcon className="h-4 w-4" />
@@ -349,8 +349,8 @@ function LocalDeploymentRows({
                       'tau-button',
                       'p-1.5 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
                       confirmArchiveLocalDeploymentId === localDeployment.id
-                        ? 'text-red-700 dark:text-red-300'
-                        : 'text-muted hover:text-red-600 dark:hover:text-red-400'
+                        ? 'text-status-danger-700 dark:text-status-danger-300'
+                        : 'text-muted hover:text-status-danger-600 dark:hover:text-status-danger-400'
                     )}
                     title={
                       confirmArchiveLocalDeploymentId === localDeployment.id
@@ -474,10 +474,10 @@ function LocalDeploymentLogsModal({
         onScroll={handleScroll}
         onWheel={markUserScrolling}
         onTouchMove={markUserScrolling}
-        className="min-h-[50vh] max-h-[70vh] overflow-auto bg-gray-950 text-gray-100 p-3 font-mono text-xs whitespace-pre-wrap"
+        className="min-h-[50vh] max-h-[70vh] overflow-auto bg-status-neutral-950 text-status-neutral-100 p-3 font-mono text-xs whitespace-pre-wrap"
       >
-        {error ? <div className="text-red-300">{error}</div> : null}
-        {lines.length === 0 && !error ? <div className="text-gray-400">Waiting for logs…</div> : null}
+        {error ? <div className="text-status-danger-300">{error}</div> : null}
+        {lines.length === 0 && !error ? <div className="text-status-neutral-400">Waiting for logs…</div> : null}
         {lines.map((line, index) => (
           <div key={`${index}-${line}`}>{line}</div>
         ))}

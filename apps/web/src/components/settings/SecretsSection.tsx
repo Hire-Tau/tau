@@ -119,30 +119,38 @@ export function SecretsSection({ scope = 'git' }: { scope?: 'git' | 'machines' }
           className={clsx(
             'flex items-center justify-between rounded-lg px-4 py-3 border',
             restartState === 'needs-restart' &&
-              'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800',
+              'bg-status-review-50 dark:bg-status-review-900/20 border-status-review-200 dark:border-status-review-800',
             (restartState === 'waiting-down' || restartState === 'waiting-up') &&
-              'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+              'bg-status-progress-50 dark:bg-status-progress-900/20 border-status-progress-200 dark:border-status-progress-800'
           )}
         >
           <div>
             {restartState === 'needs-restart' && (
               <>
-                <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200">Restart required</p>
-                <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-0.5">
+                <p className="text-sm font-medium text-status-review-800 dark:text-status-review-200">
+                  Restart required
+                </p>
+                <p className="text-xs text-status-review-600 dark:text-status-review-400 mt-0.5">
                   You changed a secret that requires a system restart to take effect.
                 </p>
               </>
             )}
             {restartState === 'waiting-down' && (
               <>
-                <p className="text-sm font-medium text-blue-800 dark:text-blue-200">Shutting down…</p>
-                <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">Waiting for the server to stop.</p>
+                <p className="text-sm font-medium text-status-progress-800 dark:text-status-progress-200">
+                  Shutting down…
+                </p>
+                <p className="text-xs text-status-progress-600 dark:text-status-progress-400 mt-0.5">
+                  Waiting for the server to stop.
+                </p>
               </>
             )}
             {restartState === 'waiting-up' && (
               <>
-                <p className="text-sm font-medium text-blue-800 dark:text-blue-200">Starting up…</p>
-                <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
+                <p className="text-sm font-medium text-status-progress-800 dark:text-status-progress-200">
+                  Starting up…
+                </p>
+                <p className="text-xs text-status-progress-600 dark:text-status-progress-400 mt-0.5">
                   Waiting for the server to come back online.
                 </p>
               </>
@@ -152,13 +160,13 @@ export function SecretsSection({ scope = 'git' }: { scope?: 'git' | 'machines' }
             <button
               onClick={() => restartMutation.mutate()}
               disabled={restartMutation.isPending}
-              className="tau-button text-sm bg-yellow-600 text-white px-4 py-1.5 rounded font-medium hover:bg-yellow-700 disabled:opacity-50 shrink-0"
+              className="tau-button text-sm bg-status-review-600 text-on-strong px-4 py-1.5 rounded font-medium hover:bg-status-review-700 disabled:opacity-50 shrink-0"
             >
               {restartMutation.isPending ? 'Restarting…' : 'Restart Now'}
             </button>
           )}
           {(restartState === 'waiting-down' || restartState === 'waiting-up') && (
-            <div className="animate-spin h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full shrink-0" />
+            <div className="animate-spin h-5 w-5 border-2 border-status-progress-500 border-t-transparent rounded-full shrink-0" />
           )}
         </div>
       )}
@@ -212,7 +220,7 @@ function ManagedSecretRow({ name, description }: { name: string; description: st
     <div className="px-4 py-3">
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-primary">{name}</span>
-        <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
+        <span className="text-xs px-1.5 py-0.5 rounded bg-status-progress-100 dark:bg-status-progress-900/30 text-status-progress-700 dark:text-status-progress-400">
           Managed by your platform
         </span>
       </div>
@@ -342,8 +350,8 @@ function SecretRow({
               className={clsx(
                 'text-xs px-1.5 py-0.5 rounded',
                 isSet
-                  ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                  : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                  ? 'bg-status-success-100 dark:bg-status-success-900/30 text-status-success-700 dark:text-status-success-400'
+                  : 'bg-status-review-100 dark:bg-status-review-900/30 text-status-review-700 dark:text-status-review-400'
               )}
             >
               {isSet ? (inheritedValue ? 'Override' : 'Set') : inheritedValue ? 'GitHub default' : 'Not set'}
@@ -367,7 +375,9 @@ function SecretRow({
             <p
               className={clsx(
                 'text-xs mt-0.5',
-                feedback.tone === 'ok' ? 'text-green-600 dark:text-green-400' : 'text-yellow-700 dark:text-yellow-400'
+                feedback.tone === 'ok'
+                  ? 'text-status-success-600 dark:text-status-success-400'
+                  : 'text-status-review-700 dark:text-status-review-400'
               )}
             >
               {feedback.text}
@@ -376,7 +386,7 @@ function SecretRow({
           {mode === 'view' &&
             lastValidation?.status === 'valid' &&
             lastValidation.warnings.map((warning) => (
-              <p key={warning} className="text-xs text-yellow-700 dark:text-yellow-400 mt-0.5">
+              <p key={warning} className="text-xs text-status-review-700 dark:text-status-review-400 mt-0.5">
                 {warning}
               </p>
             ))}
@@ -412,7 +422,7 @@ function SecretRow({
                 <span className="text-muted">·</span>
                 <button
                   onClick={handleDelete}
-                  className="tau-button text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 font-medium"
+                  className="tau-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium"
                 >
                   Clear
                 </button>
@@ -454,10 +464,10 @@ function SecretRow({
             <button
               onClick={() => handleSave()}
               disabled={!value || saveMutation.isPending}
-              className="tau-button tau-button-primary inline-flex items-center gap-1.5 text-xs bg-accent text-white px-3 py-1 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+              className="tau-button tau-button-primary inline-flex items-center gap-1.5 text-xs bg-accent text-on-accent px-3 py-1 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
             >
               {saveMutation.isPending && validated && (
-                <span className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full" />
+                <span className="animate-spin h-3 w-3 border-2 border-chrome-highlight border-t-transparent rounded-full" />
               )}
               {saveMutation.isPending ? (validated ? 'Validating with GitHub…' : 'Saving...') : 'Save'}
             </button>
@@ -468,20 +478,20 @@ function SecretRow({
           {overrideable ? (
             <div className="space-y-1">
               {overrideable.warnings.map((warning) => (
-                <p key={warning} className="text-xs text-yellow-700 dark:text-yellow-400">
+                <p key={warning} className="text-xs text-status-review-700 dark:text-status-review-400">
                   {warning}
                 </p>
               ))}
               <button
                 onClick={() => handleSave(true)}
                 disabled={saveMutation.isPending}
-                className="tau-button text-xs bg-yellow-600 text-white px-3 py-1 rounded font-medium disabled:opacity-50"
+                className="tau-button text-xs bg-status-review-600 text-on-strong px-3 py-1 rounded font-medium disabled:opacity-50"
               >
                 Save anyway
               </button>
             </div>
           ) : saveMutation.error ? (
-            <p className="text-xs text-red-600 dark:text-red-400">
+            <p className="text-xs text-status-danger-600 dark:text-status-danger-400">
               {rejectedValidation?.status === 'invalid'
                 ? rejectedValidation.message
                 : saveMutation.error.message || 'Save failed'}

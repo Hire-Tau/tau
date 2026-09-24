@@ -52,3 +52,33 @@ describe('external contribution boundaries', () => {
     }
   })
 })
+
+describe('theme initiative PR verification triggers', () => {
+  const themePrBases = ['main', 'initiative/color-themes']
+
+  for (const file of ['ci.yml', 'lint.yml']) {
+    const workflow = workflows.find((entry) => entry.file === file)!.workflow
+    test(`${file}: covers main and initiative without temporary stack bases`, () => {
+      expect(workflow.on.pull_request).toEqual({ branches: themePrBases })
+      // This must not broaden push, publishing, or privileged target events.
+      expect(workflow.on.push).toEqual({ branches: ['main'] })
+      expect(workflow.on).not.toHaveProperty('pull_request_target')
+      expect(workflow.permissions).toEqual({ contents: 'read' })
+    })
+
+    test(`${file}: checks the PR merge ref, not a pinned default/base branch`, () => {
+      const jobIds = file === 'ci.yml' ? ['test-gates', 'test-typecheck', 'test-core', 'test-web'] : ['lint']
+      for (const jobId of jobIds) {
+        const checkout = workflow.jobs[jobId]!.steps!.find((step) => step.uses?.startsWith('actions/checkout@'))
+        expect(checkout).toBeDefined()
+        expect(checkout!.with?.ref).toBeUndefined()
+      }
+    })
+  }
+
+  test('CLA target event already covers every PR base without adding untrusted execution', () => {
+    const cla = workflows.find((entry) => entry.file === 'cla.yml')!.workflow
+    expect(cla.on.pull_request_target).toEqual({ types: ['opened', 'synchronize', 'reopened'] })
+    expect(cla.on).not.toHaveProperty('pull_request')
+  })
+})

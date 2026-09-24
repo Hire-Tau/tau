@@ -1,3 +1,6 @@
+import { useGraphModulesReady } from './useGraphModulesReady'
+import { squadGraphColor, relationshipGraphColor, graphColor } from '../../theme/graph'
+import { useThemeColors } from '../../theme/useThemeColors'
 import clsx from 'clsx'
 import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -31,7 +34,6 @@ interface GraphNode {
   name: string
   status: string
   purpose: string
-  color: string
   val: number
   x?: number
   y?: number
@@ -42,7 +44,6 @@ interface GraphLink {
   source: string
   target: string
   type: string
-  color: string
   curvature?: number
 }
 
@@ -51,33 +52,15 @@ interface GraphData {
   links: GraphLink[]
 }
 
-const LINK_COLORS: Record<string, string> = {
-  reports_to: '#6B7280',
-  collaborates: '#3B82F6',
-  depends_on: '#10B981',
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  active: '#22C55E',
-  paused: '#F59E0B',
-  archived: '#6B7280',
-}
-
 export function OrgGraph({ squads, relationships }: Props) {
+  const colors = useThemeColors()
   const navigate = useNavigate()
   const { slugFor } = useSquadSlugs()
   const [is3D, setIs3D] = useState(false)
-  const [spriteTextLoaded, setSpriteTextLoaded] = useState(!!SpriteText && !!ThreeGroup)
+  const spriteTextLoaded = useGraphModulesReady(is3D, spriteTextReady)
   const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 0, height: 400 })
   const fgRef = useRef<any>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-
-  // Load SpriteText when 3D mode is activated
-  useEffect(() => {
-    if (is3D && !SpriteText) {
-      spriteTextReady.then(() => setSpriteTextLoaded(true))
-    }
-  }, [is3D])
 
   // Build graph data
   const graphData = useMemo<GraphData>(() => {
@@ -88,7 +71,6 @@ export function OrgGraph({ squads, relationships }: Props) {
       name: squad.name,
       status: squad.status,
       purpose: squad.purpose,
-      color: STATUS_COLORS[squad.status] || STATUS_COLORS.active,
       val: 10,
     }))
 
@@ -102,7 +84,6 @@ export function OrgGraph({ squads, relationships }: Props) {
         source: rel.sourceSquadId,
         target: rel.targetSquadId,
         type: rel.relationshipType,
-        color: LINK_COLORS[rel.relationshipType] || '#6B7280',
         curvature: count * 0.2,
       }
     })
@@ -119,36 +100,39 @@ export function OrgGraph({ squads, relationships }: Props) {
   )
 
   // Custom node rendering for 2D — same label spacing as AgentVisualization
-  const paintNode = useCallback((node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
-    const radius = 10
-    const x = node.x
-    const y = node.y
+  const paintNode = useCallback(
+    (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+      const radius = 10
+      const x = node.x
+      const y = node.y
 
-    ctx.beginPath()
-    ctx.arc(x, y, radius, 0, 2 * Math.PI)
-    ctx.fillStyle = node.color
-    ctx.fill()
-    ctx.strokeStyle = '#fff'
-    ctx.lineWidth = 1.5 / globalScale
-    ctx.stroke()
+      ctx.beginPath()
+      ctx.arc(x, y, radius, 0, 2 * Math.PI)
+      ctx.fillStyle = squadGraphColor(colors, node.status)
+      ctx.fill()
+      ctx.strokeStyle = graphColor(colors, '--graph-label')
+      ctx.lineWidth = 1.5 / globalScale
+      ctx.stroke()
 
-    const fontSize = Math.max(10 / globalScale, 8)
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'top'
+      const fontSize = Math.max(10 / globalScale, 8)
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'top'
 
-    // Squad name (below node)
-    ctx.font = `bold ${fontSize}px Sans-Serif`
-    ctx.fillStyle = '#fff'
-    const displayName = node.name.length > 14 ? node.name.slice(0, 12) + '…' : node.name
-    ctx.fillText(displayName, x, y + radius + 3)
+      // Squad name (below node)
+      ctx.font = `bold ${fontSize}px Sans-Serif`
+      ctx.fillStyle = graphColor(colors, '--graph-label')
+      const displayName = node.name.length > 14 ? node.name.slice(0, 12) + '…' : node.name
+      ctx.fillText(displayName, x, y + radius + 3)
 
-    // Purpose (below name)
-    ctx.font = `${fontSize * 0.8}px Sans-Serif`
-    ctx.fillStyle = 'rgba(255,255,255,0.5)'
-    const purpose = node.purpose || ''
-    const displayPurpose = purpose.length > 14 ? purpose.slice(0, 12) + '…' : purpose
-    ctx.fillText(displayPurpose, x, y + radius + 3 + fontSize * 1.1)
-  }, [])
+      // Purpose (below name)
+      ctx.font = `${fontSize * 0.8}px Sans-Serif`
+      ctx.fillStyle = graphColor(colors, '--graph-label-muted')
+      const purpose = node.purpose || ''
+      const displayPurpose = purpose.length > 14 ? purpose.slice(0, 12) + '…' : purpose
+      ctx.fillText(displayPurpose, x, y + radius + 3 + fontSize * 1.1)
+    },
+    [colors]
+  )
 
   // Configure forces for better spacing
   useEffect(() => {
@@ -212,7 +196,7 @@ export function OrgGraph({ squads, relationships }: Props) {
           onClick={() => setIs3D(false)}
           className={clsx(
             'tau-button',
-            `px-3 py-1 text-sm rounded ${!is3D ? 'bg-accent text-white' : 'text-muted hover:text-primary'}`
+            `px-3 py-1 text-sm rounded ${!is3D ? 'bg-accent text-on-accent' : 'text-muted hover:text-primary'}`
           )}
         >
           2D
@@ -221,7 +205,7 @@ export function OrgGraph({ squads, relationships }: Props) {
           onClick={() => setIs3D(true)}
           className={clsx(
             'tau-button',
-            `px-3 py-1 text-sm rounded ${is3D ? 'bg-accent text-white' : 'text-muted hover:text-primary'}`
+            `px-3 py-1 text-sm rounded ${is3D ? 'bg-accent text-on-accent' : 'text-muted hover:text-primary'}`
           )}
         >
           3D
@@ -231,15 +215,15 @@ export function OrgGraph({ squads, relationships }: Props) {
       {/* Legend */}
       <div className="absolute bottom-2 left-2 z-10 flex gap-4 bg-surface/90 border border-th-border rounded-lg p-2 text-xs">
         <div className="flex items-center gap-1">
-          <span className="w-3 h-0.5 bg-gray-500" />
+          <span className="w-3 h-0.5 bg-status-neutral-solid" />
           <span className="text-muted">Reports To</span>
         </div>
         <div className="flex items-center gap-1">
-          <span className="w-3 h-0.5 bg-blue-500" />
+          <span className="w-3 h-0.5 bg-status-progress-solid" />
           <span className="text-muted">Collaborates</span>
         </div>
         <div className="flex items-center gap-1">
-          <span className="w-3 h-0.5 bg-green-500" />
+          <span className="w-3 h-0.5 bg-status-success-solid" />
           <span className="text-muted">Depends On</span>
         </div>
       </div>
@@ -247,7 +231,7 @@ export function OrgGraph({ squads, relationships }: Props) {
       {/* Graph */}
       <div
         ref={containerRef}
-        className="border border-th-border rounded-lg overflow-hidden bg-gray-900"
+        className="border border-th-border rounded-lg overflow-hidden bg-[rgb(var(--graph-bg))]"
         style={{ height: 400 }}
       >
         {dimensions.width === 0 ? (
@@ -261,10 +245,11 @@ export function OrgGraph({ squads, relationships }: Props) {
                 height={dimensions.height}
                 graphData={graphData}
                 nodeLabel={(node: any) => `${node.name}\n${node.purpose}`}
-                nodeColor={(node: any) => node.color}
+                nodeColor={(node: any) => squadGraphColor(colors, node.status)}
                 nodeVal={(node: any) => node.val}
                 nodeOpacity={0.9}
-                linkColor={(link: any) => link.color}
+                linkOpacity={1}
+                linkColor={(link: any) => relationshipGraphColor(colors, link.type)}
                 linkWidth={2}
                 linkDirectionalArrowLength={6}
                 linkDirectionalArrowRelPos={1}
@@ -272,7 +257,7 @@ export function OrgGraph({ squads, relationships }: Props) {
                 onNodeClick={handleNodeClick}
                 onEngineStop={handleEngineStop}
                 cooldownTicks={200}
-                backgroundColor="#111827"
+                backgroundColor={graphColor(colors, '--graph-bg')}
                 showNavInfo={false}
                 {...(spriteTextLoaded && SpriteText && ThreeGroup
                   ? {
@@ -280,12 +265,12 @@ export function OrgGraph({ squads, relationships }: Props) {
                       nodeThreeObject: (node: any) => {
                         const group = new ThreeGroup()
                         const nameLabel = new SpriteText(node.name)
-                        nameLabel.color = '#FFFFFF'
+                        nameLabel.color = graphColor(colors, '--graph-label')
                         nameLabel.textHeight = 3
                         nameLabel.position.y = -10
                         group.add(nameLabel)
                         const purposeLabel = new SpriteText(node.purpose || '')
-                        purposeLabel.color = 'rgba(255,255,255,0.5)'
+                        purposeLabel.color = graphColor(colors, '--graph-label-muted')
                         purposeLabel.textHeight = 2.2
                         purposeLabel.position.y = -14
                         group.add(purposeLabel)
@@ -307,7 +292,7 @@ export function OrgGraph({ squads, relationships }: Props) {
                   ctx.arc(node.x, node.y, 15, 0, 2 * Math.PI)
                   ctx.fill()
                 }}
-                linkColor={(link: any) => link.color}
+                linkColor={(link: any) => relationshipGraphColor(colors, link.type)}
                 linkWidth={2}
                 linkDirectionalArrowLength={6}
                 linkDirectionalArrowRelPos={1}
@@ -315,7 +300,7 @@ export function OrgGraph({ squads, relationships }: Props) {
                 onNodeClick={handleNodeClick}
                 onEngineStop={handleEngineStop}
                 cooldownTicks={200}
-                backgroundColor="#111827"
+                backgroundColor={graphColor(colors, '--graph-bg')}
                 d3VelocityDecay={0.3}
                 d3AlphaDecay={0.02}
               />

@@ -80,7 +80,7 @@ export function ChannelsSection({ provider }: { provider?: ProviderId } = {}) {
           <button
             onClick={() => setIsAdding(true)}
             disabled={isAdding}
-            className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-white rounded-md hover:bg-accent/90 disabled:opacity-50 shrink-0"
+            className="tau-button tau-button-primary px-3 py-1.5 text-sm bg-accent text-on-accent rounded-md hover:bg-accent/90 disabled:opacity-50 shrink-0"
           >
             + Add New
           </button>
@@ -227,7 +227,7 @@ function DefaultSquadField({
         current squad.
       </p>
       {invalid && (
-        <p id={`${id}-error`} role="alert" className="text-xs text-red-600 dark:text-red-400 mt-1">
+        <p id={`${id}-error`} role="alert" className="text-xs text-status-danger-600 dark:text-status-danger-400 mt-1">
           {DEFAULT_SQUAD_ERROR}
         </p>
       )}
@@ -356,18 +356,18 @@ export function SquadOverridesEditor({
                     type="button"
                     onClick={() => removeRow(i)}
                     aria-label={`Remove override row ${i + 1}`}
-                    className="tau-button text-xs text-muted hover:text-red-600 dark:hover:text-red-400 px-1 shrink-0"
+                    className="tau-button text-xs text-muted hover:text-status-danger-600 dark:hover:text-status-danger-400 px-1 shrink-0"
                   >
                     ✕
                   </button>
                 </div>
                 {invalidIdx.has(i) && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                  <p className="text-xs text-status-attention-600 dark:text-status-attention-400">
                     Fill in both the {meta.overrideIdField.label.toLowerCase()} and a squad, or remove this row.
                   </p>
                 )}
                 {isUnknownSquad && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                  <p className="text-xs text-status-attention-600 dark:text-status-attention-400">
                     This override points at a squad that no longer exists ({row.squadId}). Pick a new squad or remove
                     the row.
                   </p>
@@ -486,16 +486,20 @@ export function AddChannelForm({
         <button
           onClick={handleCreate}
           disabled={!provider || createMutation.isPending}
-          className="tau-button tau-button-primary text-sm bg-accent text-white px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="tau-button tau-button-primary text-sm bg-accent text-on-accent px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
         >
           {createMutation.isPending ? 'Creating…' : 'Create'}
         </button>
         <button onClick={onClose} className="tau-button text-sm text-muted hover:text-primary px-3 py-1.5">
           Cancel
         </button>
-        {validationError && <span className="text-xs text-red-600 dark:text-red-400">{validationError}</span>}
+        {validationError && (
+          <span className="text-xs text-status-danger-600 dark:text-status-danger-400">{validationError}</span>
+        )}
         {createMutation.isError && (
-          <span className="text-xs text-red-600 dark:text-red-400">{(createMutation.error as Error).message}</span>
+          <span className="text-xs text-status-danger-600 dark:text-status-danger-400">
+            {(createMutation.error as Error).message}
+          </span>
         )}
       </div>
     </div>
@@ -635,15 +639,17 @@ export function ChannelRow({
               {getProviderMeta(channel.provider).label}
             </span>
             {!channel.defaultSquadId && (
-              <span className="text-xs font-medium text-amber-700 dark:text-amber-400">Needs configuration</span>
+              <span className="text-xs font-medium text-status-attention-700 dark:text-status-attention-400">
+                Needs configuration
+              </span>
             )}
             {channel.disabled && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+              <span className="text-xs px-1.5 py-0.5 rounded bg-status-neutral-100 dark:bg-status-neutral-800 text-status-neutral-600 dark:text-status-neutral-400">
                 Disabled
               </span>
             )}
             {channel.yamlFieldOverrides.length > 0 && (
-              <span className="text-xs px-1.5 py-0.5 rounded bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400">
+              <span className="text-xs px-1.5 py-0.5 rounded bg-status-review-100 dark:bg-status-review-900/30 text-status-review-700 dark:text-status-review-400">
                 Modified
               </span>
             )}
@@ -658,7 +664,7 @@ export function ChannelRow({
       {isExpanded && (
         <div id={panelId} className="mt-3 space-y-3">
           {!channel.defaultSquadId && (
-            <p role="status" className="text-sm text-amber-700 dark:text-amber-400">
+            <p role="status" className="text-sm text-status-attention-700 dark:text-status-attention-400">
               New conversations without a matching override cannot be routed. Existing conversations may continue with
               their current squad.{' '}
               {canUpdate ? 'Select a Default Squad below and save.' : 'Ask an administrator to select a Default Squad.'}
@@ -683,7 +689,7 @@ export function ChannelRow({
               <button
                 onClick={() => toggleDisableMutation.mutate()}
                 disabled={toggleDisableMutation.isPending}
-                className="tau-button text-xs text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 font-medium"
+                className="tau-button text-xs text-status-attention-600 dark:text-status-attention-400 hover:text-status-attention-800 dark:hover:text-status-attention-300 font-medium"
               >
                 {channel.disabled ? 'Enable' : 'Disable'}
               </button>
@@ -692,7 +698,7 @@ export function ChannelRow({
               <button
                 onClick={handleDelete}
                 disabled={deleteMutation.isPending}
-                className="tau-button text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 font-medium"
+                className="tau-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium"
               >
                 Delete
               </button>
@@ -741,14 +747,18 @@ export function ChannelRow({
               <button
                 onClick={handleSave}
                 disabled={!canUpdate || updateMutation.isPending}
-                className="tau-button tau-button-primary text-sm bg-accent text-white px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+                className="tau-button tau-button-primary text-sm bg-accent text-on-accent px-4 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
               >
                 {updateMutation.isPending ? 'Saving…' : 'Save'}
               </button>
-              {updateMutation.isSuccess && <span className="text-xs text-green-600 dark:text-green-400">Saved!</span>}
-              {saveError && <span className="text-xs text-red-600 dark:text-red-400">{saveError}</span>}
+              {updateMutation.isSuccess && (
+                <span className="text-xs text-status-success-600 dark:text-status-success-400">Saved!</span>
+              )}
+              {saveError && (
+                <span className="text-xs text-status-danger-600 dark:text-status-danger-400">{saveError}</span>
+              )}
               {updateMutation.isError && (
-                <span className="text-xs text-red-600 dark:text-red-400">
+                <span className="text-xs text-status-danger-600 dark:text-status-danger-400">
                   {(updateMutation.error as Error).message}
                 </span>
               )}

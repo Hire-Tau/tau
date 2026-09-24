@@ -64,7 +64,7 @@ export function SquadAvatarSettings({ squadId, name }: { squadId: string; name: 
               'tau-button',
               'px-3 py-1.5 text-sm rounded-md font-medium',
               canUpdate && !busy
-                ? 'bg-accent text-white hover:bg-accent/90'
+                ? 'bg-accent text-on-accent hover:bg-accent/90'
                 : 'bg-surface-secondary text-muted cursor-not-allowed'
             )}
           >
@@ -84,7 +84,7 @@ export function SquadAvatarSettings({ squadId, name }: { squadId: string; name: 
       <p className="text-xs text-muted mt-2">
         Shown as a circle — non-square images are cropped to fill. PNG, JPEG, GIF, or WebP.
       </p>
-      {uploadMutation.isError && <p className="text-xs text-red-500 mt-1">{String(uploadMutation.error)}</p>}
+      {uploadMutation.isError && <p className="text-xs text-status-danger-500 mt-1">{String(uploadMutation.error)}</p>}
       <input ref={fileRef} type="file" accept={ACCEPT} className="hidden" onChange={onPick} />
     </div>
   )

@@ -58,7 +58,7 @@ export function MonitorDetailsModal({ monitorId, initialMonitor, onClose }: Moni
     return (
       <Modal isOpen onClose={onClose} title="Monitor" maxWidth="chat">
         {detailQuery.isError ? (
-          <div className="space-y-2 text-sm text-red-600">
+          <div className="space-y-2 text-sm text-status-danger-600">
             <p>Unable to load monitor details.</p>
             <button
               type="button"
@@ -82,11 +82,11 @@ export function MonitorDetailsModal({ monitorId, initialMonitor, onClose }: Moni
             </div>
             <div className="space-y-2">
               <SkeletonLine className="w-20" />
-              <SkeletonBlock className="h-14 w-full bg-gray-900" />
+              <SkeletonBlock className="h-14 w-full bg-status-neutral-900" />
             </div>
             <div className="space-y-2">
               <SkeletonLine className="w-24" />
-              <SkeletonBlock className="h-40 w-full bg-gray-900" />
+              <SkeletonBlock className="h-40 w-full bg-status-neutral-900" />
             </div>
           </LoadingSurface>
         )}
@@ -115,14 +115,14 @@ export function MonitorDetailsModal({ monitorId, initialMonitor, onClose }: Moni
         </div>
 
         {detail.failureReason && (
-          <p className="rounded-md border border-red-200 bg-red-50 p-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-900/30 dark:text-red-300">
+          <p className="rounded-md border border-status-danger-200 bg-status-danger-50 p-2 text-sm text-status-danger-700 dark:border-status-danger-900/60 dark:bg-status-danger-900/30 dark:text-status-danger-300">
             {detail.failureReason}
           </p>
         )}
 
         <div>
           <h3 className="mb-2 text-sm font-medium text-primary">Command</h3>
-          <pre className="overflow-auto rounded-md bg-gray-950 p-3 text-xs text-gray-100 border border-th-border">
+          <pre className="overflow-auto rounded-md bg-status-neutral-950 p-3 text-xs text-status-neutral-100 border border-th-border">
             {detail.command}
           </pre>
         </div>
@@ -145,13 +145,13 @@ export function MonitorDetailsModal({ monitorId, initialMonitor, onClose }: Moni
                   onConfirm={() => cancel.mutate(detail.id)}
                   disabled={!canWriteMonitors || cancel.isPending}
                   title={canWriteMonitors ? 'Cancel monitor' : 'You do not have permission to cancel monitors'}
-                  className="tau-button rounded-md px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/30 transition-colors"
-                  confirmClassName="rounded-md bg-red-50 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300 dark:hover:bg-red-900/50 transition-colors"
+                  className="tau-button rounded-md px-2 py-1 text-xs font-medium text-status-danger-600 hover:bg-status-danger-50 dark:text-status-danger-400 dark:hover:bg-status-danger-900/30 transition-colors"
+                  confirmClassName="rounded-md bg-status-danger-50 px-2 py-1 text-xs font-medium text-status-danger-700 hover:bg-status-danger-100 dark:bg-status-danger-900/30 dark:text-status-danger-300 dark:hover:bg-status-danger-900/50 transition-colors"
                 />
               )}
             </div>
           </div>
-          <pre className="max-h-80 overflow-auto rounded-md bg-gray-950 p-3 text-xs text-gray-100 border border-th-border">
+          <pre className="max-h-80 overflow-auto rounded-md bg-status-neutral-950 p-3 text-xs text-status-neutral-100 border border-th-border">
             <AnsiText>{logs?.lines.join('\n') ?? ''}</AnsiText>
           </pre>
         </div>

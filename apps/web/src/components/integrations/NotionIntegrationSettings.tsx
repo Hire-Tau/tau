@@ -80,7 +80,7 @@ export function NotionIntegrationSettings({
     <section className={embedded ? undefined : 'border-b border-panel-border py-5'}>
       {!embedded && <h3 className="text-sm font-medium text-primary">Notion</h3>}
       {oauthApp.isError ? (
-        <div className="mt-1 text-xs text-red-600">
+        <div className="mt-1 text-xs text-status-danger-600">
           <p role="alert">Notion integration settings could not be loaded.</p>
           <button
             type="button"
@@ -221,7 +221,7 @@ export function NotionIntegrationSettings({
       {canWrite && settings?.configured && (
         <button
           type="button"
-          className="tau-button tau-button-primary mt-3 rounded bg-accent px-3 py-2 text-sm text-white"
+          className="tau-button tau-button-primary mt-3 rounded bg-accent px-3 py-2 text-sm text-on-accent"
           disabled={authorize.isPending}
           onClick={() => authorize.mutate(undefined)}
         >
@@ -229,7 +229,7 @@ export function NotionIntegrationSettings({
         </button>
       )}
       {(authorize.isError || lifecycle.isError || configure.isError) && (
-        <p role="alert" className="mt-2 text-sm text-red-600">
+        <p role="alert" className="mt-2 text-sm text-status-danger-600">
           Notion operation failed. Please try again.
         </p>
       )}

@@ -229,7 +229,7 @@ export function QuestionInput({ questionData, onSubmit, disabled, secondaryActio
   return (
     <div ref={shortcutScopeRef} className="space-y-4">
       {voiceError && (
-        <div className="rounded-md px-3 py-2 bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 text-sm">
+        <div className="rounded-md px-3 py-2 bg-status-external-wait-50 dark:bg-status-external-wait-900/30 text-status-external-wait-600 dark:text-status-external-wait-400 text-sm">
           {voiceError}
         </div>
       )}
@@ -288,7 +288,7 @@ export function QuestionInput({ questionData, onSubmit, disabled, secondaryActio
             disabled={disabled}
             title="Dismiss without answering"
             aria-label="Dismiss without answering"
-            className="tau-button min-h-10 px-3 py-2 text-sm text-muted hover:text-red-600 dark:hover:text-red-400 hover:bg-surface-hover disabled:opacity-50"
+            className="tau-button min-h-10 px-3 py-2 text-sm text-muted hover:text-status-danger-600 dark:hover:text-status-danger-400 hover:bg-surface-hover disabled:opacity-50"
           >
             Dismiss
           </button>
@@ -453,8 +453,8 @@ function QuestionField({
           {(meFocused || alwaysShowVoiceHint) && (
             <p className="text-xs text-placeholder mt-1">
               {isRecordingThis && voiceState === 'recording' ? (
-                <span className="text-orange-500 dark:text-orange-400 flex items-center gap-1">
-                  <span className="inline-block w-2 h-2 bg-orange-500 rounded-full animate-pulse" />
+                <span className="text-status-external-wait-500 dark:text-status-external-wait-400 flex items-center gap-1">
+                  <span className="inline-block w-2 h-2 bg-status-external-wait-500 rounded-full animate-pulse" />
                   {isHoldMode
                     ? `Hold-to-talk... release to ${alwaysShowVoiceHint ? 'send' : 'transcribe'}, Esc to cancel`
                     : alwaysShowVoiceHint

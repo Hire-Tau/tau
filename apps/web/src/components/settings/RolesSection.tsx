@@ -121,7 +121,7 @@ export function RolesSection() {
           type="button"
           aria-label="Create role"
           onClick={() => (showCreate ? resetCreate() : openCreate())}
-          className="tau-button tau-button-primary px-4 py-2 bg-accent text-white rounded-md text-sm font-medium hover:bg-accent-hover"
+          className="tau-button tau-button-primary px-4 py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover"
         >
           Create Role
         </button>
@@ -207,7 +207,7 @@ export function RolesSection() {
                   })
                 }
                 disabled={!createName || !createSlug || createMutation.isPending}
-                className="tau-button tau-button-primary px-4 py-2 bg-accent text-white rounded-md text-sm font-medium hover:bg-accent-hover disabled:opacity-50"
+                className="tau-button tau-button-primary px-4 py-2 bg-accent text-on-accent rounded-md text-sm font-medium hover:bg-accent-hover disabled:opacity-50"
               >
                 {createMutation.isPending ? 'Creating...' : 'Create'}
               </button>
@@ -216,7 +216,7 @@ export function RolesSection() {
               </button>
             </div>
             {createMutation.isError && (
-              <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+              <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
                 {(createMutation.error as Error)?.message || 'Failed to create role'}
               </p>
             )}
@@ -253,7 +253,7 @@ export function RolesSection() {
                       <button
                         onClick={() => updateMutation.mutate(role.id)}
                         disabled={updateMutation.isPending}
-                        className="tau-button tau-button-primary text-xs bg-accent text-white px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+                        className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
                       >
                         {updateMutation.isPending ? 'Saving...' : 'Save'}
                       </button>
@@ -265,7 +265,7 @@ export function RolesSection() {
                       </button>
                     </div>
                     {updateMutation.isError && (
-                      <p role="alert" className="text-xs text-red-600 dark:text-red-400">
+                      <p role="alert" className="text-xs text-status-danger-600 dark:text-status-danger-400">
                         {(updateMutation.error as Error)?.message || 'Failed to update role'}
                       </p>
                     )}
@@ -277,12 +277,12 @@ export function RolesSection() {
                         <span className="text-sm font-medium text-primary">{role.name}</span>
                         <span className="text-xs text-muted font-mono">({role.slug})</span>
                         {role.isSystem && (
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400">
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-status-progress-100 dark:bg-status-progress-900/30 text-status-progress-700 dark:text-status-progress-400">
                             System
                           </span>
                         )}
                         {role.readOnly && (
-                          <span className="text-xs px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+                          <span className="text-xs px-1.5 py-0.5 rounded bg-status-attention-100 dark:bg-status-attention-900/30 text-status-attention-700 dark:text-status-attention-400">
                             Read-only
                           </span>
                         )}
@@ -362,7 +362,7 @@ export function RolesSection() {
                             }}
                             disabled={deleteMutation.isPending}
                             aria-label={`Delete role ${role.name}`}
-                            className="tau-button text-xs text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 font-medium disabled:opacity-50"
+                            className="tau-button text-xs text-status-danger-600 dark:text-status-danger-400 hover:text-status-danger-800 dark:hover:text-status-danger-300 font-medium disabled:opacity-50"
                           >
                             Delete
                           </button>

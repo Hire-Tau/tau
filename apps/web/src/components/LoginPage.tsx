@@ -231,14 +231,18 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
                   className="tau-field w-full rounded-md border-input-border bg-input-bg text-primary placeholder:text-placeholder focus:border-accent focus:ring-accent px-3 py-2 border text-sm"
                 />
                 {error && (
-                  <p id="bootstrap-error" role="alert" className="text-red-600 dark:text-red-400 text-sm mt-2">
+                  <p
+                    id="bootstrap-error"
+                    role="alert"
+                    className="text-status-danger-600 dark:text-status-danger-400 text-sm mt-2"
+                  >
                     {error}
                   </p>
                 )}
                 <button
                   type="submit"
                   disabled={loading || !password.trim()}
-                  className="tau-button tau-button-primary w-full mt-3 px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-white font-medium text-sm disabled:opacity-50"
+                  className="tau-button tau-button-primary w-full mt-3 px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
                 >
                   {loading ? 'Verifying...' : 'Continue'}
                 </button>
@@ -349,14 +353,18 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
             className="tau-field w-full rounded-md border-input-border bg-input-bg text-primary placeholder:text-placeholder focus:border-accent focus:ring-accent px-3 py-2 border text-sm"
           />
           {error && (
-            <p id="login-error" role="alert" className="text-red-600 dark:text-red-400 text-sm mt-2">
+            <p
+              id="login-error"
+              role="alert"
+              className="text-status-danger-600 dark:text-status-danger-400 text-sm mt-2"
+            >
               {error}
             </p>
           )}
           <button
             type="submit"
             disabled={loading || !password.trim()}
-            className="tau-button tau-button-primary w-full mt-3 px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-white font-medium text-sm disabled:opacity-50"
+            className="tau-button tau-button-primary w-full mt-3 px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
           >
             {loading ? 'Logging in...' : 'Login'}
           </button>

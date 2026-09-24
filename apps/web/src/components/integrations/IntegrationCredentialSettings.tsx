@@ -124,7 +124,10 @@ export function IntegrationCredentialSettings({
                     />
                   )}
                   {missing && (
-                    <span id={hintId} className="block text-xs text-amber-600 dark:text-amber-400">
+                    <span
+                      id={hintId}
+                      className="block text-xs text-status-attention-600 dark:text-status-attention-400"
+                    >
                       {field.label} is required.
                     </span>
                   )}
@@ -134,7 +137,7 @@ export function IntegrationCredentialSettings({
         )}
         {canWrite && (
           <button
-            className="tau-button tau-button-primary rounded-md bg-accent px-3 py-2 text-sm text-white disabled:opacity-50"
+            className="tau-button tau-button-primary rounded-md bg-accent px-3 py-2 text-sm text-on-accent disabled:opacity-50"
             disabled={save.isPending || config.isError || !Object.keys(draft).length}
           >
             {saveLabel ?? (provider === 'web-push' ? 'Save' : 'Save credentials')}

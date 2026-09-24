@@ -1,3 +1,4 @@
+import { observeTerminalTheme, readTerminalTheme } from '../../theme/terminal'
 /**
  * SandboxLogs — read-only live tail of a squad sandbox's container logs.
  *
@@ -26,12 +27,6 @@ interface Props {
 type Status = 'idle' | 'connecting' | 'connected' | 'error' | 'closed'
 
 const SANDBOX_PREFIX = 'squad_'
-const theme = {
-  background: '#282c34',
-  foreground: '#abb2bf',
-  cursor: '#282c34',
-  selectionBackground: '#3e4451',
-}
 
 export function SandboxLogs({ squadId }: Props) {
   const sandboxId = `${SANDBOX_PREFIX}${squadId}`
@@ -120,7 +115,7 @@ export function SandboxLogs({ squadId }: Props) {
   useEffect(() => {
     if (!containerRef.current) return
     const term = new XTerm({
-      theme,
+      theme: readTerminalTheme(window.getComputedStyle(document.documentElement), 'log'),
       fontFamily: '"JetBrains Mono", monospace',
       fontSize: 12,
       disableStdin: true,
@@ -132,6 +127,7 @@ export function SandboxLogs({ squadId }: Props) {
     const searchAddon = new SearchAddon()
     term.loadAddon(fit)
     term.loadAddon(searchAddon)
+    const stopThemeObserver = observeTerminalTheme(term, containerRef.current, 'log')
     term.open(containerRef.current)
     fit.fit()
     termRef.current = term
@@ -140,6 +136,7 @@ export function SandboxLogs({ squadId }: Props) {
     ro.observe(containerRef.current)
     return () => {
       ro.disconnect()
+      stopThemeObserver()
       term.dispose()
       termRef.current = null
     }
@@ -214,9 +211,9 @@ export function SandboxLogs({ squadId }: Props) {
           <span
             className={
               status === 'connected'
-                ? 'text-xs text-green-500'
+                ? 'text-xs text-status-success-500'
                 : status === 'error'
-                  ? 'text-xs text-red-500'
+                  ? 'text-xs text-status-danger-500'
                   : 'text-xs text-muted'
             }
           >
@@ -224,7 +221,7 @@ export function SandboxLogs({ squadId }: Props) {
           </span>
         </div>
       </div>
-      <div ref={containerRef} className="w-full h-80 bg-[#282c34] rounded-lg overflow-hidden" />
+      <div ref={containerRef} className="w-full h-80 bg-[rgb(var(--log-bg))] rounded-lg overflow-hidden" />
     </div>
   )
 }

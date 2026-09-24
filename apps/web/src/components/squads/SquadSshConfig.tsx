@@ -77,7 +77,7 @@ function SshConfigEditor({ squadId }: { squadId: string }) {
     return (
       <div>
         <h4 className="text-sm font-medium text-primary mb-2">SSH Config</h4>
-        <div className="text-sm text-red-500 py-4">Failed to load SSH config</div>
+        <div className="text-sm text-status-danger-500 py-4">Failed to load SSH config</div>
       </div>
     )
   }
@@ -103,7 +103,7 @@ function SshConfigEditor({ squadId }: { squadId: string }) {
           'font-mono leading-relaxed resize-y',
           'placeholder:text-placeholder',
           ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
-          dirty ? 'border-yellow-500 dark:border-yellow-400' : 'border-th-border'
+          dirty ? 'border-status-review-500 dark:border-status-review-400' : 'border-th-border'
         )}
       />
 
@@ -115,14 +115,16 @@ function SshConfigEditor({ squadId }: { squadId: string }) {
           className={clsx(
             'tau-button',
             'px-3 py-1 text-sm rounded-md font-medium transition-colors',
-            dirty ? 'bg-accent text-white hover:bg-accent/90' : 'bg-surface-secondary text-muted cursor-not-allowed'
+            dirty ? 'bg-accent text-on-accent hover:bg-accent/90' : 'bg-surface-secondary text-muted cursor-not-allowed'
           )}
         >
           {mutation.isPending ? 'Saving...' : 'Save'}
         </button>
       </div>
 
-      {mutation.isError && <p className="text-xs text-red-500 mt-2">Failed to save: {String(mutation.error)}</p>}
+      {mutation.isError && (
+        <p className="text-xs text-status-danger-500 mt-2">Failed to save: {String(mutation.error)}</p>
+      )}
     </div>
   )
 }
@@ -190,7 +192,7 @@ function KnownHostsEditor({ squadId }: { squadId: string }) {
         <h4 data-setting-target="known-hosts" className="text-sm font-medium text-primary mb-2">
           Known Hosts
         </h4>
-        <div className="text-sm text-red-500 py-4">Failed to load known hosts</div>
+        <div className="text-sm text-status-danger-500 py-4">Failed to load known hosts</div>
       </div>
     )
   }
@@ -218,7 +220,7 @@ function KnownHostsEditor({ squadId }: { squadId: string }) {
           'font-mono leading-relaxed resize-y',
           'placeholder:text-placeholder',
           ' focus:ring-2 focus:ring-accent/50 focus:border-accent',
-          dirty ? 'border-yellow-500 dark:border-yellow-400' : 'border-th-border'
+          dirty ? 'border-status-review-500 dark:border-status-review-400' : 'border-th-border'
         )}
       />
 
@@ -230,14 +232,16 @@ function KnownHostsEditor({ squadId }: { squadId: string }) {
           className={clsx(
             'tau-button',
             'px-3 py-1 text-sm rounded-md font-medium transition-colors',
-            dirty ? 'bg-accent text-white hover:bg-accent/90' : 'bg-surface-secondary text-muted cursor-not-allowed'
+            dirty ? 'bg-accent text-on-accent hover:bg-accent/90' : 'bg-surface-secondary text-muted cursor-not-allowed'
           )}
         >
           {mutation.isPending ? 'Saving...' : 'Save'}
         </button>
       </div>
 
-      {mutation.isError && <p className="text-xs text-red-500 mt-2">Failed to save: {String(mutation.error)}</p>}
+      {mutation.isError && (
+        <p className="text-xs text-status-danger-500 mt-2">Failed to save: {String(mutation.error)}</p>
+      )}
     </div>
   )
 }

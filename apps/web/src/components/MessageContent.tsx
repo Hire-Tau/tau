@@ -229,7 +229,7 @@ function StandardHumanMessageContent({
         <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
-          className="tau-button mt-1 text-xs font-medium text-blue-100/85 underline decoration-blue-100/30 underline-offset-2 hover:text-white hover:decoration-blue-100/70"
+          className="tau-button mt-1 text-xs font-medium text-status-progress-100/85 underline decoration-status-progress-100/30 underline-offset-2 hover:text-on-strong hover:decoration-status-progress-100/70"
           aria-expanded={expanded}
         >
           {expanded ? 'Show less' : 'Show more'}
@@ -250,7 +250,7 @@ function ImageAttachments({ imageIds, variant = 'standard' }: { imageIds: string
             <img
               src={srcs[id]}
               alt="Inbox attachment"
-              className="h-20 w-20 rounded border border-blue-300/40 object-cover transition-colors hover:border-blue-300 dark:border-blue-400/30"
+              className="h-20 w-20 rounded border border-status-progress-300/40 object-cover transition-colors hover:border-status-progress-300 dark:border-status-progress-400/30"
               loading="lazy"
             />
           </a>
@@ -266,7 +266,7 @@ function ImageAttachments({ imageIds, variant = 'standard' }: { imageIds: string
           <img
             src={srcs[id]}
             alt="Attached image"
-            className="max-h-40 max-w-full rounded border border-blue-400/30 hover:border-blue-300 transition-colors"
+            className="max-h-40 max-w-full rounded border border-status-progress-400/30 hover:border-status-progress-300 transition-colors"
             loading="lazy"
           />
         </a>
@@ -287,37 +287,37 @@ function monitorTerminalStyle(
   switch (kind) {
     case 'failed':
       return {
-        border: 'border-red-200 dark:border-red-800',
-        bg: 'bg-red-50/50 dark:bg-red-900/20',
-        text: 'text-red-700 dark:text-red-300',
+        border: 'border-status-danger-200 dark:border-status-danger-800',
+        bg: 'bg-status-danger-50/50 dark:bg-status-danger-900/20',
+        text: 'text-status-danger-700 dark:text-status-danger-300',
         icon: '✗',
       }
     case 'exited':
       return exitCode && exitCode !== 0
         ? {
-            border: 'border-amber-200 dark:border-amber-800',
-            bg: 'bg-amber-50/50 dark:bg-amber-900/20',
-            text: 'text-amber-700 dark:text-amber-300',
+            border: 'border-status-attention-200 dark:border-status-attention-800',
+            bg: 'bg-status-attention-50/50 dark:bg-status-attention-900/20',
+            text: 'text-status-attention-700 dark:text-status-attention-300',
             icon: '✗',
           }
         : {
-            border: 'border-green-200 dark:border-green-800',
-            bg: 'bg-green-50/50 dark:bg-green-900/20',
-            text: 'text-green-700 dark:text-green-300',
+            border: 'border-status-success-200 dark:border-status-success-800',
+            bg: 'bg-status-success-50/50 dark:bg-status-success-900/20',
+            text: 'text-status-success-700 dark:text-status-success-300',
             icon: '✓',
           }
     case 'timed-out':
       return {
-        border: 'border-amber-200 dark:border-amber-800',
-        bg: 'bg-amber-50/50 dark:bg-amber-900/20',
-        text: 'text-amber-700 dark:text-amber-300',
+        border: 'border-status-attention-200 dark:border-status-attention-800',
+        bg: 'bg-status-attention-50/50 dark:bg-status-attention-900/20',
+        text: 'text-status-attention-700 dark:text-status-attention-300',
         icon: '⏱',
       }
     case 'overload':
       return {
-        border: 'border-red-200 dark:border-red-800',
-        bg: 'bg-red-50/50 dark:bg-red-900/20',
-        text: 'text-red-700 dark:text-red-300',
+        border: 'border-status-danger-200 dark:border-status-danger-800',
+        bg: 'bg-status-danger-50/50 dark:bg-status-danger-900/20',
+        text: 'text-status-danger-700 dark:text-status-danger-300',
         icon: '⚠',
       }
     case 'canceled':
@@ -426,19 +426,19 @@ function InboxDeliveryMessageCard({
           className={clsx(
             'rounded-full px-1.5 py-0.5 text-[10px] font-medium',
             isInterrupt
-              ? 'bg-orange-100 text-orange-700 dark:bg-orange-950/60 dark:text-orange-300'
-              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/60 dark:text-blue-300'
+              ? 'bg-status-external-wait-100 text-status-external-wait-700 dark:bg-status-external-wait-950/60 dark:text-status-external-wait-300'
+              : 'bg-status-progress-100 text-status-progress-700 dark:bg-status-progress-900/60 dark:text-status-progress-300'
           )}
         >
           {isInterrupt ? 'Interrupt' : 'Follow up'}
         </span>
       </div>
 
-      <div className="w-full rounded-lg border border-blue-300/40 bg-blue-50/70 p-3 text-left text-sm text-blue-950 dark:border-blue-400/20 dark:bg-blue-950/30 dark:text-blue-100">
+      <div className="w-full rounded-lg border border-status-progress-300/40 bg-status-progress-50/70 p-3 text-left text-sm text-status-progress-950 dark:border-status-progress-400/20 dark:bg-status-progress-950/30 dark:text-status-progress-100">
         {imageIds.length > 0 && <ImageAttachments imageIds={imageIds} variant="inbox" />}
 
         {showRaw ? (
-          <pre className="max-h-60 overflow-auto whitespace-pre-wrap rounded-md bg-white/70 p-2 font-mono text-[11px] text-secondary dark:bg-black/20">
+          <pre className="max-h-60 overflow-auto whitespace-pre-wrap rounded-md bg-chrome-paper/70 p-2 font-mono text-[11px] text-secondary dark:bg-chrome-scrim/20">
             {content}
           </pre>
         ) : summaries.length > 0 ? (
@@ -454,7 +454,7 @@ function InboxDeliveryMessageCard({
                   <button
                     type="button"
                     onClick={() => setWsOpen({ workStreamId: summary.workStreamId!, squadId: summary.squadId! })}
-                    className="tau-button mt-2 inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:text-blue-900 dark:text-blue-300 dark:hover:text-blue-200"
+                    className="tau-button mt-2 inline-flex items-center gap-1 text-xs font-medium text-status-progress-700 hover:text-status-progress-900 dark:text-status-progress-300 dark:hover:text-status-progress-200"
                   >
                     <WorkStreamIcon className="h-3.5 w-3.5 shrink-0" />
                     View work stream
@@ -500,7 +500,7 @@ function InboxCardBody({ body, className }: { body: string; className?: string }
           type="button"
           onClick={() => setExpanded((value) => !value)}
           aria-expanded={expanded}
-          className="tau-button mt-1 text-xs font-medium text-blue-700 underline decoration-blue-700/30 underline-offset-2 hover:text-blue-900 hover:decoration-blue-700/70 dark:text-blue-300 dark:hover:text-blue-200"
+          className="tau-button mt-1 text-xs font-medium text-status-progress-700 underline decoration-status-progress-700/30 underline-offset-2 hover:text-status-progress-900 hover:decoration-status-progress-700/70 dark:text-status-progress-300 dark:hover:text-status-progress-200"
         >
           {expanded ? 'Show less' : 'Show more'}
         </button>
@@ -602,13 +602,21 @@ export function SingleToolCallSection({
         className="tau-button w-full flex items-center gap-1.5 py-0.5 text-secondary hover:text-primary transition-colors text-left min-w-0"
       >
         {isError ? (
-          <span className="text-red-500 dark:text-red-400 shrink-0 inline-block w-3 text-center">&#10007;</span>
+          <span className="text-status-danger-500 dark:text-status-danger-400 shrink-0 inline-block w-3 text-center">
+            &#10007;
+          </span>
         ) : (
-          <span className="text-green-600 dark:text-green-400 shrink-0 inline-block w-3 text-center">&#10003;</span>
+          <span className="text-status-success-600 dark:text-status-success-400 shrink-0 inline-block w-3 text-center">
+            &#10003;
+          </span>
         )}
         <span className="font-medium shrink-0">{toolCall.toolName}</span>
         <ToolSummary renderers={toolRenderers} toolName={toolCall.toolName} args={toolCall.args} />
-        {isError && <span className="text-red-500 dark:text-red-400 text-[10px] font-medium shrink-0">ERROR</span>}
+        {isError && (
+          <span className="text-status-danger-500 dark:text-status-danger-400 text-[10px] font-medium shrink-0">
+            ERROR
+          </span>
+        )}
         <ChevronRightIcon
           className={clsx('w-3 h-3 shrink-0 text-muted transition-transform', expanded && 'rotate-90')}
         />
@@ -680,23 +688,23 @@ export function ThinkingSection({
     <div className="text-xs">
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="tau-button w-full flex items-center gap-1.5 py-0.5 text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-300 transition-colors"
+        className="tau-button w-full flex items-center gap-1.5 py-0.5 text-status-human-wait-600 dark:text-status-human-wait-400 hover:text-status-human-wait-800 dark:hover:text-status-human-wait-300 transition-colors"
       >
         {isStreaming ? (
-          <span className="inline-block w-3 h-3 border-2 border-purple-300 dark:border-purple-700 border-t-purple-600 dark:border-t-purple-300 rounded-full animate-spin shrink-0" />
+          <span className="inline-block w-3 h-3 border-2 border-status-human-wait-300 dark:border-status-human-wait-700 border-t-status-human-wait-600 dark:border-t-status-human-wait-300 rounded-full animate-spin shrink-0" />
         ) : (
           <span className="shrink-0 inline-block w-3 text-center">✦</span>
         )}
         <span className="font-medium">{label}</span>
         <ChevronRightIcon
           className={clsx(
-            'w-3 h-3 shrink-0 text-purple-400 dark:text-purple-500 transition-transform',
+            'w-3 h-3 shrink-0 text-status-human-wait-400 dark:text-status-human-wait-500 transition-transform',
             !collapsed && 'rotate-90'
           )}
         />
       </button>
       {!collapsed && (
-        <div className="mt-1 ml-1.5 border-l-2 border-purple-200 dark:border-purple-900/60 pl-3 py-0.5 text-secondary max-h-60 overflow-y-auto">
+        <div className="mt-1 ml-1.5 border-l-2 border-status-human-wait-200 dark:border-status-human-wait-900/60 pl-3 py-0.5 text-secondary max-h-60 overflow-y-auto">
           {showRaw ? (
             <pre className="whitespace-pre-wrap font-mono text-sm">{thinking}</pre>
           ) : (
@@ -769,13 +777,15 @@ function BlockGroupSection({
 
 function StepCompleteBlock({ message }: { message?: string }) {
   return (
-    <div className="border border-green-200 dark:border-green-800 rounded-md bg-green-50/50 dark:bg-green-900/20 text-xs">
-      <div className="flex items-center gap-1.5 px-2.5 py-1.5 text-green-700 dark:text-green-300 font-medium">
+    <div className="border border-status-success-200 dark:border-status-success-800 rounded-md bg-status-success-50/50 dark:bg-status-success-900/20 text-xs">
+      <div className="flex items-center gap-1.5 px-2.5 py-1.5 text-status-success-700 dark:text-status-success-300 font-medium">
         <span>&#10003;</span>
         <span>Step complete</span>
       </div>
       {message && (
-        <div className="border-t border-green-200 dark:border-green-800 px-2.5 py-2 text-secondary">{message}</div>
+        <div className="border-t border-status-success-200 dark:border-status-success-800 px-2.5 py-2 text-secondary">
+          {message}
+        </div>
       )}
     </div>
   )
@@ -783,12 +793,12 @@ function StepCompleteBlock({ message }: { message?: string }) {
 
 function RewindBlock({ step, message, showRaw }: { step: string; message: string; showRaw?: boolean }) {
   return (
-    <div className="border border-orange-200 dark:border-orange-800 rounded-md bg-orange-50/50 dark:bg-orange-900/20 text-xs">
-      <div className="flex items-center gap-1.5 px-2.5 py-1.5 text-orange-700 dark:text-orange-300 font-medium">
+    <div className="border border-status-external-wait-200 dark:border-status-external-wait-800 rounded-md bg-status-external-wait-50/50 dark:bg-status-external-wait-900/20 text-xs">
+      <div className="flex items-center gap-1.5 px-2.5 py-1.5 text-status-external-wait-700 dark:text-status-external-wait-300 font-medium">
         <span>&#8634;</span>
         <span>Rewind to {step}</span>
       </div>
-      <div className="border-t border-orange-200 dark:border-orange-800 px-2.5 py-2 text-secondary text-xs [&_.prose]:text-xs">
+      <div className="border-t border-status-external-wait-200 dark:border-status-external-wait-800 px-2.5 py-2 text-secondary text-xs [&_.prose]:text-xs">
         {showRaw ? (
           <pre className="whitespace-pre-wrap font-mono text-sm">{message}</pre>
         ) : (

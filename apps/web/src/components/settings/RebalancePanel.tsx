@@ -68,7 +68,7 @@ function AppliedResultsView({ plan }: { plan: RebalancePlan }) {
       {failed.map((r) => (
         <div key={r.sandboxId} className="flex items-center gap-1.5 flex-wrap">
           <span className="font-mono text-primary">{r.sandboxId}</span>
-          <span className="text-red-600 dark:text-red-400">{r.result.reason ?? 'failed'}</span>
+          <span className="text-status-danger-600 dark:text-status-danger-400">{r.result.reason ?? 'failed'}</span>
         </div>
       ))}
       {plan.results.length === 0 && <p className="text-muted">No moves were necessary.</p>}
@@ -122,7 +122,7 @@ export function RebalancePanel({ machines }: { machines: Machine[] }) {
         <button
           onClick={() => dryRun.mutate()}
           disabled={busy}
-          className="tau-button tau-button-primary shrink-0 text-xs bg-accent text-white px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+          className="tau-button tau-button-primary shrink-0 text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
         >
           {dryRun.isPending ? 'Planning…' : 'Rebalance'}
         </button>
@@ -130,7 +130,7 @@ export function RebalancePanel({ machines }: { machines: Machine[] }) {
 
       {error && (
         <div className="px-4 pb-3">
-          <p className="text-xs text-red-600 dark:text-red-400">{rebalanceErrorMessage(error)}</p>
+          <p className="text-xs text-status-danger-600 dark:text-status-danger-400">{rebalanceErrorMessage(error)}</p>
         </div>
       )}
 
@@ -142,7 +142,7 @@ export function RebalancePanel({ machines }: { machines: Machine[] }) {
               <button
                 onClick={() => apply.mutate()}
                 disabled={busy}
-                className="tau-button tau-button-primary text-xs bg-accent text-white px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
+                className="tau-button tau-button-primary text-xs bg-accent text-on-accent px-3 py-1.5 rounded font-medium hover:bg-accent-hover disabled:opacity-50"
               >
                 {apply.isPending ? 'Applying…' : 'Confirm'}
               </button>

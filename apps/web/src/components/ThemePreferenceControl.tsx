@@ -1,8 +1,8 @@
 import clsx from 'clsx'
 import { useOptionalTheme } from '../providers/ThemeProvider'
-import type { ThemePreference } from '../lib/theme'
+import type { AppearanceSetting } from '@tau/shared/theme-schema'
 
-const OPTIONS: { value: ThemePreference; label: string }[] = [
+const OPTIONS: { value: AppearanceSetting; label: string }[] = [
   { value: 'system', label: 'System' },
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
@@ -13,13 +13,13 @@ const LABEL_FOCUS_RING =
   'has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-focus'
 
 /**
- * Compact System / Light / Dark switch backed by the app's theme preference
+ * Compact System / Light / Dark switch backed by the app's appearance setting
  * (ThemeProvider). Renders nothing outside a ThemeProvider.
  */
 export function ThemePreferenceControl({ className }: { className?: string }) {
   const themeContext = useOptionalTheme()
   if (!themeContext) return null
-  const { preference, setPreference } = themeContext
+  const { appearance, setAppearance } = themeContext
 
   return (
     <div
@@ -33,7 +33,7 @@ export function ThemePreferenceControl({ className }: { className?: string }) {
           className={clsx(
             'cursor-pointer rounded px-2.5 py-1 text-xs font-medium',
             LABEL_FOCUS_RING,
-            preference === option.value ? 'bg-accent text-white' : 'text-secondary hover:bg-surface-hover'
+            appearance === option.value ? 'bg-accent text-on-accent' : 'text-secondary hover:bg-surface-hover'
           )}
         >
           <input
@@ -41,8 +41,8 @@ export function ThemePreferenceControl({ className }: { className?: string }) {
             className="sr-only"
             name="theme-preference"
             value={option.value}
-            checked={preference === option.value}
-            onChange={() => setPreference(option.value)}
+            checked={appearance === option.value}
+            onChange={() => setAppearance(option.value)}
           />
           {option.label}
         </label>

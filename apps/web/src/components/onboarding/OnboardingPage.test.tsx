@@ -672,21 +672,25 @@ describe('OnboardingPage — appearance control', () => {
     await dom.act(async () => fireEvent.click(option('Dark')))
     expect(option('Dark').checked).toBe(true)
     expect(document.documentElement.classList.contains('dark')).toBe(true)
-    expect(localStorage.getItem('tau-theme')).toBe('dark')
+    expect(localStorage.getItem('tau-appearance')).toBe('dark')
 
     await dom.act(async () => fireEvent.click(option('Light')))
     expect(document.documentElement.classList.contains('dark')).toBe(false)
 
     await dom.act(async () => fireEvent.click(option('System')))
-    expect(localStorage.getItem('tau-theme')).toBe('system')
+    expect(localStorage.getItem('tau-appearance')).toBe('system')
     expect(document.documentElement.classList.contains('dark')).toBe(true)
   })
 
-  test('inside Tau Desktop with no stored choice, System is selected and nothing is stored', async () => {
+  test('inside Tau Desktop with no stored choice, System is selected and follows the OS', async () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: (query: string) => ({ matches: query === '(prefers-color-scheme: dark)', media: query }),
+    })
     window.tauDesktopApp = { version: 1, notificationsEnabled: async () => false, deliverNotifications: async () => {} }
     await render()
 
     expect(option('System').checked).toBe(true)
-    expect(localStorage.getItem('tau-theme')).toBeNull()
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
   })
 })

@@ -70,7 +70,7 @@ export function ExternalDeploymentsPanel({ squadId }: ExternalDeploymentsPanelPr
       {isLoading ? (
         <CollectionSkeleton label="Loading external deployments" count={deploymentSkeletonCount} />
       ) : error ? (
-        <div className="text-sm text-red-500">Failed to load deployments</div>
+        <div className="text-sm text-status-danger-500">Failed to load deployments</div>
       ) : deployments.length === 0 ? (
         <div className="text-sm text-muted">No external deployments recorded yet.</div>
       ) : (
@@ -163,7 +163,7 @@ function DeploymentRows({
                       <ClipboardIcon className="h-4 w-4" />
                     </button>
                     {copiedDeploymentId === deployment.id && (
-                      <span className="text-xs text-green-600 dark:text-green-400">Copied</span>
+                      <span className="text-xs text-status-success-600 dark:text-status-success-400">Copied</span>
                     )}
                   </>
                 )}
@@ -200,8 +200,8 @@ function DeploymentRows({
                       'tau-button',
                       'p-1.5 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed',
                       confirmArchiveId === deployment.id
-                        ? 'text-red-700 dark:text-red-300'
-                        : 'text-muted hover:text-red-600 dark:hover:text-red-400'
+                        ? 'text-status-danger-700 dark:text-status-danger-300'
+                        : 'text-muted hover:text-status-danger-600 dark:hover:text-status-danger-400'
                     )}
                     title={
                       confirmArchiveId === deployment.id ? 'Click again to archive deployment' : 'Archive deployment'

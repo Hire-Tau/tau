@@ -5,6 +5,8 @@ import type { AuthStatus, AuthValidation } from '../api/auth'
 import { apiUrl, authFetch, clearStoredToken, getApiHost } from '../api/client'
 
 interface AuthContextValue {
+  /** Changes at every explicit session boundary, even when already signed in. */
+  sessionVersion: number
   /** null = still loading, true = auth required, false = auth disabled */
   authRequired: boolean | null
   isAuthenticated: boolean
@@ -62,12 +64,14 @@ export function useOptionalAuth(): AuthContextValue | null {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const [sessionVersion, setSessionVersion] = useState(0)
   const [authRequired, setAuthRequired] = useState<boolean | null>(null)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [authStatus, setAuthStatus] = useState<AuthStatus | null>(null)
   const [session, setSession] = useState<AuthValidation | null>(null)
 
   const forceLogout = useCallback(() => {
+    setSessionVersion((v) => v + 1)
     clearStoredToken()
     // Drop all cached query data so the next user can't read the prior user's
     // cached permissions / users / roles on a shared device.
@@ -203,6 +207,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Learn whose session this is before the app renders: the bootstrap password
       // may need to finish admin setup rather than open the shell.
       setSession(await readSession().catch(() => null))
+      setSessionVersion((v) => v + 1)
       setIsAuthenticated(true)
     },
     [queryClient, readSession]
@@ -210,6 +215,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithToken = useCallback(
     async (isFirstRegistration = false) => {
+      setSessionVersion((v) => v + 1)
+      setIsAuthenticated(false)
       queryClient.clear()
       // Re-read the status: registering the first admin flips hasUsers, and the
       // first-admin funnel below keys off it — a stale `hasUsers: false` would loop
@@ -230,6 +237,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   const logout = useCallback(async () => {
+    setSessionVersion((v) => v + 1)
+    setIsAuthenticated(false)
     try {
       await authFetch('/auth/logout', { method: 'POST' })
     } catch {
@@ -254,6 +263,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   return (
     <AuthContext.Provider
       value={{
+        sessionVersion,
         authRequired,
         isAuthenticated,
         needsFirstAdminSetup,

@@ -86,14 +86,14 @@ export function DemoAccessPage({ enabled }: { enabled: boolean }) {
               className="tau-field w-full rounded-md border-input-border bg-input-bg text-primary placeholder:text-placeholder focus:border-accent focus:ring-accent px-3 py-2 border text-sm"
             />
             {error && (
-              <p id="demo-access-error" className="text-sm text-red-600 dark:text-red-400 mt-2">
+              <p id="demo-access-error" className="text-sm text-status-danger-600 dark:text-status-danger-400 mt-2">
                 {error}
               </p>
             )}
             <button
               type="submit"
               disabled={loading || !secret}
-              className="tau-button tau-button-primary w-full mt-3 px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-white font-medium text-sm disabled:opacity-50"
+              className="tau-button tau-button-primary w-full mt-3 px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
             >
               {loading ? 'Generating…' : 'Generate pairing code'}
             </button>

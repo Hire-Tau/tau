@@ -1,0 +1,74 @@
+import {
+  DEFAULT_THEME_ID,
+  resolveThemeSelection,
+  type EffectiveAppearance,
+  type StoredThemeSelection,
+  type ThemeDescriptor,
+  type ThemeKind,
+} from '@tau/shared/theme-schema'
+
+/** Built-in values live in CSS, never in a second runtime JS palette.
+ * Tau is the existing pair; additional complete scopes live in builtins.css.
+ */
+export interface WebThemeDefinition extends ThemeDescriptor {
+  readonly id: string
+  readonly label: string
+  readonly kind: ThemeKind
+  /**
+   * The class added to <html> per resolved variant (null = no class). The
+   * light variant of `tau` uses the unscoped `:root` defaults, the dark
+   * variant keeps the literal `dark` class so existing Tailwind `dark:`
+   * variants keep working through the migration (report §4.1).
+   */
+  readonly variantClass: Partial<Record<EffectiveAppearance, string | null>>
+}
+
+/** The original default pair, with the narrow phase-5 contrast corrections. */
+export const TAU_THEME: WebThemeDefinition = {
+  id: 'tau',
+  label: 'Tau',
+  kind: 'dual',
+  variantClass: { light: null, dark: 'dark' },
+}
+
+/** Built-in themes available without any custom-theme machinery. */
+export const BUILT_IN_THEMES: readonly WebThemeDefinition[] = [
+  TAU_THEME,
+  // Cool slate surfaces and a restrained teal accent; familiar Tau geometry.
+  { id: 'harbor', label: 'Harbor', kind: 'dual', variantClass: { light: null, dark: 'dark' } },
+  // Warm paper/charcoal surfaces with a terracotta accent, not a semantic recolor.
+  { id: 'ember', label: 'Ember', kind: 'dual', variantClass: { light: null, dark: 'dark' } },
+  // Constant light scheme: stark ink/paper, strong outlines and dark code panels.
+  { id: 'high-contrast', label: 'High contrast', kind: 'unified', variantClass: { constant: null } },
+]
+
+/** Release gate passed: all built-in contrast and pre-paint matrices (phase 5).
+ * Keep the switch for a quick picker rollback without losing stored choices. */
+export const THEME_PICKER_ENABLED = true
+
+export function findWebTheme(themeId: string | null | undefined): WebThemeDefinition {
+  return (
+    BUILT_IN_THEMES.find((theme) => theme.id === themeId) ??
+    BUILT_IN_THEMES.find((theme) => theme.id === DEFAULT_THEME_ID)!
+  )
+}
+
+export const KNOWN_THEME_IDS: readonly string[] = BUILT_IN_THEMES.map((theme) => theme.id)
+
+export interface ResolvedWebTheme {
+  readonly theme: WebThemeDefinition
+  readonly appearance: EffectiveAppearance
+}
+
+/**
+ * Resolve (themeId, appearance) with the shared fallback rules: unknown id →
+ * default theme; unified ignores appearance; 'system' resolves against the OS
+ * preference. Never derives colors.
+ */
+export function resolveWebTheme(
+  themeId: string | null | undefined,
+  appearance: StoredThemeSelection['appearance'] | null | undefined,
+  systemPrefersDark: boolean
+): ResolvedWebTheme {
+  return resolveThemeSelection(BUILT_IN_THEMES, themeId, appearance, systemPrefersDark)
+}

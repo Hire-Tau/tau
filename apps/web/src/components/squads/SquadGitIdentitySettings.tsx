@@ -105,13 +105,13 @@ export function SquadGitIdentitySettings({ squadId }: { squadId: string }) {
           type="button"
           onClick={() => updateMutation.mutate()}
           disabled={updateMutation.isPending}
-          className="tau-button tau-button-primary rounded-md bg-accent px-3 py-2 text-sm text-white"
+          className="tau-button tau-button-primary rounded-md bg-accent px-3 py-2 text-sm text-on-accent"
         >
           {updateMutation.isPending ? 'Saving…' : 'Save identity'}
         </button>
       )}
       {updateMutation.isError && (
-        <p role="alert" className="text-sm text-red-500">
+        <p role="alert" className="text-sm text-status-danger-500">
           Failed to save: {String(updateMutation.error)}
         </p>
       )}

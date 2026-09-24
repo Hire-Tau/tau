@@ -75,12 +75,12 @@ export function PasskeyRecoveryRequest({ onBack }: Props) {
       <button
         type="submit"
         disabled={!email.trim() || loading}
-        className="tau-button tau-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-white font-medium text-sm disabled:opacity-50"
+        className="tau-button tau-button-primary w-full px-4 py-2 rounded-md bg-accent hover:bg-accent-hover text-on-accent font-medium text-sm disabled:opacity-50"
       >
         {loading ? 'Sending…' : 'Send recovery link'}
       </button>
       {error && (
-        <p role="alert" className="text-red-600 dark:text-red-400 text-sm">
+        <p role="alert" className="text-status-danger-600 dark:text-status-danger-400 text-sm">
           {error}
         </p>
       )}

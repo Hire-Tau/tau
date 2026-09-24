@@ -14,7 +14,15 @@ const dependencies = {
     authStatus: { mode: 'passkey', authEnabled: true, hasUsers: true, hasAdminUser: true },
     logout: async () => undefined,
   }),
-  useTheme: () => ({ theme: 'light' as const, toggleTheme: () => undefined }),
+  useTheme: () => ({
+    theme: 'light' as const,
+    themeId: 'tau',
+    appearance: 'light' as const,
+    toggleTheme: () => undefined,
+    setTheme: () => undefined,
+    setThemeId: () => undefined,
+    setAppearance: () => undefined,
+  }),
   usePushNotifications: () => ({
     isSupported: false,
     isSubscribed: false,
