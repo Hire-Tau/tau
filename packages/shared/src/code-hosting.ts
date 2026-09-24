@@ -83,6 +83,20 @@ export function resolveCodeHostReference(metadata: unknown): CodeHostReference |
   return described.status === 'valid' ? described.reference : null
 }
 
+/**
+ * The exact, copy-pasteable repair for a PR-delivery stream whose primary binding lacks a change
+ * request. Placeholders stay literal because the number is exactly what the operator must fill
+ * in; the stream id is always known. Single-quoted so the JSON survives POSIX shells unchanged.
+ */
+export function changeRequestBindCommand(streamId: string): string {
+  return `tau workstream set-meta ${streamId} codeHost.changeRequest '{"number":<pr-number>,"url":"<pr-url>"}'`
+}
+
+/** Same repair shape for the integration/repository half of the binding. */
+export function codeHostBindingCommand(streamId: string): string {
+  return `tau workstream set-meta ${streamId} codeHost '{"integration":"github","repository":"<owner/repo>"}'`
+}
+
 export const TRACKED_RESOURCE_KINDS = ['issue', 'pull_request'] as const
 export type TrackedResourceKind = (typeof TRACKED_RESOURCE_KINDS)[number]
 const integrationName = z

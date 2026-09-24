@@ -1,4 +1,6 @@
 import {
+  changeRequestBindCommand,
+  codeHostBindingCommand,
   deliveryPullRequests,
   describeCodeHostReference,
   resolveCodeHostReference,
@@ -55,7 +57,7 @@ export class CodeHostingRegistry {
    * (for example extra keys on `changeRequest`) from a missing binding, so a delivery failure
    * points at the actual defect instead of claiming required fields are missing.
    */
-  explainMissingBinding(metadata: unknown): string {
+  explainMissingBinding(metadata: unknown, streamId?: string): string {
     const described = describeCodeHostReference(metadata)
     if (described.status === 'invalid')
       return `codeHost metadata is present but invalid: ${described.issues.join('; ')}. Keep verification evidence outside codeHost (for example metadata.delivery).`
@@ -65,7 +67,20 @@ export class CodeHostingRegistry {
         return `codeHost.integration '${integration}' is not a supported code hosting integration (supported: ${[...this.adapters.keys()].join(', ')})`
       return `codeHost.repository '${repository}' is not a valid repository for the ${integration} integration`
     }
-    return 'Set codeHost.integration and codeHost.repository to a supported code hosting integration before completion'
+    return `Set codeHost.integration and codeHost.repository to a supported code hosting integration before completion (for example ${codeHostBindingCommand(streamId ?? '<work-stream-id>')})`
+  }
+  /**
+   * Failure class (b) for PR-delivery completion: the integration and repository resolve, but the
+   * primary change request binding is missing. Names the exact repair and the track alternative
+   * so the operator can copy-paste instead of guessing which field was absent.
+   */
+  explainMissingChangeRequest(streamId: string, reference: CodeHostReference): string {
+    return [
+      `codeHost.changeRequest is not set: the delivery pull request for ${reference.repository} is not bound to this work stream.`,
+      `Bind it exactly: ${changeRequestBindCommand(streamId)}`,
+      `A pull request opened from this stream's branch (metadata.git.branch) is bound automatically once a squad ${reference.integration} connection observes it; bind manually only when that has not happened.`,
+      `Additional pull requests that are part of the deliverable are designated with tau workstream track ${streamId} --pr <owner/repo#n> --delivery instead.`,
+    ].join(' ')
   }
   subscriptions(definition: WorkflowDefinition, metadata: unknown): IntegrationSubscription[] {
     const explicit = definition.subscriptions ?? []

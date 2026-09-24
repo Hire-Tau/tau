@@ -859,6 +859,60 @@ describe('parallel dispatch and pause', () => {
     await expect(finishFlow(id, 2, actor)).rejects.toThrow(
       'Set codeHost.integration and codeHost.repository to a supported code hosting integration before completion'
     )
+    await expect(finishFlow(id, 2, actor)).rejects.toThrow(
+      `tau workstream set-meta ${id} codeHost '{"integration":"github","repository":"<owner/repo>"}'`
+    )
+  })
+  test('finish names the exact repair for each delivery binding failure class', async () => {
+    const api = spyOn(githubApi, 'githubApiGet')
+    const stop = spyOn(Agent.prototype, 'tryTerminate').mockResolvedValue(undefined)
+    try {
+      const definition = structuredClone(flow)
+      definition.completion.mode = 'pr-merge'
+      const id = await create('active', definition)
+      await advance(id, 'completed')
+      await advance(id, 'approved')
+      // (b) integration and repository resolve, but the change request binding is missing.
+      await db
+        .update(workStreams)
+        .set({
+          metadata: {
+            completion: { mode: 'pr-merge' },
+            codeHost: { integration: 'github', repository: 'example/repo' },
+            git: { branch: 'feature' },
+          },
+        })
+        .where(eq(workStreams.id, id))
+      const missing = await finishFlow(id, 2, actor).catch((error: Error) => error.message)
+      expect(missing).toContain('codeHost.changeRequest is not set')
+      expect(missing).toContain(
+        `tau workstream set-meta ${id} codeHost.changeRequest '{"number":<pr-number>,"url":"<pr-url>"}'`
+      )
+      expect(missing).toContain(`tau workstream track ${id} --pr <owner/repo#n> --delivery`)
+      expect(missing).toContain('bound automatically')
+      // (c) the binding exists but cannot be verified at all, distinct from not-merged.
+      await db
+        .update(workStreams)
+        .set({
+          metadata: {
+            completion: { mode: 'pr-merge' },
+            codeHost: { integration: 'github', repository: 'example/repo', changeRequest: { number: 42 } },
+            git: { branch: 'feature' },
+          },
+        })
+        .where(eq(workStreams.id, id))
+      api.mockResolvedValue(null)
+      await expect(finishFlow(id, 2, actor)).rejects.toThrow(
+        "Could not verify delivery pull request example/repo#42 through the github integration: it is missing, inaccessible to the squad's connection, or the connection is unavailable"
+      )
+      expect((await WorkStream.mustFind(id)).status).toBe('active')
+      // The not-merged class keeps its own message once the pull request is visible again.
+      api.mockResolvedValue({ merged: false, base: { ref: 'main' }, head: { ref: 'feature' } })
+      await expect(finishFlow(id, 2, actor)).rejects.toThrow('The change request must be merged before completion')
+    } finally {
+      api.mockRestore()
+      stop.mockRestore()
+    }
   })
   test('usage is captured at acceptance even when it settles after a handoff', async () => {
     const { getFlowUsage } = await import('./usage')

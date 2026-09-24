@@ -606,7 +606,7 @@ export async function finishFlow(id: string, version: number, identity: Identity
     throw new WorkflowError('A human must approve delivery', 403)
   if (['pr-merge', 'pr-auto-merge', 'direct-merge'].includes(mode)) {
     const binding = codeHostingRegistry.resolve(metadata)
-    if (!binding) throw new WorkflowError(codeHostingRegistry.explainMissingBinding(metadata))
+    if (!binding) throw new WorkflowError(codeHostingRegistry.explainMissingBinding(metadata, id))
     const { reference, adapter } = binding
     if (mode === 'direct-merge') {
       const head = metadata.git?.commit,
@@ -617,9 +617,17 @@ export async function finishFlow(id: string, version: number, identity: Identity
         throw new WorkflowError('The deliverable commit must be included in the base branch', 409)
       deliveredHead = head
     } else {
-      if (!reference.changeRequest) throw new WorkflowError('Set codeHost.changeRequest.number before completion')
+      if (!reference.changeRequest)
+        throw new WorkflowError(codeHostingRegistry.explainMissingChangeRequest(id, reference))
       const change = await adapter.changeRequest(reference, stream.squadId)
-      if (!change?.merged) throw new WorkflowError('The change request must be merged before completion', 409)
+      // A null lookup is a distinct failure class from an unmerged change request: the binding
+      // exists but cannot be verified at all, so the repair is connection/access, not merging.
+      if (!change)
+        throw new WorkflowError(
+          `Could not verify delivery pull request ${reference.repository}#${reference.changeRequest.number} through the ${reference.integration} integration: it is missing, inaccessible to the squad's connection, or the connection is unavailable`,
+          409
+        )
+      if (!change.merged) throw new WorkflowError('The change request must be merged before completion', 409)
       if (change.headSha && /^[a-f0-9]{40}$/.test(change.headSha)) deliveredHead = change.headSha
       if (
         (metadata.git?.branch && change.headBranch !== metadata.git.branch) ||
@@ -644,7 +652,12 @@ export async function finishFlow(id: string, version: number, identity: Identity
           },
           stream.squadId
         )
-        if (!additional?.merged)
+        if (!additional)
+          throw new WorkflowError(
+            `Delivery pull request ${resource.repository}#${resource.number} could not be verified through the ${resource.integration} integration: it is missing, inaccessible to the squad's connection, or the connection is unavailable`,
+            409
+          )
+        if (!additional.merged)
           throw new WorkflowError(
             `Delivery pull request ${resource.repository}#${resource.number} must be merged before completion`,
             409

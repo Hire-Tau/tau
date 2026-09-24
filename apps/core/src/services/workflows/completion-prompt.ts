@@ -1,4 +1,11 @@
-import type { WorkflowDefinition, WorkflowRun } from '@tau/shared'
+import {
+  changeRequestBindCommand,
+  codeHostBindingCommand,
+  describeCodeHostReference,
+  trackedResourceLabel,
+  type WorkflowDefinition,
+  type WorkflowRun,
+} from '@tau/shared'
 
 /** Delivery guidance is shared by every flow participant, independent of squad or agent type. */
 export function flowCompletionInstructions(mode: WorkflowDefinition['completion']['mode']): string {
@@ -28,12 +35,53 @@ export function flowCompletionInstructions(mode: WorkflowDefinition['completion'
     .join('\n\n')
 }
 
+/**
+ * The completion-ready self-check for PR delivery: what is bound right now, and the exact repair
+ * command when the primary binding is incomplete. Derived from live metadata so it can never
+ * contradict what `finish` will verify.
+ */
+export function deliveryBindingSelfCheck(
+  stream: { id: string; metadata?: unknown },
+  mode: WorkflowDefinition['completion']['mode']
+): string {
+  if (mode !== 'pr-merge' && mode !== 'pr-auto-merge') return ''
+  const described = describeCodeHostReference(stream.metadata)
+  const git = (stream.metadata as { git?: { branch?: unknown } } | null)?.git
+  const branch = typeof git?.branch === 'string' && git.branch ? git.branch : undefined
+  if (described.status === 'absent')
+    return [
+      'Delivery binding self-check: codeHost is not configured for this work stream, so flow finish cannot verify delivery.',
+      `Set the integration and repository first: ${codeHostBindingCommand(stream.id)}${branch ? ` (this stream's branch is ${branch})` : ''}.`,
+    ].join(' ')
+  if (described.status === 'invalid')
+    return `Delivery binding self-check: codeHost metadata is invalid: ${described.issues.join('; ')}. Fix the metadata before finish; keep verification evidence outside codeHost.`
+  const { integration, repository, changeRequest } = described.reference
+  if (changeRequest) {
+    const label = trackedResourceLabel({ integration, repository, number: changeRequest.number })
+    return [
+      `Delivery binding self-check: bound to ${label}${changeRequest.url ? ` (${changeRequest.url})` : ''}${branch ? ` on branch ${branch}` : ''}.`,
+      `tau workstream finish ${stream.id} verifies this pull request is merged; replace the binding only with ${changeRequestBindCommand(stream.id)} if it is wrong.`,
+    ].join(' ')
+  }
+  return [
+    `Delivery binding self-check: codeHost is configured (${integration}, ${repository}) but codeHost.changeRequest is absent, so flow finish will fail until the delivery PR is bound.`,
+    `Bind it as soon as the PR exists — exact command: ${changeRequestBindCommand(stream.id)}.`,
+    branch
+      ? `A pull request opened from this stream's branch ${branch} is bound automatically when a squad ${integration} connection observes it; bind manually only if that has not happened.`
+      : 'A squad-observed pull request from this stream branch is bound automatically; bind manually only if that has not happened.',
+  ].join(' ')
+}
+
 /** Only current, active delivery work needs the provider/delivery procedure. */
 export function deliveryInstructionsForRun(
-  stream: { id: string; status: string; pause?: unknown },
+  stream: { id: string; status: string; pause?: unknown; metadata?: unknown },
   state: WorkflowRun,
   version: number
 ): string | undefined {
   if (stream.status !== 'active' || stream.pause || state.status !== 'completion-ready') return undefined
-  return `${flowCompletionInstructions(state.definition.completion.mode)}\n\nWhen the condition is met: tau workstream finish ${stream.id} --version ${version}.`
+  const selfCheck = deliveryBindingSelfCheck(stream, state.definition.completion.mode)
+  return [
+    flowCompletionInstructions(state.definition.completion.mode) + (selfCheck ? `\n\n${selfCheck}` : ''),
+    `When the condition is met: tau workstream finish ${stream.id} --version ${version}.`,
+  ].join('\n\n')
 }
