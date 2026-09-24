@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.14.0/.schema/devbox.schema.json",
   "packages": [
     "nodejs_24@latest",
-    "bun@latest",
+    "github:NixOS/nixpkgs/8825bebf6324e0579d012936eff73379af284b6d#bun",
     "python3@latest",
     "ripgrep@latest",
     "fd@latest",
