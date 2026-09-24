@@ -209,6 +209,9 @@ theme (Tau, Harbor, Ember, High contrast, or a custom theme) in light and dark.
   The token coverage and parity tests in `apps/web/src/theme/` enforce this.
 - Read colors in JS (charts, graphs, canvas, terminal) through
   `useThemeColors` / `tokenReader`, never hard-coded values.
+- After changing built-in theme CSS or anything the pre-paint script imports,
+  run `bun apps/web/scripts/generate-theme-flash.ts` and commit
+  `apps/web/index.html`; a test fails when it is stale.
 - Details: [web themes](docs/wiki/theme/README.md).
 
 ### Stable Refs
