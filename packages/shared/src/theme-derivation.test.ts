@@ -8,6 +8,8 @@ import { srgbToOklch } from './color-oklch'
 // light/dark, taken from apps/web/src/index.css), enough to exercise every
 // derivation bucket without needing the full 431-token registry.
 const TAU_LIGHT: Record<string, string> = {
+  '--swatch-secondary': '168 85 247',
+  '--swatch-tertiary': '196 181 253',
   '--color-bg-page': '250 249 252',
   '--color-bg-surface': '255 255 255',
   '--color-text-primary': '37 35 50',
@@ -207,6 +209,34 @@ describe('deriveThemeOverrides buckets', () => {
     expect(derived['--term-red']).toBeUndefined()
     expect(derived['--term-bg']).toBeDefined()
     expect(derived['--log-bg']).toBeDefined()
+  })
+})
+
+describe('swatch colors', () => {
+  test('use the palette secondary and tertiary seeds', () => {
+    const derived = deriveThemeOverrides({
+      baseTokens: TAU_LIGHT,
+      palette: { primary: '#0ea5e9', secondary: '#f97316', tertiary: '#22c55e' },
+      appearance: 'light',
+    })
+    expect(derived['--swatch-secondary']).toBe('#f97316')
+    expect(derived['--swatch-tertiary']).toBe('#22c55e')
+  })
+
+  test('fall back to the primary rotated either way when seeds are unset', () => {
+    const derived = deriveThemeOverrides({
+      baseTokens: TAU_LIGHT,
+      palette: { primary: '#0ea5e9' },
+      appearance: 'light',
+    })
+    const hue = (channels: string) => {
+      const [r, g, b] = channels.split(' ').map(Number)
+      return srgbToOklch([r!, g!, b!]).h
+    }
+    const primaryHue = hue(customColorChannels('#0ea5e9')!)
+    const delta = (value: number) => ((value - primaryHue + 540) % 360) - 180
+    expect(Math.round(delta(hue(customColorChannels(derived['--swatch-secondary'])!)))).toBeCloseTo(60, -1)
+    expect(Math.round(delta(hue(customColorChannels(derived['--swatch-tertiary'])!)))).toBeCloseTo(-60, -1)
   })
 })
 
