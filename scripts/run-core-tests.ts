@@ -25,6 +25,9 @@ export function coreTestPlan() {
 }
 
 if (import.meta.main) {
+  // The package contract needs the database: keep the preload's fail-fast exit
+  // instead of its local no-database fallback (apps/core test-db-fallback.ts).
+  process.env.TAU_TEST_REQUIRE_DB = '1'
   const plan = coreTestPlan()
   const subprocessOnly = process.argv.includes('--subprocess')
   const reverse = process.argv.includes('--reverse')

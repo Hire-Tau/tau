@@ -11,6 +11,14 @@ import { findFreeTestDbPort, testDbPortFile, testDbProjectName } from '@tau/shar
 import { expectedCheckConstraints, expectedTableColumns, findSchemaDrift, parseColumnRows } from './db/expected-schema'
 import { expectedForeignKeys, foreignKeyStatements } from './db/expected-foreign-keys'
 import { runnerTestSchemaCache } from './test-utils/schema-cache'
+import {
+  startTestDb,
+  startUnavailableTestDb,
+  TEST_DB_NOT_READY,
+  testDbFallbackAllowed,
+  unavailableTestDbBanner,
+  unavailableTestDbMessage,
+} from './test-utils/test-db-fallback'
 
 // Give the whole run its own Tau home so no test can write into the developer's
 // real ~/.tau (this is what stops squad workspace stubs leaking out of tests).
@@ -533,6 +541,9 @@ function isPostgresReady(port: number): boolean {
 // --- Main setup ---
 
 let TEST_DATABASE_URL: string
+// Set only when a local direct run continues without a database.
+let testDbUnavailableReason: string | undefined
+const allowTestDbFallback = testDbFallbackAllowed()
 
 if (useExternalDb) {
   // Use CI-provided database (already validated above)
@@ -570,31 +581,40 @@ if (useExternalDb) {
     const url = `postgres://postgres:postgres@localhost:${port}/tau_test`
     process.env.DATABASE_URL = url
 
-    if (!isPostgresReady(port)) {
+    const startup = startTestDb({
+      isReady: () => isPostgresReady(port),
       // Start a new container on the allocated port
-      Bun.spawnSync(['docker', 'compose', '-p', projectName, '-f', composeFile, 'up', '-d', 'postgres'], {
-        stdout: 'ignore',
-        stderr: 'ignore',
-        env: { ...process.env, TEST_DB_PORT: String(port), TEST_REPO_ROOT: repoRoot },
-      })
-
-      const maxWait = 30
-      for (let i = 0; i < maxWait; i++) {
-        if (isPostgresReady(port)) break
-        if (i === maxWait - 1) {
-          // This process.exit() skips withTestDbLockSync's `finally` above,
-          // so the lockfile is NOT released here via normal cleanup — it is
-          // deliberately left held. The next process to contend for the lock
-          // recovers via isAbandoned()'s stale-PID check (testDbLock.ts),
-          // which sees this PID is gone and reclaims the lockfile itself.
-          // Do not "fix" this by wrapping the wait loop in try/finally: a
-          // `finally` never runs across process.exit() either, so it
-          // wouldn't help — the stale-PID path is the actual safety net.
-          console.error('Test postgres did not become ready in time')
-          process.exit(1)
-        }
-        Bun.sleepSync(1000)
+      composeUp: () => {
+        const up = Bun.spawnSync(['docker', 'compose', '-p', projectName, '-f', composeFile, 'up', '-d', 'postgres'], {
+          stdout: 'ignore',
+          stderr: 'pipe',
+          env: { ...process.env, TEST_DB_PORT: String(port), TEST_REPO_ROOT: repoRoot },
+        })
+        return { exitCode: up.exitCode, stderr: up.stderr.toString() }
+      },
+      sleep: (ms) => Bun.sleepSync(ms),
+      allowFallback: allowTestDbFallback,
+    })
+    if (!startup.ready) {
+      if (!allowTestDbFallback) {
+        // This process.exit() skips withTestDbLockSync's `finally` above,
+        // so the lockfile is NOT released here via normal cleanup — it is
+        // deliberately left held. The next process to contend for the lock
+        // recovers via isAbandoned()'s stale-PID check (testDbLock.ts),
+        // which sees this PID is gone and reclaims the lockfile itself.
+        // Do not "fix" this by wrapping the wait loop in try/finally: a
+        // `finally` never runs across process.exit() either, so it
+        // wouldn't help — the stale-PID path is the actual safety net.
+        console.error(TEST_DB_NOT_READY)
+        process.exit(1)
       }
+      // Local direct `bun test` only (see test-utils/test-db-fallback.ts):
+      // let database-free files run; DATABASE_URL is replaced below by a
+      // stand-in that fails every database use. No port file is written, and
+      // the schema setup below is skipped because there is nothing to push to.
+      testDbUnavailableReason = startup.reason
+      delete process.env.DATABASE_URL
+      return ''
     }
 
     // Reusing a live container (the whole point of item 1's fix above) means
@@ -619,200 +639,212 @@ if (useExternalDb) {
   })
 }
 
-// Must happen before the push, in BOTH the local-container and the CI path: on
-// CI the index does not exist yet so this is a no-op, but locally the previous
-// run left it behind and the push would otherwise silently do nothing.
-const schemaCache = runnerTestSchemaCache(TEST_DATABASE_URL)
-if (schemaCache?.matches()) {
-  verifySchemaApplied(TEST_DATABASE_URL)
-  console.log('Reused verified test schema (identical source and live DDL)')
-} else {
-  dropIntrospectionHostileIndexes(TEST_DATABASE_URL)
-  dropCheckConstraints(TEST_DATABASE_URL)
-
-  // Push schema to test DB before any tests run (timeout prevents hang on stale DB)
-  let result: { exitCode: number; stderr: Buffer; stdout: Buffer }
+if (testDbUnavailableReason !== undefined) {
+  const reason = testDbUnavailableReason
   try {
-    const pushArgs =
-      process.env.TAU_TEST_SCHEMA_PUSH_NO_FORCE === '1'
-        ? ['bunx', 'drizzle-kit', 'push']
-        : ['bunx', 'drizzle-kit', 'push', '--force']
-    result = Bun.spawnSync(pushArgs, {
-      env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
-      cwd: join(__dirname, '..'),
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: 60000,
-    })
-  } catch {
-    console.error('Schema push timed out or failed. Try: bun run test:db:down && bun test')
+    TEST_DATABASE_URL = (await startUnavailableTestDb(unavailableTestDbMessage(reason))).url
+  } catch (error) {
+    console.error(`Core test database unavailable (${reason}) and its stand-in failed:`, error)
     process.exit(1)
   }
+  process.env.DATABASE_URL = TEST_DATABASE_URL
+  console.warn(unavailableTestDbBanner(reason))
+} else {
+  // Must happen before the push, in BOTH the local-container and the CI path: on
+  // CI the index does not exist yet so this is a no-op, but locally the previous
+  // run left it behind and the push would otherwise silently do nothing.
+  const schemaCache = runnerTestSchemaCache(TEST_DATABASE_URL)
+  if (schemaCache?.matches()) {
+    verifySchemaApplied(TEST_DATABASE_URL)
+    console.log('Reused verified test schema (identical source and live DDL)')
+  } else {
+    dropIntrospectionHostileIndexes(TEST_DATABASE_URL)
+    dropCheckConstraints(TEST_DATABASE_URL)
 
-  {
-    const stderr = result.stderr.toString()
-    const stdout = result.stdout.toString()
+    // Push schema to test DB before any tests run (timeout prevents hang on stale DB)
+    let result: { exitCode: number; stderr: Buffer; stdout: Buffer }
+    try {
+      const pushArgs =
+        process.env.TAU_TEST_SCHEMA_PUSH_NO_FORCE === '1'
+          ? ['bunx', 'drizzle-kit', 'push']
+          : ['bunx', 'drizzle-kit', 'push', '--force']
+      result = Bun.spawnSync(pushArgs, {
+        env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
+        cwd: join(__dirname, '..'),
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: 60000,
+      })
+    } catch {
+      console.error('Schema push timed out or failed. Try: bun run test:db:down && bun test')
+      process.exit(1)
+    }
 
-    if (result.exitCode !== 0) {
-      if (!stderr.includes('No changes detected') && !stdout.includes('No changes detected')) {
-        console.error('Failed to push schema to test DB:', stderr || stdout || '(no output)')
+    {
+      const stderr = result.stderr.toString()
+      const stdout = result.stdout.toString()
+
+      if (result.exitCode !== 0) {
+        if (!stderr.includes('No changes detected') && !stdout.includes('No changes detected')) {
+          console.error('Failed to push schema to test DB:', stderr || stdout || '(no output)')
+          process.exit(1)
+        }
+      }
+
+      // Belt and braces to verifySchemaApplied below. drizzle-kit's schema pull is
+      // all-or-nothing, so a zod failure parsing it means nothing was applied even
+      // though the process exited 0. The column check would only notice once the
+      // schema had actually diverged; catching the signature names the real cause
+      // on the run that introduces it, rather than several schema changes later.
+      //
+      // Deliberately narrow — do NOT widen this to "any error in the output".
+      // `push` already prints a harmless `PostgresError: cannot drop view
+      // pg_stat_statements_info ...` on every single run (the paradedb image ships
+      // that extension in `public`, push wants to drop views that are not in
+      // schema.ts, and cannot), then exits 0. Treating that as fatal would break
+      // every developer's test run — which is precisely why the POSITIVE check
+      // below, and not output matching, is the load-bearing one.
+      if (stderr.includes('ZodError') || stdout.includes('ZodError')) {
+        console.error(
+          'drizzle-kit push could not parse the existing test DB schema (ZodError) and exited 0 having applied nothing.\n' +
+            'Something in the database is not introspectable by drizzle-kit — if it is an index, add it to\n' +
+            'INTROSPECTION_HOSTILE_INDEXES in apps/core/src/test-setup.ts.\n' +
+            'Recover with: bun run test:db:down && bun run test:db:up\n' +
+            (stderr || stdout)
+        )
         process.exit(1)
       }
     }
 
-    // Belt and braces to verifySchemaApplied below. drizzle-kit's schema pull is
-    // all-or-nothing, so a zod failure parsing it means nothing was applied even
-    // though the process exited 0. The column check would only notice once the
-    // schema had actually diverged; catching the signature names the real cause
-    // on the run that introduces it, rather than several schema changes later.
-    //
-    // Deliberately narrow — do NOT widen this to "any error in the output".
-    // `push` already prints a harmless `PostgresError: cannot drop view
-    // pg_stat_statements_info ...` on every single run (the paradedb image ships
-    // that extension in `public`, push wants to drop views that are not in
-    // schema.ts, and cannot), then exits 0. Treating that as fatal would break
-    // every developer's test run — which is precisely why the POSITIVE check
-    // below, and not output matching, is the load-bearing one.
-    if (stderr.includes('ZodError') || stdout.includes('ZodError')) {
-      console.error(
-        'drizzle-kit push could not parse the existing test DB schema (ZodError) and exited 0 having applied nothing.\n' +
-          'Something in the database is not introspectable by drizzle-kit — if it is an index, add it to\n' +
-          'INTROSPECTION_HOSTILE_INDEXES in apps/core/src/test-setup.ts.\n' +
-          'Recover with: bun run test:db:down && bun run test:db:up\n' +
-          (stderr || stdout)
-      )
+    // Push never maintains CHECK constraints on a table it did not just create,
+    // so the set dropped above has to be put back from schema.ts by hand.
+    applyCheckConstraints(TEST_DATABASE_URL)
+
+    // Preserve the generated integration-output constraints even when push stops
+    // after table creation. Derive this fixture DDL from the actual schema.
+    {
+      const { getTableConfig } = await import('drizzle-orm/pg-core')
+      const {
+        integrationOutputEvents,
+        integrationOutputDeliveries,
+        integrationOutputTriggerRuns,
+        channelDirectChats,
+        channelDirectAgents,
+        machineBoxes,
+        remoteHostGrants,
+      } = await import('./db/schema')
+      const quote = (name: string) => '"' + name.replaceAll('"', '""') + '"'
+      const statements: string[] = []
+      for (const table of [
+        integrationOutputEvents,
+        integrationOutputDeliveries,
+        integrationOutputTriggerRuns,
+        channelDirectChats,
+        channelDirectAgents,
+        machineBoxes,
+        remoteHostGrants,
+      ]) {
+        const config = getTableConfig(table)
+        const add = (name: string, clause: string) => {
+          const literal = name.slice(0, 63).replaceAll("'", "''")
+          statements.push(
+            `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '${literal}' AND conrelid = '${config.name}'::regclass) THEN ALTER TABLE ${quote(config.name)} ADD CONSTRAINT ${quote(name)} ${clause}; END IF; END $$`
+          )
+        }
+        for (const constraint of config.uniqueConstraints)
+          add(constraint.getName()!, `UNIQUE (${constraint.columns.map((column) => quote(column.name)).join(', ')})`)
+      }
+      const result = Bun.spawnSync(['psql', TEST_DATABASE_URL, '-v', 'ON_ERROR_STOP=1', '-c', statements.join('; ')], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: 10000,
+      })
+      if (result.exitCode !== 0)
+        throw new Error(`Failed to enforce output schema constraints: ${result.stderr.toString()}`)
+    }
+
+    // A reused Docker database must enforce the same FKs as a fresh native DB.
+    // Repair all declared keys atomically instead of maintaining a partial list.
+    const foreignKeys = Bun.spawnSync(['psql', TEST_DATABASE_URL, '-v', 'ON_ERROR_STOP=1'], {
+      stdin: Buffer.from('BEGIN;\n' + foreignKeyStatements().join(';\n') + ';\nCOMMIT;'),
+      stdout: 'pipe',
+      stderr: 'pipe',
+      timeout: 10000,
+    })
+    if (foreignKeys.exitCode !== 0 || foreignKeys.signalCode) {
+      console.error('Failed to synchronize test foreign keys:', foreignKeys.stderr.toString())
       process.exit(1)
     }
-  }
 
-  // Push never maintains CHECK constraints on a table it did not just create,
-  // so the set dropped above has to be put back from schema.ts by hand.
-  applyCheckConstraints(TEST_DATABASE_URL)
+    // drizzle-kit push doesn't reliably create partial unique indexes.
+    // Apply them manually so RBAC uniqueness constraints work in tests.
+    {
+      const idxStatements = [
+        // Restore expression indexes removed for push introspection, including
+        // the uniqueness fences used by recovery and worktree ownership.
+        `CREATE INDEX IF NOT EXISTS "idx_messages_agent_stream_group"
+        ON "messages" ("agent_id", ("metadata"->>'streamGroupId'))
+        WHERE "role" = 'assistant' AND ("metadata"->>'streamGroupId') IS NOT NULL`,
+        `CREATE INDEX IF NOT EXISTS "idx_messages_agent_inbox_consumed"
+        ON "messages" ("agent_id", ("metadata"->>'consumedAt'))
+        WHERE "metadata"->>'source' = 'inbox' AND ("metadata"->>'consumedAt') IS NOT NULL`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS "idx_messages_agent_sandbox_recovery_unique"
+        ON "messages" ("agent_id", ("metadata"->>'sandboxId'), ("metadata"->>'recoveryEpisodeId'), ("metadata"->>'recoveryNotificationKind'))
+        WHERE "role" = 'human' AND "metadata"->>'source' = 'sandbox-recovery'`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS "idx_owned_worktree_path"
+        ON "work_stream_worktrees" ("squad_id", ("ownership"->>'worktree'))`,
+        // role_assignments: unique assignment when squadId IS NULL
+        `CREATE UNIQUE INDEX IF NOT EXISTS "uq_role_assignment_no_squad"
+        ON "role_assignments" ("subject_type", "subject_id", "role_id", "scope")
+        WHERE ("squad_id" IS NULL)`,
+        // role_assignments: unique assignment when squadId IS NOT NULL
+        `CREATE UNIQUE INDEX IF NOT EXISTS "uq_role_assignment_with_squad"
+        ON "role_assignments" ("subject_type", "subject_id", "role_id", "scope", "squad_id")
+        WHERE ("squad_id" IS NOT NULL)`,
+        // execution admission: one nonterminal reservation owns an agent
+        `CREATE UNIQUE INDEX IF NOT EXISTS "idx_execution_admission_reservations_agent_current"
+        ON "execution_admission_reservations" ("agent_id")
+        WHERE "agent_id" IS NOT NULL AND "state" NOT IN ('released', 'revoked')`,
+        // integrations: at most one enabled provider connection per squad
+        `CREATE UNIQUE INDEX IF NOT EXISTS "uq_integration_connections_enabled_provider"
+        ON "integration_connections" ("squad_id", "provider_key")
+        WHERE "enabled" = true`,
+        // web push: one subscription row per endpoint (ON CONFLICT arbiter for
+        // registerPushSubscription's ownership-transfer upsert, #1111)
+        `CREATE UNIQUE INDEX IF NOT EXISTS "idx_push_subscriptions_endpoint_unique"
+        ON "push_subscriptions" ("endpoint")`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS "idx_desktop_notifications_event"
+        ON "desktop_notifications" ("user_id", "event_key")`,
+        // local deployments: one live deployment per port PER NETWORK SCOPE. On the
+        // VM runtime every box on a machine shares one loopback, so a duplicate
+        // would let a tokenized app URL reach a different squad's app (#1306).
+        `CREATE UNIQUE INDEX IF NOT EXISTS "local_deployments_live_port_scope_uniq"
+        ON "local_deployments" ("port_scope", "port")
+        WHERE "archived_at" IS NULL`,
+        // squad slots: preserve the three live-state uniqueness fences that
+        // drizzle-kit push may omit for partial indexes.
+        `CREATE UNIQUE INDEX IF NOT EXISTS "idx_slot_pools_active_key_unique"
+        ON "slot_pools" ("squad_id", "key")
+        WHERE "unregistered_at" IS NULL`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS "idx_slot_claims_active_owner_unique"
+        ON "slot_claims" ("pool_id", "owner_agent_id")
+        WHERE "status" = 'active'`,
+        `CREATE UNIQUE INDEX IF NOT EXISTS "idx_slot_waiters_queued_owner_unique"
+        ON "slot_waiters" ("pool_id", "owner_agent_id")
+        WHERE "status" = 'queued'`,
+      ]
 
-  // Preserve the generated integration-output constraints even when push stops
-  // after table creation. Derive this fixture DDL from the actual schema.
-  {
-    const { getTableConfig } = await import('drizzle-orm/pg-core')
-    const {
-      integrationOutputEvents,
-      integrationOutputDeliveries,
-      integrationOutputTriggerRuns,
-      channelDirectChats,
-      channelDirectAgents,
-      machineBoxes,
-      remoteHostGrants,
-    } = await import('./db/schema')
-    const quote = (name: string) => '"' + name.replaceAll('"', '""') + '"'
-    const statements: string[] = []
-    for (const table of [
-      integrationOutputEvents,
-      integrationOutputDeliveries,
-      integrationOutputTriggerRuns,
-      channelDirectChats,
-      channelDirectAgents,
-      machineBoxes,
-      remoteHostGrants,
-    ]) {
-      const config = getTableConfig(table)
-      const add = (name: string, clause: string) => {
-        const literal = name.slice(0, 63).replaceAll("'", "''")
-        statements.push(
-          `DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = '${literal}' AND conrelid = '${config.name}'::regclass) THEN ALTER TABLE ${quote(config.name)} ADD CONSTRAINT ${quote(name)} ${clause}; END IF; END $$`
-        )
+      const idxScript = idxStatements.join('; ')
+      const idxResult = Bun.spawnSync(['psql', TEST_DATABASE_URL, '-c', idxScript], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeout: 10000,
+      })
+      if (idxResult.exitCode !== 0) {
+        throw new Error(`Failed to apply test partial unique indexes: ${idxResult.stderr.toString()}`)
       }
-      for (const constraint of config.uniqueConstraints)
-        add(constraint.getName()!, `UNIQUE (${constraint.columns.map((column) => quote(column.name)).join(', ')})`)
     }
-    const result = Bun.spawnSync(['psql', TEST_DATABASE_URL, '-v', 'ON_ERROR_STOP=1', '-c', statements.join('; ')], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: 10000,
-    })
-    if (result.exitCode !== 0)
-      throw new Error(`Failed to enforce output schema constraints: ${result.stderr.toString()}`)
+    verifySchemaApplied(TEST_DATABASE_URL)
+    schemaCache?.record()
   }
-
-  // A reused Docker database must enforce the same FKs as a fresh native DB.
-  // Repair all declared keys atomically instead of maintaining a partial list.
-  const foreignKeys = Bun.spawnSync(['psql', TEST_DATABASE_URL, '-v', 'ON_ERROR_STOP=1'], {
-    stdin: Buffer.from('BEGIN;\n' + foreignKeyStatements().join(';\n') + ';\nCOMMIT;'),
-    stdout: 'pipe',
-    stderr: 'pipe',
-    timeout: 10000,
-  })
-  if (foreignKeys.exitCode !== 0 || foreignKeys.signalCode) {
-    console.error('Failed to synchronize test foreign keys:', foreignKeys.stderr.toString())
-    process.exit(1)
-  }
-
-  // drizzle-kit push doesn't reliably create partial unique indexes.
-  // Apply them manually so RBAC uniqueness constraints work in tests.
-  {
-    const idxStatements = [
-      // Restore expression indexes removed for push introspection, including
-      // the uniqueness fences used by recovery and worktree ownership.
-      `CREATE INDEX IF NOT EXISTS "idx_messages_agent_stream_group"
-      ON "messages" ("agent_id", ("metadata"->>'streamGroupId'))
-      WHERE "role" = 'assistant' AND ("metadata"->>'streamGroupId') IS NOT NULL`,
-      `CREATE INDEX IF NOT EXISTS "idx_messages_agent_inbox_consumed"
-      ON "messages" ("agent_id", ("metadata"->>'consumedAt'))
-      WHERE "metadata"->>'source' = 'inbox' AND ("metadata"->>'consumedAt') IS NOT NULL`,
-      `CREATE UNIQUE INDEX IF NOT EXISTS "idx_messages_agent_sandbox_recovery_unique"
-      ON "messages" ("agent_id", ("metadata"->>'sandboxId'), ("metadata"->>'recoveryEpisodeId'), ("metadata"->>'recoveryNotificationKind'))
-      WHERE "role" = 'human' AND "metadata"->>'source' = 'sandbox-recovery'`,
-      `CREATE UNIQUE INDEX IF NOT EXISTS "idx_owned_worktree_path"
-      ON "work_stream_worktrees" ("squad_id", ("ownership"->>'worktree'))`,
-      // role_assignments: unique assignment when squadId IS NULL
-      `CREATE UNIQUE INDEX IF NOT EXISTS "uq_role_assignment_no_squad"
-      ON "role_assignments" ("subject_type", "subject_id", "role_id", "scope")
-      WHERE ("squad_id" IS NULL)`,
-      // role_assignments: unique assignment when squadId IS NOT NULL
-      `CREATE UNIQUE INDEX IF NOT EXISTS "uq_role_assignment_with_squad"
-      ON "role_assignments" ("subject_type", "subject_id", "role_id", "scope", "squad_id")
-      WHERE ("squad_id" IS NOT NULL)`,
-      // execution admission: one nonterminal reservation owns an agent
-      `CREATE UNIQUE INDEX IF NOT EXISTS "idx_execution_admission_reservations_agent_current"
-      ON "execution_admission_reservations" ("agent_id")
-      WHERE "agent_id" IS NOT NULL AND "state" NOT IN ('released', 'revoked')`,
-      // integrations: at most one enabled provider connection per squad
-      `CREATE UNIQUE INDEX IF NOT EXISTS "uq_integration_connections_enabled_provider"
-      ON "integration_connections" ("squad_id", "provider_key")
-      WHERE "enabled" = true`,
-      // web push: one subscription row per endpoint (ON CONFLICT arbiter for
-      // registerPushSubscription's ownership-transfer upsert, #1111)
-      `CREATE UNIQUE INDEX IF NOT EXISTS "idx_push_subscriptions_endpoint_unique"
-      ON "push_subscriptions" ("endpoint")`,
-      `CREATE UNIQUE INDEX IF NOT EXISTS "idx_desktop_notifications_event"
-      ON "desktop_notifications" ("user_id", "event_key")`,
-      // local deployments: one live deployment per port PER NETWORK SCOPE. On the
-      // VM runtime every box on a machine shares one loopback, so a duplicate
-      // would let a tokenized app URL reach a different squad's app (#1306).
-      `CREATE UNIQUE INDEX IF NOT EXISTS "local_deployments_live_port_scope_uniq"
-      ON "local_deployments" ("port_scope", "port")
-      WHERE "archived_at" IS NULL`,
-      // squad slots: preserve the three live-state uniqueness fences that
-      // drizzle-kit push may omit for partial indexes.
-      `CREATE UNIQUE INDEX IF NOT EXISTS "idx_slot_pools_active_key_unique"
-      ON "slot_pools" ("squad_id", "key")
-      WHERE "unregistered_at" IS NULL`,
-      `CREATE UNIQUE INDEX IF NOT EXISTS "idx_slot_claims_active_owner_unique"
-      ON "slot_claims" ("pool_id", "owner_agent_id")
-      WHERE "status" = 'active'`,
-      `CREATE UNIQUE INDEX IF NOT EXISTS "idx_slot_waiters_queued_owner_unique"
-      ON "slot_waiters" ("pool_id", "owner_agent_id")
-      WHERE "status" = 'queued'`,
-    ]
-
-    const idxScript = idxStatements.join('; ')
-    const idxResult = Bun.spawnSync(['psql', TEST_DATABASE_URL, '-c', idxScript], {
-      stdout: 'pipe',
-      stderr: 'pipe',
-      timeout: 10000,
-    })
-    if (idxResult.exitCode !== 0) {
-      throw new Error(`Failed to apply test partial unique indexes: ${idxResult.stderr.toString()}`)
-    }
-  }
-  verifySchemaApplied(TEST_DATABASE_URL)
-  schemaCache?.record()
 }

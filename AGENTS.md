@@ -61,6 +61,11 @@ Tests use an isolated Postgres instance running in Docker (separate from the dev
 - Starts a uniquely-named Docker container per worktree
 - Pushes the current schema before tests run
 
+When Docker cannot start the test DB, a direct local `bun test` still runs
+database-free files; every database use fails with `Core test database
+unavailable (...)`. CI and `bun run --filter core test` (via
+`TAU_TEST_REQUIRE_DB=1`) keep exiting instead.
+
 For the full Core suite (including its isolated subprocess files), run:
 
 ```bash
