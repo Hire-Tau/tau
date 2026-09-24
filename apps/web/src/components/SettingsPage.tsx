@@ -829,7 +829,7 @@ function AccountSection({ dependencies }: { dependencies: SettingsPageDependenci
           )}
         </div>
         {disconnectError && (
-          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+          <p role="alert" className="text-sm text-status-danger-600 dark:text-status-danger-400">
             {disconnectError}
           </p>
         )}
