@@ -49,6 +49,7 @@ roles:
       - secrets:write:integration
       - agent-types:read # view available agent types
       - squad-presets:read # view available squad presets
+      - theme-presets:moderate # remove another user's shared theme preset from the instance-wide list
       - channels:read # view channel instances
       - webhooks:read # view webhook status
       - skills:*

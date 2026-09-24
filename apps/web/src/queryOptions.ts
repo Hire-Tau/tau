@@ -118,7 +118,7 @@ import { getAgentQuestions } from './api/agentQuestions'
 import { getSystemTokens } from './api/systemTokens'
 import { getInstanceIdentity, listPeers, getAgentFederationStatus, listAgentAllowRules } from './api/amtp'
 import { getOnboardingStatus } from './api/onboarding'
-import type { NormalizedSquadActivityFilters } from '@tau/shared'
+import type { NormalizedSquadActivityFilters, ThemePresetScope } from '@tau/shared'
 
 /**
  * Centralized query option factories.
@@ -154,7 +154,8 @@ export const queries = {
       queryOptions({ queryKey: queryKeys.workflows.run(id), queryFn: () => client.workflows.run(id) }),
   },
   themePresets: {
-    list: () => queryOptions({ queryKey: themePresetQueryKeys.list(), queryFn: () => client.themePresets.list() }),
+    list: (scope?: ThemePresetScope) =>
+      queryOptions({ queryKey: themePresetQueryKeys.list(scope), queryFn: () => client.themePresets.list(scope) }),
   },
   agents: {
     slotWaits: (squadId: string, agentId: string) =>

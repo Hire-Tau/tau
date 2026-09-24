@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm'
 import { themePresetsRouter } from './theme-presets'
 import { identityMiddleware } from '../middleware/identity'
 import { jsonBodyErrorHandler, jsonBodyErrorMiddleware } from '../middleware/json-body-errors'
-import { authHeaders, cleanupTestRbac, createTestUser, type TestUser } from '../test-utils'
+import { assignRole, authHeaders, cleanupTestRbac, createTestRole, createTestUser, type TestUser } from '../test-utils'
 import { db, themePresets, users } from '../db'
 import { THEME_PRESET_MAX_PER_USER } from '@tau/shared'
 
@@ -25,7 +25,8 @@ const doc = (name = 'Mine') => ({
   variants: { light: {}, dark: { '--color-primary': '#0ea5e9' } },
 })
 
-const list = (user: TestUser) => app.request('/theme-presets', { headers: authHeaders(user.token) })
+const list = (user: TestUser, scope?: 'mine' | 'shared' | 'all') =>
+  app.request(`/theme-presets${scope ? `?scope=${scope}` : ''}`, { headers: authHeaders(user.token) })
 const get = (user: TestUser, id: string) => app.request(`/theme-presets/${id}`, { headers: authHeaders(user.token) })
 const create = (user: TestUser, document: unknown) =>
   app.request('/theme-presets', {
@@ -45,6 +46,16 @@ const remove = (user: TestUser, id: string, revision: number) =>
     headers: { ...authHeaders(user.token), 'Content-Type': 'application/json' },
     body: JSON.stringify({ revision }),
   })
+const setVisibility = (user: TestUser, id: string, revision: number, visibility: string) =>
+  app.request(`/theme-presets/${id}/visibility`, {
+    method: 'PUT',
+    headers: { ...authHeaders(user.token), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ revision, visibility }),
+  })
+const removeShare = (user: TestUser, id: string) =>
+  app.request(`/theme-presets/${id}/share`, { method: 'DELETE', headers: authHeaders(user.token) })
+const duplicate = (user: TestUser, id: string) =>
+  app.request(`/theme-presets/${id}/duplicate`, { method: 'POST', headers: authHeaders(user.token) })
 
 beforeAll(async () => {
   a = await createTestUser({ prefix })
@@ -59,6 +70,9 @@ test('anonymous access cannot read or mutate presets', async () => {
     () => app.request('/theme-presets'),
     () => app.request('/theme-presets/00000000-0000-4000-8000-000000000000'),
     () => app.request('/theme-presets', { method: 'POST' }),
+    () => app.request('/theme-presets/00000000-0000-4000-8000-000000000000/visibility', { method: 'PUT' }),
+    () => app.request('/theme-presets/00000000-0000-4000-8000-000000000000/share', { method: 'DELETE' }),
+    () => app.request('/theme-presets/00000000-0000-4000-8000-000000000000/duplicate', { method: 'POST' }),
   ])
     expect((await request()).status).toBe(401)
 })
@@ -68,7 +82,13 @@ test('create, list, get, update (revision) and delete (revision) are owner-scope
   const created = await create(a, doc('First'))
   expect(created.status).toBe(201)
   const preset = await created.json()
-  expect(preset).toMatchObject({ ownerUserId: a.id, visibility: 'private', revision: 1, document: doc('First') })
+  expect(preset).toMatchObject({
+    ownerUserId: a.id,
+    visibility: 'private',
+    revision: 1,
+    document: doc('First'),
+    owner: { id: a.id, displayName: a.displayName },
+  })
   expect(preset.id).toBeString()
 
   expect(await (await list(a)).json()).toEqual([preset])
@@ -156,4 +176,158 @@ test('user deletion cascades preset rows', async () => {
   await create(removable, doc())
   await db.delete(users).where(eq(users.id, removable.id))
   expect(await db.select().from(themePresets).where(eq(themePresets.ownerUserId, removable.id))).toHaveLength(0)
+})
+
+// ── Phase 2: sharing ────────────────────────────────────────────────────────
+
+test('scope=shared/all isolate visibility correctly: a private preset is never visible to another user', async () => {
+  const created = await create(a, doc('Private one'))
+  const preset = await created.json()
+
+  // Private and not the caller's own: absent from every other-user scope.
+  expect(await (await list(b, 'shared')).json()).not.toContainEqual(expect.objectContaining({ id: preset.id }))
+  expect(await (await list(b, 'all')).json()).not.toContainEqual(expect.objectContaining({ id: preset.id }))
+
+  const shared = await (await setVisibility(a, preset.id, 1, 'instance')).json()
+  expect(shared).toMatchObject({ visibility: 'instance', revision: 2 })
+
+  // Now visible to b via shared/all, with attribution, but NOT via b's own "mine" scope.
+  expect(await (await list(b, 'shared')).json()).toContainEqual(
+    expect.objectContaining({ id: preset.id, owner: { id: a.id, displayName: a.displayName } })
+  )
+  expect(await (await list(b, 'all')).json()).toContainEqual(expect.objectContaining({ id: preset.id }))
+  expect(await (await list(b, 'mine')).json()).not.toContainEqual(expect.objectContaining({ id: preset.id }))
+  // The owner's own scope=mine still includes it (still theirs, not duplicated into "shared" for themselves).
+  expect(await (await list(a, 'mine')).json()).toContainEqual(expect.objectContaining({ id: preset.id }))
+  expect(await (await list(a, 'shared')).json()).not.toContainEqual(expect.objectContaining({ id: preset.id }))
+
+  await setVisibility(a, preset.id, 2, 'private')
+  await remove(a, preset.id, 3)
+})
+
+test('GET /:id is a live-link fetch: any instance-shared preset is readable by anyone, private stays owner-only', async () => {
+  const created = await create(a, doc('Link me'))
+  const preset = await created.json()
+  expect((await get(b, preset.id)).status).toBe(404) // still private
+
+  await setVisibility(a, preset.id, 1, 'instance')
+  const seenByB = await get(b, preset.id)
+  expect(seenByB.status).toBe(200)
+  expect(await seenByB.json()).toMatchObject({ id: preset.id, visibility: 'instance', document: doc('Link me') })
+
+  await setVisibility(a, preset.id, 2, 'private') // owner unshares
+  expect((await get(b, preset.id)).status).toBe(404) // unshared -> 404 again ("no longer shared")
+
+  await remove(a, preset.id, 3)
+})
+
+test('PUT /:id/visibility is owner-only and revision-checked', async () => {
+  const created = await create(a, doc('Mine to share'))
+  const preset = await created.json()
+
+  expect((await setVisibility(b, preset.id, 1, 'instance')).status).toBe(404) // not the owner
+
+  const stale = await setVisibility(a, preset.id, 99, 'instance')
+  expect(stale.status).toBe(409)
+
+  const ok = await setVisibility(a, preset.id, 1, 'instance')
+  expect(ok.status).toBe(200)
+  expect(await ok.json()).toMatchObject({ visibility: 'instance', revision: 2 })
+
+  const back = await setVisibility(a, preset.id, 2, 'private')
+  expect(back.status).toBe(200)
+  expect(await back.json()).toMatchObject({ visibility: 'private', revision: 3 })
+
+  await remove(a, preset.id, 3)
+})
+
+test('DELETE /:id/share requires theme-presets:moderate; unshares without deleting the owner’s preset', async () => {
+  const created = await create(a, doc('Moderate me'))
+  const preset = await created.json()
+  await setVisibility(a, preset.id, 1, 'instance')
+
+  // b has no permission at all -> forbidden.
+  expect((await removeShare(b, preset.id)).status).toBe(403)
+
+  const role = await createTestRole({ prefix, permissions: ['theme-presets:moderate'] })
+  const moderator = await createTestUser({ prefix })
+  await assignRole({ userId: moderator.id, roleId: role.id, scope: 'system' })
+
+  const removed = await removeShare(moderator, preset.id)
+  expect(removed.status).toBe(200)
+  expect(await removed.json()).toMatchObject({ id: preset.id, visibility: 'private' })
+
+  // The owner still has it (as private) — moderation unshares, never deletes.
+  const stillOwned = await get(a, preset.id)
+  expect(stillOwned.status).toBe(200)
+  expect((await stillOwned.json()).visibility).toBe('private')
+  // No longer visible to anyone else.
+  expect((await get(b, preset.id)).status).toBe(404)
+
+  await remove(a, preset.id, (await (await get(a, preset.id)).json()).revision)
+})
+
+test('DELETE /:id/share on an already-private or missing preset is a harmless no-op/404, never a fake success', async () => {
+  const role = await createTestRole({ prefix, permissions: ['theme-presets:moderate'] })
+  const moderator = await createTestUser({ prefix })
+  await assignRole({ userId: moderator.id, roleId: role.id, scope: 'system' })
+
+  const created = await create(a, doc('Already private'))
+  const preset = await created.json()
+  const result = await removeShare(moderator, preset.id)
+  expect(result.status).toBe(200)
+  expect((await result.json()).revision).toBe(1) // untouched: was never shared
+
+  expect((await removeShare(moderator, '00000000-0000-4000-8000-000000000000')).status).toBe(404)
+  await remove(a, preset.id, 1)
+})
+
+test('POST /:id/duplicate copies a shared preset into the caller’s own private library with a prefixed name', async () => {
+  const created = await create(a, doc('Original'))
+  const preset = await created.json()
+  await setVisibility(a, preset.id, 1, 'instance')
+
+  const dup = await duplicate(b, preset.id)
+  expect(dup.status).toBe(201)
+  const copy = await dup.json()
+  expect(copy).toMatchObject({
+    ownerUserId: b.id,
+    visibility: 'private',
+    document: { ...doc('Original'), name: 'Copy of Original' },
+  })
+  expect(copy.id).not.toBe(preset.id)
+
+  // Also works for the owner's own preset (own-library duplicate).
+  const ownDupResponse = await duplicate(a, preset.id)
+  expect(ownDupResponse.status).toBe(201)
+  const ownDup = await ownDupResponse.json()
+  expect(ownDup).toMatchObject({ ownerUserId: a.id, visibility: 'private' })
+
+  // A private preset owned by someone else is not duplicable (404, not leaked).
+  const privateOne = await create(a, doc('Still private'))
+  const privatePreset = await privateOne.json()
+  expect((await duplicate(b, privatePreset.id)).status).toBe(404)
+
+  await setVisibility(a, preset.id, 2, 'private') // owner unshares
+  await remove(a, preset.id, 3)
+  await remove(a, privatePreset.id, 1)
+  await remove(b, copy.id, 1)
+  await remove(a, ownDup.id, 1)
+})
+
+test('POST /:id/duplicate enforces the duplicating user’s own cap (409), not the source owner’s', async () => {
+  const created = await create(a, doc('Cap source'))
+  const preset = await created.json()
+  await setVisibility(a, preset.id, 1, 'instance')
+
+  const c = await createTestUser({ prefix })
+  const ids: string[] = []
+  for (let i = 0; i < THEME_PRESET_MAX_PER_USER; i++) {
+    const response = await create(c, doc(`Filler ${i}`))
+    ids.push((await response.json()).id)
+  }
+  expect((await duplicate(c, preset.id)).status).toBe(409)
+  for (const id of ids) await remove(c, id, 1)
+  await setVisibility(a, preset.id, 2, 'private')
+  await remove(a, preset.id, 3)
 })

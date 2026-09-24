@@ -299,6 +299,7 @@ test('setAppearance and toggleTheme keep the active custom theme and preset, res
   await act(async () => {
     theme.applyPreset({
       id: 'preset-1',
+      owner: { id: 'owner-1' },
       document: {
         format: 'tau-custom-theme',
         version: 2,
@@ -309,18 +310,21 @@ test('setAppearance and toggleTheme keep the active custom theme and preset, res
     })
   })
   expect(theme.presetId).toBe('preset-1')
+  expect(theme.presetOwnerId).toBe('owner-1')
   expect(theme.customTheme?.name).toBe('Pair')
   await act(async () => {
     theme.setAppearance('dark')
   })
   // The preset and its document are still active; only the resolved variant changed.
   expect(theme.presetId).toBe('preset-1')
+  expect(theme.presetOwnerId).toBe('owner-1')
   expect(theme.customTheme?.name).toBe('Pair')
   expect(document.documentElement.style.getPropertyValue('--color-primary')).toBe('238 238 238')
   await act(async () => {
     theme.toggleTheme()
   })
   expect(theme.presetId).toBe('preset-1')
+  expect(theme.presetOwnerId).toBe('owner-1')
   expect(document.documentElement.style.getPropertyValue('--color-primary')).toBe('17 17 17')
 })
 
@@ -342,6 +346,7 @@ test('setThemeId deactivates the custom theme/preset ring without deleting anyth
   await act(async () => {
     theme.applyPreset({
       id: 'preset-1',
+      owner: { id: 'owner-1' },
       document: {
         format: 'tau-custom-theme',
         version: 2,
@@ -352,10 +357,12 @@ test('setThemeId deactivates the custom theme/preset ring without deleting anyth
     })
   })
   expect(theme.presetId).toBe('preset-1')
+  expect(theme.presetOwnerId).toBe('owner-1')
   await act(async () => {
     theme.setThemeId('harbor')
   })
   expect(theme.presetId).toBeNull()
+  expect(theme.presetOwnerId).toBeNull()
   expect(theme.customTheme).toBeNull()
   expect(theme.themeId).toBe('harbor')
 })

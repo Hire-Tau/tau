@@ -25,6 +25,15 @@ describe('slot permissions', () => {
   })
 })
 
+describe('theme preset moderation permission', () => {
+  it('declares a dedicated moderation permission distinct from settings/users management', () => {
+    expect(Permissions.THEME_PRESETS_MODERATE).toBe('theme-presets:moderate')
+    expect(isGrantablePermission(Permissions.THEME_PRESETS_MODERATE)).toBe(true)
+    expect(permissionMatches(Permissions.SETTINGS_WRITE, Permissions.THEME_PRESETS_MODERATE)).toBe(false)
+    expect(permissionMatches('theme-presets:*', Permissions.THEME_PRESETS_MODERATE)).toBe(true)
+  })
+})
+
 describe('permissionMatches', () => {
   it('registers the dedicated forced-migration permission', () => {
     expect(Permissions.MACHINES_FORCE_MIGRATE).toBe('machines:force-migrate')

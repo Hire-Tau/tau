@@ -223,6 +223,11 @@ export const Permissions = {
 
   // System API tokens (user-less, scoped automation tokens — admin-managed)
   SYSTEM_TOKENS_MANAGE: 'system-tokens:manage',
+
+  // Theme presets: self-service create/read/update/delete/share needs no permission
+  // (owner-only, resolveActingUser — see routes/theme-presets.ts). Only removing
+  // someone ELSE's preset from the instance-wide shared list is privileged.
+  THEME_PRESETS_MODERATE: 'theme-presets:moderate',
 } as const
 
 export type Permission = (typeof Permissions)[keyof typeof Permissions]

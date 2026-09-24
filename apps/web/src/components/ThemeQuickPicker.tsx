@@ -16,7 +16,11 @@ const HOVER_PREVIEW_DELAY_MS = 100
 
 type Circle =
   | { kind: 'builtin'; id: string; label: string; theme: WebThemeDefinition }
-  | { kind: 'preset'; id: string; label: string; preset: ThemePreset }
+  // Phase 2: a circle for a foreign/shared preset only needs enough of
+  // ThemePreset to paint its swatch and re-apply it (id, document, owner) —
+  // never the full server DTO, since the quick picker synthesizes one for
+  // the currently-active shared preset without an extra fetch (see below).
+  | { kind: 'preset'; id: string; label: string; preset: Pick<ThemePreset, 'id' | 'document' | 'owner'> }
 
 // Hoisted so a caller that never passes `presets` (auth-disabled instances,
 // or before the query resolves) doesn't create a new empty array every
@@ -32,7 +36,10 @@ const APPEARANCE_OPTIONS = [
 
 /** A preset's document always covers both variants; a circle preview/swatch
  * never forces a particular side, it just resolves the app's current one. */
-function presetAppearance(preset: ThemePreset, currentAppearance: EffectiveAppearance): EffectiveAppearance {
+function presetAppearance(
+  preset: Pick<ThemePreset, 'document'>,
+  currentAppearance: EffectiveAppearance
+): EffectiveAppearance {
   return findWebTheme(preset.document.base).kind === 'unified' ? 'constant' : currentAppearance
 }
 
@@ -67,9 +74,34 @@ export function ThemeQuickPicker({
   const previewClearRef = useRef<(() => void) | null>(null)
   const valueRef = useStableRef(value)
 
+  // Phase 2: the currently-active preset (own or a foreign shared one) always
+  // gets a circle, even when it isn't in `presets` (the caller's own
+  // library) — the quick picker stays compact by only ever adding this ONE
+  // extra circle, not a whole "Shared" gallery. Synthesized directly from
+  // ThemeProvider state (no extra fetch): `presetOwnerId` is populated
+  // whenever ANY preset is applied (see ThemeProvider's doc comment), so
+  // this also covers the caller's own preset if it somehow isn't in
+  // `presets` yet (e.g. the list query hasn't resolved).
+  const activeForeignPreset =
+    value.presetId &&
+    value.presetOwnerId &&
+    value.customTheme &&
+    !presets.some((preset) => preset.id === value.presetId)
+      ? { id: value.presetId, document: value.customTheme, owner: { id: value.presetOwnerId, displayName: '' } }
+      : null
   const circles: Circle[] = [
     ...BUILT_IN_THEMES.map((theme) => ({ kind: 'builtin' as const, id: theme.id, label: theme.label, theme })),
     ...presets.map((preset) => ({ kind: 'preset' as const, id: preset.id, label: preset.document.name, preset })),
+    ...(activeForeignPreset
+      ? [
+          {
+            kind: 'preset' as const,
+            id: activeForeignPreset.id,
+            label: activeForeignPreset.document.name,
+            preset: activeForeignPreset,
+          },
+        ]
+      : []),
   ]
 
   const restorePreview = () => {

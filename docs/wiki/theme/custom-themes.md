@@ -1,18 +1,106 @@
 # Custom themes and the theme preset library (v2)
 
 Settings → Appearance → **My themes** is a per-user library of saved theme
-presets (`/api/theme-presets`, owner-only — Phase 1 has no sharing). Each
-preset covers **both light and dark** (or one constant variant for a unified
-base like High contrast), so applying a preset follows the existing
-Light/Dark/System toggle instead of locking the app to one concrete
-appearance. **New**, **Duplicate**, **Edit**, **Rename**, **Delete** (with
-confirmation), **Use** and **Export/Import** all operate on this library.
-Editing a preset opens a token editor whose draft previews **live on the
-whole app** (not a scoped sample) while it is open; nothing is persisted
-until **Save** (existing preset, revision-checked `PUT`) or **Save as new**
-(`POST`, forking a copy); closing without saving restores the previously
-applied selection. There is still no public/cross-user gallery in this
-phase — see the phase 2/3 notes at the end of this document.
+presets (`/api/theme-presets`). Each preset covers **both light and dark**
+(or one constant variant for a unified base like High contrast), so applying
+a preset follows the existing Light/Dark/System toggle instead of locking the
+app to one concrete appearance. **New**, **Duplicate**, **Edit**, **Rename**,
+**Delete** (with confirmation), **Use**, **Share/Unshare** and
+**Export/Import** all operate on this library. Editing a preset opens a token
+editor whose draft previews **live on the whole app** (not a scoped sample)
+while it is open; nothing is persisted until **Save** (existing preset,
+revision-checked `PUT`) or **Save as new** (`POST`, forking a copy); closing
+without saving restores the previously applied selection.
+
+## Sharing (Phase 2)
+
+Any signed-in user can share one of their own presets with everyone else on
+the instance, and unshare it again — a preset's `visibility` is `'private'`
+(default) or `'instance'`, toggled by its owner via
+`PUT /theme-presets/:id/visibility` (revision-checked, like the document
+update route; never touches the document itself). Settings → Appearance →
+**Shared themes** lists every OTHER user's `'instance'`-visibility preset
+(`GET /theme-presets?scope=shared`; `scope=mine` — the default, Phase 1
+behavior — or `scope=all`, the union, are also available), each with a swatch,
+its name, **"by {owner}"** attribution, **Use** and **Duplicate**. Every
+`ThemePreset` DTO carries `owner: { id, displayName }` (`displayName` is the
+account's display name, falling back to its email — the same
+display-name-or-email convention Core's other cross-user attributions, like
+chat sender names and work-stream requester names, already use; there is no
+separate raw `email` field on this DTO).
+
+**Use** on a shared preset is a **live link**: the active selection
+references that preset by id, not a copy of its document at that moment. The
+author's later edits show up automatically — `GET /theme-presets/:id` is a
+live-link read that returns the caller's own preset OR any `'instance'`
+preset (a private preset owned by someone else is still a 404, indistinguishable
+from a missing id); the browser refetches it on load and on the same
+focus/online/visibility triggers as account preference sync (see
+[account sync](account-sync.md)), and applies the new document through the
+normal apply path if it changed (so the resolved snapshot, pre-paint cache and
+account sync all stay consistent) — never overriding an open editor draft or
+quick-picker hover preview, which live in a separate preview slot layered on
+top of whatever is currently applied. If the preset is unshared or deleted,
+the fetch 404s: the user keeps their last-seen copy (the already-applied
+document snapshot) and Settings shows it as **detached** ("This shared theme
+is no longer available — keep a copy to keep using it"), with a **Keep a
+copy** action that saves it into the user's own library as an ordinary new
+private preset.
+
+**Duplicate** (`POST /theme-presets/:id/duplicate`) works identically for the
+caller's own presets and any shared preset: it copies the document into a
+new, independent, always-**private** preset in the caller's own library named
+`"Copy of <original name>"` (truncated to the 40-character name limit),
+enforcing the DUPLICATING user's own 50-preset cap — never the source
+preset's owner's cap, and never the source's own visibility.
+
+An admin or operator holding the `theme-presets:moderate`
+[permission](../permissions.md) can remove any preset from the shared list —
+`DELETE /theme-presets/:id/share` —
+without deleting it: the preset simply reverts to `'private'` and stays in
+its owner's own library, exactly like the owner unsharing it themselves. An
+already-private or missing preset is a harmless no-op/404, never a fake
+success. There is no separate audit-log table for this action (the codebase
+has no generic moderation audit log — see `services/rbac/audit-actor.ts`);
+the route logs the acting identity via the existing `auditActor` convention.
+
+`presetId` alone is enough to identify a foreign preset unambiguously (it is
+a globally unique UUID), but `ThemePreference` (the account-synced selection,
+see [account sync](account-sync.md)) also carries `presetOwnerId`: it is
+populated whenever ANY preset (own or shared) is applied, and — unlike
+`presetId` — is deliberately RETAINED when the live-link refresh clears
+`presetId` on a 404. That retained pair (`presetId: null`,
+`presetOwnerId: <id>`) is what lets Settings show "no longer shared" for a
+detached SHARED preset while keeping Phase 1's silent, message-free detach
+for the caller's own deleted preset (whose `presetOwnerId` equals the
+caller's own id, so the "foreign" check never fires). The quick picker
+(`ThemeQuickPicker`) stays compact: rather than a whole shared gallery, it
+adds at most one extra circle — for the CURRENTLY active preset, if it isn't
+already in the caller's own list — synthesized directly from this same
+provider state, with no extra fetch.
+
+### Real-browser verification (Phase 2, two users)
+
+A throwaway instance (scratch Postgres, scratch `TAU_HOME`, Core built and
+run directly) was driven with `playwright-core` against a cached Chromium,
+two independent browser contexts each with its own CDP virtual WebAuthn
+authenticator, through the real bootstrap/invite/passkey-registration routes
+(no localStorage token bypass, no direct DB session writes). User A created
+and shared a preset; User B saw it under "Shared themes" with "by User A"
+attribution, clicked **Use**, and the whole app repainted (`--color-primary`
+changed from the default to A's color, confirmed via computed style). User A
+then edited the preset's color and saved; User B reloaded and picked up the
+new color with no re-"Use" needed — the live link. User A clicked
+**Unshare**; User B reloaded and saw the exact "This shared theme is no
+longer available — keep a copy to keep using it." notice while KEEPING the
+last-seen color (not reverting to the default theme), then clicked **Keep a
+copy**, landing an independent copy in her own "My themes". No uncaught page
+errors on either browser context for the whole run; a `404` on
+`GET /theme-presets/:id` right after the unshare was the expected live-link
+detection, not a bug. The instance was torn down (container removed, scratch
+home deleted) afterward; nothing was committed. This is a synthetic
+two-account session on one instance, not a multi-device or
+production-network check.
 
 ```json
 {
@@ -268,18 +356,19 @@ The editor reuses the built-in contrast computation and critical-pair inventory 
 
 ## Regression coverage
 
-- Shared: closed grammar/rejection, byte/count caps (including the worst-case-pair measurement), unknown-name and pre-inheritance coherence per variant, v1→v2 normalization, `compileCustomTheme`'s resolved-variant selection, OKLCH round-trip fidelity (`color-oklch.test.ts`), derivation buckets + harmonized-status bounding + the multi-seed contrast-pass property test in both a light and a dark real-base fixture, including a dedicated regression test holding the primary/page pair to the non-text (3:1) floor rather than the text (4.5:1) one, a concrete real-base (ember/dark) regression for `--on-accent-fg` being chosen against the final (post-pass) primary rather than a stale pre-pass one, and harmonized status fg/surface + badge-fg/badge-surface pairs actually being included in the contrast pass (`theme-derivation.test.ts`), preset request-schema/cap and per-owner-race/non-UUID-:id tests (`theme-preset.test.ts`, `theme-presets.test.ts`).
-- Core: owner-scoped preset CRUD (`GET/POST /theme-presets`, `GET/PUT/DELETE /theme-presets/:id`) — isolation, revision conflicts (409), validation (422), per-user cap (409, race-safe under real concurrency via a per-owner `pg_advisory_xact_lock` — a 20-way concurrent create from 49 lands exactly 1 more, never over the cap), a malformed `:id` is a 404 (never a raw driver error), cascade on user deletion, and the generated `theme_presets` migration.
-- Web: custom preview isolation and complete inheritance, invalid-document fallback, export round trip (import now lives once, in the library), partial-application cleanup, graph/xterm observer repaint and reset, a real-CSS-cascade palette-derivation integration test (explicit overrides still win over derived values), the resolved-snapshot round trip and staleness rules (matching doc+fingerprint+appearance applies pre-paint; an edited doc, a different build, or the other appearance falls back; a hostile/malformed snapshot value is never trusted — the WHOLE snapshot is rejected, not partially applied; a full palette+harmonized-status snapshot, BOTH sides, stays well under budget) in both `theme/custom.test.ts` and `theme/flashScript.test.ts` (the shipped script, not just the source), `ThemeProvider` tests that a real root paint persists a snapshot matching the applied document and clears it on deactivation, and that a `'system'`-appearance palette preset snapshots BOTH resolved sides (with a real pre-paint `readResolvedSnapshot` check on the non-visible side), the preview slot (last registrant wins; a superseded registrant's clear never clobbers the current one; the editor's live preview survives an appearance change, a storage event, and remote account-sync adoption made elsewhere while it's open) in `ThemeProvider.test.tsx` and `CustomThemeEditor.test.tsx`, the editor's whole-app live preview (open/tab-switch/Cancel/unmount all repaint or restore correctly), an unset seed swatch reading the active base theme's own `--color-border` token rather than any hardcoded color, color-field accessibility (swatch and text field are independently addressable, not ambiguously co-labelled), the preset library's New/Duplicate/Rename/Delete/Use/Export/Import flows, a real-built-in-CSS test that a palette-only preset's library swatch and quick-picker circle both resolve a recognizably-derived color (not empty, not the plain base), `ThemeQuickPicker` rendering one circle per saved preset (in addition to the built-ins) with a selection ring keyed on the active preset id, and the theme-presets query being gated identically (an auth-disabled instance sees presets in both) between `AppNav` and `ThemePresetLibrary` via a single shared `selfServiceQueryEnabled`.
+- Shared: closed grammar/rejection, byte/count caps (including the worst-case-pair measurement), unknown-name and pre-inheritance coherence per variant, v1→v2 normalization, `compileCustomTheme`'s resolved-variant selection, OKLCH round-trip fidelity (`color-oklch.test.ts`), derivation buckets + harmonized-status bounding + the multi-seed contrast-pass property test in both a light and a dark real-base fixture, including a dedicated regression test holding the primary/page pair to the non-text (3:1) floor rather than the text (4.5:1) one, a concrete real-base (ember/dark) regression for `--on-accent-fg` being chosen against the final (post-pass) primary rather than a stale pre-pass one, and harmonized status fg/surface + badge-fg/badge-surface pairs actually being included in the contrast pass (`theme-derivation.test.ts`), preset request-schema/cap and per-owner-race/non-UUID-:id tests, the visibility-change request schema and the `mine`/`shared`/`all` scope guard (`theme-preset.test.ts`), and `presetOwnerId`'s optional/only-alongside-a-document validation, including the detached-shared combination (`presetId: null`, `presetOwnerId` retained) (`theme-preferences.test.ts`).
+- Core: owner-scoped preset CRUD (`GET/POST /theme-presets`, `GET/PUT/DELETE /theme-presets/:id`) — isolation, revision conflicts (409), validation (422), per-user cap (409, race-safe under real concurrency via a per-owner `pg_advisory_xact_lock` — a 20-way concurrent create from 49 lands exactly 1 more, never over the cap), a malformed `:id` is a 404 (never a raw driver error), cascade on user deletion, and the generated `theme_presets` migration; Phase 2 sharing — `scope=mine/shared/all` isolation (a private preset never appears in another user's `shared`/`all`), owner attribution on every returned preset, the live-link `GET /:id` read (own OR any `'instance'` preset; unshared/deleted is a 404 again), owner-only revision-checked `PUT /:id/visibility`, `DELETE /:id/share` denied without `theme-presets:moderate` and idempotent/404-correct with it (the owner keeps a private copy), and `POST /:id/duplicate` for both own and shared sources enforcing the DUPLICATING user's own cap (`theme-presets.test.ts`).
+- Web: custom preview isolation and complete inheritance, invalid-document fallback, export round trip (import now lives once, in the library), partial-application cleanup, graph/xterm observer repaint and reset, a real-CSS-cascade palette-derivation integration test (explicit overrides still win over derived values), the resolved-snapshot round trip and staleness rules (matching doc+fingerprint+appearance applies pre-paint; an edited doc, a different build, or the other appearance falls back; a hostile/malformed snapshot value is never trusted — the WHOLE snapshot is rejected, not partially applied; a full palette+harmonized-status snapshot, BOTH sides, stays well under budget) in both `theme/custom.test.ts` and `theme/flashScript.test.ts` (the shipped script, not just the source), `ThemeProvider` tests that a real root paint persists a snapshot matching the applied document and clears it on deactivation, and that a `'system'`-appearance palette preset snapshots BOTH resolved sides (with a real pre-paint `readResolvedSnapshot` check on the non-visible side), the preview slot (last registrant wins; a superseded registrant's clear never clobbers the current one; the editor's live preview survives an appearance change, a storage event, and remote account-sync adoption made elsewhere while it's open) in `ThemeProvider.test.tsx` and `CustomThemeEditor.test.tsx`, the editor's whole-app live preview (open/tab-switch/Cancel/unmount all repaint or restore correctly), an unset seed swatch reading the active base theme's own `--color-border` token rather than any hardcoded color, color-field accessibility (swatch and text field are independently addressable, not ambiguously co-labelled), the preset library's New/Duplicate/Rename/Delete/Use/Export/Import flows, a real-built-in-CSS test that a palette-only preset's library swatch and quick-picker circle both resolve a recognizably-derived color (not empty, not the plain base), `ThemeQuickPicker` rendering one circle per saved preset (in addition to the built-ins) with a selection ring keyed on the active preset id, and the theme-presets query being gated identically (an auth-disabled instance sees presets in both) between `AppNav` and `ThemePresetLibrary` via a single shared `selfServiceQueryEnabled`; Phase 2 sharing — `ThemeSyncStore.refreshLinkedPreset`'s no-op/apply-if-changed/404-detach/network-silent/stale-response-discarded behavior and `presetOwnerId` round-tripping through `change`/reload (`theme/sync.test.ts`), the live-link fetch sequenced after (not racing) the account preference read and re-triggered on the same focus/online/visibility events (`ThemeAccountSync.test.tsx`), the Settings **Share/Unshare** toggle, **Shared themes** listing with attribution, admin-only **Remove from shared** (confirmed, permission-gated) and the detached-shared **"Keep a copy"** notice (`ThemePresetLibrary.test.tsx`), and the quick picker's single synthetic circle for an active foreign preset not already in the caller's own list (`ThemeQuickPicker.test.tsx`).
 - Actual generated utility substitution covers all mapped tokens with custom alpha and intrinsic/utility opacity; built-in palette parity and contrast gates remain unchanged.
 - Security source checks prohibit CSS/HTML text writes in the custom application path; pre-paint generation cannot drift from the shared validator/compiler.
 
 Physical-device/PWA cold-launch and authenticated account navigation are not certified by these tests. The inherited Universe fixture/layout limitation remains outside this change.
 
-## What Phase 2 and Phase 3 build on this
+## What Phase 3 builds on this
 
-- **Phase 2 (sharing)**: the schema already carries `visibility: 'private' | 'instance'` on every preset (default `'private'`); Phase 1 never sets it to `'instance'` and every route is owner-only. Phase 2 adds: a route to toggle visibility, a route (and UI) to list/browse instance-shared presets, an admin remove action, and a "Use" path for a shared preset that is a **live link** (the author's later edits show up on the follower's next load) versus "Duplicate" (an independent copy) — both map cleanly onto the existing `presetId` field on `ThemePreference` and the existing revision-checked update/delete routes.
 - **Phase 3 (theme-building assistant)**: attaches to the existing page-editor framework and the editor built here, since the editor already (a) keeps a draft separate from the saved document, (b) live-previews the whole app while open, and (c) exposes seed colors as the primary edit surface (`palette.primary/secondary/tertiary/neutral`, plus the `status` and `contrast` modes) rather than 400+ individual tokens — an assistant can converse in terms of "make it warmer" / "more contrast" and mutate 2–4 seed values instead of walking the whole token grid.
+
+Phase 2 (instance-wide sharing) is documented above, under [Sharing](#sharing-phase-2).
 
 ### Historical phase-6 verification (2026-09-21)
 
