@@ -18,6 +18,7 @@ describe('FleetAlertRuntime', () => {
         return { fleetStarved: false }
       },
       reconcileDeadFleet: async () => {},
+      reconcileSandboxOverload: async () => {},
       drainNotifications: async () => {},
       setIntervalFn: () => 1,
       clearIntervalFn: () => {},
@@ -55,6 +56,9 @@ describe('FleetAlertRuntime', () => {
         calls.push('dead')
         await blocked
       },
+      reconcileSandboxOverload: async () => {
+        calls.push('overload')
+      },
       drainNotifications: async () => {
         calls.push('notify')
       },
@@ -72,12 +76,43 @@ describe('FleetAlertRuntime', () => {
     await Bun.sleep(0)
     intervalCallback()
     await Bun.sleep(0)
-    expect(calls).toEqual(['chains', 'demand', 'provider', 'dead'])
+    expect(calls).toEqual(['chains', 'demand', 'provider', 'dead', 'overload'])
 
     release()
     await runtime.stop()
-    expect(calls).toEqual(['chains', 'demand', 'provider', 'dead', 'notify'])
+    expect(calls).toEqual(['chains', 'demand', 'provider', 'dead', 'overload', 'notify'])
     expect(cleared).toBe(42)
+  })
+
+  it('still reconciles other alerts and delivers notifications when sandbox probing fails', async () => {
+    const calls: string[] = []
+    const runtime = new FleetAlertRuntime({
+      now: () => new Date('2026-09-24T00:00:00Z'),
+      getEnabledChains: async () => [],
+      getHealth: () => ({ records: [] }),
+      getDemand: async () => new Map(),
+      reconcileProvider: async () => {
+        calls.push('provider')
+        return { fleetStarved: false }
+      },
+      reconcileDeadFleet: async () => {
+        calls.push('dead')
+      },
+      reconcileSandboxOverload: async ({ now }) => {
+        calls.push(`overload@${now.toISOString()}`)
+        throw new Error('box probe exploded')
+      },
+      drainNotifications: async () => {
+        calls.push('notify')
+      },
+      setIntervalFn: () => 1,
+      clearIntervalFn: () => {},
+    })
+
+    runtime.start()
+    await runtime.stop()
+
+    expect(calls).toEqual(['provider', 'dead', 'overload@2026-09-24T00:00:00.000Z', 'notify'])
   })
 
   it('maps enabled model chains to exact usable stored accounts and provider-wide runtime credentials', () => {

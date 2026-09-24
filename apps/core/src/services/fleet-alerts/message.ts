@@ -1,5 +1,6 @@
 import { providerLabel, type InboxPushPresentation } from '@tau/shared'
 import type { ProviderHealthKind } from '@tau/shared/provider-health'
+import { SANDBOX_OVERLOAD_STALE_MS } from './audience-policy'
 import type { FleetIncidentNotificationClaim } from './store'
 
 /** Display names resolved at delivery time, so a rename is reflected and no raw ID reaches a reader. */
@@ -75,6 +76,34 @@ function shortId(id: string | undefined): string {
   return id ? id.slice(0, 8) : 'unknown'
 }
 
+/** "the sandbox for reviewer in squad Tau Core", from names resolved at delivery time. */
+function sandboxScope(claim: FleetIncidentNotificationClaim, names: FleetIncidentNames): string {
+  if (names.agentName)
+    return `the sandbox for ${names.agentName}${names.squadName ? ` in squad ${names.squadName}` : ''}`
+  if (names.squadName) return `the sandbox for squad ${names.squadName}`
+  return `sandbox ${shortId(claim.scopeKey.split('_').pop())}`
+}
+
+const finiteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
+
+/** Load figures from allowlisted overload details, phrased for a reader. */
+function overloadReading(details: Record<string, unknown>) {
+  const load = Array.isArray(details.load) ? details.load[0] : undefined
+  const { cpus, peakLoad, memAvailableMb } = details
+  if (!finiteNumber(load) || !finiteNumber(cpus) || cpus < 1) return undefined
+  const free = finiteNumber(memAvailableMb)
+    ? memAvailableMb < 1024
+      ? `${Math.round(memAvailableMb)} MB free`
+      : `${(memAvailableMb / 1024).toFixed(1)} GB free`
+    : 'free memory unknown'
+  return {
+    load: load.toFixed(1),
+    cpus: cpus === 1 ? '1 CPU' : `${cpus} CPUs`,
+    free,
+    ...(finiteNumber(peakLoad) && peakLoad > load ? { peak: peakLoad.toFixed(1) } : {}),
+  }
+}
+
 /**
  * Render a fleet incident for its reader from allowlisted incident facts and resolved names.
  * Free-form details are never echoed; unknown causes fall back to the sanitized stored summary.
@@ -130,15 +159,27 @@ export function renderFleetIncidentMessage(
         `Waiting: ${count === 1 ? '1 work item' : `${count} work items`}` +
           (oldest ? `, the oldest for ${formatFleetDuration(now.getTime() - oldest.getTime())}` : '')
       )
+  } else if (claim.incidentKind === 'sandbox_overloaded') {
+    const title = capitalize(sandboxScope(claim, names))
+    const reading = overloadReading(details)
+    const resolvedBy = details.resolvedBy === 'unobserved' ? 'unobserved' : 'load'
+    if (alert) {
+      subject = `${title} is overloaded`
+      headline = reading
+        ? `${title} is overloaded: load ${reading.load} on ${reading.cpus} for ${lasted} (${reading.free}). Agents’ tool calls and toolchain checks time out while it lasts.`
+        : `${title} has been overloaded for ${lasted}. Agents’ tool calls and toolchain checks time out while it lasts.`
+      if (reading?.peak) facts.push(`Peak load: ${reading.peak}`)
+    } else if (resolvedBy === 'unobserved') {
+      subject = `${title}: overload alert closed`
+      headline = `${title} has had no load reading for ${formatFleetDuration(SANDBOX_OVERLOAD_STALE_MS)} (no agent is running in it, or it isn’t answering), so its overload alert is closed after ${lasted}.`
+    } else {
+      subject = `${title} recovered`
+      headline = `${title} is no longer overloaded after ${lasted}${reading ? `: load ${reading.load} on ${reading.cpus}` : ''}.`
+    }
   } else {
-    const scope = names.agentName
-      ? `the sandbox for ${names.agentName}${names.squadName ? ` in squad ${names.squadName}` : ''}`
-      : names.squadName
-        ? `the sandbox for squad ${names.squadName}`
-        : `sandbox ${shortId(claim.scopeKey.split('_').pop())}`
+    const title = capitalize(sandboxScope(claim, names))
     const reasons = sandboxReasons(details.reasons)
     if (reasons) cause = `VM sandbox setup is degraded: ${reasons}.`
-    const title = capitalize(scope)
     subject = alert ? `${title} is degraded` : `${title} recovered`
     headline = alert ? `${title} hasn’t finished setup.` : `${title} is healthy again after ${lasted}.`
     if (alert) facts.push(`Started: ${lasted} ago`)

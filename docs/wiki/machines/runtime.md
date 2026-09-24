@@ -1507,6 +1507,18 @@ exists at initial eligibility, manager delivery is terminally skipped for that e
 the human alert is immediate; assigning a manager later does not revive it. A new episode
 routes using its then-current attribution.
 
+`sandbox_overloaded` incidents come from the fleet-alert tick. On the `vm` runtime it
+reads `/healthz` load from ready boxes that have a running execution (an agent's own
+box and, for a squad member, its squad box). It reads at most 48 boxes, 8 at a time,
+with a 5-second budget each, and skips any that fail. Boxes with no running agent are
+never read, since a read would wake a socket-activated box or reset its idle-exit
+clock. The load is machine-wide, so every busy box on an overloaded machine has its
+own incident. An episode opens when the one-minute load reaches twice the CPU count
+and alerts when a reading 10 minutes later is still that high. The squad manager is
+told first, and people 15 minutes later; if there is no valid manager, people are told
+immediately. The episode resolves when the load falls below the CPU count, or when no
+reading has arrived for 10 minutes.
+
 Fleet alerts use one durable delivery row per incident phase and audience. Human messages
 retain the trusted `fleet-alert` system-inbox source and best-effort push/external fan-out.
 Manager messages use a separate agent-only source and pin their resolved recipient across

@@ -15,7 +15,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** Sandbox scopes are `sandbox:squad_<id>` or `sandbox:agent_<id>`; names are looked up now, not stored. */
 async function loadFleetIncidentNames(claim: FleetIncidentNotificationClaim): Promise<FleetIncidentNames> {
-  const sandbox = claim.incidentKind === 'sandbox_degraded' ? /^sandbox:(squad|agent)_(.+)$/.exec(claim.scopeKey) : null
+  const sandboxKind = claim.incidentKind === 'sandbox_degraded' || claim.incidentKind === 'sandbox_overloaded'
+  const sandbox = sandboxKind ? /^sandbox:(squad|agent)_(.+)$/.exec(claim.scopeKey) : null
   const agentId = sandbox?.[1] === 'agent' && UUID.test(sandbox[2]!) ? sandbox[2]! : undefined
   const [agent] = agentId
     ? await db

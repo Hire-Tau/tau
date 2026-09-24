@@ -5,7 +5,13 @@ import type { ProviderHealthRecord } from '@tau/shared/provider-health'
 import { db } from '../../db'
 import { agents, fleetIncidentNotifications, fleetIncidents, inbox, settings, squads } from '../../db/schema'
 import { FleetIncidentNotifier } from './notifier'
-import { observeDeadFleet, observeProvider, observeSandboxDegradation } from './store'
+import {
+  observeDeadFleet,
+  observeProvider,
+  observeSandboxDegradation,
+  observeSandboxOverload,
+  listOpenSandboxOverloadSandboxIds,
+} from './store'
 
 const WINDOW = 15 * 60 * 1000
 
@@ -697,5 +703,258 @@ describe('sandbox degraded fleet incident store', () => {
     })
     expect(notifications.some((row) => row.kind === 'recovery' && row.audience === 'human')).toBe(false)
     expect(notifications.find((row) => row.kind === 'recovery' && row.audience === 'manager')).toBeDefined()
+  })
+})
+
+describe('sandbox overload fleet incident store', () => {
+  const START = new Date('2026-09-24T09:00:00Z')
+  const at = (minutes: number) => new Date(START.getTime() + minutes * 60_000)
+  const pressure = (load1: number, memAvailableMb = 463) => ({
+    cpus: 4,
+    load: [load1, load1 * 0.9, load1 * 0.8] as [number, number, number],
+    memTotalMb: 16_000,
+    memAvailableMb,
+  })
+  let ownedSandboxIds: string[]
+  let ownedSquadIds: string[]
+
+  beforeEach(() => {
+    ownedSandboxIds = []
+    ownedSquadIds = []
+  })
+
+  afterEach(async () => {
+    const scopeKeys = ownedSandboxIds.map((id) => `sandbox:${id}`)
+    const incidentIds = scopeKeys.length
+      ? (
+          await db
+            .select({ id: fleetIncidents.id })
+            .from(fleetIncidents)
+            .where(and(eq(fleetIncidents.kind, 'sandbox_overloaded'), inArray(fleetIncidents.scopeKey, scopeKeys)))
+        ).map((row) => row.id)
+      : []
+    if (incidentIds.length) {
+      await db.delete(fleetIncidentNotifications).where(inArray(fleetIncidentNotifications.incidentId, incidentIds))
+      await db.delete(fleetIncidents).where(inArray(fleetIncidents.id, incidentIds))
+    }
+    if (ownedSquadIds.length) {
+      await db.delete(agents).where(inArray(agents.squadId, ownedSquadIds))
+      await db.delete(squads).where(inArray(squads.id, ownedSquadIds))
+    }
+  })
+
+  async function squadWithManager(withManager = true) {
+    const squadId = crypto.randomUUID()
+    ownedSquadIds.push(squadId)
+    await db
+      .insert(squads)
+      .values({ id: squadId, name: `overload-${squadId}`, purpose: 'Overload test', status: 'active' })
+    if (withManager) {
+      const [manager] = await db.insert(agents).values({ agentTypeId: 'manager', squadId }).returning()
+      await db.update(squads).set({ managerAgentId: manager!.id }).where(eq(squads.id, squadId))
+    }
+    return squadId
+  }
+
+  function own(sandboxId: string) {
+    ownedSandboxIds.push(sandboxId)
+    return sandboxId
+  }
+
+  async function episodes(sandboxId: string) {
+    const rows = await db
+      .select()
+      .from(fleetIncidents)
+      .where(and(eq(fleetIncidents.kind, 'sandbox_overloaded'), eq(fleetIncidents.scopeKey, `sandbox:${sandboxId}`)))
+      .orderBy(fleetIncidents.createdAt)
+    return Promise.all(
+      rows.map(async (incident) => ({
+        incident,
+        notifications: await db
+          .select()
+          .from(fleetIncidentNotifications)
+          .where(eq(fleetIncidentNotifications.incidentId, incident.id)),
+      }))
+    )
+  }
+
+  test('opens a squad-linked episode on the first overloaded reading without alerting', async () => {
+    const squadId = await squadWithManager()
+    const sandboxId = own(`squad_${squadId}`)
+    await observeSandboxOverload({ status: 'sampled', sandboxId, pressure: pressure(31.9), now: START })
+
+    const [episode, ...others] = await episodes(sandboxId)
+    expect(others).toEqual([])
+    expect(episode!.incident).toMatchObject({
+      squadId,
+      startedAt: START,
+      alertAfter: at(10),
+      lastObservedAt: START,
+      resolvedAt: null,
+      causeCode: 'sandbox-overloaded',
+      details: {
+        sandboxId,
+        cpus: 4,
+        load: [31.9, 28.7, 25.5],
+        peakLoad: 31.9,
+        memTotalMb: 16_000,
+        memAvailableMb: 463,
+      },
+    })
+    expect(episode!.incident.remediation).toContain(`tau squad sandbox-ps ${squadId}`)
+    expect(episode!.notifications).toEqual([])
+    expect(await listOpenSandboxOverloadSandboxIds()).toContain(sandboxId)
+  })
+
+  test('links an agent sandbox to the agent squad, or to no squad', async () => {
+    const squadId = await squadWithManager()
+    const [member] = await db.insert(agents).values({ agentTypeId: 'worker', squadId }).returning()
+    const [loner] = await db.insert(agents).values({ agentTypeId: 'worker' }).returning()
+    try {
+      const memberBox = own(`agent_${member!.id}`)
+      const lonerBox = own(`agent_${loner!.id}`)
+      await observeSandboxOverload({ status: 'sampled', sandboxId: memberBox, pressure: pressure(9), now: START })
+      await observeSandboxOverload({ status: 'sampled', sandboxId: lonerBox, pressure: pressure(9), now: START })
+      expect((await episodes(memberBox))[0]!.incident.squadId).toBe(squadId)
+      expect((await episodes(lonerBox))[0]!.incident.squadId).toBeNull()
+      expect((await episodes(lonerBox))[0]!.incident.remediation).toContain(`tau agent sandbox-ps ${loner!.id}`)
+    } finally {
+      await db.delete(agents).where(eq(agents.id, loner!.id))
+    }
+  })
+
+  test('ignores readings below the threshold when no episode is open', async () => {
+    const sandboxId = own(`squad_${await squadWithManager()}`)
+    expect(
+      await observeSandboxOverload({ status: 'sampled', sandboxId, pressure: pressure(7.9), now: START })
+    ).toBeUndefined()
+    expect(await episodes(sandboxId)).toEqual([])
+  })
+
+  test('alerts once, manager first, only after ten sustained minutes and keeps readings current', async () => {
+    const sandboxId = own(`squad_${await squadWithManager()}`)
+    for (const minute of [0, 1, 5, 9]) {
+      await observeSandboxOverload({ status: 'sampled', sandboxId, pressure: pressure(12 + minute), now: at(minute) })
+    }
+    // 9m59.999s: still no alert.
+    await observeSandboxOverload({
+      status: 'sampled',
+      sandboxId,
+      pressure: pressure(40.2),
+      now: new Date(at(10).getTime() - 1),
+    })
+    expect((await episodes(sandboxId))[0]!.notifications).toEqual([])
+
+    await observeSandboxOverload({ status: 'sampled', sandboxId, pressure: pressure(31.9, 900), now: at(10) })
+    await observeSandboxOverload({ status: 'sampled', sandboxId, pressure: pressure(33), now: at(11) })
+    await observeSandboxOverload({ status: 'sampled', sandboxId, pressure: pressure(35), now: at(12) })
+
+    const [episode, ...others] = await episodes(sandboxId)
+    expect(others).toEqual([])
+    expect(episode!.incident.lastObservedAt).toEqual(at(12))
+    expect(episode!.incident.details).toMatchObject({ load: [35, 31.5, 28], peakLoad: 40.2, memAvailableMb: 463 })
+    const alerts = episode!.notifications.filter((row) => row.kind === 'alert')
+    expect(alerts.map((row) => row.audience).sort()).toEqual(['human', 'manager'])
+    expect(alerts.find((row) => row.audience === 'manager')).toMatchObject({ status: 'pending', nextAttemptAt: at(10) })
+    expect(alerts.find((row) => row.audience === 'human')).toMatchObject({
+      status: 'pending',
+      nextAttemptAt: new Date(at(10).getTime() + WINDOW),
+    })
+  })
+
+  test('alerts humans immediately when the sandbox has no manager', async () => {
+    const sandboxId = own(`squad_${await squadWithManager(false)}`)
+    for (const minute of [0, 5, 10]) {
+      await observeSandboxOverload({ status: 'sampled', sandboxId, pressure: pressure(20), now: at(minute) })
+    }
+    const alerts = (await episodes(sandboxId))[0]!.notifications
+    expect(alerts.find((row) => row.audience === 'manager')).toMatchObject({ status: 'skipped' })
+    expect(alerts.find((row) => row.audience === 'human')).toMatchObject({ status: 'pending', nextAttemptAt: at(10) })
+  })
+
+  test('holds the episode between one and two loads per CPU without alerting, and resolves below one', async () => {
+    const sandboxId = own(`squad_${await squadWithManager()}`)
+    await observeSandboxOverload({ status: 'sampled', sandboxId, pressure: pressure(9), now: START })
+    // Below 2x but not below 1x: the episode stays open, and a due reading in this band does not alert.
+    await observeSandboxOverload({ status: 'sampled', sandboxId, pressure: pressure(4), now: at(5) })
+    await observeSandboxOverload({ status: 'sampled', sandboxId, pressure: pressure(7.9), now: at(11) })
+    let [episode] = await episodes(sandboxId)
+    expect(episode!.incident.resolvedAt).toBeNull()
+    expect(episode!.notifications).toEqual([])
+
+    // Overloaded again: alert now that the episode has lasted ten minutes.
+    await observeSandboxOverload({ status: 'sampled', sandboxId, pressure: pressure(8), now: at(12) })
+    ;[episode] = await episodes(sandboxId)
+    expect(episode!.notifications.map((row) => row.audience).sort()).toEqual(['human', 'manager'])
+
+    // The manager was told; the human fallback is still pending.
+    await db
+      .update(fleetIncidentNotifications)
+      .set({ status: 'delivered', deliveredAt: at(12) })
+      .where(
+        and(
+          eq(fleetIncidentNotifications.incidentId, episode!.incident.id),
+          eq(fleetIncidentNotifications.audience, 'manager')
+        )
+      )
+    await observeSandboxOverload({ status: 'sampled', sandboxId, pressure: pressure(3.9, 5000), now: at(14) })
+
+    const [resolved, ...others] = await episodes(sandboxId)
+    expect(others).toEqual([])
+    expect(resolved!.incident).toMatchObject({ resolvedAt: at(14), lastObservedAt: at(14) })
+    expect(resolved!.incident.details).toMatchObject({ load: [3.9, 3.5, 3.1], peakLoad: 9, resolvedBy: 'load' })
+    const byPhase = (kind: string, audience: string) =>
+      resolved!.notifications.find((row) => row.kind === kind && row.audience === audience)
+    expect(byPhase('recovery', 'manager')).toMatchObject({ status: 'pending', nextAttemptAt: at(14) })
+    expect(byPhase('alert', 'human')).toMatchObject({ status: 'canceled' })
+    expect(byPhase('recovery', 'human')).toBeUndefined()
+    expect(await listOpenSandboxOverloadSandboxIds()).not.toContain(sandboxId)
+
+    // A later overload is a new episode with its own ten-minute clock.
+    await observeSandboxOverload({ status: 'sampled', sandboxId, pressure: pressure(9), now: at(20) })
+    const all = await episodes(sandboxId)
+    expect(all).toHaveLength(2)
+    expect(all[1]!.incident).toMatchObject({ startedAt: at(20), alertAfter: at(30) })
+  })
+
+  test('closes an episode with no reading for ten minutes and never alerts across the gap', async () => {
+    const sandboxId = own(`squad_${await squadWithManager()}`)
+    await observeSandboxOverload({ status: 'sampled', sandboxId, pressure: pressure(9), now: START })
+    await observeSandboxOverload({ status: 'unobserved', sandboxId, now: new Date(at(10).getTime() - 1) })
+    expect((await episodes(sandboxId))[0]!.incident.resolvedAt).toBeNull()
+    await observeSandboxOverload({ status: 'unobserved', sandboxId, now: at(10) })
+    const [closed] = await episodes(sandboxId)
+    expect(closed!.incident).toMatchObject({ resolvedAt: at(10) })
+    expect(closed!.incident.details).toMatchObject({ resolvedBy: 'unobserved' })
+    expect(closed!.notifications).toEqual([])
+
+    // A reading after a gap opens a fresh episode instead of alerting on the old clock.
+    const other = own(`squad_${await squadWithManager()}`)
+    await observeSandboxOverload({ status: 'sampled', sandboxId: other, pressure: pressure(9), now: START })
+    await observeSandboxOverload({ status: 'sampled', sandboxId: other, pressure: pressure(9), now: at(25) })
+    const [old, fresh] = await episodes(other)
+    expect(old!.incident).toMatchObject({
+      resolvedAt: at(25),
+      details: expect.objectContaining({ resolvedBy: 'unobserved' }),
+    })
+    expect(fresh!.incident).toMatchObject({ startedAt: at(25), resolvedAt: null })
+    expect(fresh!.notifications).toEqual([])
+  })
+
+  test('drops readings that are not usable numbers', async () => {
+    const sandboxId = own(`squad_${await squadWithManager()}`)
+    await observeSandboxOverload({
+      status: 'sampled',
+      sandboxId,
+      pressure: { cpus: 0, load: [50, 50, 50], memTotalMb: 1, memAvailableMb: 1 },
+      now: START,
+    })
+    await observeSandboxOverload({
+      status: 'sampled',
+      sandboxId,
+      pressure: { cpus: 4, load: [Number.NaN, 1, 1], memTotalMb: 1, memAvailableMb: 1 },
+      now: START,
+    })
+    expect(await episodes(sandboxId)).toEqual([])
   })
 })
