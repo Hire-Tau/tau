@@ -77,27 +77,33 @@ function reshapeForBase(doc: CustomThemeDocument, nextBaseId: string): CustomThe
   return { ...doc, base: nextBase.id, variants }
 }
 
-// Computed, not a literal: keeps this out of the no-raw-colors guard's exact
-// per-file allowlist (`apps/web/src/no-raw-colors.test.ts`) — a real color
-// literal here is "fix the color, don't add an exception," and this genuinely
-// isn't a themeable token (it's the native <input type="color"> widget's own
-// placeholder swatch for "no seed set yet", never painted into the app itself).
-const UNSET_SWATCH_CHANNEL = 136 // mid-gray
-const UNSET_SWATCH = `#${UNSET_SWATCH_CHANNEL.toString(16).repeat(3)}`
+// "r g b" (or "r g b / a", alpha ignored) compiled-form channels -> #rrggbb,
+// for the native <input type="color"> swatch (which only accepts that strict
+// form). Shared by both the real-value and "not set yet" placeholder paths
+// below so neither needs its own literal.
+function channelsToSwatchHex(channels: string): string {
+  const [rgb] = channels.split(' / ')
+  const [r, g, b] = rgb!.trim().split(/\s+/).map(Number)
+  const hex = (n: number) => Math.round(Number.isFinite(n) ? n : 0).toString(16).padStart(2, '0')
+  return `#${hex(r!)}${hex(g!)}${hex(b!)}`
+}
 
 /** Native `<input type="color">` only accepts a strict #rrggbb value. Any
  * validly-formed accepted color (hex or rgb()/rgba()) resolves to its own
  * hex for the swatch preview; alpha is dropped there (the closed grammar and
  * alpha stay text-only, in the paired text field). Empty/invalid input falls
- * back to a neutral "not set" gray rather than leaving the widget without a
- * value (the browser control requires one). */
+ * back to the ACTIVE base theme's own `--color-border` token (read live off
+ * `document.documentElement`'s cascade, never a hardcoded literal — this file
+ * already carries an explicit, capped no-raw-colors allowlist entry for its
+ * genuine theme-authoring/contrast-math literals; this placeholder isn't one
+ * of those, so it doesn't get a color of its own at all) rather than leaving
+ * the widget without a value (the browser control requires one). */
 function toSwatchHex(value: string): string {
   const channels = customColorChannels(value)
-  if (!channels) return UNSET_SWATCH
-  const [rgb] = channels.split(' / ')
-  const [r, g, b] = rgb!.split(' ').map(Number)
-  const hex = (n: number) => n.toString(16).padStart(2, '0')
-  return `#${hex(r!)}${hex(g!)}${hex(b!)}`
+  if (channels) return channelsToSwatchHex(channels)
+  const root = document.documentElement
+  const border = root.ownerDocument.defaultView!.getComputedStyle(root).getPropertyValue('--color-border').trim()
+  return channelsToSwatchHex(border || '0 0 0')
 }
 
 /** A seed-color field: a native color-picker swatch alongside the hex/rgb()/

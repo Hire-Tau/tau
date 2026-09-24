@@ -477,6 +477,66 @@ test('readResolvedSnapshot only applies known registry property names, dropping 
   expect(readResolvedSnapshot(storage, paletteDoc, 'dark')).toEqual({ '--color-primary': '1 2 3' })
 })
 
+test('readResolvedSnapshot rejects the WHOLE snapshot if any known-token value is not a compiled channel string', async () => {
+  const { readResolvedSnapshot, hashCustomThemeDocument } = await import('./custom')
+  const hostileValues = [
+    'red', // a CSS color keyword, not the compiled "r g b" grammar
+    'rgb(1, 2, 3)', // unparsed rgb() syntax, not the post-compile form
+    '1 2 3; background: url(https://evil.example/track.png)', // CSS-injection-shaped payload
+    'javascript:alert(1)',
+    '-1 2 3', // out of the 0-255 channel range
+    '1 2 3 4', // wrong arity
+    '1 2', // wrong arity
+    '',
+  ]
+  for (const hostile of hostileValues) {
+    const storage = memoryStorage()
+    storage.setItem(
+      'tau-custom-theme-resolved',
+      JSON.stringify({
+        docHash: hashCustomThemeDocument(paletteDoc),
+        appearance: 'dark',
+        vars: { '--color-primary': hostile, '--custom-rgb-color-primary': '14 165 233' },
+      })
+    )
+    expect(readResolvedSnapshot(storage, paletteDoc, 'dark')).toBeNull()
+  }
+  // --custom-alpha-* tokens are a bare 0..1 number, not the "r g b" grammar.
+  for (const hostileAlpha of ['2', '-0.5', 'rgb(1,2,3)', '1e10', 'true', '']) {
+    const storage = memoryStorage()
+    storage.setItem(
+      'tau-custom-theme-resolved',
+      JSON.stringify({
+        docHash: hashCustomThemeDocument(paletteDoc),
+        appearance: 'dark',
+        vars: { '--color-primary': '1 2 3', '--custom-alpha-color-primary': hostileAlpha },
+      })
+    )
+    expect(readResolvedSnapshot(storage, paletteDoc, 'dark')).toBeNull()
+  }
+  // A fully well-formed snapshot (the control case) still round-trips.
+  const storage = memoryStorage()
+  storage.setItem(
+    'tau-custom-theme-resolved',
+    JSON.stringify({
+      docHash: hashCustomThemeDocument(paletteDoc),
+      appearance: 'dark',
+      vars: {
+        '--color-primary': '14 165 233',
+        '--custom-rgb-color-primary': '14 165 233',
+        '--custom-alpha-color-primary': '1',
+        '--term-bg': '1 2 3 / 0.5',
+      },
+    })
+  )
+  expect(readResolvedSnapshot(storage, paletteDoc, 'dark')).toEqual({
+    '--color-primary': '14 165 233',
+    '--custom-rgb-color-primary': '14 165 233',
+    '--custom-alpha-color-primary': '1',
+    '--term-bg': '1 2 3 / 0.5',
+  })
+})
+
 test('persistResolvedSnapshot skips (never writes) an oversized snapshot', async () => {
   const { persistResolvedSnapshot, readResolvedSnapshot, RESOLVED_SNAPSHOT_MAX_BYTES } = await import('./custom')
   const storage = memoryStorage()

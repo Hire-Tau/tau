@@ -314,3 +314,38 @@ test('palette seed fields are color controls: a native color swatch plus the hex
   expect((getByRole(container, 'textbox', { name: 'Secondary' }) as HTMLInputElement).value).toBe('')
   expect(queryByRole(container, 'button', { name: 'Clear Secondary' })).toBeNull()
 })
+
+function toHex(channels: string): string {
+  const [r, g, b] = channels.trim().split(/\s+/).map(Number)
+  const hex = (n: number) => Math.round(n!).toString(16).padStart(2, '0')
+  return `#${hex(r!)}${hex(g!)}${hex(b!)}`
+}
+
+test('an unset seed swatch reflects the active base theme\'s own --color-border token, not a hardcoded color', async () => {
+  // Two different base themes -> two different --color-border values -> the
+  // "not set yet" placeholder swatch must differ too. A hardcoded literal
+  // (any fixed hex, however it's obfuscated in source) would be identical
+  // across both and fail this.
+  const harbor = await render({ baseId: 'harbor', appearance: 'dark' })
+  await change(harbor.container, 'Primary', '#0ea5e9') // reveals the Secondary field (requires a palette)
+  const harborSwatch = getByLabelText(harbor.container, 'Secondary color swatch') as HTMLInputElement
+  const computedBorder = () =>
+    toHex(
+      document.documentElement.ownerDocument
+        .defaultView!.getComputedStyle(document.documentElement)
+        .getPropertyValue('--color-border')
+        .trim()
+    )
+  const harborBorder = computedBorder()
+  expect(harborSwatch.value).toBe(harborBorder)
+  await cleanup?.()
+
+  const ember = await render({ baseId: 'ember', appearance: 'dark' })
+  await change(ember.container, 'Primary', '#0ea5e9')
+  const emberSwatch = getByLabelText(ember.container, 'Secondary color swatch') as HTMLInputElement
+  const emberBorder = computedBorder()
+  expect(emberSwatch.value).toBe(emberBorder)
+
+  expect(emberBorder).not.toBe(harborBorder)
+  expect(emberSwatch.value).not.toBe(harborSwatch.value)
+})

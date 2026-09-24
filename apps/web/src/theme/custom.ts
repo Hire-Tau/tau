@@ -90,6 +90,29 @@ export function persistResolvedSnapshot(
   }
 }
 
+// A number in [min, max], written as plain (non-negative, non-exponential)
+// decimal digits only — never CSS syntax (no commas, functions, keywords, or
+// signs that could carry a CSS-injection-shaped payload through unexamined).
+function isBoundedDecimal(raw: string, min: number, max: number): boolean {
+  if (!/^\d+(?:\.\d+)?$/.test(raw)) return false
+  const n = Number(raw)
+  return Number.isFinite(n) && n >= min && n <= max
+}
+// A "compiled" RGB channel string, exactly what compileCustomTheme/applyCustomTheme
+// ever write: "r g b" or "r g b / a", each channel 0-255 (fractional allowed —
+// OKLCH-derived base tokens keep sub-integer precision).
+function isCompiledChannelValue(value: string): boolean {
+  const [rgb, alpha, extra] = value.split(' / ')
+  if (extra !== undefined || rgb === undefined) return false
+  const channels = rgb.split(' ')
+  if (channels.length !== 3 || !channels.every((c) => isBoundedDecimal(c, 0, 255))) return false
+  return alpha === undefined || isBoundedDecimal(alpha, 0, 1)
+}
+// --custom-alpha-* is a bare 0..1 number (see applyCustomTheme's compiled output).
+function isCompiledAlphaValue(value: string): boolean {
+  return isBoundedDecimal(value, 0, 1)
+}
+
 /** Reads a resolved snapshot only when it exactly matches this document and
  * appearance; a different document (edited elsewhere), a different resolved
  * side (e.g. a 'system' OS flip with no snapshot for that side), corrupt
@@ -97,7 +120,15 @@ export function persistResolvedSnapshot(
  * explicit-overrides-only pre-paint path. Property names are filtered to the
  * registry-owned set (custom.ts's only write surface) before use, even though
  * this key is same-origin-only: defense in depth, matching applyCustomTheme's
- * own "only individually validated, registry-owned properties" contract. */
+ * own "only individually validated, registry-owned properties" contract.
+ *
+ * Unlike names (silently dropped if unrecognized), a VALUE that doesn't match
+ * the exact compiled grammar for its token kind rejects the ENTIRE snapshot
+ * (never partially applies it) — this is untrusted, pre-paint,
+ * directly-`style.setProperty`-bound data written by a past version of this
+ * same code, but localStorage can be edited by anything with same-origin
+ * script access, so it gets the same "never trust, always reparse" treatment
+ * as everything else on this boundary. */
 export function readResolvedSnapshot(
   storage: ThemeStorage | null,
   doc: CustomThemeDocument,
@@ -117,8 +148,13 @@ export function readResolvedSnapshot(
     )
       return null
     const vars: Record<string, string> = {}
-    for (const [name, value] of Object.entries(parsed.vars))
-      if (customProperties.has(name) && typeof value === 'string') vars[name] = value
+    for (const [name, value] of Object.entries(parsed.vars)) {
+      if (!customProperties.has(name)) continue
+      if (typeof value !== 'string') return null
+      const valid = name.startsWith('--custom-alpha-') ? isCompiledAlphaValue(value) : isCompiledChannelValue(value)
+      if (!valid) return null
+      vars[name] = value
+    }
     return vars
   } catch {
     return null
