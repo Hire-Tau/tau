@@ -14,7 +14,7 @@ import { applyResolvedTheme } from '../../theme/apply'
 import { applyCustomTheme, exportCustomTheme, importCustomTheme, removeCustomProperties } from '../../theme/custom'
 import { CustomThemeEditor } from './CustomThemeEditor'
 
-type EditorTarget = { preset: ThemePreset | null; baseId: string }
+type EditorTarget = { preset: ThemePreset | null; baseId: string; focusAssistant?: boolean }
 
 function errorMessage(error: unknown, fallback: string): string {
   if (isHttpResponseError(error, 409)) return 'This theme changed elsewhere — reload it before trying again.'
@@ -266,6 +266,12 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
           >
             New theme
           </button>
+          <button
+            className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary"
+            onClick={() => setEditing({ preset: null, baseId: newBase, focusAssistant: true })}
+          >
+            New theme with assistant
+          </button>
           <label className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary">
             Import JSON
             <input
@@ -300,6 +306,7 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
             preset={editing.preset}
             baseId={editing.baseId}
             onClose={() => setEditing(null)}
+            focusAssistant={editing.focusAssistant}
           />
         )}
       </div>

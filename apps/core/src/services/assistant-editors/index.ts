@@ -6,7 +6,12 @@ import { HTTPException } from 'hono/http-exception'
 import {
   isWorkerAgentType,
   applyWorkflowCustomizations,
+  applyThemeOperations,
+  themeAssistantContract,
+  validateThemePresetDocument,
   type WorkflowDefinition,
+  type CustomThemeDocument,
+  type AssistantEditorPreset,
   assistantEditorProposalSchema,
   assistantEditorSyncSchema,
   workflowDefinitionSchema,
@@ -24,7 +29,16 @@ import {
 import { canAccessWorkflow, authorizeWorkflow } from '../workflows/access'
 import { hasPermission, type Identity } from '../rbac'
 
-/** Each page kind supplies its own authorization, validation, and model-facing contract. */
+/** Reads the workflow-only preset field without narrowing `AssistantEditorSync`
+ * at every call site; other kinds have no preset concept (their name lives in
+ * the document, e.g. a theme's `document.name`). */
+function presetOf(state: AssistantEditorSync | AssistantEditorState): AssistantEditorPreset | undefined {
+  return state.kind === 'workflow' ? state.preset : undefined
+}
+
+/** Each page kind supplies its own authorization, validation, model-facing
+ * contract, and how it turns a proposal's `operations` into a candidate
+ * document (before that candidate is run through `validate`). */
 const adapters = {
   workflow: {
     async authorize(identity: Identity, target: AssistantEditorSync['target']) {
@@ -48,6 +62,24 @@ const adapters = {
       return result
     },
     contract: `WorkflowDefinition: schemaVersion:1, name, participants:{id:{agentTypeId,model?,session:'reuse-within-stream'|'fresh-per-attempt'}}, entry:stepId, steps:[{id,name?,kind:'agent',participant,instructions,output,outcomes:{outcomeId:transition}} or {id,name?,kind:'human-approval',approver?:'reviewers'|'assigned-reviewers',instructions,output,outcomes}]. Human approvals default to assigned-reviewers, restricting decisions to users assigned to the work stream; any one assigned reviewer with review permission can decide. With no assigned reviewers, any human with review permission can decide. Use reviewers (Any reviewer) to allow anyone with workstreams:review permission in the squad regardless of assignment. Transitions: {next:stepId|'finish'}, {parallel:[stepIds],join?:stepId|'finish'}, or {returnTo:stepId,afterRework?:'follow-graph'|'return-to-requester'}. The canvas Start endpoint (selection $start) maps to entry; change entry to reconnect it. Start and Finish are visual endpoints, not entries in steps. All forward paths must reach finish; the first shared forward destination is inferred as the synchronization point and runs once after active branches arrive. Omit join; it is derived from connections. Separate tracks can finish independently and Finish waits for all work. Do not create join-only steps. To keep execution separate, use separate step IDs even when the instructions and agent type are identical. Use returnTo for revision loops, not forward cycles. The connections define mandatory work; there is no required flag or independentFrom metadata. Route every successful path through a mandatory check. returnTo is the correction step. afterRework defaults to follow-graph: run the correction then its ordinary arrows, including intermediate steps and parallel branches. return-to-requester instead brings the corrected result directly back to the step whose outcome requested changes, skipping the correction step's normal forward arrows. Use this only when the user wants targeted rework. There is no configurable resumeAt destination. routing:{mode:'guided'|'flexible'|'adaptive',returnTo:'declared-only'|'earlier-steps',delegation:'disabled'|'allowed'}. Guided requires declared-only and disabled. limits:{maxStepAttempts?:1..100,maxDelegations:0..100,maxParallelAttempts?:1..32,onLimit:'request-owner-input'}. completion:{mode:'deliverable'|'review-approval'|'pr-merge'|'pr-auto-merge'|'direct-merge',followChanges?:boolean,changeEventsTo?:'delivery-owner'|{step:agentStepId}}. Subscriptions: [{id,source:{integration,output,version,connectionId?},match:{outputField:{streamMetadata:'path'} or {value:string|number|boolean}},deliver:{to:{participant:id}|{step:id}|'active'|'delivery-owner',whenInactive:'retain'|'manager'}}]. Use only output names, versions, fields, and field types from integrationOutputs. Match external events to work-stream metadata or literal values. Inactive delivery retains events for later or routes them to the manager. The Code hosting canvas source has one output handle for its entire event bundle. Set completion.changeEventsTo:{step:agentStepId} to target an engineer, reviewer, or other agent step; omitted or delivery-owner uses the automatic finishing owner. Never configure individual GitHub events just to target a step. Preserve custom events such as Linear assignments. For code-host changes use completion.followChanges:true with metadata.codeHost (integration, repository, changeRequest:{number,url?}, connectionId?); this resolves the code-host adapter instead of hard-coding GitHub subscriptions. Preserve subscriptions when present. Each participant owns its agentTypeId, optional model override, and session policy; there is no separate profile entity. Choose only the provided worker types, never system-only roles. Participant agents start lazily. Use the same participant across steps for session reuse; distinct participants for independent reviews. Use short human-readable step names (name, up to 200 characters), such as Audience research. Keep stable step IDs for connections; changing a display name must not rewrite IDs. IDs are lowercase letters/digits/hyphens, start with a letter; finish is reserved. Guided follows declared outcomes only. Flexible permits configured earlier-step returns and ad hoc delegation; adaptive also allows bounded live flow revision. Omit maxStepAttempts by default for unlimited attempts; an explicit cap counts the first attempt plus rework; maxDelegations bounds added helpers (positive when delegation is allowed); omit maxParallelAttempts by default for no workflow concurrency limit (global agent capacity still applies); set it only when a workflow-specific cap is wanted, queuing extra starts. Exhausting attempt or delegation budgets asks the owner. deliverable finishes on the expected result; review-approval requires review; pr-merge waits for merge; pr-auto-merge enables auto-merge after checks; direct-merge merges directly when permitted. Use provider-neutral code-host completion with the stream's codeHost metadata. Never insert credentials into a flow. Preserve settings not requested to change.`,
+    applyOperations: (document: unknown, operations: unknown) =>
+      applyWorkflowCustomizations(document as WorkflowDefinition, operations),
+  },
+  theme: {
+    // Themes are personal (owner-scoped, self-service, not RBAC-gated — see
+    // apps/core/src/routes/theme-presets.ts): the outer chat:send check in
+    // lockedEditor is the whole gate. A draft's target.presetId (once saved)
+    // is not itself a grant; Save still goes through the normal
+    // revision-checked, owner-scoped theme-presets routes.
+    async authorize() {},
+    async validate(document: unknown): Promise<CustomThemeDocument> {
+      const result = validateThemePresetDocument(document)
+      if (!result.ok) throw new Error(result.error)
+      return result.document
+    },
+    contract: themeAssistantContract,
+    applyOperations: (document: unknown, operations: unknown) =>
+      applyThemeOperations(document as CustomThemeDocument, operations),
   },
 }
 
@@ -112,7 +144,8 @@ export async function syncAssistantEditor(id: string, actor: Extract<Actor, { us
       current &&
       (input.revision < current.revision ||
         (input.revision === current.revision &&
-          (!isDeepStrictEqual(input.document, current.document) || !isDeepStrictEqual(input.preset, current.preset))))
+          (!isDeepStrictEqual(input.document, current.document) ||
+            !isDeepStrictEqual(presetOf(input), presetOf(current)))))
     )
       throw new HTTPException(409, { message: 'Draft revision conflicts; reopen the editor' })
     return {
@@ -184,16 +217,18 @@ export async function proposeAssistantEditor(id: string, actor: Actor, value: un
         },
       }
     }
-    if (input.preset && !state.preset)
+    const statePreset = presetOf(state)
+    if (input.preset && !statePreset)
       throw new HTTPException(400, { message: 'Preset details are not editable on this page.' })
     if (input.preset?.id && state.target.presetId && input.preset.id !== state.target.presetId)
       throw new HTTPException(400, { message: 'A saved preset ID cannot change.' })
-    const preset = input.preset ? { ...state.preset!, ...input.preset } : state.preset
+    const preset = input.preset ? { ...statePreset!, ...input.preset } : statePreset
     let document: unknown
     try {
-      document = await adapters[state.kind].validate(
+      const adapter = adapters[state.kind]
+      document = await adapter.validate(
         input.operations
-          ? applyWorkflowCustomizations(state.document as WorkflowDefinition, input.operations)
+          ? adapter.applyOperations(state.document, input.operations)
           : input.documentJson
             ? JSON.parse(input.documentJson)
             : state.document

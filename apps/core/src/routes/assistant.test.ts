@@ -537,6 +537,149 @@ test('editor operations and history actions share revision checks and atomic pro
   ).toBe(200)
 })
 
+function blankThemeDraft() {
+  return {
+    kind: 'theme' as const,
+    target: {},
+    revision: 0,
+    document: {
+      format: 'tau-custom-theme',
+      version: 2,
+      name: 'My theme',
+      base: 'tau',
+      variants: { light: {}, dark: {} },
+    },
+    selection: { tab: 'light' as const },
+    history: { canUndo: false, canRedo: false },
+  }
+}
+
+test('theme editors: sync/read/propose share revision checks, ops apply, and another owner cannot reach the draft', async () => {
+  const f = await fixture('page-editor')
+  const draft = blankThemeDraft()
+  const sync = (value: unknown, token = f.owner.token) =>
+    app.request(`/api/assistant/${f.id}/editor`, {
+      method: 'PUT',
+      headers: { ...authHeaders(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify(value),
+    })
+  expect((await sync(draft)).status).toBe(200)
+  // Another owner cannot reach this owner's draft (ownership check, not an
+  // adapter-specific 403 — themes have no resource-specific authorization).
+  expect((await sync(draft, f.other.token)).status).toBe(404)
+  expect((await f.request(`/${f.id}/editor`, undefined, f.other.token)).status).toBe(404)
+  const read = await (await f.request(`/${f.id}/editor`)).json()
+  expect(read.kind).toBe('theme')
+  expect(read.document).toEqual(draft.document)
+  expect(read.preset).toBeUndefined()
+  expect(read.history).toEqual({ canUndo: false, canRedo: false })
+  // include:["contract"] surfaces the token catalog + built-in bases.
+  const readWithContract = await (
+    await app.request(`/api/assistant/${f.id}/editor?include=contract`, { headers: authHeaders(f.owner.token) })
+  ).json()
+  expect(readWithContract.contract).toContain('chrome')
+  expect(readWithContract.contract).toContain('high-contrast')
+
+  // Revision mismatch is rejected.
+  const stale = await f.request(`/${f.id}/editor/propose`, {
+    baseRevision: 5,
+    summary: 'Stale',
+    operations: [{ op: 'set-palette', primary: '#336699' }],
+  })
+  expect(stale.status).toBe(409)
+
+  // An invalid resulting document (unknown base) is rejected; nothing applies.
+  const invalid = await f.request(`/${f.id}/editor/propose`, {
+    baseRevision: 0,
+    summary: 'Bad base',
+    operations: [{ op: 'set-base', base: 'not-a-real-base' }],
+  })
+  expect(invalid.status).toBe(400)
+  expect(await invalid.text()).toContain('no changes applied')
+  const unchanged = await (await f.request(`/${f.id}/editor`)).json()
+  expect(unchanged.revision).toBe(0)
+  expect(unchanged.proposal).toBeUndefined()
+
+  // A valid set-palette operation proposes a derived document.
+  const proposed = await f.request(`/${f.id}/editor/propose`, {
+    baseRevision: 0,
+    summary: 'Make it teal',
+    operations: [{ op: 'set-palette', primary: '#14b8a6' }],
+  })
+  expect(proposed.status).toBe(200)
+  const proposal = (await proposed.json()).proposal
+  expect(proposal.document.palette).toEqual({ primary: '#14b8a6' })
+  expect(proposal.document.name).toBe('My theme')
+
+  // The page applies it (revision advances, history gains an undo point).
+  expect(
+    (
+      await sync({
+        ...draft,
+        revision: 1,
+        document: proposal.document,
+        history: { canUndo: true, canRedo: false },
+        acknowledgedProposalId: proposal.id,
+      })
+    ).status
+  ).toBe(200)
+
+  // preset details are never editable on a theme page.
+  const presetAttempt = await f.request(`/${f.id}/editor/propose`, {
+    baseRevision: 1,
+    summary: 'Try preset',
+    preset: { description: 'nope' },
+  })
+  expect(presetAttempt.status).toBe(400)
+
+  // Undo/redo share the same revision + history-availability checks as workflow pages.
+  const undo = { baseRevision: 1, summary: 'Undo', historyAction: 'undo' as const }
+  const undoResponse = await f.request(`/${f.id}/editor/propose`, undo)
+  expect(undoResponse.status).toBe(200)
+  const undoProposal = (await undoResponse.json()).proposal
+  expect(undoProposal.historyAction).toBe('undo')
+  expect((await f.request(`/${f.id}/editor/propose`, undo)).status).toBe(409)
+  expect(
+    (
+      await sync({
+        ...draft,
+        revision: 2,
+        history: { canUndo: false, canRedo: true },
+        acknowledgedProposalId: undoProposal.id,
+      })
+    ).status
+  ).toBe(200)
+  expect(
+    (await f.request(`/${f.id}/editor/propose`, { baseRevision: 2, summary: 'Redo', historyAction: 'redo' })).status
+  ).toBe(200)
+
+  // Closing the editor stops further proposals.
+  expect(
+    (await app.request(`/api/assistant/${f.id}/editor`, { method: 'DELETE', headers: authHeaders(f.owner.token) }))
+      .status
+  ).toBe(200)
+  expect(
+    (await f.request(`/${f.id}/editor/propose`, { baseRevision: 3, summary: 'x', historyAction: 'redo' })).status
+  ).toBe(404)
+})
+
+test('theme editors reject a workflow-shaped operation and vice versa', async () => {
+  const f = await fixture('page-editor')
+  const draft = blankThemeDraft()
+  await app.request(`/api/assistant/${f.id}/editor`, {
+    method: 'PUT',
+    headers: { ...authHeaders(f.owner.token), 'Content-Type': 'application/json' },
+    body: JSON.stringify(draft),
+  })
+  // set-outcome is a workflow op; the theme adapter's applyOperations rejects it as a malformed batch.
+  const response = await f.request(`/${f.id}/editor/propose`, {
+    baseRevision: 0,
+    summary: 'Wrong kind of op',
+    operations: [{ op: 'set-outcome', id: 'execute', outcome: 'completed', transition: { next: 'finish' } }],
+  })
+  expect(response.status).toBe(400)
+})
+
 async function squadFixture(owner: { id: string }, role: { id: string }) {
   const squad = await Squad.create({ name: `${prefix}-squad-${randomUUID().slice(0, 8)}`, purpose: 'test' })
   squadIds.push(squad.id)

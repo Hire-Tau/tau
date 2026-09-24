@@ -3,12 +3,11 @@ import { summarizeAssistantError } from '../voice/assistantErrorPresentation'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
-  assistantEditorInstructions,
   assistantEditorReadResult,
   assistantEditorContext,
-  assistantEditorToolDefinitions,
   type AssistantEditorSync,
   type AssistantEditorProposal,
+  type assistantEditorToolDefinitions,
 } from '@tau/shared'
 import { assistantApi } from '../api/assistant'
 import { assistantQueries } from '../queryOptions'
@@ -19,15 +18,34 @@ import type { PageEditorBridge } from '../voice/AssistantConversationContext'
 import { AssistantConversationView, type AssistantViewControls } from './AssistantConversationView'
 import { MicIcon } from './icons'
 
-/** Reusable conversation surface. The page owns its draft; server adapters own authorization and proposals. */
+/** Reusable conversation surface. The page owns its draft; server adapters own
+ * authorization and proposals. The host supplies its page kind's title, help
+ * copy, conversation title, and model-facing instructions/tools (see
+ * `assistantEditorInstructionsByKind` / `assistantEditorToolDefinitionsByKind`
+ * in `@tau/shared`) so this component stays kind-agnostic. */
 export function PageEditorAssistant({
   draft,
   onProposal,
   conversationDependencies,
+  title,
+  subtitle,
+  conversationTitle,
+  instructions,
+  tools,
 }: {
   draft: AssistantEditorSync
   onProposal: (proposal: AssistantEditorProposal) => AssistantEditorSync | undefined
   conversationDependencies?: Parameters<typeof AssistantConversationView>[0]['dependencies']
+  /** Header heading, e.g. "What flow do you want?" or "What would you like to change?". */
+  title: string
+  /** Header help text under the title. */
+  subtitle: string
+  /** Title used when lazily creating the underlying conversation record. */
+  conversationTitle: string
+  /** This page kind's model-facing instructions (`assistantEditorInstructionsByKind[kind]`). */
+  instructions: string
+  /** This page kind's tool definitions (`assistantEditorToolDefinitionsByKind[kind]`). */
+  tools: typeof assistantEditorToolDefinitions
 }) {
   const [id] = useState(() => crypto.randomUUID())
   const [ready, setReady] = useState(false)
@@ -47,7 +65,7 @@ export function PageEditorAssistant({
       const operation = writes.current
         .catch(() => {})
         .then(async () => {
-          create.current ??= assistantApi.create(id, 'Design a workflow', 'page-editor').catch((error) => {
+          create.current ??= assistantApi.create(id, conversationTitle, 'page-editor').catch((error) => {
             create.current = null
             throw error
           })
@@ -79,7 +97,7 @@ export function PageEditorAssistant({
         throw error
       }
     },
-    [id, draftRef]
+    [id, draftRef, conversationTitle]
   )
   useEffect(() => {
     void sync().catch(() => {})
@@ -126,9 +144,9 @@ export function PageEditorAssistant({
       context: assistantEditorContext(draft),
       getContext: () => assistantEditorContext(draftRef.current),
       instructions:
-        assistantEditorInstructions +
+        instructions +
         ' For complex designs you may delegate with delegate. The user assistant has the same draft tools and its edits appear here automatically.',
-      tools: assistantEditorToolDefinitions,
+      tools,
       execute: async (name, args) => {
         try {
           await sync()
@@ -158,7 +176,7 @@ export function PageEditorAssistant({
         }
       },
     }),
-    [sync, id, apply, draft, draftRef]
+    [sync, id, apply, draft, draftRef, instructions, tools]
   )
   const useRealtime = realtime && can('ai:voice')
   return (
@@ -168,9 +186,7 @@ export function PageEditorAssistant({
     >
       <header className="shrink-0 p-3 border-b border-th-border space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <h4 className="font-medium">
-            {draft.target.presetId ? 'What would you like to change?' : 'What flow do you want?'}
-          </h4>
+          <h4 className="font-medium">{title}</h4>
           {useRealtime && (
             <button
               type="button"
@@ -189,9 +205,7 @@ export function PageEditorAssistant({
             </button>
           )}
         </div>
-        <p className="text-xs text-muted">
-          Build and refine your flow together. Graph edits appear immediately and can be undone.
-        </p>
+        <p className="text-xs text-muted">{subtitle}</p>
       </header>
       {syncError && (
         <p role="alert" className="max-h-28 shrink-0 overflow-y-auto break-words p-3 text-sm text-danger">

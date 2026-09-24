@@ -354,6 +354,54 @@ A test compares the shipped script to a fresh bundle under the pinned Bun versio
 
 The editor reuses the built-in contrast computation and critical-pair inventory for whichever variant tab is open, including fractional channels and intrinsic opacity. Failing pairs show informational ratios and a **Use safe value** action choosing opaque black or white foreground against the completely composited surface. Other surfaces and islands are checked over the whole-app page/surface, with explicit status/badge under-surfaces resolved recursively. An opaque layer ends the chain. A translucent page with no known opaque foundation is reported as **Contrast unknown**, with no safe-value recommendation for that pair. Ratios and suggested values use the same resolved backdrop; tiny alpha values retain scientific notation numerically. Warnings never block Save. A safe value improves the named pair, not a certification of every use of that token; other warnings may remain. Arbitrary ANSI combinations, authored content and arbitrary utility-tone pairings are not certified.
 
+## Assistant
+
+Editing a theme (new or existing) shows a co-editor conversation beside the token
+editor, gated on `chat:send` like the workflow builder's assistant — see
+[voice-assistants.md](../voice-assistants.md#assistants-embedded-in-editors) for
+the shared page-editor framework this attaches to. **My themes → New theme with
+assistant** opens the editor with that panel focused; **New theme** and **Edit**
+open the same panel (when the user has `chat:send`) without moving focus to it.
+
+The assistant is palette-first: it mostly edits `palette.primary` /
+`secondary` / `tertiary` / `neutral`, `palette.contrast`
+(`'standard'`/`'high'`) and `palette.status` (`'static'`/`'harmonized'`) —
+the same seed fields the Palette panel exposes — rather than walking
+individual tokens. Its edit operations are `set-palette` (patch or clear
+seeds/contrast/status; `primary: null` clears the whole palette),
+`set-overrides` (advanced per-token overrides on one variant; `null` removes
+a token), `set-base` (change the base theme, reshaping `variants` for its
+kind), `rename`, and `clear-overrides`. Requests like "warmer", "teal
+accent", or "higher contrast" become a `set-palette` patch; "make the dark
+side deeper" becomes a `set-overrides` call on the `dark` variant. It keeps
+status colors `'static'` (their built-in meaning) unless asked to match the
+palette, and only raises `contrast: 'high'` when asked for more contrast or
+accessibility.
+
+Edits apply automatically to the open draft and repaint the whole app live,
+through the same preview slot as manual edits — there is no separate Apply
+step, and the assistant cannot save or publish; **Save**/**Save as new**
+still require the user. Manual token/palette edits and assistant edits share
+one undo/redo history (Undo/Redo buttons beside the editor, and the
+assistant's own `historyAction` edits), exactly like the workflow builder.
+
+Because the editor lives entirely in the browser (derivation runs against
+the live CSS cascade, not a server-side renderer), the assistant cannot see
+the rendered result by reading the document alone. The web host computes
+**insights** — resolved key colors (`primary`, `surface`, `page`, `text`,
+`border`, `onAccent`, `danger`, `success`, as hex) and any WCAG contrast
+warnings for the currently-painted variant — from the same paint pass that
+already checks contrast for the Advanced panel, and syncs them alongside the
+draft so a `read` returns them without an extra round trip. This lets the
+assistant judge whether an edit actually achieved what was asked (e.g.
+confirm "warmer" moved the resolved primary's hue) instead of reasoning from
+seed colors alone.
+
+`include: ["contract"]` on `read` returns the token catalog (families +
+descriptions + the full active token name list, for `set-overrides`) and the
+built-in base list — omitted by default, since ordinary palette edits don't
+need it.
+
 ## Regression coverage
 
 - Shared: closed grammar/rejection, byte/count caps (including the worst-case-pair measurement), unknown-name and pre-inheritance coherence per variant, v1→v2 normalization, `compileCustomTheme`'s resolved-variant selection, OKLCH round-trip fidelity (`color-oklch.test.ts`), derivation buckets + harmonized-status bounding + the multi-seed contrast-pass property test in both a light and a dark real-base fixture, including a dedicated regression test holding the primary/page pair to the non-text (3:1) floor rather than the text (4.5:1) one, a concrete real-base (ember/dark) regression for `--on-accent-fg` being chosen against the final (post-pass) primary rather than a stale pre-pass one, and harmonized status fg/surface + badge-fg/badge-surface pairs actually being included in the contrast pass (`theme-derivation.test.ts`), preset request-schema/cap and per-owner-race/non-UUID-:id tests, the visibility-change request schema and the `mine`/`shared`/`all` scope guard (`theme-preset.test.ts`), and `presetOwnerId`'s optional/only-alongside-a-document validation, including the detached-shared combination (`presetId: null`, `presetOwnerId` retained) (`theme-preferences.test.ts`).
@@ -364,9 +412,9 @@ The editor reuses the built-in contrast computation and critical-pair inventory 
 
 Physical-device/PWA cold-launch and authenticated account navigation are not certified by these tests. The inherited Universe fixture/layout limitation remains outside this change.
 
-## What Phase 3 builds on this
+## Earlier phases
 
-- **Phase 3 (theme-building assistant)**: attaches to the existing page-editor framework and the editor built here, since the editor already (a) keeps a draft separate from the saved document, (b) live-previews the whole app while open, and (c) exposes seed colors as the primary edit surface (`palette.primary/secondary/tertiary/neutral`, plus the `status` and `contrast` modes) rather than 400+ individual tokens — an assistant can converse in terms of "make it warmer" / "more contrast" and mutate 2–4 seed values instead of walking the whole token grid.
+The theme-building assistant is documented above, under [Assistant](#assistant).
 
 Phase 2 (instance-wide sharing) is documented above, under [Sharing](#sharing-phase-2).
 

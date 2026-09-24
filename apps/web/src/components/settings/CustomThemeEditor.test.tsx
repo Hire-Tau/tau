@@ -1,14 +1,18 @@
 import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import { act, useState } from 'react'
-import { fireEvent, getByLabelText, getByRole, getAllByRole, queryByRole } from '@testing-library/dom'
+import { fireEvent, getByLabelText, getByRole, getAllByRole, queryByRole, waitFor } from '@testing-library/dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { HttpResponseError } from '@tau/client-core'
-import { STATUS_TOKENS, type ThemePreset } from '@tau/shared'
+import { STATUS_TOKENS, type AssistantEditorState, type ThemePreset } from '@tau/shared'
 import { acquireDomHarness } from '../../test/domHarness'
 import { ThemeProvider, useTheme, useThemeSyncStore } from '../../providers/ThemeProvider'
 import { CustomThemeEditor } from './CustomThemeEditor'
 import { palettes, resolveToken } from '../../theme/test/builtins'
 import { client } from '../../api/clientInstance'
+import { assistantApi } from '../../api/assistant'
+import { assistantQueries, queries } from '../../queryOptions'
+import { PermissionsProvider } from '../../hooks/usePermissions'
+import { MemoryRouter } from 'react-router-dom'
 
 let cleanup: (() => Promise<void>) | undefined
 afterEach(async () => {
@@ -453,4 +457,120 @@ test('the editor draft preview survives remote account-sync adoption while editi
   expect(document.documentElement.getAttribute('data-theme')).toBe('harbor')
   expect(document.documentElement.getAttribute('data-appearance')).toBe('dark')
   expect(document.documentElement.style.getPropertyValue('--color-text-primary')).toBe('0 255 0')
+})
+
+test('the theme assistant panel proposes a live-previewing edit, shares undo/redo with manual edits, and cannot save', async () => {
+  const { useAssistantConversationBridge } = await import('../../voice/AssistantConversationContext')
+  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  localStorage.setItem('tau-appearance', 'dark')
+  const sheet = document.createElement('style')
+  sheet.textContent = palettes
+    .map((p) => {
+      const attrs = `[data-theme="${p.id}"]${p.appearance === 'constant' ? '' : `[data-appearance="${p.appearance}"]`}`
+      return `:root${attrs}, [data-theme-scope]${attrs} { ${Object.entries(p.tokens)
+        .map(([key]) => `${key}: ${resolveToken(p.tokens, key)};`)
+        .join(' ')} }`
+    })
+    .join('\n')
+  document.head.append(sheet)
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  cache.setQueryData(queries.voice.status().queryKey, { enabled: false })
+  let id = ''
+  let stored!: AssistantEditorState
+  let bridge: ReturnType<typeof useAssistantConversationBridge>
+  const create = spyOn(assistantApi, 'create').mockImplementation(async (next) => {
+    id = next
+    return { id } as any
+  })
+  const sync = spyOn(assistantApi, 'syncEditor').mockImplementation(async (_id, draft) => {
+    stored = structuredClone(draft) as AssistantEditorState
+    return stored
+  })
+  const read = spyOn(assistantApi, 'editor').mockImplementation(async () => ({ ...stored, contract: '' }))
+  const close = spyOn(assistantApi, 'closeEditor').mockResolvedValue({})
+  const dependencies = {
+    api: {
+      ...assistantApi,
+      history: async () => ({ entries: [], hasMore: false }),
+      inbox: async () => ({ acquired: true, messages: [], pending: 0 }),
+      release: async () => ({}),
+    } as any,
+    useAssistant: (() => {
+      bridge = useAssistantConversationBridge()
+      return {
+        history: [],
+        status: 'idle',
+        error: null,
+        isLiveAudio: false,
+        isConnected: false,
+        disconnect() {},
+        setLiveAudio: async () => {},
+      }
+    }) as any,
+  }
+  function Harness() {
+    const value = useTheme()
+    return (
+      <CustomThemeEditor
+        value={value}
+        preset={null}
+        baseId="tau"
+        onClose={() => {}}
+        assistantDependencies={dependencies}
+      />
+    )
+  }
+  const { root } = dom.createRoot()
+  try {
+    await dom.act(async () =>
+      root.render(
+        <QueryClientProvider client={cache}>
+          <MemoryRouter>
+            <PermissionsProvider
+              usePermissions={() => ({ can: () => true, permissions: ['*'], isLoading: false, isError: false })}
+            >
+              <ThemeProvider>
+                <Harness />
+              </ThemeProvider>
+            </PermissionsProvider>
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+    )
+    await dom.act(async () => waitFor(() => expect(bridge?.pageEditor).toBeDefined()))
+    expect(document.body.textContent).toContain('What theme do you want?')
+    expect((getByLabelText(document.body, 'Theme name') as HTMLInputElement).value).toBe('New theme')
+
+    // A `set-palette` proposal (the assistant's preferred edit) applies live.
+    const proposal = {
+      id: crypto.randomUUID(),
+      baseRevision: stored.revision,
+      summary: 'Made it teal',
+      document: { ...(stored.document as any), palette: { primary: '#14b8a6' } },
+    }
+    await dom.act(async () => cache.setQueryData(assistantQueries.editor(id).queryKey, { ...stored, proposal }))
+    await waitFor(() => expect(document.documentElement.style.getPropertyValue('--color-primary')).toBe('20 184 166'))
+    await waitFor(() => expect(stored.revision).toBe(1))
+    expect(stored.history).toEqual({ canUndo: true, canRedo: false })
+
+    // Duplicate delivery of the same proposal id does not add a second history entry.
+    const revisionAfterFirst = stored.revision
+    await dom.act(async () => cache.setQueryData(assistantQueries.editor(id).queryKey, { ...stored, proposal }))
+    expect(stored.revision).toBe(revisionAfterFirst)
+
+    // Undo/Redo buttons share the same history as the assistant's edit.
+    await click(document.body, 'Undo')
+    expect(document.documentElement.style.getPropertyValue('--color-primary')).not.toBe('20 184 166')
+    await waitFor(() => expect(stored.history).toEqual({ canUndo: false, canRedo: true }))
+    await click(document.body, 'Redo')
+    await waitFor(() => expect(document.documentElement.style.getPropertyValue('--color-primary')).toBe('20 184 166'))
+
+    // The assistant can propose, but never save/publish: no Save call happens here.
+    const saveCreate = spyOn(client.themePresets, 'create')
+    expect(saveCreate).not.toHaveBeenCalled()
+    saveCreate.mockRestore()
+  } finally {
+    await dom.cleanup()
+    for (const spy of [create, sync, read, close]) spy.mockRestore()
+  }
 })

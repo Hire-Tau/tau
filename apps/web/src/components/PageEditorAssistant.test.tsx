@@ -2,7 +2,12 @@ import { expect, mock, spyOn, test } from 'bun:test'
 import { StrictMode, useEffect } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
-import { createBlankWorkflow, type AssistantEditorState } from '@tau/shared'
+import {
+  createBlankWorkflow,
+  assistantEditorInstructionsByKind,
+  assistantEditorToolDefinitionsByKind,
+  type AssistantEditorState,
+} from '@tau/shared'
 import { assistantApi } from '../api/assistant'
 import { queries } from '../queryOptions'
 import { PermissionsProvider } from '../hooks/usePermissions'
@@ -66,6 +71,11 @@ test('StrictMode keeps the editor open, synchronizes current drafts, and closes 
               <PageEditorAssistant
                 draft={{ kind: 'workflow', target: {}, revision, document: createBlankWorkflow() }}
                 onProposal={onProposal}
+                title="What flow do you want?"
+                subtitle="Build and refine your flow together. Graph edits appear immediately and can be undone."
+                conversationTitle="Design a workflow"
+                instructions={assistantEditorInstructionsByKind.workflow}
+                tools={assistantEditorToolDefinitionsByKind.workflow}
                 conversationDependencies={{
                   api: fakeConversationApi as any,
                   useAssistant: useAssistant as any,
