@@ -61,6 +61,20 @@ export function useOptionalAuth(): AuthContextValue | null {
   return useContext(AuthContext)
 }
 
+/** Whether a self-service, owner-scoped query (gated on auth availability,
+ * not RBAC — e.g. /api/theme-presets, /api/user-preferences) should run: a
+ * genuinely authenticated user, OR an auth-disabled instance, where there is
+ * no login wall to wait behind at all and every request resolves to the same
+ * implicit owner. `authRequired === null` (still bootstrapping) is treated
+ * as not-yet-enabled, same as "not authenticated" — never optimistically
+ * fetch before auth state is actually known. Every caller of such a query
+ * MUST use this (not its own inline boolean expression) so they can never
+ * drift out of sync with each other. */
+// eslint-disable-next-line react-refresh/only-export-components
+export function selfServiceQueryEnabled(auth: AuthContextValue | null): boolean {
+  return !!auth?.isAuthenticated || auth?.authRequired === false
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()

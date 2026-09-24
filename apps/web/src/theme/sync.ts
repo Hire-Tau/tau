@@ -1,9 +1,9 @@
 import { validateThemePreference, type MyThemePreferences, type ThemePreference } from '@tau/shared'
-import { CUSTOM_THEME_KEY, clearCustomTheme, loadCustomTheme, persistCustomTheme } from './custom'
+import { CUSTOM_THEME_KEY, clearCustomTheme, loadCustomTheme, persistCustomTheme, persistPresetId } from './custom'
 import { APPEARANCE_KEY, LEGACY_THEME_KEY, THEME_ID_KEY, persistThemeSelection, type ThemeStorage } from './storage'
 
 export const LOCAL_OVERRIDE_KEY = 'tau-theme-local-override'
-const DEFAULT: ThemePreference = { themeId: 'tau', appearance: 'light', customTheme: null }
+const DEFAULT: ThemePreference = { themeId: 'tau', appearance: 'light', customTheme: null, presetId: null }
 export interface ThemeSyncApi {
   getMine(signal?: AbortSignal): Promise<MyThemePreferences>
   updateMine(
@@ -70,16 +70,18 @@ export class ThemeSyncStore {
     }
   }
   private current(): ThemePreference {
-    return { ...this.state.selection, customTheme: this.state.custom }
+    return { ...this.state.selection, customTheme: this.state.custom, presetId: this.state.presetId }
   }
   private apply(theme: ThemePreference) {
     clearCustomTheme(this.storage)
     const saved = !theme.customTheme || persistCustomTheme(this.storage, theme.customTheme)
+    if (theme.customTheme) persistPresetId(this.storage, theme.presetId)
     persistThemeSelection(this.storage, theme)
     this.state = {
       ...this.state,
       selection: { themeId: theme.themeId, appearance: theme.appearance },
       custom: theme.customTheme,
+      presetId: theme.customTheme ? theme.presetId : null,
       error: saved ? null : 'Theme applied for this session only: device storage is unavailable.',
     }
     this.emit()
@@ -103,8 +105,8 @@ export class ThemeSyncStore {
     const loaded = loadCustomTheme(this.storage)
     const localOverride = readLocalOverride(this.storage)
     if (
-      JSON.stringify([loaded.selection, loaded.custom, localOverride]) ===
-      JSON.stringify([this.state.selection, this.state.custom, this.state.localOverride])
+      JSON.stringify([loaded.selection, loaded.custom, loaded.presetId, localOverride]) ===
+      JSON.stringify([this.state.selection, this.state.custom, this.state.presetId, this.state.localOverride])
     )
       return
     this.revision++
@@ -114,7 +116,12 @@ export class ThemeSyncStore {
   }
   recoverCustom = () => {
     clearCustomTheme(this.storage)
-    this.state = { ...this.state, custom: null, error: 'Custom theme could not be applied. Restored its base theme.' }
+    this.state = {
+      ...this.state,
+      custom: null,
+      presetId: null,
+      error: 'Custom theme could not be applied. Restored its base theme.',
+    }
     this.emit()
   }
   connect = (api: ThemeSyncApi) => {

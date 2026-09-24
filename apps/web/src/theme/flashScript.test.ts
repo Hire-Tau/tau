@@ -272,3 +272,253 @@ describe('every built-in × appearance × OS pre-paint matrix', () => {
         }
       }
 })
+
+describe('pre-paint flash script: custom theme documents (v1 still loads; v2 resolves per side)', () => {
+  test('a v1 document (single concrete appearance) applies its explicit override before paint', async () => {
+    const storage = memoryStorage({
+      [THEME_ID_KEY]: 'harbor',
+      [APPEARANCE_KEY]: 'dark',
+      'tau-custom-theme': JSON.stringify({
+        format: 'tau-custom-theme',
+        version: 1,
+        name: 'Legacy',
+        base: 'harbor',
+        appearance: 'dark',
+        overrides: { '--color-primary': '#123456' },
+      }),
+    })
+    const dom = installDomHarness({ url: 'http://localhost/' })
+    try {
+      const run = new Function('window', 'document', 'localStorage', flashScript)
+      run(dom.window, dom.window.document, storage)
+      expect(dom.window.document.documentElement.style.getPropertyValue('--color-primary')).toBe('18 52 86')
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('a v2 pair resolves the requested side (light vs dark) at cold load', async () => {
+    const doc = {
+      format: 'tau-custom-theme',
+      version: 2,
+      name: 'Pair',
+      base: 'harbor',
+      variants: {
+        light: { '--color-primary': '#111111' },
+        dark: { '--color-primary': '#eeeeee' },
+      },
+    }
+    for (const [appearance, expected] of [
+      ['light', '17 17 17'],
+      ['dark', '238 238 238'],
+    ] as const) {
+      const storage = memoryStorage({
+        [THEME_ID_KEY]: 'harbor',
+        [APPEARANCE_KEY]: appearance,
+        'tau-custom-theme': JSON.stringify(doc),
+      })
+      const dom = installDomHarness({ url: 'http://localhost/' })
+      try {
+        const run = new Function('window', 'document', 'localStorage', flashScript)
+        run(dom.window, dom.window.document, storage)
+        expect(dom.window.document.documentElement.style.getPropertyValue('--color-primary')).toBe(expected)
+      } finally {
+        await dom.cleanup()
+      }
+    }
+  })
+
+  test("a v2 pair with 'system' appearance resolves against the OS preference at cold load", async () => {
+    const doc = {
+      format: 'tau-custom-theme',
+      version: 2,
+      name: 'Pair',
+      base: 'harbor',
+      variants: {
+        light: { '--color-primary': '#111111' },
+        dark: { '--color-primary': '#eeeeee' },
+      },
+    }
+    const storage = memoryStorage({
+      [THEME_ID_KEY]: 'harbor',
+      [APPEARANCE_KEY]: 'system',
+      'tau-custom-theme': JSON.stringify(doc),
+    })
+    const dom = installDomHarness({
+      url: 'http://localhost/',
+      configureWindow: (window: Window) => {
+        const matchMedia = (query: string) => ({
+          matches: true,
+          media: query,
+          addEventListener: () => undefined,
+          removeEventListener: () => undefined,
+        })
+        ;(window as unknown as { matchMedia: typeof matchMedia }).matchMedia = matchMedia
+      },
+    })
+    try {
+      const run = new Function('window', 'document', 'localStorage', flashScript)
+      run(dom.window, dom.window.document, storage)
+      expect(dom.window.document.documentElement.style.getPropertyValue('--color-primary')).toBe('238 238 238')
+    } finally {
+      await dom.cleanup()
+    }
+  })
+})
+
+describe('pre-paint flash script: persisted resolved snapshot (palette presets paint their derived look, not the base theme)', () => {
+  test('a matching resolved snapshot paints its derived (non-explicit) values before paint', async () => {
+    const { hashCustomThemeDocument } = await import('./custom')
+    const { computeBuiltinCssFingerprint } = await import('../../scripts/generate-theme-flash')
+    const BUILTIN_CSS_FINGERPRINT = await computeBuiltinCssFingerprint()
+    const { validateCustomTheme } = await import('@tau/shared')
+    const rawDoc = {
+      format: 'tau-custom-theme',
+      version: 2,
+      name: 'Palette preset',
+      base: 'harbor',
+      palette: { primary: '#0ea5e9' },
+      variants: { light: {}, dark: {} },
+    }
+    const validated = validateCustomTheme(JSON.stringify(rawDoc), BUILT_IN_THEMES)
+    if (!validated.ok) throw new Error(validated.error)
+    const storage = memoryStorage({
+      [THEME_ID_KEY]: 'harbor',
+      [APPEARANCE_KEY]: 'dark',
+      'tau-custom-theme': JSON.stringify(rawDoc),
+      'tau-custom-theme-resolved': JSON.stringify({
+        docHash: hashCustomThemeDocument(validated.document),
+        fingerprint: BUILTIN_CSS_FINGERPRINT,
+        sides: {
+          // A derived (not explicitly overridden) token: proves this came
+          // from the snapshot, not the explicit-overrides-only fallback path
+          // (which would leave it empty, since the palette has no explicit
+          // variants).
+          dark: { '--color-primary': '14 165 233', '--color-primary-hover': '9 130 199' },
+        },
+      }),
+    })
+    const dom = installDomHarness({ url: 'http://localhost/' })
+    try {
+      const run = new Function('window', 'document', 'localStorage', flashScript)
+      run(dom.window, dom.window.document, storage)
+      const root = dom.window.document.documentElement
+      expect(root.style.getPropertyValue('--color-primary')).toBe('14 165 233')
+      expect(root.style.getPropertyValue('--color-primary-hover')).toBe('9 130 199')
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('a stale snapshot (edited document, a different build, or the other resolved appearance) is ignored — falls back to explicit-overrides-only', async () => {
+    const { hashCustomThemeDocument } = await import('./custom')
+    const { computeBuiltinCssFingerprint } = await import('../../scripts/generate-theme-flash')
+    const BUILTIN_CSS_FINGERPRINT = await computeBuiltinCssFingerprint()
+    const { validateCustomTheme } = await import('@tau/shared')
+    const doc = {
+      format: 'tau-custom-theme',
+      version: 2,
+      name: 'Palette preset',
+      base: 'harbor',
+      palette: { primary: '#0ea5e9' },
+      variants: { light: {}, dark: { '--term-bg': '#123456' } },
+    }
+    const validated = validateCustomTheme(JSON.stringify(doc), BUILT_IN_THEMES)
+    if (!validated.ok) throw new Error(validated.error)
+    for (const badSnapshot of [
+      // Wrong docHash: as if the document were edited after the snapshot was taken.
+      JSON.stringify({
+        docHash: 'stale',
+        fingerprint: BUILTIN_CSS_FINGERPRINT,
+        sides: { dark: { '--color-primary': '99 99 99' } },
+      }),
+      // Right hash, wrong fingerprint: as if a deploy changed a built-in token.
+      JSON.stringify({
+        docHash: hashCustomThemeDocument(validated.document),
+        fingerprint: 'a-different-build',
+        sides: { dark: { '--color-primary': '99 99 99' } },
+      }),
+      // Right hash and fingerprint, wrong side: as if only the OTHER side was ever snapshotted.
+      JSON.stringify({
+        docHash: hashCustomThemeDocument(validated.document),
+        fingerprint: BUILTIN_CSS_FINGERPRINT,
+        sides: { light: { '--color-primary': '99 99 99' } },
+      }),
+    ]) {
+      const storage = memoryStorage({
+        [THEME_ID_KEY]: 'harbor',
+        [APPEARANCE_KEY]: 'dark',
+        'tau-custom-theme': JSON.stringify(doc),
+        'tau-custom-theme-resolved': badSnapshot,
+      })
+      const dom = installDomHarness({ url: 'http://localhost/' })
+      try {
+        const run = new Function('window', 'document', 'localStorage', flashScript)
+        run(dom.window, dom.window.document, storage)
+        const root = dom.window.document.documentElement
+        // The stale snapshot's value never applies...
+        expect(root.style.getPropertyValue('--color-primary')).not.toBe('99 99 99')
+        // ...but the explicit override for this side still does (the fallback path).
+        expect(root.style.getPropertyValue('--term-bg')).toBe('18 52 86')
+        // The palette itself is NOT derived pre-paint on the fallback path.
+        expect(root.style.getPropertyValue('--color-primary-hover')).toBe('')
+      } finally {
+        await dom.cleanup()
+      }
+    }
+  })
+
+  test('a full palette+harmonized-status resolved snapshot stays well under the pre-paint flash budget', async () => {
+    const { hashCustomThemeDocument, RESOLVED_SNAPSHOT_MAX_BYTES, applyCustomTheme } = await import('./custom')
+    const { validateCustomTheme } = await import('@tau/shared')
+    const { acquireDomHarness } = await import('../test/domHarness')
+    const doc = {
+      format: 'tau-custom-theme',
+      version: 2,
+      name: 'Full palette',
+      base: 'harbor',
+      palette: { primary: '#0ea5e9', secondary: '#f59e0b', tertiary: '#22c55e', status: 'harmonized' },
+      variants: { light: {}, dark: {} },
+    }
+    const validated = validateCustomTheme(JSON.stringify(doc), BUILT_IN_THEMES)
+    if (!validated.ok) throw new Error(validated.error)
+    const dom = await acquireDomHarness({ url: 'https://tau.test' })
+    try {
+      const style = document.createElement('style')
+      style.textContent = palettes
+        .map((p) => {
+          const attrs = `[data-theme="${p.id}"]${p.appearance === 'constant' ? '' : `[data-appearance="${p.appearance}"]`}`
+          return `:root${attrs}, [data-theme-scope]${attrs} { ${Object.entries(p.tokens)
+            .map(([name]) => `${name}: ${resolveToken(p.tokens, name)};`)
+            .join(' ')} }`
+        })
+        .join('\n')
+      document.head.append(style)
+      const preview = document.createElement('div')
+      preview.setAttribute('data-theme-scope', '')
+      document.body.append(preview)
+      // Real end-to-end derivation (real built-in CSS cascade), exactly the
+      // path ThemeProvider's root paint uses to produce what it persists.
+      const { computeBuiltinCssFingerprint } = await import('../../scripts/generate-theme-flash')
+      const BUILTIN_CSS_FINGERPRINT = await computeBuiltinCssFingerprint()
+      // BOTH sides land in the same snapshot for a 'system'-appearance user
+      // (see persistResolvedSnapshot/readResolvedSnapshot), so the realistic
+      // worst case — and what this budget must actually hold — is the pair,
+      // not just one side.
+      const darkVars = applyCustomTheme(preview, validated.document, 'dark')
+      const lightVars = applyCustomTheme(preview, validated.document, 'light')
+      const raw = JSON.stringify({
+        docHash: hashCustomThemeDocument(validated.document),
+        fingerprint: BUILTIN_CSS_FINGERPRINT,
+        sides: { dark: darkVars, light: lightVars },
+      })
+      expect(new TextEncoder().encode(raw).length).toBeLessThan(RESOLVED_SNAPSHOT_MAX_BYTES)
+      // Comfortably bounded, not just "under the cap": documents the actual
+      // realistic magnitude for a full palette+harmonized-status theme, BOTH
+      // sides included.
+      expect(new TextEncoder().encode(raw).length).toBeLessThan(180 * 1024)
+    } finally {
+      await dom.cleanup()
+    }
+  })
+})

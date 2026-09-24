@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { readFileSync } from 'node:fs'
-import { ACTIVE_THEME_TOKENS, compileCustomTheme } from '@tau/shared'
+import { ACTIVE_THEME_TOKENS, compileCustomTheme, validateCustomTheme } from '@tau/shared'
 import { TauLogo } from '../components/TauLogo'
 import { BUILT_IN_THEMES } from './registry'
 import { palettes } from './test/builtins'
@@ -11,7 +11,7 @@ test('brand colors are active, complete in every builtin, and custom-overridable
   for (const token of tokens) {
     expect(ACTIVE_THEME_TOKENS).toContain(token)
     for (const palette of palettes) expect(palette.tokens[token]).toBeDefined()
-    const compiled = compileCustomTheme(
+    const result = validateCustomTheme(
       JSON.stringify({
         format: 'tau-custom-theme',
         version: 1,
@@ -22,6 +22,8 @@ test('brand colors are active, complete in every builtin, and custom-overridable
       }),
       BUILT_IN_THEMES
     )
+    if (!result.ok) throw new Error(result.error)
+    const compiled = compileCustomTheme(result.document, 'light')
     expect(compiled[token]).toBe('18 52 86 / 0.5019607843137255')
   }
 })

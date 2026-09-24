@@ -2,12 +2,20 @@ import { afterEach, expect, test } from 'bun:test'
 import { act, StrictMode } from 'react'
 import { fireEvent, getByRole } from '@testing-library/dom'
 import { readFileSync } from 'node:fs'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { acquireDomHarness } from '../test/domHarness'
 import { ThemeProvider, useTheme, useThemeSyncStore } from './ThemeProvider'
 import { ThemeAccountSyncSession } from './ThemeAccountSync'
 import { ThemeControl } from '../components/settings/ThemeControl'
+import { themePresetQueryKeys } from '../queryKeys'
 import type { ThemeSyncStore, ThemeSyncApi } from '../theme/sync'
 import type { ThemePreference } from '@tau/shared'
+
+function queryClient() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  client.setQueryData(themePresetQueryKeys.list(), [])
+  return client
+}
 
 let cleanup: (() => Promise<void>) | undefined
 afterEach(async () => {
@@ -47,7 +55,7 @@ async function harness() {
   return { ...dom.createRoot(), paint }
 }
 function fixture() {
-  let theme: ThemePreference = { themeId: 'harbor', appearance: 'dark', customTheme: null }
+  let theme: ThemePreference = { themeId: 'harbor', appearance: 'dark', customTheme: null, presetId: null }
   let reads = 0
   const writes: ThemePreference[] = []
   const api: ThemeSyncApi = {
@@ -84,10 +92,12 @@ test('cold load preserves pre-paint local theme across differing server fetch, s
   await act(async () =>
     root.render(
       <StrictMode>
-        <ThemeProvider>
-          <ThemeAccountSyncSession sessionKey={1} api={remote.api} />
-          <Picker />
-        </ThemeProvider>
+        <QueryClientProvider client={queryClient()}>
+          <ThemeProvider>
+            <ThemeAccountSyncSession sessionKey={1} api={remote.api} />
+            <Picker />
+          </ThemeProvider>
+        </QueryClientProvider>
       </StrictMode>
     )
   )
@@ -120,10 +130,12 @@ test('fresh device adopts only after paint; logout removes inherited document an
   const { root, paint } = await harness()
   const remote = fixture()
   const render = (key: number | null | undefined) => (
-    <ThemeProvider>
-      <ThemeAccountSyncSession sessionKey={key} api={remote.api} />
-      <Picker />
-    </ThemeProvider>
+    <QueryClientProvider client={queryClient()}>
+      <ThemeProvider>
+        <ThemeAccountSyncSession sessionKey={key} api={remote.api} />
+        <Picker />
+      </ThemeProvider>
+    </QueryClientProvider>
   )
   await act(async () => root.render(render(undefined)))
   await paint()

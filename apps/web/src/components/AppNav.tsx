@@ -16,6 +16,7 @@ import { useAssistantActivity } from '../hooks/useAssistantActivity'
 import { AssistantActivityBadge } from './AssistantActivityBadge'
 import { ThemeQuickPicker } from './ThemeQuickPicker'
 import { useTheme } from '../providers/ThemeProvider'
+import { selfServiceQueryEnabled, useOptionalAuth } from '../providers/AuthProvider'
 import {
   isNavItemAllowed,
   moreMenuItems,
@@ -37,6 +38,15 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
   const [inboxPopupOpen, setInboxPopupOpen] = useState(false)
   const { can, isLoading: permissionsLoading } = usePermissions()
   const theme = useTheme()
+  // Optional: AppHeader renders in some standalone/test contexts without
+  // AuthProvider. No auth context (or no session, on an auth-required
+  // instance) simply means no presets query — see selfServiceQueryEnabled,
+  // which ThemePresetLibrary also uses so the two never drift apart.
+  const auth = useOptionalAuth()
+  const { data: themePresets } = useQuery({
+    ...queries.themePresets.list(),
+    enabled: selfServiceQueryEnabled(auth),
+  })
 
   // Query for inbox unread count (desktop inbox icon badge): personal + shared system (if permitted)
   const canSystem = can('inbox:system')
@@ -186,7 +196,7 @@ export function AppHeader({ usePendingActions: usePendingActionsProp = usePendin
               <SettingsIcon className="w-5 h-5" />
             </NavLink>
 
-            <ThemeQuickPicker value={theme} />
+            <ThemeQuickPicker value={theme} presets={themePresets} />
 
             <button
               onClick={() => window.dispatchEvent(new Event('open-inbox-popup'))}

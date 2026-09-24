@@ -1,57 +1,285 @@
-# Custom themes (v1)
+# Custom themes and the theme preset library (v2)
 
-In Settings → Theme, **Edit custom theme** opens a token editor whose draft and preview stay on this device. Importing or editing changes only its preview, not the account preference. **Apply custom theme** confirms the selection and, when signed in, syncs the validated document to the account preference stored on the server; **Reset to default** returns to Tau/light and removes the saved custom document. Selecting another built-in or appearance also clears custom overrides. Export downloads `tau-custom-theme.json`. There is no public gallery or publication. Local storage supplies immediate rendering and pre-paint recovery; applied documents also participate in [account synchronization](account-sync.md), including device overrides and **Use synced theme**. Without an account session, changes remain local.
+Settings → Appearance → **My themes** is a per-user library of saved theme
+presets (`/api/theme-presets`, owner-only — Phase 1 has no sharing). Each
+preset covers **both light and dark** (or one constant variant for a unified
+base like High contrast), so applying a preset follows the existing
+Light/Dark/System toggle instead of locking the app to one concrete
+appearance. **New**, **Duplicate**, **Edit**, **Rename**, **Delete** (with
+confirmation), **Use** and **Export/Import** all operate on this library.
+Editing a preset opens a token editor whose draft previews **live on the
+whole app** (not a scoped sample) while it is open; nothing is persisted
+until **Save** (existing preset, revision-checked `PUT`) or **Save as new**
+(`POST`, forking a copy); closing without saving restores the previously
+applied selection. There is still no public/cross-user gallery in this
+phase — see the phase 2/3 notes at the end of this document.
 
 ```json
 {
   "format": "tau-custom-theme",
-  "version": 1,
+  "version": 2,
   "name": "My night theme",
   "base": "harbor",
-  "appearance": "dark",
-  "overrides": {
-    "--color-primary": "#0ea5e9",
-    "--term-bg": "rgb(12, 20, 30)"
+  "palette": { "primary": "#0ea5e9", "contrast": "standard", "status": "static" },
+  "variants": {
+    "light": {},
+    "dark": { "--term-bg": "rgb(12, 20, 30)" }
   }
 }
 ```
 
-A document defines **one concrete appearance**, not an automatic light/dark pair. Dual bases accept `light` or `dark`; High contrast requires `constant`. Missing tokens inherit the selected built-in, including its fractional syntax channels, terminal selection/scrollbar sentinels, supporting graph/chart/ANSI slots and intrinsic-opacity metadata. Brand gradient, tile and ink tokens are active, alongside voice material, chrome and read-only log tokens; see [complete coverage](complete-coverage.md).
+A v1 document (`version: 1`, one concrete `appearance` + `overrides`) still
+loads everywhere: `validateCustomTheme` normalizes it into a v2 document with
+the opposite dual side empty (or into a single `constant` variant for a
+unified base). There is no user-visible "upgrade" step; the normalized v2
+shape is what gets saved back on the next edit.
+
+## Seed-color derivation (`palette`)
+
+Hand-editing dozens of tokens per variant is tedious, so a preset can instead
+set a handful of seed colors and let most tokens derive automatically. A
+preset created from a built-in with no `palette` behaves exactly like a
+plain explicit-override document; setting a `primary` color starts
+derivation. `variants` stay available as an **advanced**, always-on-top
+layer: explicit per-token overrides apply *after* derivation and win on
+conflicts, exactly like today's token list and status-grid picker (now
+tucked under an "Advanced" section once a palette is set).
+
+The editor is seeds-first: a top-level "Palette" panel exposes Primary /
+Secondary (optional) / Tertiary (optional) / Neutral (optional) color
+**fields** — each a native `<input type="color">` swatch button paired with
+the hex/`rgb()`/`rgba()` text field (the source of truth; alpha stays
+text-only, the swatch always shows the opaque hex) — a Contrast segmented
+toggle (Standard/High) and a Status colors segmented toggle
+(Static/Harmonized), all live-previewing the whole app immediately. An unset
+optional seed shows a placeholder swatch reading the active base theme's own
+`--color-border` token off the live cascade (never a hardcoded color — see
+the no-raw-colors guard), "Not set" in its text field, and no Clear button;
+setting one adds a Clear button that empties it back to unset. Clearing Primary drops the palette back to a plain
+explicit-override document. Everything from before (Base theme, the
+Light/Dark variant tabs, the token-by-token Color token/Color value editor,
+the override list, and the contrast-warnings/safe-value panel) moves into a
+collapsed `<details>` "Advanced: per-token overrides" section, reachable at
+any time — a palette and explicit overrides are never mutually exclusive.
+
+```ts
+palette?: {
+  primary: string          // required once `palette` is present
+  secondary?: string       // default: primary hue rotated +60°
+  tertiary?: string        // default: primary hue rotated +300°
+  neutral?: string         // tint for chrome/surfaces; default: primary hue at very low chroma
+  contrast?: 'standard' | 'high'   // WCAG target for the contrast pass below; default 'standard'
+  status?: 'static' | 'harmonized' // default 'static'
+}
+```
+
+Derivation (`packages/shared/src/theme-derivation.ts`, pure — no DOM, a small
+in-house sRGB↔OKLCH conversion in `color-oklch.ts`) maps every active token
+into one of these buckets, keyed off `THEME_TOKEN_FAMILIES`:
+
+| Bucket | Tokens | Rule |
+| --- | --- | --- |
+| Neutral/chrome | Backgrounds, text, borders, inputs, shadows, overlays, scrims, terminal/log **backgrounds** | Hue/chroma replaced by the neutral tint; **lightness and alpha preserved** from the base token, so the base theme's own contrast structure carries over. |
+| Primary/accent | `--color-primary(-hover/-active/-light)`, selection bg/border, focus ring | Derived from the `primary` seed with a **lightness offset** and **chroma ratio** modeled on how that same token differs from the base theme's own `--color-primary` (so "hover" stays proportionally lighter than the seed the same way it is in Tau). |
+| Ink | `--on-accent-fg` | Chosen as pure black or white by contrast against the *final* primary (after the contrast pass below, not before — see there), not hue-derived. |
+| Brand/voice | Brand gradient/tile/ink, voice-material glows | Hue interpolated primary → secondary across the family; base lightness/chroma preserved. |
+| Categorical | agent-type, badge-decoration, graph chart categories/links, a curated syntax-accent subset, utility-decoration | Hue picked from primary/secondary/tertiary by slot index; base lightness/chroma preserved. |
+| Status (`static`, default) | The 162-token status grid | **Untouched** — absent from the derived overrides, so it keeps inheriting the base theme's own values. Semantic meaning (danger=red, success=green, ...) is never reassigned by a palette. |
+| Status (`harmonized`) | Same grid | Each role's hue is bounded-shifted (≤22°, and clamped to never cross halfway into a neighboring role's own hue — roles cannot swap identities) toward whichever seed color is angularly nearest, chroma blended 30% toward that seed; **lightness stays per-step** so the ramp's contrast structure holds. Editor: a "Status colors: Static / Harmonized" toggle in the palette section, with live whole-app preview. |
+| ANSI-named terminal/log/ansi slots | `--term-red`, `--log-blue`, `--ansi-*`, ... | Unchanged — these name a specific color by convention, independent of the palette. |
+
+After derivation, a **contrast pass** nudges a small set of critical derived
+pairs by moving **lightness only** (never hue or chroma), via bisection
+against the fixed background:
+
+- `--color-text-primary`/`--color-bg-surface` and `--color-text-secondary`/
+  `--color-bg-surface` — body text, held to the **text** WCAG target (4.5:1,
+  or 7:1 for `contrast: 'high'`).
+- `--color-primary`/`--color-bg-page` — a **UI accent** (buttons, borders,
+  icons), not body text, so it is deliberately held to the lower **non-text**
+  WCAG 1.4.11 target instead (3:1, or 4.5:1 for `contrast: 'high'`). Text-level
+  contrast for content painted ON the accent is `--on-accent-fg`'s separate
+  job; using the text target here was an earlier bug — it forced a bright,
+  valid seed color to darken far more than a user choosing it as their brand
+  color would expect (a saturated sky blue against a near-white page could
+  come out murky and washed-out). A regression test holds this pair to its
+  own (lower) floor and asserts it never gets pulled toward the text floor.
+- Harmonized status `fg`/`surface` and `badge-fg`/`badge-surface` pairs (all
+  nine roles) — the text target, same as body text. `static` mode leaves
+  these tokens out of the overrides entirely, so this pass never touches
+  them there.
+
+`--on-accent-fg` (black or white) is chosen **after** the contrast pass
+above, against the **final**, possibly-nudged `--color-primary` — not the
+freshly-derived, pre-pass value. Picking it earlier was an earlier bug: the
+pass can still move `--color-primary`'s lightness for its own (UI) floor
+after ink was already chosen, leaving the ink stale against what actually
+ships (observed as low as 3.97:1 for a real base + seed + `contrast: 'high'`
+combination, against a >5:1 achievable value). For any *fixed* background,
+the better of pure black/white text always clears ≈4.58:1 (the minimum,
+at the luminance where both candidates tie) — comfortably over the
+**standard** 4.5:1 target by construction, so no further nudge is ever
+needed there. The **high** (7:1) target is not guaranteed by construction:
+when neither black nor white reaches it against the final primary, this
+additionally nudges `--color-primary`'s lightness (hue/chroma held fixed,
+same bisection shape as the pass above) toward whichever extreme lets one
+of them pass, preferring whichever candidate needs the smaller move. A
+property-style test sweeps dozens of seed colors, in both appearances, and
+asserts every built-in critical pair — including this real ember/dark
+regression case — still clears its target.
+
+Derivation needs the base theme's own resolved token values (to preserve
+lightness/chroma/alpha), which only exist in the CSS cascade — matching the
+"no copied runtime palette" rule this file has always followed. `apps/web`
+supplies them via `getComputedStyle` once the built-in CSS has painted, then
+`compileCustomTheme(doc, appearance, baseTokens)` merges derived-under-explicit
+before compiling. Both the "My themes" library rows and `ThemeQuickPicker`'s
+circles paint their swatch this same way — a scoped `[data-theme-scope]`
+element gets the base classes, `applyCustomTheme` derives from THAT element's
+own cascade, and the shared `.theme-swatch` CSS class (a static conic-gradient
+over `--color-primary`/`--color-primary-hover`/`--color-bg-surface-secondary`,
+not per-instance inline color) paints it — so a palette-derived preset's
+swatch was never literally empty, but it WAS blank in the library specifically
+until this class was applied there too (an oversight fixed alongside the
+contrast-pass bug above; both are covered by dedicated regression tests).
+
+This derivation-from-computed-style is unavailable in the **synchronous
+pre-paint flash script**, which cannot trust the cascade that early (the same
+reason it has always kept a small hardcoded surface-color fallback table
+instead of reading computed style). Instead, `ThemeProvider`'s own real root
+paint persists a **resolved snapshot** — `localStorage['tau-custom-theme-resolved']
+= { docHash, fingerprint, sides }`. `docHash` is a deterministic (FNV-1a,
+staleness-detection only) hash of the exact document; `fingerprint` is a
+**build-time** FNV-1a hash of `index.css`'s + `builtins.css`'s own content,
+injected identically into the main app bundle (`vite.config.ts`) and the
+separately-bundled pre-paint script (`generate-theme-flash.ts`) via a shared
+`theme/fnv.ts`, so a deploy that changes a built-in token's own value
+invalidates every previously persisted snapshot rather than serving a stale
+derived color (`theme/builtinFingerprint.ts`); `sides` maps each resolved
+appearance ('light'/'dark', or 'constant' for a unified base) that has
+actually been painted to the exact compiled `--token`/`--custom-rgb-*`/
+`--custom-alpha-*` map `applyCustomTheme` wrote for it. **Both** resolved
+sides of a dual-base palette document can be present at once: a
+`'system'`-appearance user's OS preference can flip between this real paint
+and the next cold load, so `ThemeProvider` also derives the currently
+non-visible side off-screen (a detached, zero-size, `visibility:hidden`
+`[data-theme-scope][data-theme][data-appearance]` probe — the same
+attribute-scoping the built-in CSS already defines for nested previews) and
+merges it into the same snapshot; gated on the document having a `palette`
+on a dual-kind base (an explicit-only document's other side needs no
+cascade/derivation at all, and a unified base has no other side), so the
+extra work only happens when it can actually pay off.
+
+On the next cold load, the flash script applies the snapshot directly
+(`root.style.setProperty` for each entry, filtered to registry-owned
+property names, and further filtered to the exact compiled channel grammar
+— see "Validation and application boundary" below) whenever `docHash` and
+`fingerprint` both match and `sides` has an entry for the currently-resolved
+appearance — this is what lets a palette preset paint its fully derived look
+before CSS/React, instead of flashing the plain base theme. A miss (the
+document was edited since the last real paint, a deploy changed a built-in
+token, the OS/appearance flipped to a side nothing has snapshotted yet, or
+there is no snapshot at all) falls back to the explicit-overrides-only path
+as before; the very next real repaint derives fully again and refreshes the
+snapshot (merging with, not discarding, whichever OTHER side's entry is
+still valid for the same doc/build). `clearCustomTheme` clears this key
+alongside the document itself. The snapshot is capped at 200 KiB (a full
+palette+harmonized-status theme, BOTH sides, measures well under 180 KiB in
+practice) and is written only for the ACTIVE document, never a library
+preset that isn't currently applied. Persisting on a storage-event-driven
+repaint (another tab changed the selection) is harmless, not just redundant:
+the derived vars are a pure function of (doc, base tokens), so every tab
+computes the identical value for the same (doc, appearance) pair, and the
+snapshot key is never one of the keys the cross-tab storage listener reacts
+to, so writing it can never itself trigger another repaint (no feedback
+loop).
 
 ## Validation and application boundary
 
-- `packages/shared/src/custom-theme.ts` owns the dependency-free schema, validator and compiler. Input is capped at **8 KiB UTF-8 before parsing**, including whitespace; override count cannot exceed the token registry count. Names are 1–40 Unicode code points and rendered only as text.
-- Values accept `#rgb`, `#rrggbb`, `#rrggbbaa`, comma-form `rgb()` with integer channels 0–255, or `rgba()` with integer RGB and alpha 0–1 (fractional alpha is supported). No named colors, percentages, fractional RGB input, CSS references, URLs, comments, declarations or arbitrary functions are accepted. Built-in fractional channels and sentinels are inherited, not valid imported color values.
-- Unsupported versions are refused with an explanation. Unknown/inactive tokens are warned about and discarded; their values still undergo the same safety checks. Unknown top-level fields are not persisted in the normalized document.
-- Any status override requires the **entire 162-token grid: nine roles × (seven semantic slots + eleven tone steps)**, validated before inheritance. The picker initializes this set from the base when editing a status token and removes it as a set. Imports must supply it explicitly.
-- Every application revalidates. `apps/web/src/theme/custom.ts` writes only individually validated, registry-owned properties through `style.setProperty`; no custom CSS/HTML text is assembled. Static built-in CSS scopes also match the preview element, preventing inherited root overrides from contaminating the preview base.
+- `packages/shared/src/custom-theme.ts` owns the dependency-free schema, validator and compiler. Input is capped at **32 KiB UTF-8 before parsing**, including whitespace — up from 8 KiB because a v2 pair can carry a FULL light+dark override of every active token at once (a v1 document only ever needed one side of the grid); the cap is sized against a measured worst-case full-pair document (`#rrggbbaa` values on every token, both variants, a 40-character name — see the "worst-case pair" test). Override count per variant cannot exceed the token registry count. Names are 1–40 Unicode code points and rendered only as text.
+- Values accept `#rgb`, `#rrggbb`, `#rrggbbaa`, comma-form `rgb()` with integer channels 0–255, or `rgba()` with integer RGB and alpha 0–1 (fractional alpha is supported); this closed grammar covers explicit overrides AND palette seed colors. No named colors, percentages, fractional RGB input, CSS references, URLs, comments, declarations or arbitrary functions are accepted.
+- Unsupported versions are refused with an explanation; both `version: 1` and `version: 2` are accepted on read, `version: 2` is the only write shape. Unknown/inactive tokens are warned about and discarded per variant; their values still undergo the same safety checks. Unknown top-level fields (including a stray v1 `appearance` on a v2 document) are not persisted in the normalized document.
+- Any status override requires the **entire 162-token grid** (nine roles × (seven semantic slots + eleven tone steps)), validated **independently per variant** before inheritance — the same rule as v1, just applied to light and dark separately. Imports must supply it explicitly for whichever variant(s) they touch.
+- Every application revalidates: `applyCustomTheme(element, doc, appearance)` re-runs `validateCustomTheme` before compiling, then writes only individually validated, registry-owned properties through `style.setProperty`; no custom CSS/HTML text is assembled. Static built-in CSS scopes also match the preview element, preventing inherited root overrides from contaminating the preview base.
 - Colors retain their full channels/alpha for ordinary CSS and graph/xterm readers. Compiler-owned `--custom-rgb-*` and `--custom-alpha-*` properties let opacity-modified utilities multiply **custom alpha × intrinsic alpha × utility opacity** without invalid double-slash RGB syntax. Imports cannot set these helper names or intrinsic metadata. Preview scopes explicitly mask inherited helpers; reset removes them from the root.
 
 Concrete graph/chart and interactive/log-terminal adapters expand JavaScript exponent notation to plain decimal color arguments. This preserves tiny numeric alpha and intrinsic-alpha products for the actual dependency parsers without rounding them to opaque. xterm quantizes colors to eight-bit channels; its existing opaque-selection policy still uses 30% selection opacity. These renderer rules do not broaden the accepted import grammar.
 
-## Contrast and recovery
+## The editor's whole-app live preview: the preview slot
 
-The editor reuses the built-in contrast computation and critical-pair inventory, including fractional channels and intrinsic opacity. Failing pairs show informational ratios and a **Use safe value** action choosing opaque black or white foreground against the completely composited surface. The preview renders a page backdrop around its surface; other surfaces and islands are checked over that surface, then the page, with explicit status/badge under-surfaces resolved recursively. An opaque layer ends the chain. A translucent page with no known opaque foundation is reported as **Contrast unknown**, with no safe-value recommendation for that pair. Ratios and suggested values use the same resolved backdrop; tiny alpha values retain scientific notation numerically. Warnings never block Apply. A safe value improves the named pair, not a certification of every use of that token; other warnings may remain. Arbitrary ANSI combinations, authored content and arbitrary utility-tone pairings are not certified.
+The preset editor (`CustomThemeEditor`, opened from **My themes**) and
+`ThemeQuickPicker`'s hover preview both paint a draft/candidate directly onto
+`document.documentElement` — the same pure-DOM `paintRoot` path (factored
+into `theme/preview.ts` so both share it) — instead of a scoped sample div.
+For a dual base the editor exposes Light/Dark tabs that each preview and
+edit their own variant independently; a unified base has no tabs. Opening
+the editor never persists anything; **Save**/**Save as new** are the only
+writes.
 
-The saved key is `tau-custom-theme`. Invalid saved documents are removed with stale surface snapshots, and the declared known base is restored (otherwise the last safe built-in selection). Application failure removes partial overrides and restores the base without reloading. Denied storage is best-effort: the in-memory theme works, and the UI explains when persistence is unavailable.
+Both preview UIs register through a single **preview slot** `ThemeProvider`
+owns (`useThemePreview()`/`setPreview(painter)`, `providers/ThemeProvider.tsx`)
+rather than calling `paintRoot` directly. `setPreview` stores the painter,
+paints it immediately, and returns an unregister function; `ThemeProvider`'s
+own root-paint effect reapplies whichever painter is currently registered
+**after its own real paint, every time it paints** — so an open preview
+survives ANY unrelated repaint (the app's Light/Dark/System control, a
+storage event from another tab, remote account-sync adoption), not just the
+one that happened to be racing it at mount time. Only one preview is ever
+active (last registrant wins); the unregister function repaints the current
+real selection, but only if it's still the registered painter, so a stale
+hover-preview cleanup (e.g. the pointer leaving a quick-picker circle AFTER
+the editor already opened) can never clobber a newer registration. Closing
+the editor — Cancel, Save success, or simply unmounting — unregisters its
+painter, which is exactly what restores the previously applied selection;
+there is no separate restore path to keep in sync.
 
-The synchronous pre-paint bootstrap uses the **same validator and compiler** as React. It applies validated custom properties before CSS/React, derives its custom surface from that document rather than a stale snapshot, and performs the same recovery. `apps/web/index.html` contains generated code; regenerate after changing its dependencies:
+(This replaces an earlier `queueMicrotask`-based ordering hack that
+exploited React firing layout effects child-before-parent — fragile because
+it only ever won the race against the ONE repaint that happened to be
+in-flight at mount time, not against a repaint triggered later by something
+else entirely while the preview was still open.)
+
+The saved key is `tau-custom-theme`; a device-local `tau-theme-preset-id` key
+remembers which library preset the active document came from (or is absent
+when detached — a built-in selection, a one-off import, or the preset's own
+row was later deleted; the applied document snapshot keeps working either
+way). Invalid saved documents are removed with stale surface snapshots, and
+the declared known base is restored (otherwise the last safe built-in
+selection). Application failure removes partial overrides and restores the
+base without reloading. Denied storage is best-effort: the in-memory theme
+works, and the UI explains when persistence is unavailable.
+
+The synchronous pre-paint bootstrap uses the **same validator and compiler**
+as React (minus palette derivation, see above). It applies validated
+explicit overrides before CSS/React, derives its custom surface from the
+document rather than a stale snapshot, and performs the same recovery.
+`apps/web/index.html` contains generated code; regenerate after changing its
+dependencies:
 
 ```sh
 bun apps/web/scripts/generate-theme-flash.ts
 ```
 
-A test compares the shipped script to a fresh bundle under the pinned Bun version, alongside built-in and custom cold-load matrices. This adds no runtime dependency.
+A test compares the shipped script to a fresh bundle under the pinned Bun version, alongside built-in and custom cold-load matrices (v1 and v2, light/dark/system). This adds no runtime dependency.
+
+## Contrast tooling (per-variant, in the editor)
+
+The editor reuses the built-in contrast computation and critical-pair inventory for whichever variant tab is open, including fractional channels and intrinsic opacity. Failing pairs show informational ratios and a **Use safe value** action choosing opaque black or white foreground against the completely composited surface. Other surfaces and islands are checked over the whole-app page/surface, with explicit status/badge under-surfaces resolved recursively. An opaque layer ends the chain. A translucent page with no known opaque foundation is reported as **Contrast unknown**, with no safe-value recommendation for that pair. Ratios and suggested values use the same resolved backdrop; tiny alpha values retain scientific notation numerically. Warnings never block Save. A safe value improves the named pair, not a certification of every use of that token; other warnings may remain. Arbitrary ANSI combinations, authored content and arbitrary utility-tone pairings are not certified.
 
 ## Regression coverage
 
-- Shared grammar/rejection, byte/count caps, unknown-name and pre-inheritance coherence tests.
-- Custom preview isolation and complete inheritance, invalid-document fallback, import/export round trip, partial-application cleanup, graph/xterm observer repaint and reset.
-- Editor interactions: preview-before-confirmation, contrast warnings/safe-value, complete status grid, apply, export, invalid import, reset and provider recovery.
+- Shared: closed grammar/rejection, byte/count caps (including the worst-case-pair measurement), unknown-name and pre-inheritance coherence per variant, v1→v2 normalization, `compileCustomTheme`'s resolved-variant selection, OKLCH round-trip fidelity (`color-oklch.test.ts`), derivation buckets + harmonized-status bounding + the multi-seed contrast-pass property test in both a light and a dark real-base fixture, including a dedicated regression test holding the primary/page pair to the non-text (3:1) floor rather than the text (4.5:1) one, a concrete real-base (ember/dark) regression for `--on-accent-fg` being chosen against the final (post-pass) primary rather than a stale pre-pass one, and harmonized status fg/surface + badge-fg/badge-surface pairs actually being included in the contrast pass (`theme-derivation.test.ts`), preset request-schema/cap and per-owner-race/non-UUID-:id tests (`theme-preset.test.ts`, `theme-presets.test.ts`).
+- Core: owner-scoped preset CRUD (`GET/POST /theme-presets`, `GET/PUT/DELETE /theme-presets/:id`) — isolation, revision conflicts (409), validation (422), per-user cap (409, race-safe under real concurrency via a per-owner `pg_advisory_xact_lock` — a 20-way concurrent create from 49 lands exactly 1 more, never over the cap), a malformed `:id` is a 404 (never a raw driver error), cascade on user deletion, and the generated `theme_presets` migration.
+- Web: custom preview isolation and complete inheritance, invalid-document fallback, export round trip (import now lives once, in the library), partial-application cleanup, graph/xterm observer repaint and reset, a real-CSS-cascade palette-derivation integration test (explicit overrides still win over derived values), the resolved-snapshot round trip and staleness rules (matching doc+fingerprint+appearance applies pre-paint; an edited doc, a different build, or the other appearance falls back; a hostile/malformed snapshot value is never trusted — the WHOLE snapshot is rejected, not partially applied; a full palette+harmonized-status snapshot, BOTH sides, stays well under budget) in both `theme/custom.test.ts` and `theme/flashScript.test.ts` (the shipped script, not just the source), `ThemeProvider` tests that a real root paint persists a snapshot matching the applied document and clears it on deactivation, and that a `'system'`-appearance palette preset snapshots BOTH resolved sides (with a real pre-paint `readResolvedSnapshot` check on the non-visible side), the preview slot (last registrant wins; a superseded registrant's clear never clobbers the current one; the editor's live preview survives an appearance change, a storage event, and remote account-sync adoption made elsewhere while it's open) in `ThemeProvider.test.tsx` and `CustomThemeEditor.test.tsx`, the editor's whole-app live preview (open/tab-switch/Cancel/unmount all repaint or restore correctly), an unset seed swatch reading the active base theme's own `--color-border` token rather than any hardcoded color, color-field accessibility (swatch and text field are independently addressable, not ambiguously co-labelled), the preset library's New/Duplicate/Rename/Delete/Use/Export/Import flows, a real-built-in-CSS test that a palette-only preset's library swatch and quick-picker circle both resolve a recognizably-derived color (not empty, not the plain base), `ThemeQuickPicker` rendering one circle per saved preset (in addition to the built-ins) with a selection ring keyed on the active preset id, and the theme-presets query being gated identically (an auth-disabled instance sees presets in both) between `AppNav` and `ThemePresetLibrary` via a single shared `selfServiceQueryEnabled`.
 - Actual generated utility substitution covers all mapped tokens with custom alpha and intrinsic/utility opacity; built-in palette parity and contrast gates remain unchanged.
 - Security source checks prohibit CSS/HTML text writes in the custom application path; pre-paint generation cannot drift from the shared validator/compiler.
 
 Physical-device/PWA cold-launch and authenticated account navigation are not certified by these tests. The inherited Universe fixture/layout limitation remains outside this change.
+
+## What Phase 2 and Phase 3 build on this
+
+- **Phase 2 (sharing)**: the schema already carries `visibility: 'private' | 'instance'` on every preset (default `'private'`); Phase 1 never sets it to `'instance'` and every route is owner-only. Phase 2 adds: a route to toggle visibility, a route (and UI) to list/browse instance-shared presets, an admin remove action, and a "Use" path for a shared preset that is a **live link** (the author's later edits show up on the follower's next load) versus "Duplicate" (an independent copy) — both map cleanly onto the existing `presetId` field on `ThemePreference` and the existing revision-checked update/delete routes.
+- **Phase 3 (theme-building assistant)**: attaches to the existing page-editor framework and the editor built here, since the editor already (a) keeps a draft separate from the saved document, (b) live-previews the whole app while open, and (c) exposes seed colors as the primary edit surface (`palette.primary/secondary/tertiary/neutral`, plus the `status` and `contrast` modes) rather than 400+ individual tokens — an assistant can converse in terms of "make it warmer" / "more contrast" and mutate 2–4 seed values instead of walking the whole token grid.
 
 ### Historical phase-6 verification (2026-09-21)
 

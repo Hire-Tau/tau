@@ -14,10 +14,12 @@ function customTokens(overrides: Record<string, string>) {
     appearance: 'dark',
     overrides,
   })
-  expect(validateCustomTheme(raw, BUILT_IN_THEMES).ok).toBe(true)
+  const result = validateCustomTheme(raw, BUILT_IN_THEMES)
+  expect(result.ok).toBe(true)
+  if (!result.ok) throw new Error(result.error)
   return {
     ...palettes.find((p) => p.id === 'tau' && p.appearance === 'dark')!.tokens,
-    ...compileCustomTheme(raw, BUILT_IN_THEMES),
+    ...compileCustomTheme(result.document, 'dark'),
   }
 }
 

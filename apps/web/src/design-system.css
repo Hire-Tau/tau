@@ -39,11 +39,12 @@
     background: rgb(var(--color-bg-surface-secondary));
   }
 
-  /* ThemeQuickPicker swirl swatch. One static rule: the actual colors come
-     from whichever [data-theme-scope][data-theme=…] element the swatch sits
+  /* Theme circle swirl swatch, shared by ThemeQuickPicker's circles AND the
+     "My themes" library rows. One static rule: the actual colors come from
+     whichever [data-theme-scope][data-theme=…] element the swatch sits
      inside, so a single class paints every theme circle correctly without any
      per-instance inline color (see no-raw-colors guard). */
-  .theme-quick-picker-swatch {
+  .theme-swatch {
     background: conic-gradient(
       rgb(var(--color-primary)) 0deg 120deg,
       rgb(var(--color-primary-hover)) 120deg 240deg,

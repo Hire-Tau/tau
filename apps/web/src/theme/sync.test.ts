@@ -24,8 +24,8 @@ function deferred<T>() {
   })
   return { promise, resolve, reject }
 }
-const harbor: ThemePreference = { themeId: 'harbor', appearance: 'dark', customTheme: null }
-const ember: ThemePreference = { themeId: 'ember', appearance: 'system', customTheme: null }
+const harbor: ThemePreference = { themeId: 'harbor', appearance: 'dark', customTheme: null, presetId: null }
+const ember: ThemePreference = { themeId: 'ember', appearance: 'system', customTheme: null, presetId: null }
 function server(theme: ThemePreference | null = harbor) {
   let remote = theme
   const writes: Array<{ expectedUserId: string; theme: ThemePreference }> = []
@@ -367,4 +367,32 @@ test('failed in-flight PUT retries on reconnect when the deliberate intent is st
   expect((await remote.api.getMine()).theme).toEqual(ember)
   expect(store.getSnapshot().selection).toEqual({ themeId: 'ember', appearance: 'system' })
   store.disconnect()
+})
+
+test('presetId round-trips through change/apply and clears when the custom theme is dropped', () => {
+  const local = storage()
+  const store = new ThemeSyncStore(local)
+  const withPreset: ThemePreference = {
+    themeId: 'harbor',
+    appearance: 'dark',
+    presetId: 'p-1',
+    customTheme: {
+      format: 'tau-custom-theme',
+      version: 2,
+      name: 'Mine',
+      base: 'harbor',
+      variants: { light: {}, dark: { '--color-primary': '#0ea5e9' } },
+    },
+  }
+  store.change(withPreset)
+  expect(store.getSnapshot().presetId).toBe('p-1')
+  expect(local.getItem('tau-theme-preset-id')).toBe('p-1')
+  // Reloading a fresh store instance from the same storage recovers presetId.
+  const reloaded = new ThemeSyncStore(local)
+  expect(reloaded.getSnapshot().presetId).toBe('p-1')
+  // Deactivating the custom theme (built-in selection) clears the preset ring
+  // locally without needing a server call — the library preset itself is untouched.
+  store.change({ themeId: 'tau', appearance: 'dark', customTheme: null, presetId: null })
+  expect(store.getSnapshot().presetId).toBeNull()
+  expect(local.getItem('tau-theme-preset-id')).toBeNull()
 })

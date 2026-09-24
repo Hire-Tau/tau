@@ -1,7 +1,7 @@
 import { afterEach, expect, spyOn, test } from 'bun:test'
 import { act } from 'react'
 import { fireEvent, getAllByRole, getByRole, queryByRole } from '@testing-library/dom'
-import type { CustomThemeDocument } from '@tau/shared'
+import type { ThemePreset } from '@tau/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { ThemeProvider, useTheme, useThemeSyncStore } from '../providers/ThemeProvider'
 import type { ThemeSyncStore } from '../theme/sync'
@@ -14,34 +14,51 @@ afterEach(async () => {
   cleanup = undefined
 })
 
-const customDoc: CustomThemeDocument = {
-  format: 'tau-custom-theme',
-  version: 1,
-  name: 'Midnight',
-  base: 'harbor',
-  appearance: 'dark',
-  overrides: { '--color-primary': '#0ea5e9' },
+const midnight: ThemePreset = {
+  id: 'preset-midnight',
+  document: {
+    format: 'tau-custom-theme',
+    version: 2,
+    name: 'Midnight',
+    base: 'harbor',
+    variants: { light: {}, dark: { '--color-primary': '#0ea5e9' } },
+  },
+  visibility: 'private',
+  ownerUserId: 'u1',
+  revision: 1,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
 }
 
-function Harness({ enabled = true, storeRef }: { enabled?: boolean; storeRef?: { current: ThemeSyncStore | null } }) {
+function Harness({
+  enabled = true,
+  presets = [],
+  storeRef,
+}: {
+  enabled?: boolean
+  presets?: ThemePreset[]
+  storeRef?: { current: ThemeSyncStore | null }
+}) {
   const value = useTheme()
   const store = useThemeSyncStore()
   if (storeRef) storeRef.current = store
-  return <ThemeQuickPicker value={value} enabled={enabled} />
+  return <ThemeQuickPicker value={value} enabled={enabled} presets={presets} />
 }
 
 async function renderPicker({
   enabled = true,
-  custom,
+  presets,
   themeId,
   appearance,
   dark = false,
+  presetId,
 }: {
   enabled?: boolean
-  custom?: CustomThemeDocument
+  presets?: ThemePreset[]
   themeId?: string
   appearance?: string
   dark?: boolean
+  presetId?: string
 } = {}) {
   const dom = await acquireDomHarness({
     url: 'https://tau.test',
@@ -56,7 +73,11 @@ async function renderPicker({
   cleanup = () => dom.cleanup()
   if (themeId) localStorage.setItem('tau-theme-id', themeId)
   if (appearance) localStorage.setItem('tau-appearance', appearance)
-  if (custom) localStorage.setItem('tau-custom-theme', JSON.stringify(custom))
+  if (presetId) {
+    const preset = (presets ?? []).find((p) => p.id === presetId)!
+    localStorage.setItem('tau-custom-theme', JSON.stringify(preset.document))
+    localStorage.setItem('tau-theme-preset-id', presetId)
+  }
   // Real per-theme cascade: mirrors the shipped selectors (:root and
   // [data-theme-scope]) so the circle swatches resolve genuine tokens, not a
   // synthetic stand-in.
@@ -75,7 +96,7 @@ async function renderPicker({
   await act(async () =>
     root.render(
       <ThemeProvider>
-        <Harness enabled={enabled} storeRef={storeRef} />
+        <Harness enabled={enabled} presets={presets} storeRef={storeRef} />
       </ThemeProvider>
     )
   )
@@ -127,8 +148,8 @@ test('lists all four built-ins with the stored theme checked, none other', async
   circles.forEach((c) => expect(c.getAttribute('role')).toBe('radio'))
 })
 
-test('adds the active custom theme circle, selected instead of its base built-in', async () => {
-  const { container } = await renderPicker({ custom: customDoc })
+test('adds a circle per saved preset, selected instead of its base built-in when active', async () => {
+  const { container } = await renderPicker({ presets: [midnight], presetId: midnight.id })
   await open(container)
   const circles = getAllByRole(container, 'radio', { name: /Tau|Harbor|Ember|High contrast|Midnight/ })
   expect(circles.map((c) => c.getAttribute('aria-label'))).toEqual([
@@ -139,18 +160,18 @@ test('adds the active custom theme circle, selected instead of its base built-in
     'Midnight',
   ])
   const harborCircle = getByRole(container, 'radio', { name: 'Harbor' })
-  const customCircle = getByRole(container, 'radio', { name: 'Midnight' })
+  const presetCircle = getByRole(container, 'radio', { name: 'Midnight' })
   expect(harborCircle.getAttribute('aria-checked')).toBe('false')
-  expect(customCircle.getAttribute('aria-checked')).toBe('true')
+  expect(presetCircle.getAttribute('aria-checked')).toBe('true')
 })
 
-test('custom circle swatch resolves the compiled override, not the plain harbor token', async () => {
-  const { container } = await renderPicker({ custom: customDoc })
+test('preset circle swatch resolves the compiled override, not the plain harbor token', async () => {
+  const { container } = await renderPicker({ presets: [midnight], presetId: midnight.id, appearance: 'dark' })
   await open(container)
-  const customCircle = getByRole(container, 'radio', { name: 'Midnight' })
-  const swatch = customCircle.querySelector('[data-theme-scope]')!
+  const presetCircle = getByRole(container, 'radio', { name: 'Midnight' })
+  const swatch = presetCircle.querySelector('[data-theme-scope]')!
   const style = window.getComputedStyle(swatch)
-  // The custom document overrides --color-primary to #0ea5e9 = rgb(14 165 233).
+  // The preset document overrides --color-primary to #0ea5e9 = rgb(14 165 233) on dark.
   expect(style.getPropertyValue('--color-primary').trim()).toBe('14 165 233')
   expect(swatch.getAttribute('data-theme')).toBe('harbor')
   expect(swatch.getAttribute('data-appearance')).toBe('dark')
@@ -181,6 +202,15 @@ test('clicking a circle swaps the palette only, preserving the stored appearance
   expect(localStorage.getItem('tau-appearance')).toBe('dark')
   expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
   expect(document.documentElement.getAttribute('data-appearance')).toBe('dark')
+})
+
+test('clicking a preset circle applies it via applyPreset and rings it as active', async () => {
+  const { container } = await renderPicker({ presets: [midnight], themeId: 'tau', appearance: 'dark' })
+  await open(container)
+  await act(async () => fireEvent.click(getByRole(container, 'radio', { name: 'Midnight' })))
+  expect(localStorage.getItem('tau-theme-id')).toBe('harbor')
+  expect(localStorage.getItem('tau-theme-preset-id')).toBe('preset-midnight')
+  expect(document.documentElement.style.getPropertyValue('--color-primary')).toBe('14 165 233')
 })
 
 test('Enter and Space activate a circle exactly like a click', async () => {
@@ -221,7 +251,10 @@ test('surfaces the same account-sync/device-override notice the Settings picker 
   const { container, storeRef } = await renderPicker()
   await act(async () => {
     storeRef.current.connect({
-      getMine: async () => ({ userId: 'u1', theme: { themeId: 'tau', appearance: 'light', customTheme: null } }),
+      getMine: async () => ({
+        userId: 'u1',
+        theme: { themeId: 'tau', appearance: 'light', customTheme: null, presetId: null },
+      }),
       updateMine: async (input) => ({ userId: 'u1', theme: input.theme }),
     })
     await storeRef.current.refresh()
@@ -369,7 +402,9 @@ test('restore re-reads the store at leave time, reflecting a selection changed d
     await hover.advance(100)
     expect(document.documentElement.getAttribute('data-theme')).toBe('harbor')
     // Selection changes elsewhere (e.g. Settings, another tab) while hovering.
-    await act(async () => storeRef.current.change({ themeId: 'ember', appearance: 'light', customTheme: null }))
+    await act(async () =>
+      storeRef.current.change({ themeId: 'ember', appearance: 'light', customTheme: null, presetId: null })
+    )
     await hoverLeave(harbor)
     // Restores to the NEW stored selection, not the pre-hover one.
     expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
@@ -393,4 +428,36 @@ test('click-outside closes the flyout and restores any live preview', async () =
   } finally {
     hover.restore()
   }
+})
+
+test('a palette-only preset circle resolves a real derived color, not an empty/unstyled swatch', async () => {
+  const paletteOnly: ThemePreset = {
+    id: 'preset-palette',
+    document: {
+      format: 'tau-custom-theme',
+      version: 2,
+      name: 'Palette only',
+      base: 'harbor',
+      palette: { primary: '#0ea5e9' },
+      variants: { light: {}, dark: {} },
+    },
+    visibility: 'private',
+    ownerUserId: 'u1',
+    revision: 1,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  }
+  const { container } = await renderPicker({ presets: [paletteOnly], themeId: 'tau', appearance: 'light' })
+  await open(container)
+  const circle = getByRole(container, 'radio', { name: 'Palette only' })
+  const swatch = circle.querySelector('[data-theme-scope]')!
+  const resolvedPrimary = window.getComputedStyle(swatch).getPropertyValue('--color-primary').trim()
+  expect(resolvedPrimary).not.toBe('')
+  expect(resolvedPrimary).not.toBe('14 95 109') // not the plain Harbor base primary
+  const { srgbToOklch } = await import('@tau/shared/color-oklch')
+  const [r, g, b] = resolvedPrimary.split(/\s+/).map(Number)
+  const oklch = srgbToOklch([r!, g!, b!])
+  expect(oklch.h).toBeGreaterThan(200)
+  expect(oklch.h).toBeLessThan(260)
+  expect(oklch.c).toBeGreaterThan(0.05)
 })

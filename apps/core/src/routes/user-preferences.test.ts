@@ -15,14 +15,13 @@ app.use('*', jsonBodyErrorMiddleware)
 app.onError(jsonBodyErrorHandler)
 app.use('*', identityMiddleware)
 app.route('/user-preferences', userPreferencesRouter)
-const theme = { themeId: 'harbor', appearance: 'dark', customTheme: null }
+const theme = { themeId: 'harbor', appearance: 'dark', customTheme: null, presetId: null }
 const customTheme = {
   format: 'tau-custom-theme',
-  version: 1,
+  version: 2,
   name: 'Synced',
   base: 'harbor',
-  appearance: 'dark',
-  overrides: { '--term-bg': '#12345680' },
+  variants: { light: {}, dark: { '--term-bg': '#12345680' } },
 }
 const get = (user: TestUser) => app.request('/user-preferences/me', { headers: authHeaders(user.token) })
 const put = (user: TestUser, body: unknown) =>
@@ -53,6 +52,14 @@ test('no account choice is null; unprivileged callers self-serve isolated atomic
   expect(await (await get(a)).json()).toEqual({ userId: a.id, theme })
   expect(await db.select().from(userPreferences).where(eq(userPreferences.userId, a.id))).toHaveLength(1)
 })
+test('presetId round-trips (the preset the active custom document came from), and stays optional', async () => {
+  const withPreset = { ...theme, customTheme, presetId: '11111111-1111-4111-8111-111111111111' }
+  expect((await put(a, { expectedUserId: a.id, theme: withPreset })).status).toBe(200)
+  expect(await (await get(a)).json()).toEqual({ userId: a.id, theme: withPreset })
+  // A dangling/deleted preset id is not itself invalid at this layer — the
+  // snapshot in customTheme keeps working; the UI treats it as detached.
+  expect((await put(a, { expectedUserId: a.id, theme: withPreset })).status).toBe(200)
+})
 test('identity precondition rejects queued writes sent with a different account session', async () => {
   expect((await put(b, { expectedUserId: a.id, theme })).status).toBe(409)
   expect((await put(b, { theme })).status).toBe(409)
@@ -70,13 +77,17 @@ test('rejects malformed, unsafe, incoherent and oversized documents without chan
     {},
     { ...theme, themeId: 'unknown' },
     { ...theme, appearance: 'constant' },
-    { ...theme, customTheme: { ...customTheme, overrides: { '--term-bg': 'url(x)' } } },
+    { ...theme, customTheme: { ...customTheme, variants: { light: {}, dark: { '--term-bg': 'url(x)' } } } },
     { ...theme, customTheme: { ...customTheme, base: 'ember' } },
-    { ...theme, customTheme: { ...customTheme, extra: 'x'.repeat(8200) } },
+    // Oversized custom document (its own 32 KiB cap), but still within the
+    // whole-envelope body limit below — isolates the per-document cap from the HTTP body limit.
+    { ...theme, customTheme: { ...customTheme, extra: 'x'.repeat(32700) } },
+    { ...theme, presetId: '' },
+    { ...theme, presetId: 123 },
   ]) {
     expect((await put(a, { expectedUserId: a.id, theme: invalid })).status).toBe(400)
   }
-  expect((await put(a, { expectedUserId: a.id, theme, padding: 'x'.repeat(10000) })).status).toBe(413)
+  expect((await put(a, { expectedUserId: a.id, theme, padding: 'x'.repeat(40000) })).status).toBe(413)
   expect(await (await get(a)).json()).toEqual(before)
 })
 test('user deletion cascades the preference row', async () => {

@@ -310,3 +310,23 @@ describe('AuthProvider first-admin funnel', () => {
     expect(seen.isAuthenticated).toBe(false)
   })
 })
+
+describe('selfServiceQueryEnabled', () => {
+  test('true for a genuinely authenticated user, regardless of whether auth is required', async () => {
+    const { selfServiceQueryEnabled } = await import('./AuthProvider')
+    expect(selfServiceQueryEnabled({ authRequired: true, isAuthenticated: true } as never)).toBe(true)
+    expect(selfServiceQueryEnabled({ authRequired: false, isAuthenticated: true } as never)).toBe(true)
+  })
+
+  test('true on an auth-disabled instance even when NOT authenticated — the actual bug: AppNav used to require BOTH isAuthenticated AND authRequired, so it never showed presets at all on an auth-disabled instance', async () => {
+    const { selfServiceQueryEnabled } = await import('./AuthProvider')
+    expect(selfServiceQueryEnabled({ authRequired: false, isAuthenticated: false } as never)).toBe(true)
+  })
+
+  test('false while auth is required and not yet authenticated, while auth status is still unknown, or with no auth context at all', async () => {
+    const { selfServiceQueryEnabled } = await import('./AuthProvider')
+    expect(selfServiceQueryEnabled({ authRequired: true, isAuthenticated: false } as never)).toBe(false)
+    expect(selfServiceQueryEnabled({ authRequired: null, isAuthenticated: false } as never)).toBe(false)
+    expect(selfServiceQueryEnabled(null)).toBe(false)
+  })
+})

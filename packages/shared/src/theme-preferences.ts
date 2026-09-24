@@ -11,6 +11,10 @@ export const SYNC_THEME_DESCRIPTORS: readonly ThemeDescriptor[] = [
 
 export interface ThemePreference extends StoredThemeSelection {
   customTheme: CustomThemeDocument | null
+  /** The library preset the active custom document was applied from, or null
+   * when detached (built-in selection, a one-off import, or the preset was
+   * later deleted — the snapshot in `customTheme` keeps working either way). */
+  presetId: string | null
 }
 export interface MyThemePreferences {
   userId: string
@@ -18,7 +22,9 @@ export interface MyThemePreferences {
   theme: ThemePreference | null
 }
 
-/** Validate atomically: never accept a custom document with a different base/variant. */
+/** Validate atomically: never accept a custom document with a different base.
+ * A v2 pair follows the Light/Dark/System toggle, so (unlike v1) the stored
+ * appearance is not required to match a single concrete variant. */
 export function validateThemePreference(
   input: unknown
 ): { ok: true; theme: ThemePreference } | { ok: false; error: string } {
@@ -32,11 +38,16 @@ export function validateThemePreference(
     const result = validateCustomTheme(JSON.stringify(value.customTheme) ?? '', SYNC_THEME_DESCRIPTORS)
     if (!result.ok) return result
     customTheme = result.document
-    if (
-      customTheme.base !== value.themeId ||
-      (customTheme.appearance !== 'constant' && customTheme.appearance !== value.appearance)
-    )
-      return { ok: false, error: 'Custom theme must match the selected base and appearance.' }
+    if (customTheme.base !== value.themeId) return { ok: false, error: 'Custom theme must match the selected base.' }
   }
-  return { ok: true, theme: { themeId: value.themeId as string, appearance: value.appearance, customTheme } }
+  let presetId: string | null = null
+  if (value.presetId !== undefined && value.presetId !== null) {
+    if (typeof value.presetId !== 'string' || !value.presetId || value.presetId.length > 200)
+      return { ok: false, error: 'Invalid presetId.' }
+    presetId = value.presetId
+  }
+  return {
+    ok: true,
+    theme: { themeId: value.themeId as string, appearance: value.appearance, customTheme, presetId },
+  }
 }

@@ -1,11 +1,13 @@
 import { afterEach, expect, test } from 'bun:test'
 import { act } from 'react'
-import { fireEvent, getByLabelText } from '@testing-library/dom'
+import { fireEvent, getByLabelText, getByRole } from '@testing-library/dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { acquireDomHarness } from '../../test/domHarness'
 import { ThemeProvider, useTheme } from '../../providers/ThemeProvider'
 import { ThemeControl } from './ThemeControl'
 import { palettes, resolveToken } from '../../theme/test/builtins'
 import { BUILT_IN_THEMES } from '../../theme/registry'
+import { themePresetQueryKeys } from '../../queryKeys'
 
 let cleanup: (() => Promise<void>) | undefined
 afterEach(async () => {
@@ -33,12 +35,16 @@ async function renderControl(themeId = 'tau', appearance = 'light', dark = false
     .map((p) => `${p.selector} { --color-bg-surface: ${resolveToken(p.tokens, '--color-bg-surface')}; }`)
     .join('\n')
   document.head.appendChild(sheet)
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  queryClient.setQueryData(themePresetQueryKeys.list(), [])
   const { root, container } = dom.createRoot()
   await act(async () => {
     root.render(
-      <ThemeProvider>
-        <Control enabled={enabled} />
-      </ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <Control enabled={enabled} />
+        </ThemeProvider>
+      </QueryClientProvider>
     )
   })
   return container
@@ -88,6 +94,29 @@ for (const theme of BUILT_IN_THEMES)
         })
       })
     }
+
+test('the "My themes" library section renders (Phase 1: owner-only, own presets)', async () => {
+  const container = await renderControl('tau', 'light')
+  expect(container.textContent).toContain('My themes')
+  expect(getByRole(container, 'button', { name: 'New theme' })).not.toBeNull()
+})
+
+test('Reset to default clears any active custom theme/preset', async () => {
+  const container = await renderControl('harbor', 'dark')
+  localStorage.setItem(
+    'tau-custom-theme',
+    JSON.stringify({
+      format: 'tau-custom-theme',
+      version: 2,
+      name: 'Mine',
+      base: 'harbor',
+      variants: { light: {}, dark: {} },
+    })
+  )
+  await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Reset to default' })))
+  expect(localStorage.getItem('tau-theme-id')).toBe('tau')
+  expect(localStorage.getItem('tau-custom-theme')).toBeNull()
+})
 
 test('release flag rollback keeps a working legacy appearance toggle', async () => {
   const container = await renderControl('tau', 'light', false, false)
