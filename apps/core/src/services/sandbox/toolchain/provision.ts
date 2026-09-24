@@ -1,5 +1,6 @@
 import type { SandboxToolchainStatus } from '@tau/shared'
 import { KeyedSerialQueue } from '../../../lib/infra/inflight'
+import { createLogger } from '../../../lib/infra/logger'
 import type { ISandboxManager, SandboxOptions } from '../types'
 import { fingerprintToolchain, isEmptyToolchain, normalizeToolchain, renderManagedDevbox } from './config'
 import {
@@ -15,6 +16,8 @@ import {
   type ToolchainReconcileSnapshot,
 } from './state'
 
+const log = createLogger('toolchain')
+
 const SAFE_MESSAGES: Record<ToolchainErrorCode, string> = {
   devbox_unavailable: 'Devbox is unavailable in this sandbox',
   install_failed: 'Package installation failed',
@@ -28,9 +31,10 @@ const SAFE_MESSAGES: Record<ToolchainErrorCode, string> = {
 export class ToolchainAdapterError extends Error {
   constructor(
     readonly code: ToolchainErrorCode,
-    readonly exitCode?: number
+    readonly exitCode?: number,
+    cause?: unknown
   ) {
-    super(SAFE_MESSAGES[code])
+    super(SAFE_MESSAGES[code], cause === undefined ? undefined : { cause })
   }
 }
 
@@ -111,7 +115,11 @@ async function reconcileLocked(
     if (configured) await deps.markReady(stateKey)
     else await deps.clearState(sandboxId, squadId)
   } catch (error) {
-    const classified = error instanceof ToolchainAdapterError ? error : new ToolchainAdapterError('unknown')
+    const classified =
+      error instanceof ToolchainAdapterError ? error : new ToolchainAdapterError('unknown', undefined, error)
+    // The recorded state keeps only a safe code; the cause is what an operator
+    // needs to tell an overloaded box from a broken toolchain.
+    log.warn(`Toolchain provisioning failed for ${sandboxId} (${classified.code})`, classified.cause ?? error)
     await deps.markFailed({ ...stateKey, errorCode: classified.code, exitCode: classified.exitCode })
     throw new ToolchainProvisioningError(classified.code)
   }
