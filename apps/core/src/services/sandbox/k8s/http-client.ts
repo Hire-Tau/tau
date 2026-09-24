@@ -754,17 +754,21 @@ export class SandboxClient {
     })
   }
 
-  /** Refresh or clear the server's managed toolchain activation cache. */
-  async toolchainReady(active = true): Promise<void> {
+  /**
+   * Refresh or clear the server's managed toolchain activation cache. With a
+   * fingerprint, a server already activated for it answers from its cache.
+   * Throws {@link SandboxHttpError} on a non-2xx (504 when activation timed out).
+   */
+  async toolchainReady(active = true, fingerprint?: string): Promise<void> {
     await this.withUnary(
       '/toolchain-ready',
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...this.authHeaders },
-        body: JSON.stringify({ active }),
+        body: JSON.stringify(fingerprint ? { active, fingerprint } : { active }),
       },
       async (resp) => {
-        if (!resp.ok) throw new Error(`Failed to signal /toolchain-ready: ${await formatHttpError(resp)}`)
+        if (!resp.ok) await this.consumeJsonResponse(resp)
       }
     )
   }

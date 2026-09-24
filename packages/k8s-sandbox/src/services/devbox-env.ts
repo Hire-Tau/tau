@@ -10,12 +10,13 @@
  * and inline the cached exports into each command's preamble.
  */
 
-import { execSync } from 'child_process'
+import { execFile, execSync } from 'child_process'
 import { getDevboxDir, getDevboxJsonPath } from '../paths'
 import { existsSync, readFileSync, readdirSync, unlinkSync } from 'fs'
 
 let cachedShellEnv: string | null = null
 let cachedManagedToolchainEnv: string | null = null
+let cachedManagedToolchainFingerprint: string | null = null
 
 /**
  * True when devbox.json declares at least one package. An empty package set is
@@ -134,30 +135,75 @@ export function getDevboxShellEnv(): string {
 /** Clear only Tau's managed toolchain activation, preserving the comfort/project cache. */
 export function clearManagedToolchainEnv(): void {
   cachedManagedToolchainEnv = null
+  cachedManagedToolchainFingerprint = null
 }
 
-/** Refresh or clear Tau's managed toolchain activation. Failures are observable to Core. */
-export function cacheManagedToolchainEnv(
+/**
+ * Budget for resolving the managed toolchain environment. It stays below Core's
+ * 30s request budget so an overloaded box answers with a timeout Core can name,
+ * instead of Core abandoning the request and reporting an unknown failure.
+ */
+export const MANAGED_SHELLENV_TIMEOUT_SECONDS = 20
+
+export class ManagedToolchainTimeoutError extends Error {
+  constructor() {
+    super(`Managed toolchain activation timed out after ${MANAGED_SHELLENV_TIMEOUT_SECONDS}s`)
+    this.name = 'ManagedToolchainTimeoutError'
+  }
+}
+
+/**
+ * Run `devbox shellenv` without blocking the server's event loop. coreutils
+ * `timeout` runs devbox in its own process group and signals the whole group,
+ * so a timed-out nix evaluation does not linger and add to the load.
+ */
+function runManagedShellenv(cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'timeout',
+      ['-k', '5', String(MANAGED_SHELLENV_TIMEOUT_SECONDS), 'devbox', 'shellenv', '--init-hook'],
+      { cwd, encoding: 'utf-8', maxBuffer: 16 * 1024 * 1024 },
+      (error, stdout) => {
+        if (!error) return resolve(stdout)
+        // timeout exits 124 when the budget expires (137 when it had to SIGKILL).
+        const code = (error as { code?: unknown }).code
+        reject(code === 124 || code === 137 ? new ManagedToolchainTimeoutError() : error)
+      }
+    )
+  })
+}
+
+/**
+ * Refresh or clear Tau's managed toolchain activation. Failures are observable
+ * to Core. A request carrying the fingerprint that is already active reuses
+ * the cached environment: Core confirms readiness before every turn, and
+ * re-resolving an unchanged toolchain on a busy box is what turns load into
+ * failed turns.
+ */
+export async function cacheManagedToolchainEnv(
   active = true,
-  runShellenv: (cwd: string) => string = (cwd) =>
-    execSync('devbox shellenv --init-hook 2>/dev/null', { encoding: 'utf-8', cwd, timeout: 30_000 })
-): void {
+  fingerprint?: string,
+  runShellenv: (cwd: string) => string | Promise<string> = runManagedShellenv
+): Promise<'cleared' | 'cached' | 'refreshed'> {
   const dir = process.env.TAU_TOOLCHAIN_DIR
   if (!active) {
     clearManagedToolchainEnv()
-    return
+    return 'cleared'
   }
   if (!dir || !existsSync(`${dir}/devbox.json`)) {
     clearManagedToolchainEnv()
     throw new Error('Managed toolchain configuration is unavailable')
   }
+  if (fingerprint && cachedManagedToolchainEnv && cachedManagedToolchainFingerprint === fingerprint) return 'cached'
 
-  const output = runShellenv(dir).trim()
+  const output = (await runShellenv(dir)).trim()
   if (!output) {
     clearManagedToolchainEnv()
     throw new Error('Managed toolchain activation produced no environment')
   }
   cachedManagedToolchainEnv = output
+  cachedManagedToolchainFingerprint = fingerprint ?? null
+  return 'refreshed'
 }
 
 /** Refresh the VM shellenv cache after a routed `devbox add` mutation. */

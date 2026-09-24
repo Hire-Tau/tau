@@ -317,6 +317,8 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 
 Squads may declare a Tau-managed package set and inline setup script with `tau squad toolchain set`. Tau realizes this isolated Devbox before squad and squad-agent sandboxes are reported ready, retains its per-sandbox lock/cache state, and reconciles a changed fingerprint without modifying the repository's `devbox.json` or `.tau/setup.sh`. Provisioning status and safe fixed failure reasons are included in sandbox status responses.
 
+Before each turn Core confirms the toolchain is active in the sandbox server. The server reuses its cached environment when the fingerprint is unchanged, and otherwise resolves it with a 20-second limit, below Core's 30-second request budget. A sandbox too loaded to answer in time reports "Toolchain provisioning timed out" rather than "Toolchain provisioning failed", and Core logs the underlying error for every toolchain failure.
+
 ## Sandbox and toolchain status precedence
 
 API and CLI responses expose the raw physical lifecycle and managed toolchain state as separate dimensions. Agent-tool and web presentations use the physical lifecycle as canonical; toolchain state refines a physically `running` sandbox and is otherwise secondary diagnostic detail.

@@ -52,7 +52,12 @@ import {
   handleMaterializeAttachment,
   handleDeleteMaterializedAttachment,
 } from './services/filesystem'
-import { cacheManagedToolchainEnv, prepareDevboxShellEnv, selfCacheDevboxEnvOnBoot } from './services/devbox-env'
+import {
+  cacheManagedToolchainEnv,
+  ManagedToolchainTimeoutError,
+  prepareDevboxShellEnv,
+  selfCacheDevboxEnvOnBoot,
+} from './services/devbox-env'
 import { getHealthResponse, setDevboxReady } from './services/health'
 import { handleShell } from './services/shell'
 import { WorkspaceWatcher } from './services/watcher'
@@ -306,9 +311,13 @@ async function main(): Promise<void> {
           switch (pathname) {
             case '/toolchain-ready':
               try {
-                cacheManagedToolchainEnv(body.active !== false)
-                return Response.json({ ok: true })
-              } catch {
+                const fingerprint = typeof body.fingerprint === 'string' ? body.fingerprint : undefined
+                const result = await cacheManagedToolchainEnv(body.active !== false, fingerprint)
+                return Response.json({ ok: true, result })
+              } catch (error) {
+                if (error instanceof ManagedToolchainTimeoutError) {
+                  return Response.json({ error: error.message, code: 'timeout' }, { status: 504 })
+                }
                 return Response.json({ error: 'Managed toolchain activation failed' }, { status: 500 })
               }
             case '/bash': {

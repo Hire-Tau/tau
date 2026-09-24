@@ -12,6 +12,7 @@ import {
   shouldSelfCacheDevboxEnvOnBoot,
   selfCacheDevboxEnvOnBoot,
   cacheManagedToolchainEnv,
+  ManagedToolchainTimeoutError,
   clearManagedToolchainEnv,
 } from './devbox-env'
 
@@ -107,17 +108,17 @@ describe('managed toolchain shellenv cache', () => {
     for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
   })
 
-  test('appends managed activation after the existing cache when Core requests it', () => {
+  test('appends managed activation after the existing cache when Core requests it', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'managed-devbox-'))
     dirs.push(dir)
     process.env.TAU_TOOLCHAIN_DIR = dir
     writeFileSync(join(dir, 'devbox.json'), '{"packages":["python3@latest"]}')
     const existingCache = getDevboxShellEnv()
 
-    cacheManagedToolchainEnv(false, () => 'should not run')
+    await cacheManagedToolchainEnv(false, undefined, () => 'should not run')
     expect(getDevboxShellEnv()).toBe(existingCache)
 
-    cacheManagedToolchainEnv(true, () => 'export MANAGED=1')
+    await cacheManagedToolchainEnv(true, undefined, () => 'export MANAGED=1')
     expect(getDevboxShellEnv()).toContain(existingCache)
     expect(
       execFileSync('/bin/bash', ['-c', `${getDevboxShellEnv()}\nprintf '%s' "$MANAGED"`], { encoding: 'utf8' })
@@ -126,21 +127,54 @@ describe('managed toolchain shellenv cache', () => {
     expect(getDevboxShellEnv()).toBe(existingCache)
   })
 
-  test('clears stale activation when files disappear', () => {
+  test('reuses the active environment for an unchanged fingerprint and re-resolves a new one', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'managed-devbox-'))
+    dirs.push(dir)
+    process.env.TAU_TOOLCHAIN_DIR = dir
+    writeFileSync(join(dir, 'devbox.json'), '{"packages":["python3@latest"]}')
+    let runs = 0
+    const shellenv = () => `export MANAGED=${++runs}`
+    expect(await cacheManagedToolchainEnv(true, 'fp-1', shellenv)).toBe('refreshed')
+    // Core confirms readiness before every turn; an unchanged toolchain must not re-run devbox.
+    expect(await cacheManagedToolchainEnv(true, 'fp-1', shellenv)).toBe('cached')
+    expect(runs).toBe(1)
+    expect(await cacheManagedToolchainEnv(true, 'fp-2', shellenv)).toBe('refreshed')
+    expect(getDevboxShellEnv()).toContain('MANAGED=2')
+    // A request without a fingerprint (older Core) always re-resolves.
+    expect(await cacheManagedToolchainEnv(true, undefined, shellenv)).toBe('refreshed')
+    expect(runs).toBe(3)
+    // Clearing forgets the fingerprint, so the next activation resolves again.
+    await cacheManagedToolchainEnv(false)
+    expect(await cacheManagedToolchainEnv(true, 'fp-2', shellenv)).toBe('refreshed')
+    clearManagedToolchainEnv()
+  })
+
+  test('a timed-out activation is reported as a timeout and leaves no stale environment', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'managed-devbox-'))
+    dirs.push(dir)
+    process.env.TAU_TOOLCHAIN_DIR = dir
+    writeFileSync(join(dir, 'devbox.json'), '{"packages":["python3@latest"]}')
+    await expect(
+      cacheManagedToolchainEnv(true, 'fp', () => Promise.reject(new ManagedToolchainTimeoutError()))
+    ).rejects.toBeInstanceOf(ManagedToolchainTimeoutError)
+    expect(getDevboxShellEnv()).not.toContain('MANAGED')
+  })
+
+  test('clears stale activation when files disappear', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'managed-devbox-'))
     dirs.push(dir)
     process.env.TAU_TOOLCHAIN_DIR = dir
     writeFileSync(join(dir, 'devbox.json'), '{"packages":["python3@latest"]}')
     writeFileSync(join(dir, '.ready'), 'fingerprint')
-    cacheManagedToolchainEnv(true, () => 'export MANAGED=1')
+    await cacheManagedToolchainEnv(true, undefined, () => 'export MANAGED=1')
     rmSync(join(dir, 'devbox.json'))
-    expect(() => cacheManagedToolchainEnv(true, () => 'should not run')).toThrow()
+    await expect(cacheManagedToolchainEnv(true, undefined, () => 'should not run')).rejects.toThrow()
     expect(getDevboxShellEnv()).not.toContain('MANAGED')
   })
 })
 
 describe('combined Devbox PATH', () => {
-  test('keeps comfort tools discoverable with managed tools taking precedence', () => {
+  test('keeps comfort tools discoverable with managed tools taking precedence', async () => {
     const previousDevbox = process.env.TAU_DEVBOX_DIR
     const previousToolchain = process.env.TAU_TOOLCHAIN_DIR
     const dir = mkdtempSync(join(tmpdir(), 'devbox-path-'))
@@ -158,7 +192,7 @@ describe('combined Devbox PATH', () => {
       // Use only fixture directories: CI may have its own gh in /usr/bin.
       // The absolute shell and its command/printf builtins need no system PATH.
       cacheDevboxShellEnv(() => `export PATH='${comfort}'`)
-      cacheManagedToolchainEnv(true, () => `export PATH='${managed}'`)
+      await cacheManagedToolchainEnv(true, undefined, () => `export PATH='${managed}'`)
       const resolve = () =>
         execFileSync('/bin/bash', ['-c', `${getDevboxShellEnv()}\ncommand -v gh; command -v node`], {
           encoding: 'utf8',

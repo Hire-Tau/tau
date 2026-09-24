@@ -1,5 +1,5 @@
 import type { ManagedToolchainRequest } from '../types'
-import { type BashResponse, SandboxClient } from '../k8s/http-client'
+import { type BashResponse, SandboxClient, SandboxHttpError, SandboxTransportError } from '../k8s/http-client'
 import { ToolchainAdapterError } from './provision'
 
 function quote(value: string): string {
@@ -41,6 +41,22 @@ async function runReadiness(
   }
 }
 
+/**
+ * Confirm the box server's managed toolchain activation. A failure here was
+ * previously surfaced as an unclassified error; name it so an overloaded box
+ * reads as a timeout rather than an unknown provisioning failure.
+ */
+async function signalToolchainReady(client: SandboxClient, active: boolean, fingerprint?: string): Promise<void> {
+  try {
+    await client.toolchainReady(active, fingerprint)
+  } catch (error) {
+    const timedOut =
+      (error instanceof SandboxTransportError && error.kind === 'timeout') ||
+      (error instanceof SandboxHttpError && (error.status === 504 || error.code === 'timeout'))
+    throw new ToolchainAdapterError(timedOut ? 'timeout' : 'activation_failed', undefined, error)
+  }
+}
+
 async function readMarker(client: SandboxClient, dir: string): Promise<string> {
   try {
     const response = await client.read({ path: `${dir}/.ready` })
@@ -64,7 +80,7 @@ export async function reconcileRemoteToolchain(
   if (!request.config || !request.fingerprint || !request.devboxJson) {
     return trackSetupWork(async () => {
       await run(client, `rm -f ${quote(`${dir}/.ready`)}`, workRoot, 'activation_failed')
-      await client.toolchainReady(false)
+      await signalToolchainReady(client, false)
       return 'cleared' as const
     })
   }
@@ -75,7 +91,7 @@ export async function reconcileRemoteToolchain(
 
   if ((await readMarker(client, dir)) === fingerprint) {
     await runReadiness(client, dir, workRoot, request.readiness)
-    await client.toolchainReady()
+    await signalToolchainReady(client, true, fingerprint)
     return 'unchanged'
   }
 
@@ -92,11 +108,7 @@ export async function reconcileRemoteToolchain(
       await run(client, `devbox run -c ${quote(dir)} -- bash ${quote(`${dir}/setup.sh`)}`, workRoot, 'setup_failed')
     }
     await runReadiness(client, dir, workRoot, request.readiness)
-    try {
-      await client.toolchainReady(true)
-    } catch {
-      throw new ToolchainAdapterError('activation_failed')
-    }
+    await signalToolchainReady(client, true, fingerprint)
     await write(client, `${dir}/.ready`, `${fingerprint}\n`)
     return 'applied' as const
   })

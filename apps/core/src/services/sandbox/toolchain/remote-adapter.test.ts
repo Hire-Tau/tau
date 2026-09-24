@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'bun:test'
+import { SandboxHttpError, SandboxTransportError } from '../k8s/http-client'
 import { reconcileRemoteToolchain } from './remote-adapter'
 
-function clientHarness(marker = '', activationFails = false, activationGate?: Promise<void>) {
+function clientHarness(marker = '', activationFails: boolean | Error = false, activationGate?: Promise<void>) {
   const calls: string[] = []
+  const activations: Array<{ active: boolean | undefined; fingerprint: string | undefined }> = []
   const client = {
     read: async ({ path }: { path: string }) => ({
       content: Buffer.from(path.endsWith('.ready') ? marker : '').toString('base64'),
@@ -32,13 +34,15 @@ function clientHarness(marker = '', activationFails = false, activationGate?: Pr
       stream.cancel = () => {}
       return stream
     },
-    toolchainReady: async () => {
+    toolchainReady: async (active?: boolean, fingerprint?: string) => {
       calls.push('activate')
+      activations.push({ active, fingerprint })
       await activationGate
+      if (activationFails instanceof Error) throw activationFails
       if (activationFails) throw new Error('secret raw activation output')
     },
   }
-  return { client: client as any, calls }
+  return { client: client as any, calls, activations }
 }
 
 describe('remote managed toolchain adapter', () => {
@@ -155,5 +159,42 @@ describe('remote managed toolchain adapter', () => {
     ).rejects.toMatchObject({ code: 'activation_failed' })
     expect(calls).not.toContain('write:.ready')
     expect(progress).toEqual(['started', 'finished:failed'])
+  })
+
+  const unchangedRequest = {
+    config: { packages: ['a'] },
+    fingerprint: 'fingerprint',
+    devboxJson: '{}',
+    reportStage: async () => {},
+  }
+
+  it('confirms an unchanged toolchain with its fingerprint so the box can answer from its cache', async () => {
+    const { client, activations } = clientHarness('fingerprint')
+    await expect(reconcileRemoteToolchain(client, '/toolchain', '/workspace', unchangedRequest)).resolves.toBe(
+      'unchanged'
+    )
+    expect(activations).toEqual([{ active: true, fingerprint: 'fingerprint' }])
+  })
+
+  // An overloaded box made this call exceed its 30s budget, and the raw error
+  // was recorded as an unknown provisioning failure with no logged cause.
+  it('names an activation timeout on an unchanged toolchain instead of an unknown failure', async () => {
+    for (const failure of [
+      new SandboxTransportError('timeout', 'connect', new Error('The operation timed out.')),
+      new SandboxHttpError('Managed toolchain activation timed out after 20s', 504, 'timeout'),
+    ]) {
+      const { client } = clientHarness('fingerprint', failure)
+      const rejection = await reconcileRemoteToolchain(client, '/toolchain', '/workspace', unchangedRequest).catch(
+        (error: unknown) => error
+      )
+      expect(rejection).toMatchObject({ code: 'timeout', cause: failure })
+    }
+  })
+
+  it('classifies any other activation failure on an unchanged toolchain', async () => {
+    const { client } = clientHarness('fingerprint', true)
+    await expect(reconcileRemoteToolchain(client, '/toolchain', '/workspace', unchangedRequest)).rejects.toMatchObject({
+      code: 'activation_failed',
+    })
   })
 })
