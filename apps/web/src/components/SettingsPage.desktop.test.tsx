@@ -138,3 +138,44 @@ test('without a paired remote instance the logout row is unchanged', async () =>
     await dom.cleanup()
   }
 })
+
+test('a remote instance without disconnect keeps the existing Logout row', async () => {
+  const dom = await acquireDomHarness({ url: 'http://localhost/' })
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  seedAccountQueries(queryClient)
+  let logoutCalls = 0
+  window.tauDesktopApp = {
+    version: 1,
+    notificationsEnabled: async () => false,
+    deliverNotifications: async () => {},
+    instance: { kind: 'remote', name: 'noah' },
+  }
+  try {
+    const { SettingsPage } = await import('./SettingsPage')
+    const { root, container } = dom.createRoot()
+    await dom.act(async () =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={['/settings?section=account']}>
+            <SettingsPage
+              dependencies={buildDependencies(async () => {
+                logoutCalls++
+              })}
+            />
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+    )
+
+    expect(container.textContent).toContain('Sign out of this device')
+    expect(container.textContent).not.toContain('Disconnect this Mac from')
+    const button = [...container.querySelectorAll('button')].find((candidate) => candidate.textContent === 'Logout')
+    expect(button).not.toBeUndefined()
+
+    await dom.act(async () => fireEvent.click(button!))
+
+    expect(logoutCalls).toBe(1)
+  } finally {
+    await dom.cleanup()
+  }
+})

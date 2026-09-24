@@ -108,6 +108,21 @@ describe('SystemUpdateSection instance kind', () => {
     expect(html).not.toContain('Tau Desktop updates')
   })
 
+  test('an attached instance updates like a server, not with the app', () => {
+    window.tauDesktopApp = {
+      version: 1,
+      notificationsEnabled: async () => false,
+      deliverNotifications: async () => {},
+      updates: stubDesktopUpdates(),
+      instance: { kind: 'attached', name: 'x' },
+    }
+
+    const html = renderSystemUpdateSection(null, { source: 'git-checkout', supervisor: 'pm2', sandboxRuntime: 'k3d' })
+
+    expect(html).toContain('Auto-update this instance')
+    expect(html).not.toContain('Tau Desktop updates')
+  })
+
   test('the bundled local instance keeps native Desktop update controls', () => {
     window.tauDesktopApp = {
       version: 1,
