@@ -195,6 +195,8 @@
     --brand-gradient-to: 124 58 237;
     --brand-tile: 124 58 237;
     --brand-ink: 255 255 255;
+    --swatch-secondary: 38 150 170;
+    --swatch-tertiary: 173 201 211;
     --color-bg-page: 244 249 250;
     --color-bg-surface: 255 255 255;
     --color-bg-surface-secondary: 236 245 247;
@@ -674,6 +676,8 @@
     --brand-gradient-to: 124 58 237;
     --brand-tile: 124 58 237;
     --brand-ink: 255 255 255;
+    --swatch-secondary: 38 150 170;
+    --swatch-tertiary: 173 201 211;
     --color-bg-page: 11 22 30;
     --color-bg-surface: 15 30 40;
     --color-bg-surface-secondary: 21 40 51;
@@ -1153,6 +1157,8 @@
     --brand-gradient-to: 124 58 237;
     --brand-tile: 124 58 237;
     --brand-ink: 255 255 255;
+    --swatch-secondary: 214 125 58;
+    --swatch-tertiary: 217 190 169;
     --color-bg-page: 252 248 243;
     --color-bg-surface: 255 253 249;
     --color-bg-surface-secondary: 247 239 230;
@@ -1632,6 +1638,8 @@
     --brand-gradient-to: 124 58 237;
     --brand-tile: 124 58 237;
     --brand-ink: 255 255 255;
+    --swatch-secondary: 214 125 58;
+    --swatch-tertiary: 217 190 169;
     --color-bg-page: 27 20 18;
     --color-bg-surface: 35 26 23;
     --color-bg-surface-secondary: 45 34 29;
@@ -2111,6 +2119,8 @@
     --brand-gradient-to: 124 58 237;
     --brand-tile: 124 58 237;
     --brand-ink: 255 255 255;
+    --swatch-secondary: 128 128 128;
+    --swatch-tertiary: 255 255 255;
     --color-bg-page: 255 255 255;
     --color-bg-surface: 255 255 255;
     --color-bg-surface-secondary: 255 255 255;

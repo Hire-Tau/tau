@@ -1,0 +1,114 @@
+import { useRef } from 'react'
+import clsx from 'clsx'
+import type { ThemePreset } from '@tau/shared'
+import { presetAppearance } from '../../theme/custom'
+import { ThemeSwatch, type ThemeSwatchSpec } from '../ThemeSwatch'
+import type { WebThemeDefinition } from '../../theme/registry'
+
+export type ThemeGridOption =
+  | { kind: 'builtin'; id: string; label: string; accessibleLabel: string; theme: WebThemeDefinition }
+  | {
+      kind: 'preset'
+      id: string
+      label: string
+      accessibleLabel: string
+      preset: Pick<ThemePreset, 'id' | 'document' | 'owner'>
+    }
+
+/**
+ * Settings' Theme picker: a wrapping grid of theme preview dots (the same
+ * `.theme-swatch` conic rendering ThemeQuickPicker and the "My themes"
+ * library use — see ThemeSwatch's doc comment) with the theme's name under
+ * each one. Native-radiogroup keyboard model: arrow keys move AND select
+ * (wrapping at both ends, like a native `<input type="radio">` group);
+ * Enter/Space select the focused dot explicitly. Roving tabindex keeps only
+ * the active dot (or the first, before anything resolves) in the Tab order.
+ */
+export function ThemeSwatchGrid({
+  options,
+  selectedId,
+  currentAppearance,
+  onSelect,
+  className,
+}: {
+  options: readonly ThemeGridOption[]
+  selectedId: string | null
+  currentAppearance: 'light' | 'dark'
+  onSelect: (option: ThemeGridOption) => void
+  className?: string
+}) {
+  const buttons = useRef(new Map<string, HTMLButtonElement>())
+  const rovingIndex = Math.max(
+    0,
+    options.findIndex((option) => option.id === selectedId)
+  )
+  const move = (fromIndex: number, delta: number) => {
+    if (options.length === 0) return
+    const next = options[(fromIndex + delta + options.length) % options.length]!
+    onSelect(next)
+    buttons.current.get(next.id)?.focus()
+  }
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Color theme"
+      className={clsx('grid grid-cols-[repeat(auto-fill,minmax(4.25rem,1fr))] gap-2', className)}
+    >
+      {options.map((option, index) => {
+        const selected = option.id === selectedId
+        const spec: ThemeSwatchSpec =
+          option.kind === 'builtin'
+            ? { kind: 'builtin', theme: option.theme, appearance: currentAppearance }
+            : {
+                kind: 'preset',
+                document: option.preset.document,
+                appearance: presetAppearance(option.preset.document, currentAppearance),
+              }
+        return (
+          <button
+            key={option.id}
+            ref={(element) => {
+              if (element) buttons.current.set(option.id, element)
+              else buttons.current.delete(option.id)
+            }}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            aria-label={option.accessibleLabel}
+            tabIndex={index === rovingIndex ? 0 : -1}
+            className="flex min-h-[44px] flex-col items-center gap-1.5 rounded-lg p-2 text-center hover:bg-surface-hover"
+            onClick={() => onSelect(option)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault()
+                onSelect(option)
+                return
+              }
+              const delta =
+                event.key === 'ArrowRight' || event.key === 'ArrowDown'
+                  ? 1
+                  : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+                    ? -1
+                    : 0
+              if (!delta) return
+              event.preventDefault()
+              move(index, delta)
+            }}
+          >
+            <span
+              className={clsx(
+                'relative block h-10 w-10 rounded-full',
+                selected && 'ring-2 ring-accent ring-offset-2 ring-offset-surface'
+              )}
+            >
+              <ThemeSwatch spec={spec} className="h-full w-full" />
+            </span>
+            <span className="w-full max-w-full line-clamp-2 break-words text-center text-xs text-secondary">
+              {option.label}
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}

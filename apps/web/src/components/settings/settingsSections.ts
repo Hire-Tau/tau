@@ -16,10 +16,16 @@ export const SECTION_GROUPS: readonly SectionGroup[] = [
     items: [
       { id: 'account', label: 'Account', icon: '👤', description: 'Your profile, email, password, and passkeys.' },
       {
+        id: 'appearance',
+        label: 'Appearance',
+        icon: '🎨',
+        description: 'Theme, color, and dark mode preferences.',
+      },
+      {
         id: 'app',
-        label: 'App & Appearance',
+        label: 'App',
         icon: '📱',
-        description: 'Theme, app installation, cache, and offline storage.',
+        description: 'App installation, cache, and offline storage.',
       },
       {
         id: 'notifications',

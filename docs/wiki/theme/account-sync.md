@@ -66,8 +66,9 @@ for the full sharing/live-link/moderation contract.
 - Picker copy identifies the override and offers **Use synced theme**. This clears
   the flag, discards unsent changes and rereads the server after outstanding writes.
   If offline, the current palette stays visible and adoption resumes on reconnect.
-  A newer deliberate edit cancels adoption. Reset to default is deliberately a new
-  local/account choice, not a synonym for following the account.
+  A newer deliberate edit cancels adoption. Choosing a built-in theme (including
+  Tau, the default) is deliberately a new local/account choice, not a synonym
+  for following the account.
 - Deliberate edits made in a connected authenticated session push best-effort.
   In-flight writes are serialized; unsent edits coalesce to the latest value.
   Offline pending edits retry on focus, visibility or reconnect **within that

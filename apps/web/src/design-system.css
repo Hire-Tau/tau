@@ -39,22 +39,87 @@
     background: rgb(var(--color-bg-surface-secondary));
   }
 
-  /* Theme circle swirl swatch, shared by ThemeQuickPicker's circles AND the
-     "My themes" library rows. One static rule: the actual colors come from
-     whichever [data-theme-scope][data-theme=…] element the swatch sits
-     inside, so a single class paints every theme circle correctly without any
-     per-instance inline color (see no-raw-colors guard). */
+  /* Theme circle swirl swatch, shared by ThemeQuickPicker's circles, the
+     Settings theme grid, AND the "My themes" library rows. One static rule:
+     the actual colors come from whichever [data-theme-scope][data-theme=…]
+     element the swatch sits inside, so a single class paints every theme
+     circle correctly without any per-instance inline color (see no-raw-colors
+     guard).
+
+     `overflow: hidden` gives the gradient exactly one circular clip boundary
+     (this element's own border-radius). The outline is drawn as an INSET
+     box-shadow rather than a `border`: a `border` box-model edge and the
+     gradient's `background-clip: border-box` default are each antialiased
+     independently, and at high device pixel ratios (2x/3x) that produced a
+     visible lighter crescent where the two roundings didn't quite agree. An
+     inset box-shadow shares the exact same clip as the gradient, so there is
+     nothing left to disagree with. A fixed aspect-ratio is a safety net for
+     any future caller that forgets to size both axes explicitly. Selection
+     rings stay on a wrapping element (never on this class) so they aren't
+     clipped by this overflow: hidden. */
   .theme-swatch {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    border-radius: 9999px;
+    overflow: hidden;
+  }
+
+  /* A flat gradient wheel: the theme's primary, secondary and tertiary
+     swatch colours softened so they run into each other with no centre
+     point. Palette presets fill the swatch tokens from their own seeds. */
+  .theme-swatch::before {
+    content: '';
+    position: absolute;
+    inset: -25%;
     background: conic-gradient(
-      rgb(var(--color-primary)) 0deg 120deg,
-      rgb(var(--color-primary-hover)) 120deg 240deg,
-      rgb(var(--color-bg-surface-secondary)) 240deg 360deg
+      rgb(var(--color-primary)),
+      rgb(var(--swatch-secondary)),
+      rgb(var(--swatch-tertiary)),
+      rgb(var(--color-primary))
     );
-    border: 1px solid
+    filter: blur(6px);
+    pointer-events: none;
+  }
+
+  /* The outline sits above the wheel so it stays visible. */
+  .theme-swatch::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 1px
       rgb(
         var(--custom-rgb-color-panel-border, var(--color-panel-border)) /
           calc(var(--custom-alpha-color-panel-border, 1) * var(--opacity-panel-border))
       );
+    pointer-events: none;
+  }
+
+  /* Native color inputs render a padded inner square; fill the rounded control instead. */
+  .tau-color-input {
+    -webkit-appearance: none;
+    appearance: none;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    background: transparent;
+    outline: 1px solid
+      rgb(
+        var(--custom-rgb-color-panel-border, var(--color-panel-border)) /
+          calc(var(--custom-alpha-color-panel-border, 1) * var(--opacity-panel-border))
+      );
+    outline-offset: -1px;
+  }
+  .tau-color-input::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+  .tau-color-input::-webkit-color-swatch {
+    border: 0;
+    border-radius: inherit;
+  }
+  .tau-color-input::-moz-color-swatch {
+    border: 0;
+    border-radius: inherit;
   }
 
   .tau-section-title {

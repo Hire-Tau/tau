@@ -1,15 +1,16 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import clsx from 'clsx'
-import type { EffectiveAppearance, ThemePreset } from '@tau/shared'
+import type { ThemePreset } from '@tau/shared'
 import type { useTheme } from '../providers/ThemeProvider'
 import { useThemePreview } from '../providers/ThemeProvider'
 import { BUILT_IN_THEMES, findWebTheme, THEME_PICKER_ENABLED, type WebThemeDefinition } from '../theme/registry'
-import { applyResolvedTheme } from '../theme/apply'
-import { applyCustomTheme, removeCustomProperties } from '../theme/custom'
+import { presetAppearance } from '../theme/custom'
 import { paintRoot } from '../theme/preview'
 import { useStableRef } from '../hooks/useStableRef'
-import { PaletteIcon, SunIcon, MoonIcon, MonitorIcon } from './icons'
+import { PaletteIcon } from './icons'
 import { THEME_CONSTANT_HINT, ThemeSyncNotice } from './settings/ThemeControl'
+import { ThemeSwatch } from './ThemeSwatch'
+import { SegmentedAppearanceControl } from './SegmentedAppearanceControl'
 
 /** Sweeping the row must not strobe the whole app; only a settled hover previews. */
 const HOVER_PREVIEW_DELAY_MS = 100
@@ -27,21 +28,6 @@ type Circle =
 // render, which would otherwise cost an extra effect run below on each of
 // this component's re-renders for no reason.
 const EMPTY: ThemePreset[] = []
-
-const APPEARANCE_OPTIONS = [
-  ['light', 'Light', SunIcon],
-  ['dark', 'Dark', MoonIcon],
-  ['system', 'System', MonitorIcon],
-] as const
-
-/** A preset's document always covers both variants; a circle preview/swatch
- * never forces a particular side, it just resolves the app's current one. */
-function presetAppearance(
-  preset: Pick<ThemePreset, 'document'>,
-  currentAppearance: EffectiveAppearance
-): EffectiveAppearance {
-  return findWebTheme(preset.document.base).kind === 'unified' ? 'constant' : currentAppearance
-}
 
 /**
  * Desktop header theme picker: swap the color palette without opening
@@ -66,7 +52,6 @@ export function ThemeQuickPicker({
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
-  const presetSwatchRefs = useRef(new Map<string, HTMLElement>())
   const panelId = useId()
   const previewTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   // The unregister function returned by the preview slot's setPreview, or
@@ -120,7 +105,7 @@ export function ThemeQuickPicker({
         paintRoot(
           root,
           findWebTheme(circle.preset.document.base),
-          presetAppearance(circle.preset, valueRef.current.theme),
+          presetAppearance(circle.preset.document, valueRef.current.theme),
           circle.preset.document
         )
       // Palette-only preview: keep the app's current effective appearance.
@@ -173,24 +158,6 @@ export function ThemeQuickPicker({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
-
-  // Paint every preset's own circle from its compiled document (not the hover
-  // preview), the same way the editor paints its live preview.
-  useLayoutEffect(() => {
-    for (const preset of presets) {
-      const element = presetSwatchRefs.current.get(preset.id)
-      if (!element) continue
-      const theme = findWebTheme(preset.document.base)
-      const appearance = presetAppearance(preset, value.theme)
-      removeCustomProperties(element)
-      applyResolvedTheme(element, theme, appearance)
-      try {
-        applyCustomTheme(element, preset.document, appearance)
-      } catch {
-        removeCustomProperties(element)
-      }
-    }
-  }, [presets, value.theme, open])
 
   if (!enabled) return null
 
@@ -255,54 +222,29 @@ export function ThemeQuickPicker({
                     selectCircle(circle)
                   }}
                 >
-                  <span
-                    ref={
-                      circle.kind === 'preset'
-                        ? (el) => {
-                            if (el) presetSwatchRefs.current.set(circle.id, el)
-                            else presetSwatchRefs.current.delete(circle.id)
+                  <ThemeSwatch
+                    spec={
+                      circle.kind === 'builtin'
+                        ? { kind: 'builtin', theme: circle.theme, appearance: value.theme }
+                        : {
+                            kind: 'preset',
+                            document: circle.preset.document,
+                            appearance: presetAppearance(circle.preset.document, value.theme),
                           }
-                        : undefined
                     }
-                    data-theme-scope=""
-                    data-theme={circle.kind === 'preset' ? undefined : circle.id}
-                    data-appearance={
-                      circle.kind === 'preset' ? undefined : circle.theme.kind === 'unified' ? undefined : value.theme
-                    }
-                    className="theme-swatch block h-full w-full rounded-full"
+                    className="h-full w-full"
                   />
                 </button>
               )
             })}
           </div>
-          <div
-            role="radiogroup"
-            aria-label="Appearance"
-            className="mt-3 flex gap-1 rounded-lg bg-surface-secondary p-1"
-          >
-            {APPEARANCE_OPTIONS.map(([setting, label, Icon]) => (
-              <button
-                key={setting}
-                type="button"
-                role="radio"
-                aria-checked={value.appearance === setting}
-                disabled={appearanceDisabled}
-                aria-describedby={appearanceDisabled ? hintId : undefined}
-                className={clsx(
-                  'flex min-h-[36px] flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium',
-                  appearanceDisabled
-                    ? 'cursor-default text-muted opacity-60'
-                    : value.appearance === setting
-                      ? 'bg-accent text-on-accent'
-                      : 'text-secondary hover:bg-surface-hover'
-                )}
-                onClick={() => value.setAppearance(setting)}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {label}
-              </button>
-            ))}
-          </div>
+          <SegmentedAppearanceControl
+            value={value.appearance}
+            onChange={value.setAppearance}
+            disabled={appearanceDisabled}
+            hintId={hintId}
+            className="mt-3"
+          />
           {appearanceDisabled && (
             <p id={hintId} className="mt-2 text-xs text-muted">
               {THEME_CONSTANT_HINT}

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import clsx from 'clsx'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ThemePreset } from '@tau/shared'
@@ -9,9 +9,10 @@ import { usePermissions } from '../../hooks/usePermissions'
 import { client } from '../../api/clientInstance'
 import { queries } from '../../queryOptions'
 import { themePresetQueryKeys } from '../../queryKeys'
-import { BUILT_IN_THEMES, findWebTheme } from '../../theme/registry'
-import { applyResolvedTheme } from '../../theme/apply'
-import { applyCustomTheme, exportCustomTheme, importCustomTheme, removeCustomProperties } from '../../theme/custom'
+import { BUILT_IN_THEMES } from '../../theme/registry'
+import { exportCustomTheme, importCustomTheme, presetAppearance } from '../../theme/custom'
+import { ThemeSwatch } from '../ThemeSwatch'
+import { OverflowMenu } from '../OverflowMenu'
 import { CustomThemeEditor } from './CustomThemeEditor'
 
 type EditorTarget = { preset: ThemePreset | null; baseId: string; focusAssistant?: boolean }
@@ -24,21 +25,16 @@ function errorMessage(error: unknown, fallback: string): string {
 /** One preset's swatch, painted from its own compiled document (not a hover
  * preview) — the same DOM-only paint path as everything else in the theme system. */
 function PresetSwatch({ preset, currentAppearance }: { preset: ThemePreset; currentAppearance: 'light' | 'dark' }) {
-  const ref = useRef<HTMLSpanElement>(null)
-  useLayoutEffect(() => {
-    const element = ref.current
-    if (!element) return
-    const theme = findWebTheme(preset.document.base)
-    const appearance = theme.kind === 'unified' ? 'constant' : currentAppearance
-    removeCustomProperties(element)
-    applyResolvedTheme(element, theme, appearance)
-    try {
-      applyCustomTheme(element, preset.document, appearance)
-    } catch {
-      removeCustomProperties(element)
-    }
-  }, [preset, currentAppearance])
-  return <span ref={ref} data-theme-scope="" className="theme-swatch block h-8 w-8 shrink-0 rounded-full" />
+  return (
+    <ThemeSwatch
+      spec={{
+        kind: 'preset',
+        document: preset.document,
+        appearance: presetAppearance(preset.document, currentAppearance),
+      }}
+      className="h-8 w-8 shrink-0"
+    />
+  )
 }
 
 export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useTheme> }) {
@@ -129,6 +125,47 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
     }
   }
 
+  /** Rename/Share/Duplicate/Export/Delete: rendered once inline for desktop
+   * and once inside the mobile OverflowMenu (see the "My themes" row below) —
+   * a plain function call, not a shared element instance, so each placement
+   * gets its own React tree with no key collisions. */
+  const presetSecondaryActions = (preset: ThemePreset) => (
+    <>
+      <button
+        className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary"
+        onClick={() => setRenaming({ id: preset.id, name: preset.document.name })}
+      >
+        Rename
+      </button>
+      <button
+        className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary"
+        disabled={share.isPending}
+        onClick={() => share.mutate(preset)}
+      >
+        {preset.visibility === 'instance' ? 'Unshare' : 'Share'}
+      </button>
+      <button
+        className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary"
+        disabled={duplicate.isPending}
+        onClick={() => duplicate.mutate(preset)}
+      >
+        Duplicate
+      </button>
+      <button className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary" onClick={() => download(preset)}>
+        Export
+      </button>
+      <button
+        className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary"
+        disabled={remove.isPending}
+        onClick={() => {
+          if (window.confirm(`Delete "${preset.document.name}"? This cannot be undone.`)) remove.mutate(preset)
+        }}
+      >
+        Delete
+      </button>
+    </>
+  )
+
   return (
     <>
       {foreignDetached && (
@@ -190,7 +227,7 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
                     {preset.visibility === 'instance' && <span className="text-secondary text-xs">(shared)</span>}
                   </span>
                 )}
-                <div className="flex flex-wrap gap-1">
+                <div className="flex flex-wrap items-center gap-1">
                   <button
                     className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary"
                     disabled={active}
@@ -204,52 +241,28 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
                   >
                     Edit
                   </button>
-                  <button
-                    className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary"
-                    onClick={() => setRenaming({ id: preset.id, name: preset.document.name })}
-                  >
-                    Rename
-                  </button>
-                  <button
-                    className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary"
-                    disabled={share.isPending}
-                    onClick={() => share.mutate(preset)}
-                  >
-                    {preset.visibility === 'instance' ? 'Unshare' : 'Share'}
-                  </button>
-                  <button
-                    className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary"
-                    disabled={duplicate.isPending}
-                    onClick={() => duplicate.mutate(preset)}
-                  >
-                    Duplicate
-                  </button>
-                  <button
-                    className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary"
-                    onClick={() => download(preset)}
-                  >
-                    Export
-                  </button>
-                  <button
-                    className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary"
-                    disabled={remove.isPending}
-                    onClick={() => {
-                      if (window.confirm(`Delete "${preset.document.name}"? This cannot be undone.`))
-                        remove.mutate(preset)
-                    }}
-                  >
-                    Delete
-                  </button>
+                  {/* Desktop: the rest fit inline. Narrow widths: the same
+                   * actions move into an overflow menu so the row doesn't wrap
+                   * across two lines (see web-ui.md's responsive guidance). */}
+                  <div className="hidden flex-wrap gap-1 md:flex">{presetSecondaryActions(preset)}</div>
+                  <div className="md:hidden">
+                    <OverflowMenu
+                      label={`More actions for ${preset.document.name}`}
+                      itemsMarker="data-theme-preset-actions"
+                    >
+                      {presetSecondaryActions(preset)}
+                    </OverflowMenu>
+                  </div>
                 </div>
               </li>
             )
           })}
         </ul>
-        <div className="flex flex-wrap items-end gap-2">
+        <div className="flex flex-col flex-wrap items-stretch gap-2 sm:flex-row sm:items-end">
           <label className="flex flex-col gap-1">
             New theme base
             <select
-              className="tau-field px-3 py-2"
+              className="tau-field w-full px-3 py-2 sm:w-auto"
               value={newBase}
               onChange={(event) => setNewBase(event.target.value)}
             >
@@ -262,15 +275,13 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
           </label>
           <button
             className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary"
-            onClick={() => setEditing({ preset: null, baseId: newBase })}
-          >
-            New theme
-          </button>
-          <button
-            className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary"
+            // Opens with the assistant panel focused when it's shown (gated on
+            // `chat:send` inside CustomThemeEditor); a no-op effect otherwise,
+            // so this single action covers both "New theme" and the former
+            // "New theme with assistant" — see custom-themes.md's Assistant section.
             onClick={() => setEditing({ preset: null, baseId: newBase, focusAssistant: true })}
           >
-            New theme with assistant
+            New theme
           </button>
           <label className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary">
             Import JSON

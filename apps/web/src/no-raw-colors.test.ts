@@ -180,6 +180,22 @@ describe('raw-color detector', () => {
     expect(findings.map((f) => f.line)).toEqual([4, 5])
   })
 
+  test('accepts relative colors derived from a token but not from a literal origin', () => {
+    for (const source of [
+      'oklch(from rgb(var(--color-primary)) l c calc(h + 45))',
+      'oklch(from rgb(var(--color-primary)) calc(l + 0.2) calc(c * 0.6) h)',
+      'oklch(from var(--brand) l c h / 0.5)',
+      'oklch(from rgb(var(--color-primary)) 0.62 max(c, 0.14) calc(h + 30))',
+    ])
+      expect(scanSourceForRawColors('synthetic.css', source)).toEqual([])
+    for (const source of [
+      'oklch(from #336699 l c h)',
+      'oklch(from rgb(1 2 3) l c calc(h + 45))',
+      'oklch(from rgb(var(--color-primary)) l c red)',
+    ])
+      expect(scanSourceForRawColors('synthetic.css', source).length).toBeGreaterThan(0)
+  })
+
   test('accepts channel and opacity tokens together without allowing literal channels', () => {
     const compliant = 'border-color: rgb(var(--color-panel-border) / var(--opacity-panel-border))'
     expect(scanSourceForRawColors('synthetic.css', compliant)).toEqual([])

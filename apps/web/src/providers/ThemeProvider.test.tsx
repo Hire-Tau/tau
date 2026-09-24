@@ -274,7 +274,10 @@ test('live custom surface alpha is serialized consistently for root, metadata an
     expect(document.documentElement.style.backgroundColor).not.toBe('rgb(255, 255, 255)')
   }
   await act(async () => {
-    theme.resetTheme()
+    // `resetTheme` was removed with the Settings "Reset to default" button —
+    // selecting the Tau built-in (setThemeId) covers the same "return to
+    // default" surface path this test exercises.
+    theme.setThemeId('tau')
   })
   expect(document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('rgb(255, 255, 255)')
   expect(JSON.parse(localStorage.getItem('tau-theme-surface')!).surface).toBe('rgb(255, 255, 255)')

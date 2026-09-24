@@ -4,7 +4,7 @@ The Settings page (`/settings`) is the central place to configure user preferenc
 
 ## Layout
 
-Settings has searchable, permission-aware navigation split between Personal and Administration. Administration is grouped into Work, Access, Configuration, Infrastructure, and Operations. Account is the default personal page, followed by App & Appearance, Notifications, Paired Devices, and Sessions. AI Providers and Integrations use searchable card directories. Workflows, Agent Types, Skills, and Integrations are under Work; AI Providers is under Infrastructure. Enabled integrations appear before disabled ones.
+Settings has searchable, permission-aware navigation split between Personal and Administration. Administration is grouped into Work, Access, Configuration, Infrastructure, and Operations. Account is the default personal page, followed by Appearance, App, Notifications, Paired Devices, and Sessions. AI Providers and Integrations use searchable card directories. Workflows, Agent Types, Skills, and Integrations are under Work; AI Providers is under Infrastructure. Enabled integrations appear before disabled ones.
 
 Assistant & Memory is under Infrastructure. Agent Execution is inside Operations → System. The former Features page is retired: its links resolve to Assistant & Memory, or System when targeting the concurrency limit. Old Agent Execution links also resolve to System. The Channels link resolves to Integrations, where Discord, Slack, and Telegram now have their own cards.
 
@@ -22,9 +22,11 @@ Inside Tau Desktop, System Updates shows the app's native updater instead of the
 
 **Notification Sounds** — Toggle the in-app ping sound that plays when an agent or chat finishes responding.
 
-### App & Appearance
+### Appearance
 
-**Theme** — Switch between dark and light mode. The setup page (**Set up Tau**) also has an **Appearance** control with **System**, **Light** and **Dark**; **System** follows the operating system's appearance. The choice is stored per browser. With no stored choice, browsers use light and Tau Desktop uses **System**.
+**Theme** — A grid of preview dots: the built-in themes (Tau, Harbor, Ember, High contrast), the user's own saved theme presets, and the active shared preset if it isn't already one of theirs. Each dot is that theme's color-wheel swatch with its name underneath; the active one is ringed. Picking a built-in deactivates any active preset (kept in the library, not deleted); picking a preset applies it. Below the grid, a **Light/Dark/System** segmented control sets appearance — disabled with an explanatory hint for unified themes (High contrast), which have one appearance. The setup page (**Set up Tau**) has its own equivalent **Appearance** control. The choice is stored per browser. With no stored choice, browsers use light and Tau Desktop uses **System**. The **My themes** library below manages presets (new/edit/rename/share/duplicate/export/delete); see [custom themes](theme/custom-themes.md).
+
+### App
 
 **App Installation** — PWA install prompt. Shows platform-appropriate instructions (iOS share sheet, Chrome install button). Displays an "Update Available" banner when a new service worker is ready.
 

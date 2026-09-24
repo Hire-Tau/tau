@@ -407,6 +407,12 @@ export const THEME_TOKEN_FAMILIES: readonly TokenFamilyDefinition[] = [
     status: 'active',
     tokens: ['--brand-gradient-from', '--brand-gradient-to', '--brand-tile', '--brand-ink'],
   },
+  {
+    family: 'swatch',
+    description: "The theme's secondary and tertiary identity colors, blended with its primary in theme swatches.",
+    status: 'active',
+    tokens: ['--swatch-secondary', '--swatch-tertiary'],
+  },
 ]
 
 /** Every token a theme must define today (all `active` families). */

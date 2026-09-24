@@ -48,7 +48,6 @@ interface ThemeContextValue {
   presetOwnerId: string | null
   applyCustom: (doc: CustomThemeDocument) => void
   applyPreset: (preset: Pick<ThemePreset, 'id' | 'document'> & { owner: Pick<ThemePresetOwner, 'id'> }) => void
-  resetTheme: () => void
   themeId: string
   /** The user's appearance setting: 'light' | 'dark' | 'system'. */
   appearance: AppearanceSetting
@@ -368,10 +367,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     },
     [store]
   )
-  const resetTheme = useCallback(() => {
-    store.change({ themeId: 'tau', appearance: 'light', customTheme: null, presetId: null, presetOwnerId: null })
-  }, [store])
-
   const contextValue: ThemeContextValue = {
     localOverride: state.localOverride,
     syncAvailable: state.syncAvailable,
@@ -382,7 +377,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     presetOwnerId,
     applyCustom,
     applyPreset,
-    resetTheme,
     themeId: resolvedThemeDefinition.id,
     appearance: selection.appearance,
     theme: resolvedTheme,

@@ -366,6 +366,25 @@ test('palette seed fields are color controls: a native color swatch plus the hex
   expect(queryByRole(container, 'button', { name: 'Clear Secondary' })).toBeNull()
 })
 
+test('the inline clear button is an accessibly-labelled, keyboard-reachable icon button beside its field (no separate "Clear X" row)', async () => {
+  const { container } = await render({ baseId: 'harbor', appearance: 'light' })
+  await change(container, 'Primary', '#0ea5e9')
+  await change(container, 'Secondary', '#22c55e')
+  const clearSecondary = getByRole(container, 'button', { name: 'Clear Secondary' })
+  // Reachable by keyboard (a real, unhidden, non-disabled button — no negative tabindex trap).
+  expect(clearSecondary.tagName).toBe('BUTTON')
+  expect(clearSecondary.getAttribute('type')).toBe('button')
+  expect(clearSecondary.hasAttribute('disabled')).toBe(false)
+  expect(clearSecondary.tabIndex).toBeGreaterThanOrEqual(0)
+  // Icon-only: no redundant visible "Clear Secondary" text node, the accessible
+  // name comes entirely from aria-label.
+  expect(clearSecondary.textContent).toBe('')
+  expect(clearSecondary.getAttribute('aria-label')).toBe('Clear Secondary')
+  // Sits with the Secondary field's own swatch/text row, not in a separate row below it.
+  const secondaryField = getByRole(container, 'textbox', { name: 'Secondary' }).closest('div')!.parentElement!
+  expect(secondaryField.contains(clearSecondary)).toBe(true)
+})
+
 function toHex(channels: string): string {
   const [r, g, b] = channels.trim().split(/\s+/).map(Number)
   const hex = (n: number) => Math.round(n!).toString(16).padStart(2, '0')

@@ -19,6 +19,8 @@
  *   derived primary, not hue-derived.
  * - brand gradient/tile/ink and voice-material glows: hue interpolated
  *   primary -> secondary across the family; base lightness/chroma preserved.
+ * - swatch secondary/tertiary: the palette's own secondary/tertiary, or the
+ *   primary rotated +60 / -60 degrees when unset.
  * - categorical families (agent-type, badge-decoration, graph chart
  *   categories/links, a curated syntax-accent subset, utility-decoration):
  *   hue picked from primary/secondary/tertiary by slot index; base
@@ -164,7 +166,7 @@ const SYNTAX_ACCENTS = [
 /** Terminal/log-terminal tokens whose slot name names an ANSI color: kept unchanged (semantic). */
 const ANSI_NAMED = /-(black|red|green|yellow|blue|magenta|cyan|white)$/
 
-type Bucket = 'neutral' | 'primary' | 'ink' | 'brand' | 'categorical' | 'status' | 'unchanged'
+type Bucket = 'neutral' | 'primary' | 'ink' | 'brand' | 'swatch' | 'categorical' | 'status' | 'unchanged'
 
 function classify(token: string): Bucket {
   if (token === '--on-accent-fg') return 'ink'
@@ -172,6 +174,7 @@ function classify(token: string): Bucket {
   const family = themeTokenFamily(token)
   if (!family) return 'unchanged'
   if (family.family === 'status') return 'status'
+  if (family.family === 'swatch') return 'swatch'
   if (family.family === 'ansi') return 'unchanged'
   if (family.family === 'terminal' || family.family === 'log-terminal')
     return ANSI_NAMED.test(token) ? 'unchanged' : 'neutral'
@@ -242,6 +245,10 @@ export function deriveThemeOverrides({ baseTokens, palette }: DeriveOptions): Re
         },
         base.alpha
       )
+    } else if (bucket === 'swatch') {
+      // The swatch shows the palette's own secondary/tertiary (or their hue-rotated fallbacks).
+      const seed = token === '--swatch-tertiary' ? tertiaryOklch : secondaryOklch
+      overrides[token] = serialize(seed, base.alpha)
     } else if (bucket === 'brand') {
       overrides[token] = serialize({ l: base.oklch.l, c: base.oklch.c, h: secondaryOklch.h }, base.alpha)
     } else if (bucket === 'categorical') {

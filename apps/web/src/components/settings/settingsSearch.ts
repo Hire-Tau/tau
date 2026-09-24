@@ -12,7 +12,8 @@ export interface SettingsSearchEntry {
 }
 export const SETTINGS_PAGE_KEYWORDS: Record<string, string> = {
   notifications: 'push notification sounds mute alerts subscriptions',
-  app: 'appearance theme harbor ember high contrast system dark light mode installation pwa offline cache storage',
+  appearance: 'theme harbor ember high contrast system dark light mode color scheme custom presets',
+  app: 'installation pwa offline cache storage',
   account: 'profile display name email passkeys security sign out logout linked chat accounts discord slack telegram',
   sessions: 'active logins browsers sign out revoke',
   devices: 'pair cli mobile authorization linked devices',
@@ -83,13 +84,13 @@ export const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   },
 
   {
-    section: 'app',
+    section: 'appearance',
     id: 'appearance',
     label: 'Appearance',
     keywords: 'dark light theme color scheme',
   },
   {
-    section: 'app',
+    section: 'appearance',
     id: 'dark-mode',
     label: 'Dark Mode',
     keywords: 'appearance light theme',

@@ -155,17 +155,47 @@ test('Delete does nothing when the confirmation is declined', async () => {
   }
 })
 
-test('New theme opens the editor for a fresh document based on the selected base', async () => {
+test('a single New theme action (no separate "with assistant" button) opens the editor for a fresh document based on the selected base', async () => {
   const { container } = await render([])
+  expect(queryByRole(container, 'button', { name: 'New theme with assistant' })).toBeNull()
   await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'New theme' })))
   expect(queryByRole(container, 'textbox', { name: 'Theme name' })).not.toBeNull()
+  expect((queryByRole(container, 'textbox', { name: 'Theme name' }) as HTMLInputElement).value).toBe('New theme')
 })
 
-test('New theme with assistant also opens a fresh document (assistant focus is exercised separately, gated on chat:send)', async () => {
-  const { container } = await render([])
-  await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'New theme with assistant' })))
-  expect(queryByRole(container, 'textbox', { name: 'Theme name' })).not.toBeNull()
-  expect((queryByRole(container, 'textbox', { name: 'Theme name' }) as HTMLInputElement).value).toBe('New theme')
+test('the row overflow menu (narrow widths) exposes aria-haspopup/expanded and its actions work the same as the inline desktop buttons', async () => {
+  const remove = spyOn(client.themePresets, 'delete').mockResolvedValue({ ok: true })
+  try {
+    const { container } = await render([mine])
+    const trigger = getByRole(container, 'button', { name: 'More actions for Mine' })
+    expect(trigger.getAttribute('aria-haspopup')).toBe('menu')
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+
+    await act(async () => fireEvent.click(trigger))
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    // Reachable by keyboard: opening focuses the first action inside the menu.
+    expect(document.activeElement?.textContent).toBe('Rename')
+
+    window.confirm = () => true
+    const menu = container.querySelector('[data-theme-preset-actions]')!
+    await act(async () => fireEvent.click(getByRole(menu, 'button', { name: 'Delete' })))
+    expect(remove).toHaveBeenCalledWith('preset-1', 1)
+    // Selecting an action closes the menu and returns focus to the trigger.
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(trigger)
+  } finally {
+    remove.mockRestore()
+  }
+})
+
+test('Escape closes the row overflow menu and returns focus to its trigger', async () => {
+  const { container } = await render([mine])
+  const trigger = getByRole(container, 'button', { name: 'More actions for Mine' })
+  await act(async () => fireEvent.click(trigger))
+  expect(trigger.getAttribute('aria-expanded')).toBe('true')
+  await act(async () => fireEvent.keyDown(document, { key: 'Escape' }))
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  expect(document.activeElement).toBe(trigger)
 })
 
 test('a palette-only preset (no explicit overrides) still resolves a real swatch color, not an empty circle', async () => {

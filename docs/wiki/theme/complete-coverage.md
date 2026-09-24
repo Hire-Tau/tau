@@ -22,7 +22,7 @@ The guard permits only these bounded findings, not whole-file legacy palettes:
 4. Seven minimal pre-CSS built-in surface fallbacks, tested against the authored palettes.
 5. Universe's hovered-node inline swatch, supplied by its live token reader.
 
-The scanner covers palette and black/white utilities, including directional/axis/logical borders and ring offsets, plus CSS `theme()` palette lookups. It distinguishes numeric HTML entities from hex colors. New raw colors and stale exception entries fail the guard. Colors inside user documents, chart specs, images or isolated presentation HTML are never rewritten.
+The scanner covers palette and black/white utilities, including directional/axis/logical borders and ring offsets, plus CSS `theme()` palette lookups. It distinguishes numeric HTML entities from hex colors. Color functions pass only when every part is a token (`rgb(var(--token))`, token-only `color-mix()`, or relative colors such as `oklch(from rgb(var(--color-primary)) l c calc(h + 45))` whose origin is a token and whose channels use only channel keywords, numbers, `calc()`, `min()`, `max()` and `clamp()`). New raw colors and stale exception entries fail the guard. Colors inside user documents, chart specs, images or isolated presentation HTML are never rewritten.
 
 ## Verification boundary
 
