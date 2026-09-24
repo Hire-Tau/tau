@@ -1,7 +1,11 @@
 import {
+  changeRequestBindCommand,
+  codeHostBindingCommand,
   deliveryPullRequests,
   describeCodeHostReference,
   resolveCodeHostReference,
+  type BranchChangeRequestCandidate,
+  type BranchChangeRequestResolution,
   type CodeHostReference,
   type IntegrationSubscription,
   type WorkflowDefinition,
@@ -15,6 +19,16 @@ export interface CodeHostingAdapter {
     reference: CodeHostReference,
     squadId: string
   ): Promise<{ merged: boolean; headBranch: string; baseBranch: string; headSha?: string } | null>
+  /**
+   * The pull requests a provider reports for one head branch (`state=all`). The GitHub filter is
+   * owner-namespace scoped, so forks reusing the branch name never appear. Null means the lookup
+   * itself failed; an empty array means the branch genuinely has no pull requests.
+   */
+  changeRequestsByHead(
+    reference: CodeHostReference,
+    squadId: string,
+    headBranch: string
+  ): Promise<BranchChangeRequestCandidate[] | null>
   containsCommit(reference: CodeHostReference, squadId: string, base: string, commit: string): Promise<boolean>
   subscriptions(reference: CodeHostReference): IntegrationSubscription[]
 }
@@ -55,7 +69,7 @@ export class CodeHostingRegistry {
    * (for example extra keys on `changeRequest`) from a missing binding, so a delivery failure
    * points at the actual defect instead of claiming required fields are missing.
    */
-  explainMissingBinding(metadata: unknown): string {
+  explainMissingBinding(metadata: unknown, streamId?: string): string {
     const described = describeCodeHostReference(metadata)
     if (described.status === 'invalid')
       return `codeHost metadata is present but invalid: ${described.issues.join('; ')}. Keep verification evidence outside codeHost (for example metadata.delivery).`
@@ -65,7 +79,36 @@ export class CodeHostingRegistry {
         return `codeHost.integration '${integration}' is not a supported code hosting integration (supported: ${[...this.adapters.keys()].join(', ')})`
       return `codeHost.repository '${repository}' is not a valid repository for the ${integration} integration`
     }
-    return 'Set codeHost.integration and codeHost.repository to a supported code hosting integration before completion'
+    return `Set codeHost.integration and codeHost.repository to a supported code hosting integration before completion (for example ${codeHostBindingCommand(streamId ?? '<work-stream-id>')})`
+  }
+  /**
+   * Failure class (b) for PR-delivery completion: the integration and repository resolve, but the
+   * primary change request binding is missing. Names what finish-time resolution concluded, the
+   * exact shape-matching repair, and the track alternative, so the operator can copy-paste
+   * instead of guessing which field was absent.
+   */
+  explainMissingChangeRequest(streamId: string, metadata: unknown, resolution?: BranchChangeRequestResolution): string {
+    const described = describeCodeHostReference(metadata)
+    const reference = described.status === 'valid' ? described.reference : null
+    const repository = reference?.repository ?? '<repository>'
+    const integration = reference?.integration ?? 'github'
+    const git = (metadata as { git?: { branch?: unknown } } | null)?.git
+    const branch = typeof git?.branch === 'string' && git.branch.trim() ? git.branch.trim() : undefined
+    const outcome =
+      resolution?.status === 'no-branch'
+        ? `This stream records no branch (metadata.git.branch), so finish cannot resolve the delivery pull request automatically; it must be bound manually.`
+        : resolution?.status === 'no-candidates'
+          ? `No pull request was found for branch '${branch}' in ${repository} (the owner-namespace head lookup excludes fork pull requests); bind the delivery pull request manually.`
+          : resolution?.status === 'unclear'
+            ? `Branch '${branch}' does not identify one delivery pull request (candidates ${resolution.candidates.join(', ')}); finish will not guess, so bind the intended one manually.`
+            : resolution?.status === 'lookup-failed'
+              ? `The pull requests for branch '${branch}' could not be read through the ${integration} integration; check the pull request exists and the squad connection can read ${repository}, then retry.`
+              : `When this stream's branch ${branch ? `'${branch}' ` : ''}carries exactly one pull request, finish binds it automatically.`
+    return [
+      `codeHost.changeRequest is not set: the delivery pull request for ${repository} is not bound to this work stream. ${outcome}`,
+      `Bind it exactly: ${changeRequestBindCommand(streamId, metadata)}`,
+      `Additional pull requests that are part of the deliverable are designated with tau workstream track ${streamId} --pr <owner/repo#n> --delivery instead.`,
+    ].join(' ')
   }
   subscriptions(definition: WorkflowDefinition, metadata: unknown): IntegrationSubscription[] {
     const explicit = definition.subscriptions ?? []

@@ -261,9 +261,48 @@ test('delivery guidance arrives on completion-ready advance/read and disappears 
     expect(result.stateStatus).toBe('completion-ready')
     expect(result.deliveryInstructions).toContain('Leave merging to the human')
     expect(result.deliveryInstructions).toContain(`tau workstream finish ${stream!.id} --version 1`)
+    // The completion-ready self-check names the current binding state and the exact repair.
+    expect(result.deliveryInstructions).toContain('codeHost is not configured for this work stream')
+    expect(result.deliveryInstructions).toContain(
+      `tau workstream set-meta ${stream!.id} codeHost '{"integration":"github","repository":"<owner/repo>"}'`
+    )
     expect((await (await request(`/runs/${stream!.id}`, admin)).json()).deliveryInstructions).toBe(
       result.deliveryInstructions
     )
+    // With the PR bound, the self-check reports the bound delivery pull request instead.
+    await db
+      .update(workStreams)
+      .set({
+        metadata: {
+          codeHost: {
+            integration: 'github',
+            repository: 'example/repo',
+            changeRequest: { number: 42, url: 'https://github.com/example/repo/pull/42' },
+          },
+        },
+      })
+      .where(eq(workStreams.id, stream!.id))
+    const bound = await (await request(`/runs/${stream!.id}`, admin)).json()
+    expect(bound.deliveryInstructions).toContain('bound to example/repo#42')
+    expect(bound.deliveryInstructions).toContain('(https://github.com/example/repo/pull/42)')
+    expect(bound.deliveryInstructions).toContain(`tau workstream finish ${stream!.id}`)
+    expect(bound.deliveryInstructions).not.toContain('codeHost.changeRequest is absent')
+    // With integration/repository but no PR, the exact bind command carries this stream's id.
+    await db
+      .update(workStreams)
+      .set({
+        metadata: {
+          codeHost: { integration: 'github', repository: 'example/repo' },
+          git: { branch: 'work/example' },
+        },
+      })
+      .where(eq(workStreams.id, stream!.id))
+    const unbound = await (await request(`/runs/${stream!.id}`, admin)).json()
+    expect(unbound.deliveryInstructions).toContain('codeHost.changeRequest is absent')
+    expect(unbound.deliveryInstructions).toContain(
+      `tau workstream set-meta ${stream!.id} codeHost.changeRequest '{"number":<pr-number>,"url":"<pr-url>"}'`
+    )
+    expect(unbound.deliveryInstructions).toContain("stream's branch work/example")
     await db.update(workStreams).set({ status: 'done' }).where(eq(workStreams.id, stream!.id))
     expect(await (await request(`/runs/${stream!.id}`, admin)).json()).not.toHaveProperty('deliveryInstructions')
     const replay = await request(`/runs/${stream!.id}/advance`, admin, 'POST', payload)

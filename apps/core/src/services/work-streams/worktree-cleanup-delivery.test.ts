@@ -27,6 +27,7 @@ function fixture(
       headBranch: overrides.headBranch ?? 'feature',
       baseBranch: overrides.baseBranch ?? 'main',
     }),
+    changeRequestsByHead: async () => [],
     containsCommit: async () => overrides.contains ?? true,
     subscriptions: () => [],
   }

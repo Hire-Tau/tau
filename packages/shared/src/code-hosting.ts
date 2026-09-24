@@ -83,6 +83,86 @@ export function resolveCodeHostReference(metadata: unknown): CodeHostReference |
   return described.status === 'valid' ? described.reference : null
 }
 
+/**
+ * The exact, copy-pasteable repair for a PR-delivery stream whose primary binding lacks a change
+ * request. Placeholders stay literal because the number is exactly what the operator must fill
+ * in; the stream id is always known. Single-quoted so the JSON survives POSIX shells unchanged.
+ * The command matches the stream's recorded shape: merging `codeHost.changeRequest` into a
+ * legacy `github`-shaped stream would mint an invalid partial `codeHost` that shadows the
+ * valid legacy identity, so those streams bind through `github.pr` instead, and a stream with
+ * no identity at all needs the full codeHost object.
+ */
+export function changeRequestBindCommand(streamId: string, metadata?: unknown): string {
+  const record =
+    metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? (metadata as Record<string, unknown>) : {}
+  if (record.codeHost === undefined && record.github)
+    return `tau workstream set-meta ${streamId} github.pr '{"number":<pr-number>,"url":"<pr-url>"}'`
+  if (record.codeHost === undefined && record.github === undefined)
+    return `tau workstream set-meta ${streamId} codeHost '{"integration":"github","repository":"<owner/repo>","changeRequest":{"number":<pr-number>,"url":"<pr-url>"}}'`
+  return `tau workstream set-meta ${streamId} codeHost.changeRequest '{"number":<pr-number>,"url":"<pr-url>"}'`
+}
+
+/** Same repair shape for the integration/repository half of the binding. */
+export function codeHostBindingCommand(streamId: string): string {
+  return `tau workstream set-meta ${streamId} codeHost '{"integration":"github","repository":"<owner/repo>"}'`
+}
+
+/** One pull request a code host reported for a head branch, in provider-neutral form. */
+export interface BranchChangeRequestCandidate {
+  number: number
+  url?: string
+  merged: boolean
+  state: string
+  headBranch: string
+  baseBranch: string
+  /** Where the head ref lives when the provider reports it; mismatches are forks. */
+  headRepository?: string
+  headSha?: string
+}
+
+export type BranchChangeRequestResolution =
+  | { status: 'chosen'; candidate: { number: number; url?: string } }
+  | { status: 'no-branch' }
+  | { status: 'no-candidates' }
+  | { status: 'unclear'; candidates: string[] }
+  | { status: 'lookup-failed' }
+
+/**
+ * Pick the delivery change request for a stream branch from the candidates a code host
+ * reported. Provider-neutral and pure so the policy stays auditable: a closed-unmerged pull
+ * request can never be the answer, a merged one wins over an open one, and anything not
+ * uniquely identified stays unresolved because a wrong binding is worse than no binding.
+ */
+export function resolveBranchChangeRequest(input: {
+  branch?: string
+  baseBranch?: string
+  repository: string
+  candidates: BranchChangeRequestCandidate[] | null
+}): BranchChangeRequestResolution {
+  if (!input.branch) return { status: 'no-branch' }
+  if (input.candidates === null) return { status: 'lookup-failed' }
+  const repository = input.repository.trim().toLowerCase()
+  const usable = input.candidates.filter(
+    (candidate) =>
+      candidate.headBranch === input.branch &&
+      // The owner-namespace head filter already excludes forks; the reported head repository
+      // is checked anyway so a provider slip cannot reintroduce one.
+      (!candidate.headRepository || candidate.headRepository.trim().toLowerCase() === repository) &&
+      (!input.baseBranch || !candidate.baseBranch || candidate.baseBranch === input.baseBranch) &&
+      (candidate.merged || candidate.state === 'open')
+  )
+  const merged = usable.filter((candidate) => candidate.merged)
+  const pick = (candidate: BranchChangeRequestCandidate) => ({
+    number: candidate.number,
+    ...(candidate.url ? { url: candidate.url } : {}),
+  })
+  if (merged.length === 1) return { status: 'chosen', candidate: pick(merged[0]!) }
+  if (merged.length > 1) return { status: 'unclear', candidates: merged.map((candidate) => `#${candidate.number}`) }
+  if (usable.length === 1) return { status: 'chosen', candidate: pick(usable[0]!) }
+  if (usable.length > 1) return { status: 'unclear', candidates: usable.map((candidate) => `#${candidate.number}`) }
+  return { status: 'no-candidates' }
+}
+
 export const TRACKED_RESOURCE_KINDS = ['issue', 'pull_request'] as const
 export type TrackedResourceKind = (typeof TRACKED_RESOURCE_KINDS)[number]
 const integrationName = z

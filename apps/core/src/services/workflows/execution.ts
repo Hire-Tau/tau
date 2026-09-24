@@ -42,6 +42,8 @@ import { resetContinuationCycle } from '../work-streams/continuation-state'
 import { resolveStoredWorkflow, validateWorkflowParticipants, WorkflowError, workflowFingerprint } from './catalog'
 import { codeHostingRegistry } from '../integrations/code-hosting'
 import { recordDeliveryVerification } from '../work-streams/delivery-pull-requests'
+import { recordChangeRequestBinding } from '../work-streams/change-request-binding'
+import { resolveBranchChangeRequest } from '@tau/shared'
 
 const log = createLogger('workflows')
 
@@ -601,13 +603,13 @@ export async function finishFlow(id: string, version: number, identity: Identity
     throw new WorkflowError('Only a participant can finish this flow', 403)
   let deliveredHead: string | undefined
   const mode = run.state.definition.completion.mode
-  const metadata = stream.metadata as Record<string, any>
+  let metadata = stream.metadata as Record<string, any>
   if (mode === 'review-approval' && identity.type !== 'user')
     throw new WorkflowError('A human must approve delivery', 403)
   if (['pr-merge', 'pr-auto-merge', 'direct-merge'].includes(mode)) {
     const binding = codeHostingRegistry.resolve(metadata)
-    if (!binding) throw new WorkflowError(codeHostingRegistry.explainMissingBinding(metadata))
-    const { reference, adapter } = binding
+    if (!binding) throw new WorkflowError(codeHostingRegistry.explainMissingBinding(metadata, id))
+    let { reference, adapter } = binding
     if (mode === 'direct-merge') {
       const head = metadata.git?.commit,
         base = metadata.git?.baseBranch
@@ -617,9 +619,40 @@ export async function finishFlow(id: string, version: number, identity: Identity
         throw new WorkflowError('The deliverable commit must be included in the base branch', 409)
       deliveredHead = head
     } else {
-      if (!reference.changeRequest) throw new WorkflowError('Set codeHost.changeRequest.number before completion')
+      // Finish-time resolution: when the binding has no change request, ask the code host which
+      // pull request the stream's branch carries (owner-namespace scoped, so forks never match)
+      // and persist the answer. The manual bind remains an override, not a required step.
+      if (!reference.changeRequest) {
+        const branch = typeof metadata.git?.branch === 'string' ? metadata.git.branch.trim() : ''
+        const resolution = resolveBranchChangeRequest({
+          branch: branch || undefined,
+          baseBranch:
+            typeof metadata.git?.baseBranch === 'string' && metadata.git.baseBranch.trim()
+              ? metadata.git.baseBranch.trim()
+              : undefined,
+          repository: reference.repository,
+          candidates: branch ? await adapter.changeRequestsByHead(reference, stream.squadId, branch) : [],
+        })
+        if (resolution.status !== 'chosen')
+          throw new WorkflowError(codeHostingRegistry.explainMissingChangeRequest(id, metadata, resolution))
+        await recordChangeRequestBinding(id, reference, resolution.candidate)
+        // Re-read so the finish permit hashes the stored metadata, exactly like merge evidence.
+        stream = await WorkStream.mustFind(id)
+        metadata = stream.metadata as Record<string, any>
+        const resolved = codeHostingRegistry.resolve(metadata)
+        if (!resolved) throw new WorkflowError(codeHostingRegistry.explainMissingBinding(metadata, id))
+        ;({ reference, adapter } = resolved)
+      }
+      if (!reference.changeRequest) throw new WorkflowError('Delivery change request resolution produced no binding')
       const change = await adapter.changeRequest(reference, stream.squadId)
-      if (!change?.merged) throw new WorkflowError('The change request must be merged before completion', 409)
+      // A null lookup is a distinct failure class from an unmerged change request: the binding
+      // exists but cannot be verified at all, so the repair is connection/access, not merging.
+      if (!change)
+        throw new WorkflowError(
+          `Could not verify delivery pull request ${reference.repository}#${reference.changeRequest.number} through the ${reference.integration} integration: it is missing, inaccessible to the squad's connection, or the connection is unavailable`,
+          409
+        )
+      if (!change.merged) throw new WorkflowError('The change request must be merged before completion', 409)
       if (change.headSha && /^[a-f0-9]{40}$/.test(change.headSha)) deliveredHead = change.headSha
       if (
         (metadata.git?.branch && change.headBranch !== metadata.git.branch) ||
@@ -644,7 +677,12 @@ export async function finishFlow(id: string, version: number, identity: Identity
           },
           stream.squadId
         )
-        if (!additional?.merged)
+        if (!additional)
+          throw new WorkflowError(
+            `Delivery pull request ${resource.repository}#${resource.number} could not be verified through the ${resource.integration} integration: it is missing, inaccessible to the squad's connection, or the connection is unavailable`,
+            409
+          )
+        if (!additional.merged)
           throw new WorkflowError(
             `Delivery pull request ${resource.repository}#${resource.number} must be merged before completion`,
             409

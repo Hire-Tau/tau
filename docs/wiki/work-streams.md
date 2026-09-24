@@ -42,6 +42,21 @@ plus zero or more **flagged** delivery PRs — tracked pull requests with
 `delivery: true`. Together they are the pull requests whose merge state gates
 completion:
 
+**Resolving the primary delivery PR at finish.** When `tau workstream finish` runs for a
+`pr-merge`/`pr-auto-merge` stream whose `codeHost.changeRequest` is not set, it asks the code
+host which pull request the stream's branch (`metadata.git.branch`) carries — one
+owner-namespace scoped lookup (`GET /repos/{repo}/pulls?head={owner}:{branch}&state=all`),
+which by construction never matches fork pull requests. Exactly one usable pull request is
+bound and persisted to `codeHost.changeRequest {number, url}` before merge verification
+continues (a merged candidate wins over an open one; closed-unmerged candidates and candidates
+with the wrong base are never chosen). When the branch carries nothing, the stream records no
+branch, or the candidates do not identify one pull request, finish fails with the exact
+shape-matching manual bind command — `tau workstream set-meta <id> codeHost.changeRequest
+'{"number":N,"url":"<pr url>"}'` for canonical streams, `github.pr` for legacy
+`metadata.github` streams, and a full `codeHost` object for unconfigured ones. The manual bind
+is therefore an override for unusual cases, not a required step, and nothing depends on
+webhooks, event timing, or connection state for the binding to exist.
+
 - `POST /api/workstreams/:id/tracked` accepts `{ url, delivery: true }` or
   `{ resource, delivery: true }` (only valid when the resource is a pull
   request) to flag a tracked PR as delivery, alongside the identity fields
