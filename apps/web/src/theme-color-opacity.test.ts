@@ -231,8 +231,9 @@ describe('tailwind theme color opacity after variable substitution', () => {
         }
       })
     }
-    // ThemeQuickPicker's swatch border joined this audit as consumer #7 (see design-system.css).
-    expect(consumers).toBe(7)
+    // ThemeQuickPicker's swatch border joined this audit as consumer #7 and the
+    // full-bleed color input outline as #8 (see design-system.css).
+    expect(consumers).toBe(8)
   })
 
   test('non-border opacity utilities still compile (including the original divide regression)', async () => {

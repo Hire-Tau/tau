@@ -156,7 +156,7 @@ function ColorField({
           aria-label={`${label} color swatch`}
           value={toSwatchHex(value)}
           onChange={(event) => (onSwatchChange ?? onChange)(event.target.value)}
-          className="h-9 w-9 shrink-0 cursor-pointer rounded border border-th-border bg-transparent p-0"
+          className="tau-color-input h-9 w-9 shrink-0 cursor-pointer rounded-md"
         />
         <div className="relative min-w-0 flex-1">
           <input

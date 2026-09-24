@@ -62,16 +62,62 @@
     aspect-ratio: 1 / 1;
     border-radius: 9999px;
     overflow: hidden;
+    /* A swirl rather than pie slices: a seamless pinwheel of the theme's
+       colors, with a blurred, turned copy in the middle so the arms twist. */
     background: conic-gradient(
-      rgb(var(--color-primary)) 0deg 120deg,
-      rgb(var(--color-primary-hover)) 120deg 240deg,
-      rgb(var(--color-bg-surface-secondary)) 240deg 360deg
+      rgb(var(--color-primary)),
+      rgb(var(--color-bg-surface-secondary)) 17%,
+      rgb(var(--color-primary-hover)) 33%,
+      rgb(var(--color-bg-surface-secondary)) 50%,
+      rgb(var(--color-primary)) 67%,
+      rgb(var(--color-bg-surface-secondary)) 83%,
+      rgb(var(--color-primary))
     );
     box-shadow: inset 0 0 0 1px
       rgb(
         var(--custom-rgb-color-panel-border, var(--color-panel-border)) /
           calc(var(--custom-alpha-color-panel-border, 1) * var(--opacity-panel-border))
       );
+  }
+
+  .theme-swatch::after {
+    content: '';
+    position: absolute;
+    inset: -10%;
+    border-radius: 9999px;
+    background: inherit;
+    transform: rotate(40deg) scale(0.7);
+    filter: blur(3px);
+    /* Masks read only alpha; any opaque token color works. */
+    mask: radial-gradient(circle, rgb(var(--color-primary)) 35%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* Native color inputs render a padded inner square; fill the rounded control instead. */
+  .tau-color-input {
+    -webkit-appearance: none;
+    appearance: none;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    background: transparent;
+    outline: 1px solid
+      rgb(
+        var(--custom-rgb-color-panel-border, var(--color-panel-border)) /
+          calc(var(--custom-alpha-color-panel-border, 1) * var(--opacity-panel-border))
+      );
+    outline-offset: -1px;
+  }
+  .tau-color-input::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+  .tau-color-input::-webkit-color-swatch {
+    border: 0;
+    border-radius: inherit;
+  }
+  .tau-color-input::-moz-color-swatch {
+    border: 0;
+    border-radius: inherit;
   }
 
   .tau-section-title {

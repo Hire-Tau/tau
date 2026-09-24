@@ -103,7 +103,9 @@ export function ThemeSwatchGrid({
             >
               <ThemeSwatch spec={spec} className="h-full w-full" />
             </span>
-            <span className="w-full max-w-full truncate text-xs text-secondary">{option.label}</span>
+            <span className="w-full max-w-full line-clamp-2 break-words text-center text-xs text-secondary">
+              {option.label}
+            </span>
           </button>
         )
       })}
