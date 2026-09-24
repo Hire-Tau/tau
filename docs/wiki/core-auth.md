@@ -100,6 +100,8 @@ Browser WebSockets use a short-lived, single-use `?ticket=` minted by `/api/auth
 
 CSRF protection is mounted for `/api/*` before the auth and webhook routers. Those routers precede the global identity middleware because login, registration, pairing claims, and provider webhook ingress need their own access rules. This does **not** make every `/api/auth` endpoint public: account, device, settings, and approval operations apply their own identity and permission checks.
 
+Bearer/header-authenticated mutations skip the cookie-CSRF check only when they carry no `Origin` header at all (the normal CLI/agent shape); a bearer request that *does* carry an `Origin` — including the opaque `Origin: null` a sandboxed iframe sends — must match the same web-origin allowlist CORS uses (`apps/core/src/services/auth/web-origins.ts`), or it's rejected with 403. This closes the gap where a native shell that injects a device bearer into its web view makes that bearer ambient to any cross-origin, no-preflight request a hostile page can fire from inside it.
+
 The remaining API routers run through `identityMiddleware` and the `authzSentinel` authorization backstop. Protected endpoints require identity and route-specific permissions. Explicit exceptions, such as signed image URLs, deployed-app access links, and federation requests, use their documented public or signature-authenticated paths. Webhook ingress verifies provider signatures; webhook status/management routes require normal authorization.
 
 ## Secrets Access

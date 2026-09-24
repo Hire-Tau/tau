@@ -54,4 +54,78 @@ describe('csrfProtection', () => {
     })
     expect(res.status).toBe(200)
   })
+
+  test('bearer with no Origin header → allowed (CLI/agent HTTP clients never send one)', async () => {
+    const res = await app().request('/api/thing', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer tau_agent_x' },
+    })
+    expect(res.status).toBe(200)
+  })
+
+  test('bearer with an allowlisted web Origin → allowed', async () => {
+    const res = await app().request('/api/thing', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer tau_agent_x', Origin: 'http://localhost:5173' },
+    })
+    expect(res.status).toBe(200)
+  })
+
+  test('bearer with a foreign Origin → 403 (a shell-injected bearer riding an iframe post)', async () => {
+    const res = await app().request('/api/thing', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer tau_agent_x', Origin: 'https://evil.example.com' },
+    })
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: 'Cross-origin request rejected' })
+  })
+
+  test('bearer with the opaque `Origin: null` (sandboxed iframe) → 403', async () => {
+    const res = await app().request('/api/thing', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer tau_agent_x', Origin: 'null' },
+    })
+    expect(res.status).toBe(403)
+  })
+
+  test('X-Auth-Token with a foreign Origin → 403', async () => {
+    const res = await app().request('/api/thing', {
+      method: 'POST',
+      headers: { 'X-Auth-Token': 'tok', Origin: 'https://evil.example.com' },
+    })
+    expect(res.status).toBe(403)
+  })
+
+  test('X-Auth-Token with an allowlisted Origin → allowed', async () => {
+    const res = await app().request('/api/thing', {
+      method: 'POST',
+      headers: { 'X-Auth-Token': 'tok', Origin: 'http://localhost:5173' },
+    })
+    expect(res.status).toBe(200)
+  })
+
+  test('GET with a foreign Origin and a bearer → allowed (safe method, untouched)', async () => {
+    const res = await app().request('/api/thing', {
+      method: 'GET',
+      headers: { Authorization: 'Bearer tau_agent_x', Origin: 'https://evil.example.com' },
+    })
+    expect(res.status).toBe(200)
+  })
+
+  test('cookie-authed mutation WITHOUT the CSRF header, with a foreign Origin → still 403 for the cookie reason', async () => {
+    const res = await app().request('/api/thing', {
+      method: 'POST',
+      headers: { Cookie: 'tau_session=t', Origin: 'https://evil.example.com' },
+    })
+    expect(res.status).toBe(403)
+    expect(await res.json()).toEqual({ error: 'Missing CSRF token' })
+  })
+
+  test('cookie-authed mutation WITH the CSRF header, with a foreign Origin → allowed (cookie path unchanged)', async () => {
+    const res = await app().request('/api/thing', {
+      method: 'POST',
+      headers: { Cookie: 'tau_session=t', 'X-Tau-Csrf': '1', Origin: 'https://evil.example.com' },
+    })
+    expect(res.status).toBe(200)
+  })
 })
