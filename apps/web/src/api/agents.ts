@@ -1,4 +1,12 @@
-import type { Agent, DeliveryMode, Execution, Message, StreamEvent } from '@tau/shared'
+import type {
+  Agent,
+  DeliveryMode,
+  Execution,
+  Message,
+  SandboxProcesses,
+  SandboxProcessSignal,
+  StreamEvent,
+} from '@tau/shared'
 import type { SandboxStatus } from './workspace'
 import { apiFetch, authFetch } from './client'
 import { parseSSEStream } from './sse'
@@ -77,6 +85,26 @@ export async function getActiveExecution(agentId: string): Promise<ActiveExecuti
 
 export async function getAgentSandboxStatus(agentId: string): Promise<SandboxStatus> {
   return apiFetch<SandboxStatus>(`/agents/${agentId}/sandbox/status`)
+}
+
+/** What this agent's own sandbox is running (samples CPU for about a second). */
+export async function getAgentSandboxProcesses(agentId: string): Promise<SandboxProcesses> {
+  return apiFetch<SandboxProcesses>(`/agents/${agentId}/sandbox/processes`)
+}
+
+export async function signalAgentSandboxProcess(
+  agentId: string,
+  pid: number,
+  signal: SandboxProcessSignal
+): Promise<void> {
+  await apiFetch(`/agents/${agentId}/sandbox/processes/${pid}/signal`, {
+    method: 'POST',
+    body: JSON.stringify({ signal }),
+  })
+}
+
+export async function stopAgentSandboxContainer(agentId: string, containerId: string): Promise<void> {
+  await apiFetch(`/agents/${agentId}/sandbox/containers/${encodeURIComponent(containerId)}/stop`, { method: 'POST' })
 }
 
 export interface AgentScope {

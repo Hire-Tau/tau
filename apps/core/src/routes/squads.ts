@@ -69,6 +69,15 @@ import { ActivityCursorExpiredError, InvalidActivityCursorError } from '../servi
 import { getHomeDir } from '../lib/utils/home'
 import { normalizeToolchain } from '../services/sandbox/toolchain/config'
 import { mergeSandboxStatus, resolveToolchainStatus } from '../services/sandbox/status'
+import {
+  listSandboxProcesses,
+  parseContainerId,
+  parseProcessId,
+  parseProcessSignal,
+  sandboxProcessesErrorResponse,
+  signalSandboxProcess,
+  stopSandboxContainer,
+} from '../services/sandbox/processes'
 import * as sandboxPrewarm from '../services/sandbox/prewarm'
 import { requireSandboxRuntime } from '../services/sandbox/runtime'
 import { userSessionRequired } from '../services/auth/user-session-required'
@@ -1140,6 +1149,48 @@ export const squadsRouter = new Hono()
       }
       log.error(`Failed to start sandbox for squad ${squad.id}:`, err)
       return c.json({ error: 'Failed to start sandbox' }, 500)
+    }
+  })
+  // GET /api/squads/:id/sandbox/processes - What the squad box is running.
+  // Command lines can carry secrets, so this needs the same permission as
+  // stopping them.
+  .get('/:id/sandbox/processes', requireSquadPermission('squads:update'), async (c) => {
+    const squad = await Squad.find(c.req.param('id'))
+    if (!squad) return c.json({ error: 'Squad not found' }, 404)
+    try {
+      return c.json(await listSandboxProcesses(squad.sandboxId))
+    } catch (err) {
+      const failure = sandboxProcessesErrorResponse(err)
+      if (failure) return c.json(failure.body, failure.status)
+      throw err
+    }
+  })
+  // POST /api/squads/:id/sandbox/processes/:pid/signal - Signal one of the box user's processes
+  .post('/:id/sandbox/processes/:pid/signal', requireSquadPermission('squads:update'), async (c) => {
+    const squad = await Squad.find(c.req.param('id'))
+    if (!squad) return c.json({ error: 'Squad not found' }, 404)
+    try {
+      const body = await parseOptionalJsonObjectBody(c, {} as { signal?: unknown })
+      const pid = parseProcessId(c.req.param('pid'))
+      const signal = parseProcessSignal(body.signal)
+      return c.json(await signalSandboxProcess(squad.sandboxId, pid, signal, c.get('identity')!))
+    } catch (err) {
+      const failure = sandboxProcessesErrorResponse(err)
+      if (failure) return c.json(failure.body, failure.status)
+      throw err
+    }
+  })
+  // POST /api/squads/:id/sandbox/containers/:containerId/stop - Stop one of the box's containers
+  .post('/:id/sandbox/containers/:containerId/stop', requireSquadPermission('squads:update'), async (c) => {
+    const squad = await Squad.find(c.req.param('id'))
+    if (!squad) return c.json({ error: 'Squad not found' }, 404)
+    try {
+      const containerId = parseContainerId(c.req.param('containerId'))
+      return c.json(await stopSandboxContainer(squad.sandboxId, containerId, c.get('identity')!))
+    } catch (err) {
+      const failure = sandboxProcessesErrorResponse(err)
+      if (failure) return c.json(failure.body, failure.status)
+      throw err
     }
   })
   // POST /api/squads/:id/sandbox/stop - Stop the sandbox pod

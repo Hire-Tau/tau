@@ -28,6 +28,7 @@ import {
   getActiveExecution,
   getAgentContext,
   getAgentSandboxStatus,
+  getAgentSandboxProcesses,
   listAgentScopes,
 } from './api/agents'
 import { listAgentTypes } from './api/agentTypes'
@@ -50,6 +51,7 @@ import {
   getSquadMemoryTree,
   getSquadMemoryFile,
   getSandboxStatus,
+  getSandboxProcesses,
   listLocalDeployments,
 } from './api/workspace'
 import { listInboundGrants, listOutboundGrants } from './api/grants'
@@ -190,6 +192,11 @@ export const queries = {
       queryOptions({
         queryKey: queryKeys.agents.scopes(agentId),
         queryFn: () => listAgentScopes(agentId),
+      }),
+    sandboxProcesses: (agentId: string) =>
+      queryOptions({
+        queryKey: queryKeys.agents.sandboxProcesses(agentId),
+        queryFn: () => getAgentSandboxProcesses(agentId),
       }),
     sandboxStatus: (agentId: string) =>
       queryOptions({
@@ -647,6 +654,11 @@ export const queries = {
       queryOptions({
         queryKey: queryKeys.sandbox.status(squadId),
         queryFn: () => getSandboxStatus(squadId),
+      }),
+    processes: (squadId: string) =>
+      queryOptions({
+        queryKey: queryKeys.sandbox.processes(squadId),
+        queryFn: () => getSandboxProcesses(squadId),
       }),
   },
   secrets: {

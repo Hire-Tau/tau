@@ -7,6 +7,7 @@
 
 const startTime = Date.now()
 import { readExecutorCommandIdentity, type ExecutorCommandIdentity } from './command-identity'
+import { readPressure } from './processes'
 
 const VERSION = process.env.EXECUTOR_VERSION || '0.2.0'
 
@@ -39,9 +40,12 @@ export function getHealthResponse(env: NodeJS.ProcessEnv = process.env) {
         commandIdentity,
       }
     : undefined
+  const pressure = readPressure()
   return {
     healthy: true,
     devboxReady,
+    // Load and memory only (no process detail): health is unauthenticated.
+    ...(pressure ? { pressure } : {}),
     version: VERSION,
     uptimeSeconds: Math.floor((Date.now() - startTime) / 1000),
     ...(runtimeContract ? { runtimeContract } : {}),

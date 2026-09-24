@@ -55,6 +55,14 @@ const JSON_PARSE_ALLOWLIST = [
       'writeImmutable: on an EEXIST race, re-reads the terminal record it just lost the write race for ' +
       '(to compare against the record this call attempted to write) — deserializes its own persisted state, not network request data.',
   },
+  {
+    file: 'services/processes.ts',
+    function: 'parseJsonLines',
+    classification: 'local-command-output',
+    rationale:
+      "Parses the box's own `docker ps`/`docker stats --format '{{json .}}'` output line by line; " +
+      'malformed lines are skipped. Not network request data.',
+  },
 ] as const
 
 function unwrap(expression: ts.Expression): ts.Expression {

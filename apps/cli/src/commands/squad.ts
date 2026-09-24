@@ -7,6 +7,7 @@ import { WorkStream } from './workstream'
 import { registerSquadGrantCommands } from './squad-grant'
 import { describeAttention, performAttentionSubscribe, type SubscriptionResponse } from './attention'
 import { buildMetadataDelta, getMetadataValue, parseMetadataPath, parseMetadataValue } from '../metadata'
+import { registerSandboxProcessCommands } from './sandbox-processes'
 
 interface Squad {
   id: string
@@ -532,6 +533,8 @@ export function registerSquadCommands(program: Command) {
         outputError(error as Error)
       }
     })
+
+  registerSandboxProcessCommands(squad, 'squad')
 
   // tau squad link <source> <target> -t <type>
   squad

@@ -11,6 +11,7 @@
 
 import { EventEmitter } from 'events'
 import { randomUUID } from 'node:crypto'
+import type { SandboxPressure, SandboxProcesses, SandboxProcessSignal } from '@tau/shared'
 
 export type SandboxTransportKind = 'connection_refused' | 'connection_reset' | 'timeout' | 'network' | 'socket_closed'
 
@@ -294,6 +295,8 @@ export interface HealthResponse {
   devboxReady: boolean
   version: string
   uptimeSeconds: number
+  /** Load and memory; absent from servers that predate it or off Linux. */
+  pressure?: SandboxPressure
   runtimeContract?: {
     runtime: 'docker'
     version: 1
@@ -771,6 +774,24 @@ export class SandboxClient {
         if (!resp.ok) await this.consumeJsonResponse(resp)
       }
     )
+  }
+
+  /** What the box is running: load, the box user's processes by current CPU, and its containers. */
+  async listProcesses(): Promise<SandboxProcesses> {
+    return this.post<SandboxProcesses>('/processes', {})
+  }
+
+  /** Signal one process the box user owns; the server refuses anything else (403). */
+  async signalProcess(
+    pid: number,
+    signal: SandboxProcessSignal
+  ): Promise<{ pid: number; signal: SandboxProcessSignal; command: string }> {
+    return this.post('/processes/signal', { pid, signal })
+  }
+
+  /** Stop one of the box's containers by id or name. */
+  async stopContainer(id: string): Promise<{ id: string }> {
+    return this.post('/containers/stop', { id })
   }
 
   async health(): Promise<HealthResponse> {

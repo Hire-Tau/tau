@@ -2,6 +2,7 @@ import { Command } from 'commander'
 import { apiGet, apiPatch, apiPost, apiDelete } from '../client'
 import { output, outputTable, outputError, isJsonMode } from '../output'
 import * as readline from 'readline'
+import { registerSandboxProcessCommands } from './sandbox-processes'
 
 function truncate(s: string, max: number): string {
   if (!s) return ''
@@ -76,6 +77,8 @@ export function registerAgentCommands(program: Command) {
         outputError(error as Error)
       }
     })
+
+  registerSandboxProcessCommands(agent, 'agent')
 
   // tau agent rename <id> <name>
   agent

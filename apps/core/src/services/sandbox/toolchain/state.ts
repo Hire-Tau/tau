@@ -22,7 +22,7 @@ const SAFE_REASONS: Record<ToolchainErrorCode, string> = {
   setup_failed: 'Toolchain setup failed',
   activation_failed: 'Toolchain activation failed',
   readiness_failed: 'Toolchain readiness check failed',
-  timeout: 'Toolchain provisioning timed out',
+  timeout: 'Toolchain provisioning timed out; the sandbox may be overloaded',
   unknown: 'Toolchain provisioning failed',
 }
 

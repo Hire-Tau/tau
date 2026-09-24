@@ -8,6 +8,8 @@ import { SandboxStatusBadge } from './sandbox/SandboxStatusBadge'
 import { resolveVmChainDisplay } from './sandbox/vmChainHealth'
 import { HOST_RUNTIME_NOTE } from './sandbox/hostRuntime'
 import { webStatus } from '../lib/statusPresentation'
+import { isSandboxOverloaded } from '@tau/shared'
+import { PressureSummary, SandboxProcesses } from './sandbox/SandboxProcesses'
 
 interface AgentSandboxControlsProps {
   agentId: string
@@ -125,6 +127,16 @@ export function AgentSandboxControls({ agentId, compact = false }: AgentSandboxC
         )}
       </dd>
       {!controllable && <p className="mt-1 text-xs text-muted">Shared sandbox — not individually controllable.</p>}
+      {isSandboxOverloaded(status.pressure) && status.pressure && (
+        <div className="mt-1">
+          <PressureSummary pressure={status.pressure} />
+        </div>
+      )}
+      {controllable && !compact && status.status === 'running' && (
+        <div className="mt-3">
+          <SandboxProcesses target={{ kind: 'agent', agentId }} />
+        </div>
+      )}
     </dl>
   )
 }
