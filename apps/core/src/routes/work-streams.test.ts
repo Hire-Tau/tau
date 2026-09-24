@@ -1755,11 +1755,15 @@ describe('work-streams routes', () => {
     it('orders active work by human actionability: human review, running work, automated gate, then the rest', async () => {
       const { human, running, auto, dependency, idle } = await seedActionabilityFixture()
 
-      const list = await (await apiFetch(`/api/workstreams?squadId=${testSquadId}&statuses=active`)).json()
-      expect(list.map((row: { id: string }) => row.id)).toEqual([human.id, running.id, auto.id, dependency.id, idle.id])
-      const byId = new Map(list.map((row: { id: string }) => [row.id, row]))
-      expect(byId.get(auto.id).automatedReviewGate).toBe(true)
-      expect(byId.get(human.id).automatedReviewGate).toBeUndefined()
+      const list = (await (await apiFetch(`/api/workstreams?squadId=${testSquadId}&statuses=active`)).json()) as {
+        id: string
+        derivedState: string
+        automatedReviewGate?: boolean
+      }[]
+      expect(list.map((row) => row.id)).toEqual([human.id, running.id, auto.id, dependency.id, idle.id])
+      const byId = new Map(list.map((row) => [row.id, row]))
+      expect(byId.get(auto.id)?.automatedReviewGate).toBe(true)
+      expect(byId.get(human.id)?.automatedReviewGate).toBeUndefined()
       expect(list.map((row: { derivedState: string }) => row.derivedState)).toEqual([
         'in_review',
         'in_progress',

@@ -154,6 +154,7 @@ export interface NonTerminalOrderCandidate {
   assigneeAgentId: string | null
   agentIds: string[] | null
   dependsOn: string[]
+  metadata: unknown
   createdAt: Date
   updatedAt: Date
 }
