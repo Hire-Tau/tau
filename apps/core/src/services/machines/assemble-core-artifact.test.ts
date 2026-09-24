@@ -51,6 +51,7 @@ async function makeCheckout(): Promise<string> {
   await write(join(root, 'apps/core/dist/worker.js'), 'core worker bundle\n')
   await write(join(root, 'apps/core/dist/migrate.js'), 'core migrate bundle\n')
   await write(join(root, 'apps/core/dist/smoke-configured-extensions.js'), 'configured extension smoke bundle\n')
+  await write(join(root, 'apps/core/dist/box-control.js'), 'operator box control bundle\n')
   // Not part of the layout: dist holds build detritus that must not ship.
   await write(join(root, 'apps/core/dist/tsconfig.tsbuildinfo'), '{"detritus":true}\n')
 
@@ -204,6 +205,7 @@ describe('assembleCoreArtifact', () => {
       [
         'apps/cli/dist/skills/tau-memory/SKILL.md',
         'apps/cli/dist/tau.js',
+        'apps/core/dist/box-control.js',
         'apps/core/dist/index.js',
         'apps/core/dist/migrate.js',
         'apps/core/dist/smoke-configured-extensions.js',
@@ -393,7 +395,7 @@ describe('assembleCoreArtifact', () => {
     const fake = makeRun()
     const { result } = await assemble({ smoke: true }, fake)
 
-    expect(result.smoke).toEqual({ migrateExitCode: 1, verifiedFiles: 27 })
+    expect(result.smoke).toEqual({ migrateExitCode: 1, verifiedFiles: 28 })
     expect(fake.calls).toContainEqual([
       'bun',
       expect.stringMatching(/apps\/core\/dist\/smoke-configured-extensions\.js$/),
