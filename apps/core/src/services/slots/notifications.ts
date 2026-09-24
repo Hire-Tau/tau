@@ -94,11 +94,15 @@ export async function claimDueSlotNotifications(input: {
 
 export function renderSlotNotification(claim: SlotNotificationClaim): string {
   if (claim.kind === 'expired') {
+    // Expiry frees capacity but cannot stop what the owner started under it.
+    // Detached containers and test databases outlive the claim and silently
+    // overload the shared box, so the owner must clean up explicitly.
     return [
-      `Your claim for slot pool "${claim.poolKey}" has expired and is no longer valid.`,
-      `Claim ID: ${claim.claimId}`,
-      'Stop relying on this claim immediately. Tau did not stop any external work.',
-      `Query authoritative state with: tau slot list ${claim.poolKey} --squad ${claim.squadId}`,
+      `Your claim ${claim.claimId} on slot pool "${claim.poolKey}" expired at ${claim.expiresAt.toISOString()} because it was not released or renewed. You no longer hold this capacity.`,
+      'Tau did not stop any work you started under this claim. Clean up now:',
+      "- Stop every heavy process, container and test database you started under it: run the repository's project-scoped test:db:down (for example `bun run test:db:down`), docker stop the containers you started, and kill your background jobs.",
+      `- Claim again before resuming heavy work: tau slot claim ${claim.poolKey} --squad ${claim.squadId}`,
+      '- Release claims as soon as the work is done: tau slot release <claim-id>',
     ].join('\n')
   }
   return [
@@ -107,8 +111,8 @@ export function renderSlotNotification(claim: SlotNotificationClaim): string {
     `Claim ID: ${claim.claimId}`,
     `Expires: ${claim.expiresAt.toISOString()}`,
     'If there is any doubt, query authoritative state before relying on this grant.',
-    `Release: tau slot release ${claim.poolKey} ${claim.claimId} --squad ${claim.squadId}`,
-    `Renew: tau slot renew ${claim.poolKey} ${claim.claimId} --squad ${claim.squadId}`,
+    `Release: tau slot release ${claim.claimId}`,
+    `Renew: tau slot renew ${claim.claimId}`,
   ].join('\n')
 }
 
@@ -232,7 +236,10 @@ export class SlotNotificationNotifier {
           senderType: 'system',
           deliveryMode: 'steer',
           wakeEligible: false,
-          subject: claim.kind === 'granted' ? `Slot granted: ${claim.poolKey}` : `Slot expired: ${claim.poolKey}`,
+          subject:
+            claim.kind === 'granted'
+              ? `Slot granted: ${claim.poolKey}`
+              : `Slot expired: ${claim.poolKey} (clean up now)`,
           content: renderSlotNotification(claim),
           metadata: { source: 'slot', poolId: claim.poolId, claimId: claim.claimId },
         },

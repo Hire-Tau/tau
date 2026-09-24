@@ -5,7 +5,14 @@ import { agents, db, executions, inbox, slotClaims, slotNotifications, slotPools
 import { Agent } from '../../entities/Agent'
 import { Squad } from '../../entities/Squad'
 import { makeDormant, setDormancyEffectHookForTest } from '../agent/lifecycle'
-import { claimSlot, registerPool, setSlotPromptDrainEnabledForTest, subscribeSlot } from './store'
+import {
+  claimSlot,
+  registerPool,
+  releaseSlot,
+  setSlotPromptDrainEnabledForTest,
+  subscribeSlot,
+  updatePool,
+} from './store'
 import { reconcileSlotsOnce } from './reconciliation'
 
 // Keep drain timing deterministic: reconciliation owns its own inline drain.
@@ -261,4 +268,109 @@ test('reconciliation settlement: repairing an ineligible owner settles its undel
     (await db.select().from(slotNotifications).where(eq(slotNotifications.id, notification!.id)))[0]
   ).toMatchObject({ status: 'delivered', lastErrorCode: 'claim_inactive', claimToken: null })
   expect(await db.select().from(inbox).where(eq(inbox.recipientId, holder!.id))).toHaveLength(0)
+})
+
+async function expireClaimInDatabase(claimId: string) {
+  await db
+    .update(slotClaims)
+    .set({ expiresAt: sql`clock_timestamp() - interval '1 second'` })
+    .where(eq(slotClaims.id, claimId))
+}
+
+test('a timed-out claim reminds its owner exactly once to clean up heavy work', async () => {
+  const squad = await Squad.create({ name: `slot-reconcile-reminder-${crypto.randomUUID()}`, purpose: 'test' })
+  squadIds.push(squad.id)
+  const pool = await registerPool({ squadId: squad.id, key: 'shared-box-intensive', createdBy: 'test' })
+  const [owner] = await createAgents(squad.id, 1)
+  const granted = await claimSlot(squad.id, 'shared-box-intensive', owner!.id)
+  if (granted.outcome !== 'granted') throw new Error('bad fixture')
+  await expireClaimInDatabase(granted.claim.id!)
+
+  // Reconciliation reruns (and its drain retries) must never duplicate the reminder.
+  await expect(reconcileSlotsOnce()).resolves.toMatchObject({ expiredClaims: 1 })
+  await reconcileSlotsOnce()
+  await reconcileSlotsOnce()
+
+  const [claim] = await db.select().from(slotClaims).where(eq(slotClaims.id, granted.claim.id!))
+  expect(claim).toMatchObject({ status: 'expired', terminalReason: 'timed_out' })
+  const messages = await db.select().from(inbox).where(eq(inbox.recipientId, owner!.id))
+  expect(messages).toHaveLength(1)
+  const content = messages[0]!.content
+  expect(content).toContain(granted.claim.id!)
+  expect(content).toContain('"shared-box-intensive"')
+  expect(content).toContain(`expired at ${claim!.expiresAt.toISOString()}`)
+  expect(content).toContain('not released or renewed')
+  expect(content).toContain('test:db:down')
+  expect(content).toContain('docker')
+  expect(content).toContain('background jobs')
+  expect(content).toContain(`tau slot claim shared-box-intensive --squad ${squad.id}`)
+  expect(content).toContain('tau slot release')
+  expect(messages[0]!.deliveryMode).toBe('steer')
+  expect(
+    await db
+      .select()
+      .from(slotNotifications)
+      .where(and(eq(slotNotifications.poolId, pool.id), eq(slotNotifications.kind, 'expired')))
+  ).toMatchObject([{ status: 'delivered', inboxId: messages[0]!.id }])
+})
+
+test('a released claim gets no expiry reminder', async () => {
+  const squad = await Squad.create({ name: `slot-reconcile-released-${crypto.randomUUID()}`, purpose: 'test' })
+  squadIds.push(squad.id)
+  const pool = await registerPool({ squadId: squad.id, key: 'tests', createdBy: 'test' })
+  const [owner] = await createAgents(squad.id, 1)
+  const granted = await claimSlot(squad.id, 'tests', owner!.id)
+  if (granted.outcome !== 'granted') throw new Error('bad fixture')
+  await expect(releaseSlot(squad.id, 'tests', owner!.id, granted.claim.id!)).resolves.toMatchObject({
+    outcome: 'released',
+  })
+  await expireClaimInDatabase(granted.claim.id!)
+
+  await reconcileSlotsOnce()
+  await reconcileSlotsOnce()
+
+  expect(
+    await db
+      .select()
+      .from(slotNotifications)
+      .where(and(eq(slotNotifications.poolId, pool.id), eq(slotNotifications.kind, 'expired')))
+  ).toHaveLength(0)
+  expect(await db.select().from(inbox).where(eq(inbox.recipientId, owner!.id))).toHaveLength(0)
+})
+
+test('an expired claim whose owner no longer exists settles its reminder without sending', async () => {
+  const squad = await Squad.create({ name: `slot-reconcile-gone-${crypto.randomUUID()}`, purpose: 'test' })
+  squadIds.push(squad.id)
+  const pool = await registerPool({ squadId: squad.id, key: 'tests', createdBy: 'test' })
+  const [missing, terminated, next] = await createAgents(squad.id, 3)
+  await updatePool(squad.id, 'tests', { capacity: 3 })
+  const missingClaim = await claimSlot(squad.id, 'tests', missing!.id)
+  const terminatedClaim = await claimSlot(squad.id, 'tests', terminated!.id)
+  if (missingClaim.outcome !== 'granted' || terminatedClaim.outcome !== 'granted') throw new Error('bad fixture')
+  await expireClaimInDatabase(missingClaim.claim.id!)
+  await expireClaimInDatabase(terminatedClaim.claim.id!)
+  await db.delete(agents).where(eq(agents.id, missing!.id))
+  await db.update(agents).set({ status: 'terminated' }).where(eq(agents.id, terminated!.id))
+
+  // A live acquisition expires both claims before reconciliation repairs owners.
+  await expect(claimSlot(squad.id, 'tests', next!.id)).resolves.toMatchObject({ outcome: 'granted' })
+  await reconcileSlotsOnce()
+  await reconcileSlotsOnce()
+
+  const reminders = await db
+    .select()
+    .from(slotNotifications)
+    .where(and(eq(slotNotifications.poolId, pool.id), eq(slotNotifications.kind, 'expired')))
+  expect(reminders.map((row) => [row.recipientAgentId, row.status, row.lastErrorCode, row.inboxId]).toSorted()).toEqual(
+    [
+      [missing!.id, 'delivered', 'recipient_missing', null],
+      [terminated!.id, 'delivered', 'recipient_terminated', null],
+    ].toSorted()
+  )
+  expect(
+    await db
+      .select()
+      .from(inbox)
+      .where(inArray(inbox.recipientId, [missing!.id, terminated!.id]))
+  ).toHaveLength(0)
 })

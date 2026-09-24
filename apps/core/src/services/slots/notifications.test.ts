@@ -241,8 +241,30 @@ test('expiry text states that ownership is invalid without claiming external wor
     attempts: 1,
     expiresAt: claim!.expiresAt,
   })
-  expect(text).toContain('expired and is no longer valid')
-  expect(text).toContain('Tau did not stop any external work')
+  expect(text).toContain(`expired at ${claim!.expiresAt.toISOString()}`)
+  expect(text).toContain('You no longer hold this capacity')
+  expect(text).toContain('Tau did not stop any work you started under this claim')
+})
+
+test('grant text gives the release and renew commands the CLI accepts', async () => {
+  const { notification } = await createFixture()
+  const [claim] = await db.select().from(slotClaims).where(eq(slotClaims.id, notification.claimId))
+  const text = renderSlotNotification({
+    notificationId: notification.id,
+    poolId: notification.poolId,
+    poolKey: 'tests',
+    squadId: crypto.randomUUID(),
+    claimId: notification.claimId,
+    recipientAgentId: notification.recipientAgentId,
+    kind: 'granted',
+    idempotencyKey: notification.idempotencyKey,
+    claimToken: crypto.randomUUID(),
+    attempts: 1,
+    expiresAt: claim!.expiresAt,
+  })
+  // `tau slot release|renew <claim-id>`: the pool and squad are not arguments.
+  expect(text).toContain(`Release: tau slot release ${notification.claimId}\n`)
+  expect(text).toMatch(new RegExp(`Renew: tau slot renew ${notification.claimId}$`))
 })
 
 test('delivery to a dormant recipient is durable and does not wake it', async () => {
