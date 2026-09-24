@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from 'react'
 import { type CustomThemeDocument, type ThemePreset, type AppearanceSetting } from '@tau/shared'
-import { findWebTheme, resolveWebTheme } from '../theme/registry'
+import { findWebTheme, resolveWebTheme, type WebThemeDefinition } from '../theme/registry'
 import { tokenColor } from '../theme/tokenReader'
 import { applyResolvedTheme } from '../theme/apply'
 import { getThemeStorage, persistSurfaceSnapshot } from '../theme/storage'
@@ -114,6 +114,44 @@ function readSystemPrefersDark(): boolean {
   }
 }
 
+/** Derives a palette document's OTHER (currently non-visible) resolved side
+ * off-screen, for the resolved-theme snapshot — a 'system'-appearance user's
+ * OS preference can flip between this real paint and the next cold load's
+ * pre-paint script, so only having a snapshot for the CURRENTLY visible side
+ * would flash the plain base theme after such a flip while a fresh
+ * derivation catches up.
+ *
+ * Reuses the same `[data-theme-scope][data-theme][data-appearance]`
+ * attribute-selector scoping the built-in CSS already defines for nested
+ * previews (ThemeQuickPicker's circles, the editor's contrast probes) — a
+ * detached-looking, zero-size, visibility:hidden element gets that side's
+ * base tokens from the SAME cascade the visible root uses, via
+ * getComputedStyle, without ever painting anything on screen. */
+function readOtherSideDerivedVars(
+  base: WebThemeDefinition,
+  otherSide: 'light' | 'dark',
+  custom: CustomThemeDocument
+): Record<string, string> | null {
+  const probe = document.createElement('div')
+  probe.setAttribute('data-theme-scope', '')
+  probe.setAttribute('data-theme', base.id)
+  probe.setAttribute('data-appearance', otherSide)
+  probe.style.position = 'absolute'
+  probe.style.width = '0'
+  probe.style.height = '0'
+  probe.style.overflow = 'hidden'
+  probe.style.visibility = 'hidden'
+  probe.style.pointerEvents = 'none'
+  document.body.appendChild(probe)
+  try {
+    return applyCustomTheme(probe, custom, otherSide)
+  } catch {
+    return null
+  } finally {
+    probe.remove()
+  }
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   // The stored selection is read once, synchronously: legacy 'tau-theme'
   // values migrate here, unreadable values fall back to the defaults.
@@ -197,7 +235,27 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         // (derivation-enabled) root paint. Lets the next cold load's
         // pre-paint script apply this exact resolved result instead of
         // flashing the plain base theme while it waits for a real repaint.
+        //
+        // This also runs for a storage-event-driven repaint (another tab
+        // changed the selection) — harmless, not just redundant: `vars` is a
+        // pure function of (doc, base tokens), so every tab derives the
+        // IDENTICAL value for the same (doc, appearance) pair, and
+        // RESOLVED_SNAPSHOT_KEY is never one of the keys `onStorage` below
+        // reacts to, so writing it can never itself trigger another
+        // storage-event repaint (no feedback loop).
         persistResolvedSnapshot(getThemeStorage(), custom, resolvedAppearance, vars)
+        // A 'system'-appearance user's OS can flip while this tab is open or
+        // between sessions; snapshot the OTHER resolved side too (derived
+        // off-screen) so a flip never flashes. Only worth the extra
+        // derivation for a palette document on a dual-kind base — an
+        // explicit-only document's other side needs no cascade/
+        // getComputedStyle at all (the flash script's fallback path already
+        // gets it exactly right), and a unified base has no other side.
+        if (selection.appearance === 'system' && custom.palette && resolvedThemeDefinition.kind === 'dual') {
+          const otherSide = resolvedAppearance === 'dark' ? 'light' : 'dark'
+          const otherVars = readOtherSideDerivedVars(resolvedThemeDefinition, otherSide, custom)
+          if (otherVars) persistResolvedSnapshot(getThemeStorage(), custom, otherSide, otherVars)
+        }
       } catch {
         store.recoverCustom()
         return

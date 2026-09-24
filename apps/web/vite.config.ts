@@ -6,6 +6,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import path from 'path'
 import { VitePWA } from 'vite-plugin-pwa'
 import { DEV_ACCESS_COOKIE, DEV_ACCESS_HEADER, requestHasDevAccess, stripDevAccessCookie } from './devAccess'
+import { fnv1a } from './src/theme/fnv'
 
 const DEV_BACKEND_CONTROL_PATH = '/__tau_dev'
 const DEV_ACCESS_LOGIN_PATH = `${DEV_BACKEND_CONTROL_PATH}/login`
@@ -421,6 +422,24 @@ function resolveBuildId(): string {
   }
 }
 
+/**
+ * Hash of index.css's + builtins.css's own content (the two files that
+ * define every built-in theme's own token values), baked in as
+ * __TAU_BUILTIN_CSS_FINGERPRINT__ (theme/builtinFingerprint.ts). Unlike
+ * resolveBuildId (which changes on every commit — right for SW cache
+ * versioning, wrong here), this changes ONLY when these two files' content
+ * changes, so a persisted resolved-theme snapshot (custom.ts) stays valid
+ * across unrelated deploys and is invalidated exactly when it should be.
+ * generate-theme-flash.ts computes the SAME hash from the SAME files for the
+ * separately-bundled pre-paint script, so both agree on the value for a
+ * given source tree without either needing to run inside the other's build.
+ */
+function computeBuiltinCssFingerprint(): string {
+  const indexCss = readFileSync(path.resolve(process.cwd(), 'src/index.css'), 'utf8')
+  const builtinsCss = readFileSync(path.resolve(process.cwd(), 'src/theme/builtins.css'), 'utf8')
+  return fnv1a(`${indexCss}\u0000${builtinsCss}`)
+}
+
 export default defineConfig(({ mode, command }) => {
   const env = loadEnv(mode, path.resolve(process.cwd(), '../..'), ['VITE_', 'APP_'])
   const deployedBase = env.APP_BASE_PATH ? env.APP_BASE_PATH.replace(/\/?$/, '/') : '/'
@@ -429,6 +448,7 @@ export default defineConfig(({ mode, command }) => {
   const base = isViteDev ? '/' : deployedBase
   const proxyRoot = isViteDev ? '' : deployedBase.replace(/\/?$/, '')
   const serviceWorkerCacheVersion = resolveBuildId()
+  const builtinCssFingerprint = computeBuiltinCssFingerprint()
   const devAccessToken = isViteDev ? process.env.TAU_DEV_ACCESS_TOKEN?.trim() : undefined
   const devBackendState: MutableDevProxyState = {
     selectedLabel: isViteDev ? (process.env.TAU_DEV_BACKEND ?? LOCAL_BACKEND_LABEL) : LOCAL_BACKEND_LABEL,
@@ -442,6 +462,7 @@ export default defineConfig(({ mode, command }) => {
     base,
     define: {
       __TAU_SW_CACHE_VERSION__: JSON.stringify(serviceWorkerCacheVersion),
+      __TAU_BUILTIN_CSS_FINGERPRINT__: JSON.stringify(builtinCssFingerprint),
       __TAU_APP_URL__: JSON.stringify(env.APP_URL || ''),
       __TAU_APP_BASE_PATH__: JSON.stringify(env.APP_BASE_PATH || ''),
       __TAU_DEV_BACKEND_BAR__: JSON.stringify(isViteDev),

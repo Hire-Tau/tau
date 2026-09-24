@@ -369,6 +369,8 @@ describe('pre-paint flash script: custom theme documents (v1 still loads; v2 res
 describe('pre-paint flash script: persisted resolved snapshot (palette presets paint their derived look, not the base theme)', () => {
   test('a matching resolved snapshot paints its derived (non-explicit) values before paint', async () => {
     const { hashCustomThemeDocument } = await import('./custom')
+    const { computeBuiltinCssFingerprint } = await import('../../scripts/generate-theme-flash')
+    const BUILTIN_CSS_FINGERPRINT = await computeBuiltinCssFingerprint()
     const { validateCustomTheme } = await import('@tau/shared')
     const rawDoc = {
       format: 'tau-custom-theme',
@@ -386,11 +388,14 @@ describe('pre-paint flash script: persisted resolved snapshot (palette presets p
       'tau-custom-theme': JSON.stringify(rawDoc),
       'tau-custom-theme-resolved': JSON.stringify({
         docHash: hashCustomThemeDocument(validated.document),
-        appearance: 'dark',
-        // A derived (not explicitly overridden) token: proves this came from
-        // the snapshot, not the explicit-overrides-only fallback path (which
-        // would leave it empty, since the palette has no explicit variants).
-        vars: { '--color-primary': '14 165 233', '--color-primary-hover': '9 130 199' },
+        fingerprint: BUILTIN_CSS_FINGERPRINT,
+        sides: {
+          // A derived (not explicitly overridden) token: proves this came
+          // from the snapshot, not the explicit-overrides-only fallback path
+          // (which would leave it empty, since the palette has no explicit
+          // variants).
+          dark: { '--color-primary': '14 165 233', '--color-primary-hover': '9 130 199' },
+        },
       }),
     })
     const dom = installDomHarness({ url: 'http://localhost/' })
@@ -405,8 +410,10 @@ describe('pre-paint flash script: persisted resolved snapshot (palette presets p
     }
   })
 
-  test('a stale snapshot (edited document, or the other resolved appearance) is ignored — falls back to explicit-overrides-only', async () => {
+  test('a stale snapshot (edited document, a different build, or the other resolved appearance) is ignored — falls back to explicit-overrides-only', async () => {
     const { hashCustomThemeDocument } = await import('./custom')
+    const { computeBuiltinCssFingerprint } = await import('../../scripts/generate-theme-flash')
+    const BUILTIN_CSS_FINGERPRINT = await computeBuiltinCssFingerprint()
     const { validateCustomTheme } = await import('@tau/shared')
     const doc = {
       format: 'tau-custom-theme',
@@ -420,12 +427,22 @@ describe('pre-paint flash script: persisted resolved snapshot (palette presets p
     if (!validated.ok) throw new Error(validated.error)
     for (const badSnapshot of [
       // Wrong docHash: as if the document were edited after the snapshot was taken.
-      JSON.stringify({ docHash: 'stale', appearance: 'dark', vars: { '--color-primary': '99 99 99' } }),
-      // Right hash, wrong appearance: as if only the OTHER side was ever snapshotted.
+      JSON.stringify({
+        docHash: 'stale',
+        fingerprint: BUILTIN_CSS_FINGERPRINT,
+        sides: { dark: { '--color-primary': '99 99 99' } },
+      }),
+      // Right hash, wrong fingerprint: as if a deploy changed a built-in token.
       JSON.stringify({
         docHash: hashCustomThemeDocument(validated.document),
-        appearance: 'light',
-        vars: { '--color-primary': '99 99 99' },
+        fingerprint: 'a-different-build',
+        sides: { dark: { '--color-primary': '99 99 99' } },
+      }),
+      // Right hash and fingerprint, wrong side: as if only the OTHER side was ever snapshotted.
+      JSON.stringify({
+        docHash: hashCustomThemeDocument(validated.document),
+        fingerprint: BUILTIN_CSS_FINGERPRINT,
+        sides: { light: { '--color-primary': '99 99 99' } },
       }),
     ]) {
       const storage = memoryStorage({
@@ -482,12 +499,24 @@ describe('pre-paint flash script: persisted resolved snapshot (palette presets p
       document.body.append(preview)
       // Real end-to-end derivation (real built-in CSS cascade), exactly the
       // path ThemeProvider's root paint uses to produce what it persists.
-      const vars = applyCustomTheme(preview, validated.document, 'dark')
-      const raw = JSON.stringify({ docHash: hashCustomThemeDocument(validated.document), appearance: 'dark', vars })
+      const { computeBuiltinCssFingerprint } = await import('../../scripts/generate-theme-flash')
+      const BUILTIN_CSS_FINGERPRINT = await computeBuiltinCssFingerprint()
+      // BOTH sides land in the same snapshot for a 'system'-appearance user
+      // (see persistResolvedSnapshot/readResolvedSnapshot), so the realistic
+      // worst case — and what this budget must actually hold — is the pair,
+      // not just one side.
+      const darkVars = applyCustomTheme(preview, validated.document, 'dark')
+      const lightVars = applyCustomTheme(preview, validated.document, 'light')
+      const raw = JSON.stringify({
+        docHash: hashCustomThemeDocument(validated.document),
+        fingerprint: BUILTIN_CSS_FINGERPRINT,
+        sides: { dark: darkVars, light: lightVars },
+      })
       expect(new TextEncoder().encode(raw).length).toBeLessThan(RESOLVED_SNAPSHOT_MAX_BYTES)
       // Comfortably bounded, not just "under the cap": documents the actual
-      // realistic magnitude for a full palette+harmonized-status theme.
-      expect(new TextEncoder().encode(raw).length).toBeLessThan(100 * 1024)
+      // realistic magnitude for a full palette+harmonized-status theme, BOTH
+      // sides included.
+      expect(new TextEncoder().encode(raw).length).toBeLessThan(180 * 1024)
     } finally {
       await dom.cleanup()
     }

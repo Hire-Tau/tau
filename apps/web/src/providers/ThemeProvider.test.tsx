@@ -388,8 +388,10 @@ test('a real root paint persists a resolved pre-paint snapshot matching the appl
   const { hashCustomThemeDocument } = await import('../theme/custom')
   const stored = JSON.parse(localStorage.getItem('tau-custom-theme-resolved')!)
   expect(stored.docHash).toBe(hashCustomThemeDocument(doc))
-  expect(stored.appearance).toBe('light')
-  expect(stored.vars['--color-primary']).toBe('18 52 86')
+  // No palette here (explicit-only document): only the visible side is
+  // snapshotted, not the other (see the 'system'-appearance both-sides test below).
+  expect(Object.keys(stored.sides)).toEqual(['light'])
+  expect(stored.sides.light['--color-primary']).toBe('18 52 86')
 
   await act(async () => {
     theme.setThemeId('harbor')
@@ -442,4 +444,66 @@ test("the preview slot: last registrant wins, and a superseded registrant's clea
   // entirely, falling back to harbor/dark's own CSS-cascade value.
   await act(async () => clearB!())
   expect(el.style.getPropertyValue('--color-text-primary')).toBe('')
+})
+
+test('a system-appearance palette preset snapshots BOTH resolved sides, not just the visible one', async () => {
+  const { dom, setSystemPrefersDark } = await installThemeDom()
+  // A minimal but real, correctly-scoped stylesheet: the visible root uses
+  // the plain :root[data-theme=...] selector, and the SAME rule also matches
+  // [data-theme-scope][data-theme=...] — the attribute-scoping convention the
+  // off-screen probe (readOtherSideDerivedVars) relies on to read the OTHER
+  // side's base tokens without ever painting it. Light/dark values are
+  // deliberately different so a real per-side derivation is provable.
+  const sheet = document.createElement('style')
+  sheet.textContent = `
+    :root[data-theme='harbor'][data-appearance='light'], [data-theme-scope][data-theme='harbor'][data-appearance='light'] {
+      --color-primary: 100 100 100;
+      --color-bg-page: 255 255 255;
+    }
+    :root[data-theme='harbor'][data-appearance='dark'], [data-theme-scope][data-theme='harbor'][data-appearance='dark'] {
+      --color-primary: 10 10 10;
+      --color-bg-page: 0 0 0;
+    }
+  `
+  document.head.append(sheet)
+  localStorage.setItem('tau-theme-id', 'harbor')
+  localStorage.setItem('tau-appearance', 'system')
+  await setSystemPrefersDark(false) // starts light
+  let theme!: ReturnType<typeof useTheme>
+  function Controls() {
+    theme = useTheme()
+    return null
+  }
+  const { root } = dom.createRoot()
+  await act(async () => {
+    root.render(
+      <ThemeProvider>
+        <Controls />
+      </ThemeProvider>
+    )
+  })
+  const doc = {
+    format: 'tau-custom-theme' as const,
+    version: 2 as const,
+    name: 'System palette',
+    base: 'harbor',
+    palette: { primary: '#0ea5e9' },
+    variants: { light: {}, dark: {} },
+  }
+  await act(async () => {
+    theme.applyCustom(doc)
+  })
+  const stored = JSON.parse(localStorage.getItem('tau-custom-theme-resolved')!)
+  expect(Object.keys(stored.sides).sort()).toEqual(['dark', 'light'])
+  expect(stored.sides.light['--color-primary']).toBeDefined()
+  expect(stored.sides.dark['--color-primary']).toBeDefined()
+  // Genuinely different per-side derivation, not the same value copied twice
+  // (the light/dark base primaries above are far enough apart in lightness
+  // to guarantee the palette derivation's offset produces different results).
+  expect(stored.sides.light['--color-primary']).not.toBe(stored.sides.dark['--color-primary'])
+
+  // The OTHER (currently non-visible, dark) side's snapshot works pre-paint
+  // too — this is the actual flash-avoidance payoff, not just a storage detail.
+  const { readResolvedSnapshot } = await import('../theme/custom')
+  expect(readResolvedSnapshot(localStorage, theme.customTheme!, 'dark')).toEqual(stored.sides.dark)
 })

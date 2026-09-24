@@ -464,14 +464,15 @@ test('readResolvedSnapshot ignores a stale snapshot: edited document, or a diffe
 })
 
 test('readResolvedSnapshot only applies known registry property names, dropping anything else', async () => {
-  const { persistResolvedSnapshot, readResolvedSnapshot, hashCustomThemeDocument } = await import('./custom')
+  const { readResolvedSnapshot, hashCustomThemeDocument } = await import('./custom')
+  const { BUILTIN_CSS_FINGERPRINT } = await import('./builtinFingerprint')
   const storage = memoryStorage()
   storage.setItem(
     'tau-custom-theme-resolved',
     JSON.stringify({
       docHash: hashCustomThemeDocument(paletteDoc),
-      appearance: 'dark',
-      vars: { '--color-primary': '1 2 3', '--not-a-real-token': 'x', 'background-color': 'red' },
+      fingerprint: BUILTIN_CSS_FINGERPRINT,
+      sides: { dark: { '--color-primary': '1 2 3', '--not-a-real-token': 'x', 'background-color': 'red' } },
     })
   )
   expect(readResolvedSnapshot(storage, paletteDoc, 'dark')).toEqual({ '--color-primary': '1 2 3' })
@@ -479,6 +480,7 @@ test('readResolvedSnapshot only applies known registry property names, dropping 
 
 test('readResolvedSnapshot rejects the WHOLE snapshot if any known-token value is not a compiled channel string', async () => {
   const { readResolvedSnapshot, hashCustomThemeDocument } = await import('./custom')
+  const { BUILTIN_CSS_FINGERPRINT } = await import('./builtinFingerprint')
   const hostileValues = [
     'red', // a CSS color keyword, not the compiled "r g b" grammar
     'rgb(1, 2, 3)', // unparsed rgb() syntax, not the post-compile form
@@ -495,8 +497,8 @@ test('readResolvedSnapshot rejects the WHOLE snapshot if any known-token value i
       'tau-custom-theme-resolved',
       JSON.stringify({
         docHash: hashCustomThemeDocument(paletteDoc),
-        appearance: 'dark',
-        vars: { '--color-primary': hostile, '--custom-rgb-color-primary': '14 165 233' },
+        fingerprint: BUILTIN_CSS_FINGERPRINT,
+        sides: { dark: { '--color-primary': hostile, '--custom-rgb-color-primary': '14 165 233' } },
       })
     )
     expect(readResolvedSnapshot(storage, paletteDoc, 'dark')).toBeNull()
@@ -508,8 +510,8 @@ test('readResolvedSnapshot rejects the WHOLE snapshot if any known-token value i
       'tau-custom-theme-resolved',
       JSON.stringify({
         docHash: hashCustomThemeDocument(paletteDoc),
-        appearance: 'dark',
-        vars: { '--color-primary': '1 2 3', '--custom-alpha-color-primary': hostileAlpha },
+        fingerprint: BUILTIN_CSS_FINGERPRINT,
+        sides: { dark: { '--color-primary': '1 2 3', '--custom-alpha-color-primary': hostileAlpha } },
       })
     )
     expect(readResolvedSnapshot(storage, paletteDoc, 'dark')).toBeNull()
@@ -520,12 +522,14 @@ test('readResolvedSnapshot rejects the WHOLE snapshot if any known-token value i
     'tau-custom-theme-resolved',
     JSON.stringify({
       docHash: hashCustomThemeDocument(paletteDoc),
-      appearance: 'dark',
-      vars: {
-        '--color-primary': '14 165 233',
-        '--custom-rgb-color-primary': '14 165 233',
-        '--custom-alpha-color-primary': '1',
-        '--term-bg': '1 2 3 / 0.5',
+      fingerprint: BUILTIN_CSS_FINGERPRINT,
+      sides: {
+        dark: {
+          '--color-primary': '14 165 233',
+          '--custom-rgb-color-primary': '14 165 233',
+          '--custom-alpha-color-primary': '1',
+          '--term-bg': '1 2 3 / 0.5',
+        },
       },
     })
   )
@@ -535,6 +539,34 @@ test('readResolvedSnapshot rejects the WHOLE snapshot if any known-token value i
     '--custom-alpha-color-primary': '1',
     '--term-bg': '1 2 3 / 0.5',
   })
+})
+
+test('readResolvedSnapshot rejects a snapshot from a different build (fingerprint mismatch)', async () => {
+  const { readResolvedSnapshot, hashCustomThemeDocument } = await import('./custom')
+  const storage = memoryStorage()
+  storage.setItem(
+    'tau-custom-theme-resolved',
+    JSON.stringify({
+      docHash: hashCustomThemeDocument(paletteDoc),
+      fingerprint: 'a-stale-build-that-had-different-builtin-tokens',
+      sides: { dark: { '--color-primary': '14 165 233' } },
+    })
+  )
+  expect(readResolvedSnapshot(storage, paletteDoc, 'dark')).toBeNull()
+})
+
+test('persistResolvedSnapshot stores BOTH resolved sides for the same document, so a system-appearance OS flip has a snapshot either way', async () => {
+  const { persistResolvedSnapshot, readResolvedSnapshot } = await import('./custom')
+  const storage = memoryStorage()
+  const lightVars = { '--color-primary': '1 1 1' }
+  const darkVars = { '--color-primary': '2 2 2' }
+  // The real paint persists its own (light) side...
+  persistResolvedSnapshot(storage, paletteDoc, 'light', lightVars)
+  // ...and separately, the off-screen-derived OTHER (dark) side, merged into
+  // the SAME stored snapshot rather than overwriting it.
+  persistResolvedSnapshot(storage, paletteDoc, 'dark', darkVars)
+  expect(readResolvedSnapshot(storage, paletteDoc, 'light')).toEqual(lightVars)
+  expect(readResolvedSnapshot(storage, paletteDoc, 'dark')).toEqual(darkVars)
 })
 
 test('persistResolvedSnapshot skips (never writes) an oversized snapshot', async () => {

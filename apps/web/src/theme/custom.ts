@@ -6,6 +6,8 @@ import {
   type CustomThemeDocument,
 } from '@tau/shared/custom-theme'
 import { applyResolvedTheme } from './apply'
+import { BUILTIN_CSS_FINGERPRINT } from './builtinFingerprint'
+import { fnv1a } from './fnv'
 import { BUILT_IN_THEMES, findWebTheme } from './registry'
 import {
   LEGACY_SURFACE_COLOR_KEY,
@@ -55,25 +57,51 @@ export function clearCustomTheme(storage: ThemeStorage | null) {
  * exactly when a stored resolved snapshot is stale — any change to the
  * document (a palette seed, an explicit override, even the name) changes it. */
 export function hashCustomThemeDocument(doc: CustomThemeDocument): string {
-  const json = JSON.stringify(doc)
-  let hash = 0x811c9dc5 // FNV-1a 32-bit offset basis
-  for (let i = 0; i < json.length; i++) {
-    hash ^= json.charCodeAt(i)
-    hash = Math.imul(hash, 0x01000193)
-  }
-  return (hash >>> 0).toString(36)
+  return fnv1a(JSON.stringify(doc))
 }
 
 interface ResolvedThemeSnapshot {
   docHash: string
-  appearance: EffectiveAppearance
-  vars: Record<string, string>
+  /** See theme/builtinFingerprint.ts: invalidates every stored side when a
+   * deploy changes a built-in token's own value, not just when the document
+   * itself changes. */
+  fingerprint: string
+  /** Both resolved sides ('light'/'dark', or just 'constant' for a unified
+   * base) CAN be present — a 'system'-appearance user's OS can flip between
+   * this real paint and the next cold load's pre-paint script, and only a
+   * snapshot covering the side that's ACTUALLY about to render avoids a
+   * flash. Absent entries just mean that side has never been painted (or was
+   * dropped by the byte cap below) — never treated differently from a
+   * completely missing snapshot. */
+  sides: Partial<Record<EffectiveAppearance, Record<string, string>>>
 }
 
-/** Persists the exact compiled vars `applyCustomTheme` just wrote to the root,
- * keyed to the document that produced them and the resolved appearance they
- * are for. Only ever called for the ACTIVE document (ThemeProvider's own root
- * paint) — never for a library preset that is not currently applied. */
+function readRawSnapshot(storage: ThemeStorage | null, doc: CustomThemeDocument): ResolvedThemeSnapshot | null {
+  const raw = storage?.getItem(RESOLVED_SNAPSHOT_KEY)
+  if (!raw) return null
+  const parsed = JSON.parse(raw) as Partial<ResolvedThemeSnapshot>
+  if (
+    !parsed ||
+    typeof parsed.docHash !== 'string' ||
+    parsed.docHash !== hashCustomThemeDocument(doc) ||
+    parsed.fingerprint !== BUILTIN_CSS_FINGERPRINT ||
+    !parsed.sides ||
+    typeof parsed.sides !== 'object'
+  )
+    return null
+  return parsed as ResolvedThemeSnapshot
+}
+
+/** Persists the exact compiled vars `applyCustomTheme` just wrote for ONE
+ * resolved side, keyed to the document that produced them, MERGED with
+ * whatever the snapshot already holds for the OTHER side — as long as that
+ * existing snapshot is for the SAME document and build (its docHash and
+ * fingerprint still match; anything else starts a fresh one, dropping a
+ * stale other-side entry rather than keeping it under a doc/build it no
+ * longer describes). Only ever called for the ACTIVE document (ThemeProvider's
+ * own root paint, for its own resolved side and — for a 'system'-appearance,
+ * dual-base palette document — the off-screen-derived other side too) — never
+ * for a library preset that is not currently applied. */
 export function persistResolvedSnapshot(
   storage: ThemeStorage | null,
   doc: CustomThemeDocument,
@@ -81,7 +109,12 @@ export function persistResolvedSnapshot(
   vars: Record<string, string>
 ): void {
   try {
-    const snapshot: ResolvedThemeSnapshot = { docHash: hashCustomThemeDocument(doc), appearance, vars }
+    const existing = readRawSnapshot(storage, doc)
+    const snapshot: ResolvedThemeSnapshot = {
+      docHash: hashCustomThemeDocument(doc),
+      fingerprint: BUILTIN_CSS_FINGERPRINT,
+      sides: { ...existing?.sides, [appearance]: vars },
+    }
     const raw = JSON.stringify(snapshot)
     if (new TextEncoder().encode(raw).length > RESOLVED_SNAPSHOT_MAX_BYTES) return
     storage?.setItem(RESOLVED_SNAPSHOT_KEY, raw)
@@ -113,42 +146,34 @@ function isCompiledAlphaValue(value: string): boolean {
   return isBoundedDecimal(value, 0, 1)
 }
 
-/** Reads a resolved snapshot only when it exactly matches this document and
- * appearance; a different document (edited elsewhere), a different resolved
- * side (e.g. a 'system' OS flip with no snapshot for that side), corrupt
- * JSON, or no snapshot at all all return null — callers fall back to the
- * explicit-overrides-only pre-paint path. Property names are filtered to the
- * registry-owned set (custom.ts's only write surface) before use, even though
- * this key is same-origin-only: defense in depth, matching applyCustomTheme's
- * own "only individually validated, registry-owned properties" contract.
+/** Reads a resolved snapshot only when it exactly matches this document, this
+ * build (see the fingerprint doc above), and has an entry for this resolved
+ * appearance; a different document (edited elsewhere), a stale build, a
+ * resolved side that was never snapshotted, corrupt JSON, or no snapshot at
+ * all all return null — callers fall back to the explicit-overrides-only
+ * pre-paint path. Property names are filtered to the registry-owned set
+ * (custom.ts's only write surface) before use, even though this key is
+ * same-origin-only: defense in depth, matching applyCustomTheme's own "only
+ * individually validated, registry-owned properties" contract.
  *
  * Unlike names (silently dropped if unrecognized), a VALUE that doesn't match
- * the exact compiled grammar for its token kind rejects the ENTIRE snapshot
- * (never partially applies it) — this is untrusted, pre-paint,
- * directly-`style.setProperty`-bound data written by a past version of this
- * same code, but localStorage can be edited by anything with same-origin
- * script access, so it gets the same "never trust, always reparse" treatment
- * as everything else on this boundary. */
+ * the exact compiled grammar for its token kind rejects the ENTIRE (this
+ * side's) snapshot (never partially applies it) — this is untrusted,
+ * pre-paint, directly-`style.setProperty`-bound data written by a past
+ * version of this same code, but localStorage can be edited by anything with
+ * same-origin script access, so it gets the same "never trust, always
+ * reparse" treatment as everything else on this boundary. */
 export function readResolvedSnapshot(
   storage: ThemeStorage | null,
   doc: CustomThemeDocument,
   appearance: EffectiveAppearance
 ): Record<string, string> | null {
   try {
-    const raw = storage?.getItem(RESOLVED_SNAPSHOT_KEY)
-    if (!raw) return null
-    const parsed = JSON.parse(raw) as Partial<ResolvedThemeSnapshot>
-    if (
-      !parsed ||
-      typeof parsed.docHash !== 'string' ||
-      parsed.docHash !== hashCustomThemeDocument(doc) ||
-      parsed.appearance !== appearance ||
-      !parsed.vars ||
-      typeof parsed.vars !== 'object'
-    )
-      return null
+    const snapshot = readRawSnapshot(storage, doc)
+    const sideVars = snapshot?.sides[appearance]
+    if (!sideVars || typeof sideVars !== 'object') return null
     const vars: Record<string, string> = {}
-    for (const [name, value] of Object.entries(parsed.vars)) {
+    for (const [name, value] of Object.entries(sideVars)) {
       if (!customProperties.has(name)) continue
       if (typeof value !== 'string') return null
       const valid = name.startsWith('--custom-alpha-') ? isCompiledAlphaValue(value) : isCompiledChannelValue(value)
