@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ThemePreset } from '@tau/shared'
 import { isHttpResponseError } from '@tau/client-core'
 import type { useTheme } from '../../providers/ThemeProvider'
+import { selfServiceQueryEnabled, useOptionalAuth } from '../../providers/AuthProvider'
 import { client } from '../../api/clientInstance'
 import { queries } from '../../queryOptions'
 import { themePresetQueryKeys } from '../../queryKeys'
@@ -40,7 +41,11 @@ function PresetSwatch({ preset, currentAppearance }: { preset: ThemePreset; curr
 }
 
 export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useTheme> }) {
-  const { data: presets = [] } = useQuery(queries.themePresets.list())
+  // Gated identically to AppNav's ThemeQuickPicker presets query (see
+  // selfServiceQueryEnabled) — an auth-disabled instance must see its
+  // presets here too, not just in the quick picker.
+  const auth = useOptionalAuth()
+  const { data: presets = [] } = useQuery({ ...queries.themePresets.list(), enabled: selfServiceQueryEnabled(auth) })
   const cache = useQueryClient()
   const [editing, setEditing] = useState<EditorTarget | null>(null)
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null)
