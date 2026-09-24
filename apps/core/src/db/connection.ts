@@ -1,5 +1,6 @@
 import postgres from 'postgres'
 import net from 'node:net'
+import { Duplex } from 'node:stream'
 import { createLogger } from '../lib/infra/logger'
 import { resolveDatabaseTls } from './tls'
 
@@ -227,41 +228,90 @@ export function createBunTlsSafeSocketFactory(connect: typeof net.connect = net.
     // pickup.test.ts's restart matrix — a spawned worker whose first DB
     // query never came back, killed only by the test timeout, stderr empty.
     // Honouring connect_timeout here restores the same bound the default
-    // (factory-less) path has, as a rejection postgres.js already handles
-    // (its createSocket catch routes it through error(), failing queries
-    // fast and loud instead of hanging them).
+    // (factory-less) path has. The failure is reported through the socket
+    // itself (see failedConnection), not as a rejection, so postgres.js
+    // releases the connection instead of leaking its pool slot.
     const timeoutSeconds = Number(options.connect_timeout)
     const timeoutMs = Number.isFinite(timeoutSeconds) && timeoutSeconds > 0 ? timeoutSeconds * 1000 : 30_000
-    await new Promise<void>((resolve, reject) => {
-      const cleanup = () => {
-        clearTimeout(timer)
-        socket.off('connect', onConnect)
-        socket.off('error', onError)
-      }
-      const onError = (error: Error) => {
-        cleanup()
-        reject(error)
-      }
-      const onConnect = () => {
-        cleanup()
-        resolve()
-      }
-      const timer = setTimeout(() => {
-        cleanup()
-        socket.destroy()
-        // `path` is `false` (not undefined) in postgres.js's options when unused.
-        const target = options.path ? options.path : `${host ?? 'localhost'}:${port ?? 5432}`
-        reject(
-          Object.assign(new Error(`CONNECT_TIMEOUT ${target}: TCP connect did not complete within ${timeoutMs}ms`), {
-            code: 'CONNECT_TIMEOUT',
-          })
-        )
-      }, timeoutMs)
-      socket.once('connect', onConnect)
-      socket.once('error', onError)
-    })
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const cleanup = () => {
+          clearTimeout(timer)
+          socket.off('connect', onConnect)
+          socket.off('error', onError)
+        }
+        const onError = (error: Error) => {
+          cleanup()
+          reject(error)
+        }
+        const onConnect = () => {
+          cleanup()
+          resolve()
+        }
+        const timer = setTimeout(() => {
+          cleanup()
+          socket.destroy()
+          // `path` is `false` (not undefined) in postgres.js's options when unused.
+          const target = options.path ? options.path : `${host ?? 'localhost'}:${port ?? 5432}`
+          reject(
+            Object.assign(new Error(`CONNECT_TIMEOUT ${target}: TCP connect did not complete within ${timeoutMs}ms`), {
+              code: 'CONNECT_TIMEOUT',
+            })
+          )
+        }, timeoutMs)
+        socket.once('connect', onConnect)
+        socket.once('error', onError)
+      })
+    } catch (error) {
+      return failedConnection(socket, error as Error, { host, port: port === undefined ? undefined : Number(port) })
+    }
     return socket
   }
+}
+
+/**
+ * Report a failed connect the way postgres.js's own socket does: 'error', then
+ * 'close'. Do NOT reject instead. postgres.js answers a rejected socket factory
+ * with error() but never runs its closed() handler, so the connection is never
+ * released back to the pool: each failed connect (a database restart, a DNS
+ * blip, a connect timeout) permanently used up a pool slot, and once they were
+ * all gone every query on that client hung forever.
+ *
+ * The failed socket's own events race postgres.js attaching its listeners (its
+ * 'close' can land before or after), so it is discarded and postgres.js gets a
+ * stand-in that swallows writes and emits nothing by itself. postgres.js
+ * attaches its listeners as soon as the factory resolves, before setImmediate
+ * runs, so the failure then takes its normal release-and-reconnect path.
+ */
+function failedConnection(failed: net.Socket, error: Error, endpoint: { host?: string; port?: number }): net.Socket {
+  failed.destroy()
+  let reported = false
+  const report = () => {
+    if (reported) return
+    reported = true
+    clearTimeout(fallback)
+    // Never throw an unheard 'error' out of a timer; without a listener there is
+    // no pool connection to release.
+    if (standIn.listenerCount('error') > 0) standIn.emit('error', error)
+    standIn.emit('close', true)
+    standIn.destroy()
+  }
+  const standIn = new Duplex({
+    emitClose: false,
+    read() {},
+    write(_chunk, _encoding, callback) {
+      callback()
+      // postgres.js writes its startup (or SSL request) as soon as the factory
+      // resolves, batched and flushed on setImmediate. Fail only after that
+      // flush: closing first cancels the flush but leaves the batch behind,
+      // and the next connection's startup is queued behind it and never sent.
+      setImmediate(report)
+    },
+  })
+  // postgres.js always writes first; this only covers a caller that never does.
+  const fallback = setTimeout(report, 1_000)
+  Object.assign(standIn, endpoint)
+  return standIn as unknown as net.Socket
 }
 
 /** Named so a heap snapshot / listener dump says what this listener is for. */
