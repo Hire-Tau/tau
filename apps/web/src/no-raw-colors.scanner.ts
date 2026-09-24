@@ -157,6 +157,9 @@ const RELATIVE_CHANNEL_WORDS = new Set([
   'alpha',
   'none',
   'calc',
+  'min',
+  'max',
+  'clamp',
 ])
 
 /**
@@ -177,7 +180,7 @@ function relativeColorIsTokenOnly(rest: string): boolean {
   }
   if (!origin || !colorPartIsTokenOnly(origin)) return false
   const channels = trimmed.slice(origin.length).replace(/var\(--[\w-]+\)/g, '0')
-  if (!/^[\s\w.%+\-*/()]*$/.test(channels)) return false
+  if (!/^[\s\w.,%+\-*/()]*$/.test(channels)) return false
   return (channels.match(/[a-z]+/gi) ?? []).every((word) => RELATIVE_CHANNEL_WORDS.has(word))
 }
 

@@ -185,6 +185,7 @@ describe('raw-color detector', () => {
       'oklch(from rgb(var(--color-primary)) l c calc(h + 45))',
       'oklch(from rgb(var(--color-primary)) calc(l + 0.2) calc(c * 0.6) h)',
       'oklch(from var(--brand) l c h / 0.5)',
+      'oklch(from rgb(var(--color-primary)) 0.62 max(c, 0.14) calc(h + 30))',
     ])
       expect(scanSourceForRawColors('synthetic.css', source)).toEqual([])
     for (const source of [
