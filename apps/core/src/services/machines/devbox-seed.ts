@@ -96,13 +96,21 @@ export const AGENT_COMFORT_PACKAGES: readonly string[] = [
 ]
 
 /**
+ * bun is pinned to a Nixpkgs commit carrying the repository's `.bun-version`
+ * (1.4.2): the Jetify version index lags Nixpkgs, so `bun@latest` resolved to an
+ * older release than a squad toolchain's plain `bun`, leaving two versions on
+ * one box. Bump the ref together with `.bun-version`.
+ */
+const BUN_PACKAGE = 'github:NixOS/nixpkgs/8825bebf6324e0579d012936eff73379af284b6d#bun'
+
+/**
  * HEAVIER comfort set — mirrors packages/k8s-sandbox/sandbox/devbox.json (the
  * `squad` stage's baked toolchain). squad AND system-manager boxes run the heavy
  * runtime, so both get this set (agent boxes get the light one above).
  */
 export const SQUAD_COMFORT_PACKAGES: readonly string[] = [
   'nodejs_24@latest',
-  'bun@latest',
+  BUN_PACKAGE,
   'python3@latest',
   'ripgrep@latest',
   'fd@latest',
@@ -199,8 +207,48 @@ type DevboxMergeResult = {
   shouldWrite: boolean
 }
 
+/** A Nixpkgs pin (`github:NixOS/nixpkgs/<rev>#bun`) is named by its attribute. */
 function packageBaseName(pkg: string): string {
-  return pkg.split('@')[0]
+  const pinned = /^github:NixOS\/nixpkgs\/[^#]+#(.+)$/.exec(pkg)
+  return pinned ? pinned[1]! : pkg.split('@')[0]
+}
+
+/**
+ * Comfort specs an earlier Core wrote itself, mapped to what replaces them.
+ * Replacing only these exact specs upgrades existing boxes without overriding
+ * a version the user chose (`bun@1.2.0` stays).
+ */
+const SUPERSEDED_COMFORT_SPECS: Readonly<Record<string, string>> = { 'bun@latest': BUN_PACKAGE }
+
+function supersededBy(role: SeedBoxRole, spec: string): string | undefined {
+  const replacement = SUPERSEDED_COMFORT_SPECS[spec]
+  return replacement && packagesForRole(role).includes(replacement) ? replacement : undefined
+}
+
+/** Swap Core's own superseded specs in place, keeping the file's shape and order. */
+function replaceSupersededSpecs(
+  role: SeedBoxRole,
+  packages: DevboxPackageList | DevboxPackageMap
+): { packages: DevboxPackageList | DevboxPackageMap; replaced: boolean } {
+  let replaced = false
+  if (Array.isArray(packages)) {
+    const next = packages.map((spec) => {
+      const replacement = supersededBy(role, spec)
+      if (!replacement) return spec
+      replaced = true
+      return replacement
+    })
+    return { packages: next, replaced }
+  }
+  const next = Object.fromEntries(
+    Object.entries(packages).map(([name, value]) => {
+      const replacement = typeof value === 'string' ? supersededBy(role, value ? `${name}@${value}` : name) : undefined
+      if (!replacement) return [name, value]
+      replaced = true
+      return splitPackageSpec(replacement)
+    })
+  )
+  return { packages: next, replaced }
 }
 
 /** `nodejs_24@latest` → `["nodejs_24", "latest"]`; a bare flake ref (`github:…#gh`) has no version (`""`). */
@@ -253,13 +301,14 @@ export function mergeDevboxJson(role: SeedBoxRole, existing: string | null): Dev
   }
 
   const document = parsed as DevboxDocument
-  const existingBases = new Set((Array.isArray(packages) ? packages : Object.keys(packages)).map(packageBaseName))
+  const { packages: current, replaced } = replaceSupersededSpecs(role, packages)
+  const existingBases = new Set((Array.isArray(current) ? current : Object.keys(current)).map(packageBaseName))
   const missing = packagesForRole(role).filter((pkg) => !existingBases.has(packageBaseName(pkg)))
-  if (missing.length === 0) return { content: existing, shouldWrite: false }
+  if (missing.length === 0 && !replaced) return { content: existing, shouldWrite: false }
 
-  const mergedPackages: DevboxPackageList | DevboxPackageMap = Array.isArray(packages)
-    ? [...packages, ...missing]
-    : { ...packages, ...Object.fromEntries(missing.map(splitPackageSpec)) }
+  const mergedPackages: DevboxPackageList | DevboxPackageMap = Array.isArray(current)
+    ? [...current, ...missing]
+    : { ...current, ...Object.fromEntries(missing.map(splitPackageSpec)) }
 
   return {
     content: `${JSON.stringify({ ...document, packages: mergedPackages }, null, 2)}\n`,

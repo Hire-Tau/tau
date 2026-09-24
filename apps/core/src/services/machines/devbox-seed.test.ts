@@ -7,6 +7,7 @@ import {
   computeDevboxSeedHash,
   AGENT_COMFORT_PACKAGES,
   SQUAD_COMFORT_PACKAGES,
+  mergeDevboxJson,
   type SeedBoxRole,
 } from './devbox-seed'
 import { SandboxHttpError } from '../sandbox/k8s/http-client'
@@ -247,11 +248,18 @@ describe('devbox comfort-set package lists mirror the Dockerfile stages', () => 
     ])
   })
 
+  test('squad bun is pinned to Nixpkgs rather than the lagging Jetify index', () => {
+    const bunRef = SQUAD_COMFORT_PACKAGES.find((pkg) => pkg.endsWith('#bun'))
+    if (!bunRef) throw new Error('Squad comfort set must pin bun directly to Nixpkgs')
+    expect(bunRef).toMatch(/^github:NixOS\/nixpkgs\/[a-f0-9]{40}#bun$/)
+    expect(SQUAD_COMFORT_PACKAGES.some((pkg) => pkg.startsWith('bun@'))).toBe(false)
+  })
+
   test('squad heavier set matches the k8s squad-stage baked devbox.json packages', () => {
     // Mirrors packages/k8s-sandbox/sandbox/devbox.json exactly.
     expect(SQUAD_COMFORT_PACKAGES).toEqual([
       'nodejs_24@latest',
-      'bun@latest',
+      'github:NixOS/nixpkgs/8825bebf6324e0579d012936eff73379af284b6d#bun',
       'python3@latest',
       'ripgrep@latest',
       'fd@latest',
@@ -408,7 +416,7 @@ describe('seedBoxDevbox', () => {
       'github:NixOS/nixpkgs/d5dfd8e6716dde34398bc14bc87c10dece9c8c68#gh': '',
       zlib: { version: 'latest', outputs: ['dev'] },
       'pkg-config': 'latest',
-      bun: 'latest',
+      'github:NixOS/nixpkgs/8825bebf6324e0579d012936eff73379af284b6d#bun': '',
       python3: 'latest',
       fd: 'latest',
       jq: 'latest',
@@ -426,6 +434,33 @@ describe('seedBoxDevbox', () => {
     // Customized → never touches the pristine lock cache, install still runs, marker written.
     expect(client.installCommands()).toHaveLength(1)
     expect(client.markerContent(dir)).toBe(computeDevboxSeedHash('squad'))
+  })
+
+  test("Core's superseded bun@latest is replaced in place, list or map, without a second bun", () => {
+    const list = JSON.parse(
+      mergeDevboxJson('squad', JSON.stringify({ packages: ['bun@latest', 'postgresql@latest'] })).content
+    ).packages as string[]
+    expect(list.slice(0, 2)).toEqual([
+      'github:NixOS/nixpkgs/8825bebf6324e0579d012936eff73379af284b6d#bun',
+      'postgresql@latest',
+    ])
+    expect(list.filter((spec) => spec.endsWith('#bun') || spec.startsWith('bun@'))).toHaveLength(1)
+
+    const map = JSON.parse(
+      mergeDevboxJson('squad', JSON.stringify({ packages: { bun: 'latest', postgresql: 'latest' } })).content
+    ).packages as Record<string, unknown>
+    expect(map).not.toHaveProperty('bun')
+    expect(Object.keys(map).slice(0, 2)).toEqual([
+      'github:NixOS/nixpkgs/8825bebf6324e0579d012936eff73379af284b6d#bun',
+      'postgresql',
+    ])
+  })
+
+  test('a bun version the user chose is kept, and no pinned bun is added beside it', () => {
+    const merged = mergeDevboxJson('squad', JSON.stringify({ packages: ['bun@1.2.0'] }))
+    const packages = JSON.parse(merged.content).packages as string[]
+    expect(packages).toContain('bun@1.2.0')
+    expect(packages.some((spec) => spec.endsWith('#bun'))).toBe(false)
   })
 
   test('a MAP-form devbox.json that already holds the whole comfort set is left untouched', async () => {
