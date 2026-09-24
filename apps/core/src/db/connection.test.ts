@@ -385,6 +385,7 @@ describe('Bun TLS-upgrade leak guard (createBunTlsSafeSocketFactory)', () => {
       connect_timeout: 2,
       socket: createBunTlsSafeSocketFactory(),
       onnotice: () => {},
+      // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- postgres.js generic default
     } as postgres.Options<{}>)
     try {
       for (let attempt = 0; attempt < 6; attempt++) {
@@ -416,6 +417,7 @@ describe('Bun TLS-upgrade leak guard (createBunTlsSafeSocketFactory)', () => {
       connect_timeout: 2,
       socket: createBunTlsSafeSocketFactory(flaky),
       onnotice: () => {},
+      // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- postgres.js generic default
     } as postgres.Options<{}>)
     try {
       for (let failure = 0; failure < 3; failure++) {
