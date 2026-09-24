@@ -259,23 +259,10 @@ test('contrast warnings offer a safe value that improves the pair and clears the
   expect(stillWarning).toBeUndefined()
 })
 
-test('import loads the file into the draft for preview only; nothing is saved until Save', async () => {
-  const doc = {
-    format: 'tau-custom-theme',
-    version: 2,
-    name: 'Imported',
-    base: 'harbor',
-    variants: { light: {}, dark: { '--color-primary': '#00ff00' } },
-  }
+test('no Import JSON control in the editor: Import lives once, in the library (see ThemePresetLibrary.test.tsx)', async () => {
   const { container } = await render({ baseId: 'harbor', appearance: 'dark' })
-  const json = JSON.stringify(doc)
-  await act(async () => {
-    fireEvent.change(getByLabelText(container, 'Import theme JSON'), {
-      target: { files: [{ size: json.length, text: async () => json }] },
-    })
-  })
-  expect(document.documentElement.style.getPropertyValue('--color-primary')).toBe('0 255 0')
-  expect(getByRole(container, 'status').textContent).toContain('Imported')
+  expect(queryByRole(container, 'button', { name: /Import/ })).toBeNull()
+  expect(container.querySelector('input[type="file"]')).toBeNull()
 })
 
 test('a primary seed color derives the palette live; clearing it returns to plain overrides; Advanced holds the token list', async () => {
@@ -304,4 +291,26 @@ test('the Status colors toggle switches between static (default) and harmonized'
   expect(document.documentElement.style.getPropertyValue('--status-danger-solid')).toBe('')
   await act(async () => fireEvent.click(getByRole(container, 'radio', { name: 'Harmonized' })))
   expect(document.documentElement.style.getPropertyValue('--status-danger-solid')).not.toBe('')
+})
+
+test('palette seed fields are color controls: a native color swatch plus the hex/text field, with accessible labels', async () => {
+  const { container } = await render({ baseId: 'harbor', appearance: 'dark' })
+  const primarySwatch = container.querySelector('input[type="color"][aria-label="Primary color swatch"]')
+  const primaryText = getByRole(container, 'textbox', { name: 'Primary' })
+  expect(primarySwatch).not.toBeNull()
+  expect(primaryText).not.toBeNull()
+  // Optional seeds start with no clear button (nothing set).
+  expect(queryByRole(container, 'button', { name: 'Clear Secondary' })).toBeNull()
+
+  // Driving the native color input updates the same palette state as the text field.
+  await act(async () => fireEvent.input(primarySwatch!, { target: { value: '#ff4fa3' } }))
+  expect((primaryText as HTMLInputElement).value).toBe('#ff4fa3')
+  expect(document.documentElement.style.getPropertyValue('--color-primary')).toBe('255 79 163')
+
+  // Setting an optional seed shows its Clear button; clearing empties it and re-derives without it.
+  await change(container, 'Secondary', '#22c55e')
+  expect(queryByRole(container, 'button', { name: 'Clear Secondary' })).not.toBeNull()
+  await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Clear Secondary' })))
+  expect((getByRole(container, 'textbox', { name: 'Secondary' }) as HTMLInputElement).value).toBe('')
+  expect(queryByRole(container, 'button', { name: 'Clear Secondary' })).toBeNull()
 })

@@ -46,15 +46,20 @@ conflicts, exactly like today's token list and status-grid picker (now
 tucked under an "Advanced" section once a palette is set).
 
 The editor is seeds-first: a top-level "Palette" panel exposes Primary /
-Secondary (optional) / Tertiary (optional) / Neutral (optional) color fields,
-a Contrast segmented toggle (Standard/High) and a Status colors segmented
-toggle (Static/Harmonized), all live-previewing the whole app immediately —
-clearing Primary drops the palette back to a plain explicit-override
-document. Everything from before (Base theme, the Light/Dark variant tabs,
-the token-by-token Color token/Color value editor, the override list, and the
-contrast-warnings/safe-value panel) moves into a collapsed `<details>`
-"Advanced: per-token overrides" section, reachable at any time — a palette
-and explicit overrides are never mutually exclusive.
+Secondary (optional) / Tertiary (optional) / Neutral (optional) color
+**fields** — each a native `<input type="color">` swatch button paired with
+the hex/`rgb()`/`rgba()` text field (the source of truth; alpha stays
+text-only, the swatch always shows the opaque hex) — a Contrast segmented
+toggle (Standard/High) and a Status colors segmented toggle
+(Static/Harmonized), all live-previewing the whole app immediately. An unset
+optional seed shows a neutral placeholder swatch, "Not set" in its text
+field, and no Clear button; setting one adds a Clear button that empties it
+back to unset. Clearing Primary drops the palette back to a plain
+explicit-override document. Everything from before (Base theme, the
+Light/Dark variant tabs, the token-by-token Color token/Color value editor,
+the override list, and the contrast-warnings/safe-value panel) moves into a
+collapsed `<details>` "Advanced: per-token overrides" section, reachable at
+any time — a palette and explicit overrides are never mutually exclusive.
 
 ```ts
 palette?: {
@@ -83,28 +88,66 @@ into one of these buckets, keyed off `THEME_TOKEN_FAMILIES`:
 | ANSI-named terminal/log/ansi slots | `--term-red`, `--log-blue`, `--ansi-*`, ... | Unchanged — these name a specific color by convention, independent of the palette. |
 
 After derivation, a **contrast pass** nudges a small set of critical derived
-pairs (`--color-text-primary`/`--color-bg-surface`, `--color-text-secondary`/
-`--color-bg-surface`, `--color-primary`/`--color-bg-page`, and the harmonized
-status fg/surface pairs) toward the WCAG target — 4.5:1, or 7:1 for
-`contrast: 'high'` — by moving **lightness only** (never hue or chroma), via
-bisection against the fixed background. `--on-accent-fg`'s black/white choice
-already clears 4.5:1 for any input color by construction (the
-minimum achievable max-contrast of that binary choice is ≈4.58:1). A
-property-style test sweeps dozens of seed colors, in both appearances, and
-asserts every built-in critical pair still clears its target.
+pairs by moving **lightness only** (never hue or chroma), via bisection
+against the fixed background:
+
+- `--color-text-primary`/`--color-bg-surface` and `--color-text-secondary`/
+  `--color-bg-surface` — body text, held to the **text** WCAG target (4.5:1,
+  or 7:1 for `contrast: 'high'`).
+- `--color-primary`/`--color-bg-page` — a **UI accent** (buttons, borders,
+  icons), not body text, so it is deliberately held to the lower **non-text**
+  WCAG 1.4.11 target instead (3:1, or 4.5:1 for `contrast: 'high'`). Text-level
+  contrast for content painted ON the accent is `--on-accent-fg`'s separate
+  job; using the text target here was an earlier bug — it forced a bright,
+  valid seed color to darken far more than a user choosing it as their brand
+  color would expect (a saturated sky blue against a near-white page could
+  come out murky and washed-out). A regression test holds this pair to its
+  own (lower) floor and asserts it never gets pulled toward the text floor.
+- Harmonized status fg/surface pairs — the text target, same as body text.
+
+`--on-accent-fg`'s black/white choice already clears 4.5:1 for any input
+color by construction (the minimum achievable max-contrast of that binary
+choice is ≈4.58:1). A property-style test sweeps dozens of seed colors, in
+both appearances, and asserts every built-in critical pair still clears its
+target.
 
 Derivation needs the base theme's own resolved token values (to preserve
 lightness/chroma/alpha), which only exist in the CSS cascade — matching the
 "no copied runtime palette" rule this file has always followed. `apps/web`
 supplies them via `getComputedStyle` once the built-in CSS has painted, then
 `compileCustomTheme(doc, appearance, baseTokens)` merges derived-under-explicit
-before compiling. This is unavailable in the **synchronous pre-paint flash
-script**, which cannot trust the cascade that early (the same reason it has
-always kept a small hardcoded surface-color fallback table instead of reading
-computed style): the flash script applies a palette document's explicit
-`variants` overrides only, and the full derived look appears on the very next
-repaint once `ThemeProvider` mounts — a single-frame, non-visible-in-practice
-gap, not a persistent flash of the wrong theme.
+before compiling. Both the "My themes" library rows and `ThemeQuickPicker`'s
+circles paint their swatch this same way — a scoped `[data-theme-scope]`
+element gets the base classes, `applyCustomTheme` derives from THAT element's
+own cascade, and the shared `.theme-swatch` CSS class (a static conic-gradient
+over `--color-primary`/`--color-primary-hover`/`--color-bg-surface-secondary`,
+not per-instance inline color) paints it — so a palette-derived preset's
+swatch was never literally empty, but it WAS blank in the library specifically
+until this class was applied there too (an oversight fixed alongside the
+contrast-pass bug above; both are covered by dedicated regression tests).
+
+This derivation-from-computed-style is unavailable in the **synchronous
+pre-paint flash script**, which cannot trust the cascade that early (the same
+reason it has always kept a small hardcoded surface-color fallback table
+instead of reading computed style). Instead, `ThemeProvider`'s own real root
+paint persists a **resolved snapshot** — `localStorage['tau-custom-theme-resolved']
+= { docHash, appearance, vars }`, where `vars` is the exact compiled
+`--token`/`--custom-rgb-*`/`--custom-alpha-*` map `applyCustomTheme` just
+wrote to the root, `docHash` is a deterministic (FNV-1a, staleness-detection
+only) hash of the exact document, and `appearance` is the resolved side. On
+the next cold load, the flash script applies this snapshot directly
+(`root.style.setProperty` for each entry, filtered to registry-owned property
+names) when `docHash` and `appearance` both match the currently-loaded
+document — this is what lets a palette preset paint its fully derived look
+before CSS/React, instead of flashing the plain base theme. A miss (the
+document was edited since the last real paint, the OS/appearance flipped to
+the side that was never snapshotted, or there is no snapshot yet) falls back
+to the explicit-overrides-only path as before; the very next real repaint
+derives fully again and refreshes the snapshot. `clearCustomTheme` clears this
+key alongside the document itself. The snapshot is capped at 200 KiB (a full
+palette+harmonized-status theme measures well under 100 KiB in practice) and
+is written only for the ACTIVE document, never a library preset that isn't
+currently applied.
 
 ## Validation and application boundary
 
@@ -163,9 +206,9 @@ The editor reuses the built-in contrast computation and critical-pair inventory 
 
 ## Regression coverage
 
-- Shared: closed grammar/rejection, byte/count caps (including the worst-case-pair measurement), unknown-name and pre-inheritance coherence per variant, v1→v2 normalization, `compileCustomTheme`'s resolved-variant selection, OKLCH round-trip fidelity (`color-oklch.test.ts`), derivation buckets + harmonized-status bounding + the multi-seed contrast-pass property test (`theme-derivation.test.ts`), preset request-schema/cap tests (`theme-preset.test.ts`).
+- Shared: closed grammar/rejection, byte/count caps (including the worst-case-pair measurement), unknown-name and pre-inheritance coherence per variant, v1→v2 normalization, `compileCustomTheme`'s resolved-variant selection, OKLCH round-trip fidelity (`color-oklch.test.ts`), derivation buckets + harmonized-status bounding + the multi-seed contrast-pass property test, including a dedicated regression test holding the primary/page pair to the non-text (3:1) floor rather than the text (4.5:1) one (`theme-derivation.test.ts`), preset request-schema/cap tests (`theme-preset.test.ts`).
 - Core: owner-scoped preset CRUD (`GET/POST /theme-presets`, `GET/PUT/DELETE /theme-presets/:id`) — isolation, revision conflicts (409), validation (422), per-user cap (409), cascade on user deletion, and the generated `theme_presets` migration.
-- Web: custom preview isolation and complete inheritance, invalid-document fallback, import/export round trip, partial-application cleanup, graph/xterm observer repaint and reset, a real-CSS-cascade palette-derivation integration test (explicit overrides still win over derived values), the editor's whole-app live preview (open/tab-switch/Cancel/unmount all repaint or restore correctly, including the mount-ordering fix above), the preset library's New/Duplicate/Rename/Delete/Use/Export/Import flows, and `ThemeQuickPicker` rendering one circle per saved preset (in addition to the built-ins) with a selection ring keyed on the active preset id.
+- Web: custom preview isolation and complete inheritance, invalid-document fallback, export round trip (import now lives once, in the library), partial-application cleanup, graph/xterm observer repaint and reset, a real-CSS-cascade palette-derivation integration test (explicit overrides still win over derived values), the resolved-snapshot round trip and staleness rules (matching doc+appearance applies pre-paint; an edited doc or the other appearance falls back; a full palette+harmonized-status snapshot stays well under budget) in both `theme/custom.test.ts` and `theme/flashScript.test.ts` (the shipped script, not just the source), a `ThemeProvider` test that a real root paint persists a snapshot matching the applied document and clears it on deactivation, the editor's whole-app live preview (open/tab-switch/Cancel/unmount all repaint or restore correctly, including the mount-ordering fix above), color-field accessibility (swatch and text field are independently addressable, not ambiguously co-labelled), the preset library's New/Duplicate/Rename/Delete/Use/Export/Import flows, a real-built-in-CSS test that a palette-only preset's library swatch and quick-picker circle both resolve a recognizably-derived color (not empty, not the plain base), and `ThemeQuickPicker` rendering one circle per saved preset (in addition to the built-ins) with a selection ring keyed on the active preset id.
 - Actual generated utility substitution covers all mapped tokens with custom alpha and intrinsic/utility opacity; built-in palette parity and contrast gates remain unchanged.
 - Security source checks prohibit CSS/HTML text writes in the custom application path; pre-paint generation cannot drift from the shared validator/compiler.
 

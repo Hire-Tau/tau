@@ -14,7 +14,7 @@ import { tokenColor } from '../theme/tokenReader'
 import { applyResolvedTheme } from '../theme/apply'
 import { getThemeStorage, persistSurfaceSnapshot } from '../theme/storage'
 
-import { applyCustomTheme, customSelection, removeCustomProperties } from '../theme/custom'
+import { applyCustomTheme, customSelection, persistResolvedSnapshot, removeCustomProperties } from '../theme/custom'
 import { ThemeSyncStore, LOCAL_OVERRIDE_KEY } from '../theme/sync'
 import { CUSTOM_THEME_KEY } from '../theme/custom'
 import { THEME_ID_KEY, APPEARANCE_KEY, LEGACY_THEME_KEY } from '../theme/storage'
@@ -129,7 +129,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     applyResolvedTheme(root, resolvedThemeDefinition, resolvedAppearance)
     if (custom) {
       try {
-        applyCustomTheme(root, custom, resolvedAppearance)
+        const vars = applyCustomTheme(root, custom, resolvedAppearance)
+        // The only place this is ever written: the ACTIVE document's own real
+        // (derivation-enabled) root paint. Lets the next cold load's
+        // pre-paint script apply this exact resolved result instead of
+        // flashing the plain base theme while it waits for a real repaint.
+        persistResolvedSnapshot(getThemeStorage(), custom, resolvedAppearance, vars)
       } catch {
         store.recoverCustom()
         return

@@ -429,3 +429,35 @@ test('click-outside closes the flyout and restores any live preview', async () =
     hover.restore()
   }
 })
+
+test('a palette-only preset circle resolves a real derived color, not an empty/unstyled swatch', async () => {
+  const paletteOnly: ThemePreset = {
+    id: 'preset-palette',
+    document: {
+      format: 'tau-custom-theme',
+      version: 2,
+      name: 'Palette only',
+      base: 'harbor',
+      palette: { primary: '#0ea5e9' },
+      variants: { light: {}, dark: {} },
+    },
+    visibility: 'private',
+    ownerUserId: 'u1',
+    revision: 1,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  }
+  const { container } = await renderPicker({ presets: [paletteOnly], themeId: 'tau', appearance: 'light' })
+  await open(container)
+  const circle = getByRole(container, 'radio', { name: 'Palette only' })
+  const swatch = circle.querySelector('[data-theme-scope]')!
+  const resolvedPrimary = window.getComputedStyle(swatch).getPropertyValue('--color-primary').trim()
+  expect(resolvedPrimary).not.toBe('')
+  expect(resolvedPrimary).not.toBe('14 95 109') // not the plain Harbor base primary
+  const { srgbToOklch } = await import('@tau/shared/color-oklch')
+  const [r, g, b] = resolvedPrimary.split(/\s+/).map(Number)
+  const oklch = srgbToOklch([r!, g!, b!])
+  expect(oklch.h).toBeGreaterThan(200)
+  expect(oklch.h).toBeLessThan(260)
+  expect(oklch.c).toBeGreaterThan(0.05)
+})

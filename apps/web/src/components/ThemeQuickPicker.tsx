@@ -226,7 +226,7 @@ export function ThemeQuickPicker({
                     data-appearance={
                       circle.kind === 'preset' ? undefined : circle.theme.kind === 'unified' ? undefined : value.theme
                     }
-                    className="theme-quick-picker-swatch block h-full w-full rounded-full"
+                    className="theme-swatch block h-full w-full rounded-full"
                   />
                 </button>
               )

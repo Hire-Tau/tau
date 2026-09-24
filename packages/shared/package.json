@@ -11,6 +11,8 @@
     "./custom-theme": "./src/custom-theme.ts",
     "./theme-preferences": "./src/theme-preferences.ts",
     "./theme-preset": "./src/theme-preset.ts",
+    "./theme-derivation": "./src/theme-derivation.ts",
+    "./color-oklch": "./src/color-oklch.ts",
     "./crypto": "./src/crypto.ts",
     "./node": "./src/node/index.ts",
     "./provider-health": "./src/provider-health.ts",

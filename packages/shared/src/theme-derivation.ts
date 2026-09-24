@@ -267,7 +267,7 @@ export function deriveThemeOverrides({ baseTokens, palette }: DeriveOptions): Re
 
   if (palette.status === 'harmonized') Object.assign(overrides, harmonizeStatus(baseTokens, seeds))
 
-  contrastPass(overrides, baseTokens, palette.contrast === 'high' ? 7 : 4.5)
+  contrastPass(overrides, baseTokens, palette.contrast === 'high' ? 7 : 4.5, palette.contrast === 'high' ? 4.5 : 3)
   return overrides
 }
 
@@ -311,14 +311,27 @@ function harmonizeStatus(baseTokens: Record<string, string>, seeds: readonly Okl
 /** Nudges lightness only (never hue/chroma) on a small set of derived-token
  * pairs until they clear the WCAG target, or gives up after bounded steps —
  * this is best-effort, never throws, and never touches hue/chroma so the
- * palette's identity is preserved. */
-function contrastPass(overrides: Record<string, string>, baseTokens: Record<string, string>, minRatio: number) {
-  const pairs: Array<[fg: string, bg: string]> = [
-    ['--color-text-primary', '--color-bg-surface'],
-    ['--color-text-secondary', '--color-bg-surface'],
-    ['--color-primary', '--color-bg-page'],
+ * palette's identity is preserved.
+ *
+ * `textMinRatio` (WCAG 1.4.3, 4.5:1 / 7:1 high) applies to body-text pairs.
+ * `--color-primary` vs `--color-bg-page` is deliberately held to the lower
+ * `uiMinRatio` (WCAG 1.4.11 non-text contrast, 3:1 / 4.5:1 high): it is a UI
+ * accent (buttons, borders, icons), not body text, and text-level contrast
+ * for readable content ON it is `--on-accent-fg`'s job, computed separately.
+ * A text-level target here would force a bright, valid seed color to darken
+ * far more than a user choosing it as their brand color would expect. */
+function contrastPass(
+  overrides: Record<string, string>,
+  baseTokens: Record<string, string>,
+  textMinRatio: number,
+  uiMinRatio: number
+) {
+  const pairs: Array<[fg: string, bg: string, minRatio: number]> = [
+    ['--color-text-primary', '--color-bg-surface', textMinRatio],
+    ['--color-text-secondary', '--color-bg-surface', textMinRatio],
+    ['--color-primary', '--color-bg-page', uiMinRatio],
   ]
-  for (const [fgToken, bgToken] of pairs) {
+  for (const [fgToken, bgToken, minRatio] of pairs) {
     const fgValue = overrides[fgToken] ?? baseTokens[fgToken]
     const bgValue = overrides[bgToken] ?? baseTokens[bgToken]
     if (!fgValue || !bgValue) continue

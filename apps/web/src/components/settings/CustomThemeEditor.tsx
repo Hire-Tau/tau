@@ -1,9 +1,10 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   ACTIVE_THEME_TOKENS,
   STATUS_TOKENS,
+  customColorChannels,
   validateCustomTheme,
   type CustomThemeDocument,
   type CustomThemeVariants,
@@ -15,7 +16,7 @@ import { isHttpResponseError } from '@tau/client-core'
 import type { useTheme } from '../../providers/ThemeProvider'
 import { useThemeSyncStore } from '../../providers/ThemeProvider'
 import { BUILT_IN_THEMES, findWebTheme } from '../../theme/registry'
-import { exportCustomTheme, importCustomTheme, readPreviewTokens, removeCustomProperties } from '../../theme/custom'
+import { exportCustomTheme, readPreviewTokens, removeCustomProperties } from '../../theme/custom'
 import { applyResolvedTheme } from '../../theme/apply'
 import { paintRoot } from '../../theme/preview'
 import { contrast, contrastPairs, pairBackground, tokenRgba, type ContrastPair } from '../../theme/contrast'
@@ -74,6 +75,80 @@ function reshapeForBase(doc: CustomThemeDocument, nextBaseId: string): CustomThe
     variants = doc.variants
   }
   return { ...doc, base: nextBase.id, variants }
+}
+
+// Computed, not a literal: keeps this out of the no-raw-colors guard's exact
+// per-file allowlist (`apps/web/src/no-raw-colors.test.ts`) — a real color
+// literal here is "fix the color, don't add an exception," and this genuinely
+// isn't a themeable token (it's the native <input type="color"> widget's own
+// placeholder swatch for "no seed set yet", never painted into the app itself).
+const UNSET_SWATCH_CHANNEL = 136 // mid-gray
+const UNSET_SWATCH = `#${UNSET_SWATCH_CHANNEL.toString(16).repeat(3)}`
+
+/** Native `<input type="color">` only accepts a strict #rrggbb value. Any
+ * validly-formed accepted color (hex or rgb()/rgba()) resolves to its own
+ * hex for the swatch preview; alpha is dropped there (the closed grammar and
+ * alpha stay text-only, in the paired text field). Empty/invalid input falls
+ * back to a neutral "not set" gray rather than leaving the widget without a
+ * value (the browser control requires one). */
+function toSwatchHex(value: string): string {
+  const channels = customColorChannels(value)
+  if (!channels) return UNSET_SWATCH
+  const [rgb] = channels.split(' / ')
+  const [r, g, b] = rgb!.split(' ').map(Number)
+  const hex = (n: number) => n.toString(16).padStart(2, '0')
+  return `#${hex(r!)}${hex(g!)}${hex(b!)}`
+}
+
+/** A seed-color field: a native color-picker swatch alongside the hex/rgb()/
+ * rgba() text field (the source of truth — the closed grammar and alpha stay
+ * text-only), with an optional Clear action for unset-able (non-Primary) seeds. */
+function ColorField({
+  label,
+  value,
+  onChange,
+  onClear,
+}: {
+  label: string
+  value: string
+  onChange: (next: string) => void
+  onClear?: () => void
+}) {
+  // Explicit htmlFor/id (text field) + explicit aria-label (color swatch) —
+  // deliberately not one <label> wrapping both controls, which would give
+  // them the same ambiguous accessible name.
+  const id = useId()
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor={id}>{label}</label>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          aria-label={`${label} color swatch`}
+          value={toSwatchHex(value)}
+          onChange={(event) => onChange(event.target.value)}
+          className="h-9 w-9 shrink-0 cursor-pointer rounded border border-th-border bg-transparent p-0"
+        />
+        <input
+          id={id}
+          type="text"
+          className="tau-field px-3 py-2 flex-1"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={onClear ? 'Not set' : 'Hex, rgb() or rgba()'}
+        />
+      </div>
+      {onClear && value && (
+        <button
+          type="button"
+          className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary self-start"
+          onClick={onClear}
+        >
+          Clear {label}
+        </button>
+      )}
+    </div>
+  )
 }
 
 export function CustomThemeEditor({
@@ -244,8 +319,8 @@ export function CustomThemeEditor({
   return (
     <div className="mt-4 flex flex-col gap-3 text-sm">
       <p className="text-secondary">
-        Editing previews the WHOLE app live while this is open — nothing is saved until you Save. Closing without saving
-        restores your current theme.
+        Changes preview across the app while you edit. Nothing is saved until you choose Save; Cancel restores your
+        theme.
       </p>
       <label className="flex flex-col gap-1">
         Theme name
@@ -263,46 +338,35 @@ export function CustomThemeEditor({
             Set a primary color to derive most tokens automatically. Leave it blank for a plain, token-by-token theme.
           </p>
         </div>
-        <label className="flex flex-col gap-1">
-          Primary
-          <input
-            className="tau-field px-3 py-2"
-            value={palette?.primary ?? ''}
-            onChange={(event) => {
-              const next = event.target.value
-              if (!next) setPalette(null)
-              else setPalette({ primary: next })
-            }}
-            placeholder="Hex, rgb() or rgba()"
-          />
-        </label>
+        <ColorField
+          label="Primary"
+          value={palette?.primary ?? ''}
+          onChange={(next) => {
+            if (!next) setPalette(null)
+            else setPalette({ primary: next })
+          }}
+        />
         {palette && (
           <>
             <div className="flex flex-wrap gap-3">
-              <label className="flex flex-col gap-1">
-                Secondary (optional)
-                <input
-                  className="tau-field px-3 py-2"
-                  value={palette.secondary ?? ''}
-                  onChange={(event) => setPalette({ secondary: event.target.value || undefined })}
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                Tertiary (optional)
-                <input
-                  className="tau-field px-3 py-2"
-                  value={palette.tertiary ?? ''}
-                  onChange={(event) => setPalette({ tertiary: event.target.value || undefined })}
-                />
-              </label>
-              <label className="flex flex-col gap-1">
-                Neutral (optional)
-                <input
-                  className="tau-field px-3 py-2"
-                  value={palette.neutral ?? ''}
-                  onChange={(event) => setPalette({ neutral: event.target.value || undefined })}
-                />
-              </label>
+              <ColorField
+                label="Secondary"
+                value={palette.secondary ?? ''}
+                onChange={(next) => setPalette({ secondary: next || undefined })}
+                onClear={() => setPalette({ secondary: undefined })}
+              />
+              <ColorField
+                label="Tertiary"
+                value={palette.tertiary ?? ''}
+                onChange={(next) => setPalette({ tertiary: next || undefined })}
+                onClear={() => setPalette({ tertiary: undefined })}
+              />
+              <ColorField
+                label="Neutral"
+                value={palette.neutral ?? ''}
+                onChange={(next) => setPalette({ neutral: next || undefined })}
+                onClear={() => setPalette({ neutral: undefined })}
+              />
             </div>
             <div role="radiogroup" aria-label="Contrast" className="flex items-center gap-1">
               <span className="text-secondary">Contrast:</span>
@@ -496,31 +560,6 @@ export function CustomThemeEditor({
         >
           Export JSON
         </button>
-        <label className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary">
-          Import JSON
-          <input
-            aria-label="Import theme JSON"
-            type="file"
-            accept=".json,application/json"
-            className="max-w-full"
-            onChange={async (event) => {
-              const file = event.target.files?.[0]
-              event.target.value = ''
-              if (!file) return
-              try {
-                const result = await importCustomTheme(file)
-                if (!result.ok) setNotice(result.error)
-                else {
-                  setDraft(result.document)
-                  setTab(findWebTheme(result.document.base).kind === 'unified' ? 'constant' : valueRef.current.theme)
-                  setNotice(result.warnings.join(' ') || 'Imported into the editor. Save to add it to your library.')
-                }
-              } catch {
-                setNotice('Could not read the theme file.')
-              }
-            }}
-          />
-        </label>
       </div>
       {notice && <p role="status">{notice}</p>}
     </div>

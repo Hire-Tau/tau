@@ -3,7 +3,7 @@
 import { applyResolvedTheme } from './apply'
 import { resolveWebTheme } from './registry'
 import { getThemeStorage, readSurfaceSnapshot } from './storage'
-import { applyCustomTheme, clearCustomTheme, loadCustomTheme } from './custom'
+import { applyCustomTheme, clearCustomTheme, loadCustomTheme, readResolvedSnapshot } from './custom'
 import { tokenColor } from './tokenReader'
 
 try {
@@ -20,10 +20,20 @@ try {
   applyResolvedTheme(root, resolved.theme, resolved.appearance)
   if (state.custom) {
     try {
-      // Palette derivation needs getComputedStyle on the built-in CSS, which is
-      // not guaranteed loaded this early; skip it here (explicit overrides
-      // still apply) — the next real repaint (ThemeProvider) derives fully.
-      applyCustomTheme(root, state.custom, resolved.appearance, { deriveFromComputedStyle: false })
+      // A palette needs getComputedStyle on the built-in CSS to derive, which
+      // is not guaranteed loaded this early. Instead, prefer a PERSISTED
+      // resolved snapshot from the last time ThemeProvider actually derived
+      // this exact (document, resolved appearance) pair — this is what lets a
+      // palette preset paint its derived look before CSS/React, instead of
+      // flashing the plain base theme. A miss (edited doc, different resolved
+      // side, or no snapshot yet) falls back to explicit-overrides-only; the
+      // next real repaint derives fully and persists a fresh snapshot.
+      const snapshot = readResolvedSnapshot(storage, state.custom, resolved.appearance)
+      if (snapshot) {
+        for (const [token, value] of Object.entries(snapshot)) root.style.setProperty(token, value)
+      } else {
+        applyCustomTheme(root, state.custom, resolved.appearance, { deriveFromComputedStyle: false })
+      }
     } catch {
       clearCustomTheme(storage)
       state.custom = null

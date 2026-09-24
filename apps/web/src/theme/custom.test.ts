@@ -403,3 +403,107 @@ test('the pre-paint flash script skips palette derivation (no reliable computed 
     await dom.cleanup()
   }
 })
+
+// --- Resolved pre-paint snapshot (persisted so a palette preset paints its
+// derived look before CSS/React, instead of flashing the plain base theme) ---
+
+function memoryStorage(): ThemeStorage {
+  const map = new Map<string, string>()
+  return {
+    getItem: (key) => map.get(key) ?? null,
+    setItem: (key, value) => void map.set(key, value),
+    removeItem: (key) => void map.delete(key),
+  }
+}
+
+const paletteDoc: CustomThemeDocument = {
+  format: 'tau-custom-theme',
+  version: 2,
+  name: 'Palette preset',
+  base: 'harbor',
+  palette: { primary: '#0ea5e9' },
+  variants: { light: {}, dark: {} },
+}
+
+test('hashCustomThemeDocument is deterministic and sensitive to any document change', async () => {
+  const { hashCustomThemeDocument } = await import('./custom')
+  expect(hashCustomThemeDocument(paletteDoc)).toBe(hashCustomThemeDocument(structuredClone(paletteDoc)))
+  expect(hashCustomThemeDocument(paletteDoc)).not.toBe(
+    hashCustomThemeDocument({ ...paletteDoc, palette: { primary: '#123456' } })
+  )
+  expect(hashCustomThemeDocument(paletteDoc)).not.toBe(hashCustomThemeDocument({ ...paletteDoc, name: 'Other' }))
+})
+
+test('persistResolvedSnapshot/readResolvedSnapshot round-trip on an exact (doc, appearance) match', async () => {
+  const { persistResolvedSnapshot, readResolvedSnapshot } = await import('./custom')
+  const storage = memoryStorage()
+  const vars = {
+    '--color-primary': '14 165 233',
+    '--custom-rgb-color-primary': '14 165 233',
+    '--custom-alpha-color-primary': '1',
+  }
+  persistResolvedSnapshot(storage, paletteDoc, 'dark', vars)
+  expect(readResolvedSnapshot(storage, paletteDoc, 'dark')).toEqual(vars)
+})
+
+test('readResolvedSnapshot ignores a stale snapshot: edited document, or a different resolved appearance', async () => {
+  const { persistResolvedSnapshot, readResolvedSnapshot } = await import('./custom')
+  const storage = memoryStorage()
+  const vars = { '--color-primary': '14 165 233' }
+  persistResolvedSnapshot(storage, paletteDoc, 'dark', vars)
+  // Same document, other side: absent (never stored for it) -> fall back.
+  expect(readResolvedSnapshot(storage, paletteDoc, 'light')).toBeNull()
+  // Document edited (even a single-field change) invalidates the stored hash.
+  const edited = { ...paletteDoc, palette: { primary: '#ff0000' } }
+  expect(readResolvedSnapshot(storage, edited, 'dark')).toBeNull()
+  // No snapshot at all.
+  expect(readResolvedSnapshot(memoryStorage(), paletteDoc, 'dark')).toBeNull()
+  // Corrupt JSON never throws.
+  storage.setItem('tau-custom-theme-resolved', '{not json')
+  expect(readResolvedSnapshot(storage, paletteDoc, 'dark')).toBeNull()
+})
+
+test('readResolvedSnapshot only applies known registry property names, dropping anything else', async () => {
+  const { persistResolvedSnapshot, readResolvedSnapshot, hashCustomThemeDocument } = await import('./custom')
+  const storage = memoryStorage()
+  storage.setItem(
+    'tau-custom-theme-resolved',
+    JSON.stringify({
+      docHash: hashCustomThemeDocument(paletteDoc),
+      appearance: 'dark',
+      vars: { '--color-primary': '1 2 3', '--not-a-real-token': 'x', 'background-color': 'red' },
+    })
+  )
+  expect(readResolvedSnapshot(storage, paletteDoc, 'dark')).toEqual({ '--color-primary': '1 2 3' })
+})
+
+test('persistResolvedSnapshot skips (never writes) an oversized snapshot', async () => {
+  const { persistResolvedSnapshot, readResolvedSnapshot, RESOLVED_SNAPSHOT_MAX_BYTES } = await import('./custom')
+  const storage = memoryStorage()
+  const huge = Object.fromEntries(
+    Array.from({ length: Math.ceil(RESOLVED_SNAPSHOT_MAX_BYTES / 20) }, (_, i) => [`--k${i}`, 'x'.repeat(15)])
+  )
+  persistResolvedSnapshot(storage, paletteDoc, 'dark', huge)
+  expect(readResolvedSnapshot(storage, paletteDoc, 'dark')).toBeNull()
+})
+
+test('clearCustomTheme also clears the resolved snapshot', async () => {
+  const { persistResolvedSnapshot, readResolvedSnapshot } = await import('./custom')
+  const storage = memoryStorage()
+  persistResolvedSnapshot(storage, paletteDoc, 'dark', { '--color-primary': '1 2 3' })
+  clearCustomTheme(storage)
+  expect(storage.getItem('tau-custom-theme-resolved')).toBeNull()
+  expect(readResolvedSnapshot(storage, paletteDoc, 'dark')).toBeNull()
+})
+
+test('applyCustomTheme returns the exact compiled vars it applied, for the caller to persist as a snapshot', async () => {
+  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  try {
+    const element = document.createElement('div')
+    const vars = applyCustomTheme(element, custom, 'dark')
+    expect(vars['--term-bg']).toBe('18 52 86')
+    for (const [token, value] of Object.entries(vars)) expect(element.style.getPropertyValue(token)).toBe(value)
+  } finally {
+    await dom.cleanup()
+  }
+})

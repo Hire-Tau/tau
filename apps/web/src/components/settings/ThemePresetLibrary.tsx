@@ -36,7 +36,7 @@ function PresetSwatch({ preset, currentAppearance }: { preset: ThemePreset; curr
       removeCustomProperties(element)
     }
   }, [preset, currentAppearance])
-  return <span ref={ref} data-theme-scope="" className="block h-8 w-8 shrink-0 rounded-full border border-th-border" />
+  return <span ref={ref} data-theme-scope="" className="theme-swatch block h-8 w-8 shrink-0 rounded-full" />
 }
 
 export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useTheme> }) {

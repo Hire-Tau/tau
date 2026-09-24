@@ -359,3 +359,40 @@ test('setThemeId deactivates the custom theme/preset ring without deleting anyth
   expect(theme.customTheme).toBeNull()
   expect(theme.themeId).toBe('harbor')
 })
+
+test('a real root paint persists a resolved pre-paint snapshot matching the applied document/appearance; deactivating clears it', async () => {
+  const { dom } = await installThemeDom()
+  const { root } = dom.createRoot()
+  let theme!: ReturnType<typeof useTheme>
+  function Controls() {
+    theme = useTheme()
+    return null
+  }
+  await act(async () => {
+    root.render(
+      <ThemeProvider>
+        <Controls />
+      </ThemeProvider>
+    )
+  })
+  const doc = {
+    format: 'tau-custom-theme' as const,
+    version: 2 as const,
+    name: 'Pair',
+    base: 'tau',
+    variants: { light: { '--color-primary': '#123456' }, dark: {} },
+  }
+  await act(async () => {
+    theme.applyCustom(doc)
+  })
+  const { hashCustomThemeDocument } = await import('../theme/custom')
+  const stored = JSON.parse(localStorage.getItem('tau-custom-theme-resolved')!)
+  expect(stored.docHash).toBe(hashCustomThemeDocument(doc))
+  expect(stored.appearance).toBe('light')
+  expect(stored.vars['--color-primary']).toBe('18 52 86')
+
+  await act(async () => {
+    theme.setThemeId('harbor')
+  })
+  expect(localStorage.getItem('tau-custom-theme-resolved')).toBeNull()
+})

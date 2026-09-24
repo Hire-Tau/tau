@@ -132,3 +132,67 @@ test('New theme opens the editor for a fresh document based on the selected base
   await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'New theme' })))
   expect(queryByRole(container, 'textbox', { name: 'Theme name' })).not.toBeNull()
 })
+
+test('a palette-only preset (no explicit overrides) still resolves a real swatch color, not an empty circle', async () => {
+  const { palettes, resolveToken } = await import('../../theme/test/builtins')
+  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  cleanup = () => dom.cleanup()
+  const style = document.createElement('style')
+  style.textContent = palettes
+    .map((p) => {
+      const attrs = `[data-theme="${p.id}"]${p.appearance === 'constant' ? '' : `[data-appearance="${p.appearance}"]`}`
+      return `:root${attrs}, [data-theme-scope]${attrs} { ${Object.entries(p.tokens)
+        .map(([key]) => `${key}: ${resolveToken(p.tokens, key)};`)
+        .join(' ')} }`
+    })
+    .join('\n')
+  document.head.append(style)
+  const paletteOnly: ThemePreset = {
+    id: 'preset-2',
+    document: {
+      format: 'tau-custom-theme',
+      version: 2,
+      name: 'Palette only',
+      base: 'harbor',
+      palette: { primary: '#0ea5e9' },
+      variants: { light: {}, dark: {} },
+    },
+    visibility: 'private',
+    ownerUserId: 'u1',
+    revision: 1,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  }
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  queryClient.setQueryData(themePresetQueryKeys.list(), [paletteOnly])
+  const { root, container } = dom.createRoot()
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <ThemeProvider>
+          <Harness />
+        </ThemeProvider>
+      </QueryClientProvider>
+    )
+  )
+  const swatch = container.querySelector('[data-theme-scope]')!
+  const resolvedPrimary = window.getComputedStyle(swatch).getPropertyValue('--color-primary').trim()
+  expect(resolvedPrimary).not.toBe('')
+  // Not the plain Harbor base primary (proves derivation ran, not a fallback)...
+  expect(resolvedPrimary).not.toBe('14 95 109')
+  // ...and recognizably derived FROM the seed (#0ea5e9): a blue hue, not the
+  // exact seed necessarily (a contrast pass may nudge lightness), but well
+  // within the blue family, never a neutral/gray/other-hue washout.
+  const { srgbToOklch } = await import('@tau/shared/color-oklch')
+  const [r, g, b] = resolvedPrimary.split(/\s+/).map(Number)
+  const oklch = srgbToOklch([r!, g!, b!])
+  expect(oklch.h).toBeGreaterThan(200)
+  expect(oklch.h).toBeLessThan(260)
+  expect(oklch.c).toBeGreaterThan(0.05)
+})
+
+test('the swatch element carries the shared theme-swatch paint class (regression: a missing class left it visually blank)', async () => {
+  const { container } = await render([mine])
+  const swatch = container.querySelector('[data-theme-scope]')!
+  expect(swatch.classList.contains('theme-swatch')).toBe(true)
+})

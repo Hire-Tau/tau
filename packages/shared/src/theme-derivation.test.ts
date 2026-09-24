@@ -109,6 +109,40 @@ describe('deriveThemeOverrides buckets', () => {
     expect(['#000000', '#ffffff']).toContain(derived['--on-accent-fg'])
   })
 
+  test('regression: --color-primary is held to the UI (3:1) contrast floor against the page, not the text (4.5:1) one', () => {
+    // A bright seed that already clears 3:1 (WCAG 1.4.11 non-text) against a
+    // near-white page must come through with its own lightness essentially
+    // unchanged — it should NOT be additionally darkened to hit a body-text
+    // 4.5:1 target. --color-primary is a UI accent (buttons/borders/icons);
+    // text-level contrast for content ON it is --on-accent-fg's separate job.
+    const seed = '#0ea5e9' // #0ea5e9 vs TAU_LIGHT's page (250 249 252) is ~2.61:1 (below even 3:1)
+    const passesAt3 = deriveThemeOverrides({
+      baseTokens: TAU_LIGHT,
+      palette: { primary: seed, contrast: 'standard' },
+      appearance: 'light',
+    })
+    const rgb = customColorChannels(passesAt3['--color-primary']!)!.split(' ').map(Number) as [number, number, number]
+    function relLuminance([r, g, b]: number[]): number {
+      return [r, g, b]
+        .map((c) => c / 255)
+        .map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+        .reduce((sum, c, i) => sum + c * [0.2126, 0.7152, 0.0722][i]!, 0)
+    }
+    const pageRgb = TAU_LIGHT['--color-bg-page']!.split(' ').map(Number)
+    const ratio = (a: number[], b: number[]) => {
+      const la = relLuminance(a)
+      const lb = relLuminance(b)
+      return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+    }
+    const finalRatio = ratio(rgb, pageRgb)
+    // Cleared (within sRGB integer-rounding tolerance of the bisection) the
+    // 3:1 floor...
+    expect(finalRatio).toBeGreaterThanOrEqual(2.99)
+    // ...but was not pushed anywhere near the old 4.5:1 text-level target —
+    // proving the UI floor, not the text floor, governs this pair.
+    expect(finalRatio).toBeLessThan(4.0)
+  })
+
   test('brand and categorical tokens pick a hue from primary/secondary/tertiary, keeping base lightness/chroma', () => {
     for (const token of ['--brand-tile', '--agent-type-1-fg', '--graph-chart-category-1', '--syntax-keyword']) {
       expect(derived[token]).toBeDefined()

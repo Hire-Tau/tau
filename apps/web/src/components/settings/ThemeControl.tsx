@@ -86,7 +86,6 @@ export function ThemeControl({
         </button>
       )}
       <ThemeSyncNotice value={value} />
-      {value.customTheme && <p className="mt-3 text-sm text-secondary">Custom theme: {value.customTheme.name}</p>}
       {value.customThemeError && <p role="alert">{value.customThemeError}</p>}
       {enabled && (
         <>
@@ -95,6 +94,9 @@ export function ThemeControl({
               Reset to default
             </button>
           </div>
+          <p className="mt-1 text-xs text-muted">
+            Switches back to Tau (light). Your saved theme presets aren't touched.
+          </p>
           <ThemePresetLibrary value={value} />
         </>
       )}
