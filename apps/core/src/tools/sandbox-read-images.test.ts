@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { convertToLlm, createReadTool, type ToolDefinition } from '@earendil-works/pi-coding-agent'
 import type { ImageContent, ToolResultMessage, AssistantMessage, Model } from '@earendil-works/pi-ai'
 import { convertResponsesMessages } from '@earendil-works/pi-ai/api/openai-responses-shared'
+import { normalizeContext } from '@earendil-works/pi-ai/utils/transcript'
 import { createK8sSandboxedReadTool, enforceAbsolutePaths, type SandboxToolsManager } from './k8s-sandbox'
 import { createDockerSandboxedReadTool } from './docker-sandbox'
 import * as sandbox from '../services/sandbox'
@@ -170,7 +171,7 @@ describe('sandbox read image attachments', () => {
         }
         const input = convertResponsesMessages(
           model,
-          { messages: convertToLlm(JSON.parse(JSON.stringify([call, message]))) },
+          normalizeContext({ messages: convertToLlm(JSON.parse(JSON.stringify([call, message]))) }),
           new Set()
         )
         const nativeImages = input

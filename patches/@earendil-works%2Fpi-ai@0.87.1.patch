@@ -1,8 +1,8 @@
 diff --git a/dist/api/openai-codex-responses.js b/dist/api/openai-codex-responses.js
-index bf979d439f531c62494291050722f7e93435280d..d565d1cc4b60b3f2517cb4b1693ee731721eb1b5 100644
+index dfdb6ec3651febbba6b8788f16118ecbf4b38fa8..f7da469d3cd621ef95bf1197cbaf67083fcf4e5d 100644
 --- a/dist/api/openai-codex-responses.js
 +++ b/dist/api/openai-codex-responses.js
-@@ -49,7 +49,7 @@ function assertSuccessfulOutput(output) {
+@@ -50,7 +50,7 @@ function assertSuccessfulOutput(output) {
  // Retry Helpers
  // ============================================================================
  function isTerminalRateLimitError(errorText) {
@@ -12,7 +12,7 @@ index bf979d439f531c62494291050722f7e93435280d..d565d1cc4b60b3f2517cb4b1693ee731
  function isRetryableError(status, errorText) {
      if (status === 429 && isTerminalRateLimitError(errorText)) {
 diff --git a/dist/utils/retry.js b/dist/utils/retry.js
-index ce8c4cbc3bdbbfa2e8e59070cdcdee12a6bb7177..f50448faa568ab5726c210dd1715e4be2b800fc3 100644
+index 6538c63c99f75a4f232ebd413adf80571a0f39b4..3884086ab1659a6ebaec29f4d47b7d67708c619c 100644
 --- a/dist/utils/retry.js
 +++ b/dist/utils/retry.js
 @@ -16,6 +16,15 @@ const NON_RETRYABLE_PROVIDER_LIMIT_ERROR_PATTERN = buildProviderErrorPattern([

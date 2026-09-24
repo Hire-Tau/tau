@@ -325,7 +325,7 @@ describe('PrecompactionController.awaitReadyResult', () => {
   })
 
   it('consumes a failover-produced bake cached under the post-failover model key', async () => {
-    let modelKey = 'openai-codex/gpt-5.4-mini/200000'
+    let modelKey = 'openai-codex/gpt-5.6-luna/200000'
     let resolveBake!: (v: { compaction: CompactionResult; modelKey: string }) => void
     const deps = makeDeps({
       getModelKey: () => modelKey,

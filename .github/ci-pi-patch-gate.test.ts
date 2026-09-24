@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 import { verifyAgentSessionDataflow, verifySanitizerTypeAndExports } from './pi-agent-session-dataflow'
 
 const root = resolve(import.meta.dir, '..')
-const overlayRoot = resolve(root, 'patches/pi-coding-agent-0.85.1-source')
+const overlayRoot = resolve(root, 'patches/pi-coding-agent-0.87.1-source')
 const expectedSources = [
   'packages/coding-agent/src/core/agent-session.ts',
   'packages/coding-agent/src/core/extensions/loader.ts',
@@ -69,7 +69,7 @@ describe('Pi patch no-drift CI gate', () => {
   test('uses only reviewed source overlays and emits an exact portable output allowlist', () => {
     const workflow = readFileSync(resolve(root, '.github/workflows/ci.yml'), 'utf8')
     const script = readFileSync(resolve(root, 'scripts/regenerate-pi-coding-agent-patch.sh'), 'utf8')
-    const patch = readFileSync(resolve(root, 'patches/@earendil-works%2Fpi-coding-agent@0.85.1.patch'), 'utf8')
+    const patch = readFileSync(resolve(root, 'patches/@earendil-works%2Fpi-coding-agent@0.87.1.patch'), 'utf8')
     expect(
       workflow
         .split('\n')
