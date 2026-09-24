@@ -17,6 +17,13 @@ export interface CanonicalWorkStreamOrderInput {
   completedAt?: Date | string | null
   updatedAt?: Date | string
   metadata?: unknown
+  /**
+   * Server-annotated discriminator for review-wait urgency: true when the open
+   * review gate is expected to settle without a human verdict (code-host CI /
+   * auto-merge delivery). Absent or false keeps the review wait
+   * human-actionable, matching older payloads that cannot know.
+   */
+  automatedReviewGate?: boolean
 }
 
 export interface CanonicalWorkStreamSortKey {
@@ -60,26 +67,24 @@ export function isValidQueuePosition(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value > 0
 }
 
-// Review is uniquely actionable and ranks first. Question, dependency, and
-// manual/blocked waits intentionally share one non-review-wait urgency tier.
+// Active urgency tiers, most human-actionable first:
+// 0. Waits a human must clear: a review that needs a human verdict, a
+//    question, or a manual/blocked wait.
+// 1. Running work (in_progress).
+// 2. A review gate the delivery pipeline settles itself (annotated
+//    `automatedReviewGate`): CI / auto-merge pending, no human input needed.
+// 3. Everything else: dependency waits (they wait on another stream, not a
+//    person), other external delivery waits, delivery setup/failure, idle,
+//    and failed executions.
 function activeUrgency(item: CanonicalWorkStreamOrderInput): number {
   const state = selectWorkStreamPresentationState({
     ...item,
     openWaits: item.openWaits?.filter((wait) => wait.closedAt === null),
   })
-  if (['in_review', 'delivery_approval', 'delivery_review', 'delivery_merge'].includes(state)) return 0
-  if (
-    [
-      'waiting_on_answer',
-      'waiting_on_dependency',
-      'blocked',
-      'delivery_external',
-      'delivery_setup',
-      'delivery_failure',
-    ].includes(state)
-  )
-    return 1
-  if (state === 'in_progress') return 2
+  if (['in_review', 'delivery_approval', 'delivery_review', 'delivery_merge'].includes(state))
+    return item.automatedReviewGate === true ? 2 : 0
+  if (state === 'waiting_on_answer' || state === 'blocked') return 0
+  if (state === 'in_progress') return 1
   return 3
 }
 

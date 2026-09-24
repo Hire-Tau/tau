@@ -25,7 +25,6 @@ import {
   SkeletonRows,
 } from '../loading/Skeleton'
 import {
-  sortCanonicalWorkStreams,
   WORK_STREAM_STATUS_ROLE,
   type WorkStream,
   type WorkStreamPresentationState,
@@ -156,8 +155,10 @@ export function WorkStreamList({
     hadSelectedWsRef.current = Boolean(selectedWs)
   }, [isFullscreen, selectedWs])
 
-  const orderedActiveWorkStreams = useMemo(() => sortCanonicalWorkStreams(workStreams), [workStreams])
-  const orderedDoneStreams = useMemo(() => sortCanonicalWorkStreams(doneStreams), [doneStreams])
+  // The server canonical order (GET /workstreams) is the single ordering
+  // authority: both lists arrive pre-sorted, so no client re-sort is needed.
+  const orderedActiveWorkStreams = workStreams
+  const orderedDoneStreams = doneStreams
 
   // Filter to active-only if requested
   const loadedWorkStreams = activeOnly ? orderedActiveWorkStreams : [...orderedActiveWorkStreams, ...orderedDoneStreams]

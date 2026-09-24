@@ -85,15 +85,17 @@ function countOccurrences(value: string, needle: string): number {
 }
 
 describe('AgentWorkStreamsPanel', () => {
-  test('renders attached work streams in canonical scheduler order', () => {
+  test('renders attached work streams in the server canonical order without re-sorting', () => {
+    // Pre-sorted to mirror the server contract (GET /workstreams); the panel
+    // must render that order as-is after filtering to the agent's streams.
     const attached = (overrides: Partial<WorkStream>) => workStream({ agentIds: [agent.id], ...overrides })
     const html = renderPanel([
-      attached({ id: 'idle', title: 'Panel Idle', derivedState: 'idle' }),
-      attached({ id: 'queue-2', title: 'Panel Queue Two', status: 'queued', queuePosition: 2 }),
       attached({ id: 'review', title: 'Panel Review', derivedState: 'in_review' }),
       attached({ id: 'wait', title: 'Panel Wait', derivedState: 'blocked' }),
       attached({ id: 'progress', title: 'Panel Progress', derivedState: 'in_progress' }),
+      attached({ id: 'idle', title: 'Panel Idle', derivedState: 'idle' }),
       attached({ id: 'queue-1', title: 'Panel Queue One', status: 'queued', queuePosition: 1 }),
+      attached({ id: 'queue-2', title: 'Panel Queue Two', status: 'queued', queuePosition: 2 }),
     ])
     const indices = [
       'Panel Review',

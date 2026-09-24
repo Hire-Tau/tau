@@ -215,14 +215,16 @@ describe('WorkStreamList', () => {
     expect(html).not.toContain('1h')
   })
 
-  test('renders active work streams in canonical scheduler order', () => {
+  test('renders active work streams in the server canonical order without re-sorting', () => {
+    // The fixture is pre-sorted to mirror the server contract (GET /workstreams);
+    // the component must render that order as-is.
     const html = renderWorkStreamList([
-      workStream({ id: 'idle', title: 'Order Idle', derivedState: 'idle', effectivePriority: 'low' }),
-      workStream({ id: 'queue-2', title: 'Order Queue Two', status: 'queued', queuePosition: 2 }),
       workStream({ id: 'review', title: 'Order Review', derivedState: 'in_review' }),
       workStream({ id: 'wait', title: 'Order Wait', derivedState: 'blocked' }),
       workStream({ id: 'progress', title: 'Order Progress', derivedState: 'in_progress' }),
+      workStream({ id: 'idle', title: 'Order Idle', derivedState: 'idle', effectivePriority: 'low' }),
       workStream({ id: 'queue-1', title: 'Order Queue One', status: 'queued', queuePosition: 1 }),
+      workStream({ id: 'queue-2', title: 'Order Queue Two', status: 'queued', queuePosition: 2 }),
     ])
 
     const indices = [
@@ -915,22 +917,24 @@ function renderWorkStreamDetailModal(
 }
 
 describe('squad WorkStreamList canonical ordering', () => {
-  const shuffled = [
-    workStream({ id: 'idle-home', title: 'Squad Idle', derivedState: 'idle' }),
-    workStream({ id: 'queue-2-home', title: 'Squad Queue Two', status: 'queued', queuePosition: 2 }),
+  // Pre-sorted to mirror the server contract (GET /workstreams); the
+  // component must render that order as-is.
+  const ordered = [
     workStream({ id: 'review-home', title: 'Squad Review', derivedState: 'in_review' }),
     workStream({ id: 'wait-home', title: 'Squad Wait', derivedState: 'blocked' }),
     workStream({ id: 'progress-home', title: 'Squad Progress', derivedState: 'in_progress' }),
+    workStream({ id: 'idle-home', title: 'Squad Idle', derivedState: 'idle' }),
     workStream({ id: 'queue-1-home', title: 'Squad Queue One', status: 'queued', queuePosition: 1 }),
+    workStream({ id: 'queue-2-home', title: 'Squad Queue Two', status: 'queued', queuePosition: 2 }),
   ]
 
-  test('renders the compact squad home list in canonical order', async () => {
+  test('renders the compact squad home list in the server canonical order', async () => {
     const queryClient = createTestQueryClient()
     queryClient.setQueryData(queryKeys.squads.agents(squad.id), [])
     const html = await renderClient(
       <QueryClientProvider client={queryClient}>
         <MemoryRouter>
-          <SquadWorkStreamList workStreams={shuffled} squadId={squad.id} squad={squad} activeOnly compact />
+          <SquadWorkStreamList workStreams={ordered} squadId={squad.id} squad={squad} activeOnly compact />
         </MemoryRouter>
       </QueryClientProvider>
     )
@@ -957,7 +961,7 @@ describe('squad WorkStreamList canonical ordering', () => {
         rendered.root.render(
           <QueryClientProvider client={queryClient}>
             <MemoryRouter>
-              <SquadWorkStreamList workStreams={shuffled} squadId={squad.id} squad={squad} />
+              <SquadWorkStreamList workStreams={ordered} squadId={squad.id} squad={squad} />
             </MemoryRouter>
           </QueryClientProvider>
         )
