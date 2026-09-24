@@ -100,10 +100,65 @@ describe('sortCanonicalWorkStreams', () => {
         ws('legacy-review', { derivedState: 'in_review' }),
         ws('missing'),
       ])
-    ).toEqual(['legacy-review', 'typed-review', 'typed-manual', 'empty-waits', 'missing'])
+    ).toEqual(['legacy-review', 'typed-manual', 'typed-review', 'empty-waits', 'missing'])
   })
 
-  test('keeps review above the intentionally shared non-review wait tier', () => {
+  describe('active ordering by human actionability', () => {
+    test('human review, question, and manual waits outrank running work; dependency and idle follow it', () => {
+      expect(
+        ids([
+          ws('z-dependency', { derivedState: 'waiting_on_dependency' }),
+          ws('m-progress', { derivedState: 'in_progress' }),
+          ws('q-question', { derivedState: 'waiting_on_answer' }),
+          ws('i-idle', { derivedState: 'idle' }),
+          ws('b-manual', { derivedState: 'blocked' }),
+          ws('a-review', { derivedState: 'in_review' }),
+        ])
+      ).toEqual(['a-review', 'b-manual', 'q-question', 'm-progress', 'i-idle', 'z-dependency'])
+    })
+
+    test('annotated automated review gates rank below running work and above other waiting work', () => {
+      expect(
+        ids([
+          ws('auto-review', { derivedState: 'in_review', automatedReviewGate: true }),
+          ws('progress', { derivedState: 'in_progress' }),
+          ws('dependency', { derivedState: 'waiting_on_dependency' }),
+          ws('idle', { derivedState: 'idle' }),
+        ])
+      ).toEqual(['progress', 'auto-review', 'dependency', 'idle'])
+    })
+
+    test('the automated discriminator applies to typed review waits too', () => {
+      expect(
+        ids([
+          ws('gate', { openWaits: [openWait('review')], automatedReviewGate: true }),
+          ws('human', { openWaits: [openWait('review')] }),
+          ws('progress', { derivedState: 'in_progress' }),
+        ])
+      ).toEqual(['human', 'progress', 'gate'])
+    })
+
+    test('absent or false discriminator keeps review waits human-actionable (older payloads)', () => {
+      expect(
+        ids([
+          ws('review-absent', { derivedState: 'in_review' }),
+          ws('review-false', { derivedState: 'in_review', automatedReviewGate: false }),
+          ws('progress', { derivedState: 'in_progress' }),
+        ])
+      ).toEqual(['review-absent', 'review-false', 'progress'])
+    })
+
+    test('the discriminator never lifts non-review states', () => {
+      expect(
+        ids([
+          ws('flagged-dependency', { derivedState: 'waiting_on_dependency', automatedReviewGate: true }),
+          ws('progress', { derivedState: 'in_progress' }),
+        ])
+      ).toEqual(['progress', 'flagged-dependency'])
+    })
+  })
+
+  test('splits human-actionable waits from dependency waits that wait on another stream', () => {
     expect(
       ids([
         ws('a-blocked', { derivedState: 'blocked' }),
@@ -111,7 +166,7 @@ describe('sortCanonicalWorkStreams', () => {
         ws('z-answer', { derivedState: 'waiting_on_answer' }),
         ws('m-dependency', { derivedState: 'waiting_on_dependency' }),
       ])
-    ).toEqual(['review', 'a-blocked', 'm-dependency', 'z-answer'])
+    ).toEqual(['a-blocked', 'review', 'z-answer', 'm-dependency'])
   })
 
   test('defaults missing or malformed priority and dates without losing determinism', () => {
@@ -165,5 +220,5 @@ test('delivery review ranks with review and paused waits do not acquire urgency'
       ws('c-external', { delivery: { kind: 'external' }, openWaits: [] }),
       ws('d-merge', { delivery: { kind: 'merge' }, openWaits: [] }),
     ])
-  ).toEqual(['d-merge', 'c-external', 'b-running', 'a-paused'])
+  ).toEqual(['d-merge', 'b-running', 'a-paused', 'c-external'])
 })

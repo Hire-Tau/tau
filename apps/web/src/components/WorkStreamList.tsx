@@ -32,7 +32,7 @@ import {
   SkeletonText,
   SkeletonRows,
 } from './loading/Skeleton'
-import { sortCanonicalWorkStreams, WORK_STREAM_STATUS_ROLE, type WorkStreamPresentationState } from '@tau/shared'
+import { WORK_STREAM_STATUS_ROLE, type WorkStreamPresentationState } from '@tau/shared'
 import type { WorkStream, WorkStreamStatus, WorkStreamDerivedState, Squad, Agent } from '@tau/shared'
 
 // --- Status constants ---
@@ -867,12 +867,12 @@ export function WorkStreamList({
     })
   }, [pagedDoneStreams, statusFilters, squadFilters, showSquadFilter])
 
-  // Split into active and done
+  // Split into active and done. The server canonical order (GET /workstreams)
+  // is the single ordering authority: every input here arrives pre-sorted and
+  // the filters above preserve relative order, so no client re-sort is needed.
   const { activeStreams, doneStreams } = useMemo(() => {
-    const activeStreams = sortCanonicalWorkStreams(filteredWorkStreams.filter((ws) => isWsActive(ws.status)))
-    const doneStreams = sortCanonicalWorkStreams(
-      pagedDone ? filteredPagedDoneStreams : filteredWorkStreams.filter((ws) => isWsDone(ws.status))
-    )
+    const activeStreams = filteredWorkStreams.filter((ws) => isWsActive(ws.status))
+    const doneStreams = pagedDone ? filteredPagedDoneStreams : filteredWorkStreams.filter((ws) => isWsDone(ws.status))
     return { activeStreams, doneStreams }
   }, [filteredWorkStreams, filteredPagedDoneStreams, pagedDone])
 

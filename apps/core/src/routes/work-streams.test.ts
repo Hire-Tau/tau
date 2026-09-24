@@ -1,5 +1,5 @@
 import { storedLegacyWorkStream } from '../test-utils/stored-legacy-work-stream'
-import { createBlankWorkflow, type CreateWorkStreamInput } from '@tau/shared'
+import { createBlankWorkflow, createWorkflowRun, type CreateWorkStreamInput } from '@tau/shared'
 import { createHmac } from 'node:crypto'
 import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, setSystemTime, spyOn } from 'bun:test'
 import { like, eq, inArray, sql } from 'drizzle-orm'
@@ -11,6 +11,7 @@ import { identityMiddleware } from '../middleware/identity'
 import { db } from '../db'
 import {
   workStreams,
+  workStreamFlowRuns,
   worktreeCleanupJobs,
   workStreamWorktrees,
   workStreamOrderSnapshots,
@@ -21,6 +22,7 @@ import {
   executions,
   roles,
 } from '../db/schema'
+import { openWait } from '../services/work-streams/waits'
 import { AgentType } from '../entities/AgentType'
 import { Agent } from '../entities/Agent'
 import { Execution } from '../entities/Execution'
@@ -643,6 +645,65 @@ describe('work-streams routes', () => {
         if (pageNumber === 1 && afterFirst) await afterFirst(seen)
       } while (cursor)
       return seen
+    }
+
+    /**
+     * Five active streams covering the human-actionability tiers: a review a
+     * human must judge, running work, an authorized auto-merge delivery gate
+     * waiting on code-host CI (annotated automatedReviewGate), a dependency
+     * wait, and idle work.
+     */
+    async function seedActionabilityFixture() {
+      const squad = await Squad.find(testSquadId)
+      await db
+        .update(squads)
+        .set({ metadata: { ...(squad!.metadata as object), policies: { allowAutoMerge: true } } })
+        .where(eq(squads.id, testSquadId))
+
+      const human = await storedLegacyWorkStream({ squadId: testSquadId, title: `${testPrefix} human review` })
+      expect((await postJson(`/api/workstreams/${human.id}/request-review`, { message: 'human verdict' })).status).toBe(
+        200
+      )
+
+      const running = await storedLegacyWorkStream({
+        squadId: testSquadId,
+        title: `${testPrefix} running`,
+        agentIds: [testAgentId],
+        assigneeAgentId: testAgentId,
+      })
+      await db.insert(executions).values({ agentId: testAgentId, status: 'running' })
+
+      const auto = await storedLegacyWorkStream({
+        squadId: testSquadId,
+        title: `${testPrefix} automated gate`,
+        completionMode: 'pr-auto-merge',
+        metadata: {
+          codeHost: { integration: 'github', repository: 'acme/widgets', changeRequest: { number: 7 } },
+        },
+      })
+      const definition = createBlankWorkflow()
+      definition.completion = { mode: 'pr-auto-merge', followChanges: true }
+      await db.insert(workStreamFlowRuns).values({
+        workStreamId: auto.id,
+        activated: true,
+        state: { ...createWorkflowRun(definition), status: 'completion-ready' },
+        source: { schemaVersion: 1, source: { kind: 'inline' }, definition },
+        createRequestId: crypto.randomUUID(),
+        createRequestHash: 'fixture',
+        createdBy: 'test',
+      })
+      expect((await postJson(`/api/workstreams/${auto.id}/request-review`, { message: 'ci will merge' })).status).toBe(
+        200
+      )
+
+      const dependency = await storedLegacyWorkStream({
+        squadId: testSquadId,
+        title: `${testPrefix} dependency wait`,
+      })
+      await openWait(db, { workStreamId: dependency.id, type: 'dependency' })
+
+      const idle = await storedLegacyWorkStream({ squadId: testSquadId, title: `${testPrefix} idle` })
+      return { human, running, auto, dependency, idle }
     }
 
     it('lists work streams for a squad', async () => {
@@ -1689,6 +1750,33 @@ describe('work-streams routes', () => {
       expect(pageNumber).toBe(5)
       expect(seen).toEqual(expected)
       expect(new Set(seen).size).toBe(120)
+    })
+
+    it('orders active work by human actionability: human review, running work, automated gate, then the rest', async () => {
+      const { human, running, auto, dependency, idle } = await seedActionabilityFixture()
+
+      const list = await (await apiFetch(`/api/workstreams?squadId=${testSquadId}&statuses=active`)).json()
+      expect(list.map((row: { id: string }) => row.id)).toEqual([human.id, running.id, auto.id, dependency.id, idle.id])
+      const byId = new Map(list.map((row: { id: string }) => [row.id, row]))
+      expect(byId.get(auto.id).automatedReviewGate).toBe(true)
+      expect(byId.get(human.id).automatedReviewGate).toBeUndefined()
+      expect(list.map((row: { derivedState: string }) => row.derivedState)).toEqual([
+        'in_review',
+        'in_progress',
+        'in_review',
+        'waiting_on_dependency',
+        'idle',
+      ])
+    })
+
+    it('orders the paged snapshot path with the same annotation-aware urgency', async () => {
+      const { human, running, auto, dependency, idle } = await seedActionabilityFixture()
+
+      const seen = await walkPagedIds(`/api/workstreams?squadId=${testSquadId}&statuses=active`, 2)
+      expect(seen).toEqual([human.id, running.id, auto.id, dependency.id, idle.id])
+      const page = await (await apiFetch(`/api/workstreams?squadId=${testSquadId}&statuses=active&limit=5`)).json()
+      const autoRow = page.items.find((row: { id: string }) => row.id === auto.id)
+      expect(autoRow.automatedReviewGate).toBe(true)
     })
 
     it('bounds large queued pages, cursors, and full-row annotation work', async () => {

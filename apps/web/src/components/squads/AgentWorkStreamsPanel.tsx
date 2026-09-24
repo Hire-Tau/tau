@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { queries } from '../../queryOptions'
 import { WorkStreamDetailModal, formatRelativeTime, getGithubInfo } from '../WorkStreamDetailModal'
 import { PullRequestIcon, WorkStreamIcon } from '../icons'
-import { sortCanonicalWorkStreams, type Agent, type WorkStream } from '@tau/shared'
+import { type Agent, type WorkStream } from '@tau/shared'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton } from '../loading/Skeleton'
 
@@ -51,7 +51,10 @@ export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
     return workStreams.filter((ws) => isAgentAttachedToWorkStream(ws, agent.id))
   }, [workStreams, agent.id])
 
-  const sortedWorkStreams = useMemo(() => sortCanonicalWorkStreams(relevantWorkStreams), [relevantWorkStreams])
+  // The server canonical order (GET /workstreams) is the single ordering
+  // authority: the squad list arrives pre-sorted and the agent filter above
+  // preserves relative order, so no client re-sort is needed.
+  const sortedWorkStreams = relevantWorkStreams
   const workStreamSkeletonCount = useLoadingShapeCount(
     `agents:${agent.id}:work-streams`,
     isSuccess ? sortedWorkStreams.length : undefined,

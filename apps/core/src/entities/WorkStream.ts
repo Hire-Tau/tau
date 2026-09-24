@@ -801,6 +801,7 @@ export class WorkStream extends BaseEntity<WorkStreamJson, UpdateWorkStreamInput
           assigneeAgentId: workStreams.assigneeAgentId,
           agentIds: workStreams.agentIds,
           dependsOn: workStreams.dependsOn,
+          metadata: workStreams.metadata,
           createdAt: workStreams.createdAt,
           updatedAt: workStreams.updatedAt,
         })

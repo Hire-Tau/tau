@@ -66,6 +66,7 @@ import { getSquadAttention } from '../services/squad/subscriptions'
 import { loadUserAttention } from '../services/attention/resolver'
 import { parseOptionalJsonObjectBody } from '../middleware/json-body-errors'
 import { computePriorityAnnotations } from '../services/work-streams/priority-annotations'
+import { computeAutomatedReviewGates } from '../services/work-streams/automated-review-gate'
 import { WorkStreamBusyError, WorkStreamNotParkableError, parkWorkStream } from '../services/work-streams/admission'
 import { computeDerivedStates } from '../services/work-streams/derived-state'
 import { listWaitHistory, toWaitJson } from '../services/work-streams/waits'
@@ -134,12 +135,14 @@ async function annotateWorkStreams(streams: WorkStream[]) {
       [...new Set((row.state.definition.subscriptions ?? []).map((subscription) => subscription.source.integration))],
     ])
   )
+  const automatedReviewGates = await computeAutomatedReviewGates(streams, derived)
   return streams.map((stream) => ({
     ...stream.toJson(),
     integrationEventSources: sources.get(stream.id) ?? [],
     runtime: runtimes.get(stream.id),
     ...(priorityAnnotations.get(stream.id) ?? {}),
     ...(derived.get(stream.id) ?? {}),
+    ...(automatedReviewGates.has(stream.id) ? { automatedReviewGate: true } : {}),
   }))
 }
 
@@ -269,11 +272,13 @@ async function orderNonTerminalCandidates(
     computePriorityAnnotations(streams),
     computeDerivedStates(streams),
   ])
+  const automatedReviewGates = await computeAutomatedReviewGates(streams, derived)
   return sortCanonicalWorkStreams(
     streams.map((stream) => ({
       ...stream,
       ...(priorityAnnotations.get(stream.id) ?? {}),
       ...(derived.get(stream.id) ?? {}),
+      ...(automatedReviewGates.has(stream.id) ? { automatedReviewGate: true } : {}),
     }))
   )
 }
