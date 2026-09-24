@@ -108,6 +108,8 @@ const LAYOUT: { path: string; kind: 'file' | 'dir' | 'generated'; contents?: str
   { path: 'apps/core/dist/worker.js', kind: 'file' },
   { path: 'apps/core/dist/migrate.js', kind: 'file' },
   { path: 'apps/core/dist/smoke-configured-extensions.js', kind: 'file' },
+  // Operator box control (platform scripts/box-control.ts runs it on the tenant VM).
+  { path: 'apps/core/dist/box-control.js', kind: 'file' },
   { path: 'apps/core/drizzle', kind: 'dir' },
   { path: 'apps/core/docker-sandbox/devbox.json', kind: 'file' },
   { path: 'apps/core/docker-sandbox/git-credential-github-token', kind: 'file' },
