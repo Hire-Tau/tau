@@ -8,13 +8,12 @@ import {
   validateCustomTheme,
   type CustomThemeDocument,
   type CustomThemeVariants,
-  type EffectiveAppearance,
   type ThemePalette,
   type ThemePreset,
 } from '@tau/shared'
 import { isHttpResponseError } from '@tau/client-core'
 import type { useTheme } from '../../providers/ThemeProvider'
-import { useThemeSyncStore } from '../../providers/ThemeProvider'
+import { useThemePreview } from '../../providers/ThemeProvider'
 import { BUILT_IN_THEMES, findWebTheme } from '../../theme/registry'
 import { exportCustomTheme, readPreviewTokens, removeCustomProperties } from '../../theme/custom'
 import { applyResolvedTheme } from '../../theme/apply'
@@ -84,7 +83,10 @@ function reshapeForBase(doc: CustomThemeDocument, nextBaseId: string): CustomThe
 function channelsToSwatchHex(channels: string): string {
   const [rgb] = channels.split(' / ')
   const [r, g, b] = rgb!.trim().split(/\s+/).map(Number)
-  const hex = (n: number) => Math.round(Number.isFinite(n) ? n : 0).toString(16).padStart(2, '0')
+  const hex = (n: number) =>
+    Math.round(Number.isFinite(n) ? n : 0)
+      .toString(16)
+      .padStart(2, '0')
   return `#${hex(r!)}${hex(g!)}${hex(b!)}`
 }
 
@@ -170,7 +172,7 @@ export function CustomThemeEditor({
   baseId: string
   onClose: () => void
 }) {
-  const store = useThemeSyncStore()
+  const { setPreview } = useThemePreview()
   const cache = useQueryClient()
   const [draft, setDraft] = useState<CustomThemeDocument>(() => preset?.document ?? emptyThemeDocument(baseId))
   const base = findWebTheme(draft.base)
@@ -201,15 +203,16 @@ export function CustomThemeEditor({
   // Whole-app live preview while the editor is open: paints the draft's
   // CURRENT tab onto document.documentElement itself (pure DOM, the same
   // paintRoot path ThemeQuickPicker's hover preview uses) — no persistence
-  // until Save. Runs on every draft/tab change; a separate unmount-only
-  // effect below restores the saved selection.
+  // until Save. Registered through ThemeProvider's preview slot (not a direct
+  // paintRoot call): the provider reapplies this painter after every one of
+  // its OWN real paints, so this preview survives a quick-picker appearance
+  // change, a storage event from another tab, or remote account-sync
+  // adoption happening while the editor is open, instead of being silently
+  // clobbered by it. Runs on every draft/tab change; the effect's cleanup
+  // (unmount, or superseded by a later registrant) restores the saved
+  // selection via the SAME slot — see useThemePreview's doc comment.
   useLayoutEffect(() => {
-    // Layout effects fire bottom-up (children before parents), so on mount
-    // ThemeProvider's OWN paint effect would run after this one and clobber
-    // the draft preview. A microtask runs after every layout effect in the
-    // commit (including ancestors') but still before the browser paints —
-    // this repaint is always the last word, with no visible flash.
-    queueMicrotask(() => {
+    const paint = () => {
       const root = document.documentElement
       removeCustomProperties(root)
       applyResolvedTheme(root, base, tab)
@@ -247,19 +250,10 @@ export function CustomThemeEditor({
       } catch {
         setNotice('Contrast analysis is unavailable for this preview; Apply is still available.')
       }
-    })
+    }
+    return setPreview(paint)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft, tab])
-
-  // Closing/unmounting restores the saved selection by re-reading the store
-  // snapshot — never the draft, regardless of how the editor closed.
-  const restore = useStableRef(() => {
-    const snapshot = store.getSnapshot()
-    const themeDef = findWebTheme(snapshot.selection.themeId)
-    const appearance: EffectiveAppearance = themeDef.kind === 'unified' ? 'constant' : valueRef.current.theme
-    paintRoot(document.documentElement, themeDef, appearance, snapshot.custom)
-  })
-  useLayoutEffect(() => () => restore.current(), [restore])
+  }, [draft, tab, setPreview])
 
   const override = (name: string, nextColor: string) => {
     const next = { ...overrides }

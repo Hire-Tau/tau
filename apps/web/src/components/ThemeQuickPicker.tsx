@@ -2,7 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
 import type { EffectiveAppearance, ThemePreset } from '@tau/shared'
 import type { useTheme } from '../providers/ThemeProvider'
-import { useThemeSyncStore } from '../providers/ThemeProvider'
+import { useThemePreview } from '../providers/ThemeProvider'
 import { BUILT_IN_THEMES, findWebTheme, THEME_PICKER_ENABLED, type WebThemeDefinition } from '../theme/registry'
 import { applyResolvedTheme } from '../theme/apply'
 import { applyCustomTheme, removeCustomProperties } from '../theme/custom'
@@ -17,6 +17,12 @@ const HOVER_PREVIEW_DELAY_MS = 100
 type Circle =
   | { kind: 'builtin'; id: string; label: string; theme: WebThemeDefinition }
   | { kind: 'preset'; id: string; label: string; preset: ThemePreset }
+
+// Hoisted so a caller that never passes `presets` (auth-disabled instances,
+// or before the query resolves) doesn't create a new empty array every
+// render, which would otherwise cost an extra effect run below on each of
+// this component's re-renders for no reason.
+const EMPTY: ThemePreset[] = []
 
 const APPEARANCE_OPTIONS = [
   ['light', 'Light', SunIcon],
@@ -40,7 +46,7 @@ function presetAppearance(preset: ThemePreset, currentAppearance: EffectiveAppea
  */
 export function ThemeQuickPicker({
   value,
-  presets = [],
+  presets = EMPTY,
   enabled = THEME_PICKER_ENABLED,
 }: {
   value: ReturnType<typeof useTheme>
@@ -48,7 +54,7 @@ export function ThemeQuickPicker({
   presets?: ThemePreset[]
   enabled?: boolean
 }) {
-  const store = useThemeSyncStore()
+  const { setPreview } = useThemePreview()
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -56,7 +62,9 @@ export function ThemeQuickPicker({
   const presetSwatchRefs = useRef(new Map<string, HTMLElement>())
   const panelId = useId()
   const previewTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const previewActive = useRef(false)
+  // The unregister function returned by the preview slot's setPreview, or
+  // null when no hover preview is currently registered by this component.
+  const previewClearRef = useRef<(() => void) | null>(null)
   const valueRef = useStableRef(value)
 
   const circles: Circle[] = [
@@ -67,34 +75,37 @@ export function ThemeQuickPicker({
   const restorePreview = () => {
     clearTimeout(previewTimer.current)
     previewTimer.current = undefined
-    if (!previewActive.current) return
-    previewActive.current = false
-    // Re-read the store now, not a value captured when the hover started: the
-    // stored selection may have changed (another tab, Settings) mid-preview.
-    const snapshot = store.getSnapshot()
-    const themeDef = findWebTheme(snapshot.selection.themeId)
-    const appearance: EffectiveAppearance = themeDef.kind === 'unified' ? 'constant' : valueRef.current.theme
-    paintRoot(document.documentElement, themeDef, appearance, snapshot.custom)
+    // A no-op if a later registrant (e.g. the editor opening mid-hover) has
+    // since taken over the slot — see useThemePreview's doc comment.
+    previewClearRef.current?.()
+    previewClearRef.current = null
   }
 
   const applyPreview = (circle: Circle) => {
-    previewActive.current = true
-    const root = document.documentElement
-    if (circle.kind === 'preset')
-      paintRoot(
-        root,
-        findWebTheme(circle.preset.document.base),
-        presetAppearance(circle.preset, valueRef.current.theme),
-        circle.preset.document
-      )
-    // Palette-only preview: keep the app's current effective appearance.
-    else paintRoot(root, circle.theme, valueRef.current.theme, null)
+    previewClearRef.current = setPreview(() => {
+      const root = document.documentElement
+      if (circle.kind === 'preset')
+        paintRoot(
+          root,
+          findWebTheme(circle.preset.document.base),
+          presetAppearance(circle.preset, valueRef.current.theme),
+          circle.preset.document
+        )
+      // Palette-only preview: keep the app's current effective appearance.
+      else paintRoot(root, circle.theme, valueRef.current.theme, null)
+    })
   }
 
   const startPreview = (circle: Circle) => {
     clearTimeout(previewTimer.current)
     previewTimer.current = setTimeout(() => applyPreview(circle), HOVER_PREVIEW_DELAY_MS)
   }
+
+  // Belt-and-suspenders: if this component unmounts while a hover preview is
+  // active (e.g. navigating away mid-hover), restore rather than leaving a
+  // stale preview painted. close()/selectCircle() already call
+  // restorePreview() on every ordinary path.
+  useEffect(() => restorePreview, [])
 
   const close = () => {
     restorePreview()

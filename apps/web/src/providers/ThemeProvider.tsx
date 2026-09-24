@@ -5,6 +5,8 @@ import {
   useEffect,
   useLayoutEffect,
   useCallback,
+  useMemo,
+  useRef,
   useSyncExternalStore,
   type ReactNode,
 } from 'react'
@@ -57,6 +59,34 @@ export function useThemeSyncStore() {
   const store = useContext(ThemeSyncContext)
   if (!store) throw new Error('useThemeSyncStore must be used within ThemeProvider')
   return store
+}
+
+/** A whole-app preview repaint: pure DOM, no return value (contrast this with
+ * paintRoot, which callers use to build one of these closures). */
+export type ThemePreviewPainter = () => void
+
+interface ThemePreviewApi {
+  /** Registers the ACTIVE preview painter (last registrant wins — only one
+   * preview is ever active), paints it immediately, and returns an unregister
+   * function. The provider's own root-paint effect reapplies whichever
+   * painter is currently registered AFTER its own real paint, every time it
+   * paints — so an unrelated repaint (setAppearance, a storage event, remote
+   * account-sync adoption) never silently clobbers an open preview.
+   *
+   * The returned unregister function repaints the CURRENT real selection
+   * (never a stale one) and is a no-op if a later registrant has since taken
+   * over the slot — callers should register on open/hover-start and call the
+   * returned function on close/unmount/hover-end, exactly like a React effect
+   * cleanup (usually IS one). */
+  setPreview: (painter: ThemePreviewPainter) => () => void
+}
+const ThemePreviewContext = createContext<ThemePreviewApi | null>(null)
+
+// eslint-disable-next-line react-refresh/only-export-components
+export function useThemePreview(): ThemePreviewApi {
+  const ctx = useContext(ThemePreviewContext)
+  if (!ctx) throw new Error('useThemePreview must be used within ThemeProvider')
+  return ctx
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
@@ -123,6 +153,39 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const { theme: resolvedThemeDefinition, appearance: resolvedAppearance } = resolved
   const resolvedTheme: Theme = resolvedAppearance === 'dark' ? 'dark' : 'light'
 
+  // The preview slot (see useThemePreview's doc comment above): `previewRef`
+  // holds the currently-registered painter (or null), and `realPaintRef`
+  // always holds a FRESH closure that paints the real, current selection —
+  // reassigned every render (the "latest ref" pattern, not memoized), so the
+  // preview-clearing restore below is never stale even if it runs long after
+  // the render that registered it.
+  const previewRef = useRef<ThemePreviewPainter | null>(null)
+  const realPaintRef = useRef<() => void>(() => {})
+  realPaintRef.current = () => {
+    const root = document.documentElement
+    removeCustomProperties(root)
+    applyResolvedTheme(root, resolvedThemeDefinition, resolvedAppearance)
+    if (!custom) return
+    try {
+      applyCustomTheme(root, custom, resolvedAppearance)
+    } catch {
+      store.recoverCustom()
+    }
+  }
+  const setPreview = useCallback((painter: ThemePreviewPainter) => {
+    previewRef.current = painter
+    painter()
+    return () => {
+      // Only clear if we're still the registered painter — a later
+      // registrant (e.g. the editor opening while a quick-picker hover
+      // preview is still technically "active") already owns the slot, and
+      // this stale cleanup must not clobber it.
+      if (previewRef.current !== painter) return
+      previewRef.current = null
+      realPaintRef.current()
+    }
+  }, [])
+
   useLayoutEffect(() => {
     const root = document.documentElement
     removeCustomProperties(root)
@@ -162,6 +225,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       }
       meta.content = surface
     }
+
+    // Reapply the active preview (editor draft, quick-picker hover), if any,
+    // AFTER our own real paint above. This is what makes a preview survive
+    // an unrelated repaint — setAppearance, a storage event from another tab,
+    // remote account-sync adoption — instead of being silently clobbered by
+    // it: every time this effect repaints the real selection, it hands
+    // control straight back to whatever's currently in the preview slot.
+    previewRef.current?.()
   }, [resolvedThemeDefinition, resolvedAppearance, selection, custom, store])
 
   const setThemeId = useCallback(
@@ -238,10 +309,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setAppearance,
     setThemeId,
   }
+  const previewContextValue = useMemo(() => ({ setPreview }), [setPreview])
 
   return (
     <ThemeSyncContext.Provider value={store}>
-      <ThemeContext.Provider value={contextValue}>{children}</ThemeContext.Provider>
+      <ThemePreviewContext.Provider value={previewContextValue}>
+        <ThemeContext.Provider value={contextValue}>{children}</ThemeContext.Provider>
+      </ThemePreviewContext.Provider>
     </ThemeSyncContext.Provider>
   )
 }

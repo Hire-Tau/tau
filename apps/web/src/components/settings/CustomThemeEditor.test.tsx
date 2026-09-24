@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { HttpResponseError } from '@tau/client-core'
 import { STATUS_TOKENS, type ThemePreset } from '@tau/shared'
 import { acquireDomHarness } from '../../test/domHarness'
-import { ThemeProvider, useTheme } from '../../providers/ThemeProvider'
+import { ThemeProvider, useTheme, useThemeSyncStore } from '../../providers/ThemeProvider'
 import { CustomThemeEditor } from './CustomThemeEditor'
 import { palettes, resolveToken } from '../../theme/test/builtins'
 import { client } from '../../api/clientInstance'
@@ -32,12 +32,31 @@ const existing: ThemePreset = {
   updatedAt: '2026-01-01T00:00:00.000Z',
 }
 
-function Harness({ preset, baseId, onClose }: { preset: ThemePreset | null; baseId: string; onClose: () => void }) {
+function Harness({
+  preset,
+  baseId,
+  onClose,
+  onReady,
+}: {
+  preset: ThemePreset | null
+  baseId: string
+  onClose: () => void
+  onReady?: (value: ReturnType<typeof useTheme>, store: ReturnType<typeof useThemeSyncStore>) => void
+}) {
   const value = useTheme()
+  const store = useThemeSyncStore()
+  onReady?.(value, store)
   return <CustomThemeEditor value={value} preset={preset} baseId={baseId} onClose={onClose} />
 }
 
-async function render({ preset = null as ThemePreset | null, baseId = 'harbor', appearance = 'dark' } = {}) {
+async function render({
+  preset = null as ThemePreset | null,
+  baseId = 'harbor',
+  appearance = 'dark',
+  onReady = undefined as
+    | ((value: ReturnType<typeof useTheme>, store: ReturnType<typeof useThemeSyncStore>) => void)
+    | undefined,
+} = {}) {
   const dom = await acquireDomHarness({ url: 'https://tau.test' })
   cleanup = () => dom.cleanup()
   localStorage.setItem('tau-appearance', appearance)
@@ -66,7 +85,7 @@ async function render({ preset = null as ThemePreset | null, baseId = 'harbor', 
     root.render(
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
-          <Harness preset={preset} baseId={baseId} onClose={onClose} />
+          <Harness preset={preset} baseId={baseId} onClose={onClose} onReady={onReady} />
         </ThemeProvider>
       </QueryClientProvider>
     )
@@ -321,7 +340,7 @@ function toHex(channels: string): string {
   return `#${hex(r!)}${hex(g!)}${hex(b!)}`
 }
 
-test('an unset seed swatch reflects the active base theme\'s own --color-border token, not a hardcoded color', async () => {
+test("an unset seed swatch reflects the active base theme's own --color-border token, not a hardcoded color", async () => {
   // Two different base themes -> two different --color-border values -> the
   // "not set yet" placeholder swatch must differ too. A hardcoded literal
   // (any fixed hex, however it's obfuscated in source) would be identical
@@ -348,4 +367,89 @@ test('an unset seed swatch reflects the active base theme\'s own --color-border 
 
   expect(emberBorder).not.toBe(harborBorder)
   expect(emberSwatch.value).not.toBe(harborSwatch.value)
+})
+
+test('the editor draft preview survives an appearance change made elsewhere while editing', async () => {
+  let value: ReturnType<typeof useTheme> | undefined
+  const { container } = await render({
+    preset: existing,
+    appearance: 'dark',
+    onReady: (v) => {
+      value = v
+    },
+  })
+  await change(container, 'Color token', '--color-text-primary')
+  await change(container, 'Color value', '#00ff00')
+  await click(container, 'Preview token')
+  expect(document.documentElement.style.getPropertyValue('--color-text-primary')).toBe('0 255 0')
+
+  // A real ThemeProvider repaint triggered by something OTHER than the editor
+  // (here: the app's own Light/Dark/System control) must not clobber the
+  // still-open draft preview: the provider reapplies the active preview
+  // painter right after its own paint, every time it paints.
+  await act(async () => value!.setAppearance('light'))
+  // The REAL underlying selection did change...
+  expect(localStorage.getItem('tau-appearance')).toBe('light')
+  // ...but the editor's own draft (still on its own independent 'Dark' tab)
+  // is what's actually on screen, reapplied after that real repaint.
+  expect(document.documentElement.getAttribute('data-appearance')).toBe('dark')
+  expect(document.documentElement.style.getPropertyValue('--color-text-primary')).toBe('0 255 0')
+})
+
+test('the editor draft preview survives a storage event from another tab while editing', async () => {
+  const { container } = await render({ preset: existing, appearance: 'dark' })
+  await change(container, 'Color token', '--color-text-primary')
+  await change(container, 'Color value', '#00ff00')
+  await click(container, 'Preview token')
+  expect(document.documentElement.style.getPropertyValue('--color-text-primary')).toBe('0 255 0')
+
+  // Simulate another tab/window changing the appearance: a real storage
+  // event, exactly like the browser dispatches on a cross-document write.
+  await act(async () => {
+    localStorage.setItem('tau-appearance', 'light')
+    window.dispatchEvent(new window.StorageEvent('storage', { key: 'tau-appearance', newValue: 'light' }))
+  })
+  expect(localStorage.getItem('tau-appearance')).toBe('light')
+  expect(document.documentElement.getAttribute('data-appearance')).toBe('dark')
+  expect(document.documentElement.style.getPropertyValue('--color-text-primary')).toBe('0 255 0')
+})
+
+test('the editor draft preview survives remote account-sync adoption while editing', async () => {
+  let store: ReturnType<typeof useThemeSyncStore> | undefined
+  const { container } = await render({
+    preset: existing,
+    appearance: 'dark',
+    onReady: (_value, s) => {
+      store = s
+    },
+  })
+  await change(container, 'Color token', '--color-text-primary')
+  await change(container, 'Color value', '#00ff00')
+  await click(container, 'Preview token')
+  expect(document.documentElement.style.getPropertyValue('--color-text-primary')).toBe('0 255 0')
+
+  // A different account preference (server-adopted, e.g. "Use this device's
+  // theme everywhere") lands while the editor is open. This connects a fake
+  // sync API and drives the real adoptSynced()/refresh() flow — the same
+  // codepath ThemeAccountSync uses — rather than a synthetic stand-in.
+  const adopted = { themeId: 'ember', appearance: 'light' as const, customTheme: null, presetId: null }
+  const api = {
+    getMine: async () => ({ userId: 'u1', theme: adopted }),
+    updateMine: async (input: { theme: typeof adopted }) => ({ userId: 'u1', theme: input.theme }),
+  }
+  await act(async () => {
+    store!.connect(api)
+    await store!.refresh()
+  })
+  await act(async () => {
+    store!.adoptSynced()
+    await store!.refresh()
+  })
+  // The REAL underlying selection adopted the remote preference...
+  expect(store!.getSnapshot().selection).toEqual({ themeId: 'ember', appearance: 'light' })
+  // ...but the editor's own draft (still on 'harbor'/'Dark', its own tab) is
+  // what's actually on screen, reapplied after that real repaint.
+  expect(document.documentElement.getAttribute('data-theme')).toBe('harbor')
+  expect(document.documentElement.getAttribute('data-appearance')).toBe('dark')
+  expect(document.documentElement.style.getPropertyValue('--color-text-primary')).toBe('0 255 0')
 })

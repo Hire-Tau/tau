@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { act } from 'react'
-import { ThemeProvider, useTheme } from './ThemeProvider'
+import { ThemeProvider, useTheme, useThemePreview } from './ThemeProvider'
 import { acquireDomHarness } from '../test/domHarness'
 
 // Provider-level coverage for phase 0: <html> data-theme/data-appearance
@@ -395,4 +395,51 @@ test('a real root paint persists a resolved pre-paint snapshot matching the appl
     theme.setThemeId('harbor')
   })
   expect(localStorage.getItem('tau-custom-theme-resolved')).toBeNull()
+})
+
+test("the preview slot: last registrant wins, and a superseded registrant's clear never clobbers the current one", async () => {
+  const { dom } = await installThemeDom()
+  localStorage.setItem('tau-theme-id', 'harbor')
+  localStorage.setItem('tau-appearance', 'dark')
+  let api: ReturnType<typeof useThemePreview> | undefined
+  function PreviewProbe() {
+    api = useThemePreview()
+    return null
+  }
+  const { root } = dom.createRoot()
+  await act(async () => {
+    root.render(
+      <ThemeProvider>
+        <ThemeProbe />
+        <PreviewProbe />
+      </ThemeProvider>
+    )
+  })
+  const el = document.documentElement
+
+  // Registrant A (e.g. a quick-picker hover preview) takes the slot.
+  let clearA: (() => void) | undefined
+  await act(async () => {
+    clearA = api!.setPreview(() => el.style.setProperty('--color-text-primary', '1 1 1'))
+  })
+  expect(el.style.getPropertyValue('--color-text-primary')).toBe('1 1 1')
+
+  // Registrant B (e.g. the editor opening) takes over — only one preview is
+  // ever active, and the newest registration wins.
+  let clearB: (() => void) | undefined
+  await act(async () => {
+    clearB = api!.setPreview(() => el.style.setProperty('--color-text-primary', '2 2 2'))
+  })
+  expect(el.style.getPropertyValue('--color-text-primary')).toBe('2 2 2')
+
+  // A's stale clear (e.g. the hover ending AFTER the editor already opened)
+  // must not clobber B's still-active preview.
+  await act(async () => clearA!())
+  expect(el.style.getPropertyValue('--color-text-primary')).toBe('2 2 2')
+
+  // B's own clear (e.g. the editor closing) DOES restore the real selection
+  // — no custom document is applied here, so the inline override is removed
+  // entirely, falling back to harbor/dark's own CSS-cascade value.
+  await act(async () => clearB!())
+  expect(el.style.getPropertyValue('--color-text-primary')).toBe('')
 })
