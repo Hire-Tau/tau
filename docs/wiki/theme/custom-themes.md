@@ -52,9 +52,10 @@ the hex/`rgb()`/`rgba()` text field (the source of truth; alpha stays
 text-only, the swatch always shows the opaque hex) — a Contrast segmented
 toggle (Standard/High) and a Status colors segmented toggle
 (Static/Harmonized), all live-previewing the whole app immediately. An unset
-optional seed shows a neutral placeholder swatch, "Not set" in its text
-field, and no Clear button; setting one adds a Clear button that empties it
-back to unset. Clearing Primary drops the palette back to a plain
+optional seed shows a placeholder swatch reading the active base theme's own
+`--color-border` token off the live cascade (never a hardcoded color — see
+the no-raw-colors guard), "Not set" in its text field, and no Clear button;
+setting one adds a Clear button that empties it back to unset. Clearing Primary drops the palette back to a plain
 explicit-override document. Everything from before (Base theme, the
 Light/Dark variant tabs, the token-by-token Color token/Color value editor,
 the override list, and the contrast-warnings/safe-value panel) moves into a
@@ -147,23 +148,51 @@ pre-paint flash script**, which cannot trust the cascade that early (the same
 reason it has always kept a small hardcoded surface-color fallback table
 instead of reading computed style). Instead, `ThemeProvider`'s own real root
 paint persists a **resolved snapshot** — `localStorage['tau-custom-theme-resolved']
-= { docHash, appearance, vars }`, where `vars` is the exact compiled
-`--token`/`--custom-rgb-*`/`--custom-alpha-*` map `applyCustomTheme` just
-wrote to the root, `docHash` is a deterministic (FNV-1a, staleness-detection
-only) hash of the exact document, and `appearance` is the resolved side. On
-the next cold load, the flash script applies this snapshot directly
-(`root.style.setProperty` for each entry, filtered to registry-owned property
-names) when `docHash` and `appearance` both match the currently-loaded
-document — this is what lets a palette preset paint its fully derived look
+= { docHash, fingerprint, sides }`. `docHash` is a deterministic (FNV-1a,
+staleness-detection only) hash of the exact document; `fingerprint` is a
+**build-time** FNV-1a hash of `index.css`'s + `builtins.css`'s own content,
+injected identically into the main app bundle (`vite.config.ts`) and the
+separately-bundled pre-paint script (`generate-theme-flash.ts`) via a shared
+`theme/fnv.ts`, so a deploy that changes a built-in token's own value
+invalidates every previously persisted snapshot rather than serving a stale
+derived color (`theme/builtinFingerprint.ts`); `sides` maps each resolved
+appearance ('light'/'dark', or 'constant' for a unified base) that has
+actually been painted to the exact compiled `--token`/`--custom-rgb-*`/
+`--custom-alpha-*` map `applyCustomTheme` wrote for it. **Both** resolved
+sides of a dual-base palette document can be present at once: a
+`'system'`-appearance user's OS preference can flip between this real paint
+and the next cold load, so `ThemeProvider` also derives the currently
+non-visible side off-screen (a detached, zero-size, `visibility:hidden`
+`[data-theme-scope][data-theme][data-appearance]` probe — the same
+attribute-scoping the built-in CSS already defines for nested previews) and
+merges it into the same snapshot; gated on the document having a `palette`
+on a dual-kind base (an explicit-only document's other side needs no
+cascade/derivation at all, and a unified base has no other side), so the
+extra work only happens when it can actually pay off.
+
+On the next cold load, the flash script applies the snapshot directly
+(`root.style.setProperty` for each entry, filtered to registry-owned
+property names, and further filtered to the exact compiled channel grammar
+— see "Validation and application boundary" below) whenever `docHash` and
+`fingerprint` both match and `sides` has an entry for the currently-resolved
+appearance — this is what lets a palette preset paint its fully derived look
 before CSS/React, instead of flashing the plain base theme. A miss (the
-document was edited since the last real paint, the OS/appearance flipped to
-the side that was never snapshotted, or there is no snapshot yet) falls back
-to the explicit-overrides-only path as before; the very next real repaint
-derives fully again and refreshes the snapshot. `clearCustomTheme` clears this
-key alongside the document itself. The snapshot is capped at 200 KiB (a full
-palette+harmonized-status theme measures well under 100 KiB in practice) and
-is written only for the ACTIVE document, never a library preset that isn't
-currently applied.
+document was edited since the last real paint, a deploy changed a built-in
+token, the OS/appearance flipped to a side nothing has snapshotted yet, or
+there is no snapshot at all) falls back to the explicit-overrides-only path
+as before; the very next real repaint derives fully again and refreshes the
+snapshot (merging with, not discarding, whichever OTHER side's entry is
+still valid for the same doc/build). `clearCustomTheme` clears this key
+alongside the document itself. The snapshot is capped at 200 KiB (a full
+palette+harmonized-status theme, BOTH sides, measures well under 180 KiB in
+practice) and is written only for the ACTIVE document, never a library
+preset that isn't currently applied. Persisting on a storage-event-driven
+repaint (another tab changed the selection) is harmless, not just redundant:
+the derived vars are a pure function of (doc, base tokens), so every tab
+computes the identical value for the same (doc, appearance) pair, and the
+snapshot key is never one of the keys the cross-tab storage listener reacts
+to, so writing it can never itself trigger another repaint (no feedback
+loop).
 
 ## Validation and application boundary
 
@@ -176,22 +205,39 @@ currently applied.
 
 Concrete graph/chart and interactive/log-terminal adapters expand JavaScript exponent notation to plain decimal color arguments. This preserves tiny numeric alpha and intrinsic-alpha products for the actual dependency parsers without rounding them to opaque. xterm quantizes colors to eight-bit channels; its existing opaque-selection policy still uses 30% selection opacity. These renderer rules do not broaden the accepted import grammar.
 
-## The editor's whole-app live preview
+## The editor's whole-app live preview: the preview slot
 
-The preset editor (`CustomThemeEditor`, opened from **My themes**) paints its
-draft directly onto `document.documentElement` — the same pure-DOM
-`paintRoot` path `ThemeQuickPicker`'s hover preview uses (factored into
-`theme/preview.ts` so both share it) — instead of a scoped sample div. For a
-dual base it exposes Light/Dark tabs that each preview and edit their own
-variant independently; a unified base has no tabs. Opening the editor never
-persists anything; **Save**/**Save as new** are the only writes. Closing the
-editor — Cancel, Save success, or simply unmounting — always restores the
-previously applied selection by re-reading the theme store's snapshot, never
-the in-progress draft. (Implementation note: React fires layout effects
-child-before-parent, so the editor's first paint runs inside a microtask —
-scheduled after every layout effect in the same commit, including
-`ThemeProvider`'s own, but still before the browser paints — so its initial
-frame is never clobbered by the provider's unrelated repaint.)
+The preset editor (`CustomThemeEditor`, opened from **My themes**) and
+`ThemeQuickPicker`'s hover preview both paint a draft/candidate directly onto
+`document.documentElement` — the same pure-DOM `paintRoot` path (factored
+into `theme/preview.ts` so both share it) — instead of a scoped sample div.
+For a dual base the editor exposes Light/Dark tabs that each preview and
+edit their own variant independently; a unified base has no tabs. Opening
+the editor never persists anything; **Save**/**Save as new** are the only
+writes.
+
+Both preview UIs register through a single **preview slot** `ThemeProvider`
+owns (`useThemePreview()`/`setPreview(painter)`, `providers/ThemeProvider.tsx`)
+rather than calling `paintRoot` directly. `setPreview` stores the painter,
+paints it immediately, and returns an unregister function; `ThemeProvider`'s
+own root-paint effect reapplies whichever painter is currently registered
+**after its own real paint, every time it paints** — so an open preview
+survives ANY unrelated repaint (the app's Light/Dark/System control, a
+storage event from another tab, remote account-sync adoption), not just the
+one that happened to be racing it at mount time. Only one preview is ever
+active (last registrant wins); the unregister function repaints the current
+real selection, but only if it's still the registered painter, so a stale
+hover-preview cleanup (e.g. the pointer leaving a quick-picker circle AFTER
+the editor already opened) can never clobber a newer registration. Closing
+the editor — Cancel, Save success, or simply unmounting — unregisters its
+painter, which is exactly what restores the previously applied selection;
+there is no separate restore path to keep in sync.
+
+(This replaces an earlier `queueMicrotask`-based ordering hack that
+exploited React firing layout effects child-before-parent — fragile because
+it only ever won the race against the ONE repaint that happened to be
+in-flight at mount time, not against a repaint triggered later by something
+else entirely while the preview was still open.)
 
 The saved key is `tau-custom-theme`; a device-local `tau-theme-preset-id` key
 remembers which library preset the active document came from (or is absent
@@ -223,8 +269,8 @@ The editor reuses the built-in contrast computation and critical-pair inventory 
 ## Regression coverage
 
 - Shared: closed grammar/rejection, byte/count caps (including the worst-case-pair measurement), unknown-name and pre-inheritance coherence per variant, v1→v2 normalization, `compileCustomTheme`'s resolved-variant selection, OKLCH round-trip fidelity (`color-oklch.test.ts`), derivation buckets + harmonized-status bounding + the multi-seed contrast-pass property test in both a light and a dark real-base fixture, including a dedicated regression test holding the primary/page pair to the non-text (3:1) floor rather than the text (4.5:1) one, a concrete real-base (ember/dark) regression for `--on-accent-fg` being chosen against the final (post-pass) primary rather than a stale pre-pass one, and harmonized status fg/surface + badge-fg/badge-surface pairs actually being included in the contrast pass (`theme-derivation.test.ts`), preset request-schema/cap and per-owner-race/non-UUID-:id tests (`theme-preset.test.ts`, `theme-presets.test.ts`).
-- Core: owner-scoped preset CRUD (`GET/POST /theme-presets`, `GET/PUT/DELETE /theme-presets/:id`) — isolation, revision conflicts (409), validation (422), per-user cap (409), cascade on user deletion, and the generated `theme_presets` migration.
-- Web: custom preview isolation and complete inheritance, invalid-document fallback, export round trip (import now lives once, in the library), partial-application cleanup, graph/xterm observer repaint and reset, a real-CSS-cascade palette-derivation integration test (explicit overrides still win over derived values), the resolved-snapshot round trip and staleness rules (matching doc+appearance applies pre-paint; an edited doc or the other appearance falls back; a full palette+harmonized-status snapshot stays well under budget) in both `theme/custom.test.ts` and `theme/flashScript.test.ts` (the shipped script, not just the source), a `ThemeProvider` test that a real root paint persists a snapshot matching the applied document and clears it on deactivation, the editor's whole-app live preview (open/tab-switch/Cancel/unmount all repaint or restore correctly, including the mount-ordering fix above), color-field accessibility (swatch and text field are independently addressable, not ambiguously co-labelled), the preset library's New/Duplicate/Rename/Delete/Use/Export/Import flows, a real-built-in-CSS test that a palette-only preset's library swatch and quick-picker circle both resolve a recognizably-derived color (not empty, not the plain base), and `ThemeQuickPicker` rendering one circle per saved preset (in addition to the built-ins) with a selection ring keyed on the active preset id.
+- Core: owner-scoped preset CRUD (`GET/POST /theme-presets`, `GET/PUT/DELETE /theme-presets/:id`) — isolation, revision conflicts (409), validation (422), per-user cap (409, race-safe under real concurrency via a per-owner `pg_advisory_xact_lock` — a 20-way concurrent create from 49 lands exactly 1 more, never over the cap), a malformed `:id` is a 404 (never a raw driver error), cascade on user deletion, and the generated `theme_presets` migration.
+- Web: custom preview isolation and complete inheritance, invalid-document fallback, export round trip (import now lives once, in the library), partial-application cleanup, graph/xterm observer repaint and reset, a real-CSS-cascade palette-derivation integration test (explicit overrides still win over derived values), the resolved-snapshot round trip and staleness rules (matching doc+fingerprint+appearance applies pre-paint; an edited doc, a different build, or the other appearance falls back; a hostile/malformed snapshot value is never trusted — the WHOLE snapshot is rejected, not partially applied; a full palette+harmonized-status snapshot, BOTH sides, stays well under budget) in both `theme/custom.test.ts` and `theme/flashScript.test.ts` (the shipped script, not just the source), `ThemeProvider` tests that a real root paint persists a snapshot matching the applied document and clears it on deactivation, and that a `'system'`-appearance palette preset snapshots BOTH resolved sides (with a real pre-paint `readResolvedSnapshot` check on the non-visible side), the preview slot (last registrant wins; a superseded registrant's clear never clobbers the current one; the editor's live preview survives an appearance change, a storage event, and remote account-sync adoption made elsewhere while it's open) in `ThemeProvider.test.tsx` and `CustomThemeEditor.test.tsx`, the editor's whole-app live preview (open/tab-switch/Cancel/unmount all repaint or restore correctly), an unset seed swatch reading the active base theme's own `--color-border` token rather than any hardcoded color, color-field accessibility (swatch and text field are independently addressable, not ambiguously co-labelled), the preset library's New/Duplicate/Rename/Delete/Use/Export/Import flows, a real-built-in-CSS test that a palette-only preset's library swatch and quick-picker circle both resolve a recognizably-derived color (not empty, not the plain base), `ThemeQuickPicker` rendering one circle per saved preset (in addition to the built-ins) with a selection ring keyed on the active preset id, and the theme-presets query being gated identically (an auth-disabled instance sees presets in both) between `AppNav` and `ThemePresetLibrary` via a single shared `selfServiceQueryEnabled`.
 - Actual generated utility substitution covers all mapped tokens with custom alpha and intrinsic/utility opacity; built-in palette parity and contrast gates remain unchanged.
 - Security source checks prohibit CSS/HTML text writes in the custom application path; pre-paint generation cannot drift from the shared validator/compiler.
 
