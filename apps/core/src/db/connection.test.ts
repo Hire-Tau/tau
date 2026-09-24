@@ -345,9 +345,95 @@ describe('Bun TLS-upgrade leak guard (createBunTlsSafeSocketFactory)', () => {
     })
   })
 
-  test('a failed TCP connect rejects (so postgres.js can retry) instead of hanging', async () => {
+  // How postgres.js's own socket reports a failure, and what releases the pool
+  // slot: 'error', then 'close', after postgres.js has attached its listeners.
+  async function failureEvents(socket: net.Socket) {
+    const events: string[] = []
+    let error: unknown
+    socket.on('error', (value) => {
+      events.push('error')
+      error = value
+    })
+    await new Promise<void>((resolve) =>
+      socket.on('close', () => {
+        events.push('close')
+        resolve()
+      })
+    )
+    return { events, error }
+  }
+
+  test('a failed TCP connect is reported as error then close on the returned socket, not a rejection', async () => {
     // Port 1 on loopback: nothing listens there.
-    await expect(createBunTlsSafeSocketFactory()({ host: '127.0.0.1', port: 1 })).rejects.toBeInstanceOf(Error)
+    const socket = await createBunTlsSafeSocketFactory()({ host: '127.0.0.1', port: 1 })
+    const { events, error } = await failureEvents(socket)
+    expect(events).toEqual(['error', 'close'])
+    expect((error as NodeJS.ErrnoException).code).toBe('ECONNREFUSED')
+  })
+
+  // postgres.js reports a rejected socket factory through error() but never
+  // runs its closed() handler, so the connection is never released back to the
+  // pool. With the factory rejecting, every failed connect permanently used up
+  // a pool slot: after `max` failures (a database restart, a DNS blip) every
+  // later query on that client hung forever instead of failing. Mutation check:
+  // make the factory reject again and the third query below hangs.
+  test('failed connects release their pool slots, so later queries fail fast instead of hanging', async () => {
+    const { default: postgresClient } = await import('postgres')
+    // Port 1 on loopback: nothing listens there, so every connect is refused.
+    const sql = postgresClient('postgres://postgres:postgres@127.0.0.1:1/tau_test', {
+      max: 2,
+      connect_timeout: 2,
+      socket: createBunTlsSafeSocketFactory(),
+      onnotice: () => {},
+      // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- postgres.js generic default
+    } as postgres.Options<{}>)
+    try {
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const outcome = await Promise.race([
+          sql`select 1`.then(
+            () => 'connected',
+            (error: Error) => error
+          ),
+          new Promise<string>((resolve) => setTimeout(() => resolve('hung'), 3_000)),
+        ])
+        expect(outcome).toBeInstanceOf(Error)
+      }
+    } finally {
+      await sql.end({ timeout: 1 })
+    }
+  })
+
+  test('a client whose connects failed reconnects and serves queries once the database is reachable', async () => {
+    const { default: postgresClient } = await import('postgres')
+    const real = new URL(process.env.DATABASE_URL!)
+    let attempts = 0
+    // The first three connects are refused, as during a database restart.
+    const flaky = ((port: number, host: string) =>
+      attempts++ < 3
+        ? net.connect(1, '127.0.0.1')
+        : net.connect(Number(real.port), real.hostname)) as unknown as typeof net.connect
+    const sql = postgresClient(process.env.DATABASE_URL!, {
+      max: 1,
+      connect_timeout: 2,
+      socket: createBunTlsSafeSocketFactory(flaky),
+      onnotice: () => {},
+      // eslint-disable-next-line @typescript-eslint/no-empty-object-type -- postgres.js generic default
+    } as postgres.Options<{}>)
+    try {
+      for (let failure = 0; failure < 3; failure++) {
+        // postgres.js queries run only when awaited through .then(), which
+        // expect().rejects does not call, so settle the query explicitly.
+        const outcome = await sql`select 1`.then(
+          () => 'connected',
+          (error: Error) => error
+        )
+        expect(outcome).toBeInstanceOf(Error)
+      }
+      const [row] = await sql`select 1 as ok`
+      expect(row).toEqual({ ok: 1 })
+    } finally {
+      await sql.end({ timeout: 1 })
+    }
   })
 
   // postgres.js arms its connect_timeout only AFTER the socket factory
@@ -357,16 +443,21 @@ describe('Bun TLS-upgrade leak guard (createBunTlsSafeSocketFactory)', () => {
   // through CI as 60s budget deaths in pickup.test.ts's restart matrix.
   // Mutation check: removing the factory's internal timeout makes this test
   // itself hang to its own test timeout.
-  test('a connect that never completes rejects at connect_timeout instead of hanging forever', async () => {
+  test('a connect that never completes fails at connect_timeout instead of hanging forever', async () => {
     let created: net.Socket | undefined
     const neverConnect = (() => {
       created = new net.Socket()
       return created
     }) as unknown as typeof net.connect
     const start = Date.now()
-    await expect(
-      createBunTlsSafeSocketFactory(neverConnect)({ host: '10.255.255.1', port: 5432, connect_timeout: 0.1 })
-    ).rejects.toMatchObject({ code: 'CONNECT_TIMEOUT' })
+    const socket = await createBunTlsSafeSocketFactory(neverConnect)({
+      host: '10.255.255.1',
+      port: 5432,
+      connect_timeout: 0.1,
+    })
+    const { events, error } = await failureEvents(socket)
+    expect(events).toEqual(['error', 'close'])
+    expect(error).toMatchObject({ code: 'CONNECT_TIMEOUT' })
     const elapsed = Date.now() - start
     expect(elapsed).toBeGreaterThanOrEqual(90)
     expect(elapsed).toBeLessThan(5000)

@@ -111,12 +111,10 @@ export function postgresFatalResponse(message: string): Buffer {
  * Start a loopback server that answers every Postgres connection with
  * {@link postgresFatalResponse}, and return a tau_test URL for it.
  *
- * Why a refusing server rather than an unresolvable or closed address: Core's
- * socket factory (db/connection.ts) makes postgres.js leak each connection that
- * fails to connect, so after a few failures every query on the pool hangs
- * until the test timeout instead of failing. A completed connection that the
- * server rejects takes postgres.js's normal error path, and psql/pg_dump print
- * the same message.
+ * Why a refusing server rather than an unresolvable or closed address: every
+ * client (postgres.js, psql, pg_dump) then fails with this one message naming
+ * the cause, instead of a bare connection-refused or DNS error, and postgres.js
+ * does not retry it (3D000 is not a transient code).
  *
  * The server lives in a Worker because tests and the preload block the main
  * thread in `Bun.spawnSync(['psql', ...])`; a main-thread listener could not
