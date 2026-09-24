@@ -11,7 +11,7 @@ export interface SettingsSectionGroup {
   items: readonly { id: string; label: string }[]
 }
 
-const PERSONAL_SECTIONS = new Set(['general', 'notifications', 'app', 'account', 'sessions', 'devices'])
+const PERSONAL_SECTIONS = new Set(['general', 'notifications', 'app', 'appearance', 'account', 'sessions', 'devices'])
 
 export function SettingsNavigation({
   groups,

@@ -31,13 +31,23 @@ import { client } from '../../api/clientInstance'
 import { themePresetQueryKeys } from '../../queryKeys'
 import { useStableRef } from '../../hooks/useStableRef'
 import { PageEditorAssistant } from '../PageEditorAssistant'
-import { UndoIcon, RedoIcon } from '../icons'
+import { UndoIcon, RedoIcon, CloseIcon } from '../icons'
+import { SegmentedControl, type SegmentedControlOption } from '../SegmentedControl'
 
 interface Warning {
   pair: ContrastPair
   ratio: number | null
   safe: string | null
 }
+
+const CONTRAST_OPTIONS: readonly SegmentedControlOption<'standard' | 'high'>[] = [
+  { value: 'standard', label: 'Standard' },
+  { value: 'high', label: 'High' },
+]
+const STATUS_MODE_OPTIONS: readonly SegmentedControlOption<'static' | 'harmonized'>[] = [
+  { value: 'static', label: 'Static' },
+  { value: 'harmonized', label: 'Harmonized' },
+]
 
 /** A variant tab is always a concrete side, never 'system' (the editor edits
  * concrete light/dark overrides; the app's Light/Dark/System toggle resolves
@@ -136,6 +146,7 @@ function ColorField({
   // deliberately not one <label> wrapping both controls, which would give
   // them the same ambiguous accessible name.
   const id = useId()
+  const clearable = !!onClear && !!value
   return (
     <div className="flex flex-col gap-1">
       <label htmlFor={id}>{label}</label>
@@ -147,25 +158,28 @@ function ColorField({
           onChange={(event) => (onSwatchChange ?? onChange)(event.target.value)}
           className="h-9 w-9 shrink-0 cursor-pointer rounded border border-th-border bg-transparent p-0"
         />
-        <input
-          id={id}
-          type="text"
-          className="tau-field px-3 py-2 flex-1"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onBlur={onBlur}
-          placeholder={onClear ? 'Not set' : 'Hex, rgb() or rgba()'}
-        />
+        <div className="relative min-w-0 flex-1">
+          <input
+            id={id}
+            type="text"
+            className={clsx('tau-field w-full px-3 py-2', clearable && 'pr-8')}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            onBlur={onBlur}
+            placeholder={onClear ? 'Not set' : 'Hex, rgb() or rgba()'}
+          />
+          {clearable && (
+            <button
+              type="button"
+              aria-label={`Clear ${label}`}
+              onClick={onClear}
+              className="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted hover:bg-surface-hover hover:text-primary"
+            >
+              <CloseIcon className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       </div>
-      {onClear && value && (
-        <button
-          type="button"
-          className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary self-start"
-          onClick={onClear}
-        >
-          Clear {label}
-        </button>
-      )}
     </div>
   )
 }
@@ -188,7 +202,11 @@ export function CustomThemeEditor({
   baseId: string
   onClose: () => void
   assistantDependencies?: Parameters<typeof PageEditorAssistant>[0]['conversationDependencies']
-  /** "New theme with assistant": move DOM focus to the assistant panel on mount. */
+  /** "New theme" (the library's single new-preset action): move DOM focus to
+   * the assistant panel on mount. A no-op when the panel isn't rendered
+   * (`can('chat:send')` false), so "New theme" behaves identically with or
+   * without the assistant. `Edit` never passes this, so opening an existing
+   * preset never steals focus away from the fields. */
   focusAssistant?: boolean
   /** How long a typed-field undo session stays open with no further keystroke
    * before the next keystroke opens a new step. Defaults to 800ms. */
@@ -531,13 +549,16 @@ export function CustomThemeEditor({
         )}
       >
         {can('chat:send') && (
-          // tabIndex makes this a valid one-shot focus target for "New theme
-          // with assistant" (see the `focusAssistant` effect above); it is
-          // not meant to be a persistent tab stop otherwise.
+          // tabIndex makes this a valid one-shot focus target for "New theme"
+          // (see the `focusAssistant` effect above); it is not meant to be a
+          // persistent tab stop otherwise. `order-2 lg:order-none` puts it
+          // full-width BELOW the editor on narrow widths (source order would
+          // otherwise place it above, ahead of the fields being described)
+          // while restoring the side-by-side column order at `lg`.
           <div
             ref={assistantPanel}
             tabIndex={-1}
-            className="min-w-0 min-h-[24rem] lg:min-h-0 flex flex-col outline-none"
+            className="order-2 min-w-0 min-h-[24rem] flex flex-col outline-none lg:order-none lg:min-h-0"
           >
             <PageEditorAssistant
               draft={editorDraft}
@@ -551,7 +572,7 @@ export function CustomThemeEditor({
             />
           </div>
         )}
-        <div className="flex min-w-0 flex-col gap-3">
+        <div className="order-1 flex min-w-0 flex-col gap-3 lg:order-none">
           <div className="flex items-center justify-end gap-1">
             <button
               type="button"
@@ -600,7 +621,7 @@ export function CustomThemeEditor({
               onBlur={closeTypingSession}
             />
           </label>
-          <div className="rounded-lg border border-th-border p-3 flex flex-col gap-3">
+          <div className="rounded-lg border border-th-border p-3 flex flex-col gap-4">
             <div>
               <h4 className="font-medium text-primary">Palette</h4>
               <p className="text-muted text-xs">
@@ -608,16 +629,20 @@ export function CustomThemeEditor({
                 theme.
               </p>
             </div>
-            <ColorField
-              label="Primary"
-              value={palette?.primary ?? ''}
-              onChange={(next) => setPaletteTyped('primary', next ? { primary: next } : null)}
-              onSwatchChange={(next) => setPaletteImmediate(next ? { primary: next } : null)}
-              onBlur={closeTypingSession}
-            />
-            {palette && (
-              <>
-                <div className="flex flex-wrap gap-3">
+            {/* Every seed field shares one layout and width: single column on
+             * mobile, an even 2x2 grid from sm up (see web-ui.md's spacing
+             * guidance) — Primary always renders; Secondary/Tertiary/Neutral
+             * only once a palette exists (setting Primary creates one). */}
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <ColorField
+                label="Primary"
+                value={palette?.primary ?? ''}
+                onChange={(next) => setPaletteTyped('primary', next ? { primary: next } : null)}
+                onSwatchChange={(next) => setPaletteImmediate(next ? { primary: next } : null)}
+                onBlur={closeTypingSession}
+              />
+              {palette && (
+                <>
                   <ColorField
                     label="Secondary"
                     value={palette.secondary ?? ''}
@@ -642,47 +667,35 @@ export function CustomThemeEditor({
                     onClear={() => setPaletteImmediate({ neutral: undefined })}
                     onBlur={closeTypingSession}
                   />
+                </>
+              )}
+            </div>
+            {palette && (
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-secondary text-sm">Contrast</span>
+                  <SegmentedControl
+                    ariaLabel="Contrast"
+                    options={CONTRAST_OPTIONS}
+                    value={palette.contrast ?? 'standard'}
+                    onChange={(level) => setPaletteImmediate({ contrast: level })}
+                    className="w-full"
+                  />
                 </div>
-                <div role="radiogroup" aria-label="Contrast" className="flex items-center gap-1">
-                  <span className="text-secondary">Contrast:</span>
-                  {(['standard', 'high'] as const).map((level) => (
-                    <button
-                      key={level}
-                      type="button"
-                      role="radio"
-                      aria-checked={(palette.contrast ?? 'standard') === level}
-                      className={clsx(
-                        'tau-button min-h-[36px] px-3 py-1',
-                        (palette.contrast ?? 'standard') === level ? 'tau-button-primary' : 'tau-button-secondary'
-                      )}
-                      onClick={() => setPaletteImmediate({ contrast: level })}
-                    >
-                      {level === 'standard' ? 'Standard' : 'High'}
-                    </button>
-                  ))}
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-secondary text-sm">Status colors</span>
+                  <SegmentedControl
+                    ariaLabel="Status colors"
+                    options={STATUS_MODE_OPTIONS}
+                    value={palette.status ?? 'static'}
+                    onChange={(mode) => setPaletteImmediate({ status: mode })}
+                    className="w-full"
+                  />
+                  <p className="text-muted text-xs">
+                    Harmonized tints warnings, errors and success toward your colors; meanings stay the same.
+                  </p>
                 </div>
-                <div role="radiogroup" aria-label="Status colors" className="flex items-center gap-1">
-                  <span className="text-secondary">Status colors:</span>
-                  {(['static', 'harmonized'] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      role="radio"
-                      aria-checked={(palette.status ?? 'static') === mode}
-                      className={clsx(
-                        'tau-button min-h-[36px] px-3 py-1',
-                        (palette.status ?? 'static') === mode ? 'tau-button-primary' : 'tau-button-secondary'
-                      )}
-                      onClick={() => setPaletteImmediate({ status: mode })}
-                    >
-                      {mode === 'static' ? 'Static' : 'Harmonized'}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-muted text-xs">
-                  Harmonized tints warnings, errors and success toward your colors; meanings stay the same.
-                </p>
-              </>
+              </div>
             )}
           </div>
           {!validation.ok && <p role="alert">{validation.error}</p>}

@@ -199,6 +199,18 @@ export function customSelection(doc: CustomThemeDocument, previous: StoredThemeS
   return { themeId: doc.base, appearance: previous.appearance }
 }
 
+/** A preset's document always covers both variants; a circle preview/swatch
+ * never forces a particular side, it just resolves the app's current one.
+ * Shared by every preset swatch (ThemeQuickPicker, the Settings theme grid,
+ * the "My themes" library rows) so they agree on which side a unified base
+ * paints. */
+export function presetAppearance(
+  document: Pick<CustomThemeDocument, 'base'>,
+  currentAppearance: EffectiveAppearance
+): EffectiveAppearance {
+  return findWebTheme(document.base).kind === 'unified' ? 'constant' : currentAppearance
+}
+
 export function readPresetId(storage: ThemeStorage | null): string | null {
   try {
     return storage?.getItem(PRESET_ID_KEY) ?? null

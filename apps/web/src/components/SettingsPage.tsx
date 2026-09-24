@@ -184,6 +184,7 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
           {activeSection === 'machines' && <MachinesSection />}
           {activeSection === 'remote-hosts' && <RemoteHostsSection />}
           {activeSection === 'notifications' && <NotificationsSection dependencies={resolvedDependencies} />}
+          {activeSection === 'appearance' && <AppearanceSection dependencies={resolvedDependencies} />}
           {activeSection === 'app' && <AppSection dependencies={resolvedDependencies} />}
           {activeSection === 'account' && <AccountSection dependencies={resolvedDependencies} />}
           {activeSection === 'users' && <UsersSection />}
@@ -341,12 +342,27 @@ function NotificationsSection({ dependencies }: { dependencies: SettingsPageDepe
 }
 
 // =============================================================================
-// App & Appearance Section
+// Appearance Section
+// =============================================================================
+
+function AppearanceSection({ dependencies }: { dependencies: SettingsPageDependencies }) {
+  const theme = dependencies.useTheme()
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="text-lg font-semibold text-primary">Appearance</h3>
+      </div>
+      <ThemeControl value={theme} />
+    </div>
+  )
+}
+
+// =============================================================================
+// App Section
 // =============================================================================
 
 function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }) {
   const pwa = dependencies.usePWA()
-  const theme = dependencies.useTheme()
   const { cacheStats, clearCache } = dependencies.useOfflineCache()
   const [isClearing, setIsClearing] = useState(false)
 
@@ -359,10 +375,8 @@ function AppSection({ dependencies }: { dependencies: SettingsPageDependencies }
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold text-primary">App & Appearance</h3>
+        <h3 className="text-lg font-semibold text-primary">App</h3>
       </div>
-
-      <ThemeControl value={theme} />
 
       {/* PWA Installation */}
       <div className="tau-section py-5">

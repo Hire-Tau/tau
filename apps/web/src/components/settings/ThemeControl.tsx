@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { ThemePresetLibrary } from './ThemePresetLibrary'
+import { ThemeSwatchGrid, type ThemeGridOption } from './ThemeSwatchGrid'
+import { SegmentedAppearanceControl } from '../SegmentedAppearanceControl'
 import type { AppearanceSetting, ThemePreset } from '@tau/shared'
 import type { useTheme } from '../../providers/ThemeProvider'
 import { BUILT_IN_THEMES, findWebTheme, THEME_PICKER_ENABLED } from '../../theme/registry'
@@ -33,13 +35,6 @@ export function ThemeSyncNotice({
   )
 }
 
-/** Sentinel option value for the Color theme select while a custom theme
- * (own preset, someone else's shared preset, or a detached one-off) is
- * active. Picking a real built-in id from the list below it deactivates the
- * preset exactly like the quick picker's circles do — see `setThemeId` —
- * without touching the library. Never collides with a real theme id. */
-const CUSTOM_THEME_OPTION_VALUE = '__custom-theme__'
-
 // Hoisted so a caller whose "mine" list hasn't resolved yet doesn't create a
 // new empty array every render (mirrors ThemeQuickPicker's EMPTY).
 const EMPTY_PRESETS: ThemePreset[] = []
@@ -58,65 +53,79 @@ export function ThemeControl({
     ...queries.themePresets.list('mine'),
     enabled: selfServiceQueryEnabled(auth),
   })
-  const customActive = !!customTheme
   // A preset id present but absent from the caller's own library is someone
   // else's shared preset (see ThemeProvider's presetOwnerId doc comment) —
   // the same "not in my list" test ThemeQuickPicker's activeForeignPreset uses.
-  // Until the library has loaded, don't guess: an own preset would flash "(shared)".
+  // Until the library has loaded, don't guess: an own preset would flash as
+  // shared, or worse, get a duplicate dot once the real list resolves.
   const foreignPreset = !!presetId && mineLoaded && !minePresets.some((preset) => preset.id === presetId)
-  const customOptionLabel = customTheme
-    ? foreignPreset
-      ? `${customTheme.name} (shared)`
-      : `Custom: ${customTheme.name}`
-    : ''
+
+  // The grid: every built-in, the caller's own saved presets, and — only if
+  // it isn't already one of those — the currently active shared preset. This
+  // mirrors ThemeQuickPicker's `circles` composition exactly (see its doc
+  // comment) so both entry points show the same set for the same state.
+  const gridOptions: ThemeGridOption[] = [
+    ...BUILT_IN_THEMES.map((builtin) => ({
+      kind: 'builtin' as const,
+      id: builtin.id,
+      label: builtin.label,
+      accessibleLabel: builtin.label,
+      theme: builtin,
+    })),
+    ...minePresets.map((preset) => ({
+      kind: 'preset' as const,
+      id: preset.id,
+      label: preset.document.name,
+      accessibleLabel: preset.document.name,
+      preset,
+    })),
+    ...(foreignPreset && customTheme && presetId
+      ? [
+          {
+            kind: 'preset' as const,
+            id: presetId,
+            label: customTheme.name,
+            accessibleLabel: `${customTheme.name} (shared)`,
+            preset: { id: presetId, document: customTheme, owner: { id: value.presetOwnerId!, displayName: '' } },
+          },
+        ]
+      : []),
+  ]
+  // A custom/preset theme active selects its dot (or, for a detached one-off
+  // with no library dot to represent it, no dot at all — never the plain
+  // built-in it happens to be based on, which would misrepresent it as
+  // unmodified). Otherwise the active built-in's own dot is selected.
+  const selectedId = customTheme ? presetId : selected.id
+
   return (
     <section data-setting-target="appearance" aria-label="Theme" className="tau-section py-5">
       <h3 data-setting-target="dark-mode" className="font-medium text-primary">
         Theme
       </h3>
       {enabled ? (
-        <div className="mt-3 flex flex-col sm:flex-row gap-4">
-          <label className="flex flex-col gap-1 text-sm text-secondary">
-            Color theme
-            <select
-              className="tau-field px-3 py-2 min-h-[44px]"
-              value={customActive ? CUSTOM_THEME_OPTION_VALUE : selected.id}
-              onChange={(event) => {
-                // The custom entry is never itself a choosable target (it's
-                // already selected) — a real change always picks a built-in,
-                // which deactivates the preset (kept in the library) exactly
-                // like the quick picker's circles do.
-                if (event.target.value === CUSTOM_THEME_OPTION_VALUE) return
-                setThemeId(event.target.value)
-              }}
-            >
-              {customActive && <option value={CUSTOM_THEME_OPTION_VALUE}>{customOptionLabel}</option>}
-              {BUILT_IN_THEMES.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-sm text-secondary">
-            Appearance
-            <select
-              className="tau-field px-3 py-2 min-h-[44px]"
+        <div className="mt-3 flex flex-col gap-4">
+          <ThemeSwatchGrid
+            options={gridOptions}
+            selectedId={selectedId}
+            currentAppearance={theme}
+            onSelect={(option) =>
+              option.kind === 'builtin' ? setThemeId(option.id) : value.applyPreset(option.preset)
+            }
+          />
+          <div>
+            <SegmentedAppearanceControl
               value={appearance}
+              onChange={(next: AppearanceSetting) => setAppearance(next)}
               disabled={selected.kind === 'unified'}
-              aria-describedby={selected.kind === 'unified' ? 'theme-constant-hint' : undefined}
-              onChange={(event) => setAppearance(event.target.value as AppearanceSetting)}
-            >
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-              <option value="system">System</option>
-            </select>
-          </label>
-          {selected.kind === 'unified' && (
-            <p id="theme-constant-hint" className="text-sm text-muted self-end">
-              {THEME_CONSTANT_HINT}
-            </p>
-          )}
+              hintId={selected.kind === 'unified' ? 'theme-constant-hint' : undefined}
+              className="max-w-xs"
+            />
+            {selected.kind === 'unified' && (
+              <p id="theme-constant-hint" className="mt-2 text-sm text-muted">
+                {THEME_CONSTANT_HINT}
+              </p>
+            )}
+          </div>
         </div>
       ) : (
         <button className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary mt-3" onClick={toggleTheme}>
@@ -125,19 +134,7 @@ export function ThemeControl({
       )}
       <ThemeSyncNotice value={value} />
       {value.customThemeError && <p role="alert">{value.customThemeError}</p>}
-      {enabled && (
-        <>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary" onClick={value.resetTheme}>
-              Reset to default
-            </button>
-          </div>
-          <p className="mt-1 text-xs text-muted">
-            Switches back to Tau (light). Your saved theme presets aren't touched.
-          </p>
-          <ThemePresetLibrary value={value} />
-        </>
-      )}
+      {enabled && <ThemePresetLibrary value={value} />}
     </section>
   )
 }

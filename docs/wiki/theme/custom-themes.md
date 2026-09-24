@@ -359,9 +359,10 @@ The editor reuses the built-in contrast computation and critical-pair inventory 
 Editing a theme (new or existing) shows a co-editor conversation beside the token
 editor, gated on `chat:send` like the workflow builder's assistant — see
 [voice-assistants.md](../voice-assistants.md#assistants-embedded-in-editors) for
-the shared page-editor framework this attaches to. **My themes → New theme with
-assistant** opens the editor with that panel focused; **New theme** and **Edit**
-open the same panel (when the user has `chat:send`) without moving focus to it.
+the shared page-editor framework this attaches to. **My themes → New theme**
+opens the editor with that panel focused (when the user has `chat:send`; a
+no-op otherwise, so there is only ever one "New theme" action); **Edit** opens
+the same panel without moving focus to it.
 
 The assistant is palette-first: it mostly edits `palette.primary` /
 `secondary` / `tertiary` / `neutral`, `palette.contrast`
