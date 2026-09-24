@@ -42,16 +42,32 @@ function Harness({
   baseId,
   onClose,
   onReady,
+  idleCoalesceMs,
+  scheduleIdleTimeout,
+  cancelIdleTimeout,
 }: {
   preset: ThemePreset | null
   baseId: string
   onClose: () => void
   onReady?: (value: ReturnType<typeof useTheme>, store: ReturnType<typeof useThemeSyncStore>) => void
+  idleCoalesceMs?: number
+  scheduleIdleTimeout?: (callback: () => void, ms: number) => ReturnType<typeof setTimeout>
+  cancelIdleTimeout?: (handle: ReturnType<typeof setTimeout>) => void
 }) {
   const value = useTheme()
   const store = useThemeSyncStore()
   onReady?.(value, store)
-  return <CustomThemeEditor value={value} preset={preset} baseId={baseId} onClose={onClose} />
+  return (
+    <CustomThemeEditor
+      value={value}
+      preset={preset}
+      baseId={baseId}
+      onClose={onClose}
+      idleCoalesceMs={idleCoalesceMs}
+      scheduleIdleTimeout={scheduleIdleTimeout}
+      cancelIdleTimeout={cancelIdleTimeout}
+    />
+  )
 }
 
 async function render({
@@ -61,6 +77,9 @@ async function render({
   onReady = undefined as
     | ((value: ReturnType<typeof useTheme>, store: ReturnType<typeof useThemeSyncStore>) => void)
     | undefined,
+  idleCoalesceMs = undefined as number | undefined,
+  scheduleIdleTimeout = undefined as ((callback: () => void, ms: number) => ReturnType<typeof setTimeout>) | undefined,
+  cancelIdleTimeout = undefined as ((handle: ReturnType<typeof setTimeout>) => void) | undefined,
 } = {}) {
   const dom = await acquireDomHarness({ url: 'https://tau.test' })
   cleanup = () => dom.cleanup()
@@ -90,7 +109,15 @@ async function render({
     root.render(
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
-          <Harness preset={preset} baseId={baseId} onClose={onClose} onReady={onReady} />
+          <Harness
+            preset={preset}
+            baseId={baseId}
+            onClose={onClose}
+            onReady={onReady}
+            idleCoalesceMs={idleCoalesceMs}
+            scheduleIdleTimeout={scheduleIdleTimeout}
+            cancelIdleTimeout={cancelIdleTimeout}
+          />
         </ThemeProvider>
       </QueryClientProvider>
     )
@@ -459,6 +486,92 @@ test('the editor draft preview survives remote account-sync adoption while editi
   expect(document.documentElement.style.getPropertyValue('--color-text-primary')).toBe('0 255 0')
 })
 
+function createManualScheduler() {
+  let handleSeq = 0
+  const timers = new Map<number, () => void>()
+  return {
+    schedule: (callback: () => void, _ms: number) => {
+      const handle = ++handleSeq
+      timers.set(handle, callback)
+      return handle as unknown as ReturnType<typeof setTimeout>
+    },
+    cancel: (handle: ReturnType<typeof setTimeout>) => {
+      timers.delete(handle as unknown as number)
+    },
+    /** Fires every currently-pending idle timer (there is at most one open
+     * coalescing session, so at most one is ever pending) — the deterministic
+     * stand-in for "~800ms passes without typing". */
+    fireAll: () => {
+      const callbacks = [...timers.values()]
+      timers.clear()
+      for (const callback of callbacks) callback()
+    },
+  }
+}
+
+test('typing "abc" in the theme name field is one undo step', async () => {
+  const { container } = await render()
+  await change(container, 'Theme name', 'a')
+  await change(container, 'Theme name', 'ab')
+  await change(container, 'Theme name', 'abc')
+  expect((getByLabelText(container, 'Theme name') as HTMLInputElement).value).toBe('abc')
+  await click(container, 'Undo')
+  expect((getByLabelText(container, 'Theme name') as HTMLInputElement).value).toBe('New theme')
+  expect((getByRole(container, 'button', { name: 'Undo' }) as HTMLButtonElement).disabled).toBe(true)
+})
+
+test('switching from the name field to a palette field starts a new undo step', async () => {
+  const { container } = await render()
+  // Three keystrokes in "name" must coalesce, or this test's second Undo
+  // below (which expects the WHOLE burst reverted in one step) would fail.
+  await change(container, 'Theme name', 'a')
+  await change(container, 'Theme name', 'ab')
+  await change(container, 'Theme name', 'abc')
+  await change(container, 'Primary', '#112233')
+  expect((getByLabelText(container, 'Primary') as HTMLInputElement).value).toBe('#112233')
+  await click(container, 'Undo')
+  expect((getByLabelText(container, 'Primary') as HTMLInputElement).value).toBe('')
+  expect((getByLabelText(container, 'Theme name') as HTMLInputElement).value).toBe('abc')
+  await click(container, 'Undo')
+  expect((getByLabelText(container, 'Theme name') as HTMLInputElement).value).toBe('New theme')
+  expect((getByRole(container, 'button', { name: 'Undo' }) as HTMLButtonElement).disabled).toBe(true)
+})
+
+test('an idle pause starts a new undo step even in the same field', async () => {
+  const scheduler = createManualScheduler()
+  const { container } = await render({
+    idleCoalesceMs: 800,
+    scheduleIdleTimeout: scheduler.schedule,
+    cancelIdleTimeout: scheduler.cancel,
+  })
+  // Two keystrokes, an idle pause, then two more: each pair must coalesce
+  // into its own step, or the two Undos below wouldn't reach "New theme".
+  await change(container, 'Theme name', 'a')
+  await change(container, 'Theme name', 'ab')
+  await act(async () => scheduler.fireAll())
+  await change(container, 'Theme name', 'abc')
+  await change(container, 'Theme name', 'abcd')
+  expect((getByLabelText(container, 'Theme name') as HTMLInputElement).value).toBe('abcd')
+  await click(container, 'Undo')
+  expect((getByLabelText(container, 'Theme name') as HTMLInputElement).value).toBe('ab')
+  await click(container, 'Undo')
+  expect((getByLabelText(container, 'Theme name') as HTMLInputElement).value).toBe('New theme')
+  expect((getByRole(container, 'button', { name: 'Undo' }) as HTMLButtonElement).disabled).toBe(true)
+})
+
+test('redo replays a coalesced typed edit', async () => {
+  const { container } = await render()
+  await change(container, 'Theme name', 'a')
+  await change(container, 'Theme name', 'ab')
+  await change(container, 'Theme name', 'abc')
+  await click(container, 'Undo')
+  expect((getByLabelText(container, 'Theme name') as HTMLInputElement).value).toBe('New theme')
+  expect((getByRole(container, 'button', { name: 'Undo' }) as HTMLButtonElement).disabled).toBe(true)
+  await click(container, 'Redo')
+  expect((getByLabelText(container, 'Theme name') as HTMLInputElement).value).toBe('abc')
+  expect((getByRole(container, 'button', { name: 'Redo' }) as HTMLButtonElement).disabled).toBe(true)
+})
+
 test('the theme assistant panel proposes a live-previewing edit, shares undo/redo with manual edits, and cannot save', async () => {
   const { useAssistantConversationBridge } = await import('../../voice/AssistantConversationContext')
   const dom = await acquireDomHarness({ url: 'https://tau.test' })
@@ -569,6 +682,153 @@ test('the theme assistant panel proposes a live-previewing edit, shares undo/red
     const saveCreate = spyOn(client.themePresets, 'create')
     expect(saveCreate).not.toHaveBeenCalled()
     saveCreate.mockRestore()
+  } finally {
+    await dom.cleanup()
+    for (const spy of [create, sync, read, close]) spy.mockRestore()
+  }
+})
+
+test('typing bumps the revision every keystroke (stale assistant edits are still rejected) and an assistant proposal mid-typing is its own undo step', async () => {
+  const { useAssistantConversationBridge } = await import('../../voice/AssistantConversationContext')
+  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  localStorage.setItem('tau-appearance', 'dark')
+  const sheet = document.createElement('style')
+  sheet.textContent = palettes
+    .map((p) => {
+      const attrs = `[data-theme="${p.id}"]${p.appearance === 'constant' ? '' : `[data-appearance="${p.appearance}"]`}`
+      return `:root${attrs}, [data-theme-scope]${attrs} { ${Object.entries(p.tokens)
+        .map(([key]) => `${key}: ${resolveToken(p.tokens, key)};`)
+        .join(' ')} }`
+    })
+    .join('\n')
+  document.head.append(sheet)
+  const cache = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+  cache.setQueryData(queries.voice.status().queryKey, { enabled: false })
+  let id = ''
+  let stored!: AssistantEditorState
+  let bridge: ReturnType<typeof useAssistantConversationBridge>
+  const create = spyOn(assistantApi, 'create').mockImplementation(async (next) => {
+    id = next
+    return { id } as any
+  })
+  const sync = spyOn(assistantApi, 'syncEditor').mockImplementation(async (_id, draft) => {
+    stored = structuredClone(draft) as AssistantEditorState
+    return stored
+  })
+  const read = spyOn(assistantApi, 'editor').mockImplementation(async () => ({ ...stored, contract: '' }))
+  const close = spyOn(assistantApi, 'closeEditor').mockResolvedValue({})
+  const dependencies = {
+    api: {
+      ...assistantApi,
+      history: async () => ({ entries: [], hasMore: false }),
+      inbox: async () => ({ acquired: true, messages: [], pending: 0 }),
+      release: async () => ({}),
+    } as any,
+    useAssistant: (() => {
+      bridge = useAssistantConversationBridge()
+      return {
+        history: [],
+        status: 'idle',
+        error: null,
+        isLiveAudio: false,
+        isConnected: false,
+        disconnect() {},
+        setLiveAudio: async () => {},
+      }
+    }) as any,
+  }
+  function Harness() {
+    const value = useTheme()
+    return (
+      <CustomThemeEditor
+        value={value}
+        preset={null}
+        baseId="tau"
+        onClose={() => {}}
+        assistantDependencies={dependencies}
+      />
+    )
+  }
+  const { root } = dom.createRoot()
+  try {
+    await dom.act(async () =>
+      root.render(
+        <QueryClientProvider client={cache}>
+          <MemoryRouter>
+            <PermissionsProvider
+              usePermissions={() => ({ can: () => true, permissions: ['*'], isLoading: false, isError: false })}
+            >
+              <ThemeProvider>
+                <Harness />
+              </ThemeProvider>
+            </PermissionsProvider>
+          </MemoryRouter>
+        </QueryClientProvider>
+      )
+    )
+    await dom.act(async () => waitFor(() => expect(bridge?.pageEditor).toBeDefined()))
+    await waitFor(() => expect(stored.revision).toBe(0))
+    const nameInput = () => getByLabelText(document.body, 'Theme name') as HTMLInputElement
+
+    // Three keystrokes in the same field: the revision bumps every time (the
+    // page-editor sync and the assistant's baseRevision staleness check both
+    // depend on this), but coalesce into ONE undo step below.
+    await dom.act(async () => fireEvent.change(nameInput(), { target: { value: 'T' } }))
+    await waitFor(() => expect(stored.revision).toBe(1))
+    await dom.act(async () => fireEvent.change(nameInput(), { target: { value: 'Te' } }))
+    await waitFor(() => expect(stored.revision).toBe(2))
+    await dom.act(async () => fireEvent.change(nameInput(), { target: { value: 'Tea' } }))
+    await waitFor(() => expect(stored.revision).toBe(3))
+    expect(stored.history).toEqual({ canUndo: true, canRedo: false })
+
+    // A proposal computed against a now-stale revision (from before typing
+    // started) is rejected — WorkflowBuilder-style staleness protection still
+    // holds for coalesced typed edits, not just single-shot ones.
+    const staleProposal = {
+      id: crypto.randomUUID(),
+      baseRevision: 0,
+      summary: 'stale',
+      document: { ...(stored.document as any), name: 'Stale' },
+    }
+    await dom.act(async () =>
+      cache.setQueryData(assistantQueries.editor(id).queryKey, { ...stored, proposal: staleProposal })
+    )
+    await waitFor(() => expect(document.body.textContent).toContain('The draft changed before this edit arrived'))
+    expect(nameInput().value).toBe('Tea')
+
+    // A proposal against the CURRENT revision applies live and is its own
+    // undo step — it never merges with the coalesced typed burst before it.
+    const proposal = {
+      id: crypto.randomUUID(),
+      baseRevision: stored.revision,
+      summary: 'Made it teal',
+      document: { ...(stored.document as any), palette: { primary: '#14b8a6' } },
+    }
+    await dom.act(async () => cache.setQueryData(assistantQueries.editor(id).queryKey, { ...stored, proposal }))
+    await waitFor(() => expect(document.documentElement.style.getPropertyValue('--color-primary')).toBe('20 184 166'))
+    expect(nameInput().value).toBe('Tea')
+
+    // Undo once: reverts only the assistant's edit — the typed burst
+    // ("T" -> "Te" -> "Tea") is intact as its own step underneath it.
+    await click(document.body, 'Undo')
+    await waitFor(() =>
+      expect(document.documentElement.style.getPropertyValue('--color-primary')).not.toBe('20 184 166')
+    )
+    expect(nameInput().value).toBe('Tea')
+    await waitFor(() => expect(stored.history.canRedo).toBe(true))
+
+    // Undo again: reverts the WHOLE typed burst in one step, back to the
+    // pristine default — not three separate undos for "T", "Te", "Tea".
+    await click(document.body, 'Undo')
+    await waitFor(() => expect(nameInput().value).toBe('New theme'))
+    await waitFor(() => expect(stored.history).toEqual({ canUndo: false, canRedo: true }))
+
+    // Redo replays the typed burst, then the assistant's edit, in order.
+    await click(document.body, 'Redo')
+    await waitFor(() => expect(nameInput().value).toBe('Tea'))
+    await click(document.body, 'Redo')
+    await waitFor(() => expect(document.documentElement.style.getPropertyValue('--color-primary')).toBe('20 184 166'))
+    await waitFor(() => expect(stored.history).toEqual({ canUndo: true, canRedo: false }))
   } finally {
     await dom.cleanup()
     for (const spy of [create, sync, read, close]) spy.mockRestore()
