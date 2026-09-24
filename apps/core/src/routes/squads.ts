@@ -1170,7 +1170,7 @@ export const squadsRouter = new Hono()
     const squad = await Squad.find(c.req.param('id'))
     if (!squad) return c.json({ error: 'Squad not found' }, 404)
     try {
-      const body = (await c.req.json().catch(() => ({}))) as { signal?: unknown }
+      const body = await parseOptionalJsonObjectBody(c, {} as { signal?: unknown })
       const pid = parseProcessId(c.req.param('pid'))
       const signal = parseProcessSignal(body.signal)
       return c.json(await signalSandboxProcess(squad.sandboxId, pid, signal, c.get('identity')!))

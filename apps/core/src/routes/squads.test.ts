@@ -1686,6 +1686,14 @@ describe('squads routes', () => {
           ['stop', 'tau-core-tsc'],
         ])
 
+        const malformed = await app.request(`/api/squads/${squad.id}/sandbox/processes/2838629/signal`, {
+          method: 'POST',
+          headers: { ...authHeaders(admin.token), 'content-type': 'application/json' },
+          body: '{"signal":',
+        })
+        expect(malformed.status).toBe(400)
+        expect(calls).toHaveLength(2)
+
         const invalid = await app.request(`/api/squads/${squad.id}/sandbox/processes/1/signal`, {
           method: 'POST',
           headers: authHeaders(admin.token),

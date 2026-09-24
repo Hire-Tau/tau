@@ -1139,7 +1139,7 @@ export const agentsRouter = new Hono()
     }),
     async (c) =>
       ownAgentSandbox(c, async (sandboxId) => {
-        const body = (await c.req.json().catch(() => ({}))) as { signal?: unknown }
+        const body = await parseOptionalJsonObjectBody(c, {} as { signal?: unknown })
         const pid = parseProcessId(c.req.param('pid'))
         return signalSandboxProcess(sandboxId, pid, parseProcessSignal(body.signal), c.get('identity')!)
       })
