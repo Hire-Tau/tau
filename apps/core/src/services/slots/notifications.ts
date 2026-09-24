@@ -111,8 +111,8 @@ export function renderSlotNotification(claim: SlotNotificationClaim): string {
     `Claim ID: ${claim.claimId}`,
     `Expires: ${claim.expiresAt.toISOString()}`,
     'If there is any doubt, query authoritative state before relying on this grant.',
-    `Release: tau slot release ${claim.poolKey} ${claim.claimId} --squad ${claim.squadId}`,
-    `Renew: tau slot renew ${claim.poolKey} ${claim.claimId} --squad ${claim.squadId}`,
+    `Release: tau slot release ${claim.claimId}`,
+    `Renew: tau slot renew ${claim.claimId}`,
   ].join('\n')
 }
 
