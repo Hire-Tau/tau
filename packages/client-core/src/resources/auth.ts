@@ -126,8 +126,11 @@ export function authResource(t: Transport) {
      */
     demoPair: (secret: string): Promise<{ code: string; serverUrl: string; expiresAt: string }> =>
       t.request('/auth/demo/pair', { method: 'POST', body: { secret } }),
-    /** (mobile, unauthenticated) Claim a scanned code → a long-lived per-device token. */
-    pairClaim: (input: { code: string; name: string; platform: DevicePlatform }): Promise<PairClaimResult> =>
+    /**
+     * (mobile, unauthenticated) Claim a scanned code → a long-lived per-device token.
+     * `/pair/claim` only recognizes these platforms — it coerces any other value to `'ios'`.
+     */
+    pairClaim: (input: { code: string; name: string; platform: 'ios' | 'android' | 'cli' }): Promise<PairClaimResult> =>
       t.request('/auth/pair/claim', { method: 'POST', body: input }),
     deviceAuthorizationInspect: (input: { verificationCode: string }): Promise<DeviceAuthorizationPreview> =>
       t.request('/auth/device/inspect', { method: 'POST', body: input }),

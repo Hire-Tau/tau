@@ -707,7 +707,9 @@ authRouter.post('/device/start', async (c) => {
       verificationUri,
       expiresAt: grant.expiresAt.toISOString(),
       interval: DEVICE_AUTH_POLL_INTERVAL_SECONDS,
-      // Desktop uses this field's presence to detect servers that support desktop pairing.
+      // Desktop pairing is supported only when this field comes back exactly 'desktop'; an
+      // older server ignores `platform` in the request and always issues a CLI grant, so
+      // callers must check the value and discard the grant otherwise.
       platform: grant.platform,
     },
     200,

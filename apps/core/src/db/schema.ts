@@ -2458,7 +2458,7 @@ export const deviceTokens = pgTable('device_tokens', {
   revokedAt: timestamp('revoked_at'),
 })
 
-// Short-lived browser-approved grants used to bootstrap an unauthenticated CLI.
+// Short-lived browser-approved grants used to bootstrap an unauthenticated CLI or Tau Desktop instance.
 export const deviceAuthorizations = pgTable(
   'device_authorizations',
   {
