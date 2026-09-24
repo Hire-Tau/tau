@@ -42,6 +42,21 @@ plus zero or more **flagged** delivery PRs — tracked pull requests with
 `delivery: true`. Together they are the pull requests whose merge state gates
 completion:
 
+**Auto-binding the primary delivery PR.** When a squad's GitHub connection
+observes a `pull_request` opened/edited/synchronize event whose head branch is
+exactly an active work stream's `metadata.git.branch` and whose repository
+matches the stream's `codeHost.repository` (or legacy `github.repo`; the base
+branch must also agree when both record one), Tau populates the empty
+`codeHost.changeRequest {number, url}` automatically and notifies the delivery
+owner — no manual `set-meta` step. This only ever fills the primary binding:
+if multiple active streams match the branch, or the matching stream is already
+bound to a different PR, nothing is written; the ambiguity is recorded under
+`metadata.deliveryBinding.autoAttach` and escalated to the owner/manager with
+the exact manual repair command. Done/canceled streams, non-PR completion
+modes, and tracked resources are never touched. Bind manually with
+`tau workstream set-meta <id> codeHost.changeRequest '{"number":N,"url":"<pr url>"}'`
+only when auto-binding did not fire.
+
 - `POST /api/workstreams/:id/tracked` accepts `{ url, delivery: true }` or
   `{ resource, delivery: true }` (only valid when the resource is a pull
   request) to flag a tracked PR as delivery, alongside the identity fields

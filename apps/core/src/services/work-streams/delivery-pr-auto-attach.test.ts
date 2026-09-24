@@ -197,12 +197,46 @@ test('multiple matching streams bind none and record the ambiguity on every cand
       headBranch: 'work/ambiguity-a',
     })
     const notice = (await bindingNotifications()).find(
-      (row) => row.idempotencyKey === `pr-binding-ambiguous:${id}:${repo}#9`
+      (row) => row.idempotencyKey === `pr-binding-ambiguous:multiple-candidates:${id}:${repo}#9`
     )
     expect(notice).toBeDefined()
     expect(notice!.content).toContain('multiple active work streams')
     expect(notice!.content).toContain(id)
   }
+})
+
+test('a reason flip after manual remediation records and notifies instead of colliding on a key', async () => {
+  const bound = await createStream({ branch: 'work/ambiguity-b' })
+  const waiting = await createStream({ branch: 'work/ambiguity-b' })
+  await publish(prFact({ number: 12, headBranch: 'work/ambiguity-b' }))
+  // Both candidates recorded multiple-candidates; the operator follows the notification and
+  // binds one stream manually, exactly as instructed.
+  await db
+    .update(workStreams)
+    .set({
+      metadata: {
+        codeHost: { integration: 'github', repository: repo, changeRequest: { number: 12 } },
+        git: { branch: 'work/ambiguity-b', baseBranch: 'main' },
+      },
+    })
+    .where(eq(workStreams.id, bound))
+  // The next event for the same PR must not throw on a reused idempotency key: the remaining
+  // candidate flips to a different-binding ambiguity with its own notification.
+  await publish(prFact({ number: 12, action: 'synchronize', headBranch: 'work/ambiguity-b' }))
+  const boundMetadata = await metadataOf(bound)
+  expect(boundMetadata.codeHost.changeRequest).toEqual({ number: 12 })
+  expect(boundMetadata.deliveryBinding).toBeUndefined()
+  const waitingMetadata = await metadataOf(waiting)
+  expect(waitingMetadata.codeHost.changeRequest).toBeUndefined()
+  expect(waitingMetadata.deliveryBinding.autoAttach).toMatchObject({ status: 'different-binding', number: 12 })
+  const flip = (await bindingNotifications()).find(
+    (row) => row.idempotencyKey === `pr-binding-ambiguous:different-binding:${waiting}:${repo}#12`
+  )
+  expect(flip).toBeDefined()
+  expect(flip!.content).toContain('another work stream is already bound to this pull request')
+  // Each reason notified exactly once for the stream.
+  const forWaiting = (await bindingNotifications()).filter((row) => row.content.includes(waiting))
+  expect(forWaiting).toHaveLength(2)
 })
 
 test('a stream bound to a different pull request is never overwritten', async () => {
@@ -215,10 +249,10 @@ test('a stream bound to a different pull request is never overwritten', async ()
   expect(metadata.codeHost.changeRequest).toEqual({ number: 5 })
   expect(metadata.deliveryBinding.autoAttach).toMatchObject({ status: 'different-binding', number: 8 })
   const notice = (await bindingNotifications()).find(
-    (row) => row.idempotencyKey === `pr-binding-ambiguous:${id}:${repo}#8`
+    (row) => row.idempotencyKey === `pr-binding-ambiguous:different-binding:${id}:${repo}#8`
   )
   expect(notice).toBeDefined()
-  expect(notice!.content).toContain('already bound to a different pull request')
+  expect(notice!.content).toContain('already bound to a different pull request (#5)')
 })
 
 test('non-PR completion modes, terminal statuses, queued streams, wrong repos, and other squads are untouched', async () => {
@@ -274,6 +308,7 @@ test('instance-authority events never bind', async () => {
 test('pure matcher: repository identity, branch, base branch, and bound PR decide the outcome', () => {
   const base = {
     completionMode: 'pr-merge',
+    integration: 'github',
     repository: 'owner/repo',
     number: 7,
     headBranch: 'work/x',
@@ -307,6 +342,17 @@ test('pure matcher: repository identity, branch, base branch, and bound PR decid
       metadata: { ...streamMetadata, codeHost: { integration: 'github', repository: 'other/repo' } },
     })
   ).toEqual({ kind: 'unmatched' })
+  // A fact from another provider never binds a GitHub stream, even with the same repository name.
+  expect(
+    evaluateDeliveryPrBinding({
+      ...base,
+      integration: 'gitlab',
+      metadata: { ...streamMetadata, codeHost: { integration: 'gitlab', repository: 'owner/repo' } },
+    })
+  ).toEqual({ kind: 'attach' })
+  expect(evaluateDeliveryPrBinding({ ...base, integration: 'gitlab', metadata: streamMetadata })).toEqual({
+    kind: 'unmatched',
+  })
   expect(
     evaluateDeliveryPrBinding({
       ...base,

@@ -61,11 +61,14 @@ export type DeliveryPrBindingDecision =
 /**
  * Pure evaluation of one work stream against one pull-request event. Repository identity comes
  * from `resolveCodeHostReference`: the canonical `codeHost.repository` (auto-detected from the
- * stream's Git remote) or the legacy `github.repo` shape — never from a filesystem path.
+ * stream's Git remote) or the legacy `github.repo` shape — never from a filesystem path. The
+ * event's integration must equal the binding's, so a fact from one provider can never bind
+ * another provider's stream.
  */
 export function evaluateDeliveryPrBinding(input: {
   completionMode: string
   metadata: unknown
+  integration: string
   repository: string
   number: number
   headBranch: string
@@ -73,7 +76,12 @@ export function evaluateDeliveryPrBinding(input: {
 }): DeliveryPrBindingDecision {
   if (input.completionMode !== 'pr-merge' && input.completionMode !== 'pr-auto-merge') return { kind: 'unmatched' }
   const reference = resolveCodeHostReference(input.metadata)
-  if (!reference || reference.repository.trim().toLowerCase() !== input.repository) return { kind: 'unmatched' }
+  if (
+    !reference ||
+    reference.integration !== input.integration ||
+    reference.repository.trim().toLowerCase() !== input.repository
+  )
+    return { kind: 'unmatched' }
   const git = (input.metadata as { git?: { branch?: unknown; baseBranch?: unknown } } | null)?.git
   if (typeof git?.branch !== 'string' || !git.branch || git.branch !== input.headBranch) return { kind: 'unmatched' }
   // A pull request targeting a different base than the stream records is a different deliverable:
@@ -150,7 +158,9 @@ async function bindingRecipient(
   return addressableRecipient(tx, order)
 }
 
-function prUrl(shape: DeliveryPrBindingEvent): string {
+function prUrl(shape: { integration?: string; repository: string; number: number; url?: string }): string {
+  // Only a provider whose facts are observed can reach an attach; the registry is GitHub-only
+  // today, so the constructed fallback is always a GitHub URL. Other providers must carry url.
   return shape.url ?? `https://github.com/${shape.repository}/pull/${shape.number}`
 }
 
@@ -188,6 +198,7 @@ export async function autoAttachDeliveryPrBinding(event: Event): Promise<boolean
       decision: evaluateDeliveryPrBinding({
         completionMode: row.mode,
         metadata: row.metadata,
+        integration: event.integration,
         repository: shape.repository,
         number: shape.number,
         headBranch: shape.headBranch,
@@ -222,6 +233,7 @@ async function attachBinding(
       ? evaluateDeliveryPrBinding({
           completionMode: run.state.definition.completion.mode,
           metadata: stream.metadata,
+          integration: event.integration,
           repository: shape.repository,
           number: shape.number,
           headBranch: shape.headBranch,
@@ -292,6 +304,7 @@ async function recordAmbiguity(
       ? evaluateDeliveryPrBinding({
           completionMode: run.state.definition.completion.mode,
           metadata: stream.metadata,
+          integration: event.integration,
           repository: shape.repository,
           number: shape.number,
           headBranch: shape.headBranch,
@@ -314,10 +327,15 @@ async function recordAmbiguity(
         eventId: event.id,
       },
     }
+    // The wording reflects what THIS stream's decision is, not just the plan-level reason: an
+    // unbound candidate recorded because a sibling already holds the PR must not be told it is
+    // itself bound to something else.
     const explanation =
-      reason === 'multiple-candidates'
-        ? 'multiple active work streams in this squad match the same branch and repository'
-        : 'this stream is already bound to a different pull request'
+      decision.kind === 'conflict'
+        ? `this stream is already bound to a different pull request (#${decision.boundNumber})`
+        : reason === 'multiple-candidates'
+          ? 'multiple active work streams in this squad match the same branch and repository'
+          : 'another work stream is already bound to this pull request'
     recipientId = await bindingRecipient(tx, stream.squadId, stream, true)
     if (recipientId) {
       await InboxMessage.persistSystemAgentOnceInTransaction(
@@ -334,7 +352,10 @@ async function recordAmbiguity(
           wakeEligible: false,
           recordOnly: true,
         },
-        `pr-binding-ambiguous:${streamId}:${shape.repository}#${shape.number}`,
+        // The reason is part of the key: the same stream and pull request can legitimately be
+        // ambiguous for one reason and later another (for example after a sibling is bound
+        // manually), and each transition must notify once instead of colliding on a reused key.
+        `pr-binding-ambiguous:${reason}:${streamId}:${shape.repository}#${shape.number}`,
         afterCommit
       )
     } else log.warn(`Delivery PR binding ambiguity on ${streamId} recorded with no notifiable recipient`)
