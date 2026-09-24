@@ -160,4 +160,136 @@ describe('fleet incident messages', () => {
     expect(JSON.stringify(message)).not.toContain('must-not-leak')
     expect(JSON.stringify(message)).not.toContain(SQUAD_ID)
   })
+
+  describe('overloaded sandboxes', () => {
+    const AGENT_ID = '8feeb6aa-7f95-4686-a92f-56095edd2660'
+    const squadRemediation = `Find and stop the runaway job with \`tau squad sandbox-ps ${SQUAD_ID}\` (or Workspace settings → Processes), then \`tau squad sandbox-kill\` / \`sandbox-stop-container\`.`
+    const agentRemediation = `Find and stop the runaway job with \`tau agent sandbox-ps ${AGENT_ID}\` (or the agent's sandbox controls → Processes), then \`tau agent sandbox-kill\` / \`sandbox-stop-container\`.`
+    const cause =
+      'More work is running than the machine has CPUs for, often a detached build, test run, or container left behind. On a shared machine, another sandbox can cause it too.'
+    const overload = (overrides: Partial<FleetIncidentNotificationClaim>) =>
+      claim({
+        incidentKind: 'sandbox_overloaded',
+        incidentStartedAt: ago(12),
+        scopeKey: `sandbox:squad_${SQUAD_ID}`,
+        causeCode: 'sandbox-overloaded',
+        causeSummary: cause,
+        remediation: squadRemediation,
+        details: {
+          sandboxId: `squad_${SQUAD_ID}`,
+          cpus: 4,
+          load: [31.9, 28.7, 25.5],
+          peakLoad: 40.2,
+          memTotalMb: 16_000,
+          memAvailableMb: 463,
+        },
+        ...overrides,
+      })
+
+    test('a squad sandbox alert gives the load, its duration, the effect, and how to find the job', () => {
+      const message = renderFleetIncidentMessage(overload({}), { squadName: 'Tau Core' }, NOW)
+      expect(message.subject).toBe('The sandbox for squad Tau Core is overloaded')
+      expect(message.content).toBe(
+        'The sandbox for squad Tau Core is overloaded: load 31.9 on 4 CPUs for 12m (463 MB free). ' +
+          'Agents’ tool calls and toolchain checks time out while it lasts.\n\n' +
+          `Cause: ${cause}\n` +
+          'Peak load: 40.2\n' +
+          `Fix: ${squadRemediation}`
+      )
+      expect(message.push).toMatchObject({
+        title: 'The sandbox for squad Tau Core is overloaded',
+        subtitle: 'Tau Core',
+        interruptionLevel: 'active',
+      })
+    })
+
+    test('an agent sandbox alert names the agent and uses the agent commands', () => {
+      const message = renderFleetIncidentMessage(
+        overload({
+          squadId: undefined,
+          scopeKey: `sandbox:agent_${AGENT_ID}`,
+          remediation: agentRemediation,
+          details: {
+            sandboxId: `agent_${AGENT_ID}`,
+            cpus: 1,
+            load: [2.5, 2, 1],
+            peakLoad: 2.5,
+            memTotalMb: 4_096,
+            memAvailableMb: 2_560,
+          },
+        }),
+        { agentName: 'reviewer' },
+        NOW
+      )
+      expect(message.subject).toBe('The sandbox for reviewer is overloaded')
+      expect(message.content).toBe(
+        'The sandbox for reviewer is overloaded: load 2.5 on 1 CPU for 12m (2.5 GB free). ' +
+          'Agents’ tool calls and toolchain checks time out while it lasts.\n\n' +
+          `Cause: ${cause}\n` +
+          `Fix: ${agentRemediation}`
+      )
+    })
+
+    test('recovery reports how long it lasted and the load it settled at', () => {
+      const message = renderFleetIncidentMessage(
+        overload({
+          phase: 'recovery',
+          incidentStartedAt: ago(26),
+          incidentResolvedAt: ago(0),
+          details: { cpus: 4, load: [2.1, 6, 9], peakLoad: 40.2, memAvailableMb: 9_000, resolvedBy: 'load' },
+        }),
+        { squadName: 'Tau Core' },
+        NOW
+      )
+      expect(message.subject).toBe('The sandbox for squad Tau Core recovered')
+      expect(message.content).toBe(
+        'The sandbox for squad Tau Core is no longer overloaded after 26m: load 2.1 on 4 CPUs.\n\n' +
+          `Earlier cause: ${cause}`
+      )
+      expect(message.push.interruptionLevel).toBe('passive')
+
+      const agent = renderFleetIncidentMessage(
+        overload({
+          phase: 'recovery',
+          scopeKey: `sandbox:agent_${AGENT_ID}`,
+          incidentResolvedAt: ago(0),
+          details: { cpus: 2, load: [1.5, 3, 3], resolvedBy: 'load' },
+        }),
+        { agentName: 'reviewer', squadName: 'Tau Core' },
+        NOW
+      )
+      expect(agent.subject).toBe('The sandbox for reviewer in squad Tau Core recovered')
+      expect(agent.content).toStartWith(
+        'The sandbox for reviewer in squad Tau Core is no longer overloaded after 12m: load 1.5 on 2 CPUs.'
+      )
+    })
+
+    test('an episode closed for lack of readings says so instead of claiming recovery', () => {
+      const message = renderFleetIncidentMessage(
+        overload({
+          phase: 'recovery',
+          incidentStartedAt: ago(40),
+          incidentResolvedAt: ago(0),
+          details: { cpus: 4, load: [31.9, 28.7, 25.5], resolvedBy: 'unobserved' },
+        }),
+        { squadName: 'Tau Core' },
+        NOW
+      )
+      expect(message.subject).toBe('The sandbox for squad Tau Core: overload alert closed')
+      expect(message.content).toStartWith(
+        'The sandbox for squad Tau Core has had no load reading for 10m (no agent is running in it, or it isn’t answering), so its overload alert is closed after 40m.'
+      )
+    })
+
+    test('missing or malformed readings fall back without inventing numbers', () => {
+      const message = renderFleetIncidentMessage(
+        overload({ details: { cpus: 'four', load: 'high', secret: 'must-not-leak' } }),
+        {},
+        NOW
+      )
+      expect(message.subject).toBe(`Sandbox ${SQUAD_ID.slice(0, 8)} is overloaded`)
+      expect(message.content).toStartWith(`Sandbox ${SQUAD_ID.slice(0, 8)} has been overloaded for 12m.`)
+      expect(JSON.stringify(message)).not.toContain('must-not-leak')
+    })
+  })
 })

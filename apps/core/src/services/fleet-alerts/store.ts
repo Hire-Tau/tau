@@ -1,9 +1,16 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
-import { SYSTEM_RECIPIENT_ID } from '@tau/shared'
+import { isSandboxOverloaded, SYSTEM_RECIPIENT_ID, type SandboxPressure } from '@tau/shared'
 import type { ProviderHealthRecord } from '@tau/shared/provider-health'
 import { db } from '../../db'
-import { agents, fleetIncidentNotifications, fleetIncidents, squads } from '../../db/schema'
-import { planFleetAlert, planSandboxAlert, type FleetIncidentAudience } from './audience-policy'
+import { agents, fleetIncidentNotifications, fleetIncidents, squads, type FleetIncidentKind } from '../../db/schema'
+import {
+  planFleetAlert,
+  planSandboxAlert,
+  planSandboxOverloadAlert,
+  SANDBOX_OVERLOAD_ALERT_AFTER_MS,
+  SANDBOX_OVERLOAD_STALE_MS,
+  type FleetIncidentAudience,
+} from './audience-policy'
 import { sanitizeProviderRecord } from './cause'
 
 const PROVIDER_ALERT_WINDOW_MS = 15 * 60 * 1000
@@ -635,6 +642,202 @@ export async function observeSandboxDegradation(input: SandboxDegradationObserva
   })
 }
 
+export type SandboxOverloadObservation =
+  | { status: 'sampled'; sandboxId: string; pressure: SandboxPressure; now: Date }
+  | { status: 'unobserved'; sandboxId: string; now: Date }
+
+/** What an overload incident records for rendering; everything else about the box stays out. */
+export interface SandboxOverloadDetails extends Record<string, unknown> {
+  sandboxId: string
+  cpus: number
+  /** Latest 1, 5 and 15 minute load averages. */
+  load: [number, number, number]
+  /** Highest one-minute load seen this episode. */
+  peakLoad: number
+  memTotalMb: number
+  memAvailableMb: number
+  /** Why the episode closed: load fell below the CPU count, or no reading for a while. */
+  resolvedBy?: 'load' | 'unobserved'
+}
+
+function validPressure(pressure: SandboxPressure): boolean {
+  return (
+    Number.isInteger(pressure.cpus) &&
+    pressure.cpus > 0 &&
+    Array.isArray(pressure.load) &&
+    pressure.load.length === 3 &&
+    pressure.load.every((value) => Number.isFinite(value) && value >= 0) &&
+    Number.isFinite(pressure.memTotalMb) &&
+    Number.isFinite(pressure.memAvailableMb)
+  )
+}
+
+const round1 = (value: number) => Math.round(value * 10) / 10
+
+function sandboxOverloadRemediation(sandboxId: string): string {
+  const [, kind, id] = /^(squad|agent)_(.+)$/.exec(sandboxId) ?? []
+  if (kind === 'agent' && id && UUID_PATTERN.test(id)) {
+    return `Find and stop the runaway job with \`tau agent sandbox-ps ${id}\` (or the agent's sandbox controls → Processes), then \`tau agent sandbox-kill\` / \`sandbox-stop-container\`.`
+  }
+  if (kind === 'squad' && id && UUID_PATTERN.test(id)) {
+    return `Find and stop the runaway job with \`tau squad sandbox-ps ${id}\` (or Workspace settings → Processes), then \`tau squad sandbox-kill\` / \`sandbox-stop-container\`.`
+  }
+  return 'Find and stop the runaway job with `tau squad sandbox-ps` or `tau agent sandbox-ps`, then `sandbox-kill` / `sandbox-stop-container`.'
+}
+
+/** The squad a sandbox belongs to: its own squad, or the owning agent's squad. */
+async function sandboxSquadId(tx: FleetAlertTx, sandboxId: string): Promise<string | null> {
+  const [, kind, id] = /^(squad|agent)_(.+)$/.exec(sandboxId) ?? []
+  if (!id || !UUID_PATTERN.test(id)) return null
+  if (kind === 'squad') {
+    const [squad] = await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, id)).limit(1)
+    return squad?.id ?? null
+  }
+  const [agent] = await tx.select({ squadId: agents.squadId }).from(agents).where(eq(agents.id, id)).limit(1)
+  return agent?.squadId ?? null
+}
+
+/**
+ * Persist one sandbox load reading. An episode opens on the first overloaded
+ * reading (one-minute load at least twice the CPU count) and alerts only when
+ * a reading is still overloaded {@link SANDBOX_OVERLOAD_ALERT_AFTER_MS} later.
+ * It resolves with hysteresis — only once the one-minute load drops below the
+ * CPU count — so a box hovering around the threshold cannot flap. Readings in
+ * between keep the episode open without alerting.
+ */
+export async function observeSandboxOverload(input: SandboxOverloadObservation): Promise<string | undefined> {
+  if (input.status === 'sampled' && !validPressure(input.pressure)) return undefined
+  const scopeKey = `sandbox:${input.sandboxId}`
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${'fleet-incident:sandbox_overloaded:' + scopeKey}))`)
+    const [current] = await tx
+      .select()
+      .from(fleetIncidents)
+      .where(
+        and(
+          eq(fleetIncidents.kind, 'sandbox_overloaded'),
+          eq(fleetIncidents.scopeKey, scopeKey),
+          isNull(fleetIncidents.resolvedAt)
+        )
+      )
+      .limit(1)
+
+    // An episode nobody has read for the stale window closes, whether this is
+    // the detector noticing (unobserved) or a reading arriving after the gap.
+    const stale = current != null && input.now.getTime() - current.lastObservedAt.getTime() >= SANDBOX_OVERLOAD_STALE_MS
+    if (current && stale) {
+      await tx
+        .update(fleetIncidents)
+        .set({ details: { ...current.details, resolvedBy: 'unobserved' }, updatedAt: input.now })
+        .where(eq(fleetIncidents.id, current.id))
+      await resolveFleetIncident(tx, current.id, input.now)
+      if (input.status === 'unobserved') return current.id
+    }
+    const openIncident = stale ? undefined : current
+    if (input.status === 'unobserved') return openIncident?.id
+
+    const pressure = input.pressure
+    const overloaded = isSandboxOverloaded(pressure)
+    const cleared = pressure.load[0] < pressure.cpus
+    const reading = {
+      sandboxId: input.sandboxId,
+      cpus: pressure.cpus,
+      load: pressure.load.map(round1) as [number, number, number],
+      memTotalMb: Math.round(pressure.memTotalMb),
+      memAvailableMb: Math.round(pressure.memAvailableMb),
+    }
+
+    if (!openIncident) {
+      if (!overloaded) return undefined
+      const details: SandboxOverloadDetails = { ...reading, peakLoad: reading.load[0] }
+      const [incident] = await tx
+        .insert(fleetIncidents)
+        .values({
+          kind: 'sandbox_overloaded',
+          scopeKey,
+          squadId: await sandboxSquadId(tx, input.sandboxId),
+          startedAt: input.now,
+          alertAfter: new Date(input.now.getTime() + SANDBOX_OVERLOAD_ALERT_AFTER_MS),
+          lastObservedAt: input.now,
+          causeCode: 'sandbox-overloaded',
+          causeSummary:
+            'More work is running than the machine has CPUs for, often a detached build, test run, or container left behind. On a shared machine, another sandbox can cause it too.',
+          remediation: sandboxOverloadRemediation(input.sandboxId),
+          details,
+          updatedAt: input.now,
+        })
+        .returning()
+      if (!incident) throw new Error('Failed to persist sandbox overload incident')
+      return incident.id
+    }
+
+    const previous = openIncident.details as Partial<SandboxOverloadDetails>
+    const details: SandboxOverloadDetails = {
+      ...reading,
+      peakLoad: Math.max(typeof previous.peakLoad === 'number' ? previous.peakLoad : 0, reading.load[0]),
+      ...(cleared ? { resolvedBy: 'load' as const } : {}),
+    }
+    await tx
+      .update(fleetIncidents)
+      .set({ lastObservedAt: input.now, details, updatedAt: input.now })
+      .where(eq(fleetIncidents.id, openIncident.id))
+
+    if (cleared) {
+      await resolveFleetIncident(tx, openIncident.id, input.now)
+      return openIncident.id
+    }
+    if (!overloaded || input.now.getTime() < openIncident.alertAfter.getTime()) return openIncident.id
+
+    const hasValidManager = (await validCurrentManagerForSquad(tx, openIncident.squadId)) != null
+    const plan = planSandboxOverloadAlert(hasValidManager)
+    await materializeManagerRoutedAlert(tx, {
+      incidentId: openIncident.id,
+      managerDueAt: input.now,
+      managerStatus: plan.manager === 'skip' ? 'skipped' : 'pending',
+      humanDelayMs: plan.humanDelayMs,
+      now: input.now,
+    })
+    return openIncident.id
+  })
+}
+
+/** Sandboxes with an open overload episode, so the detector can close ones it no longer sees. */
+/**
+ * The latest load reading of a sandbox's open overload episode. Sandbox status
+ * rarely probes a box itself (a probe would wake or keep alive a socket-activated
+ * box), so this reading from the overload detector is what surfaces overload in
+ * status views.
+ */
+export async function openSandboxOverloadPressure(sandboxId: string): Promise<SandboxPressure | undefined> {
+  const [row] = await db
+    .select({ details: fleetIncidents.details })
+    .from(fleetIncidents)
+    .where(
+      and(
+        eq(fleetIncidents.kind, 'sandbox_overloaded'),
+        eq(fleetIncidents.scopeKey, `sandbox:${sandboxId}`),
+        isNull(fleetIncidents.resolvedAt)
+      )
+    )
+    .limit(1)
+  const details = row?.details as Partial<SandboxOverloadDetails> | undefined
+  if (!details || typeof details.cpus !== 'number' || !Array.isArray(details.load)) return undefined
+  return {
+    cpus: details.cpus,
+    load: details.load,
+    memTotalMb: details.memTotalMb ?? 0,
+    memAvailableMb: details.memAvailableMb ?? 0,
+  }
+}
+
+export async function listOpenSandboxOverloadSandboxIds(): Promise<string[]> {
+  const rows = await db
+    .select({ scopeKey: fleetIncidents.scopeKey })
+    .from(fleetIncidents)
+    .where(and(eq(fleetIncidents.kind, 'sandbox_overloaded'), isNull(fleetIncidents.resolvedAt)))
+  return rows.flatMap((row) => (row.scopeKey.startsWith('sandbox:') ? [row.scopeKey.slice('sandbox:'.length)] : []))
+}
+
 export interface FleetIncidentNotificationClaim {
   notificationId: string
   incidentId: string
@@ -646,7 +849,7 @@ export interface FleetIncidentNotificationClaim {
   attempts: number
   incidentResolvedAt: Date | null
   incidentStartedAt: Date
-  incidentKind: 'provider_unhealthy' | 'squad_dead_fleet' | 'sandbox_degraded'
+  incidentKind: FleetIncidentKind
   squadId?: string | undefined
   provider?: string | undefined
   scopeKey: string

@@ -7,7 +7,7 @@ import { eventEmitter } from '../../lib/infra/event-emitter'
 import { Agent } from '../../entities/Agent'
 import { makeDormant } from '../agent/lifecycle'
 import { FleetIncidentNotifier } from './notifier'
-import { bindFleetIncidentManagerTarget, retryFleetIncidentNotification } from './store'
+import { bindFleetIncidentManagerTarget, observeSandboxOverload, retryFleetIncidentNotification } from './store'
 
 const NOW = new Date('2026-08-18T12:00:00Z')
 const LEASE_MS = 60_000
@@ -910,5 +910,48 @@ describe('fleet incident notifier', () => {
     expect(row!.content).toContain('Started: 20m ago')
     expect(`${row!.subject}\n${row!.content}`).not.toContain(agent!.id)
     expect((row!.metadata as { push?: { subtitle?: string } }).push?.subtitle).toBe(`${prefix} squad`)
+  })
+
+  test('delivers an overloaded agent sandbox alert by name with the agent commands', async () => {
+    const squadId = crypto.randomUUID()
+    ownedSquadIds.push(squadId)
+    await db.insert(squads).values({ id: squadId, name: `${prefix} squad`, purpose: 'Fleet names', status: 'active' })
+    const [agent] = await db
+      .insert(agents)
+      .values({ agentTypeId: 'worker', squadId, metadata: { name: 'reviewer' } })
+      .returning()
+    ownedAgentIds.push(agent!.id)
+    const sandboxId = `agent_${agent!.id}`
+    const pressure = {
+      cpus: 4,
+      load: [31.9, 30, 25] as [number, number, number],
+      memTotalMb: 8000,
+      memAvailableMb: 463,
+    }
+    const start = new Date(NOW.getTime() - 12 * 60_000)
+    let incidentId: string | undefined
+    for (const minutes of [0, 5, 10, 12]) {
+      incidentId = await observeSandboxOverload({
+        status: 'sampled',
+        sandboxId,
+        pressure,
+        now: new Date(start.getTime() + minutes * 60_000),
+      })
+    }
+    ownedIncidentIds.push(incidentId!)
+
+    // The squad has no manager, so the human alert is due as soon as the episode is sustained.
+    await new FleetIncidentNotifier().drain({ now: NOW, incidentIds: [incidentId!] })
+
+    const [row] = await db
+      .select()
+      .from(inbox)
+      .where(eq(inbox.idempotencyKey, `fleet-incident:${incidentId}:alert:human:system`))
+    expect(row!.subject).toBe(`The sandbox for reviewer in squad ${prefix} squad is overloaded`)
+    expect(row!.content).toStartWith(
+      `The sandbox for reviewer in squad ${prefix} squad is overloaded: load 31.9 on 4 CPUs for 12m (463 MB free).`
+    )
+    expect(row!.content).toContain(`\`tau agent sandbox-ps ${agent!.id}\``)
+    expect(row!.metadata).toMatchObject({ source: 'fleet-alert', incidentKind: 'sandbox_overloaded', squadId })
   })
 })

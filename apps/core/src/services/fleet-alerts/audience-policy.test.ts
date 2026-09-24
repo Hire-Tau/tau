@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { HUMAN_FALLBACK_MS, planFleetAlert, planSandboxAlert } from './audience-policy'
+import { HUMAN_FALLBACK_MS, planFleetAlert, planSandboxAlert, planSandboxOverloadAlert } from './audience-policy'
 
 const providerCauses = [
   'rate-limit',
@@ -62,5 +62,10 @@ describe('fleet alert audience policy', () => {
 
   test('skips a missing sandbox manager and escalates immediately', () => {
     expect(planSandboxAlert(['devbox_unavailable'], false)).toEqual({ manager: 'skip', humanDelayMs: 0 })
+  })
+
+  test('routes an overloaded sandbox manager-first, or straight to humans without a manager', () => {
+    expect(planSandboxOverloadAlert(true)).toEqual({ manager: 'deliver', humanDelayMs: HUMAN_FALLBACK_MS })
+    expect(planSandboxOverloadAlert(false)).toEqual({ manager: 'skip', humanDelayMs: 0 })
   })
 })

@@ -11,6 +11,7 @@ import { getSquadDemandSnapshots } from './demand'
 import { reconcileDeadFleet } from './dead-fleet'
 import { FleetIncidentNotifier } from './notifier'
 import { reconcileProviderHealthRecords } from './provider-health-reconciler'
+import { reconcileSandboxOverload } from './sandbox-overload'
 import type { ProviderHealthRecord } from '@tau/shared/provider-health'
 
 const log = createLogger('fleet-alert-runtime')
@@ -26,6 +27,7 @@ interface FleetAlertRuntimeDeps {
   getDemand?: typeof getSquadDemandSnapshots
   reconcileProvider?: typeof reconcileProviderHealthRecords
   reconcileDeadFleet?: typeof reconcileDeadFleet
+  reconcileSandboxOverload?: (input: { now: Date }) => Promise<void>
   drainNotifications?: (input: { now: Date }) => Promise<void>
   setIntervalFn?: (callback: () => void, intervalMs: number) => IntervalHandle
   clearIntervalFn?: (handle: IntervalHandle) => void
@@ -75,6 +77,7 @@ export class FleetAlertRuntime {
   private readonly getDemand: typeof getSquadDemandSnapshots
   private readonly reconcileProvider: typeof reconcileProviderHealthRecords
   private readonly reconcileDeadFleetFn: typeof reconcileDeadFleet
+  private readonly reconcileSandboxOverloadFn: (input: { now: Date }) => Promise<void>
   private readonly drainNotifications: (input: { now: Date }) => Promise<void>
   private readonly setIntervalFn: (callback: () => void, intervalMs: number) => IntervalHandle
   private readonly clearIntervalFn: (handle: IntervalHandle) => void
@@ -90,6 +93,7 @@ export class FleetAlertRuntime {
     this.getDemand = deps.getDemand ?? getSquadDemandSnapshots
     this.reconcileProvider = deps.reconcileProvider ?? reconcileProviderHealthRecords
     this.reconcileDeadFleetFn = deps.reconcileDeadFleet ?? reconcileDeadFleet
+    this.reconcileSandboxOverloadFn = deps.reconcileSandboxOverload ?? ((input) => reconcileSandboxOverload(input))
     this.drainNotifications = deps.drainNotifications ?? ((input) => new FleetIncidentNotifier().drain(input))
     this.setIntervalFn = deps.setIntervalFn ?? setInterval
     this.clearIntervalFn = deps.clearIntervalFn ?? clearInterval
@@ -125,6 +129,10 @@ export class FleetAlertRuntime {
     await Promise.all([
       this.reconcileProvider({ ...health, enabledChains, now }),
       this.reconcileDeadFleetFn({ demand, now, coldStartAt: this.startedAt }),
+      // Box probes must never hold back provider/dead-fleet alerts or delivery.
+      this.reconcileSandboxOverloadFn({ now }).catch((error) =>
+        log.warn('Sandbox overload reconciliation failed:', error)
+      ),
     ])
     await this.drainNotifications({ now })
   }

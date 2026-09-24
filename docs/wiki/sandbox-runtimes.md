@@ -342,6 +342,16 @@ out. On a `vm` machine, one box can starve the others on the same machine.
 Sandbox status includes the box's load and memory, and the web app flags a
 sandbox whose one-minute load is at least twice its CPU count as overloaded.
 
+On `vm`, Core also watches for this. Once a minute it reads the load of each
+sandbox an agent is running in; it never reads an idle sandbox, because that
+would wake it. When the one-minute load stays at or above twice the CPU count
+for 10 minutes, the squad manager gets a fleet alert that names the load and
+the commands below. People get the alert 15 minutes later if it has not
+cleared, or immediately if the squad has no manager. The alert clears, with a
+recovery message, once the one-minute load falls below the CPU count. If no
+load reading arrives for 10 minutes, for example because no agent is using the
+sandbox any more, the alert is closed and the message says so.
+
 To find and stop the cause without restarting the sandbox:
 
 ```bash

@@ -1669,13 +1669,13 @@ export const scheduleHealthNotifications = pgTable(
   ]
 )
 
+export type FleetIncidentKind = 'provider_unhealthy' | 'squad_dead_fleet' | 'sandbox_degraded' | 'sandbox_overloaded'
+
 export const fleetIncidents = pgTable(
   'fleet_incidents',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    kind: varchar('kind', { length: 40 })
-      .$type<'provider_unhealthy' | 'squad_dead_fleet' | 'sandbox_degraded'>()
-      .notNull(),
+    kind: varchar('kind', { length: 40 }).$type<FleetIncidentKind>().notNull(),
     scopeKey: varchar('scope_key', { length: 255 }).notNull(),
     squadId: uuid('squad_id').references(() => squads.id, { onDelete: 'cascade' }),
     provider: varchar('provider', { length: 100 }),

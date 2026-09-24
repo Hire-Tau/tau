@@ -52,6 +52,7 @@ import { listPendingActionsForIdentity } from '../services/agents/actions'
 import { User } from '../entities/User'
 import { Squad } from '../entities/Squad'
 import { mergeSandboxStatus, resolveToolchainStatus } from '../services/sandbox/status'
+import { openSandboxOverloadPressure } from '../services/fleet-alerts/store'
 import {
   listSandboxProcesses,
   parseContainerId,
@@ -1085,6 +1086,10 @@ export const agentsRouter = new Hono()
       mergeSandboxStatus(
         {
           ...status,
+          // The overload detector's reading when status did not probe the box itself.
+          ...(isVmRuntime() && !('pressure' in status && status.pressure)
+            ? await openSandboxOverloadPressure(sandboxId).then((pressure) => (pressure ? { pressure } : {}))
+            : {}),
           controllable,
           runtime: isVmRuntime() ? ('vm' as const) : ('k8s' as const),
           ...(provisioning ? { provisioning } : {}),
