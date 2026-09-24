@@ -272,3 +272,96 @@ describe('every built-in × appearance × OS pre-paint matrix', () => {
         }
       }
 })
+
+describe('pre-paint flash script: custom theme documents (v1 still loads; v2 resolves per side)', () => {
+  test('a v1 document (single concrete appearance) applies its explicit override before paint', async () => {
+    const storage = memoryStorage({
+      [THEME_ID_KEY]: 'harbor',
+      [APPEARANCE_KEY]: 'dark',
+      'tau-custom-theme': JSON.stringify({
+        format: 'tau-custom-theme',
+        version: 1,
+        name: 'Legacy',
+        base: 'harbor',
+        appearance: 'dark',
+        overrides: { '--color-primary': '#123456' },
+      }),
+    })
+    const dom = installDomHarness({ url: 'http://localhost/' })
+    try {
+      const run = new Function('window', 'document', 'localStorage', flashScript)
+      run(dom.window, dom.window.document, storage)
+      expect(dom.window.document.documentElement.style.getPropertyValue('--color-primary')).toBe('18 52 86')
+    } finally {
+      await dom.cleanup()
+    }
+  })
+
+  test('a v2 pair resolves the requested side (light vs dark) at cold load', async () => {
+    const doc = {
+      format: 'tau-custom-theme',
+      version: 2,
+      name: 'Pair',
+      base: 'harbor',
+      variants: {
+        light: { '--color-primary': '#111111' },
+        dark: { '--color-primary': '#eeeeee' },
+      },
+    }
+    for (const [appearance, expected] of [
+      ['light', '17 17 17'],
+      ['dark', '238 238 238'],
+    ] as const) {
+      const storage = memoryStorage({
+        [THEME_ID_KEY]: 'harbor',
+        [APPEARANCE_KEY]: appearance,
+        'tau-custom-theme': JSON.stringify(doc),
+      })
+      const dom = installDomHarness({ url: 'http://localhost/' })
+      try {
+        const run = new Function('window', 'document', 'localStorage', flashScript)
+        run(dom.window, dom.window.document, storage)
+        expect(dom.window.document.documentElement.style.getPropertyValue('--color-primary')).toBe(expected)
+      } finally {
+        await dom.cleanup()
+      }
+    }
+  })
+
+  test("a v2 pair with 'system' appearance resolves against the OS preference at cold load", async () => {
+    const doc = {
+      format: 'tau-custom-theme',
+      version: 2,
+      name: 'Pair',
+      base: 'harbor',
+      variants: {
+        light: { '--color-primary': '#111111' },
+        dark: { '--color-primary': '#eeeeee' },
+      },
+    }
+    const storage = memoryStorage({
+      [THEME_ID_KEY]: 'harbor',
+      [APPEARANCE_KEY]: 'system',
+      'tau-custom-theme': JSON.stringify(doc),
+    })
+    const dom = installDomHarness({
+      url: 'http://localhost/',
+      configureWindow: (window: Window) => {
+        const matchMedia = (query: string) => ({
+          matches: true,
+          media: query,
+          addEventListener: () => undefined,
+          removeEventListener: () => undefined,
+        })
+        ;(window as unknown as { matchMedia: typeof matchMedia }).matchMedia = matchMedia
+      },
+    })
+    try {
+      const run = new Function('window', 'document', 'localStorage', flashScript)
+      run(dom.window, dom.window.document, storage)
+      expect(dom.window.document.documentElement.style.getPropertyValue('--color-primary')).toBe('238 238 238')
+    } finally {
+      await dom.cleanup()
+    }
+  })
+})

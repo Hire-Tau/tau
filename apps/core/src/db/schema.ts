@@ -22,6 +22,7 @@ import {
 } from 'drizzle-orm/pg-core'
 import type {
   ThemePreference,
+  CustomThemeDocument,
   AmtpEnvelope,
   AmtpSignedAgentCard,
   Attention,
@@ -1777,6 +1778,27 @@ export const userPreferences = pgTable('user_preferences', {
   theme: jsonb('theme').$type<ThemePreference>().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
+
+// Phase 1: every user's private library of saved theme presets (a v2 light/dark
+// document each). 'instance' visibility is reserved for Phase 2 sharing; Phase 1
+// never writes it and every route here is owner-only. `revision` is an
+// optimistic-concurrency counter bumped on every update (see services/theme-presets.ts).
+export const themePresetVisibilityEnum = pgEnum('theme_preset_visibility', ['private', 'instance'])
+export const themePresets = pgTable(
+  'theme_presets',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ownerUserId: uuid('owner_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    document: jsonb('document').$type<CustomThemeDocument>().notNull(),
+    visibility: themePresetVisibilityEnum('visibility').notNull().default('private'),
+    revision: integer('revision').notNull().default(1),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('idx_theme_presets_owner').on(table.ownerUserId)]
+)
 
 // Per-user notification preferences. Notification delivery (push) is per-user; this lets each user
 // control their own push without affecting the shared/system notification rules.

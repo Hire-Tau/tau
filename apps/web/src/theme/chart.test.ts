@@ -131,8 +131,10 @@ test('Vega and Vega-Lite SVG output retains parser-safe tiny custom alpha produc
     appearance: 'light',
     overrides: { '--graph-chart-mark': 'rgba(10,20,30,0.0000001)' },
   })
-  expect(validateCustomTheme(raw, BUILT_IN_THEMES).ok).toBe(true)
-  const channels = compileCustomTheme(raw, BUILT_IN_THEMES)['--graph-chart-mark']!
+  const result = validateCustomTheme(raw, BUILT_IN_THEMES)
+  expect(result.ok).toBe(true)
+  if (!result.ok) throw new Error(result.error)
+  const channels = compileCustomTheme(result.document, 'light')['--graph-chart-mark']!
   const concrete = tokenColor(channels, '0.12')!
   expect(parseColor(concrete)!.opacity).toBe(0.0000001 * 0.12)
   const custom = { ...colors, '--graph-chart-mark': concrete }

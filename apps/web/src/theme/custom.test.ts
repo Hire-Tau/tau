@@ -21,13 +21,17 @@ import { observeTerminalTheme, readTerminalTheme } from './terminal'
 import { generateThemeFlash } from '../../scripts/generate-theme-flash'
 import type { ThemeStorage } from './storage'
 
+// v2: a preset covers both light and dark. This fixture is dark-only (light
+// stays empty), matching what a v1 dark document normalizes to.
 export const custom: CustomThemeDocument = {
   format: 'tau-custom-theme',
-  version: 1,
+  version: 2,
   name: 'Test theme',
   base: 'ember',
-  appearance: 'dark',
-  overrides: { '--color-bg-surface': '#123456', '--term-bg': '#123456', '--graph-bg': '#234567' },
+  variants: {
+    light: {},
+    dark: { '--color-bg-surface': '#123456', '--term-bg': '#123456', '--graph-bg': '#234567' },
+  },
 }
 function storageFor(raw: string | null): ThemeStorage {
   const map = new Map<string, string>([
@@ -64,15 +68,16 @@ test('recovery matrix: invalid documents clear storage/snapshots, retain a known
   for (const raw of [
     '{broken',
     'null',
-    ' '.repeat(8193),
+    ' '.repeat(32769),
     JSON.stringify({ ...custom, version: 9 }),
-    JSON.stringify({ ...custom, overrides: { '--term-bg': 'url(x)' } }),
+    JSON.stringify({ ...custom, variants: { light: {}, dark: { '--term-bg': 'url(x)' } } }),
     JSON.stringify({ ...custom, base: 'unknown' }),
-    JSON.stringify({ ...custom, overrides: { '--status-danger-fg': '#fff' } }),
+    JSON.stringify({ ...custom, variants: { light: {}, dark: { '--status-danger-fg': '#fff' } } }),
   ]) {
     const storage = storageFor(raw)
     const state = loadCustomTheme(storage)
     expect(state.custom).toBeNull()
+    expect(state.presetId).toBeNull()
     expect(state.error).toContain('Custom theme removed')
     expect(storage.getItem(CUSTOM_THEME_KEY)).toBeNull()
     expect(storage.getItem('tau-theme-surface')).toBeNull()
@@ -97,6 +102,25 @@ test('recovery matrix: invalid documents clear storage/snapshots, retain a known
   expect(() => clearCustomTheme(denied)).not.toThrow()
 })
 
+test('a v1 document (raw string) still loads and normalizes to a v2 pair', () => {
+  const v1 = JSON.stringify({
+    format: 'tau-custom-theme',
+    version: 1,
+    name: 'Legacy',
+    base: 'ember',
+    appearance: 'dark',
+    overrides: { '--term-bg': '#123456' },
+  })
+  const state = loadCustomTheme(storageFor(v1))
+  expect(state.custom).toEqual({
+    format: 'tau-custom-theme',
+    version: 2,
+    name: 'Legacy',
+    base: 'ember',
+    variants: { light: {}, dark: { '--term-bg': '#123456' } },
+  })
+})
+
 test('import/export round trip is bounded, rejects malicious files before reading oversize data', async () => {
   const json = exportCustomTheme(custom)
   expect(await importCustomTheme({ size: json.length, text: async () => json })).toEqual({
@@ -107,15 +131,17 @@ test('import/export round trip is bounded, rejects malicious files before readin
   expect(
     (
       await importCustomTheme({
-        size: 8193,
+        size: 32769,
         text: async () => {
           throw new Error('must not read')
         },
       })
     ).ok
   ).toBe(false)
-  expect((await importCustomTheme({ size: 1, text: async () => ' '.repeat(8193) })).ok).toBe(false)
-  expect(() => exportCustomTheme({ ...custom, overrides: { '--color-primary': 'url(x)' } })).toThrow()
+  expect((await importCustomTheme({ size: 1, text: async () => ' '.repeat(32769) })).ok).toBe(false)
+  expect(() =>
+    exportCustomTheme({ ...custom, variants: { light: {}, dark: { '--color-primary': 'url(x)' } } })
+  ).toThrow()
   const storage = storageFor(null)
   expect(persistCustomTheme(storage, custom)).toBe(true)
   expect(storage.getItem(CUSTOM_THEME_KEY)).toBe(json)
@@ -143,12 +169,13 @@ test('preview isolation, inheritance, alpha/fractions/sentinels, graph/xterm liv
     preview.setAttribute('data-theme-scope', '')
     document.body.append(preview)
     const before = root.outerHTML.split('<head>')[0]
-    applyCustomTheme(preview, custom)
+    applyCustomTheme(preview, custom, 'dark')
     expect(root.outerHTML.split('<head>')[0]).toBe(before)
     expect(preview.style.getPropertyValue('--term-bg')).toBe('18 52 86')
     const get = (token: string) => window.getComputedStyle(preview).getPropertyValue(token).trim()
-    const base = palettes.find((p) => p.id === custom.base && p.appearance === custom.appearance)!
-    for (const token of ACTIVE_THEME_TOKENS.filter((t) => !(t in custom.overrides)))
+    const base = palettes.find((p) => p.id === custom.base && p.appearance === 'dark')!
+    const darkOverrides = custom.variants.dark
+    for (const token of ACTIVE_THEME_TOKENS.filter((t) => !(t in darkOverrides)))
       expect(get(token)).toBe(resolveToken(base.tokens, token))
     expect(get('--opacity-status-danger-surface')).toBe(base.tokens['--opacity-status-danger-surface']!)
     expect(get('--term-selection-foreground')).toBe('none')
@@ -161,8 +188,8 @@ test('preview isolation, inheritance, alpha/fractions/sentinels, graph/xterm liv
     document.body.append(container)
     const terminal = { options: { theme: readTerminalTheme(window.getComputedStyle(root)) } }
     dispose = observeTerminalTheme(terminal, container)
-    applyCustomTheme(root, custom)
-    applyCustomTheme(preview, { ...custom, overrides: {} })
+    applyCustomTheme(root, custom, 'dark')
+    applyCustomTheme(preview, { ...custom, variants: { light: {}, dark: {} } }, 'dark')
     expect(preview.style.getPropertyValue('--custom-rgb-term-bg')).toBe('initial')
     expect(window.getComputedStyle(preview).getPropertyValue('--term-bg').trim()).toBe(
       resolveToken(base.tokens, '--term-bg')
@@ -184,12 +211,50 @@ test('preview isolation, inheritance, alpha/fractions/sentinels, graph/xterm liv
   }
 })
 
+test('a light/dark pair resolves the correct side per requested appearance', async () => {
+  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  try {
+    const style = document.createElement('style')
+    style.textContent = palettes
+      .map((p) => {
+        const attributes = `[data-theme="${p.id}"]${p.appearance === 'constant' ? '' : `[data-appearance="${p.appearance}"]`}`
+        return `:root${attributes}, [data-theme-scope]${attributes} { ${Object.entries(p.tokens)
+          .map(([name]) => `${name}: ${resolveToken(p.tokens, name)};`)
+          .join(' ')} }`
+      })
+      .join('\n')
+    document.head.append(style)
+    const pair: CustomThemeDocument = {
+      format: 'tau-custom-theme',
+      version: 2,
+      name: 'Pair',
+      base: 'tau',
+      variants: {
+        light: { '--color-primary': '#111111' },
+        dark: { '--color-primary': '#eeeeee' },
+      },
+    }
+    const preview = document.createElement('div')
+    preview.setAttribute('data-theme-scope', '')
+    document.body.append(preview)
+    applyCustomTheme(preview, pair, 'light')
+    expect(window.getComputedStyle(preview).getPropertyValue('--color-primary').trim()).toBe('17 17 17')
+    applyCustomTheme(preview, pair, 'dark')
+    expect(window.getComputedStyle(preview).getPropertyValue('--color-primary').trim()).toBe('238 238 238')
+  } finally {
+    await dom.cleanup()
+  }
+})
+
 test('application revalidates, rejects injection before any mutation, cleans partially applied properties on throw', async () => {
   const dom = await acquireDomHarness({ url: 'https://tau.test' })
   try {
     const element = document.createElement('div')
-    for (const overrides of [{ '--term-bg': 'url(https://evil.test)' }, { '--status-danger-fg': '#fff' }]) {
-      expect(() => applyCustomTheme(element, { ...custom, overrides })).toThrow()
+    for (const variants of [
+      { light: {}, dark: { '--term-bg': 'url(https://evil.test)' } },
+      { light: {}, dark: { '--status-danger-fg': '#fff' } },
+    ]) {
+      expect(() => applyCustomTheme(element, { ...custom, variants }, 'dark')).toThrow()
       expect(element.attributes.length).toBe(0)
     }
     const original = element.style.setProperty.bind(element.style)
@@ -197,7 +262,7 @@ test('application revalidates, rejects injection before any mutation, cleans par
       if (name === '--term-bg') throw new Error('application failure')
       original(name, value, priority)
     }
-    expect(() => applyCustomTheme(element, custom)).toThrow('application failure')
+    expect(() => applyCustomTheme(element, custom, 'dark')).toThrow('application failure')
     expect(element.getAttribute('data-theme')).toBe('ember')
     for (const name of ACTIVE_THEME_TOKENS) expect(element.style.getPropertyValue(name)).toBe('')
   } finally {
@@ -209,6 +274,7 @@ test('security contract: custom runtime never writes HTML/CSS text, inline boots
   for (const file of [
     'custom.ts',
     'flash.ts',
+    'preview.ts',
     '../components/settings/CustomThemeEditor.tsx',
     '../providers/ThemeProvider.tsx',
   ]) {
@@ -219,21 +285,33 @@ test('security contract: custom runtime never writes HTML/CSS text, inline boots
   expect(html.match(/<script data-tau-theme-flash>([\s\S]*?)<\/script>/)![1]).toBe(await generateThemeFlash())
 })
 
-test('shipped pre-paint custom matrix and broken-document fallback run before React/CSS', async () => {
+test('shipped pre-paint custom matrix (v2 pair) and broken-document fallback run before React/CSS', async () => {
   const script = readFileSync(new URL('../../index.html', import.meta.url), 'utf8').match(
     /<script data-tau-theme-flash>([\s\S]*?)<\/script>/
   )![1]!
   const dom = await acquireDomHarness({ url: 'https://tau.test' })
   try {
     for (const p of palettes) {
-      const doc = {
-        ...custom,
+      const patch = { ...custom.variants.dark, '--brand-tile': '#123456' }
+      const doc: CustomThemeDocument = {
+        format: 'tau-custom-theme',
+        version: 2,
+        name: custom.name,
         base: p.id,
-        appearance: p.appearance,
-        overrides: { ...custom.overrides, '--brand-tile': '#123456' },
+        variants: p.appearance === 'constant' ? { constant: patch } : { light: patch, dark: patch },
       }
       for (const broken of [false, true]) {
-        const storage = storageFor(JSON.stringify(broken ? { ...doc, overrides: { '--term-bg': 'url(x)' } } : doc))
+        const brokenDoc: CustomThemeDocument = broken
+          ? {
+              ...doc,
+              variants:
+                'constant' in doc.variants
+                  ? { constant: { '--term-bg': 'url(x)' } }
+                  : { light: { '--term-bg': 'url(x)' }, dark: { '--term-bg': 'url(x)' } },
+            }
+          : doc
+        const storage = storageFor(JSON.stringify(brokenDoc))
+        storage.setItem('tau-appearance', p.appearance === 'constant' ? 'light' : p.appearance)
         removeCustomProperties(document.documentElement)
         document.head.innerHTML = '<meta name="msapplication-TileColor" content="#7c3aed" />'
         new Function('window', 'document', 'localStorage', script)(window, document, storage)
@@ -261,4 +339,67 @@ test('pre-paint bundle stays independent of unrelated shared runtime exports', a
   // Theme-only code fits comfortably here; the shared barrel pulled in Zod and
   // workflow schemas (~100 KiB) before any page could paint.
   expect(new TextEncoder().encode(await generateThemeFlash()).length).toBeLessThan(30000)
+})
+
+test('a palette derives most tokens from the real built-in CSS cascade, explicit overrides still win', async () => {
+  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  try {
+    const style = document.createElement('style')
+    style.textContent = palettes
+      .map((p) => {
+        const attributes = `[data-theme="${p.id}"]${p.appearance === 'constant' ? '' : `[data-appearance="${p.appearance}"]`}`
+        return `:root${attributes}, [data-theme-scope]${attributes} { ${Object.entries(p.tokens)
+          .map(([name]) => `${name}: ${resolveToken(p.tokens, name)};`)
+          .join(' ')} }`
+      })
+      .join('\n')
+    document.head.append(style)
+    const preview = document.createElement('div')
+    preview.setAttribute('data-theme-scope', '')
+    document.body.append(preview)
+    const doc: CustomThemeDocument = {
+      format: 'tau-custom-theme',
+      version: 2,
+      name: 'Palette',
+      base: 'tau',
+      palette: { primary: '#0ea5e9' },
+      variants: { light: { '--color-primary': '#ff0000' }, dark: {} },
+    }
+    applyCustomTheme(preview, doc, 'light')
+    const get = (token: string) => window.getComputedStyle(preview).getPropertyValue(token).trim()
+    // Explicit override wins over the derived value for the same token.
+    expect(get('--color-primary')).toBe('255 0 0')
+    // A neutral/chrome token not explicitly overridden is derived (differs
+    // from the plain base value, since the base's own primary isn't sky blue).
+    const base = palettes.find((p) => p.id === 'tau' && p.appearance === 'light')!
+    expect(get('--color-primary-hover')).not.toBe(resolveToken(base.tokens, '--color-primary-hover'))
+    // Status stays static (semantic) by default: untouched by the palette.
+    expect(get('--status-danger-solid')).toBe(resolveToken(base.tokens, '--status-danger-solid'))
+  } finally {
+    await dom.cleanup()
+  }
+})
+
+test('the pre-paint flash script skips palette derivation (no reliable computed style yet) but still applies explicit overrides', async () => {
+  const script = readFileSync(new URL('../../index.html', import.meta.url), 'utf8').match(
+    /<script data-tau-theme-flash>([\s\S]*?)<\/script>/
+  )![1]!
+  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  try {
+    const doc: CustomThemeDocument = {
+      format: 'tau-custom-theme',
+      version: 2,
+      name: 'Palette',
+      base: 'tau',
+      palette: { primary: '#0ea5e9' },
+      variants: { light: { '--color-primary': '#ff0000' }, dark: {} },
+    }
+    const storage = storageFor(JSON.stringify(doc))
+    storage.setItem('tau-appearance', 'light')
+    new Function('window', 'document', 'localStorage', script)(window, document, storage)
+    // The explicit override still applies synchronously, pre-paint.
+    expect(document.documentElement.style.getPropertyValue('--color-primary')).toBe('255 0 0')
+  } finally {
+    await dom.cleanup()
+  }
 })

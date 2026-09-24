@@ -1,11 +1,12 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import clsx from 'clsx'
-import type { CustomThemeDocument, EffectiveAppearance } from '@tau/shared'
+import type { EffectiveAppearance, ThemePreset } from '@tau/shared'
 import type { useTheme } from '../providers/ThemeProvider'
 import { useThemeSyncStore } from '../providers/ThemeProvider'
 import { BUILT_IN_THEMES, findWebTheme, THEME_PICKER_ENABLED, type WebThemeDefinition } from '../theme/registry'
 import { applyResolvedTheme } from '../theme/apply'
 import { applyCustomTheme, removeCustomProperties } from '../theme/custom'
+import { paintRoot } from '../theme/preview'
 import { useStableRef } from '../hooks/useStableRef'
 import { PaletteIcon, SunIcon, MoonIcon, MonitorIcon } from './icons'
 import { THEME_CONSTANT_HINT, ThemeSyncNotice } from './settings/ThemeControl'
@@ -15,7 +16,7 @@ const HOVER_PREVIEW_DELAY_MS = 100
 
 type Circle =
   | { kind: 'builtin'; id: string; label: string; theme: WebThemeDefinition }
-  | { kind: 'custom'; id: 'custom'; label: string; document: CustomThemeDocument }
+  | { kind: 'preset'; id: string; label: string; preset: ThemePreset }
 
 const APPEARANCE_OPTIONS = [
   ['light', 'Light', SunIcon],
@@ -23,39 +24,28 @@ const APPEARANCE_OPTIONS = [
   ['system', 'System', MonitorIcon],
 ] as const
 
-/** Full repaint of one root/element: mirrors ThemeProvider's own effect body
- * (minus persistence), so preview/restore and the real applied theme never
- * drift from each other. Pure DOM; never touches storage or the store. */
-function paintRoot(
-  root: HTMLElement,
-  theme: WebThemeDefinition,
-  appearance: EffectiveAppearance,
-  custom: CustomThemeDocument | null
-) {
-  removeCustomProperties(root)
-  applyResolvedTheme(root, theme, appearance)
-  if (!custom) return
-  try {
-    applyCustomTheme(root, custom)
-  } catch {
-    // Preview/restore never mutates the store or recovers persisted state
-    // (that belongs to ThemeProvider); fall back to the plain builtin paint.
-    removeCustomProperties(root)
-  }
+/** A preset's document always covers both variants; a circle preview/swatch
+ * never forces a particular side, it just resolves the app's current one. */
+function presetAppearance(preset: ThemePreset, currentAppearance: EffectiveAppearance): EffectiveAppearance {
+  return findWebTheme(preset.document.base).kind === 'unified' ? 'constant' : currentAppearance
 }
 
 /**
  * Desktop header theme picker: swap the color palette without opening
- * Settings. Circles preview the whole app on hover intent and always fully
- * restore the stored selection; clicking persists through the existing
- * ThemeProvider paths (setThemeId / applyCustom), so sync and device-override
- * behavior is identical to the Settings ThemeControl.
+ * Settings. Circles are every built-in plus the caller's saved theme presets;
+ * hovering previews the whole app on intent and always fully restores the
+ * stored selection; clicking persists through the existing ThemeProvider
+ * paths (setThemeId / applyPreset), so sync and device-override behavior is
+ * identical to the Settings ThemeControl.
  */
 export function ThemeQuickPicker({
   value,
+  presets = [],
   enabled = THEME_PICKER_ENABLED,
 }: {
   value: ReturnType<typeof useTheme>
+  /** The caller's saved theme presets (fetched via React Query at the call site). */
+  presets?: ThemePreset[]
   enabled?: boolean
 }) {
   const store = useThemeSyncStore()
@@ -63,7 +53,7 @@ export function ThemeQuickPicker({
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
-  const customSwatchRef = useRef<HTMLDivElement>(null)
+  const presetSwatchRefs = useRef(new Map<string, HTMLElement>())
   const panelId = useId()
   const previewTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const previewActive = useRef(false)
@@ -71,9 +61,7 @@ export function ThemeQuickPicker({
 
   const circles: Circle[] = [
     ...BUILT_IN_THEMES.map((theme) => ({ kind: 'builtin' as const, id: theme.id, label: theme.label, theme })),
-    ...(value.customTheme
-      ? [{ kind: 'custom' as const, id: 'custom' as const, label: value.customTheme.name, document: value.customTheme }]
-      : []),
+    ...presets.map((preset) => ({ kind: 'preset' as const, id: preset.id, label: preset.document.name, preset })),
   ]
 
   const restorePreview = () => {
@@ -92,8 +80,13 @@ export function ThemeQuickPicker({
   const applyPreview = (circle: Circle) => {
     previewActive.current = true
     const root = document.documentElement
-    if (circle.kind === 'custom')
-      paintRoot(root, findWebTheme(circle.document.base), circle.document.appearance, circle.document)
+    if (circle.kind === 'preset')
+      paintRoot(
+        root,
+        findWebTheme(circle.preset.document.base),
+        presetAppearance(circle.preset, valueRef.current.theme),
+        circle.preset.document
+      )
     // Palette-only preview: keep the app's current effective appearance.
     else paintRoot(root, circle.theme, valueRef.current.theme, null)
   }
@@ -110,7 +103,7 @@ export function ThemeQuickPicker({
 
   const selectCircle = (circle: Circle) => {
     restorePreview()
-    if (circle.kind === 'custom') value.applyCustom(circle.document)
+    if (circle.kind === 'preset') value.applyPreset(circle.preset)
     else value.setThemeId(circle.id)
   }
 
@@ -138,19 +131,23 @@ export function ThemeQuickPicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
-  // Paint the active custom theme's own circle from the real document (not
-  // the hover preview), the same way CustomThemeEditor paints its preview.
+  // Paint every preset's own circle from its compiled document (not the hover
+  // preview), the same way the editor paints its live preview.
   useLayoutEffect(() => {
-    const element = customSwatchRef.current
-    if (!element || !value.customTheme) return
-    removeCustomProperties(element)
-    applyResolvedTheme(element, findWebTheme(value.customTheme.base), value.customTheme.appearance)
-    try {
-      applyCustomTheme(element, value.customTheme)
-    } catch {
+    for (const preset of presets) {
+      const element = presetSwatchRefs.current.get(preset.id)
+      if (!element) continue
+      const theme = findWebTheme(preset.document.base)
+      const appearance = presetAppearance(preset, value.theme)
       removeCustomProperties(element)
+      applyResolvedTheme(element, theme, appearance)
+      try {
+        applyCustomTheme(element, preset.document, appearance)
+      } catch {
+        removeCustomProperties(element)
+      }
     }
-  }, [value.customTheme, open])
+  }, [presets, value.theme, open])
 
   if (!enabled) return null
 
@@ -191,7 +188,7 @@ export function ThemeQuickPicker({
           <div role="radiogroup" aria-label="Color theme" className="flex flex-wrap gap-2">
             {circles.map((circle) => {
               const selected =
-                circle.kind === 'custom' ? !!value.customTheme : !value.customTheme && value.themeId === circle.id
+                circle.kind === 'preset' ? value.presetId === circle.id : !value.presetId && value.themeId === circle.id
               return (
                 <button
                   key={circle.id}
@@ -216,11 +213,18 @@ export function ThemeQuickPicker({
                   }}
                 >
                   <span
-                    ref={circle.kind === 'custom' ? customSwatchRef : undefined}
+                    ref={
+                      circle.kind === 'preset'
+                        ? (el) => {
+                            if (el) presetSwatchRefs.current.set(circle.id, el)
+                            else presetSwatchRefs.current.delete(circle.id)
+                          }
+                        : undefined
+                    }
                     data-theme-scope=""
-                    data-theme={circle.kind === 'custom' ? undefined : circle.id}
+                    data-theme={circle.kind === 'preset' ? undefined : circle.id}
                     data-appearance={
-                      circle.kind === 'custom' ? undefined : circle.theme.kind === 'unified' ? undefined : value.theme
+                      circle.kind === 'preset' ? undefined : circle.theme.kind === 'unified' ? undefined : value.theme
                     }
                     className="theme-quick-picker-swatch block h-full w-full rounded-full"
                   />

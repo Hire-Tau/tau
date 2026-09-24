@@ -9,6 +9,8 @@
     ".": "./src/index.ts",
     "./theme-schema": "./src/theme-schema.ts",
     "./custom-theme": "./src/custom-theme.ts",
+    "./theme-preferences": "./src/theme-preferences.ts",
+    "./theme-preset": "./src/theme-preset.ts",
     "./crypto": "./src/crypto.ts",
     "./node": "./src/node/index.ts",
     "./provider-health": "./src/provider-health.ts",

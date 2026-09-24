@@ -21,8 +21,10 @@ for (const alpha of ['0.5', '0.0000001', `0.${'0'.repeat(323)}5`, '0', '1']) {
         '--log-selection-background': value,
       },
     })
-    expect(validateCustomTheme(raw, BUILT_IN_THEMES).ok).toBe(true)
-    const properties = compileCustomTheme(raw, BUILT_IN_THEMES)
+    const result = validateCustomTheme(raw, BUILT_IN_THEMES)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    const properties = compileCustomTheme(result.document, 'light')
     for (const intrinsic of ['1', '0.12', '0.00000001']) {
       const style = {
         getPropertyValue: (name: string) => (name === '--opacity-graph-link-2' ? intrinsic : (properties[name] ?? '')),

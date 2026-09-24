@@ -16,7 +16,7 @@ import { assistantQueryKeys } from './queryKeys'
 import { getModelCatalog } from './api/modelCatalog'
 import { modelCatalogQueryKeys } from './queryKeys'
 import { infiniteQueryOptions, keepPreviousData, queryOptions } from '@tanstack/react-query'
-import { queryKeys, onboardingQueryKeys, integrationQueryKeys } from './queryKeys'
+import { queryKeys, onboardingQueryKeys, integrationQueryKeys, themePresetQueryKeys } from './queryKeys'
 import { getStorageStatus, getStorage, getSystemPause, getSystemPauseDetails } from './api/system'
 import { getGlobalActivityPresence, listGlobalActivity } from './api/activity'
 
@@ -152,6 +152,9 @@ export const queries = {
     list: () => queryOptions({ queryKey: queryKeys.workflows.list(), queryFn: client.workflows.list }),
     run: (id: string) =>
       queryOptions({ queryKey: queryKeys.workflows.run(id), queryFn: () => client.workflows.run(id) }),
+  },
+  themePresets: {
+    list: () => queryOptions({ queryKey: themePresetQueryKeys.list(), queryFn: () => client.themePresets.list() }),
   },
   agents: {
     slotWaits: (squadId: string, agentId: string) =>

@@ -588,3 +588,30 @@ export function normalizeStoredThemeSelection(input: StoredThemeSelectionInput):
       : (input.defaultAppearance ?? DEFAULT_APPEARANCE)
   return { themeId, appearance }
 }
+
+// ---------------------------------------------------------------------------
+// Closed color grammar (shared by custom-theme.ts and theme-derivation.ts;
+// lives here, the module both depend on, to avoid a circular import between them)
+// ---------------------------------------------------------------------------
+
+/** Closed color grammar: integer RGB channels, optional unit-interval alpha.
+ * No CSS parser, URLs, references, percentages, exponents or arbitrary functions.
+ * Internal built-in channels/sentinels are inherited, never imported as values. */
+export function customColorChannels(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const color = value.trim()
+  const hex = /^#(?:[\da-f]{3}|[\da-f]{6}|[\da-f]{8})$/i.exec(color)
+  if (hex) {
+    const digits = color.slice(1)
+    const expanded = digits.length === 3 ? [...digits].map((d) => d + d).join('') : digits
+    const parts = expanded.match(/../g)!.map((d) => parseInt(d, 16))
+    return parts.slice(0, 3).join(' ') + (parts.length === 4 ? ` / ${parts[3]! / 255}` : '')
+  }
+  const match = /^(rgb|rgba)\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(0|1|0?\.\d+|1\.0+))?\s*\)$/.exec(
+    color
+  )
+  if (!match || (match[1] === 'rgba') !== (match[5] !== undefined)) return null
+  const rgb = match.slice(2, 5).map(Number)
+  if (rgb.some((n) => n > 255)) return null
+  return rgb.join(' ') + (match[5] === undefined ? '' : ` / ${Number(match[5])}`)
+}

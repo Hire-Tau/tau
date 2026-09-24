@@ -7,6 +7,13 @@ export const desktopQueryKeys = {
 
 export const modelTierQueryKeys = { list: () => ['model-tiers'] as const }
 
+/** A user's own theme preset library. Phase 1 has no cross-user reads, so this
+ * key never needs a userId segment — it is always "my presets". */
+export const themePresetQueryKeys = {
+  all: ['theme-presets'] as const,
+  list: () => [...themePresetQueryKeys.all, 'list'] as const,
+}
+
 /**
  * Onboarding has no mobile surface yet, so its keys live here directly
  * instead of in the shared @tau/client-core definitions — same `all` +

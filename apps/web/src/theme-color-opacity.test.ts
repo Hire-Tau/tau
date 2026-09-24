@@ -1,4 +1,4 @@
-import { compileCustomTheme, STATUS_TOKENS } from '@tau/shared'
+import { compileCustomTheme, validateCustomTheme, STATUS_TOKENS } from '@tau/shared'
 import { palettes } from './theme/test/builtins'
 import { BUILT_IN_THEMES } from './theme/registry'
 import { describe, expect, test } from 'bun:test'
@@ -7,6 +7,13 @@ import { join } from 'node:path'
 import postcss, { type Root, type Rule } from 'postcss'
 import tailwindcss from 'tailwindcss'
 import tailwindConfig from '../tailwind.config.js'
+
+/** Validates a raw (v1 or v2) document, then compiles the resolved variant. */
+function compileRaw(raw: unknown, appearance: 'light' | 'dark' | 'constant') {
+  const result = validateCustomTheme(JSON.stringify(raw), BUILT_IN_THEMES)
+  if (!result.ok) throw new Error(result.error)
+  return compileCustomTheme(result.document, appearance)
+}
 
 // Regression history:
 // 1. Plain var(--color-*) mappings silently emitted no rule for /50 utilities.
@@ -182,9 +189,9 @@ describe('tailwind theme color opacity after variable substitution', () => {
         const overrides = Object.fromEntries(
           (STATUS_TOKENS.includes(token) ? STATUS_TOKENS : [token]).map((key) => [key, 'rgba(12,34,56,0.5)'])
         )
-        const variables = compileCustomTheme(
-          JSON.stringify({ format: 'tau-custom-theme', version: 1, name: 'Alpha', base: 'tau', appearance, overrides }),
-          BUILT_IN_THEMES
+        const variables = compileRaw(
+          { format: 'tau-custom-theme', version: 1, name: 'Alpha', base: 'tau', appearance, overrides },
+          appearance
         )
         const declared = declarations(rules.get(`border-${name}/50`)!)
         const color = numericRgb(substitute(declared['border-color']!, { ...base, ...variables, ...declared }))
@@ -262,16 +269,16 @@ test('actual spinner and narrow Stop CSS follows custom status colors without ch
       })
   })
   expect(stop).toEqual(['rgb(var(--status-danger-600))', 'rgb(var(--status-danger-400))'])
-  const custom = compileCustomTheme(
-    JSON.stringify({
+  const custom = compileRaw(
+    {
       format: 'tau-custom-theme',
       version: 1,
       name: 'Spinner',
       base: 'tau',
       appearance: 'light',
       overrides: Object.fromEntries(STATUS_TOKENS.map((name) => [name, 'rgba(12, 34, 56, 0.5)'])),
-    }),
-    BUILT_IN_THEMES
+    },
+    'light'
   )
   for (const [i, shade] of ['600', '400'].entries()) {
     const expected = shade === '600' ? [220, 38, 38] : [248, 113, 113]
@@ -334,16 +341,16 @@ test('new storage warnings preserve main shades and opacity while accepting cust
   generated.walkRules((rule) => {
     rules.set(rule.selector.slice(1).replaceAll('\\', ''), rule)
   })
-  const custom = compileCustomTheme(
-    JSON.stringify({
+  const custom = compileRaw(
+    {
       format: 'tau-custom-theme',
       version: 1,
       name: 'Storage',
       base: 'tau',
       appearance: 'light',
       overrides: Object.fromEntries(STATUS_TOKENS.map((key) => [key, 'rgba(12,34,56,0.5)'])),
-    }),
-    BUILT_IN_THEMES
+    },
+    'light'
   )
   for (const [, utility, prop, , opacity, channels] of expected) {
     const decls = declarations(rules.get(utility)!)

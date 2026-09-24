@@ -20,7 +20,10 @@ try {
   applyResolvedTheme(root, resolved.theme, resolved.appearance)
   if (state.custom) {
     try {
-      applyCustomTheme(root, state.custom)
+      // Palette derivation needs getComputedStyle on the built-in CSS, which is
+      // not guaranteed loaded this early; skip it here (explicit overrides
+      // still apply) — the next real repaint (ThemeProvider) derives fully.
+      applyCustomTheme(root, state.custom, resolved.appearance, { deriveFromComputedStyle: false })
     } catch {
       clearCustomTheme(storage)
       state.custom = null

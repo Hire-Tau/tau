@@ -1,12 +1,26 @@
 # Account theme sync
 
-Theme/appearance and the **custom theme document** sync together. The existing
-8 KiB custom-document cap fits a single `user_preferences.theme` JSONB field;
-there is no palette copy, new runtime dependency, or change to custom color,
-status coherence, sentinel inheritance, intrinsic-opacity or contrast rules.
-Migration `0188_salty_micromax.sql` was generated with `bun db:generate`. It adds
+Theme/appearance and the **custom theme document** sync together. The v2
+custom-document cap (32 KiB — sized for a full light+dark pair, see
+[custom themes](custom-themes.md)) fits the `user_preferences.theme` JSONB
+field; there is no palette copy, new runtime dependency, or change to custom
+color, status coherence, sentinel inheritance, intrinsic-opacity or contrast
+rules. Migration `0188_salty_micromax.sql` was generated with `bun db:generate`. It adds
 one row per user, an update timestamp and a cascading user foreign key. An absent
 row is **no account choice**, not a default value to upload.
+
+`ThemePreference` also carries `presetId: string | null` — the [theme preset
+library](custom-themes.md) preset the active `customTheme` snapshot came
+from, or `null` when detached (a built-in selection, a one-off import, or the
+preset's own row was later deleted). `presetId` is optional on input
+(defaults to `null`) but `customTheme` remains required (may be `null`). A
+v1-shaped stored preference (no `presetId`, single-appearance `customTheme`)
+still validates and normalizes exactly like a document read directly — the
+"appearance must equal the document's appearance" rule is gone: a v2 pair
+follows the Light/Dark/System toggle, so only `customTheme.base ===
+themeId` is still required. Deleting the referenced preset does not touch
+this row or "break" the device that has it applied — `customTheme` is a full
+snapshot, and a dangling `presetId` is simply detached going forward.
 
 ## Conflict and recovery contract
 
@@ -60,12 +74,17 @@ row is **no account choice**, not a default value to upload.
 ## API
 
 `client.userPreferences.getMine(signal?)` calls `GET /user-preferences/me` and
-returns `{ userId, theme: null | { themeId, appearance, customTheme } }`.
+returns `{ userId, theme: null | { themeId, appearance, customTheme, presetId } }`.
 `updateMine({ expectedUserId, theme }, signal?)` calls `PUT` on the same path.
 This is an atomic whole-theme replacement, not a partial merge. Unknown IDs,
-appearances, versions, unsafe values, partial status roles, base/variant mismatch
+appearances, versions, unsafe values, partial status roles, base mismatch
 and oversized documents are rejected before persistence; the HTTP envelope is
-also bounded to 9 KiB. The browser revalidates remote documents before applying.
+also bounded to the 32 KiB document cap plus 1 KiB. The browser revalidates remote documents before applying.
+
+The same self-service pattern (`resolveActingUser` + `authzChecked`, owner-only,
+not RBAC-gated) also backs `/api/theme-presets` — `client.themePresets.{list,
+get,create,update,delete}` — for the library each preset lives in; see [custom
+themes](custom-themes.md) for its revision-checked update/delete contract.
 
 ## Verification
 
@@ -79,6 +98,10 @@ also bounded to 9 KiB. The browser revalidates remote documents before applying.
 - `db/user-preferences-migration.test.ts` runs the complete predecessor chain and
   the generated migration in a uniquely owned database, then checks idempotence,
   existing user preservation, JSON round-trip and cascading deletion.
+- `routes/theme-presets.test.ts` and `db/theme-presets-migration.test.ts` cover
+  the preset library the same way: owner isolation (another user's preset is a
+  404, not a 403), revision conflicts, the per-user cap, cascading deletion and
+  the generated `theme_presets` migration.
 
 The full web gate passes (2,420 tests / 316 files), including its existing fixture
 coverage; the previously reported Universe fixture failure was not reproduced in

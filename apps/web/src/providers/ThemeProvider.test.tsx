@@ -194,11 +194,10 @@ test('custom brand tile updates the OS tile metadata, not only the logo', async 
     'tau-custom-theme',
     JSON.stringify({
       format: 'tau-custom-theme',
-      version: 1,
+      version: 2,
       name: 'Tile',
       base: 'tau',
-      appearance: 'light',
-      overrides: { '--brand-tile': '#123456' },
+      variants: { light: { '--brand-tile': '#123456' }, dark: {} },
     })
   )
   const { root } = dom.createRoot()
@@ -263,11 +262,10 @@ test('live custom surface alpha is serialized consistently for root, metadata an
     await act(async () => {
       theme.applyCustom({
         format: 'tau-custom-theme',
-        version: 1,
+        version: 2,
         name: 'Surface',
         base: 'tau',
-        appearance: 'light',
-        overrides: { '--color-bg-surface': `rgba(10,20,30,${alpha})` },
+        variants: { light: { '--color-bg-surface': `rgba(10,20,30,${alpha})` }, dark: {} },
       })
     })
     const expected = `rgba(10, 20, 30, ${alpha})`
@@ -281,4 +279,83 @@ test('live custom surface alpha is serialized consistently for root, metadata an
   expect(document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe('rgb(255, 255, 255)')
   expect(JSON.parse(localStorage.getItem('tau-theme-surface')!).surface).toBe('rgb(255, 255, 255)')
   expect(localStorage.getItem('tau-custom-theme')).toBeNull()
+})
+
+test('setAppearance and toggleTheme keep the active custom theme and preset, resolving the other variant', async () => {
+  const { dom } = await installThemeDom()
+  const { root } = dom.createRoot()
+  let theme!: ReturnType<typeof useTheme>
+  function Controls() {
+    theme = useTheme()
+    return null
+  }
+  await act(async () => {
+    root.render(
+      <ThemeProvider>
+        <Controls />
+      </ThemeProvider>
+    )
+  })
+  await act(async () => {
+    theme.applyPreset({
+      id: 'preset-1',
+      document: {
+        format: 'tau-custom-theme',
+        version: 2,
+        name: 'Pair',
+        base: 'tau',
+        variants: { light: { '--color-primary': '#111111' }, dark: { '--color-primary': '#eeeeee' } },
+      },
+    })
+  })
+  expect(theme.presetId).toBe('preset-1')
+  expect(theme.customTheme?.name).toBe('Pair')
+  await act(async () => {
+    theme.setAppearance('dark')
+  })
+  // The preset and its document are still active; only the resolved variant changed.
+  expect(theme.presetId).toBe('preset-1')
+  expect(theme.customTheme?.name).toBe('Pair')
+  expect(document.documentElement.style.getPropertyValue('--color-primary')).toBe('238 238 238')
+  await act(async () => {
+    theme.toggleTheme()
+  })
+  expect(theme.presetId).toBe('preset-1')
+  expect(document.documentElement.style.getPropertyValue('--color-primary')).toBe('17 17 17')
+})
+
+test('setThemeId deactivates the custom theme/preset ring without deleting anything from the library', async () => {
+  const { dom } = await installThemeDom()
+  const { root } = dom.createRoot()
+  let theme!: ReturnType<typeof useTheme>
+  function Controls() {
+    theme = useTheme()
+    return null
+  }
+  await act(async () => {
+    root.render(
+      <ThemeProvider>
+        <Controls />
+      </ThemeProvider>
+    )
+  })
+  await act(async () => {
+    theme.applyPreset({
+      id: 'preset-1',
+      document: {
+        format: 'tau-custom-theme',
+        version: 2,
+        name: 'Pair',
+        base: 'tau',
+        variants: { light: {}, dark: {} },
+      },
+    })
+  })
+  expect(theme.presetId).toBe('preset-1')
+  await act(async () => {
+    theme.setThemeId('harbor')
+  })
+  expect(theme.presetId).toBeNull()
+  expect(theme.customTheme).toBeNull()
+  expect(theme.themeId).toBe('harbor')
 })

@@ -1,4 +1,4 @@
-import { ACTIVE_THEME_TOKENS, type StoredThemeSelection } from '@tau/shared/theme-schema'
+import { ACTIVE_THEME_TOKENS, type EffectiveAppearance, type StoredThemeSelection } from '@tau/shared/theme-schema'
 import {
   CUSTOM_THEME_MAX_BYTES,
   compileCustomTheme,
@@ -16,9 +16,14 @@ import {
 } from './storage'
 
 export const CUSTOM_THEME_KEY = 'tau-custom-theme'
+/** Device-local only (not part of pre-paint): remembers which library preset the
+ * active document came from, so the UI can restore the ring/active state on reload
+ * without a network round-trip. A dangling value (deleted preset) is harmless —
+ * callers treat an unmatched id as detached. */
+export const PRESET_ID_KEY = 'tau-theme-preset-id'
 
 export function clearCustomTheme(storage: ThemeStorage | null) {
-  for (const key of [CUSTOM_THEME_KEY, THEME_SURFACE_KEY, LEGACY_SURFACE_COLOR_KEY]) {
+  for (const key of [CUSTOM_THEME_KEY, PRESET_ID_KEY, THEME_SURFACE_KEY, LEGACY_SURFACE_COLOR_KEY]) {
     try {
       storage?.removeItem(key)
     } catch {
@@ -27,13 +32,33 @@ export function clearCustomTheme(storage: ThemeStorage | null) {
   }
 }
 
+/** A v2 document covers both variants, so applying it never forces a particular
+ * appearance — only its base theme id changes the selection. */
 export function customSelection(doc: CustomThemeDocument, previous: StoredThemeSelection): StoredThemeSelection {
-  return { themeId: doc.base, appearance: doc.appearance === 'constant' ? previous.appearance : doc.appearance }
+  return { themeId: doc.base, appearance: previous.appearance }
+}
+
+export function readPresetId(storage: ThemeStorage | null): string | null {
+  try {
+    return storage?.getItem(PRESET_ID_KEY) ?? null
+  } catch {
+    return null
+  }
+}
+
+export function persistPresetId(storage: ThemeStorage | null, presetId: string | null) {
+  try {
+    if (presetId) storage?.setItem(PRESET_ID_KEY, presetId)
+    else storage?.removeItem(PRESET_ID_KEY)
+  } catch {
+    /* device-local in memory */
+  }
 }
 
 export function loadCustomTheme(storage: ThemeStorage | null): {
   selection: StoredThemeSelection
   custom: CustomThemeDocument | null
+  presetId: string | null
   error: string | null
 } {
   let selection = readThemeSelection(storage)
@@ -43,12 +68,13 @@ export function loadCustomTheme(storage: ThemeStorage | null): {
   } catch {
     /* unavailable */
   }
-  if (raw === null) return { selection, custom: null, error: null }
+  if (raw === null) return { selection, custom: null, presetId: null, error: null }
   const result = validateCustomTheme(raw, BUILT_IN_THEMES)
   if (result.ok)
     return {
       selection: customSelection(result.document, selection),
       custom: result.document,
+      presetId: readPresetId(storage),
       error: result.warnings.join(' ') || null,
     }
   // A broken but readable document may still name a valid recovery base.
@@ -57,14 +83,14 @@ export function loadCustomTheme(storage: ThemeStorage | null): {
     try {
       const doc = JSON.parse(raw)
       const base = BUILT_IN_THEMES.find((theme) => theme.id === doc?.base)
-      if (base) selection = { themeId: base.id, appearance: doc.appearance === 'dark' ? 'dark' : 'light' }
+      if (base) selection = { themeId: base.id, appearance: selection.appearance }
     } catch {
       /* retain the last safe built-in selection */
     }
   }
   clearCustomTheme(storage)
   persistThemeSelection(storage, selection)
-  return { selection, custom: null, error: `Custom theme removed: ${result.error}` }
+  return { selection, custom: null, presetId: null, error: `Custom theme removed: ${result.error}` }
 }
 
 export function persistCustomTheme(storage: ThemeStorage | null, doc: CustomThemeDocument): boolean {
@@ -100,11 +126,27 @@ export function removeCustomProperties(element: HTMLElement) {
 }
 
 /** The ONLY custom-color DOM write path. Both preview and root use this function.
- * Names and values are revalidated; no CSS text or HTML construction exists. */
-export function applyCustomTheme(element: HTMLElement, doc: CustomThemeDocument) {
-  const variables = compileCustomTheme(JSON.stringify(doc), BUILT_IN_THEMES)
+ * Names and values are revalidated (the application boundary, not just file-open
+ * time); no CSS text or HTML construction exists. `appearance` picks the resolved
+ * variant (light/dark/'system' already resolved by the caller, or 'constant'). */
+export function applyCustomTheme(
+  element: HTMLElement,
+  doc: CustomThemeDocument,
+  appearance: EffectiveAppearance,
+  options?: { deriveFromComputedStyle?: boolean }
+) {
+  const result = validateCustomTheme(JSON.stringify(doc), BUILT_IN_THEMES)
+  if (!result.ok) throw new Error(result.error)
   removeCustomProperties(element)
-  applyResolvedTheme(element, findWebTheme(doc.base), doc.appearance)
+  applyResolvedTheme(element, findWebTheme(doc.base), appearance)
+  // A palette derives most tokens from the base theme's OWN resolved values
+  // (getComputedStyle), so the plain base must paint first. Callers that
+  // cannot trust the cascade yet (the synchronous pre-paint flash script,
+  // before CSS is guaranteed loaded) pass deriveFromComputedStyle: false —
+  // explicit `variants` overrides still apply either way.
+  const deriveFromComputedStyle = options?.deriveFromComputedStyle ?? true
+  const baseTokens = result.document.palette && deriveFromComputedStyle ? readPreviewTokens(element) : undefined
+  const variables = compileCustomTheme(result.document, appearance, baseTokens)
   try {
     for (const [token, channels] of Object.entries(variables)) element.style.setProperty(token, channels)
   } catch (error) {
@@ -136,6 +178,7 @@ export function exportCustomTheme(doc: CustomThemeDocument): string {
 }
 
 export async function importCustomTheme(file: Pick<File, 'size' | 'text'>) {
-  if (file.size > CUSTOM_THEME_MAX_BYTES) return { ok: false as const, error: 'Theme document exceeds 8 KiB.' }
+  if (file.size > CUSTOM_THEME_MAX_BYTES)
+    return { ok: false as const, error: `Theme document exceeds ${CUSTOM_THEME_MAX_BYTES / 1024} KiB.` }
   return validateCustomTheme(await file.text(), BUILT_IN_THEMES)
 }
