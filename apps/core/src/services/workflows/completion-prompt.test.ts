@@ -20,7 +20,7 @@ describe('delivery binding self-check', () => {
     )
   })
 
-  test('missing change request names the exact bind command and the automatic fallback', () => {
+  test('missing change request names the exact bind command and the finish-time resolution', () => {
     const id = '22222222-2222-4222-8222-222222222222'
     const check = deliveryBindingSelfCheck(
       stream(id, { codeHost: { integration: 'github', repository: 'owner/repo' }, git: { branch: 'work/x' } }),
@@ -31,6 +31,23 @@ describe('delivery binding self-check', () => {
       `tau workstream set-meta ${id} codeHost.changeRequest '{"number":<pr-number>,"url":"<pr-url>"}'`
     )
     expect(check).toContain("stream's branch work/x")
+    expect(check).toContain('never matches fork pull requests')
+    expect(check).toContain('only to override that resolution')
+  })
+
+  test('a branchless stream is told the manual bind is required; legacy shapes get github.pr', () => {
+    const id = '44444444-4444-4444-8444-444444444444'
+    const branchless = deliveryBindingSelfCheck(
+      stream(id, { codeHost: { integration: 'github', repository: 'owner/repo' } }),
+      'pr-merge'
+    )
+    expect(branchless).toContain('records no branch (metadata.git.branch)')
+    expect(branchless).toContain('bind it manually')
+    const legacy = deliveryBindingSelfCheck(
+      stream(id, { github: { repo: 'owner/repo' }, git: { branch: 'work/x' } }),
+      'pr-merge'
+    )
+    expect(legacy).toContain(`tau workstream set-meta ${id} github.pr '{"number":<pr-number>,"url":"<pr-url>"}'`)
   })
 
   test('bound pull request is reported with its identity, and invalid metadata is named', () => {

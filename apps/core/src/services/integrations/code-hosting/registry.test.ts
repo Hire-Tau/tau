@@ -13,6 +13,9 @@ test('a new code hosting adapter supplies delivery evidence and events without c
       calls.push([reference, squadId])
       return { merged: true, headBranch: 'feature', baseBranch: 'main' }
     },
+    changeRequestsByHead: async () => [
+      { number: 7, merged: true, state: 'closed', headBranch: 'feature', baseBranch: 'main' },
+    ],
     containsCommit: async (_reference, _squadId, base, commit) => base === 'main' && commit === 'a'.repeat(40),
     subscriptions: (reference) => [
       {

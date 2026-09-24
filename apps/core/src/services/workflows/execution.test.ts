@@ -872,24 +872,80 @@ describe('parallel dispatch and pause', () => {
       const id = await create('active', definition)
       await advance(id, 'completed')
       await advance(id, 'approved')
-      // (b) integration and repository resolve, but the change request binding is missing.
+      // (b) no branch recorded: resolution is impossible, so the manual bind is required.
       await db
         .update(workStreams)
         .set({
           metadata: {
             completion: { mode: 'pr-merge' },
             codeHost: { integration: 'github', repository: 'example/repo' },
-            git: { branch: 'feature' },
           },
         })
         .where(eq(workStreams.id, id))
-      const missing = await finishFlow(id, 2, actor).catch((error: Error) => error.message)
+      let missing = await finishFlow(id, 2, actor).catch((error: Error) => error.message)
       expect(missing).toContain('codeHost.changeRequest is not set')
+      expect(missing).toContain('records no branch (metadata.git.branch)')
       expect(missing).toContain(
         `tau workstream set-meta ${id} codeHost.changeRequest '{"number":<pr-number>,"url":"<pr-url>"}'`
       )
       expect(missing).toContain(`tau workstream track ${id} --pr <owner/repo#n> --delivery`)
-      expect(missing).toContain('bound automatically')
+      // (b) with a branch: an empty owner-namespace lookup and an ambiguous one both fail with
+      // the exact repair, and the legacy shape gets a shape-matching command.
+      await db
+        .update(workStreams)
+        .set({
+          metadata: {
+            completion: { mode: 'pr-merge' },
+            codeHost: { integration: 'github', repository: 'example/repo' },
+            git: { branch: 'feature', baseBranch: 'main' },
+          },
+        })
+        .where(eq(workStreams.id, id))
+      api.mockImplementation((path: string) => Promise.resolve(path.includes('pulls?head=') ? [] : null))
+      missing = await finishFlow(id, 2, actor).catch((error: Error) => error.message)
+      expect(missing).toContain("No pull request was found for branch 'feature' in example/repo")
+      expect(missing).toContain('owner-namespace head lookup excludes fork pull requests')
+      api.mockImplementation((path: string) =>
+        Promise.resolve(
+          path.includes('pulls?head=')
+            ? [
+                {
+                  number: 1,
+                  merged: false,
+                  state: 'open',
+                  head: { ref: 'feature', repo: { full_name: 'example/repo' } },
+                  base: { ref: 'main' },
+                },
+                {
+                  number: 2,
+                  merged: false,
+                  state: 'open',
+                  head: { ref: 'feature', repo: { full_name: 'example/repo' } },
+                  base: { ref: 'main' },
+                },
+              ]
+            : null
+        )
+      )
+      missing = await finishFlow(id, 2, actor).catch((error: Error) => error.message)
+      expect(missing).toContain("Branch 'feature' does not identify one delivery pull request (candidates #1, #2)")
+      api.mockImplementation((path: string) => Promise.resolve(path.includes('pulls?head=') ? null : null))
+      missing = await finishFlow(id, 2, actor).catch((error: Error) => error.message)
+      expect(missing).toContain("pull requests for branch 'feature' could not be read through the github integration")
+      // A legacy github-repo stream is told to bind github.pr, never a partial codeHost.
+      await db
+        .update(workStreams)
+        .set({
+          metadata: {
+            completion: { mode: 'pr-merge' },
+            github: { repo: 'example/repo' },
+            git: { branch: 'feature' },
+          },
+        })
+        .where(eq(workStreams.id, id))
+      api.mockImplementation((path: string) => Promise.resolve(path.includes('pulls?head=') ? [] : null))
+      missing = await finishFlow(id, 2, actor).catch((error: Error) => error.message)
+      expect(missing).toContain(`tau workstream set-meta ${id} github.pr '{"number":<pr-number>,"url":"<pr-url>"}'`)
       // (c) the binding exists but cannot be verified at all, distinct from not-merged.
       await db
         .update(workStreams)
@@ -909,6 +965,78 @@ describe('parallel dispatch and pause', () => {
       // The not-merged class keeps its own message once the pull request is visible again.
       api.mockResolvedValue({ merged: false, base: { ref: 'main' }, head: { ref: 'feature' } })
       await expect(finishFlow(id, 2, actor)).rejects.toThrow('The change request must be merged before completion')
+    } finally {
+      api.mockRestore()
+      stop.mockRestore()
+    }
+  })
+  test('finish resolves the delivery pull request from the stream branch and persists the binding', async () => {
+    const api = spyOn(githubApi, 'githubApiGet')
+    const stop = spyOn(Agent.prototype, 'tryTerminate').mockResolvedValue(undefined)
+    try {
+      const definition = structuredClone(flow)
+      definition.completion.mode = 'pr-merge'
+      const id = await create('active', definition)
+      await advance(id, 'completed')
+      await advance(id, 'approved')
+      await db
+        .update(workStreams)
+        .set({
+          metadata: {
+            completion: { mode: 'pr-merge' },
+            github: { repo: 'example/repo' },
+            git: { branch: 'feature', baseBranch: 'main' },
+          },
+        })
+        .where(eq(workStreams.id, id))
+      // One open pull request on the branch: it is bound and persisted, then verified unmerged.
+      api.mockImplementation((path: string) =>
+        Promise.resolve(
+          path.includes('pulls?head=')
+            ? [
+                {
+                  number: 42,
+                  html_url: 'https://github.com/example/repo/pull/42',
+                  merged: false,
+                  state: 'open',
+                  head: { ref: 'feature', repo: { full_name: 'example/repo' } },
+                  base: { ref: 'main' },
+                },
+              ]
+            : { merged: false, base: { ref: 'main' }, head: { ref: 'feature' } }
+        )
+      )
+      await expect(finishFlow(id, 2, actor)).rejects.toThrow('The change request must be merged before completion')
+      const bound = ((await WorkStream.mustFind(id)).metadata as Record<string, any>).codeHost
+      expect(bound).toEqual({
+        integration: 'github',
+        repository: 'example/repo',
+        changeRequest: { number: 42, url: 'https://github.com/example/repo/pull/42' },
+      })
+      expect((await WorkStream.mustFind(id)).status).toBe('active')
+      // Once merged, the same persisted binding finishes the flow.
+      api.mockImplementation((path: string) =>
+        Promise.resolve(
+          path.includes('pulls?head=')
+            ? [
+                {
+                  number: 42,
+                  merged: true,
+                  state: 'closed',
+                  head: { ref: 'feature', sha: 'a'.repeat(40), repo: { full_name: 'example/repo' } },
+                  base: { ref: 'main' },
+                },
+              ]
+            : { merged: true, base: { ref: 'main' }, head: { ref: 'feature', sha: 'a'.repeat(40) } }
+        )
+      )
+      expect((await finishFlow(id, 2, actor)).status).toBe('done')
+      const [cleanup] = await db.select().from(worktreeCleanupJobs).where(eq(worktreeCleanupJobs.workStreamId, id))
+      expect(cleanup).toHaveProperty('deliveredHead', 'a'.repeat(40))
+      // The lookup is owner-namespace scoped, which is what excludes fork pull requests.
+      expect(api.mock.calls.map((call) => call[0])).toContain(
+        `/repos/example/repo/pulls?head=${encodeURIComponent('example:feature')}&state=all`
+      )
     } finally {
       api.mockRestore()
       stop.mockRestore()

@@ -42,20 +42,20 @@ plus zero or more **flagged** delivery PRs — tracked pull requests with
 `delivery: true`. Together they are the pull requests whose merge state gates
 completion:
 
-**Auto-binding the primary delivery PR.** When a squad's GitHub connection
-observes a `pull_request` opened/edited/synchronize event whose head branch is
-exactly an active work stream's `metadata.git.branch` and whose repository
-matches the stream's `codeHost.repository` (or legacy `github.repo`; the base
-branch must also agree when both record one), Tau populates the empty
-`codeHost.changeRequest {number, url}` automatically and notifies the delivery
-owner — no manual `set-meta` step. This only ever fills the primary binding:
-if multiple active streams match the branch, or the matching stream is already
-bound to a different PR, nothing is written; the ambiguity is recorded under
-`metadata.deliveryBinding.autoAttach` and escalated to the owner/manager with
-the exact manual repair command. Done/canceled streams, non-PR completion
-modes, and tracked resources are never touched. Bind manually with
-`tau workstream set-meta <id> codeHost.changeRequest '{"number":N,"url":"<pr url>"}'`
-only when auto-binding did not fire.
+**Resolving the primary delivery PR at finish.** When `tau workstream finish` runs for a
+`pr-merge`/`pr-auto-merge` stream whose `codeHost.changeRequest` is not set, it asks the code
+host which pull request the stream's branch (`metadata.git.branch`) carries — one
+owner-namespace scoped lookup (`GET /repos/{repo}/pulls?head={owner}:{branch}&state=all`),
+which by construction never matches fork pull requests. Exactly one usable pull request is
+bound and persisted to `codeHost.changeRequest {number, url}` before merge verification
+continues (a merged candidate wins over an open one; closed-unmerged candidates and candidates
+with the wrong base are never chosen). When the branch carries nothing, the stream records no
+branch, or the candidates do not identify one pull request, finish fails with the exact
+shape-matching manual bind command — `tau workstream set-meta <id> codeHost.changeRequest
+'{"number":N,"url":"<pr url>"}'` for canonical streams, `github.pr` for legacy
+`metadata.github` streams, and a full `codeHost` object for unconfigured ones. The manual bind
+is therefore an override for unusual cases, not a required step, and nothing depends on
+webhooks, event timing, or connection state for the binding to exist.
 
 - `POST /api/workstreams/:id/tracked` accepts `{ url, delivery: true }` or
   `{ resource, delivery: true }` (only valid when the resource is a pull

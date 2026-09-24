@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto'
-import { trackedResourceKey, type IntegrationSubscription, type ResolvedTrackedResource } from '@tau/shared'
+import {
+  trackedResourceKey,
+  type BranchChangeRequestCandidate,
+  type IntegrationSubscription,
+  type ResolvedTrackedResource,
+} from '@tau/shared'
 import { resolveGitHubRelayAssignment } from './resolve-connection'
 import type { CodeHostingAdapter } from '../code-hosting/registry'
 import type { TrackedResourceAdapter } from '../tracked-resources/registry'
@@ -54,6 +59,35 @@ export const githubTrackedResourceAdapter: TrackedResourceAdapter = {
   },
 }
 
+/** The pull requests a head branch carries, in provider-neutral form. `head=owner:branch` only matches the owner's namespace, never forks. */
+function branchChangeRequests(pulls: Array<Record<string, any>>): BranchChangeRequestCandidate[] {
+  return pulls.flatMap((pull) => {
+    const number = pull?.number
+    const headBranch = pull?.head?.ref
+    const baseBranch = pull?.base?.ref
+    if (!Number.isSafeInteger(number) || number <= 0 || typeof headBranch !== 'string' || !headBranch) return []
+    if (typeof baseBranch !== 'string' || !baseBranch) return []
+    const url =
+      typeof pull?.html_url === 'string' && pull.html_url.startsWith('https://github.com/') ? pull.html_url : undefined
+    const headRepository =
+      typeof pull?.head?.repo?.full_name === 'string' && /^[\w.-]+\/[\w.-]+$/.test(pull.head.repo.full_name)
+        ? pull.head.repo.full_name.toLowerCase()
+        : undefined
+    return [
+      {
+        number,
+        merged: pull?.merged === true,
+        state: String(pull?.state ?? ''),
+        headBranch,
+        baseBranch,
+        ...(url ? { url } : {}),
+        ...(headRepository ? { headRepository } : {}),
+        ...(typeof pull?.head?.sha === 'string' && pull.head.sha ? { headSha: pull.head.sha } : {}),
+      },
+    ]
+  })
+}
+
 export const githubCodeHostingAdapter: CodeHostingAdapter = {
   integration: 'github',
   validateRepository,
@@ -72,6 +106,16 @@ export const githubCodeHostingAdapter: CodeHostingAdapter = {
           ...(pr.head.sha ? { headSha: pr.head.sha } : {}),
         }
       : null
+  },
+  async changeRequestsByHead(reference, squadId, headBranch) {
+    const [owner] = reference.repository.split('/')
+    if (!owner || !headBranch) return []
+    const pulls = await githubApiGet<Array<Record<string, any>>>(
+      `/repos/${reference.repository}/pulls?head=${encodeURIComponent(`${owner}:${headBranch}`)}&state=all`,
+      squadId,
+      reference.connectionId
+    )
+    return pulls === null ? null : branchChangeRequests(pulls)
   },
   async containsCommit(reference, squadId, base, commit) {
     const comparison = await githubApiGet<{ status: string }>(

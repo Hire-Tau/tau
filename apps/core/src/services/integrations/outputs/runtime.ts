@@ -35,7 +35,6 @@ import type { VerifiedIngressEvent } from '../types'
 import { eventRuleTrigger, routeDefaultNotifications } from './default-routing'
 import { eventTrackedResource, streamTracksEvent } from './tracked-match'
 import { recordDeliveryObservation } from '../../work-streams/delivery-pull-requests'
-import { autoAttachDeliveryPrBinding } from '../../work-streams/delivery-pr-auto-attach'
 import { createLogger } from '../../../lib/infra/logger'
 
 const log = createLogger('integration-outputs')
@@ -264,11 +263,6 @@ export async function publishIntegrationOutput(
     triggerError = error
   }
   await matchOutputEvent(event)
-  // Auto-binding runs after subscription matching, so the event that performed the bind is not
-  // itself claimed as routed feedback; the next event for the pull request delivers through the
-  // code-host subscriptions the binding now activates. Idempotent: a present binding (or a
-  // recorded ambiguity) makes repeated events a no-op.
-  await autoAttachDeliveryPrBinding(event)
   const deliveries = await db
     .select({ id: integrationOutputDeliveries.workStreamId })
     .from(integrationOutputDeliveries)
@@ -728,7 +722,6 @@ export async function reconcileUnmatchedOutputs() {
     try {
       await applyOutputTriggers(event)
       await matchOutputEvent(event)
-      await autoAttachDeliveryPrBinding(event)
       await finalizeOutputRouting(event)
     } catch {
       await db

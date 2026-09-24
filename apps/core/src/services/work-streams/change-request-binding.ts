@@ -1,0 +1,57 @@
+import { eq } from 'drizzle-orm'
+import { db, squads, workStreams } from '../../db'
+
+/**
+ * Persist a finish-time-resolved delivery change request binding.
+ *
+ * `finishFlow` resolves the delivery pull request from the stream's branch when
+ * `codeHost.changeRequest` is missing; this records the outcome so the binding survives the
+ * finish that produced it (and every later read shows what was actually verified). The write is
+ * canonical `codeHost` (which legitimately shadows a legacy `github` shape), row-locked in the
+ * codebase's squad-before-stream order, and never overwrites an existing binding: a manual
+ * binding written concurrently always wins over the resolution.
+ */
+export async function recordChangeRequestBinding(
+  streamId: string,
+  reference: { integration: string; repository: string; connectionId?: string },
+  chosen: { number: number; url?: string }
+): Promise<boolean> {
+  const url =
+    chosen.url ??
+    (reference.integration === 'github'
+      ? `https://github.com/${reference.repository}/pull/${chosen.number}`
+      : undefined)
+  const changed = await db.transaction(async (tx) => {
+    // Global lock order: squad before work stream.
+    const [owner] = await tx
+      .select({ squadId: workStreams.squadId })
+      .from(workStreams)
+      .where(eq(workStreams.id, streamId))
+    if (!owner) return false
+    await tx.select({ id: squads.id }).from(squads).where(eq(squads.id, owner.squadId)).for('update')
+    const [locked] = await tx.select().from(workStreams).where(eq(workStreams.id, streamId)).for('update')
+    if (!locked || ['done', 'canceled'].includes(locked.status)) return false
+    const record = (locked.metadata as Record<string, unknown> | null) ?? {}
+    const codeHost = (record.codeHost ?? {}) as Record<string, unknown>
+    const existing = codeHost.changeRequest as { number?: number } | undefined
+    // Re-resolving what is already bound, or losing a race to a manual binding, changes nothing.
+    if (existing?.number != null) return existing.number === chosen.number
+    await tx
+      .update(workStreams)
+      .set({
+        metadata: {
+          ...record,
+          codeHost: {
+            integration: reference.integration,
+            repository: reference.repository,
+            ...(reference.connectionId ? { connectionId: reference.connectionId } : {}),
+            changeRequest: { number: chosen.number, ...(url ? { url } : {}) },
+          },
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(workStreams.id, streamId))
+    return true
+  })
+  return changed
+}
