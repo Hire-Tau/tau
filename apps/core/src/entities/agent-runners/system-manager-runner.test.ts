@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { SystemManagerRunner } from './system-manager-runner'
 import { AgentSession } from '../AgentSession'
 import * as tools from '../../tools'
+import { assistantEditorInstructionsByKind } from '@tau/shared'
 
 class TestSystemManagerRunner extends SystemManagerRunner {
   protected override async getPageEditorConversation() {
@@ -105,13 +106,13 @@ describe('SystemManagerRunner sandbox setup', () => {
 describe('SystemManagerRunner sandbox_status tool gating on runtime', () => {
   class RealToolkitSystemManagerRunner extends SystemManagerRunner {
     assistantDelegate = false
-    editor = false
+    editor: false | 'workflow' | 'theme' = false
     protected override async getPageEditorConversation() {
       return this.editor
         ? {
             id: 'conversation',
             kind: 'page-editor' as const,
-            editor: { kind: 'workflow' as const, target: {}, revision: 0, document: {} },
+            editor: { kind: this.editor, target: {}, revision: 0, document: {} },
           }
         : { id: 'conversation', kind: 'assistant' as const, editor: null }
     }
@@ -217,9 +218,24 @@ describe('SystemManagerRunner sandbox_status tool gating on runtime', () => {
     const { agent, agentType } = makeAgentAndType()
     const runner = new RealToolkitSystemManagerRunner({ id: 'exec-1' } as any, agent, agentType)
     runner.assistantDelegate = true
-    runner.editor = true
+    runner.editor = 'workflow'
     await runner.exposeCreateSession(null)
     expect(capturedToolNames()).toEqual(['read', 'edit'])
+  })
+
+  it('selects the system prompt by the open page editor draft kind', async () => {
+    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    const { agent, agentType } = makeAgentAndType()
+    const runner = new RealToolkitSystemManagerRunner({ id: 'exec-1' } as any, agent, agentType)
+    runner.assistantDelegate = true
+    runner.editor = 'workflow'
+    await runner.exposeCreateSession(null)
+    expect(agentSessionCreateSpy.mock.calls[0][0].systemPrompt).toBe(assistantEditorInstructionsByKind.workflow)
+    agentSessionCreateSpy.mockClear()
+    runner.editor = 'theme'
+    await runner.exposeCreateSession(null)
+    expect(agentSessionCreateSpy.mock.calls[0][0].systemPrompt).toBe(assistantEditorInstructionsByKind.theme)
+    expect(assistantEditorInstructionsByKind.theme).not.toBe(assistantEditorInstructionsByKind.workflow)
   })
 
   it('includes sandbox_status on docker-socket', async () => {

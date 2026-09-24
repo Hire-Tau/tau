@@ -185,6 +185,40 @@ export function readCustomThemeVariant(
   return variants[variant === 'dark' ? 'dark' : 'light']
 }
 
+/** Replaces one variant's raw overrides, preserving the other side for a dual
+ * document. 'constant' documents ignore the requested light/dark side, just
+ * like `readCustomThemeVariant`. Shared by the editor UI and the assistant's
+ * pure `applyThemeOperations` so both stay in lockstep. */
+export function withCustomThemeVariant(
+  variants: CustomThemeVariants,
+  variant: EffectiveAppearance,
+  overrides: Record<string, string>
+): CustomThemeVariants {
+  if ('constant' in variants) return { constant: overrides }
+  return { ...variants, [variant === 'dark' ? 'dark' : 'light']: overrides }
+}
+
+/** Reshapes `variants` across a base-kind change: unified -> dual seeds both
+ * sides with the same starting overrides; dual -> unified merges both sides
+ * (dark taking precedence on conflicting tokens is an arbitrary but stable
+ * choice — the caller reviews the result, live, immediately). Shared by the
+ * editor UI and the assistant's `set-base` operation. */
+export function reshapeCustomThemeForBase(
+  doc: CustomThemeDocument,
+  nextBase: Pick<ThemeDescriptor, 'id' | 'kind'>
+): CustomThemeDocument {
+  let variants: CustomThemeVariants
+  if (nextBase.kind === 'unified') {
+    const merged = 'constant' in doc.variants ? doc.variants.constant : { ...doc.variants.light, ...doc.variants.dark }
+    variants = { constant: merged }
+  } else if ('constant' in doc.variants) {
+    variants = { light: doc.variants.constant, dark: doc.variants.constant }
+  } else {
+    variants = doc.variants
+  }
+  return { ...doc, base: nextBase.id, variants }
+}
+
 /** Revalidate at the application boundary, not merely at file-open time: callers
  * apply an already-normalized `CustomThemeDocument` (typically the result of a
  * fresh `validateCustomTheme` call), then compile the resolved variant.

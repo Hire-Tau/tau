@@ -161,6 +161,13 @@ test('New theme opens the editor for a fresh document based on the selected base
   expect(queryByRole(container, 'textbox', { name: 'Theme name' })).not.toBeNull()
 })
 
+test('New theme with assistant also opens a fresh document (assistant focus is exercised separately, gated on chat:send)', async () => {
+  const { container } = await render([])
+  await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'New theme with assistant' })))
+  expect(queryByRole(container, 'textbox', { name: 'Theme name' })).not.toBeNull()
+  expect((queryByRole(container, 'textbox', { name: 'Theme name' }) as HTMLInputElement).value).toBe('New theme')
+})
+
 test('a palette-only preset (no explicit overrides) still resolves a real swatch color, not an empty circle', async () => {
   const { palettes, resolveToken } = await import('../../theme/test/builtins')
   const dom = await acquireDomHarness({ url: 'https://tau.test' })

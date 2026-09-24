@@ -6,6 +6,8 @@ import { useStableRef } from '../../hooks/useStableRef'
 import clsx from 'clsx'
 import {
   workflowDefinitionSchema,
+  assistantEditorInstructionsByKind,
+  assistantEditorToolDefinitionsByKind,
   type AssistantEditorPreset,
   type AssistantEditorProposal,
   type WorkflowDefinition,
@@ -260,6 +262,11 @@ export function WorkflowBuilder({
               draft={draft}
               onProposal={applyAssistantEdit}
               conversationDependencies={assistantDependencies}
+              title={presetId ? 'What would you like to change?' : 'What flow do you want?'}
+              subtitle="Build and refine your flow together. Graph edits appear immediately and can be undone."
+              conversationTitle="Design a workflow"
+              instructions={assistantEditorInstructionsByKind.workflow}
+              tools={assistantEditorToolDefinitionsByKind.workflow}
             />
           </div>
         )}

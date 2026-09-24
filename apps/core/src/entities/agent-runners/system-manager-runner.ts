@@ -2,7 +2,7 @@ import { db, messages } from '../../db'
 import { eq } from 'drizzle-orm'
 import { createAssistantTools } from '../../tools/assistant'
 import { linkAssistantSummaries } from '../../services/assistant-conversation-updates'
-import { assistantEditorInstructions } from '@tau/shared'
+import { assistantEditorInstructionsByKind } from '@tau/shared'
 import { createPageEditorTools } from '../../tools/page-editor'
 import { getAccessibleSquadIds, hasPermission, type Identity } from '../../services/rbac/permissions'
 import { findOwningConversation, isAssistantDelegate } from '../../services/assistant-agents'
@@ -133,6 +133,10 @@ export class SystemManagerRunner extends AgentRunner {
     // editor gets only its two editor tools from the first turn, and an app-wide conversation never
     // gains them.
     const pageEditor = editorConversation?.kind === 'page-editor' ? editorConversation : undefined
+    // A brand-new page editor's draft may not have synced yet when the agent session is created
+    // (the web page syncs eagerly on mount, but nothing guarantees ordering); default to the
+    // original page kind rather than fail closed.
+    const pageEditorKind = pageEditor?.editor?.kind ?? 'workflow'
     const managerPromptResult = await SystemManagerRunner.buildManagerPrompt(
       {
         type: 'agent',
@@ -182,7 +186,7 @@ export class SystemManagerRunner extends AgentRunner {
 
     return this.createPiSession(scope, async () => {
       const sessionOptions = await this.buildBaseSessionOptions({
-        systemPrompt: pageEditor ? assistantEditorInstructions : systemPrompt,
+        systemPrompt: pageEditor ? assistantEditorInstructionsByKind[pageEditorKind] : systemPrompt,
         skillPaths: pageEditor ? [] : skillPaths,
         extensionPaths: pageEditor ? [] : extensionPaths,
         sandboxId,
@@ -235,6 +239,7 @@ export class SystemManagerRunner extends AgentRunner {
     await requireAssistantConversation(identity, conversation.id)
     const configured = await SystemManagerRunner.buildManagerPrompt(identity, 'assistant')
     const pageEditor = conversation.kind === 'page-editor'
+    const pageEditorKind = conversation.editor?.kind ?? 'workflow'
     const core = pageEditor
       ? createPageEditorTools(this.agent.id, conversation.id)
       : [
@@ -254,7 +259,7 @@ export class SystemManagerRunner extends AgentRunner {
     return this.createPiSession(scope, async () =>
       AgentSession.create(
         await this.buildBaseSessionOptions({
-          systemPrompt: pageEditor ? assistantEditorInstructions : configured.systemPrompt,
+          systemPrompt: pageEditor ? assistantEditorInstructionsByKind[pageEditorKind] : configured.systemPrompt,
           model: await this.agent.getEffectiveModelSpec(configured.model),
           skillPaths: [],
           extensionPaths: [],
