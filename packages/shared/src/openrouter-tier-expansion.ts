@@ -22,6 +22,7 @@ const OPENROUTER_ENDPOINT_BY_MODEL_VENDOR: Readonly<Record<string, string>> = {
   baseten: 'baseten',
   groq: 'groq',
   cerebras: 'cerebras',
+  meta: 'meta',
 }
 
 /** Verified endpoint families for direct providers that may produce shadows. */
@@ -45,6 +46,7 @@ const OPENROUTER_ENDPOINT_BY_DIRECT_PROVIDER: Readonly<Record<string, string>> =
   baseten: 'baseten',
   groq: 'groq',
   cerebras: 'cerebras',
+  meta: 'meta',
   'cloudflare-workers-ai': 'cloudflare',
 }
 

@@ -55,7 +55,7 @@ export interface PiCompactionProviderSwitch {
 }
 
 export interface PiCompactionModelFailoverOptions {
-  /** Original priority list (e.g. `openai-codex:gpt-5.4-mini,zai:glm-5-turbo`). */
+  /** Original priority list (e.g. `openai-codex:gpt-5.6-luna,zai:glm-5-turbo`). */
   priorityList: string
   /** Test hook / advanced override. Defaults to non-disabled, non-exhausted candidates in priority order. */
   selectNextSpec?: (exhaustedProvider: string) => string | undefined

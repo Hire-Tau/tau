@@ -43,9 +43,9 @@ const usesEmbeddedModules = isBunBinary || isNodeSeaBinary || isBundledNode;
 let createJitiPromise: Promise<typeof createJiti> | undefined;
 
 function getCreateJiti(): Promise<typeof createJiti> {
-	createJitiPromise ??= (usesEmbeddedModules ? import("./jiti-static-loader.ts") : import("./jiti-loader.ts")).then(
-		(module) => module.createJiti,
-	);
+	// Tau bundles this SDK into its own dist, where jiti's lazy entry cannot
+	// resolve its relative Babel transform, so every runtime uses the static entry.
+	createJitiPromise ??= import("./jiti-static-loader.ts").then((module) => module.createJiti);
 	return createJitiPromise;
 }
 

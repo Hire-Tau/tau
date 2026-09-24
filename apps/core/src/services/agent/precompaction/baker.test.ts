@@ -207,7 +207,7 @@ describe('createPiCompactionBaker', () => {
       turnPrefixMessages: [],
       settings: { reserveTokens: 16_384 },
     })
-    const codex = resolveAgentModelSpec('openai-codex:gpt-5.4-mini').model
+    const codex = resolveAgentModelSpec('openai-codex:gpt-5.6-luna').model
     const zai = resolveAgentModelSpec('zai:glm-5-turbo').model
     const session = fakeSession({ model: codex }) as {
       model: typeof codex
@@ -234,7 +234,7 @@ describe('createPiCompactionBaker', () => {
 
     const bake = createPiCompactionBaker(session as never, {
       modelFailover: {
-        priorityList: 'openai-codex:gpt-5.4-mini,zai:glm-5-turbo',
+        priorityList: 'openai-codex:gpt-5.6-luna,zai:glm-5-turbo',
         selectNextSpec: () => 'zai:glm-5-turbo',
       },
     })
@@ -259,7 +259,7 @@ describe('createPiCompactionBaker', () => {
       turnPrefixMessages: [],
       settings: { reserveTokens: 16_384 },
     })
-    const codex = resolveAgentModelSpec('openai-codex:gpt-5.4-mini').model
+    const codex = resolveAgentModelSpec('openai-codex:gpt-5.6-luna').model
     const session = fakeSession({
       model: codex,
       modelRuntime: {
@@ -301,7 +301,7 @@ describe('createPiCompactionBaker', () => {
 
     const bake = createPiCompactionBaker(session as never, {
       modelFailover: {
-        priorityList: 'openai-codex:gpt-5.4-mini,anthropic:claude-sonnet-4-6,zai:glm-5-turbo',
+        priorityList: 'openai-codex:gpt-5.6-luna,anthropic:claude-sonnet-4-6,zai:glm-5-turbo',
         prepareProviderSwitch: (provider) => {
           if (provider === 'anthropic') return { commit: anthropicCommit, rollback: anthropicRollback }
           if (provider === 'zai') return { commit: zaiCommit }
@@ -327,7 +327,7 @@ describe('createPiCompactionBaker', () => {
       turnPrefixMessages: [],
       settings: { reserveTokens: 16_384 },
     })
-    const codex = resolveAgentModelSpec('openai-codex:gpt-5.4-mini').model
+    const codex = resolveAgentModelSpec('openai-codex:gpt-5.6-luna').model
     const session = fakeSession({ model: codex, thinkingLevel: 'high' }) as {
       model: typeof codex
       thinkingLevel: string
@@ -352,7 +352,7 @@ describe('createPiCompactionBaker', () => {
     const onModelSwitched = mock(() => {})
     const bake = createPiCompactionBaker(session as never, {
       modelFailover: {
-        priorityList: 'openai-codex:gpt-5.4-mini,zai:glm-5-turbo',
+        priorityList: 'openai-codex:gpt-5.6-luna,zai:glm-5-turbo',
         selectNextSpec: () => 'zai:glm-5-turbo',
         prepareProviderSwitch: () => ({ commit, rollback }),
         onModelSwitched,
@@ -374,7 +374,7 @@ describe('createPiCompactionBaker', () => {
       turnPrefixMessages: [],
       settings: { reserveTokens: 16_384 },
     })
-    const codex = resolveAgentModelSpec('openai-codex:gpt-5.4-mini').model
+    const codex = resolveAgentModelSpec('openai-codex:gpt-5.6-luna').model
     const ctrl = new AbortController()
     const session = fakeSession({ model: codex, thinkingLevel: 'high' }) as {
       model: typeof codex
@@ -400,7 +400,7 @@ describe('createPiCompactionBaker', () => {
     const onModelSwitched = mock(() => {})
     const bake = createPiCompactionBaker(session as never, {
       modelFailover: {
-        priorityList: 'openai-codex:gpt-5.4-mini,zai:glm-5-turbo',
+        priorityList: 'openai-codex:gpt-5.6-luna,zai:glm-5-turbo',
         selectNextSpec: () => 'zai:glm-5-turbo',
         prepareProviderSwitch: () => ({ commit, rollback }),
         onModelSwitched,
