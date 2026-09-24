@@ -12,9 +12,22 @@ export const SYNC_THEME_DESCRIPTORS: readonly ThemeDescriptor[] = [
 export interface ThemePreference extends StoredThemeSelection {
   customTheme: CustomThemeDocument | null
   /** The library preset the active custom document was applied from, or null
-   * when detached (built-in selection, a one-off import, or the preset was
-   * later deleted — the snapshot in `customTheme` keeps working either way). */
+   * when detached (built-in selection, a one-off import, the preset was later
+   * deleted, or — Phase 2 — a shared preset was unshared/deleted; the
+   * snapshot in `customTheme` keeps working either way). */
   presetId: string | null
+  /**
+   * Phase 2: the id of the user who owns `presetId`'s preset, populated
+   * whenever a preset (own or another user's shared preset) is applied.
+   * Deliberately NOT cleared when a live-link refresh finds the preset gone
+   * and nulls `presetId` — retaining it is what lets the UI tell "a shared
+   * preset is no longer available" (show a detached notice) apart from
+   * silently detaching from your own deleted preset (Phase 1 behavior,
+   * unchanged): compare `presetOwnerId` against the caller's own user id.
+   * Only meaningful alongside a `customTheme`; meaningless (and rejected) on
+   * its own.
+   */
+  presetOwnerId: string | null
 }
 export interface MyThemePreferences {
   userId: string
@@ -46,8 +59,15 @@ export function validateThemePreference(
       return { ok: false, error: 'Invalid presetId.' }
     presetId = value.presetId
   }
+  let presetOwnerId: string | null = null
+  if (value.presetOwnerId !== undefined && value.presetOwnerId !== null) {
+    if (typeof value.presetOwnerId !== 'string' || !value.presetOwnerId || value.presetOwnerId.length > 200)
+      return { ok: false, error: 'Invalid presetOwnerId.' }
+    if (!customTheme) return { ok: false, error: 'presetOwnerId requires a customTheme.' }
+    presetOwnerId = value.presetOwnerId
+  }
   return {
     ok: true,
-    theme: { themeId: value.themeId as string, appearance: value.appearance, customTheme, presetId },
+    theme: { themeId: value.themeId as string, appearance: value.appearance, customTheme, presetId, presetOwnerId },
   }
 }

@@ -4,7 +4,13 @@ import type { CustomThemeDocument } from './custom-theme'
 import { STATUS_TOKENS } from './theme-schema'
 import { validateThemePreference } from './theme-preferences'
 
-const theme: ThemePreference = { themeId: 'harbor', appearance: 'dark', customTheme: null, presetId: null }
+const theme: ThemePreference = {
+  themeId: 'harbor',
+  appearance: 'dark',
+  customTheme: null,
+  presetId: null,
+  presetOwnerId: null,
+}
 const custom: CustomThemeDocument = {
   format: 'tau-custom-theme',
   version: 2,
@@ -34,6 +40,31 @@ test('presetId is optional; when present it must be a non-empty string, defaulti
   expect(validateThemePreference(withPreset)).toEqual({ ok: true, theme: withPreset })
   expect(validateThemePreference({ ...theme, presetId: '' }).ok).toBe(false)
   expect(validateThemePreference({ ...theme, presetId: 123 }).ok).toBe(false)
+})
+test('presetOwnerId is optional; a non-empty string when present, but only alongside a customTheme', () => {
+  const { presetOwnerId: _drop, ...withoutOwnerId } = theme
+  expect(validateThemePreference(withoutOwnerId)).toEqual({ ok: true, theme })
+  const withOwner = {
+    ...theme,
+    customTheme: custom,
+    presetId: '11111111-1111-4111-8111-111111111111',
+    presetOwnerId: '22222222-2222-4222-8222-222222222222',
+  }
+  expect(validateThemePreference(withOwner)).toEqual({ ok: true, theme: withOwner })
+  // Phase 2 detached-shared state: presetId cleared (the live link 404'd) but
+  // presetOwnerId retained — this is exactly what tells the UI "no longer
+  // shared" apart from an ordinary silently-detached own preset.
+  const detachedShared = {
+    ...theme,
+    customTheme: custom,
+    presetId: null,
+    presetOwnerId: '22222222-2222-4222-8222-222222222222',
+  }
+  expect(validateThemePreference(detachedShared)).toEqual({ ok: true, theme: detachedShared })
+  expect(validateThemePreference({ ...theme, presetOwnerId: '' }).ok).toBe(false)
+  expect(validateThemePreference({ ...theme, presetOwnerId: 123 }).ok).toBe(false)
+  // No customTheme at all: an owner id would be meaningless (nothing to detach from).
+  expect(validateThemePreference({ ...theme, presetOwnerId: '22222222-2222-4222-8222-222222222222' }).ok).toBe(false)
 })
 test('a custom theme pair may resolve either side regardless of the current appearance (no forced match)', () => {
   // Previously appearance had to equal the document's single concrete appearance;

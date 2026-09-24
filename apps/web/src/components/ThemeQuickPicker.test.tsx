@@ -25,6 +25,7 @@ const midnight: ThemePreset = {
   },
   visibility: 'private',
   ownerUserId: 'u1',
+  owner: { id: 'u1', displayName: 'Owner' },
   revision: 1,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
@@ -52,6 +53,8 @@ async function renderPicker({
   appearance,
   dark = false,
   presetId,
+  presetOwnerId,
+  activePreset,
 }: {
   enabled?: boolean
   presets?: ThemePreset[]
@@ -59,6 +62,10 @@ async function renderPicker({
   appearance?: string
   dark?: boolean
   presetId?: string
+  presetOwnerId?: string
+  /** Used when the applied preset isn't in the caller's own `presets` list —
+   * a foreign/shared preset in use, exactly the Phase 2 quick-picker case. */
+  activePreset?: ThemePreset
 } = {}) {
   const dom = await acquireDomHarness({
     url: 'https://tau.test',
@@ -74,10 +81,11 @@ async function renderPicker({
   if (themeId) localStorage.setItem('tau-theme-id', themeId)
   if (appearance) localStorage.setItem('tau-appearance', appearance)
   if (presetId) {
-    const preset = (presets ?? []).find((p) => p.id === presetId)!
+    const preset = activePreset ?? (presets ?? []).find((p) => p.id === presetId)!
     localStorage.setItem('tau-custom-theme', JSON.stringify(preset.document))
     localStorage.setItem('tau-theme-preset-id', presetId)
   }
+  if (presetOwnerId) localStorage.setItem('tau-theme-preset-owner-id', presetOwnerId)
   // Real per-theme cascade: mirrors the shipped selectors (:root and
   // [data-theme-scope]) so the circle swatches resolve genuine tokens, not a
   // synthetic stand-in.
@@ -211,6 +219,43 @@ test('clicking a preset circle applies it via applyPreset and rings it as active
   expect(localStorage.getItem('tau-theme-id')).toBe('harbor')
   expect(localStorage.getItem('tau-theme-preset-id')).toBe('preset-midnight')
   expect(document.documentElement.style.getPropertyValue('--color-primary')).toBe('14 165 233')
+})
+
+test('the active shared (foreign) preset gets its own circle even though it is not in the caller’s own presets list', async () => {
+  const teamTheme: ThemePreset = {
+    id: 'shared-1',
+    document: {
+      format: 'tau-custom-theme',
+      version: 2,
+      name: 'Team theme',
+      base: 'harbor',
+      variants: { light: {}, dark: {} },
+    },
+    visibility: 'instance',
+    ownerUserId: 'author',
+    owner: { id: 'author', displayName: 'Author' },
+    revision: 1,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  }
+  const { container } = await renderPicker({
+    presets: [midnight], // the caller's own library — does NOT include the foreign shared preset
+    presetId: 'shared-1',
+    presetOwnerId: 'author',
+    activePreset: teamTheme,
+  })
+  await open(container)
+  const circle = getByRole(container, 'radio', { name: 'Team theme' })
+  expect(circle.getAttribute('aria-checked')).toBe('true')
+  // The caller's own preset circle is NOT checked while a foreign preset is active.
+  expect(getByRole(container, 'radio', { name: 'Midnight' }).getAttribute('aria-checked')).toBe('false')
+})
+
+test('a foreign preset already present in the caller’s own presets list is not duplicated into a second circle', async () => {
+  // midnight IS in the caller's own list, so applying it should render exactly one circle for it.
+  const { container } = await renderPicker({ presets: [midnight], presetId: 'preset-midnight' })
+  await open(container)
+  expect(getAllByRole(container, 'radio', { name: 'Midnight' })).toHaveLength(1)
 })
 
 test('Enter and Space activate a circle exactly like a click', async () => {
@@ -443,6 +488,7 @@ test('a palette-only preset circle resolves a real derived color, not an empty/u
     },
     visibility: 'private',
     ownerUserId: 'u1',
+    owner: { id: 'u1', displayName: 'Owner' },
     revision: 1,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',

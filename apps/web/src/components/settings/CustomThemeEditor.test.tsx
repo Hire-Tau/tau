@@ -27,6 +27,7 @@ const existing: ThemePreset = {
   },
   visibility: 'private',
   ownerUserId: 'u1',
+  owner: { id: 'u1', displayName: 'Owner' },
   revision: 3,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',

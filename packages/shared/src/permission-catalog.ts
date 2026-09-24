@@ -136,6 +136,8 @@ export const PERMISSION_DESCRIPTIONS = {
   'system:logs': 'Read system diagnostics and stream Tau service logs.',
   'system:demo': 'Seed and manage the app-store reviewer demo account on a designated demo instance.',
   'system-tokens:manage': 'Create, list, and revoke system API tokens, including choosing their permission scopes.',
+  'theme-presets:moderate':
+    'Remove another user’s theme preset from the instance-wide shared list. The owner keeps a private copy.',
 } satisfies Record<Permission, string>
 
 export const PERMISSION_CATALOG = Object.values(Permissions)

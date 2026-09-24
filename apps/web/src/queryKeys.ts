@@ -1,3 +1,4 @@
+import type { ThemePresetScope } from '@tau/shared'
 // Query keys now live in @tau/client-core so web and mobile share one definition.
 export { queryKeys } from '@tau/client-core'
 export const desktopQueryKeys = {
@@ -7,11 +8,14 @@ export const desktopQueryKeys = {
 
 export const modelTierQueryKeys = { list: () => ['model-tiers'] as const }
 
-/** A user's own theme preset library. Phase 1 has no cross-user reads, so this
- * key never needs a userId segment — it is always "my presets". */
+/** A user's theme preset library. Phase 2 adds `scope` ('mine' | 'shared' |
+ * 'all') so the caller's own presets and everyone else's shared presets can
+ * be cached independently; every scope still shares the `all` prefix, so a
+ * single broad invalidation after any mutation (share/unshare/duplicate/use)
+ * covers every list, as it did in Phase 1. */
 export const themePresetQueryKeys = {
   all: ['theme-presets'] as const,
-  list: () => [...themePresetQueryKeys.all, 'list'] as const,
+  list: (scope: ThemePresetScope = 'mine') => [...themePresetQueryKeys.all, 'list', scope] as const,
 }
 
 /**

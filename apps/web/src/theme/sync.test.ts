@@ -1,6 +1,7 @@
-import { expect, test } from 'bun:test'
-import { SYNC_THEME_DESCRIPTORS, type MyThemePreferences, type ThemePreference } from '@tau/shared'
-import { ThemeSyncStore, LOCAL_OVERRIDE_KEY, type ThemeSyncApi } from './sync'
+import { expect, mock, test } from 'bun:test'
+import { SYNC_THEME_DESCRIPTORS, type MyThemePreferences, type ThemePreference, type ThemePreset } from '@tau/shared'
+import { HttpResponseError } from '@tau/client-core'
+import { ThemeSyncStore, LOCAL_OVERRIDE_KEY, type ThemeSyncApi, type ThemePresetLiveLinkApi } from './sync'
 import { BUILT_IN_THEMES } from './registry'
 
 function storage(initial: Record<string, string> = {}) {
@@ -24,8 +25,20 @@ function deferred<T>() {
   })
   return { promise, resolve, reject }
 }
-const harbor: ThemePreference = { themeId: 'harbor', appearance: 'dark', customTheme: null, presetId: null }
-const ember: ThemePreference = { themeId: 'ember', appearance: 'system', customTheme: null, presetId: null }
+const harbor: ThemePreference = {
+  themeId: 'harbor',
+  appearance: 'dark',
+  customTheme: null,
+  presetId: null,
+  presetOwnerId: null,
+}
+const ember: ThemePreference = {
+  themeId: 'ember',
+  appearance: 'system',
+  customTheme: null,
+  presetId: null,
+  presetOwnerId: null,
+}
 function server(theme: ThemePreference | null = harbor) {
   let remote = theme
   const writes: Array<{ expectedUserId: string; theme: ThemePreference }> = []
@@ -369,6 +382,14 @@ test('failed in-flight PUT retries on reconnect when the deliberate intent is st
   store.disconnect()
 })
 
+const mineDoc = {
+  format: 'tau-custom-theme' as const,
+  version: 2 as const,
+  name: 'Mine',
+  base: 'harbor',
+  variants: { light: {}, dark: { '--color-primary': '#0ea5e9' } },
+}
+
 test('presetId round-trips through change/apply and clears when the custom theme is dropped', () => {
   const local = storage()
   const store = new ThemeSyncStore(local)
@@ -376,13 +397,8 @@ test('presetId round-trips through change/apply and clears when the custom theme
     themeId: 'harbor',
     appearance: 'dark',
     presetId: 'p-1',
-    customTheme: {
-      format: 'tau-custom-theme',
-      version: 2,
-      name: 'Mine',
-      base: 'harbor',
-      variants: { light: {}, dark: { '--color-primary': '#0ea5e9' } },
-    },
+    presetOwnerId: null,
+    customTheme: mineDoc,
   }
   store.change(withPreset)
   expect(store.getSnapshot().presetId).toBe('p-1')
@@ -392,7 +408,179 @@ test('presetId round-trips through change/apply and clears when the custom theme
   expect(reloaded.getSnapshot().presetId).toBe('p-1')
   // Deactivating the custom theme (built-in selection) clears the preset ring
   // locally without needing a server call — the library preset itself is untouched.
-  store.change({ themeId: 'tau', appearance: 'dark', customTheme: null, presetId: null })
+  store.change({ themeId: 'tau', appearance: 'dark', customTheme: null, presetId: null, presetOwnerId: null })
   expect(store.getSnapshot().presetId).toBeNull()
   expect(local.getItem('tau-theme-preset-id')).toBeNull()
+})
+
+test('presetOwnerId round-trips alongside presetId, survives reload, and clears with the custom theme', () => {
+  const local = storage()
+  const store = new ThemeSyncStore(local)
+  const withOwner: ThemePreference = {
+    themeId: 'harbor',
+    appearance: 'dark',
+    presetId: 'p-1',
+    presetOwnerId: 'owner-1',
+    customTheme: mineDoc,
+  }
+  store.change(withOwner)
+  expect(store.getSnapshot().presetOwnerId).toBe('owner-1')
+  expect(local.getItem('tau-theme-preset-owner-id')).toBe('owner-1')
+  const reloaded = new ThemeSyncStore(local)
+  expect(reloaded.getSnapshot().presetOwnerId).toBe('owner-1')
+  // Appearance changes (setAppearance/toggleTheme in ThemeProvider) must carry
+  // presetOwnerId forward, exactly like presetId — verified via change() with
+  // the same custom/presetId/presetOwnerId, only appearance flipped.
+  store.change({ ...withOwner, appearance: 'light' })
+  expect(store.getSnapshot().presetOwnerId).toBe('owner-1')
+  store.change({ themeId: 'tau', appearance: 'dark', customTheme: null, presetId: null, presetOwnerId: null })
+  expect(store.getSnapshot().presetOwnerId).toBeNull()
+  expect(local.getItem('tau-theme-preset-owner-id')).toBeNull()
+})
+
+test('presetOwnerId is retained (detached-shared) even when presetId alone is cleared', () => {
+  const local = storage()
+  const store = new ThemeSyncStore(local)
+  store.change({
+    themeId: 'harbor',
+    appearance: 'dark',
+    presetId: 'p-1',
+    presetOwnerId: 'owner-1',
+    customTheme: mineDoc,
+  })
+  // Simulates what refreshLinkedPreset does on a 404: presetId nulled, owner + doc retained.
+  store.change({
+    themeId: 'harbor',
+    appearance: 'dark',
+    presetId: null,
+    presetOwnerId: 'owner-1',
+    customTheme: mineDoc,
+  })
+  expect(store.getSnapshot().presetId).toBeNull()
+  expect(store.getSnapshot().presetOwnerId).toBe('owner-1')
+  expect(store.getSnapshot().custom).toEqual(mineDoc)
+})
+
+function presetFor(document: typeof mineDoc, ownerId = 'owner-1'): ThemePreset {
+  return {
+    id: 'p-1',
+    document,
+    visibility: 'instance',
+    ownerUserId: ownerId,
+    owner: { id: ownerId, displayName: 'Author' },
+    revision: 1,
+    createdAt: '',
+    updatedAt: '',
+  }
+}
+
+test('refreshLinkedPreset is a no-op when there is no active foreign preset (never calls the API)', async () => {
+  const store = new ThemeSyncStore(storage())
+  const get = mock(async () => presetFor(mineDoc))
+  await store.refreshLinkedPreset({ get })
+  expect(get).not.toHaveBeenCalled()
+
+  // A preset that IS applied but has no owner (should not happen via applyPreset,
+  // but the guard is presetId && presetOwnerId && custom, all three required).
+  store.change({ themeId: 'harbor', appearance: 'dark', presetId: 'p-1', presetOwnerId: null, customTheme: mineDoc })
+  await store.refreshLinkedPreset({ get })
+  expect(get).not.toHaveBeenCalled()
+})
+
+test('refreshLinkedPreset applies a changed document through the normal apply path, keeping presetId/presetOwnerId', async () => {
+  const local = storage()
+  const store = new ThemeSyncStore(local)
+  store.change({
+    themeId: 'harbor',
+    appearance: 'dark',
+    presetId: 'p-1',
+    presetOwnerId: 'owner-1',
+    customTheme: mineDoc,
+  })
+  const changedDoc = { ...mineDoc, name: 'Mine (edited)' }
+  const get = mock(async () => presetFor(changedDoc))
+  await store.refreshLinkedPreset({ get })
+  expect(get).toHaveBeenCalledTimes(1)
+  expect(store.getSnapshot().custom).toEqual(changedDoc)
+  expect(store.getSnapshot().presetId).toBe('p-1')
+  expect(store.getSnapshot().presetOwnerId).toBe('owner-1')
+  expect(local.getItem('tau-custom-theme')).toBe(JSON.stringify(changedDoc))
+})
+
+test('refreshLinkedPreset is a no-op when the document is unchanged (identical hash)', async () => {
+  const store = new ThemeSyncStore(storage())
+  store.change({
+    themeId: 'harbor',
+    appearance: 'dark',
+    presetId: 'p-1',
+    presetOwnerId: 'owner-1',
+    customTheme: mineDoc,
+  })
+  const revisionBefore = store.getSnapshot()
+  const get = mock(async () => presetFor(mineDoc))
+  await store.refreshLinkedPreset({ get })
+  expect(store.getSnapshot()).toEqual(revisionBefore)
+})
+
+test('refreshLinkedPreset on 404 marks detached: presetId cleared, presetOwnerId + snapshot retained', async () => {
+  const local = storage()
+  const store = new ThemeSyncStore(local)
+  store.change({
+    themeId: 'harbor',
+    appearance: 'dark',
+    presetId: 'p-1',
+    presetOwnerId: 'owner-1',
+    customTheme: mineDoc,
+  })
+  const get = mock(async () => {
+    throw new HttpResponseError(404, 'gone')
+  })
+  await store.refreshLinkedPreset({ get })
+  expect(store.getSnapshot().presetId).toBeNull()
+  expect(store.getSnapshot().presetOwnerId).toBe('owner-1')
+  expect(store.getSnapshot().custom).toEqual(mineDoc) // the user keeps the last-seen copy
+  expect(local.getItem('tau-theme-preset-id')).toBeNull()
+  expect(local.getItem('tau-theme-preset-owner-id')).toBe('owner-1')
+})
+
+test('refreshLinkedPreset on a network/other error silently leaves state untouched (retried later, like account sync)', async () => {
+  const store = new ThemeSyncStore(storage())
+  store.change({
+    themeId: 'harbor',
+    appearance: 'dark',
+    presetId: 'p-1',
+    presetOwnerId: 'owner-1',
+    customTheme: mineDoc,
+  })
+  const before = store.getSnapshot()
+  const get = mock(async () => {
+    throw new Error('offline')
+  })
+  await store.refreshLinkedPreset({ get })
+  expect(store.getSnapshot()).toEqual(before)
+})
+
+test('refreshLinkedPreset discards a stale in-flight result superseded by a newer deliberate change', async () => {
+  const store = new ThemeSyncStore(storage())
+  store.change({
+    themeId: 'harbor',
+    appearance: 'dark',
+    presetId: 'p-1',
+    presetOwnerId: 'owner-1',
+    customTheme: mineDoc,
+  })
+  const response = (() => {
+    let resolve!: (preset: ThemePreset) => void
+    const promise = new Promise<ThemePreset>((r) => (resolve = r))
+    return { promise, resolve }
+  })()
+  const get: ThemePresetLiveLinkApi['get'] = () => response.promise
+  const pending = store.refreshLinkedPreset({ get })
+  // A newer deliberate change happens while the fetch is in flight.
+  store.change({ themeId: 'ember', appearance: 'system', presetId: null, presetOwnerId: null, customTheme: null })
+  response.resolve(presetFor({ ...mineDoc, name: 'Late arrival' }))
+  await pending
+  // The stale response must not clobber the newer selection.
+  expect(store.getSnapshot().selection.themeId).toBe('ember')
+  expect(store.getSnapshot().presetId).toBeNull()
 })

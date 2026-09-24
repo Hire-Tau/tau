@@ -3,8 +3,10 @@ import {
   THEME_PRESET_MAX_PER_USER,
   createThemePresetRequestSchema,
   deleteThemePresetRequestSchema,
+  isThemePresetScope,
   isThemePresetVisibility,
   updateThemePresetRequestSchema,
+  updateThemePresetVisibilityRequestSchema,
   validateThemePresetDocument,
 } from './theme-preset'
 
@@ -49,4 +51,22 @@ test('request schemas accept exactly their documented shape', () => {
 
 test('a per-user cap constant exists for the route to enforce', () => {
   expect(THEME_PRESET_MAX_PER_USER).toBe(50)
+})
+
+test('isThemePresetScope recognizes exactly the three Phase-2 list scopes', () => {
+  expect(isThemePresetScope('mine')).toBe(true)
+  expect(isThemePresetScope('shared')).toBe(true)
+  expect(isThemePresetScope('all')).toBe(true)
+  expect(isThemePresetScope('everyone')).toBe(false)
+  expect(isThemePresetScope(undefined)).toBe(false)
+})
+
+test('the visibility-change request schema accepts exactly revision + visibility', () => {
+  expect(updateThemePresetVisibilityRequestSchema.safeParse({ revision: 1, visibility: 'instance' }).success).toBe(true)
+  expect(updateThemePresetVisibilityRequestSchema.safeParse({ revision: 1, visibility: 'private' }).success).toBe(true)
+  expect(updateThemePresetVisibilityRequestSchema.safeParse({ revision: 1, visibility: 'public' }).success).toBe(false)
+  expect(updateThemePresetVisibilityRequestSchema.safeParse({ visibility: 'instance' }).success).toBe(false)
+  expect(
+    updateThemePresetVisibilityRequestSchema.safeParse({ revision: 1, visibility: 'instance', document: {} }).success
+  ).toBe(false)
 })

@@ -1,15 +1,37 @@
-import { validateThemePreference, type MyThemePreferences, type ThemePreference } from '@tau/shared'
-import { CUSTOM_THEME_KEY, clearCustomTheme, loadCustomTheme, persistCustomTheme, persistPresetId } from './custom'
+import { validateThemePreference, type MyThemePreferences, type ThemePreference, type ThemePreset } from '@tau/shared'
+import { isHttpResponseError } from '@tau/client-core'
+import {
+  CUSTOM_THEME_KEY,
+  clearCustomTheme,
+  hashCustomThemeDocument,
+  loadCustomTheme,
+  persistCustomTheme,
+  persistPresetId,
+  persistPresetOwnerId,
+} from './custom'
 import { APPEARANCE_KEY, LEGACY_THEME_KEY, THEME_ID_KEY, persistThemeSelection, type ThemeStorage } from './storage'
 
 export const LOCAL_OVERRIDE_KEY = 'tau-theme-local-override'
-const DEFAULT: ThemePreference = { themeId: 'tau', appearance: 'light', customTheme: null, presetId: null }
+const DEFAULT: ThemePreference = {
+  themeId: 'tau',
+  appearance: 'light',
+  customTheme: null,
+  presetId: null,
+  presetOwnerId: null,
+}
 export interface ThemeSyncApi {
   getMine(signal?: AbortSignal): Promise<MyThemePreferences>
   updateMine(
     input: { expectedUserId: string; theme: ThemePreference },
     signal?: AbortSignal
   ): Promise<MyThemePreferences>
+}
+/** Phase 2 live link: just enough of `client.themePresets` to refetch the
+ * currently-applied preset's document. A separate, minimal interface (like
+ * `ThemeSyncApi` above) rather than importing the whole client-core resource
+ * type, so this module stays testable with a one-method fake. */
+export interface ThemePresetLiveLinkApi {
+  get(id: string, signal?: AbortSignal): Promise<ThemePreset>
 }
 interface Session {
   abort: AbortController
@@ -70,18 +92,27 @@ export class ThemeSyncStore {
     }
   }
   private current(): ThemePreference {
-    return { ...this.state.selection, customTheme: this.state.custom, presetId: this.state.presetId }
+    return {
+      ...this.state.selection,
+      customTheme: this.state.custom,
+      presetId: this.state.presetId,
+      presetOwnerId: this.state.presetOwnerId,
+    }
   }
   private apply(theme: ThemePreference) {
     clearCustomTheme(this.storage)
     const saved = !theme.customTheme || persistCustomTheme(this.storage, theme.customTheme)
-    if (theme.customTheme) persistPresetId(this.storage, theme.presetId)
+    if (theme.customTheme) {
+      persistPresetId(this.storage, theme.presetId)
+      persistPresetOwnerId(this.storage, theme.presetOwnerId)
+    }
     persistThemeSelection(this.storage, theme)
     this.state = {
       ...this.state,
       selection: { themeId: theme.themeId, appearance: theme.appearance },
       custom: theme.customTheme,
       presetId: theme.customTheme ? theme.presetId : null,
+      presetOwnerId: theme.customTheme ? theme.presetOwnerId : null,
       error: saved ? null : 'Theme applied for this session only: device storage is unavailable.',
     }
     this.emit()
@@ -105,8 +136,14 @@ export class ThemeSyncStore {
     const loaded = loadCustomTheme(this.storage)
     const localOverride = readLocalOverride(this.storage)
     if (
-      JSON.stringify([loaded.selection, loaded.custom, loaded.presetId, localOverride]) ===
-      JSON.stringify([this.state.selection, this.state.custom, this.state.presetId, this.state.localOverride])
+      JSON.stringify([loaded.selection, loaded.custom, loaded.presetId, loaded.presetOwnerId, localOverride]) ===
+      JSON.stringify([
+        this.state.selection,
+        this.state.custom,
+        this.state.presetId,
+        this.state.presetOwnerId,
+        this.state.localOverride,
+      ])
     )
       return
     this.revision++
@@ -120,6 +157,7 @@ export class ThemeSyncStore {
       ...this.state,
       custom: null,
       presetId: null,
+      presetOwnerId: null,
       error: 'Custom theme could not be applied. Restored its base theme.',
     }
     this.emit()
@@ -216,5 +254,50 @@ export class ThemeSyncStore {
       await session.reading
       if (this.alive(session) && !this.state.localOverride) await this.refresh()
     })()
+  }
+  /**
+   * Phase 2 "live link": refetches the currently-applied preset's document
+   * and applies it if it changed — the author's edits show up on this
+   * device's next load or focus/refresh, exactly like account preference
+   * sync's own `refresh()`. Independent of `localOverride` (which governs
+   * whether THIS DEVICE follows the ACCOUNT's theme choice, an orthogonal
+   * concern) and of `connect()`/`session` (the preset itself, not the
+   * account preference row, is what's being refetched) — callers still only
+   * invoke it during an authenticated session, matching `ThemeAccountSync`'s
+   * own trigger lifecycle.
+   *
+   * A no-op unless a preset with a known owner is actually active (`custom`,
+   * `presetId` AND `presetOwnerId` all present) — never fetches for a
+   * built-in selection, a one-off import, or an already-detached preset.
+   * `presetOwnerId` stays populated for EVERY applied preset, including the
+   * caller's own (see ThemePreference.presetOwnerId's doc comment), so this
+   * also picks up the caller's own edits made from another device — a
+   * harmless, usually-no-op bonus, not a behavior regression: the editor and
+   * rename flow already apply an own edit locally and instantly.
+   *
+   * On 404 (unshared or deleted), marks detached — clears `presetId` but
+   * RETAINS `presetOwnerId` and the document snapshot, via the normal
+   * `apply()` path (persists + repaints identically to any other selection
+   * change). Never overrides an open editor draft or quick-picker hover
+   * preview: those live in ThemeProvider's separate preview slot, which
+   * always reapplies over any real repaint this triggers (see
+   * `useThemePreview`'s doc comment) — this method only ever touches the
+   * STORED selection, never paints directly.
+   */
+  refreshLinkedPreset = async (api: ThemePresetLiveLinkApi, signal?: AbortSignal): Promise<void> => {
+    const { presetId, presetOwnerId, custom, selection } = this.state
+    if (!presetId || !presetOwnerId || !custom) return
+    const revision = this.revision
+    try {
+      const preset = await api.get(presetId, signal)
+      if (revision !== this.revision) return // superseded by a newer local change meanwhile
+      if (hashCustomThemeDocument(preset.document) === hashCustomThemeDocument(custom)) return // unchanged
+      this.apply({ ...selection, customTheme: preset.document, presetId: preset.id, presetOwnerId: preset.owner.id })
+    } catch (error) {
+      if (revision !== this.revision) return
+      if (isHttpResponseError(error, 404))
+        this.apply({ ...selection, customTheme: custom, presetId: null, presetOwnerId })
+      // Any other error (offline, old server, aborted): silently remain as-is, retried on the next trigger.
+    }
   }
 }

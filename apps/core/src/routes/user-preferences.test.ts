@@ -15,7 +15,7 @@ app.use('*', jsonBodyErrorMiddleware)
 app.onError(jsonBodyErrorHandler)
 app.use('*', identityMiddleware)
 app.route('/user-preferences', userPreferencesRouter)
-const theme = { themeId: 'harbor', appearance: 'dark', customTheme: null, presetId: null }
+const theme = { themeId: 'harbor', appearance: 'dark', customTheme: null, presetId: null, presetOwnerId: null }
 const customTheme = {
   format: 'tau-custom-theme',
   version: 2,
@@ -60,6 +60,26 @@ test('presetId round-trips (the preset the active custom document came from), an
   // snapshot in customTheme keeps working; the UI treats it as detached.
   expect((await put(a, { expectedUserId: a.id, theme: withPreset })).status).toBe(200)
 })
+test('presetOwnerId round-trips, including the Phase 2 detached-shared combination (presetId null, presetOwnerId retained)', async () => {
+  const withOwner = {
+    ...theme,
+    customTheme,
+    presetId: '11111111-1111-4111-8111-111111111111',
+    presetOwnerId: '22222222-2222-4222-8222-222222222222',
+  }
+  expect((await put(a, { expectedUserId: a.id, theme: withOwner })).status).toBe(200)
+  expect(await (await get(a)).json()).toEqual({ userId: a.id, theme: withOwner })
+
+  const detachedShared = { ...withOwner, presetId: null }
+  expect((await put(a, { expectedUserId: a.id, theme: detachedShared })).status).toBe(200)
+  expect(await (await get(a)).json()).toEqual({ userId: a.id, theme: detachedShared })
+
+  // presetOwnerId with no customTheme at all is meaningless and rejected.
+  expect(
+    (await put(a, { expectedUserId: a.id, theme: { ...theme, presetOwnerId: '22222222-2222-4222-8222-222222222222' } }))
+      .status
+  ).toBe(400)
+})
 test('identity precondition rejects queued writes sent with a different account session', async () => {
   expect((await put(b, { expectedUserId: a.id, theme })).status).toBe(409)
   expect((await put(b, { theme })).status).toBe(409)
@@ -84,6 +104,8 @@ test('rejects malformed, unsafe, incoherent and oversized documents without chan
     { ...theme, customTheme: { ...customTheme, extra: 'x'.repeat(32700) } },
     { ...theme, presetId: '' },
     { ...theme, presetId: 123 },
+    { ...theme, presetOwnerId: '' },
+    { ...theme, presetOwnerId: 123 },
   ]) {
     expect((await put(a, { expectedUserId: a.id, theme: invalid })).status).toBe(400)
   }

@@ -4,7 +4,13 @@ import type { Transport, RequestOptions } from '../transport'
 
 test('self-service resource uses the shared transport, whole preference and session identity precondition', async () => {
   const calls: Array<{ path: string; options?: RequestOptions }> = []
-  const theme = { themeId: 'harbor', appearance: 'dark' as const, customTheme: null, presetId: null }
+  const theme = {
+    themeId: 'harbor',
+    appearance: 'dark' as const,
+    customTheme: null,
+    presetId: null,
+    presetOwnerId: null,
+  }
   const result = { userId: 'A', theme }
   const transport: Transport = {
     request: async <T>(path: string, options?: RequestOptions) => {

@@ -8,8 +8,8 @@ import { ThemeProvider, useTheme, useThemeSyncStore } from './ThemeProvider'
 import { ThemeAccountSyncSession } from './ThemeAccountSync'
 import { ThemeControl } from '../components/settings/ThemeControl'
 import { themePresetQueryKeys } from '../queryKeys'
-import type { ThemeSyncStore, ThemeSyncApi } from '../theme/sync'
-import type { ThemePreference } from '@tau/shared'
+import type { ThemeSyncStore, ThemeSyncApi, ThemePresetLiveLinkApi } from '../theme/sync'
+import type { ThemePreference, ThemePreset } from '@tau/shared'
 
 function queryClient() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -55,7 +55,13 @@ async function harness() {
   return { ...dom.createRoot(), paint }
 }
 function fixture() {
-  let theme: ThemePreference = { themeId: 'harbor', appearance: 'dark', customTheme: null, presetId: null }
+  let theme: ThemePreference = {
+    themeId: 'harbor',
+    appearance: 'dark',
+    customTheme: null,
+    presetId: null,
+    presetOwnerId: null,
+  }
   let reads = 0
   const writes: ThemePreference[] = []
   const api: ThemeSyncApi = {
@@ -159,4 +165,96 @@ test('fresh device adopts only after paint; logout removes inherited document an
     await store.refresh()
   })
   expect(remote.reads()).toBe(1)
+})
+
+const sharedDoc = {
+  format: 'tau-custom-theme' as const,
+  version: 2 as const,
+  name: 'Shared',
+  base: 'harbor',
+  variants: { light: {}, dark: {} },
+}
+function sharedPreset(document = sharedDoc): ThemePreset {
+  return {
+    id: 'shared-1',
+    document,
+    visibility: 'instance',
+    ownerUserId: 'author',
+    owner: { id: 'author', displayName: 'Author' },
+    revision: 1,
+    createdAt: '',
+    updatedAt: '',
+  }
+}
+
+test('a live-linked shared preset is refetched on load (after the account read) and applied if changed', async () => {
+  const { root, paint } = await harness()
+  const remote = fixture()
+  remote.set({
+    themeId: 'harbor',
+    appearance: 'dark',
+    presetId: 'shared-1',
+    presetOwnerId: 'author',
+    customTheme: sharedDoc,
+  })
+  const gets: string[] = []
+  const editedDoc = { ...sharedDoc, name: 'Shared (edited)' }
+  const themePresetsApi: ThemePresetLiveLinkApi = {
+    get: async (id) => {
+      gets.push(id)
+      return sharedPreset(editedDoc)
+    },
+  }
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={queryClient()}>
+        <ThemeProvider>
+          <ThemeAccountSyncSession sessionKey={1} api={remote.api} themePresetsApi={themePresetsApi} />
+          <Picker />
+        </ThemeProvider>
+      </QueryClientProvider>
+    )
+  )
+  await paint()
+  await paint()
+  expect(remote.reads()).toBe(1) // account preference read happened first
+  expect(gets).toEqual(['shared-1']) // then the live-link fetch
+  expect(store.getSnapshot().custom?.name).toBe('Shared (edited)')
+})
+
+test('focus/online/visibility refresh also re-checks the live-linked preset', async () => {
+  const { root, paint } = await harness()
+  const remote = fixture()
+  remote.set({
+    themeId: 'harbor',
+    appearance: 'dark',
+    presetId: 'shared-1',
+    presetOwnerId: 'author',
+    customTheme: sharedDoc,
+  })
+  const gets: string[] = []
+  const themePresetsApi: ThemePresetLiveLinkApi = {
+    get: async (id) => {
+      gets.push(id)
+      return sharedPreset()
+    },
+  }
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={queryClient()}>
+        <ThemeProvider>
+          <ThemeAccountSyncSession sessionKey={1} api={remote.api} themePresetsApi={themePresetsApi} />
+          <Picker />
+        </ThemeProvider>
+      </QueryClientProvider>
+    )
+  )
+  await paint()
+  await paint()
+  expect(gets).toHaveLength(1)
+  await act(async () => {
+    window.dispatchEvent(new Event('online'))
+    await store.refresh()
+  })
+  expect(gets.length).toBeGreaterThanOrEqual(2)
 })

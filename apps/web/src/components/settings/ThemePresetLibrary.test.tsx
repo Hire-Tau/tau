@@ -1,12 +1,12 @@
 import { afterEach, expect, spyOn, test } from 'bun:test'
 import { act } from 'react'
-import { fireEvent, getByRole, queryByRole } from '@testing-library/dom'
+import { fireEvent, getAllByRole, getByRole, queryByRole } from '@testing-library/dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ThemePreset } from '@tau/shared'
 import { acquireDomHarness } from '../../test/domHarness'
 import { ThemeProvider, useTheme } from '../../providers/ThemeProvider'
 import { ThemePresetLibrary } from './ThemePresetLibrary'
-import { themePresetQueryKeys } from '../../queryKeys'
+import { themePresetQueryKeys, queryKeys } from '../../queryKeys'
 import { client } from '../../api/clientInstance'
 
 let cleanup: (() => Promise<void>) | undefined
@@ -26,6 +26,24 @@ const mine: ThemePreset = {
   },
   visibility: 'private',
   ownerUserId: 'u1',
+  owner: { id: 'u1', displayName: 'Owner' },
+  revision: 1,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+}
+
+const sharedByAuthor: ThemePreset = {
+  id: 'preset-shared',
+  document: {
+    format: 'tau-custom-theme',
+    version: 2,
+    name: 'Author theme',
+    base: 'harbor',
+    variants: { light: {}, dark: {} },
+  },
+  visibility: 'instance',
+  ownerUserId: 'author',
+  owner: { id: 'author', displayName: 'Ann Author' },
   revision: 1,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
@@ -36,11 +54,19 @@ function Harness() {
   return <ThemePresetLibrary value={value} />
 }
 
-async function render(presets: ThemePreset[]) {
+async function render(
+  mine: ThemePreset[],
+  opts: { shared?: ThemePreset[]; permissions?: string[]; userId?: string } = {}
+) {
   const dom = await acquireDomHarness({ url: 'https://tau.test' })
   cleanup = () => dom.cleanup()
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-  queryClient.setQueryData(themePresetQueryKeys.list(), presets)
+  queryClient.setQueryData(themePresetQueryKeys.list('mine'), mine)
+  queryClient.setQueryData(themePresetQueryKeys.list('shared'), opts.shared ?? [])
+  queryClient.setQueryData(queryKeys.auth.permissions(), {
+    permissions: opts.permissions ?? [],
+    identity: { type: 'user', userId: opts.userId ?? 'u1' },
+  })
   const { root, container } = dom.createRoot()
   await act(async () =>
     root.render(
@@ -67,16 +93,18 @@ test('lists a preset with its name, and applies it via Use (applyPreset)', async
   expect(localStorage.getItem('tau-theme-id')).toBe('harbor')
 })
 
-test('Duplicate posts a copy with a suffixed name', async () => {
-  const create = spyOn(client.themePresets, 'create').mockResolvedValue({ ...mine, id: 'preset-2' })
+test('Duplicate calls the server-side duplicate endpoint (works identically for own and shared presets)', async () => {
+  const duplicate = spyOn(client.themePresets, 'duplicate').mockResolvedValue({
+    ...mine,
+    id: 'preset-2',
+    document: { ...mine.document, name: 'Copy of Mine' },
+  })
   try {
     const { container } = await render([mine])
     await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Duplicate' })))
-    expect(create).toHaveBeenCalledTimes(1)
-    const [document] = create.mock.calls[0]!
-    expect((document as { name: string }).name).toBe('Mine copy')
+    expect(duplicate).toHaveBeenCalledWith('preset-1')
   } finally {
-    create.mockRestore()
+    duplicate.mockRestore()
   }
 })
 
@@ -159,6 +187,7 @@ test('a palette-only preset (no explicit overrides) still resolves a real swatch
     },
     visibility: 'private',
     ownerUserId: 'u1',
+    owner: { id: 'u1', displayName: 'Owner' },
     revision: 1,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
@@ -195,4 +224,153 @@ test('the swatch element carries the shared theme-swatch paint class (regression
   const { container } = await render([mine])
   const swatch = container.querySelector('[data-theme-scope]')!
   expect(swatch.classList.contains('theme-swatch')).toBe(true)
+})
+
+// ── Phase 2: sharing ────────────────────────────────────────────────────────
+
+test('My themes: Share toggles a private preset to instance visibility; the row then offers Unshare', async () => {
+  const setVisibility = spyOn(client.themePresets, 'setVisibility').mockResolvedValue({
+    ...mine,
+    visibility: 'instance',
+    revision: 2,
+  })
+  try {
+    const { container } = await render([mine])
+    expect(queryByRole(container, 'button', { name: 'Unshare' })).toBeNull()
+    await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Share' })))
+    expect(setVisibility).toHaveBeenCalledWith('preset-1', 1, 'instance')
+  } finally {
+    setVisibility.mockRestore()
+  }
+})
+
+test('My themes: an already-shared preset shows Unshare, which reverts to private', async () => {
+  const setVisibility = spyOn(client.themePresets, 'setVisibility').mockResolvedValue({
+    ...mine,
+    visibility: 'private',
+    revision: 2,
+  })
+  try {
+    const shared = { ...mine, visibility: 'instance' as const }
+    const { container } = await render([shared])
+    expect(queryByRole(container, 'button', { name: 'Share' })).toBeNull()
+    await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Unshare' })))
+    expect(setVisibility).toHaveBeenCalledWith('preset-1', 1, 'private')
+  } finally {
+    setVisibility.mockRestore()
+  }
+})
+
+test('Shared themes section lists other users’ shared presets with attribution, and Use applies it', async () => {
+  const { container } = await render([], { shared: [sharedByAuthor] })
+  expect(container.textContent).toContain('Shared themes')
+  expect(container.textContent).toContain('Author theme')
+  expect(container.textContent).toContain('Ann Author')
+  const useButtons = getAllByRole(container, 'button', { name: 'Use' })
+  await act(async () => fireEvent.click(useButtons[0]!))
+  expect(localStorage.getItem('tau-theme-preset-id')).toBe('preset-shared')
+  expect(localStorage.getItem('tau-theme-preset-owner-id')).toBe('author')
+})
+
+test('with no shared presets, the Shared themes section is omitted entirely', async () => {
+  const { container } = await render([mine], { shared: [] })
+  expect(container.textContent).not.toContain('Shared themes')
+})
+
+test('Shared themes: Duplicate is available for a shared preset (not just My themes)', async () => {
+  const duplicate = spyOn(client.themePresets, 'duplicate').mockResolvedValue({
+    ...sharedByAuthor,
+    id: 'preset-copy',
+    ownerUserId: 'u1',
+    owner: { id: 'u1', displayName: 'Me' },
+    visibility: 'private',
+    document: { ...sharedByAuthor.document, name: 'Copy of Author theme' },
+  })
+  try {
+    const { container } = await render([], { shared: [sharedByAuthor] })
+    await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Duplicate' })))
+    expect(duplicate).toHaveBeenCalledWith('preset-shared')
+  } finally {
+    duplicate.mockRestore()
+  }
+})
+
+test('Shared themes: a non-admin/operator never sees a Remove action', async () => {
+  const { container } = await render([], { shared: [sharedByAuthor], permissions: [] })
+  expect(queryByRole(container, 'button', { name: /Remove/ })).toBeNull()
+})
+
+test('Shared themes: an admin/operator sees Remove, confirms, and it unshares (owner keeps the preset)', async () => {
+  const removeShare = spyOn(client.themePresets, 'removeShare').mockResolvedValue({
+    ...sharedByAuthor,
+    visibility: 'private',
+    revision: 2,
+  })
+  try {
+    const { container } = await render([], { shared: [sharedByAuthor], permissions: ['theme-presets:moderate'] })
+    let confirmed = false
+    window.confirm = () => {
+      confirmed = true
+      return true
+    }
+    await act(async () => fireEvent.click(getByRole(container, 'button', { name: /Remove/ })))
+    expect(confirmed).toBe(true)
+    expect(removeShare).toHaveBeenCalledWith('preset-shared')
+  } finally {
+    removeShare.mockRestore()
+  }
+})
+
+test('Shared themes: Remove does nothing when the confirmation is declined', async () => {
+  const removeShare = spyOn(client.themePresets, 'removeShare').mockResolvedValue({
+    ...sharedByAuthor,
+    visibility: 'private',
+  })
+  try {
+    const { container } = await render([], { shared: [sharedByAuthor], permissions: ['theme-presets:moderate'] })
+    window.confirm = () => false
+    await act(async () => fireEvent.click(getByRole(container, 'button', { name: /Remove/ })))
+    expect(removeShare).not.toHaveBeenCalled()
+  } finally {
+    removeShare.mockRestore()
+  }
+})
+
+test('detached-shared: a foreign preset that 404s is shown as no longer available, with a "keep a copy" action', async () => {
+  const dom = await acquireDomHarness({ url: 'https://tau.test' })
+  cleanup = () => dom.cleanup()
+  // Simulate ThemeSyncStore.refreshLinkedPreset's 404 outcome directly via
+  // localStorage: presetId cleared, presetOwnerId + document retained.
+  localStorage.setItem('tau-custom-theme', JSON.stringify(sharedByAuthor.document))
+  localStorage.setItem('tau-theme-preset-owner-id', 'author')
+  localStorage.setItem('tau-theme-id', 'harbor')
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  queryClient.setQueryData(themePresetQueryKeys.list('mine'), [])
+  queryClient.setQueryData(themePresetQueryKeys.list('shared'), [])
+  queryClient.setQueryData(queryKeys.auth.permissions(), { permissions: [], identity: { type: 'user', userId: 'u1' } })
+  const create = spyOn(client.themePresets, 'create').mockResolvedValue({
+    ...sharedByAuthor,
+    id: 'kept-copy',
+    ownerUserId: 'u1',
+    owner: { id: 'u1', displayName: 'Me' },
+    visibility: 'private',
+  })
+  try {
+    const { root, container } = dom.createRoot()
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={queryClient}>
+          <ThemeProvider>
+            <Harness />
+          </ThemeProvider>
+        </QueryClientProvider>
+      )
+    )
+    expect(container.textContent).toContain('no longer available')
+    await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Keep a copy' })))
+    expect(create).toHaveBeenCalledTimes(1)
+    expect(localStorage.getItem('tau-theme-preset-id')).toBe('kept-copy')
+  } finally {
+    create.mockRestore()
+  }
 })

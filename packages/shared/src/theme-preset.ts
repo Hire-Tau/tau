@@ -3,16 +3,39 @@ import { validateCustomTheme, type CustomThemeDocument, type CustomThemeValidati
 import { SYNC_THEME_DESCRIPTORS } from './theme-preferences'
 
 /**
- * Phase 1: every user gets a library of saved theme presets, private by
- * default. `visibility` exists now so Phase 2 (instance-wide sharing) only
- * needs to add routes/UI on top of this schema — Phase 1 itself never sets
- * it to 'instance' and never reads another user's presets; every route here
- * is owner-only.
+ * Every user gets a library of saved theme presets, private by default.
+ * Phase 2 adds instance-wide sharing: a preset with `visibility: 'instance'`
+ * is readable (and its document live-linkable) by every other signed-in user
+ * on the instance via `GET /theme-presets/:id`, in addition to its owner via
+ * `scope=mine`. Mutating the document, deleting, or changing visibility
+ * remains owner-only; an admin/operator with `theme-presets:moderate` may
+ * additionally unshare (never delete) another user's preset.
  */
 export type ThemePresetVisibility = 'private' | 'instance'
 
 export function isThemePresetVisibility(value: unknown): value is ThemePresetVisibility {
   return value === 'private' || value === 'instance'
+}
+
+export const themePresetVisibilitySchema = z.enum(['private', 'instance'])
+
+/** `GET /theme-presets` list scope. 'mine' (default, Phase 1 behavior) is the
+ * caller's own library regardless of visibility; 'shared' is every OTHER
+ * user's instance-visible preset; 'all' is the union of both. */
+export type ThemePresetScope = 'mine' | 'shared' | 'all'
+
+export function isThemePresetScope(value: unknown): value is ThemePresetScope {
+  return value === 'mine' || value === 'shared' || value === 'all'
+}
+
+/** Phase 2: public attribution for a preset shown to users other than its
+ * owner. `displayName` is already the display-name-or-email fallback (the
+ * same convention `formatRequestingUser`/chat sender attribution use
+ * elsewhere in Core) — never a raw separate `email` field, matching how
+ * those existing attributions expose one computed name, not two fields. */
+export interface ThemePresetOwner {
+  id: string
+  displayName: string
 }
 
 /** Per-user library size cap, enforced by the create route (409/422 on overflow). */
@@ -25,6 +48,9 @@ export interface ThemePreset {
   document: CustomThemeDocument
   visibility: ThemePresetVisibility
   ownerUserId: string
+  /** Phase 2: attribution, always present (even for the caller's own presets —
+   * one DTO shape, no conditional client-side branching on scope). */
+  owner: ThemePresetOwner
   revision: number
   createdAt: string
   updatedAt: string
@@ -52,13 +78,20 @@ export function validateThemePresetDocument(
 
 const requiredDocument = z.unknown().refine((value) => value !== undefined, { message: 'document is required' })
 
-/** Phase 1 request bodies never take `visibility` — there is no sharing route yet. */
+/** Creating a preset never takes `visibility` — a new preset always starts
+ * private; sharing is a deliberate, separate action via the visibility route. */
 export const createThemePresetRequestSchema = z.object({ document: requiredDocument }).strict()
 export const updateThemePresetRequestSchema = z
   .object({ revision: z.number().int().nonnegative(), document: requiredDocument })
   .strict()
 export const deleteThemePresetRequestSchema = z.object({ revision: z.number().int().nonnegative() }).strict()
+/** `PUT /theme-presets/:id/visibility` — owner-only, revision-checked, like the
+ * document update route. Sharing/unsharing never touches the document. */
+export const updateThemePresetVisibilityRequestSchema = z
+  .object({ revision: z.number().int().nonnegative(), visibility: themePresetVisibilitySchema })
+  .strict()
 
 export type CreateThemePresetRequest = z.infer<typeof createThemePresetRequestSchema>
 export type UpdateThemePresetRequest = z.infer<typeof updateThemePresetRequestSchema>
 export type DeleteThemePresetRequest = z.infer<typeof deleteThemePresetRequestSchema>
+export type UpdateThemePresetVisibilityRequest = z.infer<typeof updateThemePresetVisibilityRequestSchema>

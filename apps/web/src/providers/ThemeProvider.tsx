@@ -10,7 +10,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react'
-import { type CustomThemeDocument, type ThemePreset, type AppearanceSetting } from '@tau/shared'
+import { type CustomThemeDocument, type ThemePreset, type ThemePresetOwner, type AppearanceSetting } from '@tau/shared'
 import { findWebTheme, resolveWebTheme, type WebThemeDefinition } from '../theme/registry'
 import { tokenColor } from '../theme/tokenReader'
 import { applyResolvedTheme } from '../theme/apply'
@@ -36,10 +36,18 @@ interface ThemeContextValue {
   customTheme: CustomThemeDocument | null
   customThemeError: string | null
   /** The library preset `customTheme` came from, or null when detached
-   * (built-in selection, a one-off import, or the preset was later deleted). */
+   * (built-in selection, a one-off import, the preset was later deleted, or
+   * — Phase 2 — a shared preset was unshared/deleted). */
   presetId: string | null
+  /** Phase 2: the owner of `presetId`'s preset, populated for every applied
+   * preset (own or another user's shared preset) and RETAINED even once
+   * `presetId` goes null on a live-link 404 — `presetId === null &&
+   * presetOwnerId !== null` is what marks "a shared theme is no longer
+   * available" for the Settings UI, as opposed to silently detaching from
+   * your own deleted preset (`presetOwnerId` also null in that case). */
+  presetOwnerId: string | null
   applyCustom: (doc: CustomThemeDocument) => void
-  applyPreset: (preset: Pick<ThemePreset, 'id' | 'document'>) => void
+  applyPreset: (preset: Pick<ThemePreset, 'id' | 'document'> & { owner: Pick<ThemePresetOwner, 'id'> }) => void
   resetTheme: () => void
   themeId: string
   /** The user's appearance setting: 'light' | 'dark' | 'system'. */
@@ -157,7 +165,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // values migrate here, unreadable values fall back to the defaults.
   const [store] = useState(() => new ThemeSyncStore(getThemeStorage()))
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
-  const { selection, custom, presetId, error } = state
+  const { selection, custom, presetId, presetOwnerId, error } = state
   const [systemPrefersDark, setSystemPrefersDark] = useState(readSystemPrefersDark)
 
   useEffect(() => {
@@ -302,6 +310,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         themeId: findWebTheme(themeId).id,
         customTheme: null,
         presetId: null,
+        presetOwnerId: null,
       })
     },
     [store]
@@ -309,9 +318,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const setAppearance = useCallback(
     (appearance: AppearanceSetting) => {
       // A v2 document covers both variants: changing appearance keeps the
-      // active preset and just resolves a different side of it.
+      // active preset (and its owner, for the live link) and just resolves a
+      // different side of it.
       const snapshot = store.getSnapshot()
-      store.change({ ...snapshot.selection, appearance, customTheme: snapshot.custom, presetId: snapshot.presetId })
+      store.change({
+        ...snapshot.selection,
+        appearance,
+        customTheme: snapshot.custom,
+        presetId: snapshot.presetId,
+        presetOwnerId: snapshot.presetOwnerId,
+      })
     },
     [store]
   )
@@ -325,28 +341,35 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       appearance: resolved.appearance === 'dark' ? 'light' : 'dark',
       customTheme: snapshot.custom,
       presetId: snapshot.presetId,
+      presetOwnerId: snapshot.presetOwnerId,
     })
   }, [store, systemPrefersDark])
   /** Applies a one-off document not tied to a saved preset (import, or a raw
    * apply from the editor's "Save as new" flow before the row exists yet). */
   const applyCustom = useCallback(
     (doc: CustomThemeDocument) => {
-      store.change({ ...customSelection(doc, store.getSnapshot().selection), customTheme: doc, presetId: null })
+      store.change({
+        ...customSelection(doc, store.getSnapshot().selection),
+        customTheme: doc,
+        presetId: null,
+        presetOwnerId: null,
+      })
     },
     [store]
   )
   const applyPreset = useCallback(
-    (preset: Pick<ThemePreset, 'id' | 'document'>) => {
+    (preset: Pick<ThemePreset, 'id' | 'document'> & { owner: Pick<ThemePresetOwner, 'id'> }) => {
       store.change({
         ...customSelection(preset.document, store.getSnapshot().selection),
         customTheme: preset.document,
         presetId: preset.id,
+        presetOwnerId: preset.owner.id,
       })
     },
     [store]
   )
   const resetTheme = useCallback(() => {
-    store.change({ themeId: 'tau', appearance: 'light', customTheme: null, presetId: null })
+    store.change({ themeId: 'tau', appearance: 'light', customTheme: null, presetId: null, presetOwnerId: null })
   }, [store])
 
   const contextValue: ThemeContextValue = {
@@ -356,6 +379,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     customTheme: custom,
     customThemeError: error,
     presetId,
+    presetOwnerId,
     applyCustom,
     applyPreset,
     resetTheme,

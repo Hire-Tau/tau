@@ -23,6 +23,12 @@ export const CUSTOM_THEME_KEY = 'tau-custom-theme'
  * without a network round-trip. A dangling value (deleted preset) is harmless —
  * callers treat an unmatched id as detached. */
 export const PRESET_ID_KEY = 'tau-theme-preset-id'
+/** Phase 2: the owner of `PRESET_ID_KEY`'s preset, populated whenever a preset
+ * (own or shared) is applied. Deliberately retained even when a live-link
+ * refresh clears `PRESET_ID_KEY` on a 404 — see ThemePreference.presetOwnerId
+ * for why that combination (id null, owner set) is what marks "detached from
+ * a shared theme" apart from an ordinary silently-detached own preset. */
+export const PRESET_OWNER_ID_KEY = 'tau-theme-preset-owner-id'
 /** A palette-derived document needs getComputedStyle to derive (see
  * applyCustomTheme below), which the synchronous pre-paint script cannot trust
  * yet — so it stores the LAST RESOLVED result here instead, keyed to the exact
@@ -39,6 +45,7 @@ export function clearCustomTheme(storage: ThemeStorage | null) {
   for (const key of [
     CUSTOM_THEME_KEY,
     PRESET_ID_KEY,
+    PRESET_OWNER_ID_KEY,
     RESOLVED_SNAPSHOT_KEY,
     THEME_SURFACE_KEY,
     LEGACY_SURFACE_COLOR_KEY,
@@ -209,10 +216,28 @@ export function persistPresetId(storage: ThemeStorage | null, presetId: string |
   }
 }
 
+export function readPresetOwnerId(storage: ThemeStorage | null): string | null {
+  try {
+    return storage?.getItem(PRESET_OWNER_ID_KEY) ?? null
+  } catch {
+    return null
+  }
+}
+
+export function persistPresetOwnerId(storage: ThemeStorage | null, presetOwnerId: string | null) {
+  try {
+    if (presetOwnerId) storage?.setItem(PRESET_OWNER_ID_KEY, presetOwnerId)
+    else storage?.removeItem(PRESET_OWNER_ID_KEY)
+  } catch {
+    /* device-local in memory */
+  }
+}
+
 export function loadCustomTheme(storage: ThemeStorage | null): {
   selection: StoredThemeSelection
   custom: CustomThemeDocument | null
   presetId: string | null
+  presetOwnerId: string | null
   error: string | null
 } {
   let selection = readThemeSelection(storage)
@@ -222,13 +247,14 @@ export function loadCustomTheme(storage: ThemeStorage | null): {
   } catch {
     /* unavailable */
   }
-  if (raw === null) return { selection, custom: null, presetId: null, error: null }
+  if (raw === null) return { selection, custom: null, presetId: null, presetOwnerId: null, error: null }
   const result = validateCustomTheme(raw, BUILT_IN_THEMES)
   if (result.ok)
     return {
       selection: customSelection(result.document, selection),
       custom: result.document,
       presetId: readPresetId(storage),
+      presetOwnerId: readPresetOwnerId(storage),
       error: result.warnings.join(' ') || null,
     }
   // A broken but readable document may still name a valid recovery base.
@@ -244,7 +270,13 @@ export function loadCustomTheme(storage: ThemeStorage | null): {
   }
   clearCustomTheme(storage)
   persistThemeSelection(storage, selection)
-  return { selection, custom: null, presetId: null, error: `Custom theme removed: ${result.error}` }
+  return {
+    selection,
+    custom: null,
+    presetId: null,
+    presetOwnerId: null,
+    error: `Custom theme removed: ${result.error}`,
+  }
 }
 
 export function persistCustomTheme(storage: ThemeStorage | null, doc: CustomThemeDocument): boolean {
