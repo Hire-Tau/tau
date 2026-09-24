@@ -802,6 +802,34 @@ export async function observeSandboxOverload(input: SandboxOverloadObservation):
 }
 
 /** Sandboxes with an open overload episode, so the detector can close ones it no longer sees. */
+/**
+ * The latest load reading of a sandbox's open overload episode. Sandbox status
+ * rarely probes a box itself (a probe would wake or keep alive a socket-activated
+ * box), so this reading from the overload detector is what surfaces overload in
+ * status views.
+ */
+export async function openSandboxOverloadPressure(sandboxId: string): Promise<SandboxPressure | undefined> {
+  const [row] = await db
+    .select({ details: fleetIncidents.details })
+    .from(fleetIncidents)
+    .where(
+      and(
+        eq(fleetIncidents.kind, 'sandbox_overloaded'),
+        eq(fleetIncidents.scopeKey, `sandbox:${sandboxId}`),
+        isNull(fleetIncidents.resolvedAt)
+      )
+    )
+    .limit(1)
+  const details = row?.details as Partial<SandboxOverloadDetails> | undefined
+  if (!details || typeof details.cpus !== 'number' || !Array.isArray(details.load)) return undefined
+  return {
+    cpus: details.cpus,
+    load: details.load,
+    memTotalMb: details.memTotalMb ?? 0,
+    memAvailableMb: details.memAvailableMb ?? 0,
+  }
+}
+
 export async function listOpenSandboxOverloadSandboxIds(): Promise<string[]> {
   const rows = await db
     .select({ scopeKey: fleetIncidents.scopeKey })

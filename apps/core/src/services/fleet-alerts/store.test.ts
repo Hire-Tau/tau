@@ -10,6 +10,7 @@ import {
   observeProvider,
   observeSandboxDegradation,
   observeSandboxOverload,
+  openSandboxOverloadPressure,
   listOpenSandboxOverloadSandboxIds,
 } from './store'
 
@@ -777,6 +778,22 @@ describe('sandbox overload fleet incident store', () => {
       }))
     )
   }
+
+  test("exposes an open episode's latest reading for status views, and nothing once it clears", async () => {
+    const squadId = await squadWithManager()
+    const sandboxId = own(`squad_${squadId}`)
+    expect(await openSandboxOverloadPressure(sandboxId)).toBeUndefined()
+    await observeSandboxOverload({ status: 'sampled', sandboxId, pressure: pressure(31.9), now: START })
+    await observeSandboxOverload({ status: 'sampled', sandboxId, pressure: pressure(12, 900), now: at(1) })
+    expect(await openSandboxOverloadPressure(sandboxId)).toEqual({
+      cpus: 4,
+      load: [12, 10.8, 9.6],
+      memTotalMb: 16_000,
+      memAvailableMb: 900,
+    })
+    await observeSandboxOverload({ status: 'sampled', sandboxId, pressure: pressure(2), now: at(2) })
+    expect(await openSandboxOverloadPressure(sandboxId)).toBeUndefined()
+  })
 
   test('opens a squad-linked episode on the first overloaded reading without alerting', async () => {
     const squadId = await squadWithManager()

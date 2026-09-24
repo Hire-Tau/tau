@@ -1761,6 +1761,44 @@ describe('squads routes', () => {
       expect(res.status).toBe(404)
     })
 
+    it("reports an open overload episode's load on a VM box whose status did not probe it", async () => {
+      const squad = await Squad.create({ name: `${testPrefix} Overloaded`, purpose: 'Testing overload status' })
+      const { observeSandboxOverload } = await import('../services/fleet-alerts/store')
+      await observeSandboxOverload({
+        status: 'sampled',
+        sandboxId: squad.sandboxId,
+        pressure: { cpus: 4, load: [31.9, 28.7, 25.5], memTotalMb: 7941, memAvailableMb: 463 },
+        now: new Date(),
+      })
+      const remoteSpy = spyOn(sandboxFactory, 'isRemoteSandboxRuntime').mockReturnValue(true)
+      const k8sSpy = spyOn(sandboxFactory, 'isK8sRuntime').mockReturnValue(false)
+      const vmSpy = spyOn(sandboxFactory, 'isVmRuntime').mockReturnValue(true)
+      const managerSpy = spyOn(sandboxFactory, 'getSandboxManager').mockReturnValue({
+        // An idle-flagged box: status answers from chain health without probing it.
+        getSandboxStatus: async () => ({
+          status: 'running',
+          readiness: 'ready',
+          devboxReady: true,
+          chain: { boxProvisioned: true, machine: 'reachable', boxServer: 'idle' },
+        }),
+      } as never)
+      try {
+        const res = await app.request(`/api/squads/${squad.id}/sandbox/status`, { headers: authHeaders(admin.token) })
+        expect(res.status).toBe(200)
+        expect((await res.json()).pressure).toEqual({
+          cpus: 4,
+          load: [31.9, 28.7, 25.5],
+          memTotalMb: 7941,
+          memAvailableMb: 463,
+        })
+      } finally {
+        remoteSpy.mockRestore()
+        k8sSpy.mockRestore()
+        vmSpy.mockRestore()
+        managerSpy.mockRestore()
+      }
+    })
+
     it('adds provisioning diagnostics only for K8s status', async () => {
       const squad = await Squad.create({ name: `${testPrefix} K8s Status`, purpose: 'Testing K8s diagnostics' })
       const remoteSpy = spyOn(sandboxFactory, 'isRemoteSandboxRuntime').mockReturnValue(true)

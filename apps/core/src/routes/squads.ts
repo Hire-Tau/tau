@@ -69,6 +69,7 @@ import { ActivityCursorExpiredError, InvalidActivityCursorError } from '../servi
 import { getHomeDir } from '../lib/utils/home'
 import { normalizeToolchain } from '../services/sandbox/toolchain/config'
 import { mergeSandboxStatus, resolveToolchainStatus } from '../services/sandbox/status'
+import { openSandboxOverloadPressure } from '../services/fleet-alerts/store'
 import {
   listSandboxProcesses,
   parseContainerId,
@@ -1119,6 +1120,10 @@ export const squadsRouter = new Hono()
       mergeSandboxStatus(
         {
           ...status,
+          // The overload detector's reading when status did not probe the box itself.
+          ...(isVmRuntime() && !('pressure' in status && status.pressure)
+            ? await openSandboxOverloadPressure(squad.sandboxId).then((pressure) => (pressure ? { pressure } : {}))
+            : {}),
           runtime: isVmRuntime() ? ('vm' as const) : ('k8s' as const),
           ...(provisioning ? { provisioning } : {}),
         },
