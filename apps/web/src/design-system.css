@@ -57,35 +57,44 @@
      any future caller that forgets to size both axes explicitly. Selection
      rings stay on a wrapping element (never on this class) so they aren't
      clipped by this overflow: hidden. */
-  /* A colour wheel around the theme's primary: hues sweep about 60 degrees
-     either side of it at one lightness, meeting in a crisp centre. Only the
-     primary differs between built-ins, so the wheel is derived from it
-     (relative colour syntax, with a plain fallback). */
   .theme-swatch {
     position: relative;
     aspect-ratio: 1 / 1;
     border-radius: 9999px;
     overflow: hidden;
+  }
+
+  /* A flat gradient wheel: the theme's primary blending into its neighbouring
+     hues and a lighter tint, softened so the colours run into each other with
+     no centre point. Only the primary differs between built-ins, so the wheel
+     is derived from it (relative colour syntax, with a plain fallback). */
+  .theme-swatch::before {
+    content: '';
+    position: absolute;
+    inset: -25%;
     background: conic-gradient(rgb(var(--color-primary)), rgb(var(--color-primary-hover)), rgb(var(--color-primary)));
     background: conic-gradient(
-      oklch(from rgb(var(--color-primary)) 0.62 max(c, 0.14) h),
-      oklch(from rgb(var(--color-primary)) 0.62 max(c, 0.14) calc(h + 30)),
-      oklch(from rgb(var(--color-primary)) 0.62 max(c, 0.14) calc(h + 60)),
-      oklch(from rgb(var(--color-primary)) 0.62 max(c, 0.14) calc(h + 30)),
-      oklch(from rgb(var(--color-primary)) 0.62 max(c, 0.14) h),
-      oklch(from rgb(var(--color-primary)) 0.62 max(c, 0.14) calc(h - 30)),
-      oklch(from rgb(var(--color-primary)) 0.62 max(c, 0.14) calc(h - 60)),
-      oklch(from rgb(var(--color-primary)) 0.62 max(c, 0.14) calc(h - 30)),
-      oklch(from rgb(var(--color-primary)) 0.62 max(c, 0.14) h)
+      rgb(var(--color-primary)),
+      oklch(from rgb(var(--color-primary)) l c calc(h + 45)),
+      oklch(from rgb(var(--color-primary)) calc(l + 0.2) calc(c * 0.6) h),
+      oklch(from rgb(var(--color-primary)) l c calc(h - 45)),
+      rgb(var(--color-primary))
+    );
+    filter: blur(6px);
+    pointer-events: none;
+  }
+
+  /* High contrast has no hue to rotate; blend its ink into its paper instead. */
+  .theme-swatch[data-theme='high-contrast']:not([style*='--color-primary'])::before {
+    background: conic-gradient(
+      from 30deg,
+      rgb(var(--color-primary)) 0 22%,
+      rgb(var(--color-bg-surface)) 48% 72%,
+      rgb(var(--color-primary)) 96%
     );
   }
 
-  /* High contrast has no hue to sweep; run its ink round into its paper. */
-  .theme-swatch[data-theme='high-contrast']:not([style*='--color-primary']) {
-    background: conic-gradient(rgb(var(--color-primary)), rgb(var(--color-bg-surface)) 50%, rgb(var(--color-primary)));
-  }
-
-  /* The outline sits above the wheel so it stays visible. */
+  /* The outline sits above the blurred wheel so it stays visible. */
   .theme-swatch::after {
     content: '';
     position: absolute;
