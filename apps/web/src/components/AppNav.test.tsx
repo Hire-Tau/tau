@@ -6,6 +6,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { isNavItemAllowed, navFooterHints, navItems, resolveNavShortcut, shouldShowVoiceButton } from './navModel'
 import { assistantQueryKeys, queryKeys } from '../queryKeys'
 import { getTabNavigationTarget, getTabPath, recordTabPath, resetTabHistory } from '../hooks/useTabHistory'
+import { ThemeProvider } from '../providers/ThemeProvider'
 
 let permissions = new Set<string>()
 let permissionsLoading = false
@@ -47,7 +48,9 @@ function renderWithProviders(children: ReactNode, path = '/squads') {
   }
   return renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[path]}>{children}</MemoryRouter>
+      <ThemeProvider>
+        <MemoryRouter initialEntries={[path]}>{children}</MemoryRouter>
+      </ThemeProvider>
     </QueryClientProvider>
   )
 }
@@ -271,6 +274,34 @@ describe('primary desktop navigation', () => {
     expect(html).not.toContain('Schedules')
     expect(html).not.toContain('href="/chat"')
     expect(html).not.toContain('href="/schedules"')
+  })
+})
+
+describe('theme quick picker placement', () => {
+  beforeEach(() => {
+    resetTabHistory()
+    permissions = new Set<string>()
+    permissionsLoading = false
+    voiceStatus = { enabled: true }
+  })
+
+  test('sits between Settings and Inbox in the desktop right cluster, desktop-only like both neighbors', () => {
+    const html = renderWithProviders(<AppHeader usePendingActions={useFixturePendingActions} />)
+
+    const settingsIndex = html.indexOf('title="Settings (S)"')
+    const themeIndex = html.indexOf('title="Theme"')
+    const inboxIndex = html.indexOf('title="Inbox (I)"')
+
+    expect(settingsIndex).toBeGreaterThan(-1)
+    expect(themeIndex).toBeGreaterThan(-1)
+    expect(inboxIndex).toBeGreaterThan(-1)
+    expect(settingsIndex).toBeLessThan(themeIndex)
+    expect(themeIndex).toBeLessThan(inboxIndex)
+
+    // Same desktop-only pattern as its Settings/Inbox neighbors.
+    const themeButtonStart = html.lastIndexOf('<button', themeIndex)
+    const themeButton = html.slice(themeButtonStart, html.indexOf('>', themeIndex) + 1)
+    expect(themeButton).toContain('hidden md:flex')
   })
 })
 

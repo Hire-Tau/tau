@@ -5,6 +5,7 @@ import { expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { PermissionsProvider } from '../hooks/usePermissions'
+import { ThemeProvider } from '../providers/ThemeProvider'
 import { acquireDomHarness } from '../test/domHarness'
 import { integrationQueries, queries } from '../queryOptions'
 import { UnifiedAssistant } from './UnifiedAssistant'
@@ -35,15 +36,17 @@ test('the assistant nav button toggles the panel like its keyboard shortcut whil
     await dom.act(async () =>
       root.render(
         <QueryClientProvider client={cache}>
-          <MemoryRouter initialEntries={['/settings?section=providers']}>
-            <PermissionsProvider
-              usePermissions={() => ({ can: () => false, permissions: [], isLoading: false, isError: false })}
-            >
-              <AppHeader usePendingActions={() => ({ data: [] })} />
-              <UnifiedAssistant dependencies={{ ConversationComponent: () => <div data-conversation /> }} />
-              <Probe />
-            </PermissionsProvider>
-          </MemoryRouter>
+          <ThemeProvider>
+            <MemoryRouter initialEntries={['/settings?section=providers']}>
+              <PermissionsProvider
+                usePermissions={() => ({ can: () => false, permissions: [], isLoading: false, isError: false })}
+              >
+                <AppHeader usePendingActions={() => ({ data: [] })} />
+                <UnifiedAssistant dependencies={{ ConversationComponent: () => <div data-conversation /> }} />
+                <Probe />
+              </PermissionsProvider>
+            </MemoryRouter>
+          </ThemeProvider>
         </QueryClientProvider>
       )
     )
