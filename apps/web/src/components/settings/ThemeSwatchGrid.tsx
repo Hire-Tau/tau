@@ -52,7 +52,7 @@ export function ThemeSwatchGrid({
     <div
       role="radiogroup"
       aria-label="Color theme"
-      className={clsx('grid grid-cols-[repeat(auto-fill,minmax(4.25rem,1fr))] gap-2', className)}
+      className={clsx('grid grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] gap-2', className)}
     >
       {options.map((option, index) => {
         const selected = option.id === selectedId
@@ -103,7 +103,7 @@ export function ThemeSwatchGrid({
             >
               <ThemeSwatch spec={spec} className="h-full w-full" />
             </span>
-            <span className="w-full max-w-full line-clamp-2 break-words text-center text-xs text-secondary">
+            <span className="w-full max-w-full line-clamp-2 break-normal text-center text-xs text-secondary">
               {option.label}
             </span>
           </button>

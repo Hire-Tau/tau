@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test'
 import type { ThemePreference } from './theme-preferences'
 import type { CustomThemeDocument } from './custom-theme'
 import { STATUS_TOKENS } from './theme-schema'
-import { validateThemePreference } from './theme-preferences'
+import { SYNC_THEME_DESCRIPTORS, validateThemePreference } from './theme-preferences'
 
 const theme: ThemePreference = {
   themeId: 'harbor',
@@ -32,6 +32,20 @@ test('validates a complete preference including tiny-alpha custom values; strips
       presetId: null,
     }).ok
   ).toBe(true)
+})
+
+test('accepts every BigBrain-ported unified built-in id (docs/wiki/theme/builtins.md)', () => {
+  const bigBrainIds = ['nurebairo', 'phosphorus', 'yamabukiiro', 'moegiiro', 'adzukiiro', 'asagiiro']
+  expect(SYNC_THEME_DESCRIPTORS.filter((d) => bigBrainIds.includes(d.id)).map((d) => d.kind)).toEqual(
+    bigBrainIds.map(() => 'unified')
+  )
+  for (const themeId of bigBrainIds) {
+    const result = validateThemePreference({ themeId, appearance: 'system', customTheme: null, presetId: null })
+    expect(result).toEqual({
+      ok: true,
+      theme: { themeId, appearance: 'system', customTheme: null, presetId: null, presetOwnerId: null },
+    })
+  }
 })
 test('presetId is optional; when present it must be a non-empty string, defaulting to null when absent', () => {
   const { presetId: _drop, ...withoutPresetId } = theme

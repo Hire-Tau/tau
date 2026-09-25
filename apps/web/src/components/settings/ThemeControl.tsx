@@ -9,8 +9,9 @@ import { selfServiceQueryEnabled, useOptionalAuth } from '../../providers/AuthPr
 import { queries } from '../../queryOptions'
 
 /** Shared with ThemeQuickPicker so both entry points explain a unified theme identically. */
-export const THEME_CONSTANT_HINT =
-  'High contrast has one appearance. Your appearance preference is kept for other themes.'
+export function themeConstantHint(label: string): string {
+  return `${label} has one appearance. Your appearance preference is kept for other themes.`
+}
 
 /** Shared account-sync/device-override notice, identical on both the Settings picker and the header quick picker. */
 export function ThemeSyncNotice({
@@ -122,7 +123,7 @@ export function ThemeControl({
             />
             {selected.kind === 'unified' && (
               <p id="theme-constant-hint" className="mt-2 text-sm text-muted">
-                {THEME_CONSTANT_HINT}
+                {themeConstantHint(customTheme?.name ?? selected.label)}
               </p>
             )}
           </div>

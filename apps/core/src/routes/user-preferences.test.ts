@@ -118,3 +118,9 @@ test('user deletion cascades the preference row', async () => {
   await db.delete(users).where(eq(users.id, removable.id))
   expect(await db.select().from(userPreferences).where(eq(userPreferences.userId, removable.id))).toHaveLength(0)
 })
+
+test('accepts a BigBrain-ported unified built-in id (docs/wiki/theme/builtins.md)', async () => {
+  const bigBrain = { themeId: 'asagiiro', appearance: 'system', customTheme: null, presetId: null, presetOwnerId: null }
+  expect((await put(a, { expectedUserId: a.id, theme: bigBrain })).status).toBe(200)
+  expect(await (await get(a)).json()).toEqual({ userId: a.id, theme: bigBrain })
+})
