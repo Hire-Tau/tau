@@ -77,31 +77,20 @@
     background: rgb(var(--color-bg-surface-hover));
   }
 
-  .chat-composer-delivery {
-    gap: 8px;
-  }
-
-  .chat-composer .chat-composer-mode {
-    min-height: 44px;
-    border: 0;
-    border-radius: 8px;
-    color: rgb(var(--color-text-muted));
-    background: transparent;
-  }
-
-  .chat-composer .chat-composer-mode:hover {
-    background: rgb(var(--color-bg-surface-hover));
-  }
-
-  .chat-composer-send button[type='submit']:disabled {
+  /* The Interrupt / Follow up split button keeps its mode colour while empty; only its send half dims. */
+  .chat-composer-send button[type='submit']:disabled:not(.chat-composer-submit) {
     background: rgb(var(--color-bg-pill));
     color: rgb(var(--color-text-muted));
   }
 
-  .chat-composer .chat-composer-submit {
+  .chat-composer .chat-composer-submit,
+  .chat-composer .chat-composer-mode {
     min-height: 44px;
-    min-width: 44px;
-    border-radius: 8px;
+  }
+
+  .chat-composer .chat-composer-mode {
+    min-width: 36px;
+    justify-content: center;
   }
 }
 

@@ -1044,7 +1044,8 @@ describe('ChatView sandbox recovery composer behavior', () => {
       />
     )
 
-    expect(window.document.querySelector('[title="Interrupt: click to switch to Follow up"]')).not.toBeNull()
+    expect(window.document.querySelector('button[type="submit"][aria-label="Interrupt"]')).not.toBeNull()
+    expect(window.document.querySelector('select[aria-label="Message delivery"]')).not.toBeNull()
   })
 })
 
@@ -1153,6 +1154,47 @@ describe('ChatView mobile options overlay', () => {
     await dom.act(async () => fireEvent.change(select, { target: { value: 'follow-up' } }))
     expect(onDeliveryModeChange).toHaveBeenCalledWith('follow-up')
     expect(onSend).not.toHaveBeenCalled()
+  })
+
+  test('delivery is one split button: the send half names the mode, the chevron explains each choice', async () => {
+    const onDeliveryModeChange = mock(() => {})
+    const { window } = await renderChatView(
+      <ChatView
+        items={[]}
+        onSend={() => {}}
+        executionStatus="running"
+        deliveryMode="steer"
+        onDeliveryModeChange={onDeliveryModeChange}
+      />
+    )
+    const group = window.document.querySelector('.chat-composer-delivery') as HTMLElement
+    const submit = group.querySelector('button[type="submit"]') as HTMLButtonElement
+    const select = group.querySelector('select[aria-label="Message delivery"]') as HTMLSelectElement
+    // Both halves live in one container that owns the shape and colour.
+    expect(group.className).toContain('rounded-md')
+    expect(group.className).toContain('bg-accent')
+    expect(submit.textContent).toBe('Interrupt')
+    expect([...select.options].map((option) => option.textContent)).toEqual([
+      'Interrupt: send now',
+      'Follow up: send after this turn',
+    ])
+    // No separate icon-only toggle remains.
+    expect(window.document.querySelector('[title^="Interrupt: click"]')).toBeNull()
+  })
+
+  test('follow-up mode colours the whole split button and names its send half', async () => {
+    const { window } = await renderChatView(
+      <ChatView
+        items={[]}
+        onSend={() => {}}
+        executionStatus="running"
+        deliveryMode="follow-up"
+        onDeliveryModeChange={() => {}}
+      />
+    )
+    const group = window.document.querySelector('.chat-composer-delivery') as HTMLElement
+    expect(group.className).toContain('bg-status-attention-600')
+    expect(group.querySelector('button[type="submit"]')!.textContent).toBe('Follow up')
   })
 
   for (const fullscreen of [false, true]) {
