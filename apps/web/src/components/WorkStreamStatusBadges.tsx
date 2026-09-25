@@ -3,8 +3,8 @@ import { Badge } from './Badge'
 import {
   getWsDisplayState,
   isWorkStreamParked,
+  workStreamStatusLabel,
   WS_STATUS_BADGE_COLORS,
-  WS_STATUS_LABELS,
 } from '../lib/workStreamStatusPresentation'
 
 /** The reason for waiting and admission state are independent facts. */
@@ -22,8 +22,8 @@ export function WorkStreamStatusBadges({
   if (!showPrimary && !parked) return null
   const label =
     showQueuePosition && state === 'queued' && workStream.queuePosition != null
-      ? `${WS_STATUS_LABELS[state]} — position ${workStream.queuePosition}`
-      : WS_STATUS_LABELS[state]
+      ? `${workStreamStatusLabel(workStream)} — position ${workStream.queuePosition}`
+      : workStreamStatusLabel(workStream)
   const title =
     !showQueuePosition && workStream.status === 'queued' && workStream.queuePosition != null
       ? `${label} (${workStream.queuePosition})`

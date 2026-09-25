@@ -4,12 +4,8 @@ import clsx from 'clsx'
 import type { Agent, WorkStream } from '@tau/shared'
 import { getAgentPrimaryLabel } from '../lib/agentDisplay'
 import { Badge } from './Badge'
-import {
-  WS_PRIORITY_BADGE_COLORS,
-  WS_STATUS_BADGE_COLORS,
-  WS_STATUS_LABELS,
-  getWsDisplayState,
-} from './WorkStreamDetailModal'
+import { workStreamStatusLabel, WS_STATUS_BADGE_COLORS, WS_STATUS_LABELS } from '../lib/workStreamStatusPresentation'
+import { WS_PRIORITY_BADGE_COLORS } from './WorkStreamDetailModal'
 import {
   layoutWorkStreamGraph,
   WORK_STREAM_GRAPH_NODE_HEIGHT,
@@ -63,7 +59,6 @@ export function WorkStreamGraph({ workStreams, agentMap, onSelectWorkStream }: W
           })}
           {layout.nodes.map((node) => {
             const stream = streamById.get(node.id)!
-            const displayState = getWsDisplayState(stream)
             const storedPriority = stream.priority ?? 'normal'
             const effectivePriority = stream.effectivePriority ?? storedPriority
             const boosted = effectivePriority !== storedPriority
@@ -75,7 +70,7 @@ export function WorkStreamGraph({ workStreams, agentMap, onSelectWorkStream }: W
                 key={node.id}
                 role="button"
                 tabIndex={0}
-                aria-label={`Open ${stream.title}, ${WS_STATUS_LABELS[displayState] ?? displayState}, ${effectivePriority} priority`}
+                aria-label={`Open ${stream.title}, ${workStreamStatusLabel(stream)}, ${effectivePriority} priority`}
                 onClick={() => onSelectWorkStream(stream.id)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' || event.key === ' ') {

@@ -13,13 +13,9 @@ import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { computeWorkStreamElapsedMs } from '../lib/workStreamRuntime'
 import { webStatus } from '../lib/statusPresentation'
 import { queries } from '../queryOptions'
-import {
-  WorkStreamDetailModal,
-  WS_STATUS_LABELS,
-  WS_PRIORITY_BADGE_COLORS,
-  getWsDisplayState,
-} from './WorkStreamDetailModal'
+import { WorkStreamDetailModal, WS_PRIORITY_BADGE_COLORS, getWsDisplayState } from './WorkStreamDetailModal'
 import { workStreamPullRequests } from '../lib/workStreamGithub'
+import { workStreamStatusLabel } from '../lib/workStreamStatusPresentation'
 import { Badge, type BadgeColor } from './Badge'
 import { AgentActivityDot } from './AgentActivityDot'
 import { WorkStreamFiltersPopover } from './WorkStreamFiltersPopover'
@@ -512,7 +508,8 @@ function WorkStreamRow({
   const priorityBadge = getPriorityBadgeInfo(workStream)
   const queuePositionText =
     workStream.status === 'queued' && workStream.queuePosition != null ? `#${workStream.queuePosition} in queue` : null
-  const statusBadgeText = WS_STATUS_LABELS[state] ?? state
+  // Tooltips use the same derived label as the pill (e.g. "Awaiting CI" rather than the generic external wait).
+  const statusBadgeText = workStreamStatusLabel(workStream)
 
   if (feedLayout) {
     const completedAt = new Date(workStream.completedAt ?? workStream.updatedAt)
