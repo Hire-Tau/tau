@@ -187,7 +187,7 @@ function HumanMessageRow({
         <div
           className={clsx(
             'max-w-[90%] md:max-w-[80%] rounded-lg',
-            auto ? 'break-words' : 'px-3 md:px-4 py-2 md:py-3 bg-status-progress-600 text-on-strong break-words'
+            auto ? 'break-words' : 'px-3 md:px-4 py-2 md:py-3 bg-accent text-on-accent break-words'
           )}
         >
           <HumanMessageContent
@@ -293,11 +293,11 @@ function PendingMessageRow({
       <div
         className={clsx(
           'max-w-[90%] md:max-w-[80%] rounded-lg break-words',
-          auto ? '' : 'px-3 md:px-4 py-2 md:py-3 bg-status-progress-600 text-on-strong'
+          auto ? '' : 'px-3 md:px-4 py-2 md:py-3 bg-accent text-on-accent'
         )}
       >
         {deliveryMode && !auto && queued && (
-          <div className="flex items-center gap-1.5 mb-1 text-status-progress-200 text-xs">
+          <div className="flex items-center gap-1.5 mb-1 text-on-accent/80 text-xs">
             {deliveryMode === 'steer' ? '⚡ Interrupt' : '📋 Follow up'}
           </div>
         )}
@@ -306,14 +306,12 @@ function PendingMessageRow({
           <button
             type="button"
             onClick={onRetry}
-            className="tau-button mt-1 text-xs text-status-progress-200 underline hover:text-on-strong"
+            className="tau-button mt-1 text-xs text-on-accent underline hover:text-on-accent/80"
           >
             Retry
           </button>
         )}
-        {status === 'sending' && !auto && (
-          <div className="mt-1 text-xs text-status-progress-200 opacity-70">Sending…</div>
-        )}
+        {status === 'sending' && !auto && <div className="mt-1 text-xs text-on-accent/80">Sending…</div>}
       </div>
     </div>
   )
@@ -2110,7 +2108,7 @@ export function ChatView({
                       'tau-button',
                       'p-2.5 md:p-2 rounded-md min-h-[44px] md:min-h-0 flex items-center justify-center transition-colors',
                       autoScroll
-                        ? 'text-status-progress-600 dark:text-status-progress-400 hover:bg-status-progress-50 dark:hover:bg-status-progress-900/30'
+                        ? 'text-accent hover:bg-selection'
                         : 'text-placeholder hover:text-secondary hover:bg-surface-hover'
                     )}
                     title={autoScroll ? 'Auto-scroll enabled' : 'Auto-scroll disabled'}
@@ -2140,7 +2138,7 @@ export function ChatView({
                           'tau-button',
                           'hidden md:block px-2 py-1.5 rounded-l-md text-sm font-medium border-r transition-colors',
                           deliveryMode === 'steer'
-                            ? 'bg-status-progress-600 hover:bg-status-progress-700 text-on-strong border-status-progress-700'
+                            ? 'bg-accent hover:bg-accent-hover text-on-accent border-accent-active'
                             : 'bg-status-attention-600 hover:bg-status-attention-700 text-on-strong border-status-attention-700'
                         )}
                         title={
@@ -2185,10 +2183,10 @@ export function ChatView({
                         }
                         className={clsx(
                           'tau-button',
-                          'chat-composer-submit px-3 py-2 md:py-1.5 rounded-r-md text-on-strong text-sm disabled:opacity-50 font-medium transition-colors',
+                          'chat-composer-submit px-3 py-2 md:py-1.5 rounded-r-md text-sm disabled:opacity-50 font-medium transition-colors',
                           deliveryMode === 'steer'
-                            ? 'bg-status-progress-600 hover:bg-status-progress-700 active:bg-status-progress-800'
-                            : 'bg-status-attention-600 hover:bg-status-attention-700 active:bg-status-attention-800'
+                            ? 'bg-accent hover:bg-accent-hover active:bg-accent-active text-on-accent'
+                            : 'bg-status-attention-600 hover:bg-status-attention-700 active:bg-status-attention-800 text-on-strong'
                         )}
                       >
                         <SendIcon className="h-5 w-5 md:hidden" />
