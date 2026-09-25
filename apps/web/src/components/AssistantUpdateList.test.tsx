@@ -54,7 +54,7 @@ const task = {
   updatedAt: '2026-09-15T00:00:00.000Z',
 }
 
-async function fixture(visible: boolean) {
+async function fixture(visible: boolean, initial: Partial<Parameters<typeof AssistantUpdateList>[0]> = {}) {
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
   let emit: ((entries: Array<{ target: Element; isIntersecting: boolean }>) => void) | undefined
   const observed: Element[] = []
@@ -83,7 +83,7 @@ async function fixture(visible: boolean) {
         {...props}
       />
     )
-  await dom.act(async () => render())
+  await dom.act(async () => render(initial))
   return {
     dom,
     container,
@@ -178,7 +178,7 @@ test('a failed acknowledgment keeps unread markers and surfaces a status', async
   }
 })
 
-test('the section stays collapsed while everything is seen, opens for unread updates, and toggles by hand', async () => {
+test('the section opens for unread updates, stays open with viewed cards after they are read, and toggles by hand', async () => {
   const f = await fixture(true)
   try {
     const region = () => f.container.querySelector<HTMLElement>('#assistant-task-updates')!
@@ -188,13 +188,22 @@ test('the section stays collapsed while everything is seen, opens for unread upd
     expect(f.onExpandedChange).toHaveBeenLastCalledWith(true)
     expect(region().hidden).toBe(false)
     expect(toggle().textContent).toContain('2 unread')
-    // Everything seen: collapsed, count shows history size, nothing observed.
+    // Reading them (here or elsewhere) keeps the section open and the cards in view, now read, so
+    // nothing vanishes while you are looking at it.
     await f.dom.act(async () => f.render({ updates: [update(1, true), update(2, true), update(3, true)] }))
-    expect(toggle().getAttribute('aria-expanded')).toBe('false')
-    expect(f.onExpandedChange).toHaveBeenLastCalledWith(false)
-    expect(region().hidden).toBe(true)
+    expect(toggle().getAttribute('aria-expanded')).toBe('true')
+    expect(f.onExpandedChange).toHaveBeenLastCalledWith(true)
+    expect(region().hidden).toBe(false)
+    expect(
+      [...f.container.querySelectorAll<HTMLElement>('[data-update-id]')].map((card) => card.dataset.updateId)
+    ).toEqual([update(2).messageId, update(1).messageId])
+    expect(f.container.querySelectorAll('[data-unread]')).toHaveLength(0)
     // The header always counts unread, including zero.
     expect(toggle().textContent).toContain('0 unread')
+    // Closing is the user's call; it stays closed and drops the retained cards.
+    await f.dom.act(async () => toggle().click())
+    expect(region().hidden).toBe(true)
+    expect(f.onExpandedChange).toHaveBeenLastCalledWith(false)
     // Manual toggle opens the section without acknowledging anything; read history is a toggle away.
     await f.dom.act(async () => toggle().click())
     expect(region().hidden).toBe(false)
@@ -218,6 +227,50 @@ test('the section stays collapsed while everything is seen, opens for unread upd
     expect(region().className).toContain('flex-1 md:max-h-80 md:flex-none')
     await f.dom.act(async () => toggle().click())
     expect(section.className).not.toContain('flex-1')
+  } finally {
+    await f.dom.cleanup()
+  }
+})
+
+test('a history that is already read starts collapsed, and a viewed card stays after it is acknowledged', async () => {
+  const f = await fixture(true, { updates: [update(1, true), update(2, true)], latestSequence: 2 })
+  try {
+    const toggle = () => f.container.querySelector<HTMLButtonElement>('button[aria-expanded]')!
+    expect(toggle().getAttribute('aria-expanded')).toBe('false')
+    // A new update arrives and opens the section; seeing it on screen acknowledges it.
+    await f.dom.act(async () => f.render({ updates: [update(1, true), update(2, true), update(3)], latestSequence: 3 }))
+    expect(toggle().getAttribute('aria-expanded')).toBe('true')
+    await f.intersect([update(3).messageId])
+    expect(f.onSeen).toHaveBeenCalledWith([update(3).messageId])
+    // The refetch reports it seen: the card is still there and the section still open.
+    await f.dom.act(async () =>
+      f.render({ updates: [update(1, true), update(2, true), update(3, true)], latestSequence: 3 })
+    )
+    expect(toggle().getAttribute('aria-expanded')).toBe('true')
+    expect(f.container.querySelector(`[data-update-id="${update(3).messageId}"]`)).not.toBeNull()
+    expect(f.container.querySelector(`[data-update-id="${update(3).messageId}"]`)?.hasAttribute('data-unread')).toBe(
+      false
+    )
+    // Only the older read history sits behind the toggle.
+    expect(f.container.textContent).toContain('Show read (2)')
+  } finally {
+    await f.dom.cleanup()
+  }
+})
+
+test('Mark updates read clears the cards but keeps the section open', async () => {
+  const f = await fixture(true)
+  try {
+    const markAll = [...f.container.querySelectorAll<HTMLButtonElement>('button')].find(
+      (button) => button.textContent === 'Mark updates read'
+    )!
+    await f.dom.act(async () => markAll.click())
+    expect(f.onSeenThrough).toHaveBeenCalledWith(3)
+    await f.dom.act(async () => f.render({ updates: [update(1, true), update(2, true), update(3, true)] }))
+    const toggle = f.container.querySelector<HTMLButtonElement>('button[aria-expanded]')!
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(f.container.querySelectorAll('[data-update-id]')).toHaveLength(0)
+    expect(f.container.textContent).toContain('All caught up.')
   } finally {
     await f.dom.cleanup()
   }
