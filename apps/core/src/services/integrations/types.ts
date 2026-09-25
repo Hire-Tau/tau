@@ -30,7 +30,14 @@ export interface ProviderAuthContext<C = unknown> {
   signal?: AbortSignal
 }
 
-export type ProviderValidation = { ok: true; grantedScopes: readonly string[] } | { ok: false; code: string }
+export type ProviderValidation =
+  | {
+      ok: true
+      grantedScopes: readonly string[]
+      /** Non-secret configuration refreshed for the same account identity, e.g. after a rename. */
+      configuration?: unknown
+    }
+  | { ok: false; code: string }
 
 export interface BoundIntegrationTool {
   name: string

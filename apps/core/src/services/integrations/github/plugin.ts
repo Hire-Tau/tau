@@ -21,9 +21,11 @@ export function createGitHubPlugin(
   const validate: GitHubPlugin['authorization']['validate'] = async ({ configuration, credential, signal }) => {
     try {
       const actual = await client.currentUser({ accessToken: credential.accessToken, signal })
-      return actual.userId === configuration.userId
+      if (actual.userId !== configuration.userId) return { ok: false, code: 'account_identity_mismatch' }
+      // Logins route webhooks and can change at any time; the account ID proves it is the same account.
+      return actual.login === configuration.login
         ? { ok: true, grantedScopes: [] }
-        : { ok: false, code: 'account_identity_mismatch' }
+        : { ok: true, grantedScopes: [], configuration: actual }
     } catch (error) {
       return { ok: false, code: classifyGitHubOAuthError(error).code }
     }
