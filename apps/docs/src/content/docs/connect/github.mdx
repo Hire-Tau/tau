@@ -33,7 +33,9 @@ To use your own GitHub App, expand **Use your own GitHub App** in Settings, or
 **Use your own GitHub App instead** during onboarding. A client ID alone uses
 device login and needs no public URL; enable device flow in that App. Adding the
 optional client secret switches to browser authorization, which redirects to the
-exact callback URL displayed by Tau. Enable expiring user tokens either way.
+exact callback URL displayed by Tau. Enable expiring user tokens either way,
+and give the App the **SSH signing keys** account permission (read and write)
+so Tau can sign agents' commits.
 
 If connecting fails, Tau shows GitHub's reason, such as GitHub being unreachable
 from the instance, device flow being disabled for the App, or GitHub rejecting
@@ -106,6 +108,24 @@ instance must be reachable at the displayed public URL.
 
 </ModeContent>
 
+## Sign agents' commits
+
+Each account in the GitHub card has a **Commit signing** line. When it is on,
+commits and tags your agents make with that account are signed and show as
+**Verified** on GitHub. Connecting an account turns it on automatically; choose
+**Turn on signing** if it is off.
+
+Tau creates a signing key, adds it to the connected GitHub account (you can see
+it under **GitHub Settings → SSH and GPG keys** as _Tau commit signing_), and
+keeps the private key on your Tau server. Agents never see it: their `git` asks
+Tau to sign each commit. **Turn off** removes the key from GitHub.
+
+Signing needs the App's **SSH signing keys** permission. If the card asks for it,
+choose **Reconnect** and approve the updated permissions on GitHub, then turn
+signing on. Commits show as Verified when the commit email is one GitHub has
+verified for the account; Tau's default, the account's `users.noreply.github.com`
+address, always is.
+
 ## Fix access or disconnect
 
 If a repository cannot be read, check the App installation, the account's
@@ -121,7 +141,9 @@ permission updates. Reconnecting in Tau does not replace that approval or add
 repositories to the installation.
 
 Disabling GitHub preserves saved accounts and assignments while stopping new
-use. Disconnecting removes access through Tau. Removing a default account does
+use. Disconnecting removes access through Tau and removes Tau's signing key from
+the account while the account's authorization still allows it; without its
+private half, a leftover key cannot sign anything. Removing a default account does
 not silently choose another identity; select a new default explicitly. For full
 revocation, review **GitHub Settings → Applications → Authorized GitHub Apps**;
 public-client device authorizations cannot be remotely revoked by Tau alone.

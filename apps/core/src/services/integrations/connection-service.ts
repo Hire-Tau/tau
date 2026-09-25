@@ -69,6 +69,15 @@ export interface ConnectionServiceDependencies {
   audit?: IntegrationAuditRecorder
   requiresRemoteRevocation?: (providerKey: string, adapterVersion: number, clientAuthority: OAuthAuthority) => boolean
   deproject?: (input: { squadIds: readonly string[]; providerKey: string }) => Promise<void>
+  /**
+   * Capture provider-side cleanup while the connection and its credential still
+   * exist (the removal enqueues credential revocation). The returned step runs
+   * only after the removal commits, before squads are deprojected.
+   */
+  prepareRemoval?: (
+    connection: IntegrationConnectionRecord,
+    credential: string | undefined
+  ) => Promise<(() => Promise<void>) | undefined>
   allowsManualCredential?: (providerKey: string) => boolean
   safeConfiguration?: (providerKey: string, configuration: unknown) => unknown
   refreshAvailable?: (providerKey: string, credential: string | undefined) => boolean | undefined
@@ -99,6 +108,7 @@ export class IntegrationConnectionService {
     clientAuthority: OAuthAuthority
   ) => boolean
   readonly #deproject?: ConnectionServiceDependencies['deproject']
+  readonly #prepareRemoval?: ConnectionServiceDependencies['prepareRemoval']
   readonly #allowsManualCredential: (providerKey: string) => boolean
   readonly #safeConfiguration: (providerKey: string, configuration: unknown) => unknown
   readonly #refreshAvailable: (providerKey: string, credential: string | undefined) => boolean | undefined
@@ -117,6 +127,7 @@ export class IntegrationConnectionService {
     this.#auditRecorder = dependencies.audit
     this.#requiresRemoteRevocation = dependencies.requiresRemoteRevocation ?? (() => false)
     this.#deproject = dependencies.deproject
+    this.#prepareRemoval = dependencies.prepareRemoval
     this.#allowsManualCredential = dependencies.allowsManualCredential ?? (() => true)
     this.#safeConfiguration = dependencies.safeConfiguration ?? ((_providerKey, configuration) => configuration)
     this.#refreshAvailable = dependencies.refreshAvailable ?? (() => undefined)
@@ -342,6 +353,7 @@ export class IntegrationConnectionService {
       if (requiresRevocation && !this.#repository.deleteWithRevocation) {
         throw new Error('Remote revocation is unavailable')
       }
+      const cleanup = await this.#prepareRemoval?.(connection, this.#credentials.get(connection.credentialRef))
       let mutation: Awaited<ReturnType<IntegrationConnectionRepository['delete']>>
       try {
         mutation = requiresRevocation
@@ -359,11 +371,18 @@ export class IntegrationConnectionService {
       }
       this.#requireUpdated(mutation)
       if (mutation.status !== 'updated') throw new Error('unreachable')
-      return { connection, usage, requiresRevocation, retiredCredentialRef: mutation.value.retiredCredentialRef }
+      return {
+        connection,
+        usage,
+        requiresRevocation,
+        retiredCredentialRef: mutation.value.retiredCredentialRef,
+        cleanup,
+      }
     }
     const removed = this.#authorizationLease
       ? await this.#authorizationLease.runExclusive(id, removeWhileLeased)
       : await removeWhileLeased()
+    await removed.cleanup?.()
     await this.#deproject?.({
       squadIds: removed.usage.squads.map((squad) => squad.id),
       providerKey: removed.connection.providerKey,

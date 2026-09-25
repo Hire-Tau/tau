@@ -1,6 +1,7 @@
 import { configureGlobalOptionScope } from './global-options'
 import { Command } from 'commander'
 import { buildInfo } from './build-info'
+import { defaultGitSigningDependencies, isSshKeygenInvocation, runSshKeygenCompat } from './git-signing'
 import { setSelectedBackend } from './config'
 import { setOutputOptions } from './output'
 import { registerActionCommands } from './commands/action'
@@ -103,5 +104,13 @@ registerWorkerCommands(program)
 registerWorkstreamCommands(program)
 registerWorkflowCommands(program)
 
-configureGlobalOptionScope(program)
-program.parse()
+// git runs `tau` as its gpg.ssh.program (squad commit signing) with ssh-keygen's argv.
+const args = process.argv.slice(2)
+if (isSshKeygenInvocation(args)) {
+  void runSshKeygenCompat(args, defaultGitSigningDependencies()).then((code) => {
+    process.exitCode = code
+  })
+} else {
+  configureGlobalOptionScope(program)
+  program.parse()
+}

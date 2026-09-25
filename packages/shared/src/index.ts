@@ -56,6 +56,7 @@ export * from './workflow-editing'
 
 export * from './integration-outputs'
 export type { GitHubRepositoryAccess } from './github-repository-access'
+export type { GitHubCommitSigningErrorCode, GitHubCommitSigningStatus } from './github-commit-signing'
 export type { IntegrationAuthorizationStart, IntegrationDeviceAuthorizationStatus } from './integration-authorization'
 
 export * from './code-hosting'

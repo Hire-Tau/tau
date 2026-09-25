@@ -1,6 +1,7 @@
 import type {
   IntegrationAuthorizationStart,
   IntegrationDeviceAuthorizationStatus,
+  GitHubCommitSigningStatus,
   GitHubRepositoryAccess,
 } from '@tau/shared'
 import { apiFetch } from './client'
@@ -9,6 +10,16 @@ type ApiFetcher = <T>(path: string, init?: RequestInit) => Promise<T>
 
 export const getGitHubRepositoryAccess = (connectionId: string, fetcher: ApiFetcher = apiFetch) =>
   fetcher<GitHubRepositoryAccess>(`/integrations/connections/${connectionId}/github-repository-access`)
+
+export const getGitHubCommitSigning = (connectionId: string, fetcher: ApiFetcher = apiFetch) =>
+  fetcher<GitHubCommitSigningStatus>(`/integrations/connections/${connectionId}/github-commit-signing`)
+
+/** Turn commit signing on (registers a key on the GitHub account) or off (removes it). */
+export const setGitHubCommitSigning = (connectionId: string, enabled: boolean, fetcher: ApiFetcher = apiFetch) =>
+  fetcher<GitHubCommitSigningStatus>(`/integrations/connections/${connectionId}/github-commit-signing`, {
+    method: 'POST',
+    body: JSON.stringify({ enabled }),
+  })
 
 export type IntegrationConnectionHealthState = 'unknown' | 'healthy' | 'degraded' | 'unreachable'
 

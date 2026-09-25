@@ -5,6 +5,7 @@ import { eq, isNull } from 'drizzle-orm'
 import { db, squads, squadSecretExposures, globalSecretExposures } from '../../db'
 import { isManagedSecretKey } from '../secrets'
 import { loadProtectedIntegrationBindings } from '../integrations/projection/protected-env'
+import { githubSigningPublicKeyForSquad } from '../integrations/github/commit-signing-store'
 import { getSquadWorkspacePath } from './workspace'
 
 const USER_ENV_FILE = 'env.user'
@@ -208,8 +209,10 @@ async function writeGeneratedEnvFile(
   const envPath = join(tauDir, GENERATED_ENV_FILE)
   const tempPath = join(tauDir, `.env.tmp-${crypto.randomUUID()}`)
   let protectedBindings: readonly (readonly [string, string])[]
+  let signingPublicKey: string | undefined
   try {
     protectedBindings = await loadProtectedIntegrationBindings(squadId)
+    signingPublicKey = await githubSigningPublicKeyForSquad(squadId)
   } catch (error) {
     rmSync(envPath, { force: true })
     throw error
@@ -219,7 +222,7 @@ async function writeGeneratedEnvFile(
       tempPath,
       renderGeneratedEnvContent(content, keys, getSecretValue, protectedBindings) +
         '\n' +
-        githubCommandBindings(squadId),
+        githubCommandBindings(squadId, signingPublicKey),
       {
         mode: 0o600,
       }
@@ -354,13 +357,35 @@ export function renderEnvForSecrets(
   return renderGeneratedEnvContent(content, keys, getSecretValue, protectedBindings)
 }
 
-/** Resolve credentials on each invocation so long-lived shells see rotation and detach. */
-export function githubCommandBindings(squadId: string): string {
+/**
+ * Resolve credentials on each invocation so long-lived shells see rotation and detach.
+ *
+ * With `signingPublicKey`, agents' commits and tags are also signed: git calls
+ * `tau` as its `gpg.ssh.program`, which has Core sign with the connection's key
+ * (the private half never enters the sandbox). Command-line `-c` outranks any
+ * repo-local config. Signing applies only when `TAU_TOKEN` is set, i.e. to agent
+ * commands: a human terminal cannot reach the signer, and must not have every
+ * commit fail.
+ */
+export function githubCommandBindings(squadId: string, signingPublicKey?: string): string {
   const squad = shellQuote(squadId)
+  const credential = `-c credential.https://github.com.helper= -c ${shellQuote(`credential.https://github.com.helper=!f() { command tau integration exec github --squad ${squad} -- gh auth git-credential "$@"; }; f`)}`
+  const signing = signingPublicKey
+    ? [
+        '-c gpg.format=ssh',
+        '-c commit.gpgsign=true',
+        '-c tag.gpgsign=true',
+        `-c ${shellQuote(`user.signingkey=key::${signingPublicKey.trim()}`)}`,
+        '-c gpg.ssh.program=tau',
+      ].join(' ')
+    : undefined
+  const git = signing
+    ? `git() { if [ -n "\${TAU_TOKEN:-}" ]; then TAU_GIT_SIGNING_SQUAD=${squad} command git ${credential} ${signing} "$@"; else command git ${credential} "$@"; fi; }`
+    : `git() { command git ${credential} "$@"; }`
   return (
     [
       `gh() { command tau integration exec github --squad ${squad} -- gh "$@"; }`,
-      `git() { command git -c credential.https://github.com.helper= -c ${shellQuote(`credential.https://github.com.helper=!f() { command tau integration exec github --squad ${squad} -- gh auth git-credential "$@"; }; f`)} "$@"; }`,
+      git,
       'if [ -n "${BASH_VERSION:-}" ]; then export -f gh git; fi',
     ].join('\n') + '\n'
   )

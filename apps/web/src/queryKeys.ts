@@ -43,6 +43,8 @@ export const integrationQueryKeys = {
   githubWebhook: () => [...integrationQueryKeys.all, 'webhook', 'github'] as const,
   githubRepositoryAccess: (connectionId: string) =>
     [...integrationQueryKeys.all, 'github-repository-access', connectionId] as const,
+  githubCommitSigning: (connectionId: string) =>
+    [...integrationQueryKeys.all, 'github-commit-signing', connectionId] as const,
   oauthApp: (provider: string) => [...integrationQueryKeys.all, 'oauth-app', provider] as const,
   squad: (squadId: string, provider: string) => [...integrationQueryKeys.all, 'squad', squadId, provider] as const,
   export: (agentId: string) => [...integrationQueryKeys.all, 'export', agentId] as const,
