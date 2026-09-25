@@ -636,10 +636,10 @@ describe('ChatView items-contract rendering', () => {
     const body = window.document.body.innerHTML
     expect(body).toContain('Inbox message from Builder')
     expect(body).toContain('Build is ready')
-    expect(body).not.toContain('bg-blue-600 text-white')
+    expect(body).not.toContain('bg-accent text-on-accent')
   })
 
-  test('renders inbox-source human messages without the outer blue user bubble', async () => {
+  test('renders inbox-source human messages without the outer accent user bubble', async () => {
     const metadata: MessageMetadata = {
       source: 'inbox',
       inboxDeliveryMode: 'follow-up',
@@ -670,7 +670,7 @@ describe('ChatView items-contract rendering', () => {
 
     const body = window.document.body.innerHTML
     expect(body).toContain('Inbox message from Builder')
-    expect(body).not.toContain('bg-blue-600 text-white')
+    expect(body).not.toContain('bg-accent text-on-accent')
   })
 
   test('inbox delivery card toggles the truncated body with Show more / Show less', async () => {
@@ -817,7 +817,7 @@ describe('ChatView system RenderItem', () => {
 })
 
 describe('ChatView monitor-source and sender label', () => {
-  test('monitor-source human message renders right-aligned without the blue bubble', async () => {
+  test('monitor-source human message renders right-aligned without the accent bubble', async () => {
     const metadata: MessageMetadata = {
       source: 'monitor',
     }
@@ -837,8 +837,23 @@ describe('ChatView monitor-source and sender label', () => {
     const body = window.document.body.innerHTML
     // Should be right-aligned (justify-end)
     expect(body).toContain('justify-end')
-    // Should NOT have the blue bubble classes
-    expect(body).not.toContain('bg-blue-600 text-white')
+    // Should NOT have the user bubble classes
+    expect(body).not.toContain('bg-accent text-on-accent')
+  })
+
+  test('plain human message renders the themed accent user bubble', async () => {
+    const items: RenderItem[] = [
+      {
+        kind: 'persisted',
+        id: 'm1',
+        message: humanMsg('m1', 'Hello from the human'),
+        blocks: [],
+      },
+    ]
+
+    const { window } = await renderChatView(<ChatView items={items} onSend={() => {}} hideComposer />)
+
+    expect(window.document.body.innerHTML).toContain('bg-accent text-on-accent')
   })
 
   test('renders sender label above bubble when sender differs from viewing user and previous sender', async () => {
