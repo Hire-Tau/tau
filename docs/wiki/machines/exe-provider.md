@@ -88,13 +88,13 @@ To start using exe:
    `POST /api/machines` leaves the row `registered` until an operator calls
    `POST /:id/bootstrap` (mirroring BYO-SSH — see runtime.md).
 
-## Custom box image: the prebaked `tau-machine` image
+## Custom box image: the prebaked `ficus-machine` image
 
 By default an exe VM boots exe's stock **exeuntu** image (bare Ubuntu 24.04),
 and `bootstrap.sh` then installs the whole toolchain (bun, multi-user nix,
 devbox, Docker engine + rootless extras) — a multi-minute cost. To collapse that
 to a **seconds-long** boot, tau provisions exe VMs from a **prebaked custom
-image**, `tau-machine`, that bakes exactly that toolchain at the same pinned
+image**, `ficus-machine`, that bakes exactly that toolchain at the same pinned
 versions and paths. `bootstrap.sh` then detects the baked toolchain and skips the
 installs (see § Prebaked box image + fast bootstrap in `runtime.md`).
 
@@ -124,7 +124,7 @@ exe VMs are x86_64, so the image **must** be built for `linux/amd64`. From the
 ```
 docker buildx build --platform linux/amd64 \
   -f packages/machine-image/Dockerfile \
-  -t ghcr.io/ficushq/tau-machine:latest .
+  -t ghcr.io/ficushq/ficus-machine:latest .
 ```
 
 CI publishes it (`.github/workflows/publish-images.yml`, `build-machine-image`
@@ -145,7 +145,7 @@ The exe provider reads the image ref from `getExeMachineImage()`
 
 | `TAU_EXE_MACHINE_IMAGE` | Behavior                                                                                                      |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **unset**               | `ghcr.io/ficushq/tau-machine:latest` (`DEFAULT_EXE_MACHINE_IMAGE`) — the default.                             |
+| **unset**               | `ghcr.io/ficushq/ficus-machine:latest` (`DEFAULT_EXE_MACHINE_IMAGE`) — the default.                           |
 | a value                 | that image ref (a tenant override, e.g. a pinned `sha-<short>` tag).                                          |
 | **empty string**        | `undefined` ⇒ the provider omits `--image`, so exe boots its own default exeuntu image. The explicit opt-out. |
 
@@ -161,7 +161,7 @@ pinned to an old tag), the marker's baked versions won't match the script's
 pins. Because the `/opt/tau/prebaked` marker is **present**, bootstrap **keeps
 using the baked tooling** — it does **not** reinstall over the image — and logs a
 `WARNING` per drifting tool (e.g. `prebaked image nix 2.24.9 != script 2.25.0 —
-using baked tooling; rebake the tau-machine image to change pinned versions`).
+using baked tooling; rebake the ficus-machine image to change pinned versions`).
 
 This is deliberate and safety-critical, **not** a self-heal: the official nix
 installer refuses to run over an existing `/nix`, so a boot-time reinstall would
@@ -255,8 +255,8 @@ tests make no external calls.
 ### Live validation (gated/manual — not in CI)
 
 **Validated live 2026-07-13/14** on an exe VM booted from the published
-`ghcr.io/ficushq/tau-machine:latest`: bootstrap completed in **1 second**
-(the log shows `prebaked tau-machine image detected … skipping install steps`,
+`ghcr.io/ficushq/ficus-machine:latest`: bootstrap completed in **1 second**
+(the log shows `prebaked ficus-machine image detected … skipping install steps`,
 no apt/nix output) versus multi-minute on bare exeuntu; the caps probe
 reported `docker:"rootless"` and `forwarding:"yes"`; a box provisioned in ~0s
 and (with `--with-docker`) its rootless daemon came up with working container

@@ -1,4 +1,4 @@
-# tau-machine image
+# ficus-machine image
 
 Prebaked OCI image for tau's VM sandbox "machines" on [exe.dev](https://exe.dev):
 everything `scripts/machine/bootstrap.sh` installs (bun, multi-user nix, devbox,
@@ -62,19 +62,19 @@ exe VMs are x86_64, so the image **must** be built for `linux/amd64`. From the
 ```sh
 docker buildx build --platform linux/amd64 \
   -f packages/machine-image/Dockerfile \
-  -t ghcr.io/ficushq/tau-machine:latest .
+  -t ghcr.io/ficushq/ficus-machine:latest .
 ```
 
-## Publishing (ghcr.io/ficushq/tau-machine)
+## Publishing (ghcr.io/ficushq/ficus-machine)
 
 CI builds and pushes on main (see `.github/workflows/publish-images.yml`):
 
 ```sh
-docker push ghcr.io/ficushq/tau-machine:latest
+docker push ghcr.io/ficushq/ficus-machine:latest
 ```
 
 **One-time manual step:** after the first push, set the ghcr package to
-**public** (GitHub → ficushq org → Packages → `tau-machine` → Package settings
+**public** (GitHub → ficushq org → Packages → `ficus-machine` → Package settings
 → Danger Zone → Change visibility → Public). Package visibility is independent
 of source repository visibility. Public is required so exe.dev pulls the image
 without `--registry-auth`.
@@ -82,11 +82,11 @@ without `--registry-auth`.
 ## Using
 
 ```sh
-exe new --image=ghcr.io/ficushq/tau-machine:latest
+exe new --image=ghcr.io/ficushq/ficus-machine:latest
 ```
 
 The exe provider passes this via `TAU_EXE_MACHINE_IMAGE`
-(default `ghcr.io/ficushq/tau-machine:latest`).
+(default `ghcr.io/ficushq/ficus-machine:latest`).
 
 On a VM booted from this image, bootstrap.sh detects `/opt/tau/prebaked` and
 skips the install steps (bun/nix/devbox/apt), doing only per-boot work — the

@@ -1,4 +1,4 @@
-# tau-machine: prebaked box-VM image for exe.dev
+# ficus-machine: prebaked box-VM image for exe.dev
 # ===============================================
 # exeuntu (exe.dev's default, exe-compatible Ubuntu 24.04 + systemd + exedev
 # user) with everything scripts/machine/bootstrap.sh installs baked on top, at
@@ -17,7 +17,7 @@
 # (the COPY below reaches into scripts/machine/):
 #   docker buildx build --platform linux/amd64 \
 #     -f packages/machine-image/Dockerfile \
-#     -t ghcr.io/ficushq/tau-machine:latest .
+#     -t ghcr.io/ficushq/ficus-machine:latest .
 
 # Base: the PUBLISHED exeuntu image (public on ghcr, pulls anonymously —
 # verified). Already provides: systemd + systemd-sysv init, the `exedev`

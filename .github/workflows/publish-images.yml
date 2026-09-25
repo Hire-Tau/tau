@@ -43,9 +43,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with: 
-          images: ghcr.io/ficushq/tau-machine
+          images: ghcr.io/ficushq/ficus-machine
           tags: "type=raw,value=latest,enable={{is_default_branch}}\ntype=ref,event=tag\ntype=sha,prefix=sha-,format=short\n"
-      - name: Build and push tau-machine
+      - name: Build and push ficus-machine
         uses: docker/build-push-action@v6
         with: 
           context: "."

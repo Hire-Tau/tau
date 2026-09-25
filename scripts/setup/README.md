@@ -47,7 +47,7 @@ This creates the VM, waits for SSH, pushes the toolkit + config + key files
 `setup-host.sh` remotely, and prints the handoff URL. `provision.provider`
 picks the VM provider:
 
-- **exe** (default) — `ssh exe.dev new --name <n> --image ghcr.io/ficushq/tau-machine:latest`;
+- **exe** (default) — `ssh exe.dev new --name <n> --image ghcr.io/ficushq/ficus-machine:latest`;
   the VM is reachable at the stable `<name>.exe.xyz` hostname before it even exists.
 - **hetzner** — creates (or reuses, by name) a Hetzner Cloud server via the
   hcloud API (`provision.hetzner.{server_type,location,image,ssh_key_name}`),
@@ -339,7 +339,7 @@ scripts/setup/seed.sh --config tau-setup.yaml \
 - **`TAU_WEB_ORIGIN` must equal the browser origin** (no path!) or WebAuthn
   fails silently. The origin format is validated; for exe that is
   `https://<vm>.exe.xyz:<port>` — the proxy origin, not localhost.
-- **The tau-machine image masks rootful docker** (box hardening). The CORE host
+- **The ficus-machine image masks rootful docker** (box hardening). The CORE host
   is not a box host, so `setup-host.sh` unmasks it for the local DB container —
   intentional and correct.
 - **openai-codex cannot be seeded headless** (OAuth, not api-key) — see above.

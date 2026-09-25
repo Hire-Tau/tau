@@ -63,16 +63,16 @@ export async function isExeBacked(
 }
 
 /**
- * Default OCI image exe VMs boot from: the prebaked `tau-machine` image (exeuntu
+ * Default OCI image exe VMs boot from: the prebaked `ficus-machine` image (exeuntu
  * + bun/nix/devbox/rootless-docker prereqs + tau scripts). PUBLIC on ghcr, so no
  * `--registry-auth` is needed. Booting from it turns box provisioning from a
  * multi-minute bootstrap install into a seconds-long boot.
  */
-export const DEFAULT_EXE_MACHINE_IMAGE = 'ghcr.io/ficushq/tau-machine:latest'
+export const DEFAULT_EXE_MACHINE_IMAGE = 'ghcr.io/ficushq/ficus-machine:latest'
 
 /**
  * Resolve the OCI image exe VMs boot from, configured via `TAU_EXE_MACHINE_IMAGE`:
- *   - unset  ⇒ {@link DEFAULT_EXE_MACHINE_IMAGE} (the prebaked tau-machine image).
+ *   - unset  ⇒ {@link DEFAULT_EXE_MACHINE_IMAGE} (the prebaked ficus-machine image).
  *   - a value ⇒ that image ref (a tenant override — e.g. a pinned tag).
  *   - EMPTY  ⇒ `undefined`, meaning "use exe's own default image" (the provider
  *     then omits `--image` so exe boots exeuntu). This is the explicit opt-out.

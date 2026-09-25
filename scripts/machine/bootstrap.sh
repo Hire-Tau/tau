@@ -86,7 +86,7 @@ BUN_BIN_LINK="${TAU_ROOT}/bin/bun"     # stable invocation path used by box-prov
 
 # Prebaked-image marker (packages/machine-image/Dockerfile writes it as
 # {"bunVersion","nixVersion","devboxVersion"}). Present ONLY on a VM booted from
-# the tau-machine image, where bun/nix/devbox/apt prereqs are already baked. Its
+# the ficus-machine image, where bun/nix/devbox/apt prereqs are already baked. Its
 # PRESENCE (regardless of the exact baked versions) is the source of truth that
 # the tooling is baked: main() then SKIPS every install step and uses the baked
 # tooling. This is deliberately NOT gated on a version match — a prebaked image
@@ -1454,20 +1454,20 @@ log_prebaked_decision() {
     [ "${baked_nix}" = "${NIX_VERSION}" ] &&
     [ "${baked_devbox}" = "${DEVBOX_VERSION}" ] &&
     [ "${baked_playwright}" = "${PLAYWRIGHT_VERSION}" ]; then
-    echo "bootstrap.sh: prebaked tau-machine image detected (bun ${baked_bun}, nix ${baked_nix}, devbox ${baked_devbox}, playwright ${baked_playwright} match pins) — skipping install steps" >&2
+    echo "bootstrap.sh: prebaked ficus-machine image detected (bun ${baked_bun}, nix ${baked_nix}, devbox ${baked_devbox}, playwright ${baked_playwright} match pins) — skipping install steps" >&2
     return 0
   fi
   # Drift: DO NOT reinstall (a nix reinstall over the baked /nix bricks the run —
   # see above). Use the baked tooling and warn per drifting field; a real version
   # bump is applied by rebaking the image, not by a boot-time reinstall.
   [ "${baked_bun}" = "${BUN_VERSION}" ] ||
-    echo "bootstrap.sh: WARNING prebaked image bun ${baked_bun} != script ${BUN_VERSION} — using baked tooling; rebake the tau-machine image to change pinned versions" >&2
+    echo "bootstrap.sh: WARNING prebaked image bun ${baked_bun} != script ${BUN_VERSION} — using baked tooling; rebake the ficus-machine image to change pinned versions" >&2
   [ "${baked_nix}" = "${NIX_VERSION}" ] ||
-    echo "bootstrap.sh: WARNING prebaked image nix ${baked_nix} != script ${NIX_VERSION} — using baked tooling; rebake the tau-machine image to change pinned versions" >&2
+    echo "bootstrap.sh: WARNING prebaked image nix ${baked_nix} != script ${NIX_VERSION} — using baked tooling; rebake the ficus-machine image to change pinned versions" >&2
   [ "${baked_devbox}" = "${DEVBOX_VERSION}" ] ||
-    echo "bootstrap.sh: WARNING prebaked image devbox ${baked_devbox} != script ${DEVBOX_VERSION} — using baked tooling; rebake the tau-machine image to change pinned versions" >&2
+    echo "bootstrap.sh: WARNING prebaked image devbox ${baked_devbox} != script ${DEVBOX_VERSION} — using baked tooling; rebake the ficus-machine image to change pinned versions" >&2
   [ "${baked_playwright}" = "${PLAYWRIGHT_VERSION}" ] ||
-    echo "bootstrap.sh: WARNING prebaked image playwright ${baked_playwright} != script ${PLAYWRIGHT_VERSION} — using baked tooling; rebake the tau-machine image to change pinned versions" >&2
+    echo "bootstrap.sh: WARNING prebaked image playwright ${baked_playwright} != script ${PLAYWRIGHT_VERSION} — using baked tooling; rebake the ficus-machine image to change pinned versions" >&2
 }
 
 write_manifest() {
@@ -1815,7 +1815,7 @@ print_capabilities() {
 }
 
 main() {
-  # Prebaked tau-machine image: when its /opt/tau/prebaked marker is PRESENT, the
+  # Prebaked ficus-machine image: when its /opt/tau/prebaked marker is PRESENT, the
   # install_* steps are already baked, so skip them and use the baked tooling —
   # ALWAYS, regardless of whether the baked versions match this script's pins.
   # A prebaked image is never reinstalled over at boot (a nix reinstall over the

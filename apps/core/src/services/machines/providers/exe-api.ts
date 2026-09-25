@@ -147,7 +147,7 @@ export function createExeApi(deps: { token: string; exec?: ExeExec }): ExeApi {
       const args = ['new', '--name', opts.name]
       // VERIFIED (live recon 2026-07-13): `new --image <OWNER/IMAGE:TAG>` boots a
       // custom OCI image as the VM. When `image` is unset/empty we omit the flag
-      // and exe boots its default exeuntu image. The tau-machine image is PUBLIC
+      // and exe boots its default exeuntu image. The ficus-machine image is PUBLIC
       // on ghcr, so no `--registry-auth` is needed.
       //
       // FUTURE HOOK (do not build now): a PRIVATE image would additionally need

@@ -35,7 +35,7 @@ source:
   # artifact mode (there is no checkout to move, but the ref is still logged).
   ref: main
   # Where the source is cloned on the target host. Must NOT be /opt/tau: the
-  # prebaked tau-machine image (the default core VM image) owns /opt/tau for its
+  # prebaked ficus-machine image (the default core VM image) owns /opt/tau for its
   # own tooling. Keep the app in a separate path.
   dest: /opt/tau-core
   # git-ssh only: path to the SSH deploy key ON THE MACHINE RUNNING setup-host.sh.
@@ -201,7 +201,7 @@ runtime:
     # Prompted if empty and running interactively.
     ssh_key_path: ''
     # Image new agent/squad boxes boot from.
-    machine_image: ghcr.io/ficushq/tau-machine:latest
+    machine_image: ghcr.io/ficushq/ficus-machine:latest
 
 # -----------------------------------------------------------------------------
 # Optional initial AI provider + model (off by default — omit this whole

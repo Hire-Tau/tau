@@ -1860,11 +1860,11 @@ git_source_sync() {
   fi
 
   # A pre-existing NON-git, non-empty dest means someone pointed source.dest at
-  # an occupied path (classic: /opt/tau, which the tau-machine image owns). Fail
+  # an occupied path (classic: /opt/tau, which the ficus-machine image owns). Fail
   # with a clear instruction instead of git's opaque "destination path already
   # exists and is not an empty directory" fatal.
   if [[ ! -d ${SRC_DEST}/.git ]] && [[ -n $(ls -A "${SRC_DEST}" 2>/dev/null) ]]; then
-    die "source.dest '${SRC_DEST}' already exists, is non-empty, and is not a git checkout — pick an unused path (the tau-machine image owns /opt/tau; use e.g. /opt/tau-core)"
+    die "source.dest '${SRC_DEST}' already exists, is non-empty, and is not a git checkout — pick an unused path (the ficus-machine image owns /opt/tau; use e.g. /opt/tau-core)"
   fi
 
   if [[ -d ${SRC_DEST}/.git ]]; then
@@ -2890,7 +2890,7 @@ wizard_write_config() { # OUT_FILE
     die "database mode must be container or external"
   fi
 
-  local sandbox='' exe_key='' exe_image='ghcr.io/ficushq/tau-machine:latest'
+  local sandbox='' exe_key='' exe_image='ghcr.io/ficushq/ficus-machine:latest'
   # The sandbox runtime has NO default: the core refuses to start without an
   # explicit TAU_SANDBOX_RUNTIME, so the wizard must make the operator choose.
   # Bounded retries — an EOF on stdin returns an empty answer forever, and an
