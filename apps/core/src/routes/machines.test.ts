@@ -24,7 +24,7 @@ import { getMachineProvider, registerMachineProvider, unregisterMachineProvider 
 import type { MachineProvider, MachineSpec } from '../services/machines/provider'
 import { EXE_PROVIDER_SSH_KEY } from '../services/machines/provider-credentials'
 import { resolveMachineUnitCapacity, unitWeightForSandboxId } from '../services/machines/placement'
-import { insertMachine, stampArtifactVersion } from '../services/machines/queries'
+import { claimMachineForBootstrap, insertMachine, stampArtifactVersion } from '../services/machines/queries'
 import { RebalanceInProgressError } from '../services/machines/rebalance'
 import { MachineTunnelManager } from '../services/machines/tunnel-manager'
 import { createDeviceToken, revokeDeviceToken } from '../services/auth/device-tokens'
@@ -245,6 +245,24 @@ describe('machines routes', () => {
     expect(calledWith).toBe(created.id)
     // The outcome lives on the row, which is what every caller now watches.
     expect(await waitForMachineStatus(created.id, 'ready')).toBe('ready')
+  })
+
+  it('is inert while another bootstrap holds the machine (e.g. the worker boot reconcile)', async () => {
+    let runs = 0
+    const router = authedRouter({
+      bootstrap: async () => {
+        runs++
+        return {}
+      },
+    })
+    const created = await createMachine(router, { name: `${prefix}-boot-held` })
+    // The worker's drift reconcile claims through the same query.
+    expect(await claimMachineForBootstrap(created.id, ['registered'])).not.toBeNull()
+
+    const res = await router.request(`/${created.id}/bootstrap`, req('POST'))
+    expect(res.status).toBe(202)
+    expect((await res.json()).status).toBe('bootstrapping')
+    expect(runs).toBe(0)
   })
 
   it('returns 404 bootstrapping a missing machine', async () => {

@@ -27,12 +27,14 @@ import {
   areBoxesMigratingLocked,
   bindMachineBox,
   BoxBindConflictError,
+  claimMachineForBootstrap,
   claimMachineForReaping,
   clearAllMigratingFences,
   clearBoxMigrating,
   deleteMachine,
   deleteMachineBox,
   externalizeUnverifiedBoxStop,
+  failMachineBootstrapClaim,
   fenceBoxForMigration,
   getMachine,
   getMachineByName,
@@ -205,6 +207,32 @@ describe('unverified stop externalization', () => {
         unverifiedStopRemnantId('agent.with.dot', '00000000-0000-4000-8000-000000000001')
       )
     ).toBe('agent.with.dot')
+  })
+})
+
+describe('machine bootstrap claim', () => {
+  it('admits exactly one of many concurrent claims', async () => {
+    const machine = await insertMachine({ ...machineValues('boot-claim-race'), status: 'ready' })
+    const results = await Promise.all(Array.from({ length: 8 }, () => claimMachineForBootstrap(machine.id)))
+    expect(results.filter((row) => row !== null)).toHaveLength(1)
+    expect((await getMachine(machine.id))?.status).toBe('bootstrapping')
+  })
+
+  it('claims only from the allowed statuses', async () => {
+    const machine = await insertMachine({ ...machineValues('boot-claim-from'), status: 'unreachable' })
+    expect(await claimMachineForBootstrap(machine.id, ['ready'])).toBeNull()
+    expect((await getMachine(machine.id))?.status).toBe('unreachable')
+    expect((await claimMachineForBootstrap(machine.id))?.status).toBe('bootstrapping')
+  })
+
+  it('settles a stranded claim but never clobbers an outcome the run recorded', async () => {
+    const stranded = await insertMachine({ ...machineValues('boot-claim-stranded'), status: 'bootstrapping' })
+    await failMachineBootstrapClaim(stranded.id, 'boom')
+    expect(await getMachine(stranded.id)).toMatchObject({ status: 'unreachable', lastError: 'boom' })
+
+    const settled = await insertMachine({ ...machineValues('boot-claim-settled'), status: 'ready' })
+    await failMachineBootstrapClaim(settled.id, 'late failure')
+    expect(await getMachine(settled.id)).toMatchObject({ status: 'ready', lastError: null })
   })
 })
 

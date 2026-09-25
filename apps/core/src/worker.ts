@@ -286,6 +286,8 @@ export interface BootBootstrapReconcileDeps {
   listMachines?: () => Promise<Machine[]>
   currentBootstrapVersion?: () => string
   bootstrapMachine?: (machine: Machine) => Promise<unknown>
+  claimMachineForBootstrap?: (id: string, from: readonly string[]) => Promise<Machine | null>
+  failMachineBootstrapClaim?: (id: string, lastError: string) => Promise<void>
 }
 
 /**
@@ -311,7 +313,10 @@ export interface BootBootstrapReconcileDeps {
 export async function reconcileMachineBootstrapAtBoot(deps: BootBootstrapReconcileDeps = {}): Promise<void> {
   const isVmRuntime = deps.isVmRuntime ?? (await import('./services/sandbox')).isVmRuntime
   if (!isVmRuntime()) return
-  const listMachines = deps.listMachines ?? (await import('./services/machines/queries')).listMachines
+  const queries = await import('./services/machines/queries')
+  const listMachines = deps.listMachines ?? queries.listMachines
+  const claimMachineForBootstrap = deps.claimMachineForBootstrap ?? queries.claimMachineForBootstrap
+  const failMachineBootstrapClaim = deps.failMachineBootstrapClaim ?? queries.failMachineBootstrapClaim
   const bootstrapModule = await import('./services/machines/bootstrap')
   const bootstrapMachine = deps.bootstrapMachine ?? bootstrapModule.bootstrapMachine
   const currentBootstrapVersion = deps.currentBootstrapVersion ?? bootstrapModule.currentBootstrapVersion
@@ -320,20 +325,32 @@ export async function reconcileMachineBootstrapAtBoot(deps: BootBootstrapReconci
   const drifted = (await listMachines()).filter((m) => m.status === 'ready' && m.bootstrapVersion !== target)
   if (drifted.length === 0) return
   let failures = 0
+  let skipped = 0
   for (const machine of drifted) {
+    // Claim the row first, exactly like POST /machines/:id/bootstrap, so an
+    // operator-triggered bootstrap and this sweep never run bootstrap.sh on
+    // the same host at once. Only a still-ready machine is ours to take.
+    const claimed = await claimMachineForBootstrap(machine.id, ['ready'])
+    if (!claimed) {
+      skipped++
+      log.info(`Boot bootstrap reconcile: ${machine.name} is no longer ready (bootstrap already running?); skipping`)
+      continue
+    }
     try {
       log.info(
         `Boot bootstrap reconcile: re-bootstrapping ${machine.name} ` +
           `(${machine.bootstrapVersion?.slice(0, 12) ?? 'none'} → ${target.slice(0, 12)})`
       )
-      await bootstrapMachine(machine)
+      await bootstrapMachine(claimed)
     } catch (err) {
       failures++
       log.warn(`Boot bootstrap reconcile: re-bootstrap failed for machine ${machine.id} (${machine.name}):`, err)
+      await failMachineBootstrapClaim(machine.id, err instanceof Error ? err.message : String(err)).catch(() => {})
     }
   }
   log.info(
-    `Boot bootstrap reconcile: re-bootstrapped ${drifted.length - failures}/${drifted.length} drifted machine(s)`
+    `Boot bootstrap reconcile: re-bootstrapped ${drifted.length - failures - skipped}/${drifted.length} drifted machine(s)` +
+      (skipped > 0 ? ` (${skipped} skipped: no longer ready)` : '')
   )
 }
 

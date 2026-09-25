@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID } from 'crypto'
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, ne, sql } from 'drizzle-orm'
 import { db, instanceMaintenanceState, machineBoxes, machines } from '../../db'
 import type { MachineCapabilities } from '../../db/schema'
 import { cancelInterruptedForceMigrationAudits } from './force-migration-audit'
@@ -94,6 +94,36 @@ export async function updateMachine(
 ): Promise<Machine | null> {
   const [row] = await db.update(machines).set(updates).where(eq(machines.id, id)).returning()
   return row ?? null
+}
+
+/**
+ * Atomically move a machine into `'bootstrapping'`: the only way a
+ * `bootstrap.sh` run may start. Two concurrent runs on one host race on shared
+ * installer paths (two bun installers unzipping the same file), so whoever
+ * loses the claim must not run. `from` restricts the statuses it may claim
+ * from; by default any status but `'bootstrapping'` itself. Returns the claimed
+ * row, or null when the claim lost.
+ */
+export async function claimMachineForBootstrap(id: string, from?: readonly string[]): Promise<Machine | null> {
+  const [row] = await db
+    .update(machines)
+    .set({ status: 'bootstrapping' })
+    .where(and(eq(machines.id, id), from ? inArray(machines.status, [...from]) : ne(machines.status, 'bootstrapping')))
+    .returning()
+  return row ?? null
+}
+
+/**
+ * Settle a bootstrap claim whose run threw before `bootstrapMachine` could
+ * record an outcome, so the row is not stranded in `'bootstrapping'`.
+ * Conditional on the claim still being held: never clobbers a status the run
+ * itself (or anything else) wrote meanwhile.
+ */
+export async function failMachineBootstrapClaim(id: string, lastError: string): Promise<void> {
+  await db
+    .update(machines)
+    .set({ status: 'unreachable', lastError })
+    .where(and(eq(machines.id, id), eq(machines.status, 'bootstrapping')))
 }
 
 export async function deleteMachine(id: string): Promise<void> {
