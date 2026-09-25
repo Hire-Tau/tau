@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom'
 import { useStableRef } from '../hooks/useStableRef'
 import { getAgentPrimaryLabel, getAgentSecondaryLabel, AGENT_STATUS_LABELS } from '../lib/agentDisplay'
 import { agentChatPath, type EntityReference } from '../lib/entityReference'
-import { getGithubInfo } from '../lib/workStreamGithub'
+import { workStreamPullRequests } from '../lib/workStreamGithub'
 import { Link } from 'react-router-dom'
 import { PullRequestIcon } from './icons'
 import { queries } from '../queryOptions'
@@ -155,8 +155,7 @@ function WorkSummary({ work, onNavigate, onOpenAgent }: { work: WorkStream } & A
     retry: false,
   })
   if (isError) return <Unavailable />
-  const github = getGithubInfo(data.metadata ?? {})
-  const prUrl = github?.prUrl && /^https?:\/\//i.test(github.prUrl) ? github.prUrl : undefined
+  const pullRequests = workStreamPullRequests(data.metadata ?? {})
   const priority = data.effectivePriority ?? data.priority ?? 'normal'
   return (
     <div className="space-y-2">
@@ -173,13 +172,25 @@ function WorkSummary({ work, onNavigate, onOpenAgent }: { work: WorkStream } & A
         ) : (
           <span className="text-xs text-muted">Unassigned</span>
         )}
-        {prUrl && (
-          <a href={prUrl} target="_blank" rel="noopener noreferrer" className={`${quickLinkClass} shrink-0`}>
-            <PullRequestIcon className="h-3.5 w-3.5 shrink-0" />
-            <span>{github?.prNumber ? `PR #${github.prNumber}` : 'Pull request'}</span>
-            <span aria-hidden="true">↗</span>
-            <span className="sr-only"> (opens in a new tab)</span>
-          </a>
+        {pullRequests.some((pullRequest) => pullRequest.url) && (
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {pullRequests.map((pullRequest) =>
+              pullRequest.url ? (
+                <a
+                  key={pullRequest.key}
+                  href={pullRequest.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`${quickLinkClass} shrink-0`}
+                >
+                  <PullRequestIcon className="h-3.5 w-3.5 shrink-0" />
+                  <span>PR #{pullRequest.number}</span>
+                  <span aria-hidden="true">↗</span>
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </a>
+              ) : null
+            )}
+          </div>
         )}
       </div>
     </div>

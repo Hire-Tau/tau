@@ -3,7 +3,8 @@ import { WorkStreamStatusBadges } from '../WorkStreamStatusBadges'
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { queries } from '../../queryOptions'
-import { WorkStreamDetailModal, formatRelativeTime, getGithubInfo } from '../WorkStreamDetailModal'
+import { WorkStreamDetailModal, formatRelativeTime } from '../WorkStreamDetailModal'
+import { workStreamPullRequests } from '../../lib/workStreamGithub'
 import { PullRequestIcon, WorkStreamIcon } from '../icons'
 import { type Agent, type WorkStream } from '@tau/shared'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
@@ -85,7 +86,7 @@ export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
     <div className="flex-1 overflow-y-auto p-3">
       <div className="space-y-2">
         {sortedWorkStreams.map((ws) => {
-          const github = getGithubInfo(ws.metadata ?? {})
+          const pullRequests = workStreamPullRequests(ws.metadata ?? {})
           const isAssigned = ws.assigneeAgentId === agent.id
           const isOwner = ws.ownerAgentId === agent.id
           const isCreator = agentIdMatches(agent.id, ws.creatorAgentId)
@@ -119,10 +120,12 @@ export function AgentWorkStreamsPanel({ agent, squadId }: Props) {
                   <h4 className="text-sm font-medium text-primary mt-1 truncate">{workStreamTitle(ws)}</h4>
                   {ws.description && <p className="text-xs text-muted mt-0.5 line-clamp-2">{ws.description}</p>}
                 </div>
-                {github?.prNumber && (
+                {pullRequests.length > 0 && (
                   <div className="flex items-center gap-1 text-xs text-muted shrink-0">
                     <PullRequestIcon className="w-3.5 h-3.5" />
-                    <span>#{github.prNumber}</span>
+                    {pullRequests.map((pullRequest) => (
+                      <span key={pullRequest.key}>#{pullRequest.number}</span>
+                    ))}
                   </div>
                 )}
               </div>

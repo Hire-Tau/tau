@@ -5,8 +5,7 @@ import { webStatus } from '../lib/statusPresentation'
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
 import { getWsDisplayState, WS_STATUS_LABELS } from '../lib/workStreamStatusPresentation'
 export { getWsDisplayState, WS_STATUS_LABELS, WS_STATUS_BADGE_COLORS } from '../lib/workStreamStatusPresentation'
-import { getGithubInfo } from '../lib/workStreamGithub'
-export { getGithubInfo } from '../lib/workStreamGithub'
+import { workStreamGithubRepository, workStreamPullRequests } from '../lib/workStreamGithub'
 import { WorkStreamPauseControls } from './WorkStreamPauseControls'
 import { WorkflowRunPanel } from './WorkflowRunPanel'
 import { WorkflowReviewCallout } from './WorkflowReviewCallout'
@@ -289,7 +288,8 @@ export function WorkStreamDetailModal({
   const hasActiveRuntime = (workStream.runtime?.activeCount ?? 0) > 0
   const now = useTick(1000, hasActiveRuntime)
   const elapsed = computeWorkStreamElapsedMs(workStream, now)
-  const github = getGithubInfo(metadata)
+  const githubRepository = workStreamGithubRepository(metadata)
+  const pullRequests = workStreamPullRequests(metadata)
   const nextSteps = getWorkStreamNextSteps(metadata)
 
   return (
@@ -510,36 +510,48 @@ export function WorkStreamDetailModal({
               </Badge>
             </div>
           </div>
-          {!!github?.repo && (
+          {githubRepository && (
             <div className="min-w-0">
               <label className="text-xs font-medium text-secondary">Repository</label>
               <div className="mt-0.5">
                 <a
-                  href={github.repoUrl}
+                  href={githubRepository.repositoryUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-start gap-1.5 text-accent hover:underline break-words"
                 >
                   <GitHubIcon className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span>
-                    {typeof github.repo === 'string' ? github.repo : `${github.repo.owner}/${github.repo.name}`}
-                  </span>
+                  <span>{githubRepository.repository}</span>
                 </a>
               </div>
             </div>
           )}
-          {!!github?.prUrl && (
-            <div>
+          {pullRequests.length > 0 && (
+            <div className="min-w-0">
               <label className="text-xs font-medium text-secondary">Pull request</label>
-              <div className="mt-0.5">
-                <a
-                  href={github.prUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-accent hover:underline"
-                >
-                  <PullRequestIcon className="w-3.5 h-3.5 shrink-0" />#{github.prNumber}
-                </a>
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+                {pullRequests.map((pullRequest) => {
+                  const number = (
+                    <span className="inline-flex items-center gap-1">
+                      <PullRequestIcon className="w-3.5 h-3.5 shrink-0" />#{pullRequest.number}
+                    </span>
+                  )
+                  return pullRequest.url ? (
+                    <a
+                      key={pullRequest.key}
+                      href={pullRequest.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-accent hover:underline"
+                    >
+                      {number}
+                    </a>
+                  ) : (
+                    <span key={pullRequest.key} className="inline-flex items-center gap-1.5 text-secondary">
+                      {number}
+                    </span>
+                  )
+                })}
               </div>
             </div>
           )}

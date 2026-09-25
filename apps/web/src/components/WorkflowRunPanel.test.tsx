@@ -430,7 +430,9 @@ function deliveryRun(): WorkflowRunDetail {
 }
 const deliveredStream = {
   ...stream,
-  metadata: { github: { repo: 'Hire-Tau/tau', pr: { number: 12 } } },
+  metadata: {
+    codeHost: { integration: 'github', repository: 'Hire-Tau/tau', changeRequest: { number: 12 } },
+  },
 } as unknown as WorkStream
 
 test('delivery approval sits in the review callout with the pull request, the delivered evidence, and both decisions', async () => {

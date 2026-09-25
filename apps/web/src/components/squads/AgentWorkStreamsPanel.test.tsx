@@ -120,6 +120,68 @@ describe('AgentWorkStreamsPanel', () => {
     expect(html).not.toContain('Unrelated work')
   })
 
+  test('shows the tracked delivery pull request number on the row', () => {
+    const html = renderPanel([
+      workStream({
+        id: 'tracked-pr',
+        title: 'Tracked PR work',
+        agentIds: [agent.id],
+        metadata: {
+          tracked: [
+            {
+              integration: 'github',
+              repository: 'example/product',
+              kind: 'pull_request',
+              number: 123,
+              delivery: true,
+            },
+          ],
+        },
+      }),
+    ])
+
+    expect(html).toContain('#123')
+  })
+
+  test('shows every delivery pull request number, codeHost-bound first', () => {
+    const html = renderPanel([
+      workStream({
+        id: 'multi-pr',
+        title: 'Multi PR work',
+        agentIds: [agent.id],
+        metadata: {
+          codeHost: { integration: 'github', repository: 'example/product', changeRequest: { number: 5 } },
+          tracked: [
+            {
+              integration: 'github',
+              repository: 'example/product',
+              kind: 'pull_request',
+              number: 6,
+              delivery: true,
+            },
+          ],
+        },
+      }),
+    ])
+
+    expect(html.indexOf('#5')).toBeGreaterThanOrEqual(0)
+    expect(html.indexOf('#6')).toBeGreaterThanOrEqual(0)
+    expect(html.indexOf('#5')).toBeLessThan(html.indexOf('#6'))
+  })
+
+  test('shows no pull request number for legacy metadata.github alone', () => {
+    const html = renderPanel([
+      workStream({
+        id: 'legacy',
+        title: 'Legacy work',
+        agentIds: [agent.id],
+        metadata: { github: { repo: 'example/product', pr: { number: 123 } } },
+      }),
+    ])
+
+    expect(html).not.toContain('#123')
+  })
+
   test('shows creator badge once alongside assigned and owner badges when roles overlap', () => {
     const html = renderPanel([
       workStream({

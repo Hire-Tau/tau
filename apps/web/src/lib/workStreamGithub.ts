@@ -1,36 +1,47 @@
-import { resolveCodeHostReference } from '@tau/shared'
+import { codeHostReferenceSchema, deliveryPullRequests, type ResolvedTrackedResource } from '@tau/shared'
 
-interface GithubInfo {
-  repo?: string | { owner: string; name: string }
-  repoUrl?: string
-  prNumber?: number
-  prUrl?: string
+export interface GithubRepositoryInfo {
+  repository: string
+  repositoryUrl: string
 }
 
-export function getGithubInfo(metadata: Record<string, unknown>): GithubInfo | null {
-  const binding = resolveCodeHostReference(metadata)
-  const github = (
-    metadata.codeHost !== undefined
-      ? binding?.integration === 'github'
-        ? { repo: binding.repository, pr: binding.changeRequest }
-        : undefined
-      : metadata.github
-  ) as Record<string, any> | undefined
-  if (!github?.repo) return null
-  const repo =
-    typeof github.repo === 'string'
-      ? github.repo
-      : typeof github.repo === 'object' && github.repo !== null
-        ? `${github.repo.owner}/${github.repo.name}`
-        : undefined
-  const repoUrl = repo ? (repo.startsWith('http') ? repo : `https://github.com/${repo}`) : undefined
-  const pr = github.pr as Record<string, unknown> | undefined
-  const prNumber = pr?.number ? Number(pr.number) : undefined
-  const prUrl =
-    pr?.url && typeof pr.url === 'string'
-      ? pr.url
-      : prNumber
-        ? `https://github.com/${repo}/pull/${prNumber}`
-        : undefined
-  return { repo, repoUrl, prNumber, prUrl }
+function metadataRecord(metadata: unknown): Record<string, unknown> | null {
+  return metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+    ? (metadata as Record<string, unknown>)
+    : null
+}
+
+/**
+ * All pull requests a work stream designates as delivery change requests, primary (codeHost-bound)
+ * first, then tracked PRs flagged `delivery`. Canonical model only: PRs attach through an explicit
+ * `codeHost.changeRequest` binding or `tracked` entries, and the legacy `metadata.github` shape is
+ * intentionally not supported by web surfaces anymore.
+ */
+export function workStreamPullRequests(metadata: unknown): ResolvedTrackedResource[] {
+  // deliveryPullRequests resolves the codeHost-bound PR through the shared resolver, which also
+  // maps a legacy `github` shape onto the same 'delivery' source. Without an explicit `codeHost`
+  // key those entries are legacy-only, so they are dropped here.
+  const codeHostBound = metadataRecord(metadata)?.codeHost !== undefined
+  return deliveryPullRequests(metadata).filter((pullRequest) => codeHostBound || pullRequest.source !== 'delivery')
+}
+
+/**
+ * GitHub repository identity for detail surfaces: the explicit `codeHost` binding (which may be
+ * repo-only), else the primary delivery pull request's repository. Non-github bindings carry no
+ * GitHub identity, and legacy `metadata.github` is not read.
+ */
+export function workStreamGithubRepository(metadata: unknown): GithubRepositoryInfo | null {
+  const record = metadataRecord(metadata)
+  const binding = record && record.codeHost !== undefined ? codeHostReferenceSchema.safeParse(record.codeHost) : null
+  if (binding?.success) {
+    if (binding.data.integration !== 'github') return null
+    return { repository: binding.data.repository, repositoryUrl: githubRepositoryUrl(binding.data.repository) }
+  }
+  const primary = workStreamPullRequests(metadata)[0]
+  if (primary?.integration !== 'github') return null
+  return { repository: primary.repository, repositoryUrl: githubRepositoryUrl(primary.repository) }
+}
+
+function githubRepositoryUrl(repository: string): string {
+  return repository.startsWith('http') ? repository : `https://github.com/${repository}`
 }

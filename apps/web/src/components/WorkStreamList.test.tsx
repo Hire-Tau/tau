@@ -916,6 +916,91 @@ function renderWorkStreamDetailModal(
   )
 }
 
+// Canonical tracked-resource metadata shapes used by the inline PR link tests.
+const trackedDeliveryPullRequest = (number: number, overrides: Record<string, unknown> = {}) => ({
+  integration: 'github',
+  repository: 'example/product',
+  kind: 'pull_request',
+  number,
+  delivery: true,
+  ...overrides,
+})
+
+describe('WorkStreamList inline pull request links', () => {
+  test('feed rows link every tracked delivery pull request in order', () => {
+    const html = renderWorkStreamList(
+      [workStream({ metadata: { tracked: [trackedDeliveryPullRequest(31), trackedDeliveryPullRequest(32)] } })],
+      { feedLayout: true, hideFilters: true }
+    )
+    expect(html.indexOf('href="https://github.com/example/product/pull/31"')).toBeGreaterThanOrEqual(0)
+    expect(html.indexOf('href="https://github.com/example/product/pull/32"')).toBeGreaterThanOrEqual(0)
+    // Primary-first order: the first delivery PR renders before the second.
+    expect(html.indexOf('pull/31')).toBeLessThan(html.indexOf('pull/32'))
+    expect(html).toContain('aria-label="Open PR #31"')
+    expect(html).toContain('aria-label="Open PR #32"')
+  })
+
+  test('standard rows badge every delivery pull request, codeHost-bound first', () => {
+    const html = renderWorkStreamList([
+      workStream({
+        metadata: {
+          codeHost: { integration: 'github', repository: 'example/product', changeRequest: { number: 5 } },
+          tracked: [trackedDeliveryPullRequest(6)],
+        },
+      }),
+    ])
+    expect(html.indexOf('href="https://github.com/example/product/pull/5"')).toBeGreaterThanOrEqual(0)
+    expect(html.indexOf('href="https://github.com/example/product/pull/6"')).toBeGreaterThanOrEqual(0)
+    expect(html.indexOf('pull/5"')).toBeLessThan(html.indexOf('pull/6"'))
+    expect(html).toContain('title="Open PR #5"')
+    expect(html).toContain('title="Open PR #6"')
+  })
+
+  test('standard rows link tracked delivery pull requests without a codeHost change request', () => {
+    const html = renderWorkStreamList([
+      workStream({
+        metadata: {
+          codeHost: { integration: 'github', repository: 'example/product' },
+          tracked: [trackedDeliveryPullRequest(9)],
+        },
+      }),
+    ])
+    expect(html).toContain('href="https://github.com/example/product/pull/9"')
+  })
+
+  test('tracked issues and non-delivery pull requests render no PR link', () => {
+    const html = renderWorkStreamList(
+      [
+        workStream({
+          metadata: {
+            tracked: [
+              { integration: 'github', repository: 'example/product', kind: 'issue', number: 11 },
+              { integration: 'github', repository: 'example/product', kind: 'pull_request', number: 12 },
+            ],
+          },
+        }),
+      ],
+      { feedLayout: true, hideFilters: true }
+    )
+    expect(html).not.toContain('pull/11')
+    expect(html).not.toContain('issues/11')
+    expect(html).not.toContain('pull/12')
+  })
+
+  test('legacy metadata.github alone renders no PR link', () => {
+    const standard = renderWorkStreamList([
+      workStream({ metadata: { github: { repo: 'example/product', pr: { number: 123 } } } }),
+    ])
+    expect(standard).not.toContain('pull/123')
+    const feed = renderWorkStreamList(
+      [workStream({ metadata: { github: { repo: 'example/product', pr: { number: 123 } } } })],
+      { feedLayout: true, hideFilters: true }
+    )
+    expect(feed).not.toContain('pull/123')
+    expect(feed).not.toContain('aria-label="Open PR #123"')
+  })
+})
+
 describe('squad WorkStreamList canonical ordering', () => {
   // Pre-sorted to mirror the server contract (GET /workstreams); the
   // component must render that order as-is.

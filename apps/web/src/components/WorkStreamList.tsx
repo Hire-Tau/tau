@@ -3,7 +3,7 @@ import { workStreamTitle } from '@tau/shared'
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
 import clsx from 'clsx'
 import { createPortal } from 'react-dom'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useLocation } from 'react-router-dom'
 import { useURLStringState, useURLStringArrayState, useURLBooleanState } from '../hooks/useURLState'
@@ -18,8 +18,8 @@ import {
   WS_STATUS_LABELS,
   WS_PRIORITY_BADGE_COLORS,
   getWsDisplayState,
-  getGithubInfo,
 } from './WorkStreamDetailModal'
+import { workStreamPullRequests } from '../lib/workStreamGithub'
 import { Badge, type BadgeColor } from './Badge'
 import { AgentActivityDot } from './AgentActivityDot'
 import { WorkStreamFiltersPopover } from './WorkStreamFiltersPopover'
@@ -496,7 +496,7 @@ function WorkStreamRow({
   const hasActiveRuntime = (workStream.runtime?.activeCount ?? 0) > 0
   const now = useTick(1000, hasActiveRuntime)
   const elapsed = computeWorkStreamElapsedMs(workStream, now)
-  const github = getGithubInfo(workStream.metadata ?? {})
+  const pullRequests = workStreamPullRequests(workStream.metadata ?? {})
   const assignee = workStream.assigneeAgentId ? agentMap.get(workStream.assigneeAgentId) : null
   const assigneeTypeName = assignee ? (agentTypeNameMap.get(assignee.agentTypeId) ?? assignee.agentTypeId) : null
   const assigneeTarget = assignee ? `/squads/${slugFor(workStream.squadId)}/agents?agent=${assignee.id}` : null
@@ -556,19 +556,21 @@ function WorkStreamRow({
             </time>
           )}
           {!isDone && elapsed > 1000 && <span>· {formatDuration(elapsed)}</span>}
-          {github?.prUrl && (
-            <>
-              <span aria-hidden="true">·</span>
-              <a
-                href={github.prUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={clsx(FEED_METADATA_LINK_CLASS, 'gap-1')}
-                aria-label={`Open PR #${github.prNumber}`}
-              >
-                <PullRequestIcon className="h-3.5 w-3.5" /> #{github.prNumber}
-              </a>
-            </>
+          {pullRequests.map((pullRequest) =>
+            pullRequest.url ? (
+              <Fragment key={pullRequest.key}>
+                <span aria-hidden="true">·</span>
+                <a
+                  href={pullRequest.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={clsx(FEED_METADATA_LINK_CLASS, 'gap-1')}
+                  aria-label={`Open PR #${pullRequest.number}`}
+                >
+                  <PullRequestIcon className="h-3.5 w-3.5" /> #{pullRequest.number}
+                </a>
+              </Fragment>
+            ) : null
           )}
         </div>
       </li>
@@ -593,19 +595,22 @@ function WorkStreamRow({
             {formatDuration(elapsed)}
           </span>
         )}
-        {github?.prUrl && (
-          <a
-            href={github.prUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="shrink-0"
-            title={`Open PR #${github.prNumber}`}
-          >
-            <Badge color="accent-2" className="gap-1">
-              <PullRequestIcon className="w-3.5 h-3.5" />#{github.prNumber}
-            </Badge>
-          </a>
+        {pullRequests.map((pullRequest) =>
+          pullRequest.url ? (
+            <a
+              key={pullRequest.key}
+              href={pullRequest.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="shrink-0"
+              title={`Open PR #${pullRequest.number}`}
+            >
+              <Badge color="accent-2" className="gap-1">
+                <PullRequestIcon className="w-3.5 h-3.5" />#{pullRequest.number}
+              </Badge>
+            </a>
+          ) : null
         )}
         <div className="flex items-center gap-1.5 shrink-0">
           <Badge color={priorityBadge.color} className={priorityBadge.className} title={priorityBadge.title}>
@@ -665,19 +670,22 @@ function WorkStreamRow({
           <span className="line-clamp-2 break-words text-sm font-medium text-primary flex-1 min-w-0">
             {workStreamTitle(workStream)}
           </span>
-          {github?.prUrl && (
-            <a
-              href={github.prUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="shrink-0"
-              title={`Open PR #${github.prNumber}`}
-            >
-              <Badge color="accent-2" className="gap-1">
-                <PullRequestIcon className="w-3.5 h-3.5" />#{github.prNumber}
-              </Badge>
-            </a>
+          {pullRequests.map((pullRequest) =>
+            pullRequest.url ? (
+              <a
+                key={pullRequest.key}
+                href={pullRequest.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="shrink-0"
+                title={`Open PR #${pullRequest.number}`}
+              >
+                <Badge color="accent-2" className="gap-1">
+                  <PullRequestIcon className="w-3.5 h-3.5" />#{pullRequest.number}
+                </Badge>
+              </a>
+            ) : null
           )}
         </div>
         <div
