@@ -32,6 +32,7 @@ function setup(
     operatorAlertFails?: boolean
     authorityCasLoses?: boolean
     prepareRemoval?: ConnectionServiceDependencies['prepareRemoval']
+    parseConfig?: (value: unknown) => unknown
   } = {}
 ) {
   let row: IntegrationConnectionRecord | null = null
@@ -78,6 +79,9 @@ function setup(
         authState: input.validation.ok ? 'authenticated' : 'invalid',
         healthState: input.validation.ok ? 'healthy' : 'unreachable',
         grantedScopes: input.validation.ok ? input.validation.grantedScopes : [],
+        ...(input.validation.ok && input.validation.configuration !== undefined
+          ? { configuration: input.validation.configuration }
+          : {}),
         validatedRevision: input.validation.ok ? input.materialRevision : null,
         validatedAt: input.now,
         validationExpiresAt: input.expiresAt,
@@ -183,7 +187,7 @@ function setup(
     resolveProvider: (providerKey) => ({
       key: providerKey,
       adapterVersion: 1,
-      parseConfig: (value) => value,
+      parseConfig: options.parseConfig ?? ((value) => value),
       validate: () => {
         validationCalls += 1
         return validation
@@ -395,6 +399,27 @@ describe('IntegrationConnectionService', () => {
     })
     expect(view.configuration).toEqual({ workspaceId: 'workspace-1' })
     expect(JSON.stringify(view)).not.toContain('TOKEN-SENTINEL')
+  })
+
+  test('validation persists configuration the provider refreshed for the same account', async () => {
+    const harness = setup()
+    const created = await create(harness.service)
+    harness.setValidation(Promise.resolve({ ok: true, grantedScopes: [], configuration: { version: 2 } }))
+    await harness.service.validate(created.id)
+    expect(harness.getRow()).toMatchObject({ healthState: 'healthy', configuration: { version: 2 } })
+  })
+
+  test('validation keeps stored configuration when the refreshed shape does not parse', async () => {
+    const harness = setup({
+      parseConfig: (value) => {
+        if ((value as { version?: unknown }).version !== 1) throw new Error('Invalid configuration')
+        return value
+      },
+    })
+    const created = await create(harness.service)
+    harness.setValidation(Promise.resolve({ ok: true, grantedScopes: [], configuration: { version: 'bogus' } }))
+    await harness.service.validate(created.id)
+    expect(harness.getRow()).toMatchObject({ healthState: 'healthy', configuration: { version: 1 } })
   })
 
   test('historical local OAuth validation reconciles authority before provider access', async () => {

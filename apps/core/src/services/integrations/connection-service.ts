@@ -530,10 +530,19 @@ export class IntegrationConnectionService {
     provider: IntegrationProvider,
     credential: string
   ): Promise<ProviderValidation> {
+    let validation: ProviderValidation
     try {
-      return await provider.validate({ connection, credential })
+      validation = await provider.validate({ connection, credential })
     } catch {
       return { ok: false, code: 'provider_unreachable' }
+    }
+    if (!validation.ok || validation.configuration === undefined) return validation
+    // A refreshed configuration is persisted only in the provider's own validated shape.
+    const { configuration, ...rest } = validation
+    try {
+      return { ...rest, configuration: provider.parseConfig(configuration) }
+    } catch {
+      return rest
     }
   }
 

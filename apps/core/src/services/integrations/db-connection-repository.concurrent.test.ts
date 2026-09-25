@@ -1151,6 +1151,36 @@ test('validation classification preserves authentication for transient failures 
   }
 })
 
+test('successful validation persists a refreshed configuration and leaves it alone otherwise', async () => {
+  const repository = new DbIntegrationConnectionRepository()
+  const connection = await repository.createPending(pending())
+  const now = new Date()
+  const refreshed = { version: 1, apiBase: 'https://renamed.example' }
+  try {
+    await repository.recordValidation({
+      id: connection.id,
+      materialRevision: connection.materialRevision,
+      validation: { ok: true, grantedScopes: [], configuration: refreshed },
+      now,
+      expiresAt: new Date(now.getTime() + 60_000),
+    })
+    expect(await repository.get(connection.id)).toMatchObject({
+      configuration: refreshed,
+      validatedRevision: connection.materialRevision,
+    })
+    await repository.recordValidation({
+      id: connection.id,
+      materialRevision: connection.materialRevision,
+      validation: { ok: true, grantedScopes: [] },
+      now: new Date(now.getTime() + 1),
+      expiresAt: new Date(now.getTime() + 60_000),
+    })
+    expect((await repository.get(connection.id))?.configuration).toEqual(refreshed)
+  } finally {
+    await db.delete(integrationConnections).where(eq(integrationConnections.id, connection.id))
+  }
+})
+
 test('an expired or provider-rejected refresh failure deprojects but remains retryable and recoverable', async () => {
   const repository = new DbIntegrationConnectionRepository()
   const connection = await repository.createPending(pending())
