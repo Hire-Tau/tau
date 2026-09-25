@@ -62,6 +62,11 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
   const [hidden, setHidden] = useState<ReadonlySet<string>>(new Set())
   // Read updates stay out of the way by default; a small text toggle brings the history back.
   const [showRead, setShowRead] = useState(false)
+  // Cards that were unread while the section was open stay in view after they are acknowledged, so
+  // reading an update never makes it vanish under you. Cleared when the section is toggled.
+  const [retained, setRetained] = useState<ReadonlySet<string>>(new Set())
+  // Once unread updates open the section it stays open after they are read, until the user closes it.
+  const [latched, setLatched] = useState(false)
   const propsRef = useStableRef(props)
   const documentVisible = props.dependencies?.documentVisible ?? (() => document.visibilityState === 'visible')
   const documentVisibleRef = useStableRef(documentVisible)
@@ -99,9 +104,21 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
   useEffect(() => {
     // New unread updates reopen a section the user had collapsed.
     if (unread > previousUnread.current) setExpandedOverride(null)
+    if (unread > 0) setLatched(true)
     previousUnread.current = unread
   }, [unread])
-  const expanded = expandedOverride ?? unread > 0
+  const expanded = expandedOverride ?? (unread > 0 || latched)
+  const unreadIds = props.updates
+    .filter((update) => !update.seenAt)
+    .map((update) => update.messageId)
+    .join(',')
+  useEffect(() => {
+    if (!expanded || !unreadIds) return
+    setRetained((current) => {
+      const ids = unreadIds.split(',').filter((id) => !current.has(id))
+      return ids.length ? new Set([...current, ...ids]) : current
+    })
+  }, [expanded, unreadIds])
   const onExpandedChange = useStableRef(props.onExpandedChange)
   useEffect(() => {
     onExpandedChange.current?.(expanded)
@@ -126,9 +143,10 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
     }
   })
   const createObserver = props.dependencies?.createObserver ?? defaultObserverFactory
-  const readCount = props.updates.filter((update) => update.seenAt).length
+  // Read cards not already in view (retained ones are shown regardless of the toggle).
+  const readCount = props.updates.filter((update) => update.seenAt && !retained.has(update.messageId)).length
   const shown = props.updates
-    .filter((update) => !hidden.has(update.messageId) && (showRead || !update.seenAt))
+    .filter((update) => !hidden.has(update.messageId) && (showRead || !update.seenAt || retained.has(update.messageId)))
     // Newest first: the latest result or question is what the user came to see.
     .sort((a, b) => b.sequence - a.sequence)
   const updateIds = shown.map((update) => update.messageId).join(',')
@@ -176,7 +194,9 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
           className="tau-button flex min-w-0 items-center gap-1.5 rounded-md py-1 pl-1 pr-2 text-muted hover:text-primary"
           onClick={() => {
             setExpandedOverride(!expanded)
+            setLatched(false)
             setHidden(new Set())
+            setRetained(new Set())
             setShowRead(false)
           }}
         >
@@ -203,6 +223,8 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
               setMarking(true)
               try {
                 await props.onSeenThrough(props.latestSequence)
+                // Marking everything read is an explicit clear: the cards leave, the section stays open.
+                setRetained(new Set())
                 setAckError(false)
               } catch {
                 setAckError(true)
