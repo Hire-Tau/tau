@@ -11,6 +11,7 @@ import { ToolSummary, ToolArgsView, ToolResultView } from '../lib/tool-renderers
 import { getImageAttachState } from '../lib/imageAttach'
 import {
   CheckIcon,
+  ChevronDownIcon,
   ChevronRightIcon,
   CloseIcon,
   CodeIcon,
@@ -2128,36 +2129,15 @@ export function ChatView({
                     </button>
                   )}
                   {deliveryMode && onDeliveryModeChange && (agentBusy || isStreaming) ? (
-                    <div className="chat-composer-delivery flex items-center min-h-[44px] md:min-h-0">
-                      {/* Delivery mode toggle + send — only while a turn is active to interrupt/queue into.
-                          When idle, a plain Send is shown and deliveryMode stays 'steer' (safe default). */}
-                      <button
-                        type="button"
-                        onClick={() => onDeliveryModeChange(deliveryMode === 'steer' ? 'follow-up' : 'steer')}
-                        className={clsx(
-                          'tau-button',
-                          'hidden md:block px-2 py-1.5 rounded-l-md text-sm font-medium border-r transition-colors',
-                          deliveryMode === 'steer'
-                            ? 'bg-accent hover:bg-accent-hover text-on-accent border-accent-active'
-                            : 'bg-status-attention-600 hover:bg-status-attention-700 text-on-strong border-status-attention-700'
-                        )}
-                        title={
-                          deliveryMode === 'steer'
-                            ? 'Interrupt: click to switch to Follow up'
-                            : 'Follow up: click to switch to Interrupt'
-                        }
-                      >
-                        {deliveryMode === 'steer' ? '⚡' : '📋'}
-                      </button>
-                      <select
-                        aria-label="Message delivery"
-                        value={deliveryMode}
-                        onChange={(event) => onDeliveryModeChange(event.target.value as DeliveryMode)}
-                        className="chat-composer-mode md:hidden px-2 text-sm font-medium cursor-pointer"
-                      >
-                        <option value="steer">Interrupt</option>
-                        <option value="follow-up">Follow up</option>
-                      </select>
+                    <div
+                      className={clsx(
+                        // One split button: the main part sends in the chosen mode, the chevron picks the mode.
+                        // Shown only while a turn is active to interrupt or queue into; when idle a plain Send
+                        // is shown and deliveryMode stays 'steer' (safe default).
+                        'chat-composer-delivery flex min-h-[44px] items-stretch overflow-hidden rounded-md md:min-h-0',
+                        deliveryMode === 'steer' ? 'bg-accent text-on-accent' : 'bg-status-attention-600 text-on-strong'
+                      )}
+                    >
                       <button
                         type="submit"
                         aria-label={
@@ -2171,7 +2151,11 @@ export function ChatView({
                                   ? 'Interrupt'
                                   : 'Follow up'
                         }
-                        title={deliveryMode === 'steer' ? 'Interrupt' : 'Follow up'}
+                        title={
+                          deliveryMode === 'steer'
+                            ? 'Send now: the agent reads it at its next step'
+                            : 'Send after the agent finishes this turn'
+                        }
                         disabled={
                           disabled ||
                           isUploading ||
@@ -2182,26 +2166,42 @@ export function ChatView({
                           (!hasInput && pendingImages.length === 0)
                         }
                         className={clsx(
-                          'tau-button',
-                          'chat-composer-submit px-3 py-2 md:py-1.5 rounded-r-md text-sm disabled:opacity-50 font-medium transition-colors',
+                          'chat-composer-submit px-3 py-2 text-sm font-medium transition-colors disabled:opacity-50 md:py-1.5',
                           deliveryMode === 'steer'
-                            ? 'bg-accent hover:bg-accent-hover active:bg-accent-active text-on-accent'
-                            : 'bg-status-attention-600 hover:bg-status-attention-700 active:bg-status-attention-800 text-on-strong'
+                            ? 'hover:bg-accent-hover active:bg-accent-active'
+                            : 'hover:bg-status-attention-700 active:bg-status-attention-800'
                         )}
                       >
-                        <SendIcon className="h-5 w-5 md:hidden" />
-                        <span className="hidden md:inline">
-                          {isPreparingImages
-                            ? 'Preparing...'
-                            : isUploading
-                              ? 'Uploading...'
-                              : isSubmitting
-                                ? 'Sending...'
-                                : deliveryMode === 'steer'
-                                  ? 'Interrupt'
-                                  : 'Follow up'}
-                        </span>
+                        {isPreparingImages
+                          ? 'Preparing...'
+                          : isUploading
+                            ? 'Uploading...'
+                            : isSubmitting
+                              ? 'Sending...'
+                              : deliveryMode === 'steer'
+                                ? 'Interrupt'
+                                : 'Follow up'}
                       </button>
+                      <label
+                        title="Choose when this message is delivered"
+                        className={clsx(
+                          'chat-composer-mode relative flex cursor-pointer items-center border-l px-1.5 transition-colors',
+                          deliveryMode === 'steer'
+                            ? 'border-accent-active hover:bg-accent-hover'
+                            : 'border-status-attention-700 hover:bg-status-attention-700'
+                        )}
+                      >
+                        <ChevronDownIcon className="h-4 w-4" />
+                        <select
+                          aria-label="Message delivery"
+                          value={deliveryMode}
+                          onChange={(event) => onDeliveryModeChange(event.target.value as DeliveryMode)}
+                          className="absolute inset-0 cursor-pointer opacity-0"
+                        >
+                          <option value="steer">Interrupt: send now</option>
+                          <option value="follow-up">Follow up: send after this turn</option>
+                        </select>
+                      </label>
                     </div>
                   ) : (
                     <button
