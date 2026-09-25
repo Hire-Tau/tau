@@ -43,10 +43,11 @@
 //    own stored channels — see tokenCoverage.test.ts and the calc() formula
 //    in index.css: it is an authored "how translucent should this render
 //    via an opacity utility" constant, not something derivable from the
-//    channel string. `--opacity-input-border` and `--opacity-panel-border`
-//    are set to 1 (matching High contrast's own choice) since, like High
-//    contrast, these themes render borders as solid mixed colors, not
-//    Tau's translucent neutral-gray ones. Everything else (badge-decoration
+//    channel string. `--opacity-input-border` is set to 1: input borders
+//    are an explicit subtle mix drawn solid. `--opacity-panel-border` keeps
+//    Tau's 12%, like Harbor and Ember: the derived panel border is a strong
+//    accent/text color, which drawn solid made every card and header rule
+//    too bright. Everything else (badge-decoration
 //    and status metadata) is outside BigBrain's own palette scope, so it is
 //    copied verbatim from Tau's matching-scheme block, unchanged.
 import { resolve } from 'node:path'
@@ -170,7 +171,9 @@ function buildThemeTokens(palette: BigBrainPalette, tauLight: Record<string, str
   // --on-accent-fg is derived-only (chosen by contrast against the final
   // primary); it is never a baseTokens key filter miss since baseTokens
   // (Tau's own block) already declares it.
-  const SOLID_OPACITY_TOKENS = new Set(['--opacity-input-border', '--opacity-panel-border'])
+  // Input borders are an explicit subtle mix (above), drawn solid. Panel borders keep Tau's translucency: the derived
+  // panel border is a strong accent/text color, which Tau, Harbor and Ember all draw at 12%, never solid.
+  const SOLID_OPACITY_TOKENS = new Set(['--opacity-input-border'])
   const finalOpacity: Record<string, string> = {}
   for (const token of Object.keys(baseTokens)) {
     if (!token.startsWith('--opacity-')) continue
