@@ -479,10 +479,10 @@ test('the editor draft preview survives remote account-sync adoption while editi
   await click(container, 'Preview token')
   expect(document.documentElement.style.getPropertyValue('--color-text-primary')).toBe('0 255 0')
 
-  // A different account preference (server-adopted, e.g. "Use this device's
-  // theme everywhere") lands while the editor is open. This connects a fake
-  // sync API and drives the real adoptSynced()/refresh() flow — the same
-  // codepath ThemeAccountSync uses — rather than a synthetic stand-in.
+  // A different account preference (chosen on another device) lands while the
+  // editor is open. This connects a fake sync API and drives the real
+  // refresh() adoption — the same codepath ThemeAccountSync uses — rather
+  // than a synthetic stand-in.
   const adopted = { themeId: 'ember', appearance: 'light' as const, customTheme: null, presetId: null }
   const api = {
     getMine: async () => ({ userId: 'u1', theme: adopted }),
@@ -490,10 +490,6 @@ test('the editor draft preview survives remote account-sync adoption while editi
   }
   await act(async () => {
     store!.connect(api)
-    await store!.refresh()
-  })
-  await act(async () => {
-    store!.adoptSynced()
     await store!.refresh()
   })
   // The REAL underlying selection adopted the remote preference...

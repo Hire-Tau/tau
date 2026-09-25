@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from 'bun:test'
 import { act, StrictMode } from 'react'
-import { fireEvent, getByRole } from '@testing-library/dom'
+import { queryByRole } from '@testing-library/dom'
 import { readFileSync } from 'node:fs'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { acquireDomHarness } from '../test/domHarness'
@@ -85,7 +85,7 @@ function fixture() {
   }
 }
 
-test('cold load preserves pre-paint local theme across differing server fetch, strict effects and reconnect; no flash/echo loop', async () => {
+test('cold load paints the cached theme first, reads only after paint, then adopts the account theme; no echo loop', async () => {
   const { root, container, paint } = await harness()
   localStorage.setItem('tau-theme-id', 'ember')
   localStorage.setItem('tau-appearance', 'light')
@@ -114,22 +114,17 @@ test('cold load preserves pre-paint local theme across differing server fetch, s
   expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
   await paint()
   expect(remote.reads()).toBe(1)
-  expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
-  expect(container.textContent).toContain('This device overrides your synced theme')
+  // Every device follows the account: the cached Ember painted first, then the account's Harbor replaces it.
+  expect(document.documentElement.getAttribute('data-theme')).toBe('harbor')
+  expect(document.documentElement.getAttribute('data-appearance')).toBe('dark')
+  expect(container.textContent).toContain('Your theme syncs across your devices.')
+  expect(queryByRole(container, 'button', { name: /synced theme/i })).toBeNull()
   await act(async () => {
     window.dispatchEvent(new Event('online'))
     await store.refresh()
   })
   expect(remote.reads()).toBe(2)
-  expect(remote.writes).toHaveLength(0)
-  expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
-  await act(async () => {
-    fireEvent.click(getByRole(container, 'button', { name: 'Use synced theme' }))
-    await store.refresh()
-  })
   expect(document.documentElement.getAttribute('data-theme')).toBe('harbor')
-  expect(document.documentElement.getAttribute('data-appearance')).toBe('dark')
-  expect(container.textContent).toContain('Following your account theme.')
   expect(remote.writes).toHaveLength(0)
 })
 test('fresh device adopts only after paint; logout removes inherited document and scheduled/late requests cannot follow the next session', async () => {

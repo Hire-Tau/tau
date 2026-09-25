@@ -1,7 +1,6 @@
 import { validateThemePreference, type MyThemePreferences, type ThemePreference, type ThemePreset } from '@tau/shared'
 import { isHttpResponseError } from '@tau/client-core'
 import {
-  CUSTOM_THEME_KEY,
   clearCustomTheme,
   hashCustomThemeDocument,
   loadCustomTheme,
@@ -9,9 +8,11 @@ import {
   persistPresetId,
   persistPresetOwnerId,
 } from './custom'
-import { APPEARANCE_KEY, LEGACY_THEME_KEY, THEME_ID_KEY, persistThemeSelection, type ThemeStorage } from './storage'
+import { persistThemeSelection, type ThemeStorage } from './storage'
 
-export const LOCAL_OVERRIDE_KEY = 'tau-theme-local-override'
+/** Written by versions that let a device keep its own theme instead of following the account. Every device now
+ * follows the account, so the flag is only removed. */
+export const LEGACY_LOCAL_OVERRIDE_KEY = 'tau-theme-local-override'
 const DEFAULT: ThemePreference = {
   themeId: 'tau',
   appearance: 'light',
@@ -41,20 +42,6 @@ interface Session {
   reading: Promise<void> | null
 }
 
-/** Migrate before the provider writes its default keys. Explicit false distinguishes
- * an inherited cache from a deliberate choice on older, pre-sync devices. */
-export function readLocalOverride(storage: ThemeStorage | null): boolean {
-  try {
-    const flag = storage?.getItem(LOCAL_OVERRIDE_KEY)
-    if (flag !== null && flag !== undefined) return flag === '1'
-    return [THEME_ID_KEY, APPEARANCE_KEY, LEGACY_THEME_KEY, CUSTOM_THEME_KEY].some(
-      (key) => storage?.getItem(key) != null
-    )
-  } catch {
-    return false
-  }
-}
-
 /** No network at construction or local paint time. Only connect() starts I/O.
  * No query cache: remote documents and queued writes belong to exactly one session. */
 export class ThemeSyncStore {
@@ -63,12 +50,15 @@ export class ThemeSyncStore {
   private api: ThemeSyncApi | null = null
   private revision = 0
   private inheritedInSession = false
-  private state: ReturnType<typeof loadCustomTheme> & { localOverride: boolean; syncAvailable: boolean }
+  private state: ReturnType<typeof loadCustomTheme> & { syncAvailable: boolean }
 
   constructor(private storage: ThemeStorage | null) {
-    const localOverride = readLocalOverride(storage)
-    this.state = { ...loadCustomTheme(storage), localOverride, syncAvailable: false }
-    this.persistOverride(localOverride)
+    this.state = { ...loadCustomTheme(storage), syncAvailable: false }
+    try {
+      storage?.removeItem(LEGACY_LOCAL_OVERRIDE_KEY)
+    } catch {
+      /* storage unavailable: nothing to clean up */
+    }
     // Initial migration/defaults are persisted once. Later writes belong only
     // to deliberate changes or account adoption in apply(), never to a React
     // rerender caused by a storage event from another document.
@@ -83,13 +73,6 @@ export class ThemeSyncStore {
   }
   private emit() {
     for (const listener of this.listeners) listener()
-  }
-  private persistOverride(value: boolean) {
-    try {
-      this.storage?.setItem(LOCAL_OVERRIDE_KEY, value ? '1' : '0')
-    } catch {
-      /* device-local in memory */
-    }
   }
   private current(): ThemePreference {
     return {
@@ -122,9 +105,9 @@ export class ThemeSyncStore {
     const result = validateThemePreference(theme)
     if (!result.ok) throw new Error(result.error)
     this.revision++
-    this.persistOverride(true)
-    this.state = { ...this.state, localOverride: true }
     this.apply(result.theme)
+    // The choice is now the account's, so signing out drops it like an adopted one.
+    if (this.session?.userId) this.inheritedInSession = true
     if (this.session) {
       this.session.pending = this.current()
       void this.flush(this.session)
@@ -134,21 +117,14 @@ export class ThemeSyncStore {
    * Read only: never echo a storage event back into network/persistence. */
   reloadFromStorage = () => {
     const loaded = loadCustomTheme(this.storage)
-    const localOverride = readLocalOverride(this.storage)
     if (
-      JSON.stringify([loaded.selection, loaded.custom, loaded.presetId, loaded.presetOwnerId, localOverride]) ===
-      JSON.stringify([
-        this.state.selection,
-        this.state.custom,
-        this.state.presetId,
-        this.state.presetOwnerId,
-        this.state.localOverride,
-      ])
+      JSON.stringify([loaded.selection, loaded.custom, loaded.presetId, loaded.presetOwnerId]) ===
+      JSON.stringify([this.state.selection, this.state.custom, this.state.presetId, this.state.presetOwnerId])
     )
       return
     this.revision++
     if (this.session) this.session.pending = null
-    this.state = { ...this.state, ...loaded, localOverride }
+    this.state = { ...this.state, ...loaded }
     this.emit()
   }
   recoverCustom = () => {
@@ -173,7 +149,7 @@ export class ThemeSyncStore {
     this.session = null
     this.api = null
     this.state = { ...this.state, syncAvailable: false }
-    if (clearInherited && this.inheritedInSession && !this.state.localOverride) this.apply(DEFAULT)
+    if (clearInherited && this.inheritedInSession) this.apply(DEFAULT)
     if (clearInherited) this.inheritedInSession = false
     this.emit()
   }
@@ -194,10 +170,9 @@ export class ThemeSyncStore {
         } catch {
           // Keep only the latest unsent choice, within this session. Reconnect/focus
           // retries it; neither login nor reload uploads an old device/account cache.
-          // Storage replacement/adoption cancels the original intent even when
-          // the replacement is itself an override. Never resurrect that old PUT;
+          // A newer choice from another tab cancels the original intent. Never resurrect that old PUT;
           // a newer same-tab choice is already in pending and stays there.
-          if (this.alive(session) && this.state.localOverride && revision === this.revision) session.pending ??= theme
+          if (this.alive(session) && revision === this.revision) session.pending ??= theme
           break
         }
       }
@@ -223,12 +198,14 @@ export class ThemeSyncStore {
           this.disconnect(true)
           return
         }
-        const parsed =
-          result.theme === null ? { ok: true as const, theme: DEFAULT } : validateThemePreference(result.theme)
-        if (!parsed.ok) return
+        // No row is no account choice yet: keep this device's theme rather than resetting it to the default.
+        const parsed = result.theme === null ? null : validateThemePreference(result.theme)
+        if (parsed && !parsed.ok) return
         session.userId = result.userId
         this.state = { ...this.state, syncAvailable: true }
-        if (!this.state.localOverride && revision === this.revision) {
+        // Every device follows the account, except over a newer choice made here that the read predates or that
+        // has not reached the server yet (offline); that choice is uploaded next and becomes the account's.
+        if (parsed && revision === this.revision && !session.pending) {
           this.inheritedInSession = true
           this.apply(parsed.theme)
         } else this.emit()
@@ -240,28 +217,11 @@ export class ThemeSyncStore {
     await session.reading
     session.reading = null
   }
-  adoptSynced = () => {
-    if (!this.session) return
-    this.revision++
-    this.persistOverride(false)
-    this.state = { ...this.state, localOverride: false }
-    this.session.pending = null
-    this.emit()
-    // A read already in flight was captured before the action. Await it, then
-    // reread after any outstanding writes; never apply a cached remote snapshot.
-    const session = this.session
-    void (async () => {
-      await session.reading
-      if (this.alive(session) && !this.state.localOverride) await this.refresh()
-    })()
-  }
   /**
    * Phase 2 "live link": refetches the currently-applied preset's document
    * and applies it if it changed — the author's edits show up on this
    * device's next load or focus/refresh, exactly like account preference
-   * sync's own `refresh()`. Independent of `localOverride` (which governs
-   * whether THIS DEVICE follows the ACCOUNT's theme choice, an orthogonal
-   * concern) and of `connect()`/`session` (the preset itself, not the
+   * sync's own `refresh()`. Independent of `connect()`/`session` (the preset itself, not the
    * account preference row, is what's being refetched) — callers still only
    * invoke it during an authenticated session, matching `ThemeAccountSync`'s
    * own trigger lifecycle.

@@ -3,6 +3,7 @@ import { act } from 'react'
 import { fireEvent, getAllByRole, getByRole, queryByRole } from '@testing-library/dom'
 import type { ThemePreset } from '@tau/shared'
 import { acquireDomHarness } from '../test/domHarness'
+import { useHoverTimer } from '../test/hoverTimer'
 import { ThemeProvider, useTheme, useThemeSyncStore } from '../providers/ThemeProvider'
 import type { ThemeSyncStore } from '../theme/sync'
 import { ThemeQuickPicker } from './ThemeQuickPicker'
@@ -129,6 +130,13 @@ function hoverEnter(element: Element) {
 function hoverLeave(element: Element) {
   return act(async () => element.dispatchEvent(new window.MouseEvent('mouseout', { bubbles: true })))
 }
+/** The pointer moves directly from one element to another, as it does between touching circles. */
+function moveBetween(from: Element, to: Element) {
+  return act(async () => {
+    from.dispatchEvent(new window.MouseEvent('mouseout', { bubbles: true, relatedTarget: to }))
+    to.dispatchEvent(new window.MouseEvent('mouseover', { bubbles: true, relatedTarget: from }))
+  })
+}
 
 test('hides the trigger entirely when disabled, without touching the DOM otherwise', async () => {
   const { container } = await renderPicker({ enabled: false })
@@ -156,7 +164,7 @@ test('lists all four built-ins with the stored theme checked, none other', async
   circles.forEach((c) => expect(c.getAttribute('role')).toBe('radio'))
 })
 
-test('adds a circle per saved preset, selected instead of its base built-in when active', async () => {
+test('adds a circle per saved preset, selected instead of its base built-in when active; High contrast stays last', async () => {
   const { container } = await renderPicker({ presets: [midnight], presetId: midnight.id })
   await open(container)
   const circles = getAllByRole(container, 'radio', { name: /Tau|Harbor|Ember|High contrast|Midnight/ })
@@ -164,8 +172,8 @@ test('adds a circle per saved preset, selected instead of its base built-in when
     'Tau',
     'Harbor',
     'Ember',
-    'High contrast',
     'Midnight',
+    'High contrast',
   ])
   const harborCircle = getByRole(container, 'radio', { name: 'Harbor' })
   const presetCircle = getByRole(container, 'radio', { name: 'Midnight' })
@@ -292,7 +300,7 @@ test('appearance is disabled for a unified theme, with the same explanatory hint
   expect(container.textContent).toContain('High contrast has one appearance.')
 })
 
-test('surfaces the same account-sync/device-override notice the Settings picker shows', async () => {
+test('surfaces the same account-sync notice the Settings picker shows', async () => {
   const { container, storeRef } = await renderPicker()
   await act(async () => {
     storeRef.current.connect({
@@ -305,47 +313,11 @@ test('surfaces the same account-sync/device-override notice the Settings picker 
     await storeRef.current.refresh()
   })
   await open(container)
-  expect(container.textContent).toContain('Following your account theme.')
+  expect(container.textContent).toContain('Your theme syncs across your devices.')
+  expect(queryByRole(container, 'button', { name: /synced theme/i })).toBeNull()
 })
 
 // --- Hover preview -----------------------------------------------------
-
-/** Owns just the hover-intent deadline (100ms); everything else keeps the real clock. */
-function useHoverTimer() {
-  const deadlines = new Map<number, { callback: () => void; ms: number }>()
-  let serial = 10000
-  const originalSet = globalThis.setTimeout
-  const originalClear = globalThis.clearTimeout
-  const timer = spyOn(globalThis, 'setTimeout').mockImplementation(((
-    callback: () => void,
-    ms: number,
-    ...rest: unknown[]
-  ) => {
-    if (ms === 100) {
-      deadlines.set(++serial, { callback, ms })
-      return serial
-    }
-    return originalSet(callback, ms, ...(rest as []))
-  }) as typeof setTimeout)
-  const clear = spyOn(globalThis, 'clearTimeout').mockImplementation(((id: number) => {
-    if (!deadlines.delete(Number(id))) originalClear(id)
-  }) as typeof clearTimeout)
-  return {
-    advance: (ms: number) =>
-      act(async () => {
-        for (const [id, deadline] of [...deadlines])
-          if (deadline.ms <= ms) {
-            deadlines.delete(id)
-            deadline.callback()
-          }
-      }),
-    pending: () => deadlines.size,
-    restore: () => {
-      timer.mockRestore()
-      clear.mockRestore()
-    },
-  }
-}
 
 test('hovering a circle previews the whole app after the intent delay, pure DOM only', async () => {
   const { container } = await renderPicker({ themeId: 'tau', appearance: 'light' })
@@ -378,6 +350,36 @@ test('sweeping quickly across circles cancels the pending preview (no strobe)', 
     expect(hover.pending()).toBe(1)
     await hover.advance(100)
     expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
+    expect(localStorage.getItem('tau-theme-id')).toBe('tau')
+  } finally {
+    hover.restore()
+  }
+})
+
+test('moving straight from one circle to the next swaps the preview without restoring in between', async () => {
+  const { container } = await renderPicker({ themeId: 'tau', appearance: 'light' })
+  await open(container)
+  const hover = useHoverTimer()
+  try {
+    const tau = getByRole(container, 'radio', { name: 'Tau' })
+    const harbor = getByRole(container, 'radio', { name: 'Harbor' })
+    const ember = getByRole(container, 'radio', { name: 'Ember' })
+    await hoverEnter(harbor)
+    await hover.advance(100)
+    expect(document.documentElement.getAttribute('data-theme')).toBe('harbor')
+    await moveBetween(harbor, ember)
+    // Still Harbor, never the stored Tau, until Ember's own preview lands.
+    expect(document.documentElement.getAttribute('data-theme')).toBe('harbor')
+    // The ring follows the previewed circle; the stored selection's ring dims.
+    expect(ember.querySelector('.ring-accent')).not.toBeNull()
+    expect(harbor.querySelector('.ring-accent')).toBeNull()
+    expect(tau.querySelector('.ring-accent')).toBeNull()
+    expect(tau.getAttribute('aria-checked')).toBe('true')
+    await hover.advance(100)
+    expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
+    await hoverLeave(ember)
+    expect(document.documentElement.getAttribute('data-theme')).toBe('tau')
+    expect(tau.querySelector('.ring-accent')).not.toBeNull()
     expect(localStorage.getItem('tau-theme-id')).toBe('tau')
   } finally {
     hover.restore()

@@ -42,51 +42,47 @@ for the full sharing/live-link/moderation contract.
   remain the synchronous pre-paint source of truth. No network runs in the
   bootstrap script. Its generated output is refreshed for shared-module bundling;
   its behavior is unchanged.
-- `tau-theme-local-override=1` means an explicit device choice. Every picker,
-  appearance toggle, custom Apply or Reset action sets it. OS appearance changes,
-  previews, hydration and remote adoption do not.
-- `0` means follow the account. On first upgrade, pre-existing selection, legacy
-  appearance or custom-document keys count as an override. A fresh device records
-  `0` **before** the provider writes defaults, so a second load cannot mistake
-  automatic persistence for a user choice.
+- Every device follows the account. Every picker, appearance toggle, custom Apply
+  or Reset action is a deliberate choice that is saved on the device and pushed to
+  the account. OS appearance changes, previews and hydration are not. Devices that
+  want different looks use **System** appearance.
+- Older versions let a device keep its own theme with `tau-theme-local-override`.
+  That flag is removed on load and ignored; a device that had it adopts the account
+  theme on its next read, and its cached choice is never uploaded.
 - After a paint opportunity (two animation frames), an authenticated session reads
-  its account choice. A fresh/following device adopts it; an override never does.
-  There may be one intentional post-paint adoption on a fresh device: the account
-  value is not knowable before the request. Subsequent cold loads use its cache.
+  its account choice and adopts it, except over a newer deliberate choice on this
+  device: one made after the read started, or one not yet uploaded (offline). That
+  choice is uploaded next and becomes the account's. An account with no row keeps
+  the device's current theme and is not written to. There may be one intentional
+  post-paint adoption on a fresh device: the account value is not knowable before
+  the request. Subsequent cold loads use its cache.
 - The shared-preset live link piggybacks on this same lifecycle
   (`ThemeAccountSyncSession`, `apps/web/src/providers/ThemeAccountSync.tsx`):
   `ThemeSyncStore.refreshLinkedPreset` runs right after the account preference
   read completes (sequenced, not racing it — a fresh device's `presetId` often
   only becomes known FROM that read) on mount, and again on the same
-  focus/online/visibility triggers as `refresh()` above. It is independent of
-  `localOverride` — an orthogonal concern (which theme THIS DEVICE follows vs.
-  whether a referenced PRESET's document is still current) — and a no-op
+  focus/online/visibility triggers as `refresh()` above. It is a no-op
   unless a preset with a known owner (`presetId`, `presetOwnerId` and
   `customTheme` all present) is actually applied.
-- Picker copy identifies the override and offers **Use synced theme**. This clears
-  the flag, discards unsent changes and rereads the server after outstanding writes.
-  If offline, the current palette stays visible and adoption resumes on reconnect.
-  A newer deliberate edit cancels adoption. Choosing a built-in theme (including
-  Tau, the default) is deliberately a new local/account choice, not a synonym
-  for following the account.
+- Picker copy says the theme syncs across devices; there is no per-device override
+  or "use synced theme" action.
 - Deliberate edits made in a connected authenticated session push best-effort.
   In-flight writes are serialized; unsent edits coalesce to the latest value.
   Offline pending edits retry on focus, visibility or reconnect **within that
   session only**. Login/reload never uploads an old local cache automatically.
-  Across devices the last successful whole-preference write wins on the account;
-  each device with an override keeps its own choice. Storage events also honor
-  a deliberate choice made in another tab, without echoing an upload. A failed
+  Across devices the last successful whole-preference write wins on the account,
+  and every device adopts it on its next read. Storage events also honor a
+  deliberate choice made in another tab, without echoing an upload. A failed
   in-flight write may retry only while its captured choice revision is current;
-  it cannot revive an intent canceled by another tab or the adopt action.
+  it cannot revive an intent canceled by another tab.
 - Storage-event adoption is read-only for preference keys. A React rerender must
   not persist its possibly intermediate selection back over the writing tab.
   Initial migration is persisted once by the store; subsequent preference writes
-  belong to deliberate changes or server adoption. This closes a real-browser
-  race between the override-flag event and the following selection events.
+  belong to deliberate changes or server adoption.
 - Logout/account transitions abort requests and discard remote state and queued
   writes. Old responses cannot apply to the next session. A theme inherited during
-  that session is cleared on logout; an explicit device override remains, including
-  its custom document. As required for first paint, the cached palette on disk is
+  that session, or chosen on this device while signed in (it became the account's),
+  is cleared on logout. As required for first paint, the cached palette on disk is
   readable before authentication resolves—it is device appearance data, not an
   authentication boundary or secret store. It is never uploaded to a new account.
 - `PUT` requires the user ID returned by `GET` as an identity precondition, not as

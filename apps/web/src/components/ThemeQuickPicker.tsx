@@ -2,18 +2,19 @@ import { useEffect, useId, useRef, useState } from 'react'
 import clsx from 'clsx'
 import type { ThemePreset } from '@tau/shared'
 import type { useTheme } from '../providers/ThemeProvider'
-import { useThemePreview } from '../providers/ThemeProvider'
-import { BUILT_IN_THEMES, findWebTheme, THEME_PICKER_ENABLED, type WebThemeDefinition } from '../theme/registry'
+import {
+  BUILT_IN_THEMES,
+  findWebTheme,
+  highContrastLast,
+  THEME_PICKER_ENABLED,
+  type WebThemeDefinition,
+} from '../theme/registry'
 import { presetAppearance } from '../theme/custom'
-import { paintRoot } from '../theme/preview'
-import { useStableRef } from '../hooks/useStableRef'
+import { useThemeHoverPreview } from '../hooks/useThemeHoverPreview'
 import { PaletteIcon } from './icons'
 import { themeConstantHint, ThemeSyncNotice } from './settings/ThemeControl'
 import { ThemeSwatch } from './ThemeSwatch'
 import { SegmentedAppearanceControl } from './SegmentedAppearanceControl'
-
-/** Sweeping the row must not strobe the whole app; only a settled hover previews. */
-const HOVER_PREVIEW_DELAY_MS = 100
 
 type Circle =
   | { kind: 'builtin'; id: string; label: string; theme: WebThemeDefinition }
@@ -47,17 +48,12 @@ export function ThemeQuickPicker({
   presets?: ThemePreset[]
   enabled?: boolean
 }) {
-  const { setPreview } = useThemePreview()
+  const hover = useThemeHoverPreview(value.theme)
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const panelId = useId()
-  const previewTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  // The unregister function returned by the preview slot's setPreview, or
-  // null when no hover preview is currently registered by this component.
-  const previewClearRef = useRef<(() => void) | null>(null)
-  const valueRef = useStableRef(value)
 
   // Phase 2: the currently-active preset (own or a foreign shared one) always
   // gets a circle, even when it isn't in `presets` (the caller's own
@@ -74,7 +70,7 @@ export function ThemeQuickPicker({
     !presets.some((preset) => preset.id === value.presetId)
       ? { id: value.presetId, document: value.customTheme, owner: { id: value.presetOwnerId, displayName: '' } }
       : null
-  const circles: Circle[] = [
+  const circles: Circle[] = highContrastLast([
     ...BUILT_IN_THEMES.map((theme) => ({ kind: 'builtin' as const, id: theme.id, label: theme.label, theme })),
     ...presets.map((preset) => ({ kind: 'preset' as const, id: preset.id, label: preset.document.name, preset })),
     ...(activeForeignPreset
@@ -87,42 +83,9 @@ export function ThemeQuickPicker({
           },
         ]
       : []),
-  ]
+  ])
 
-  const restorePreview = () => {
-    clearTimeout(previewTimer.current)
-    previewTimer.current = undefined
-    // A no-op if a later registrant (e.g. the editor opening mid-hover) has
-    // since taken over the slot — see useThemePreview's doc comment.
-    previewClearRef.current?.()
-    previewClearRef.current = null
-  }
-
-  const applyPreview = (circle: Circle) => {
-    previewClearRef.current = setPreview(() => {
-      const root = document.documentElement
-      if (circle.kind === 'preset')
-        paintRoot(
-          root,
-          findWebTheme(circle.preset.document.base),
-          presetAppearance(circle.preset.document, valueRef.current.theme),
-          circle.preset.document
-        )
-      // Palette-only preview: keep the app's current effective appearance.
-      else paintRoot(root, circle.theme, valueRef.current.theme, null)
-    })
-  }
-
-  const startPreview = (circle: Circle) => {
-    clearTimeout(previewTimer.current)
-    previewTimer.current = setTimeout(() => applyPreview(circle), HOVER_PREVIEW_DELAY_MS)
-  }
-
-  // Belt-and-suspenders: if this component unmounts while a hover preview is
-  // active (e.g. navigating away mid-hover), restore rather than leaving a
-  // stale preview painted. close()/selectCircle() already call
-  // restorePreview() on every ordinary path.
-  useEffect(() => restorePreview, [])
+  const restorePreview = hover.end
 
   const close = () => {
     restorePreview()
@@ -195,10 +158,13 @@ export function ThemeQuickPicker({
           aria-label="Theme"
           className="tau-overlay absolute right-0 top-full z-50 mt-2 w-72 max-w-[calc(100vw-3rem)] rounded-xl border border-th-border bg-surface p-3 shadow-theme-lg"
         >
-          <div role="radiogroup" aria-label="Color theme" className="flex flex-wrap gap-2">
+          {/* The cells touch, so sweeping between circles never crosses a gap that would restore the app for a
+              frame; the padding inside each cell keeps the circles apart. */}
+          <div role="radiogroup" aria-label="Color theme" className="flex flex-wrap" onMouseLeave={restorePreview}>
             {circles.map((circle) => {
               const selected =
                 circle.kind === 'preset' ? value.presetId === circle.id : !value.presetId && value.themeId === circle.id
+              const previewing = hover.hoveredId === circle.id
               return (
                 <button
                   key={circle.id}
@@ -206,12 +172,8 @@ export function ThemeQuickPicker({
                   role="radio"
                   aria-checked={selected}
                   aria-label={circle.label}
-                  className={clsx(
-                    'relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full',
-                    selected && 'ring-2 ring-accent ring-offset-2 ring-offset-surface'
-                  )}
-                  onMouseEnter={() => startPreview(circle)}
-                  onMouseLeave={restorePreview}
+                  className="group flex h-8 w-8 shrink-0 items-center justify-center focus:outline-none"
+                  onMouseEnter={() => hover.start(circle)}
                   onClick={() => selectCircle(circle)}
                   onKeyDown={(event) => {
                     // Explicit, rather than relying on native button default
@@ -222,18 +184,27 @@ export function ThemeQuickPicker({
                     selectCircle(circle)
                   }}
                 >
-                  <ThemeSwatch
-                    spec={
-                      circle.kind === 'builtin'
-                        ? { kind: 'builtin', theme: circle.theme, appearance: value.theme }
-                        : {
-                            kind: 'preset',
-                            document: circle.preset.document,
-                            appearance: presetAppearance(circle.preset.document, value.theme),
-                          }
-                    }
-                    className="h-full w-full"
-                  />
+                  <span
+                    className={clsx(
+                      'block h-6 w-6 rounded-full ring-offset-2 ring-offset-surface group-focus-visible:ring-2 group-focus-visible:ring-accent',
+                      previewing
+                        ? 'ring-2 ring-accent'
+                        : selected && (hover.hoveredId ? 'ring-2 ring-accent/40' : 'ring-2 ring-accent')
+                    )}
+                  >
+                    <ThemeSwatch
+                      spec={
+                        circle.kind === 'builtin'
+                          ? { kind: 'builtin', theme: circle.theme, appearance: value.theme }
+                          : {
+                              kind: 'preset',
+                              document: circle.preset.document,
+                              appearance: presetAppearance(circle.preset.document, value.theme),
+                            }
+                      }
+                      className="h-full w-full"
+                    />
+                  </span>
                 </button>
               )
             })}
