@@ -26,7 +26,7 @@ export type ThemeGridOption =
  *
  * Hovering a dot previews it through `onPreview`; `onPreviewEnd` fires when the pointer leaves the whole grid. The
  * tiles touch (no grid gap) so a sweep never crosses a gap between them. Every row is as tall as the tallest (a
- * two-line name) and each tile centres its dot and name, so all tiles line up.
+ * two-line name) and each tile centres its dot and a two-line name box, so all dots and names line up.
  */
 export function ThemeSwatchGrid({
   options,
@@ -116,7 +116,9 @@ export function ThemeSwatchGrid({
                 className="h-full w-full"
               />
             </span>
-            <span className="w-full max-w-full line-clamp-2 break-normal text-center text-xs text-secondary">
+            {/* Every name reserves two lines, so each tile's dot and name block is the same height and the dots line up
+                across a row even when one name wraps. */}
+            <span className="h-8 w-full max-w-full line-clamp-2 break-normal text-center text-xs leading-4 text-secondary">
               {option.label}
             </span>
           </button>
