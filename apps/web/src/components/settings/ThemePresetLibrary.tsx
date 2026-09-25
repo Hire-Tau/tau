@@ -128,43 +128,40 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
   /** Rename/Share/Duplicate/Export/Delete: rendered once inline for desktop
    * and once inside the mobile OverflowMenu (see the "My themes" row below) —
    * a plain function call, not a shared element instance, so each placement
-   * gets its own React tree with no key collisions. */
-  const presetSecondaryActions = (preset: ThemePreset) => (
-    <>
-      <button
-        className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary"
-        onClick={() => setRenaming({ id: preset.id, name: preset.document.name })}
-      >
-        Rename
-      </button>
-      <button
-        className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary"
-        disabled={share.isPending}
-        onClick={() => share.mutate(preset)}
-      >
-        {preset.visibility === 'instance' ? 'Unshare' : 'Share'}
-      </button>
-      <button
-        className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary"
-        disabled={duplicate.isPending}
-        onClick={() => duplicate.mutate(preset)}
-      >
-        Duplicate
-      </button>
-      <button className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary" onClick={() => download(preset)}>
-        Export
-      </button>
-      <button
-        className="tau-button min-h-[36px] px-2 py-1 tau-button-secondary"
-        disabled={remove.isPending}
-        onClick={() => {
-          if (window.confirm(`Delete "${preset.document.name}"? This cannot be undone.`)) remove.mutate(preset)
-        }}
-      >
-        Delete
-      </button>
-    </>
-  )
+   * gets its own React tree with no key collisions. Inline they are bordered
+   * secondary buttons; in the menu they are plain rows like the other
+   * OverflowMenu callers. */
+  const presetSecondaryActions = (preset: ThemePreset, placement: 'inline' | 'menu') => {
+    const buttonClass =
+      placement === 'inline'
+        ? 'tau-button min-h-[36px] px-2 py-1 tau-button-secondary'
+        : 'tau-button hover:text-primary'
+    return (
+      <>
+        <button className={buttonClass} onClick={() => setRenaming({ id: preset.id, name: preset.document.name })}>
+          Rename
+        </button>
+        <button className={buttonClass} disabled={share.isPending} onClick={() => share.mutate(preset)}>
+          {preset.visibility === 'instance' ? 'Unshare' : 'Share'}
+        </button>
+        <button className={buttonClass} disabled={duplicate.isPending} onClick={() => duplicate.mutate(preset)}>
+          Duplicate
+        </button>
+        <button className={buttonClass} onClick={() => download(preset)}>
+          Export
+        </button>
+        <button
+          className={buttonClass}
+          disabled={remove.isPending}
+          onClick={() => {
+            if (window.confirm(`Delete "${preset.document.name}"? This cannot be undone.`)) remove.mutate(preset)
+          }}
+        >
+          Delete
+        </button>
+      </>
+    )
+  }
 
   return (
     <>
@@ -244,13 +241,13 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
                   {/* Desktop: the rest fit inline. Narrow widths: the same
                    * actions move into an overflow menu so the row doesn't wrap
                    * across two lines (see web-ui.md's responsive guidance). */}
-                  <div className="hidden flex-wrap gap-1 md:flex">{presetSecondaryActions(preset)}</div>
+                  <div className="hidden flex-wrap gap-1 md:flex">{presetSecondaryActions(preset, 'inline')}</div>
                   <div className="md:hidden">
                     <OverflowMenu
                       label={`More actions for ${preset.document.name}`}
                       itemsMarker="data-theme-preset-actions"
                     >
-                      {presetSecondaryActions(preset)}
+                      {presetSecondaryActions(preset, 'menu')}
                     </OverflowMenu>
                   </div>
                 </div>
