@@ -50,7 +50,13 @@ export function OverflowMenu({
       ref={container}
       className="relative shrink-0"
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false)
+        // Only close when focus moves to a known element outside. Safari (iOS
+        // and macOS) doesn't focus a tapped button, so tapping a menu item
+        // blurs the focused one with a null relatedTarget; closing then would
+        // unmount the item before its click fires. Outside taps are handled
+        // by the pointerdown listener above.
+        const next = event.relatedTarget
+        if (next && !event.currentTarget.contains(next)) setOpen(false)
       }}
     >
       <button

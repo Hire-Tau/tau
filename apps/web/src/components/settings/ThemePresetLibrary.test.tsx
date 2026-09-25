@@ -178,6 +178,8 @@ test('the row overflow menu (narrow widths) exposes aria-haspopup/expanded and i
 
     window.confirm = () => true
     const menu = container.querySelector('[data-theme-preset-actions]')!
+    // Menu items are plain rows, not bordered secondary buttons.
+    expect(menu.querySelectorAll('button.tau-button-secondary')).toHaveLength(0)
     await act(async () => fireEvent.click(getByRole(menu, 'button', { name: 'Delete' })))
     expect(remove).toHaveBeenCalledWith('preset-1', 1)
     // Selecting an action closes the menu and returns focus to the trigger.
@@ -186,6 +188,34 @@ test('the row overflow menu (narrow widths) exposes aria-haspopup/expanded and i
   } finally {
     remove.mockRestore()
   }
+})
+
+test('tapping a menu action in Safari (focus leaves with no relatedTarget) still activates it', async () => {
+  const remove = spyOn(client.themePresets, 'delete').mockResolvedValue({ ok: true })
+  try {
+    const { container } = await render([mine])
+    const trigger = getByRole(container, 'button', { name: 'More actions for Mine' })
+    await act(async () => fireEvent.click(trigger))
+    const menu = container.querySelector('[data-theme-preset-actions]')!
+    // Safari doesn't focus a tapped button: the focused first item blurs to nothing.
+    await act(async () => fireEvent.focusOut(getByRole(menu, 'button', { name: 'Rename' }), { relatedTarget: null }))
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    window.confirm = () => true
+    await act(async () => fireEvent.click(getByRole(menu, 'button', { name: 'Delete' })))
+    expect(remove).toHaveBeenCalledWith('preset-1', 1)
+  } finally {
+    remove.mockRestore()
+  }
+})
+
+test('moving focus outside the row overflow menu closes it', async () => {
+  const { container } = await render([mine])
+  const trigger = getByRole(container, 'button', { name: 'More actions for Mine' })
+  await act(async () => fireEvent.click(trigger))
+  const menu = container.querySelector('[data-theme-preset-actions]')!
+  const outside = getByRole(container, 'button', { name: 'Use' })
+  await act(async () => fireEvent.focusOut(getByRole(menu, 'button', { name: 'Rename' }), { relatedTarget: outside }))
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
 })
 
 test('Escape closes the row overflow menu and returns focus to its trigger', async () => {
