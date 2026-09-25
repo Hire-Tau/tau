@@ -1,0 +1,85 @@
+---
+title: Themes and appearance
+description: Pick a built-in theme, build your own with a palette and the theme assistant, share it with your instance, and keep your choice in sync across devices.
+---
+
+Tau ships eleven built-in themes and lets you build your own. A theme is personal: it does not change what anyone else sees.
+
+## Open the theme picker
+
+In **Settings → Appearance**, the **Theme** grid shows every built-in theme plus any themes you have saved. Select one to apply it immediately.
+
+On a wider screen, the palette button in the header opens the same picker without leaving the page. Hover a swatch to preview it across the app; move away and your applied theme returns. Select a swatch to apply it. The header picker is not shown on narrow/mobile widths — use Settings there instead.
+
+## Choose a built-in theme
+
+| Theme         | Character                                           | Appearance            |
+| ------------- | --------------------------------------------------- | --------------------- |
+| Tau           | The default: balanced blue-gray with a calm accent. | Light / Dark / System |
+| Harbor        | Cool slate surfaces with a restrained teal accent.  | Light / Dark / System |
+| Forest        | Pine green with warm bark and mossy accents.        | Light / Dark / System |
+| Ember         | Warm paper and charcoal with a terracotta accent.   | Light / Dark / System |
+| High contrast | Stark black-on-white with strong outlines.          | Fixed                 |
+| nurebairo     | Deep charcoal with a rose-pink accent.              | Fixed                 |
+| Phosphorus    | Soft sage green with a violet accent.               | Fixed                 |
+| yamabukiiro   | Golden amber with a deep plum accent.               | Fixed                 |
+| moegiiro      | Vivid forest green with a bright yellow accent.     | Fixed                 |
+| adzukiiro     | Deep maroon with a cool blue-gray accent.           | Fixed                 |
+| asagiiro      | Steel blue with a golden accent.                    | Fixed                 |
+
+Tau, Harbor, Forest and Ember each have a light and a dark side, so they follow your Light/Dark/System choice below. High contrast and the six palette themes (nurebairo, Phosphorus, yamabukiiro, moegiiro, adzukiiro, asagiiro) have one fixed appearance each — the appearance control is disabled while one of them is active, with a note explaining why. Switch back to a light/dark theme and your previous appearance choice returns.
+
+## Set light, dark, or system appearance
+
+Use the **Light / Dark / System** control next to the theme grid (or in the header picker) to choose how a light/dark theme renders. **System** follows your operating system's setting. Your appearance choice is kept when you switch between themes that support it.
+
+## Build your own theme
+
+Under **My themes**, select **New theme** to open the theme editor. Pick a starting built-in as its base first, from the **New theme base** menu.
+
+The editor is palette-first — set a few seed colors and most of the theme derives automatically:
+
+- **Primary** — your theme's main accent color.
+- **Secondary** and **Tertiary** (optional) — supporting accents; left unset, they're derived from Primary.
+- **Neutral** (optional) — tints the backgrounds, borders, and surfaces.
+- **Contrast: Standard / High** — how strongly text needs to stand out from its background.
+- **Status colors: Static / Harmonized** — **Static** keeps success/warning/danger colors as they are; **Harmonized** tints them toward your palette while keeping their meaning.
+
+A theme covers both light and dark at once — edit each side from the Light/Dark tabs (a theme based on a fixed-appearance built-in has just one). Everything you change previews live across the whole app, not a small sample, so you can see exactly how it will look while you work.
+
+Nothing is saved until you choose to save it:
+
+- **Save** — updates the theme you're editing.
+- **Save as new** — saves your changes as a separate theme instead, leaving the original untouched.
+- **Cancel** — discards your changes and restores the theme you had applied before.
+
+For finer control, expand **Advanced: per-token overrides** to set individual colors beyond what the palette covers. If a color pair doesn't meet a readable contrast level, the editor flags it with a warning and offers **Use safe value** to correct it automatically. Warnings don't block saving.
+
+## Ask the assistant to adjust a theme
+
+When you have chat access, opening or editing a theme also opens a theme assistant beside the editor. Describe what you want in plain language:
+
+> Make it warmer, with a teal accent.
+
+> Give it higher contrast.
+
+The assistant edits your draft directly and previews live, the same as a manual change — nothing saves until you choose Save or Save as new. Manual edits and the assistant's edits share one **Undo**/**Redo** history. If your instance has Realtime voice set up, you can talk to the assistant instead of typing, the same as the workspace Assistant.
+
+## Manage your saved themes
+
+Each saved theme in **My themes** offers **Use** (apply it), **Edit**, **Rename**, **Duplicate**, **Export** (download it as JSON), and **Delete** (with confirmation). **Import JSON** adds a theme file someone shared with you into your own library. You can save up to 50 themes.
+
+## Share a theme with your instance
+
+Choose **Share** on one of your saved themes to make it visible to everyone else on your Tau instance; **Unshare** takes it back to private. Shared themes from other people appear under **Shared themes**, each labeled with its name and who shared it.
+
+- **Use** links to the live theme — if its author edits it later, you see the update automatically.
+- **Duplicate** makes your own independent copy that no longer changes with the original.
+
+If a theme you're using gets unshared or deleted, you keep the last version you saw, and Settings shows a notice with a **Keep a copy** action to save it into your own library. Admins and operators with the right permission can remove a theme from the shared list; it stays in its owner's own library, just no longer shared.
+
+## Keep your theme synced across devices
+
+Signed in, your theme and appearance choice sync automatically to every device you use. Changing the theme on one device updates the others the next time they check in.
+
+A device can keep its own choice instead: applying a theme or changing appearance on that device marks it as overriding your synced choice, and Settings shows **This device overrides your synced theme**. Choose **Use synced theme** there to drop the override and follow your account again.

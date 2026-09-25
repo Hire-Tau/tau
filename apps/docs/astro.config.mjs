@@ -46,6 +46,7 @@ export default defineConfig({
             { label: 'Work streams', slug: 'use/work-streams' },
             { label: 'Workflows', slug: 'use/workflows' },
             { label: 'Review and intervene', slug: 'use/review-and-intervene' },
+            { label: 'Themes and appearance', slug: 'use/themes' },
           ],
         },
         {
