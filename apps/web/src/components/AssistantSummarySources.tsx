@@ -4,7 +4,9 @@ import { useQuery } from '@tanstack/react-query'
 import type { RenderItem } from '@tau/client-core'
 import { assistantQueries } from '../queryOptions'
 import { assistantApi } from '../api/assistant'
-import { MarkdownContent } from './MarkdownContent'
+import clsx from 'clsx'
+import { AssistantUpdateCard } from './AssistantUpdateCard'
+import { ChevronRightIcon } from './icons'
 
 /** Source IDs come from every grouped row. Retrieval does not depend on the latest update page. */
 export function AssistantSummarySources({
@@ -27,43 +29,77 @@ export function AssistantSummarySources({
   })
   if (!ids.length) return null
   return (
-    <details className="min-w-0 px-3 pb-3 text-sm" onToggle={(event) => setExpanded(event.currentTarget.open)}>
-      <summary className="cursor-pointer text-muted">Task updates · {ids.length}</summary>
-      {query.isError ? (
-        <button
-          className="tau-button"
-          onClick={() => {
-            void query.refetch()
-          }}
-        >
-          Retry loading updates
-        </button>
-      ) : query.isPending ? (
-        <p role="status">Loading updates…</p>
-      ) : (
-        query.data.map((update) => (
-          <div key={update.messageId} className="my-2 rounded-lg bg-surface-secondary p-3 [overflow-wrap:anywhere]">
-            <MarkdownContent>{update.content}</MarkdownContent>
-            {visible && !update.seenAt && (
-              <button
-                className="tau-button mt-2"
-                onClick={async () => {
-                  try {
-                    await assistantApi.seen(conversationId, [update.messageId])
-                    await query.refetch()
-                    setError(false)
-                  } catch {
-                    setError(true)
-                  }
-                }}
+    <div className="min-w-0 pb-2 text-sm">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        className="tau-button flex min-w-0 items-center gap-1.5 rounded-md py-1 pr-2 text-xs text-muted hover:text-primary"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <ChevronRightIcon
+          className={clsx(
+            'h-3.5 w-3.5 shrink-0 transition-transform motion-reduce:transition-none',
+            expanded && 'rotate-90'
+          )}
+        />
+        <span className="font-medium">Task updates</span>
+        <span>{ids.length}</span>
+      </button>
+      {expanded &&
+        (query.isError ? (
+          <button
+            type="button"
+            className="tau-button py-1 text-xs text-accent-light"
+            onClick={() => {
+              void query.refetch()
+            }}
+          >
+            Retry loading updates
+          </button>
+        ) : query.isPending ? (
+          <p role="status" className="py-1 text-xs text-muted">
+            Loading updates…
+          </p>
+        ) : (
+          <ul className="mt-1 space-y-1">
+            {query.data.map((update) => (
+              <li
+                key={update.messageId}
+                className="rounded-xl bg-surface-secondary px-3 py-2 text-sm [overflow-wrap:anywhere]"
               >
-                Mark read
-              </button>
-            )}
-          </div>
-        ))
+                <AssistantUpdateCard
+                  update={update}
+                  taskLabel={update.taskLabel}
+                  action={
+                    visible &&
+                    !update.seenAt && (
+                      <button
+                        type="button"
+                        className="tau-button -my-1 shrink-0 rounded-md px-1.5 py-1 text-accent-light hover:bg-selection"
+                        onClick={async () => {
+                          try {
+                            await assistantApi.seen(conversationId, [update.messageId])
+                            await query.refetch()
+                            setError(false)
+                          } catch {
+                            setError(true)
+                          }
+                        }}
+                      >
+                        Mark read
+                      </button>
+                    )
+                  }
+                />
+              </li>
+            ))}
+          </ul>
+        ))}
+      {error && (
+        <p role="alert" className="py-1 text-xs text-muted">
+          Could not mark the update read. Try again.
+        </p>
       )}
-      {error && <p role="alert">Could not mark the update read. Try again.</p>}
-    </details>
+    </div>
   )
 }

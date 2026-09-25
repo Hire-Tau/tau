@@ -1,5 +1,7 @@
 import { ToolRenderersContext } from '../lib/ToolRenderersContext'
 import { AssistantConversationContext } from '../voice/AssistantConversationContext'
+import { AssistantConversationLinkRow } from './AssistantConversationLinkRow'
+import { AssistantPageLinkRow } from './AssistantPageLinkRow'
 import { AssistantSummarySources } from './AssistantSummarySources'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
@@ -12,6 +14,7 @@ import { assistantQueryKeys, queryKeys } from '../queryKeys'
 import { useAssistantActivity } from '../hooks/useAssistantActivity'
 import { useStableRef } from '../hooks/useStableRef'
 import { durableAssistantConversationLinks, type AssistantConversationLink } from '../lib/assistantConversationLinks'
+import { durableAssistantPageLinks } from '../lib/assistantPageLinks'
 import { siteAssistantToolRenderers, type ToolRenderers } from '../lib/tool-renderers'
 import type { PageEditorBridge } from '../voice/AssistantConversationContext'
 import { useRealtimeVoiceAssistant } from '../voice/useRealtimeVoiceAssistant'
@@ -362,14 +365,15 @@ function DurableConversation(props: AssistantConversationViewProps) {
                 <>
                   {props.onOpenConversation &&
                     durableAssistantConversationLinks(item).map((link) => (
-                      <button
+                      <AssistantConversationLinkRow
                         key={link.agentId}
-                        className="tau-button mx-3 mb-2 text-sm text-accent"
-                        onClick={() => props.onOpenConversation?.(link)}
-                      >
-                        Open {link.label}
-                      </button>
+                        conversation={link}
+                        onOpen={props.onOpenConversation!}
+                      />
                     ))}
+                  {durableAssistantPageLinks(item).map((path) => (
+                    <AssistantPageLinkRow key={path} path={path} onOpen={navigate} />
+                  ))}
                   <AssistantSummarySources
                     ownerId={ownerId}
                     conversationId={props.id}
