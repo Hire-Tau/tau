@@ -1,6 +1,6 @@
 # Complete app-owned color coverage
 
-The final sweep removes the legacy file allowlist rather than treating it as proof of completion. All app-owned palette utilities, black/white chrome, voice material colors, log terminal colors, image-viewer framing, progress SVG strokes and logo colors now resolve through registered tokens. Default colors and status meanings are preserved; this is not a redesign.
+This guard removes the legacy file allowlist rather than treating it as proof of completion. All app-owned palette utilities, black/white chrome, voice material colors, log terminal colors, image-viewer framing, progress SVG strokes and logo colors resolve through registered tokens. Default colors and status meanings are preserved; this is not a redesign.
 
 ## Token contracts
 

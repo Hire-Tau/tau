@@ -74,44 +74,45 @@ Existing built-ins establish (verified against the actual CSS) that only the `ch
 3. Runs the shared palette derivation (`deriveThemeOverrides`, the same pure engine `theme-derivation.ts` uses for custom themes) with `primary` = activity, `secondary` = bg, `tertiary` = fg, `neutral` = bg, `contrast: 'standard'`, `status: 'static'` — but applies its output ONLY to the restricted chrome/swatch/on-accent-fg set above; every other family is copied verbatim from Tau.
 4. Layers BigBrain's own sRGB `color-mix(in srgb, fg P%, bg)` formulas as explicit overrides on top of the core chrome tokens, winning over the derived value exactly like a custom theme's explicit `variants` win over palette derivation:
 
-   | Token | Formula |
-   | --- | --- |
-   | `--color-bg-page` | `bg` |
-   | `--color-bg-surface` | mix 4% |
-   | `--color-bg-surface-secondary`, `--color-bg-inset` | mix 8% |
-   | `--color-bg-surface-hover`, `--color-bg-pill` | mix 10% |
-   | `--color-input-bg` | mix ~2% |
-   | `--color-text-primary`, `--color-code-text` | `fg` |
-   | `--color-text-secondary` | mix 88% (nudged up per-theme if needed — see Contrast below) |
-   | `--color-text-muted` | mix 65% (nudged up per-theme if needed) |
-   | `--color-text-placeholder` | mix 50% (nudged up per-theme if needed) |
-   | `--color-border`, `--color-input-border` | mix 18% |
-   | `--color-border-hover` | mix 28% |
-   | `--color-code-bg` | mix 6% |
-   | `--color-selection-bg` | activity mixed 15% into `bg` |
-   | `--color-selection-border` | activity mixed 40% into `bg` |
+   | Token                                              | Formula                                                      |
+   | -------------------------------------------------- | ------------------------------------------------------------ |
+   | `--color-bg-page`                                  | `bg`                                                         |
+   | `--color-bg-surface`                               | mix 4%                                                       |
+   | `--color-bg-surface-secondary`, `--color-bg-inset` | mix 8%                                                       |
+   | `--color-bg-surface-hover`, `--color-bg-pill`      | mix 10%                                                      |
+   | `--color-input-bg`                                 | mix ~2%                                                      |
+   | `--color-text-primary`, `--color-code-text`        | `fg`                                                         |
+   | `--color-text-secondary`                           | mix 88% (nudged up per-theme if needed — see Contrast below) |
+   | `--color-text-muted`                               | mix 65% (nudged up per-theme if needed)                      |
+   | `--color-text-placeholder`                         | mix 50% (nudged up per-theme if needed)                      |
+   | `--color-border`, `--color-input-border`           | mix 18%                                                      |
+   | `--color-border-hover`                             | mix 28%                                                      |
+   | `--color-code-bg`                                  | mix 6%                                                       |
+   | `--color-selection-bg`                             | activity mixed 15% into `bg`                                 |
+   | `--color-selection-border`                         | activity mixed 40% into `bg`                                 |
 
    `--swatch-secondary`/`--swatch-tertiary` are not set explicitly — the palette's own `secondary`/`tertiary` seeds (bg/fg) already derive them, so the swatch wheel blends primary→secondary→tertiary as BigBrain's own accent→bg→fg.
+
 5. `--opacity-input-border` and `--opacity-panel-border` (the only two `--opacity-*` metadata entries whose companion color token these palettes touch) are set to 1, matching High contrast's own choice: like High contrast, these palettes render borders as solid mixed colors, not Tau's translucent neutral-gray ones. Every other `--opacity-*` entry (the seven badge-decoration surfaces/hovers, the nine status roles' surface/badge-surface/badge-hover) is copied verbatim — it is an independent authored "how translucent should this render via an opacity utility" constant, not derivable from the color token's own stored channels (see `tokenCoverage.test.ts` and the `calc()` formula in `index.css`).
 
 ### Contrast
 
 The strict built-in gate (`apps/web/src/theme/builtins.test.ts`'s `contrastPairs`) checks every foreground — including the categorical/status tokens copied verbatim from Tau in step 3 above — against every one of this theme's OWN chrome surfaces (page/surface/surface-secondary/pill/surface-hover/inset), a broader check than the shared derivation engine's own internal pass. Since several of BigBrain's surfaces are noticeably more saturated/darker than Tau's own neutral grays, some Tau-tuned foregrounds fell short there. The generator's `repairContrastPairs` step corrects this — never by weakening a gate, and never by touching the shared derivation engine — by nudging ONLY that specific token's LIGHTNESS (hue/chroma held fixed, the identical bisection technique `theme-derivation.ts`'s own `contrastPass` uses) toward whichever extreme clears every gated pair for that one theme; if lightness alone can't reach the target even at the sRGB gamut extreme (a saturated hue that can't get light/dark enough without desaturating), it falls back to also reducing chroma toward gray at that extreme, same bisection technique. Per-theme, the tokens this actually moved:
 
-| Theme | Tokens adjusted |
-| --- | --- |
-| nurebairo | `--scrollbar-thumb` |
-| phosphorus | `--color-focus`, `--agent-type-{1–5}-fg` |
-| yamabukiiro | `--color-focus`, `--scrollbar-thumb`, `--agent-type-{1–6}-fg` |
-| moegiiro | `--scrollbar-thumb`, all nine `--status-*-fg`, `--agent-type-{1–6}-fg` |
-| adzukiiro | `--scrollbar-thumb`, eight `--status-*-fg` (all but `review`), `--agent-type-{1,2,3,5}-fg` |
-| asagiiro | `--scrollbar-thumb`, all nine `--status-*-fg`, `--agent-type-{1–6}-fg` |
+| Theme       | Tokens adjusted                                                                            |
+| ----------- | ------------------------------------------------------------------------------------------ |
+| nurebairo   | `--scrollbar-thumb`                                                                        |
+| phosphorus  | `--color-focus`, `--agent-type-{1–5}-fg`                                                   |
+| yamabukiiro | `--color-focus`, `--scrollbar-thumb`, `--agent-type-{1–6}-fg`                              |
+| moegiiro    | `--scrollbar-thumb`, all nine `--status-*-fg`, `--agent-type-{1–6}-fg`                     |
+| adzukiiro   | `--scrollbar-thumb`, eight `--status-*-fg` (all but `review`), `--agent-type-{1,2,3,5}-fg` |
+| asagiiro    | `--scrollbar-thumb`, all nine `--status-*-fg`, `--agent-type-{1–6}-fg`                     |
 
 Every other token (including every badge-decoration and syntax-accent pair, and every text role after the mix-percentage bump above) already cleared its gate without adjustment. The full `builtins.test.ts` suite — the same 1.4.3/1.4.11 gate Tau/Harbor/Ember/High contrast are held to — passes for all six unchanged (no carve-out).
 
-## Release gate — enabled
+## Strict contrast gate
 
-The picker is **enabled** after every built-in passed the strict contrast gate and the cold-load matrix. On 2026-09-21 the owner authorized a narrow exception to default-palette parity: minimally correct the six failing Tau tokens, while preserving its default selection and overall identity. No legacy contrast carve-out was added.
+Every built-in must pass the strict WCAG contrast gate and the cold-load matrix before it can ship. Tau's default palette carries a narrow, deliberately authorized exception to exact legacy-color parity: six tokens are minimally corrected from their pre-gate values so Tau itself clears the gate, while preserving its default selection and overall identity. No other contrast carve-out exists.
 
 ### Authorized Tau deltas (worst applicable pair)
 
@@ -126,17 +127,7 @@ The picker is **enabled** after every built-in passed the strict contrast gate a
 
 Only these token values change in Tau. The syntax parity test explicitly substitutes the two authorized inks; all other syntax styles, ANSI/terminal slots, status and decorative palettes retain their parity checks. The dark muted/placeholder text remains unchanged.
 
-The gate checks **356 pairs per concrete palette** with sRGB WCAG luminance, fractional channels, foreground alpha and surface alpha × intrinsic-opacity metadata. Text requires 4.5:1; focus, scrollbars and graph links require 3:1. Covered: four text roles on six chrome surfaces, inline code, nine status roles and hover badges, seven decorative badge palettes, six agent identities, all syntax inks on both code surfaces, terminal text/muted/cursor, accent button states and graph labels/links. Status/badge translucent surfaces are composited over every likely underlying chrome surface.
-
-| Palette       | Lowest text ratio | Lowest indicator ratio | Failing pairs |
-| ------------- | ----------------: | ---------------------: | ------------: |
-| Tau light     |             4.567 |                  3.585 |             0 |
-| Tau dark      |             4.567 |                  3.178 |             0 |
-| Harbor light  |             4.682 |                  3.302 |             0 |
-| Harbor dark   |             4.908 |                  3.302 |             0 |
-| Ember light   |             4.641 |                  3.391 |             0 |
-| Ember dark    |             4.857 |                  3.391 |             0 |
-| High contrast |             4.760 |                  3.657 |             0 |
+The gate checks every text/UI-accent/focus/scrollbar/graph-link pair per concrete palette with sRGB WCAG luminance, fractional channels, foreground alpha and surface alpha × intrinsic-opacity metadata. Text requires 4.5:1; focus, scrollbars and graph links require 3:1. Covered: four text roles on six chrome surfaces, inline code, nine status roles and hover badges, seven decorative badge palettes, six agent identities, all syntax inks on both code surfaces, terminal text/muted/cursor, accent button states and graph labels/links. Status/badge translucent surfaces are composited over every likely underlying chrome surface. Every built-in — Tau, Harbor, Forest, Ember, High contrast and the six BigBrain ports — clears the gate with zero failing pairs; see each theme's own section above for its generator and any per-token contrast repairs.
 
 These are defined-token-pair checks, not certification of every rendered page, text opacity utility, terminal SGR combination or third-party chart scheme.
 
@@ -144,13 +135,11 @@ These are defined-token-pair checks, not certification of every rendered page, t
 
 The shipped inline script contains a minimal surface map, checked against the registry and actual CSS, so missing/corrupt/stale snapshots and an OS scheme flip cannot paint a default white surface over a stored dark/recolored theme. A matching state-keyed snapshot still wins. Unknown IDs retain the Tau fallback. Unified themes omit data-appearance and remove the dark migration class.
 
-- Unit matrix: 4 themes × 3 appearance settings × 2 OS schemes × 4 snapshot cases = **96** pre-paint cases.
-- Provider matrix: 4 × 3 × 2 = **24** cases plus interaction coverage of unified → dual preference retention.
-- Chromium: actual shipped HTML with the application module blocked (no React/CSS assistance), 4 × (light, dark, system-light, system-dark) × (missing, corrupt, stale, matching snapshot) = **64** cases. Document scope, dark class, background and theme-color all matched before hydration.
+- Unit matrix: every built-in × each appearance setting (Light/Dark/System) × both OS color schemes × the snapshot cases (missing, corrupt, stale, matching).
+- Provider matrix: the same dimensions, plus interaction coverage of unified → dual preference retention.
+- Chromium: the actual shipped HTML with the application module blocked (no React/CSS assistance), across appearance setting × snapshot case. This was run by hand on Tau, Harbor, Ember and High contrast; later built-ins rely on the unit and provider matrices. Document scope, dark class, background and theme-color all matched before hydration.
 
-## Historical phase-5 render matrix and current limits
-
-Chromium real-renderer fixture, synthetic local data, 1280×1100: **96** cases (six panels × four themes × light/dark/system-light/system-dark) without uncaught browser errors. This is not authenticated application navigation or a live service/session test.
+A real-renderer Chromium fixture (synthetic local data) exercised the surfaces below for Tau, Harbor, Ember and High contrast in each appearance, without uncaught browser errors. This is not authenticated application navigation or a live service/session test.
 
 | Requested surface          | Actual paths reviewed in each theme/appearance                                                                                                   |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -162,9 +151,11 @@ Chromium real-renderer fixture, synthetic local data, 1280×1100: **96** cases (
 | Presentation / file viewer | Real `PresentationRenderer` with Vega-Lite chart and `FileViewer` with a TypeScript file                                                         |
 | Terminal                   | Real xterm, `readTerminalTheme` and root observer; theme changes repaint the existing terminal without discarding it; no remote shell connection |
 
-**Unverified:** successful `SquadUniverse` WebGL rendering (inherited tick/layout initialization failure already reproduced on the predecessor and its baseline), authenticated full-page flows, physical iOS Safari/PWA cold launch, Windows hardware high-contrast rendering, arbitrary artifact-authored palettes. No unrelated graph layout repair is included. The final integration migrated the former presentation-framing and voice-gradient islands; the historical phase-5 matrix above does not certify that later work. The complete guard retains only explicitly bounded content/definition exceptions.
+**Unverified:** successful `SquadUniverse` WebGL rendering (an inherited tick/layout initialization failure, already reproduced on the predecessor and its baseline), authenticated full-page flows, physical iOS Safari/PWA cold launch, Windows hardware high-contrast rendering, and arbitrary artifact-authored palettes. The complete-coverage guard (see [complete coverage](complete-coverage.md)) retains only its explicitly bounded content/definition exceptions.
 
-## Forced-colors checklist (each of Tau, Harbor, Ember, High contrast)
+## Forced-colors checklist
+
+This was reviewed by hand on Tau, Harbor, Ember and High contrast. The forced-colors rules are theme-independent.
 
 - [x] Chromium forced-colors emulation with reduced motion and reduced transparency: author inset shadows disappear; primary buttons still have a system-color boundary and focus outline.
 - [x] Native selectors retain labels and focus; unified appearance is disabled with explanatory text.
@@ -173,23 +164,3 @@ Chromium real-renderer fixture, synthetic local data, 1280×1100: **96** cases (
 - [ ] Physical Windows high-contrast / assistive-technology pass (not performed).
 
 The browser review caught the existing `voice-orb-status { display: none }`; the forced-colors rule explicitly restores its display, hides decorative dots and exposes its accessible label visually. A color/box-shadow-only fallback would have missed this.
-
-## Historical phase-5 verification (2026-09-21)
-
-After the authorized Tau corrections and picker enablement:
-
-- Full web gate: **2,383 passing, 0 failing**, 311 files.
-- Deterministic DOM-order gate: passed, including the full mixed/reversed cohorts.
-- Web typecheck and production build: passed.
-- Browser matrix rerun against the enabled picker and corrected Tau: **164 cases**, no uncaught errors (96 render, 4 forced-colors, 64 pre-paint), plus mounted canvas/xterm continuity and mobile selector review.
-- The six-token Tau change keeps all remaining content/status/decorative parity assertions intact.
-
-Browser evidence uses synthetic fixture data and the real components/libraries listed above. Screenshot review does not replace the specific limitations listed in the matrix.
-
-### Review screenshots
-
-Synthetic fixture, actual renderers (not live account data):
-
-- [Harbor light: Feed, work-stream rows, picker and badges](screenshots/harbor-light.png)
-- [Ember dark: chat, syntax, tools and ANSI](screenshots/ember-dark.png)
-- [High contrast: unified picker, Feed and badges](screenshots/high-contrast.png)
