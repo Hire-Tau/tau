@@ -3,8 +3,8 @@
 The registered theme's resolved CSS scope is the source of truth for all colors
 (`index.css`). The syntax object references variables directly, so changing the
 resolved appearance updates mounted blocks without a hook, duplicate JS palettes,
-or a first-render fallback. Tau keeps its dark syntax and terminal palettes in **both** appearances; phase 5
-minimally raises comment/property and terminal-muted ink for contrast. Streamed
+or a first-render fallback. Tau keeps its dark syntax and terminal palettes in **both** appearances; the strict
+contrast gate minimally raises comment/property and terminal-muted ink for contrast. Streamed
 ANSI retains its distinct light/dark palettes. Additional built-ins define their
 complete scopes in `builtins.css`; see [built-in intent, gates and matrix](../../../../docs/wiki/theme/builtins.md).
 
@@ -47,7 +47,7 @@ complete scopes in `builtins.css`; see [built-in intent, gates and matrix](../..
 Future built-in/custom-theme adapters must preserve the selection/scrollbar
 sentinels when inheriting Tau, support numeric fractional channels, and retain
 intrinsic-opacity metadata. Completeness alone does not establish contrast.
-The phase-5 gate checks the defined critical pairs for every built-in, including
+The strict contrast gate checks the defined critical pairs for every built-in, including
 code comments. Arbitrary ANSI/terminal combinations (including terminal black),
 arbitrary utility tone combinations and authored artifacts are not accessibility-certified. There are no remaining un-tokenized utility islands; see [complete coverage](../../../../docs/wiki/theme/complete-coverage.md).
 
@@ -56,8 +56,7 @@ arbitrary utility tone combinations and authored artifacts are not accessibility
 - `contentColors.test.tsx`: normalized rendered-markup parity against oneDark for
   ten languages, with/without line numbers, in both appearances, with exactly two
   owner-approved syntax ink exceptions; all ANSI rules and legacy xterm values; semantic ANSI hues; exact supporting colors; raw-color
-  guard on every migrated consumer. The JSON fixture was captured from the
-  pre-migration CSS and terminal object at `2ce904fae`.
+  guard on every migrated consumer.
 - `terminal.test.ts`: constructor ordering, real DOM observer updates, custom
   overrides/reset and disposal without creating a terminal session.
 - Existing token completeness, opacity-substitution and initial-flash suites

@@ -60,16 +60,12 @@ zoom and occlusion still affect rendered pixels. Chromium/SwiftShader inspection
 of real OrgGraph and AgentVisualization verified 3D labels and edges, light/dark
 and live custom overrides (including background, label and status aliases).
 
-A separate pre-existing Universe mount failure was reproduced in the same
-browser fixture using the unchanged parent implementation: its force effect can
-reheat before the library initializes `state.layout`, causing an undefined
-`tick` error. Consequently a successful Universe WebGL browser run is **not**
-claimed here; its palette, contrast and subscription wiring are covered by tests.
-This initialization issue is reported for follow-up rather than hidden by a retry.
-The fixture used real components, styles and rendering libraries with a seeded
-React Query cache, synthetic squads/agents and MemoryRouter, not an authenticated
-production page. Whether the initialization timing also occurs in the complete
-application remains unverified.
+A pre-existing Universe mount failure is inherited, not introduced here: its
+force effect can reheat before the library initializes `state.layout`,
+causing an undefined `tick` error, so a successful Universe WebGL browser run
+is **not** claimed. Its palette, contrast and subscription wiring are still
+covered by tests. Whether this initialization timing also occurs in the
+complete application remains unverified.
 
 ## Charts are content, not chrome
 

@@ -9,4 +9,4 @@ Maintained guidance for the web theme subsystem:
 - [Custom themes](custom-themes.md) — values-only JSON, preview, validation and recovery.
 - [Account sync](account-sync.md) — account preferences, device overrides and race handling.
 
-See the [source contributor guide](../../../apps/web/src/theme/README.md) for implementation entrypoints and the [developer wiki](../README.md) for other subsystems. Historical validation snapshots within these guides retain their stated scope and limitations; they do not establish unverified device or account coverage.
+See the [source contributor guide](../../../apps/web/src/theme/README.md) for implementation entrypoints and the [developer wiki](../README.md) for other subsystems.

@@ -1,12 +1,12 @@
-# Semantic color migration
+# Semantic colors
 
 The default Tau light/dark colors are unchanged, except for intentional text-selection styling. Status meanings and precedence still come from `packages/shared/src/status-presentation.ts`, which is unchanged.
 
-## Compatibility decision
+## Compatibility
 
-On 2026-09-21, Noah chose **preserve appearance** over simplifying existing Badge colors. Role text originally used shade 700/400, while badges used 800/200; role surfaces used 50/900 at 20%, while badges used 100/900 at 30% (70% on hover). These cannot share one foreground/surface pair without a visible change.
+Badge colors deliberately preserve their own appearance rather than sharing a single foreground/surface pair with role text: role text uses shade 700/400 while badges use 800/200, and role surfaces use 50/900 at 20% while badges use 100/900 at 30% (70% on hover). Merging them would produce a visible change to one or the other.
 
-I retained the four role slots and added `badge-fg`, `badge-surface`, and `badge-hover` for every role. `validateThemeTokenOverrides` rejects an override containing any status token unless it supplies all 162 status tokens (nine roles × seven semantic slots plus eleven tone steps). Full built-in definitions must provide every active token. The custom-theme importer calls this shared override validator **before merging with the base**; validating only the final inherited set would hide partial status overrides.
+Each role therefore keeps its four plain slots alongside dedicated `badge-fg`, `badge-surface`, and `badge-hover` slots. `validateThemeTokenOverrides` rejects an override containing any status token unless it supplies all 162 status tokens (nine roles × seven semantic slots plus eleven tone steps). Full built-in definitions must provide every active token. The custom-theme importer calls this shared override validator **before merging with the base**; validating only the final inherited set would hide partial status overrides.
 
 Values remain in `apps/web/src/index.css`, the source of truth used by the existing class-based web registry. All Tailwind-mapped tokens use bare RGB channels; translucent surfaces have separate `--opacity-*` metadata multiplied by Tailwind modifiers. The original `--opacity-input-border` and `--opacity-panel-border` remain unchanged. Theme adapters must carry opacity metadata along with color channels. CSS-only scrollbar colors retain embedded alpha.
 
@@ -30,7 +30,7 @@ Every caller of the shared `Badge` component is classified below. The color prop
 | `components/schedules/SchedulesList.tsx`                                              | Health → neutral/success/danger; **action kind** → accent-2/1/3; squad/agent **scope** identity → accent-6/7                                                                                                 |
 | `components/squads/LocalDeploymentsPanel.tsx`                                         | Existing starting/running/restarting/unhealthy/crashed/stopped status and filter palette → review/success/progress/externalWait/danger/neutral                                                               |
 
-The seven retained decorative accents are purple, blue, green, violet, orange, amber, and cyan in the default theme. They have independent tokens, so recoloring a lifecycle role does not recolor unrelated entity/mode badges. Neutral decoration shares the neutral role treatment. Eight unused old palette entries were removed: lime, emerald, teal, sky, indigo, fuchsia, pink, and rose. Simplification of **used** decorative colors is deferred, not silently bundled into this migration.
+The seven decorative accents are purple, blue, green, violet, orange, amber, and cyan in the default theme. They have independent tokens, so recoloring a lifecycle role does not recolor unrelated entity/mode badges. Neutral decoration shares the neutral role treatment. Only used decorative colors are registered; the legacy entries lime, emerald, teal, sky, indigo, fuchsia, pink, and rose are not. Simplification of the used decorative colors is a separate, deferred effort.
 
 Other components whose names contain “Badge” but do not use the shared `Badge` API are not part of this table; sandbox status components already delegate to the shared web status adapter.
 
@@ -40,10 +40,10 @@ Other components whose names contain “Badge” but do not use the shared `Badg
 - The WebKit thin scrollbar remains RGB 156/163/175 at 50% opacity, now via `--scrollbar-thumb`.
 - The custom dark checkbox check remains white, now via `--checkbox-check`.
 - Verified `bg-accent` fills use `text-on-accent` (including the primary button component rule and its 8% inset highlight). Active tab count pills use the same foreground token at 20% for their overlay. Filled-control ink, paper surfaces, scrims, highlights and switch thumbs now have independent tokens; only image/document canvases retain bounded content exceptions. ChatView's custom `sendButtonClassName` takes the filled-control ink token; its default accent fill takes the accent ink token.
-- Status marker colors for canvas/Three.js are read lazily as numeric comma-form RGB, never passed as unsupported `var(...)`. The later graph migration owns reactive graph snapshots and remaining graph colors.
+- Status marker colors for canvas/Three.js are read lazily as numeric comma-form RGB, never passed as unsupported `var(...)`. [Graph colors](graph-colors.md) owns reactive graph snapshots and remaining graph colors.
 
 ## Verification and coverage boundary
 
 `theme/semanticParity.test.ts` compiles the real new and old Tailwind utilities and compares fully substituted colors for both appearances, including hover and neutral special cases. `theme-color-opacity.test.ts` also checks `/25`, `/50`, and `/100` without double alpha. Identity contrast remains ≥4.5:1 on both original and actual app surfaces. Component tests pin token routing, not concrete palette utility names.
 
-The final integration removes every legacy-file waiver. Status tone steps retain the exact old control palette without changing lifecycle classifications; decorative ramps remain separate for indigo/pink/rose/emerald/violet identity surfaces. Voice material, log viewers, brand assets and black/white chrome are also tokenized. See [complete coverage](complete-coverage.md) for the closed exception list and verification boundary.
+No legacy-file waiver remains: every app-owned color resolves through a registered token. Status tone steps retain the exact old control palette without changing lifecycle classifications; decorative ramps remain separate for indigo/pink/rose/emerald/violet identity surfaces. Voice material, log viewers, brand assets and black/white chrome are also tokenized. See [complete coverage](complete-coverage.md) for the closed exception list and verification boundary.
