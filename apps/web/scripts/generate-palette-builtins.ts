@@ -73,6 +73,38 @@ export const PALETTE_BUILTINS: readonly WebPaletteBuiltin[] = [
   },
 ]
 
+/**
+ * Harbor and Ember paint every interactive surface (hover, pill, inset and selection) with one tint of their accent
+ * over the surface, the secondary surface with a lighter one, and the selection border (in light, the input border
+ * too) with a stronger mix. The shared derivation leaves those close to the plain surface for a palette (Forest's light
+ * selection came out lighter than its own page), so palette built-ins apply the same structure after deriving, before
+ * the contrast repair. Dark tints from the primary itself: a pale dark-mode accent would only grey the surface.
+ */
+const INTERACTION_TINTS: Record<
+  ResolvedAppearance,
+  { tint: [string, number]; secondary: number; border: [string, number]; inputBorder: boolean }
+> = {
+  light: { tint: ['--color-primary', 12], secondary: 7, border: ['--color-primary', 38], inputBorder: true },
+  dark: { tint: ['--color-primary', 24], secondary: 12, border: ['--color-primary-light', 32], inputBorder: false },
+}
+
+/** `pct`% of channel color `a` over channel color `b`, in sRGB, as "r g b" channels. */
+function mixChannels(a: string, pct: number, b: string): string {
+  const [x, y] = [a, b].map((value) => value.trim().split(/\s+/).slice(0, 3).map(Number))
+  return x!.map((channel, i) => Math.round((channel * pct + y![i]! * (100 - pct)) / 100)).join(' ')
+}
+
+function applyInteractionTints(tokens: Record<string, string>, appearance: ResolvedAppearance): void {
+  const { tint, secondary, border, inputBorder } = INTERACTION_TINTS[appearance]
+  const surface = tokens['--color-bg-surface']!
+  const tinted = mixChannels(tokens[tint[0]]!, tint[1], surface)
+  for (const token of ['--color-bg-surface-hover', '--color-bg-pill', '--color-bg-inset', '--color-selection-bg'])
+    tokens[token] = tinted
+  tokens['--color-bg-surface-secondary'] = mixChannels(tokens[tint[0]]!, secondary, surface)
+  tokens['--color-selection-border'] = mixChannels(tokens[border[0]]!, border[1], surface)
+  if (inputBorder) tokens['--color-input-border'] = tokens['--color-selection-border']
+}
+
 /** Builds the full compiled token map for one built-in's one appearance. */
 function buildThemeTokens(palette: ThemePalette, baseTokens: Record<string, string>, appearance: ResolvedAppearance) {
   const derivedHex = deriveThemeOverrides({ baseTokens, palette, appearance })
@@ -88,6 +120,7 @@ function buildThemeTokens(palette: ThemePalette, baseTokens: Record<string, stri
     const derived = DERIVABLE_TOKENS.has(token) ? derivedHex[token] : undefined
     combined[token] = derived ? (customColorChannels(derived) ?? baseTokens[token]!) : baseTokens[token]!
   }
+  applyInteractionTints(combined, appearance)
   return repairContrastPairs(combined)
 }
 
