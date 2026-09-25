@@ -228,7 +228,10 @@ test('actual poll -> durable cursor -> serialized attention supports baseline an
         .set({ cursor: { ...current, deliveryPresentation: { ...current.deliveryPresentation, ...overrides } } })
         .where(eq(integrationEventPollingCursors.resourceKey, key))
       const stream = await WorkStream.mustFind(row!.id)
-      expect((await computeDerivedStates([stream])).get(stream.id)?.delivery).toEqual({ kind: 'external' })
+      expect((await computeDerivedStates([stream])).get(stream.id)?.delivery).toEqual({
+        kind: 'external',
+        explanation: { pullRequests: [{ number: 7, state: 'open' }] },
+      })
     }
   } finally {
     stop()

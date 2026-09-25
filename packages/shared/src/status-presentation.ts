@@ -23,11 +23,49 @@ export type StatusRole =
 export type AgentPresentationState = AgentStatus | 'offline'
 export type DeliveryPresentationKind = 'approval' | 'review' | 'merge' | 'external' | 'setup' | 'failure'
 
+/** One designated delivery pull request in the server's delivery view, primary first. */
+export interface WorkStreamDeliveryPullRequestFact {
+  number: number
+  /** Open unless a merge or close is positively observed. */
+  state: 'open' | 'merged' | 'closed'
+}
+
+/** Provider gate facts for one delivery pull request, as last observed. */
+export interface WorkStreamDeliveryGateFacts {
+  mergeState?: string
+  checksState?: 'success' | 'failure' | 'pending' | 'unknown'
+  reviewDecision?: 'required' | 'approved' | 'changes_requested' | 'unknown'
+  draft?: boolean
+  pendingHumanReview?: boolean
+}
+
+/**
+ * Server-owned facts explaining a delivery presentation. Omitted fields are
+ * unknown; consumers must fail soft rather than infer them client-side.
+ */
+export interface WorkStreamDeliveryExplanation {
+  /** Why a `setup` presentation cannot complete, when the classifier knows. */
+  setupReason?: 'unbound' | 'not-following-changes' | 'branch-mismatch' | 'direct-merge-facts'
+  /** Stream vs pull request branch disagreement, when `setupReason` is `branch-mismatch`. */
+  branchMismatch?: {
+    streamBranch?: string
+    pullRequestBranch?: string
+    streamBaseBranch?: string
+    pullRequestBaseBranch?: string
+  }
+  /** Designated delivery pull requests, primary first. */
+  pullRequests?: WorkStreamDeliveryPullRequestFact[]
+  /** Gate facts for the pull request that decided the kind, when evidence exists. */
+  gates?: WorkStreamDeliveryGateFacts
+}
+
 /** Server-owned delivery facts, never inferred from client metadata. Unknown kinds are ignored. */
 export interface WorkStreamDeliveryPresentation {
   kind: DeliveryPresentationKind
   /** The one operational approval wait represented by this gate; other waits retain precedence. */
   approvalWaitId?: string
+  /** Explanatory facts, attached only when the server owns them. */
+  explanation?: WorkStreamDeliveryExplanation
 }
 
 export type WorkStreamPresentationState =

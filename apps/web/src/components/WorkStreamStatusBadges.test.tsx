@@ -13,6 +13,45 @@ for (const row of WORK_STREAM_PRESENTATION_CASES) {
   })
 }
 
+test('delivery-external pills show the derived label from server explanation facts', () => {
+  const base = { status: 'active' as const, openWaits: [] }
+  const merge = renderToStaticMarkup(
+    <WorkStreamStatusBadges
+      workStream={{
+        ...base,
+        delivery: {
+          kind: 'external',
+          explanation: { pullRequests: [{ number: 212, state: 'open' }] },
+        },
+      }}
+    />
+  )
+  expect(merge).toContain('Awaiting PR merge - #212')
+  expect(merge).not.toContain('Awaiting Code Host')
+  const ci = renderToStaticMarkup(
+    <WorkStreamStatusBadges
+      workStream={{
+        ...base,
+        delivery: {
+          kind: 'external',
+          explanation: {
+            pullRequests: [{ number: 212, state: 'open' }],
+            gates: { checksState: 'pending' },
+          },
+        },
+      }}
+    />
+  )
+  expect(ci).toContain('Awaiting CI')
+  // Unknown evidence keeps the generic label, as do other delivery kinds.
+  expect(
+    renderToStaticMarkup(<WorkStreamStatusBadges workStream={{ ...base, delivery: { kind: 'external' } }} />)
+  ).toContain('Awaiting Code Host')
+  expect(
+    renderToStaticMarkup(<WorkStreamStatusBadges workStream={{ ...base, delivery: { kind: 'merge' } }} />)
+  ).toContain('Merge Pull Request')
+})
+
 test('queued delivery approval retains its independent Parked badge only with a real wait', () => {
   const delivery = { kind: 'approval' as const, approvalWaitId: 'approval' }
   const openWaits = [{ id: 'approval', type: 'manual' as const }]

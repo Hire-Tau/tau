@@ -9,6 +9,7 @@ import { workStreamGithubRepository, workStreamPullRequests } from '../lib/workS
 import { WorkStreamPauseControls } from './WorkStreamPauseControls'
 import { WorkflowRunPanel } from './WorkflowRunPanel'
 import { WorkflowReviewCallout } from './WorkflowReviewCallout'
+import { WorkStreamDeliverySetupCallout } from './WorkStreamDeliverySetupCallout'
 import clsx from 'clsx'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
@@ -318,6 +319,7 @@ export function WorkStreamDetailModal({
           focusWaitId={focusWaitId}
           onOpenAgent={onClose}
         />
+        <WorkStreamDeliverySetupCallout stream={workStream} />
         {needsResponse && (
           <div className="p-4 rounded-xl bg-surface-secondary">
             <div className="flex items-center gap-2 mb-1.5">
