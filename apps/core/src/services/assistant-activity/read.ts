@@ -153,6 +153,29 @@ function senderName(metadata: Record<string, unknown>): string {
   return sender?.name || sender?.agentTypeName || 'Agent'
 }
 
+/** One update card: the tracking row plus its inbox message. */
+export function toAssistantActivityUpdate({
+  update,
+  message,
+}: {
+  update: typeof assistantUpdates.$inferSelect
+  message: typeof inbox.$inferSelect
+}): AssistantActivityUpdate {
+  return {
+    messageId: update.messageId,
+    taskId: update.taskId,
+    requestId: update.requestId,
+    sequence: update.sequence,
+    reportedStatus: update.reportedStatus,
+    content: message.content,
+    subject: message.subject,
+    senderName: senderName(message.metadata),
+    processedAt: update.processedAt?.toISOString() ?? null,
+    seenAt: update.seenAt?.toISOString() ?? null,
+    createdAt: update.createdAt.toISOString(),
+  }
+}
+
 /** Tracked tasks plus one page of updates in ascending display order; `null` when not owned. */
 export async function readAssistantActivity(
   ownerUserId: string,
@@ -209,24 +232,11 @@ export async function readAssistantActivity(
     .innerJoin(inbox, eq(inbox.id, assistantUpdates.messageId))
     .where(and(eq(assistantTasks.conversationId, conversationId), eq(assistantTasks.status, 'needs-input')))
     .orderBy(asc(assistantTasks.id), desc(assistantUpdates.sequence))
-  const toUpdate = ({ update, message }: (typeof updateRows)[number]): AssistantActivityUpdate => ({
-    messageId: update.messageId,
-    taskId: update.taskId,
-    requestId: update.requestId,
-    sequence: update.sequence,
-    reportedStatus: update.reportedStatus,
-    content: message.content,
-    subject: message.subject,
-    senderName: senderName(message.metadata),
-    processedAt: update.processedAt?.toISOString() ?? null,
-    seenAt: update.seenAt?.toISOString() ?? null,
-    createdAt: update.createdAt.toISOString(),
-  })
   return {
     conversation: toConversationActivity(row),
     tasks,
-    updates: page.map(toUpdate),
-    pendingInputs: pendingInputRows.map(toUpdate),
+    updates: page.map(toAssistantActivityUpdate),
+    pendingInputs: pendingInputRows.map(toAssistantActivityUpdate),
     hasMore: updateRows.length > ACTIVITY_UPDATE_PAGE_SIZE,
     beforeSequence: page[0]?.update.sequence ?? null,
   }

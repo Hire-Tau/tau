@@ -1,10 +1,14 @@
 import { and, eq, inArray } from 'drizzle-orm'
-import { db, assistantUpdates, assistantConversations, inbox } from '../db'
+import { db, assistantUpdates, assistantConversations, assistantTasks, inbox } from '../db'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { zValidator } from '@hono/zod-validator'
 import { markAssistantUpdatesSeen } from '../services/assistant-activity/acknowledge'
-import { listAssistantActivity, readAssistantActivity } from '../services/assistant-activity/read'
+import {
+  listAssistantActivity,
+  readAssistantActivity,
+  toAssistantActivityUpdate,
+} from '../services/assistant-activity/read'
 
 const uuid = z.string().uuid()
 const activityQuerySchema = z.object({
@@ -29,10 +33,11 @@ export const assistantActivityRouter = new Hono<{ Variables: { assistantOwner: s
     const id = c.req.param('id')
     if (!uuid.safeParse(id).success) return c.json({ error: 'Conversation not found' }, 404)
     const rows = await db
-      .select({ update: assistantUpdates, content: inbox.content })
+      .select({ update: assistantUpdates, message: inbox, taskLabel: assistantTasks.label })
       .from(assistantUpdates)
       .innerJoin(assistantConversations, eq(assistantConversations.id, assistantUpdates.conversationId))
       .innerJoin(inbox, eq(inbox.id, assistantUpdates.messageId))
+      .leftJoin(assistantTasks, eq(assistantTasks.id, assistantUpdates.taskId))
       .where(
         and(
           eq(assistantConversations.id, id),
@@ -41,14 +46,7 @@ export const assistantActivityRouter = new Hono<{ Variables: { assistantOwner: s
         )
       )
     if (rows.length !== new Set(c.req.valid('json').messageIds).size) return c.json({ error: 'Update not found' }, 404)
-    return c.json(
-      rows.map((row) => ({
-        messageId: row.update.messageId,
-        taskId: row.update.taskId,
-        content: row.content,
-        seenAt: row.update.seenAt,
-      }))
-    )
+    return c.json(rows.map((row) => ({ ...toAssistantActivityUpdate(row), taskLabel: row.taskLabel ?? null })))
   })
   .get('/:id/activity', zValidator('query', detailQuerySchema), async (c) => {
     const id = c.req.param('id')

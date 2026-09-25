@@ -1192,6 +1192,27 @@ test('viewing an update does not mark it processed', async () => {
   expect(activity.conversations.map((row: { id: string }) => row.id)).toEqual([f.id])
 })
 
+test('reading updates by id returns full update cards with their task label', async () => {
+  const f = await activityFixture()
+  const receipt = await f.start()
+  const message = await f.update(receipt.id, 'Found the regression.', 'working')
+  const response = await f.request(`/${f.id}/updates/read`, { messageIds: [message.id] })
+  expect(response.status).toBe(200)
+  const [update] = await response.json()
+  const [task] = await db.select().from(assistantTasks).where(eq(assistantTasks.id, receipt.taskId))
+  expect(update).toMatchObject({
+    messageId: message.id,
+    taskId: receipt.taskId,
+    taskLabel: task.label,
+    reportedStatus: 'working',
+    content: 'Found the regression.',
+    seenAt: null,
+  })
+  expect(typeof update.senderName).toBe('string')
+  expect(typeof update.createdAt).toBe('string')
+  expect((await f.request(`/${f.id}/updates/read`, { messageIds: [message.id] }, f.other.token)).status).toBe(404)
+})
+
 test('another owner cannot read or acknowledge activity', async () => {
   const f = await activityFixture()
   const receipt = await f.start()

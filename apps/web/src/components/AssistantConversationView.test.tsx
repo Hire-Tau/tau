@@ -344,3 +344,74 @@ test('the first voice click waits for the durable conversation and then starts a
     await f.cleanup()
   }
 })
+
+test('assistant summaries show nested conversations as full rows and task updates as cards', async () => {
+  const f = await fixture()
+  const { queries, assistantQueries } = await import('../queryOptions')
+  f.queryClient.setQueryData(queries.agents.detail('delegate').queryKey, {
+    id: 'delegate',
+    squadId: 'tau',
+    agentTypeId: 'engineer',
+    status: 'active',
+    metadata: { name: 'Riley', purpose: 'Fix inline PR rows' },
+  } as any)
+  f.queryClient.setQueryData(assistantQueries.updates('owner', 'conversation', ['update-1']).queryKey, [
+    {
+      messageId: 'update-1',
+      taskId: 'task-1',
+      taskLabel: 'Fix inline PR rows',
+      requestId: 'request-1',
+      sequence: 1,
+      reportedStatus: 'working',
+      content: 'Found the row components.',
+      subject: null,
+      senderName: 'Riley',
+      processedAt: null,
+      seenAt: null,
+      createdAt: new Date().toISOString(),
+    },
+  ])
+  const onOpenConversation = mock(() => {})
+  f.props.onOpenConversation = onOpenConversation
+  await f.dom.act(async () => f.render())
+  await waitFor(() => expect(f.chat.renderMessageFooter).toBeDefined())
+  const item = {
+    kind: 'persisted',
+    message: { role: 'assistant', metadata: { assistantUpdateIds: ['update-1'] } },
+    blocks: [
+      {
+        type: 'tool_use',
+        toolCall: {
+          toolName: 'delegate_task',
+          result: JSON.stringify({ id: 'receipt', agentId: 'delegate' }),
+          isError: false,
+        },
+      },
+    ],
+  } as any
+  const footerRoot = f.dom.createRoot()
+  await f.dom.act(async () =>
+    footerRoot.root.render(
+      <QueryClientProvider client={f.queryClient}>{f.chat.renderMessageFooter!(item)}</QueryClientProvider>
+    )
+  )
+  const footer = footerRoot.container
+  // A full row: the agent's resolved label as the title and an action subtitle, not a bare text link.
+  const row = footer.querySelector<HTMLButtonElement>('button[aria-label="Open conversation: Fix inline PR rows"]')!
+  expect(row).not.toBeNull()
+  expect(row.textContent).toContain('Fix inline PR rows')
+  expect(row.textContent).toContain('Open conversation')
+  await f.dom.act(async () => fireEvent.click(row))
+  expect(onOpenConversation).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'delegate' }))
+
+  const toggle = [...footer.querySelectorAll('button')].find((button) => button.textContent?.includes('Task updates'))!
+  expect(toggle.getAttribute('aria-expanded')).toBe('false')
+  await f.dom.act(async () => fireEvent.click(toggle))
+  expect(toggle.getAttribute('aria-expanded')).toBe('true')
+  const card = footer.querySelector('li')!
+  expect(card.textContent).toContain('Fix inline PR rows')
+  expect(card.textContent).toContain('Riley')
+  expect(card.textContent).toContain('Found the row components.')
+  expect([...card.querySelectorAll('button')].map((button) => button.textContent)).toContain('Mark read')
+  await f.cleanup()
+})

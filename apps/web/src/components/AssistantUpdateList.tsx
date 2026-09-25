@@ -2,12 +2,8 @@ import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import type { AssistantActivityUpdate, AssistantTaskSummary } from '@tau/shared'
 import { useStableRef } from '../hooks/useStableRef'
-import {
-  ASSISTANT_TASK_STATUS_LABELS,
-  formatAssistantUpdateTime,
-  shouldAcknowledgeAssistantUpdate,
-} from '../lib/assistantActivityPresentation'
-import { MarkdownContent } from './MarkdownContent'
+import { shouldAcknowledgeAssistantUpdate } from '../lib/assistantActivityPresentation'
+import { AssistantUpdateCard } from './AssistantUpdateCard'
 import { ChevronRightIcon } from './icons'
 
 export interface AssistantUpdateObserver {
@@ -236,7 +232,6 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
         <ul className="space-y-1">
           {shown.map((update) => {
             const task = update.taskId ? taskById.get(update.taskId) : undefined
-            const status = update.reportedStatus ? ASSISTANT_TASK_STATUS_LABELS[update.reportedStatus] : undefined
             return (
               <li
                 key={update.messageId}
@@ -244,29 +239,23 @@ export function AssistantUpdateList(props: AssistantUpdateListProps) {
                 data-unread={update.seenAt ? undefined : 'true'}
                 className={clsx('rounded-xl px-3 py-2 text-sm', !update.seenAt && 'bg-selection')}
               >
-                <div className="flex items-center gap-2 text-xs text-muted">
-                  {!update.seenAt && (
-                    <span aria-label="Unread" className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-                  )}
-                  {task && <span className="truncate font-medium text-primary">{task.label}</span>}
-                  {status && <span className="shrink-0">{status}</span>}
-                  <span className="ml-auto shrink-0">
-                    {update.senderName} · {formatAssistantUpdateTime(update.createdAt)}
-                  </span>
-                  {!update.seenAt && (
-                    <button
-                      type="button"
-                      aria-label="Hide update"
-                      title="Mark read and hide until the section is reopened"
-                      className="tau-button -my-1 shrink-0 rounded-md px-1.5 py-1 text-accent-light hover:bg-selection"
-                      onClick={() => void hideCard.current(update.messageId)}
-                    >
-                      Hide
-                    </button>
-                  )}
-                </div>
-                {update.subject && <p className="mt-1 font-medium">{update.subject}</p>}
-                <MarkdownContent className="mt-1 text-sm">{update.content}</MarkdownContent>
+                <AssistantUpdateCard
+                  update={update}
+                  taskLabel={task?.label}
+                  action={
+                    !update.seenAt && (
+                      <button
+                        type="button"
+                        aria-label="Hide update"
+                        title="Mark read and hide until the section is reopened"
+                        className="tau-button -my-1 shrink-0 rounded-md px-1.5 py-1 text-accent-light hover:bg-selection"
+                        onClick={() => void hideCard.current(update.messageId)}
+                      >
+                        Hide
+                      </button>
+                    )
+                  }
+                />
               </li>
             )
           })}

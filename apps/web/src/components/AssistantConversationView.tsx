@@ -1,5 +1,6 @@
 import { ToolRenderersContext } from '../lib/ToolRenderersContext'
 import { AssistantConversationContext } from '../voice/AssistantConversationContext'
+import { AssistantConversationLinkRow } from './AssistantConversationLinkRow'
 import { AssistantSummarySources } from './AssistantSummarySources'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
@@ -362,13 +363,11 @@ function DurableConversation(props: AssistantConversationViewProps) {
                 <>
                   {props.onOpenConversation &&
                     durableAssistantConversationLinks(item).map((link) => (
-                      <button
+                      <AssistantConversationLinkRow
                         key={link.agentId}
-                        className="tau-button mx-3 mb-2 text-sm text-accent"
-                        onClick={() => props.onOpenConversation?.(link)}
-                      >
-                        Open {link.label}
-                      </button>
+                        conversation={link}
+                        onOpen={props.onOpenConversation!}
+                      />
                     ))}
                   <AssistantSummarySources
                     ownerId={ownerId}
