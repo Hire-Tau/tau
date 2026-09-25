@@ -259,7 +259,7 @@ Register machines from Settings → Machines in the web UI (or `POST
 
 ```bash
 TAU_SANDBOX_RUNTIME=vm
-# TAU_EXE_MACHINE_IMAGE=ghcr.io/hire-tau/tau-machine:latest   # optional; exe provider only
+# TAU_EXE_MACHINE_IMAGE=ghcr.io/ficushq/tau-machine:latest   # optional; exe provider only
 ```
 
 Setup toolkit: `runtime.sandbox: vm` (plus `runtime.exe.ssh_key_path` and

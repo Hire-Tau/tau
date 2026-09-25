@@ -45,7 +45,7 @@ Current-head evidence is reduced by provider observation order, not by event nam
 
 Widget summaries add an authoritative optional `bucket`, boolean `pause` (never private pause reasons), and typed `delivery`. Prefer `bucket` when present; older payloads can fall back to the shared selector. This also preserves the omitted-waits compatibility projection without fabricating waits. `openWaitTypes` remains an explicit array for existing native decoders. New `bucketCounts.paused` and `bucketCounts.externalWait` keys are optional in the consumer type, and should default to zero against older servers. Interest authorization, uncapped counts, title privacy and attention-first ordering remain unchanged. Foreground snapshots and APNs use the same builder.
 
-Source compatibility was inspected at `Hire-Tau/tau-mobile` commit `c84b39e57de916a7acfeda2987e01c8d529c98e1`:
+Source compatibility was inspected at `ficushq/tau-mobile` commit `c84b39e57de916a7acfeda2987e01c8d529c98e1`:
 
 - Both copies of `TauWorkAttributes.swift` decode bucket as `String`, not a closed Codable enum.
 - `WorkStreamsClient.swift` likewise decodes Live Activity buckets as strings and ignores additive summary/count fields.

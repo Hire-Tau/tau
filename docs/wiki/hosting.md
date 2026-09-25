@@ -49,7 +49,7 @@ start without one of these five values.
      (bootstrap pushes everything; multi-user nix/devbox gives no-sudo agents
      self-serve tooling).
    - **exe** — auto-provisioned exe.dev VMs from the public prebaked
-     `ghcr.io/hire-tau/tau-machine` image (~1s bootstrap;
+     `ghcr.io/ficushq/tau-machine` image (~1s bootstrap;
      `docs/wiki/machines/exe-provider.md`).
 
    On top: dumb best-fit unit packer (squads effectively VM-exclusive,

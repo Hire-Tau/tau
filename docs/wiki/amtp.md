@@ -18,7 +18,7 @@ Each instance has a cryptographic identity (peering), each agent has its own
 identity key, and messages are **signed by the authoring agent** and verified
 against the sender's published, pinned key.
 
-The wire protocol is specified normatively in [the AMTP spec](https://github.com/Hire-Tau/amtp/blob/main/docs/SPEC.md).
+The wire protocol is specified normatively in [the AMTP spec](https://github.com/ficushq/amtp/blob/main/docs/SPEC.md).
 
 ## Concepts
 

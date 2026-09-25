@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-REPO="${TAU_INSTALL_REPO:-Hire-Tau/tau}"
+REPO="${TAU_INSTALL_REPO:-ficushq/tau}"
 INSTALL_DIR="${TAU_INSTALL_DIR:-$HOME/.tau/bin}"
 SHARE_DIR="${TAU_SHARE_DIR:-$HOME/.tau/share}"
 BIN_NAME="tau"

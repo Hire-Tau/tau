@@ -100,7 +100,7 @@ for it.
 are unaffected without it. All new env vars (`TAU_MACHINE_REVERSE_PORT`,
 `TAU_UNIT_WEIGHT_*`, `TAU_MACHINE_UNIT_CAPACITY`, `TAU_MAX_MACHINES`, …) are
 optional with defaults. The prebaked machine image
-`ghcr.io/hire-tau/tau-machine` is public (no pull auth needed).
+`ghcr.io/ficushq/tau-machine` is public (no pull auth needed).
 
 See `docs/backlog/machines/follow-ups.md` for the remaining post-merge backlog and
 user-gated items.

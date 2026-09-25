@@ -323,7 +323,7 @@ esac
 # (trimming) boot guard and then fail every isVmRuntime() comparison.
 RT_SANDBOX=$(trim_ws "$(cfg_get '.runtime.sandbox')")
 EXE_KEY_PATH=$(expand_tilde "$(cfg_get '.runtime.exe.ssh_key_path')")
-EXE_IMAGE=$(cfg_get '.runtime.exe.machine_image' 'ghcr.io/hire-tau/tau-machine:latest')
+EXE_IMAGE=$(cfg_get '.runtime.exe.machine_image' 'ghcr.io/ficushq/tau-machine:latest')
 require_sandbox_runtime "${RT_SANDBOX}"
 # Under `host` there is no sandbox image to pin gh in, so agents run this
 # machine's gh; warn (never abort) when it cannot serve `gh --attach`.

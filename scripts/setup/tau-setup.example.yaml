@@ -30,7 +30,7 @@ source:
   #            three are presigned GET credentials, and this file is not
   #            where credentials belong.
   mode: git-ssh
-  repo: git@github.com:Hire-Tau/tau.git
+  repo: git@github.com:ficushq/tau.git
   # Branch, tag, or full/abbreviated commit sha. Recorded metadata even in
   # artifact mode (there is no checkout to move, but the ref is still logged).
   ref: main
@@ -201,7 +201,7 @@ runtime:
     # Prompted if empty and running interactively.
     ssh_key_path: ''
     # Image new agent/squad boxes boot from.
-    machine_image: ghcr.io/hire-tau/tau-machine:latest
+    machine_image: ghcr.io/ficushq/tau-machine:latest
 
 # -----------------------------------------------------------------------------
 # Optional initial AI provider + model (off by default — omit this whole

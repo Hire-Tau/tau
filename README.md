@@ -38,7 +38,7 @@ choices, headless installation, and troubleshooting. Prefer managed hosting?
 **From source**
 
 ```bash
-git clone --recurse-submodules https://github.com/Hire-Tau/tau.git
+git clone --recurse-submodules https://github.com/ficushq/tau.git
 cd tau
 bun install
 bun run setup

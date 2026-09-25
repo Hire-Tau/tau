@@ -43,9 +43,9 @@ describe('createExeApi.createVm', () => {
     const { exec, calls } = fakeExec(() => ok(JSON.stringify({ vm_name: 'vm-img' })))
     const api = createExeApi({ token: 't', exec })
 
-    await api.createVm({ name: 'vm-img', image: 'ghcr.io/hire-tau/tau-machine:latest' })
+    await api.createVm({ name: 'vm-img', image: 'ghcr.io/ficushq/tau-machine:latest' })
 
-    expect(calls).toEqual([['new', '--name', 'vm-img', '--image', 'ghcr.io/hire-tau/tau-machine:latest', '--json']])
+    expect(calls).toEqual([['new', '--name', 'vm-img', '--image', 'ghcr.io/ficushq/tau-machine:latest', '--json']])
   })
 
   it('omits `--image` from the `new` argv when no image is provided (exe uses its default)', async () => {
