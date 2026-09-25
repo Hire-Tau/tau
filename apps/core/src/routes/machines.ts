@@ -23,7 +23,9 @@ import {
   releaseMachineBoxes as releaseMachineBoxesDefault,
 } from '../services/machines/machine-quiesce'
 import {
+  claimMachineForBootstrap,
   deleteMachine,
+  failMachineBootstrapClaim,
   getMachine,
   getMachineByName,
   insertMachine,
@@ -416,12 +418,13 @@ export function createMachinesRouter(
 
     // Already running: return the current row rather than starting a SECOND
     // concurrent bootstrap over the same SSH connection. Double-clicking the
-    // button, or a provision retry landing on an in-flight run, must be inert.
-    if (machine.status === 'bootstrapping') {
-      return c.json(toPublicMachine(machine), 202)
+    // button, a provision retry landing on an in-flight run, or the worker's
+    // boot-time drift reconcile holding the machine must all be inert. The
+    // claim is atomic, so two requests racing here cannot both start one.
+    const starting = await claimMachineForBootstrap(machine.id)
+    if (!starting) {
+      return c.json(toPublicMachine((await getMachine(machine.id)) ?? machine), 202)
     }
-
-    const starting = (await updateMachine(machine.id, { status: 'bootstrapping' })) as Machine
     emitMachineChange(machine, starting)
 
     // Deliberately not awaited. Terminal state (ready | unreachable) is written
@@ -439,11 +442,8 @@ export function createMachinesRouter(
         // 'unreachable' only if the row is still sitting in the state we put it
         // in, and persist the error message alongside it so the row still tells
         // an operator WHY even when bootstrapMachine's own write never ran.
-        const current = await getMachine(machine.id)
-        if (current?.status === 'bootstrapping') {
-          const message = err instanceof Error ? err.message : String(err)
-          await updateMachine(machine.id, { status: 'unreachable', lastError: capLastError(message) })
-        }
+        const message = err instanceof Error ? err.message : String(err)
+        await failMachineBootstrapClaim(machine.id, capLastError(message))
       })
       .finally(async () => {
         const settled = await getMachine(machine.id)

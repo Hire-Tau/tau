@@ -207,10 +207,59 @@ describe('worker boot-time machine artifact reconcile', () => {
 describe('worker boot-time bootstrap-drift reconcile', () => {
   const machine = (id: string, status: string, bootstrapVersion: string | null) =>
     ({ id, name: id, status, bootstrapVersion }) as Machine
+  // In-memory claim: every listed machine is still claimable unless named.
+  const claims = (held: string[] = []) => ({
+    claimMachineForBootstrap: async (id: string) =>
+      held.includes(id) ? null : ({ id, name: id, status: 'bootstrapping' } as Machine),
+    failMachineBootstrapClaim: async () => {},
+  })
+
+  it('claims each machine before re-bootstrapping and skips one whose claim is held elsewhere', async () => {
+    const claimed: Array<{ id: string; from: readonly string[] }> = []
+    const rebootstrapped: Array<{ id: string; status: string }> = []
+    await reconcileMachineBootstrapAtBoot({
+      isVmRuntime: () => true,
+      currentBootstrapVersion: () => 'v2',
+      listMachines: async () => [machine('a', 'ready', 'v1'), machine('b', 'ready', 'v1')],
+      claimMachineForBootstrap: async (id, from) => {
+        claimed.push({ id, from })
+        // b was claimed by an operator's POST /bootstrap after the listing.
+        return id === 'b' ? null : ({ id, name: id, status: 'bootstrapping' } as Machine)
+      },
+      failMachineBootstrapClaim: async () => {},
+      bootstrapMachine: async (m) => {
+        rebootstrapped.push({ id: m.id, status: m.status })
+      },
+    })
+    expect(claimed).toEqual([
+      { id: 'a', from: ['ready'] },
+      { id: 'b', from: ['ready'] },
+    ])
+    // Runs with the claimed row, and never on the machine someone else holds.
+    expect(rebootstrapped).toEqual([{ id: 'a', status: 'bootstrapping' }])
+  })
+
+  it('settles its claim when the re-bootstrap throws before recording an outcome', async () => {
+    const failed: Array<{ id: string; lastError: string }> = []
+    await reconcileMachineBootstrapAtBoot({
+      isVmRuntime: () => true,
+      currentBootstrapVersion: () => 'v2',
+      listMachines: async () => [machine('a', 'ready', 'v1')],
+      claimMachineForBootstrap: async (id) => ({ id, name: id, status: 'bootstrapping' }) as Machine,
+      failMachineBootstrapClaim: async (id, lastError) => {
+        failed.push({ id, lastError })
+      },
+      bootstrapMachine: async () => {
+        throw new Error('secret store unavailable')
+      },
+    })
+    expect(failed).toEqual([{ id: 'a', lastError: 'secret store unavailable' }])
+  })
 
   it('re-bootstraps only ready machines whose bootstrapVersion drifted from the current one', async () => {
     const rebootstrapped: string[] = []
     await reconcileMachineBootstrapAtBoot({
+      ...claims(),
       isVmRuntime: () => true,
       currentBootstrapVersion: () => 'v2',
       listMachines: async () => [
@@ -230,6 +279,7 @@ describe('worker boot-time bootstrap-drift reconcile', () => {
     const rebootstrapped: string[] = []
     await expect(
       reconcileMachineBootstrapAtBoot({
+        ...claims(),
         isVmRuntime: () => true,
         currentBootstrapVersion: () => 'v2',
         listMachines: async () => [
@@ -249,6 +299,7 @@ describe('worker boot-time bootstrap-drift reconcile', () => {
   it('does nothing when every ready machine is already current', async () => {
     let bootstrapped = false
     await reconcileMachineBootstrapAtBoot({
+      ...claims(),
       isVmRuntime: () => true,
       currentBootstrapVersion: () => 'v2',
       listMachines: async () => [machine('a', 'ready', 'v2'), machine('b', 'ready', 'v2')],

@@ -919,6 +919,26 @@ describe('browser tools Phase 1 — Playwright pin lockstep + wiring', () => {
     expect(bootstrapSh).not.toContain('chromium-*/chrome-linux/chrome')
   })
 
+  it('bounds the Chromium download, retries a stall, and never trusts a partial extraction', () => {
+    // Playwright's forked extractor intermittently stalls forever mid-extract
+    // under bun, leaving a truncated chrome binary. Unbounded, that holds
+    // bootstrap until Core's 15-minute SSH deadline marks the machine
+    // unreachable; and a bare chrome-binary presence check would then skip the
+    // re-download forever. timeout sits INSIDE sudo so its process-group kill
+    // reaches the extractor.
+    expect(bootstrapSh).toContain(
+      'DEBIAN_FRONTEND=noninteractive \\\n        timeout -k 30 "${BROWSER_DOWNLOAD_TIMEOUT_SECS}" \\\n        "${BUN_BIN_LINK}" "${TAU_BROWSER_ROOT}/node_modules/playwright/cli.js" install --with-deps chromium \\\n        && break'
+    )
+    expect(bootstrapSh).toContain('for attempt in $(seq 1 "${BROWSER_DOWNLOAD_ATTEMPTS}"); do')
+    // Every attempt together must leave room inside Core's 15-minute bootstrap run.
+    const perAttempt = Number(/^BROWSER_DOWNLOAD_TIMEOUT_SECS=(\d+)$/m.exec(bootstrapSh)?.[1])
+    const attempts = Number(/^BROWSER_DOWNLOAD_ATTEMPTS=(\d+)$/m.exec(bootstrapSh)?.[1])
+    expect(attempts).toBeGreaterThan(1)
+    expect(perAttempt * attempts).toBeLessThanOrEqual(600)
+    // Presence requires Playwright's own completion marker, not just the binary.
+    expect(bootstrapSh).toContain('chromium-*/INSTALLATION_COMPLETE')
+  })
+
   it('install_browser + verify_browser are wired into the install/boot flow (the bump is real)', () => {
     // install_browser runs in the non-prebaked branch (after install_devbox), and
     // verify_browser unconditionally in main() — both as `... || true` standalone

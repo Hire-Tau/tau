@@ -71,6 +71,14 @@ DEVBOX_VERSION="0.14.0"
 # apps/core/docker-sandbox/Dockerfile (asserted by bootstrap.test.ts). Bump
 # deliberately — it changes the bootstrap hash → re-bootstrap.
 PLAYWRIGHT_VERSION="1.58.2"
+# Upper bound on each Chromium download + extract attempt. A healthy run takes
+# under a minute; Playwright's out-of-process extractor intermittently stalls
+# forever mid-extract under the pinned bun (5 of 9 runs on an arm64 Ubuntu 24.04
+# VM), which would otherwise hold bootstrap until Core's 15-minute SSH deadline
+# and mark the whole machine unreachable. The stall is not sticky, so a stalled
+# attempt is retried once; the worst case stays at 10 minutes.
+BROWSER_DOWNLOAD_TIMEOUT_SECS=300
+BROWSER_DOWNLOAD_ATTEMPTS=2
 
 TAU_ROOT="/opt/tau"
 BUN_INSTALL_DIR="${TAU_ROOT}/bun"      # official installer target (dispatcher: "install to /opt/tau/bun")
@@ -1203,8 +1211,12 @@ _browser_install_steps() {
     installed="$(jq -r '.version // ""' \
       "${TAU_BROWSER_ROOT}/node_modules/playwright/package.json" 2>/dev/null || echo "")"
   fi
+  # Playwright writes INSTALLATION_COMPLETE only after extraction finishes, so a
+  # chrome binary without it is a truncated leftover from an interrupted
+  # download — treat it as absent and re-download.
   local chromium_present=false
   compgen -G "${TAU_BROWSER_BROWSERS_PATH}/chromium-*/chrome-linux*/chrome" >/dev/null 2>&1 \
+    && compgen -G "${TAU_BROWSER_BROWSERS_PATH}/chromium-*/INSTALLATION_COMPLETE" >/dev/null 2>&1 \
     && chromium_present=true
   if [ "${installed}" != "${PLAYWRIGHT_VERSION}" ] || [ "${chromium_present}" != true ]; then
     printf '{"name":"tau-browser","private":true,"dependencies":{"playwright":"%s"}}\n' \
@@ -1222,10 +1234,20 @@ _browser_install_steps() {
     # shim: the shim is `#!/usr/bin/env node` and machine hosts install bun, NOT
     # node — the shim exits 127 ("node: not found"), the original cause of
     # chromium_download_failed on every do_droplet host.
-    "${SUDO[@]}" env "PLAYWRIGHT_BROWSERS_PATH=${TAU_BROWSER_BROWSERS_PATH}" \
-      DEBIAN_FRONTEND=noninteractive \
-      "${BUN_BIN_LINK}" "${TAU_BROWSER_ROOT}/node_modules/playwright/cli.js" install --with-deps chromium \
-      || { BROWSER_INSTALL_REASON=chromium_download_failed; return 1; }
+    # `timeout` runs inside sudo so its process-group kill also reaches
+    # Playwright's forked extractor, which is what stalls. A retry re-downloads:
+    # the stalled attempt left no INSTALLATION_COMPLETE marker.
+    local attempt
+    for attempt in $(seq 1 "${BROWSER_DOWNLOAD_ATTEMPTS}"); do
+      "${SUDO[@]}" env "PLAYWRIGHT_BROWSERS_PATH=${TAU_BROWSER_BROWSERS_PATH}" \
+        DEBIAN_FRONTEND=noninteractive \
+        timeout -k 30 "${BROWSER_DOWNLOAD_TIMEOUT_SECS}" \
+        "${BUN_BIN_LINK}" "${TAU_BROWSER_ROOT}/node_modules/playwright/cli.js" install --with-deps chromium \
+        && break
+      [ "${attempt}" -lt "${BROWSER_DOWNLOAD_ATTEMPTS}" ] \
+        || { BROWSER_INSTALL_REASON=chromium_download_failed; return 1; }
+      echo "bootstrap.sh: WARNING Chromium install attempt ${attempt} failed or stalled; retrying" >&2
+    done
   fi
 
   write_browser_service || { BROWSER_INSTALL_REASON=setup_failed; return 1; }
