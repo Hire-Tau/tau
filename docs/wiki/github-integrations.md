@@ -33,13 +33,22 @@ Disconnect removes access in Tau. GitHub requires a client secret for remote rev
 
 Legacy `GH_TOKEN`, `GITHUB_TOKEN`, `GH_TOKEN_*`, `GITHUB_TOKEN_*`, `GITHUB_USER`, and squad `githubTokenSecretKey` configuration are retired. Reconnect accounts through Integrations. Stored historical values are not automatically deleted. Git commit author overrides remain separate from the account used to authenticate.
 
+## Commit signing
+
+Agents' commits and annotated tags are signed with an SSH key Tau registers on the connected GitHub account, so GitHub shows them as **Verified**. The GitHub card shows the state per account and turns it on or off; connecting an account turns it on automatically unless it was turned off for that account before.
+
+- **Key custody.** Core generates an ed25519 key per connection, registers the public half with `POST /user/ssh_signing_keys` (the App's **SSH signing keys** account permission) and keeps the private half in the secret store under `__integration-github-signing:<connectionId>`. The private key never enters a sandbox. Turning signing off or disconnecting the account deletes the key from GitHub and from Tau; an explicit off is remembered so connect-time setup does not re-enable it.
+- **How git signs.** When signing is on for a squad's default GitHub connection, the squad env's `git` wrapper adds `-c gpg.format=ssh -c commit.gpgsign=true -c tag.gpgsign=true -c user.signingkey=key::<public key> -c gpg.ssh.program=tau`. Command-line settings outrank repository config. Git runs `tau -Y sign …`, which sends the object git is signing to `POST /api/squads/:squadId/integrations/github/sign` with the agent's own token and writes the returned signature. Other `-Y` operations (`git verify-commit`, `git log --show-signature`) pass through to the real `ssh-keygen`.
+- **What Core signs.** Only for agent identities with `integrations:use` on the squad, only git commit or tag objects, and only when the committer (or tagger) email is the squad's configured git identity or the account's `users.noreply.github.com` address. GitHub marks a signature Verified only when that email is verified on the account, which the noreply address always is.
+- **Where it applies.** Everywhere Tau already provides GitHub credentials: agent commands in squad shells on every sandbox runtime. Shells without an agent token (human terminals) keep committing unsigned rather than failing.
+
 ## App configuration
 
 The default public client ID is `Iv23liN16iuEh5lT1PYV`. In a standalone instance, expand **Use your own GitHub App** (in onboarding, **Use your own GitHub App instead**) to configure another public client ID. A client ID alone uses device login and needs no public URL. An optional client secret switches to browser authorization; use the callback URL displayed in settings. Webhook delivery is configured only in Settings. Existing connections retain their issuing app reference.
 
 Failed authorization requests return a stable `code` and a user-safe `error` message, and Core logs each rejection at warn with its code (never provider bodies, tokens, or secrets). GitHub failures map as follows: `provider_unavailable` 502 and `provider_timeout` 504 (GitHub unreachable from the instance), `rate_limited` 429 with `Retry-After`, `device_flow_disabled` 400, `incorrect_client_credentials` and `invalid_auth` 400, `capability_or_resource_denied` 502 (GitHub refused the app, for example an unknown client ID), and `invalid_response` or other provider errors 502. Authorization flow rejections keep their code in `error`, for example `oauth_app_unconfigured`.
 
-Enable device flow and expiring user authorization tokens. Leave “Request user authorization during installation” unchecked so Tau initiates authorization with bound state. Configure repository permissions: Contents, Pull requests, Issues, Actions, and Workflows read/write; Checks, Commit statuses, and Metadata read-only. Users choose which repositories to install the app on.
+Enable device flow and expiring user authorization tokens. Leave “Request user authorization during installation” unchecked so Tau initiates authorization with bound state. Configure repository permissions: Contents, Pull requests, Issues, Actions, and Workflows read/write; Checks, Commit statuses, and Metadata read-only. Configure the account permission **SSH signing keys** read/write for commit signing. Users choose which repositories to install the app on.
 
 Tau uses user access tokens. GitHub App ownership still permits the owner to generate a private key and obtain installation tokens independently; this design does not remove that GitHub capability. Operators who want to control the app themselves can use the custom-app option.
 

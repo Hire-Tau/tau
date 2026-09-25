@@ -31,10 +31,13 @@ import { describeGitHubAuthorizationError } from '../services/integrations/autho
 import { GitHubOAuthError } from '@tau/shared/oauth-providers/github/client'
 import { createLogger } from '../lib/infra/logger'
 import { userSessionRequired } from '../services/auth/user-session-required'
+import { GitHubSignRefused, GitHubSigningError } from '../services/integrations/github/commit-signing'
+import { MAX_SIGNING_PAYLOAD_BYTES } from '../services/integrations/github/signing-payload'
 import type { SafeIntegrationCatalogEntry } from '../services/integrations/plugin'
 import type {
   IntegrationAuthorizationStart,
   IntegrationDeviceAuthorizationStatus,
+  GitHubCommitSigningStatus,
   GitHubRepositoryAccess,
 } from '@tau/shared'
 
@@ -105,6 +108,8 @@ export interface IntegrationRoutesService extends Pick<
   providerFor(id: string): Promise<string | null>
   refresh?(connectionId: string): Promise<unknown>
   githubRepositoryAccess?(connectionId: string): Promise<GitHubRepositoryAccess | null>
+  githubCommitSigning?(connectionId: string): Promise<GitHubCommitSigningStatus>
+  setGitHubCommitSigning?(connectionId: string, enabled: boolean, actor: string): Promise<GitHubCommitSigningStatus>
   linearWebhook?: {
     get(): GitHubWebhookSettings
     configure(input: unknown, actor: string): Promise<GitHubWebhookSettings>
@@ -143,6 +148,8 @@ export interface IntegrationRoutesService extends Pick<
 }
 
 export interface SquadIntegrationRoutesService {
+  /** Sign a git commit or tag object with the squad's GitHub signing key (agents only). */
+  signGitObject?(squadId: string, agentId: string, payload: Buffer): Promise<string>
   configureScope?(
     squadId: string,
     providerKey: string,
@@ -485,6 +492,36 @@ export function createIntegrationsRouter(service: IntegrationRoutesService): Hon
       const result = await service.githubRepositoryAccess?.(id)
       return result ? c.json(result) : c.json({ error: 'Repository access check unavailable' }, 503)
     })
+    .get('/connections/:connectionId/github-commit-signing', async (c) => {
+      const denied = await authorize(c, 'integrations:read:github')
+      if (denied) return denied
+      const id = c.req.param('connectionId')
+      c.header('Cache-Control', 'no-store')
+      if ((await service.providerFor(id)) !== 'github' || !service.githubCommitSigning)
+        return c.json({ error: 'GitHub connection not found' }, 404)
+      return c.json(await service.githubCommitSigning(id))
+    })
+    .post(
+      '/connections/:connectionId/github-commit-signing',
+      zValidator('json', z.object({ enabled: z.boolean() }).strict()),
+      async (c) => {
+        const denied = await authorize(c, 'integrations:write:github')
+        if (denied) return denied
+        const identity = c.get('identity')
+        // Registers or removes a key on the person's own GitHub account.
+        if (identity?.type !== 'user') return userSessionRequired(c, identity, 'change GitHub commit signing')
+        const id = c.req.param('connectionId')
+        if ((await service.providerFor(id)) !== 'github' || !service.setGitHubCommitSigning)
+          return c.json({ error: 'GitHub connection not found' }, 404)
+        try {
+          return c.json(await service.setGitHubCommitSigning(id, c.req.valid('json').enabled, identityActor(identity)))
+        } catch (error) {
+          if (error instanceof GitHubSigningError)
+            return c.json({ error: error.message, code: error.code }, error.code === 'github_unavailable' ? 502 : 409)
+          throw error
+        }
+      }
+    )
     .get('/connections', async (c) => {
       const parsed = providerKeySchema.safeParse(c.req.query('provider'))
       if (!parsed.success) return c.json({ error: 'Valid provider is required' }, 400)
@@ -641,6 +678,39 @@ export function createSquadIntegrationsRouter(service: SquadIntegrationRoutesSer
             409
           )
         return c.json({ environment })
+      }
+    )
+    .post(
+      '/:squadId/integrations/github/sign',
+      requireSquadPermission('integrations:use', 'squadId'),
+      zValidator(
+        'json',
+        z
+          .object({
+            payload: z
+              .string()
+              .min(1)
+              .max(Math.ceil((MAX_SIGNING_PAYLOAD_BYTES * 4) / 3) + 4),
+          })
+          .strict()
+      ),
+      async (c) => {
+        const identity = c.get('identity')
+        // Signatures vouch for the connected account; only the squad's agents commit through this path.
+        if (identity?.type !== 'agent') return c.json({ error: 'Only agents sign commits through Tau' }, 403)
+        if (!service.signGitObject) return c.json({ error: 'Commit signing is unavailable' }, 404)
+        c.header('Cache-Control', 'no-store')
+        try {
+          const payload = Buffer.from(c.req.valid('json').payload, 'base64')
+          return c.json({ signature: await service.signGitObject(resolvedSquadId(c), identity.agentId, payload) })
+        } catch (error) {
+          if (error instanceof GitHubSignRefused)
+            return c.json(
+              { error: error.message, code: error.code },
+              error.code === 'identity_mismatch' ? 403 : error.code === 'invalid_payload' ? 400 : 409
+            )
+          throw error
+        }
       }
     )
     .get('/:squadId/integrations/:provider', requireSquadPermission('integrations:read', 'squadId'), async (c) => {

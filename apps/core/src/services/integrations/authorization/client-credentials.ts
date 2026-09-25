@@ -91,6 +91,7 @@ export function getOAuthAppSettings(
         'Workflows: write',
         'Checks: read',
         'Commit statuses: read',
+        'SSH signing keys: write (account permission, for commit signing)',
       ],
     }
   }

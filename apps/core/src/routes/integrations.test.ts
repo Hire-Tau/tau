@@ -1,13 +1,14 @@
 import { afterAll, afterEach, beforeAll, describe, expect, mock, spyOn, test } from 'bun:test'
 import { Hono } from 'hono'
 import { eq } from 'drizzle-orm'
-import { db, roleAssignments, roles, squads, users } from '../db'
+import { agentExtraScopes, agents, db, roleAssignments, roles, squads, users } from '../db'
 import { authzSentinel } from '../middleware/authz-sentinel'
 import type { Identity } from '../services/rbac'
 import { createIntegrationsRouter, createSquadIntegrationsRouter } from './integrations'
 import type { SafeOAuthAppSettings } from '../services/integrations/authorization/client-credentials'
 import { AuthorizationFlowError } from '../services/integrations/authorization/service'
 import { GitHubOAuthError } from '@tau/shared/oauth-providers/github/client'
+import { GitHubSignRefused, GitHubSigningError } from '../services/integrations/github/commit-signing'
 
 const summary = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -70,6 +71,13 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
   const unassign = mock(async () => true)
   const executionEnvironment = mock(async () => ({ GH_TOKEN: 'execution-only-token' }))
   const retryProjection = mock(async () => ({ status: 'pending' as const, lastErrorCode: null }))
+  const githubCommitSigning = mock(async () => ({ state: 'off' as const }))
+  const setGitHubCommitSigning = mock(async (_id: string, enabled: boolean, _actor: string) =>
+    enabled ? { state: 'on' as const, fingerprint: 'SHA256:abc', registeredOnGitHub: true } : { state: 'off' as const }
+  )
+  const signGitObject = mock(
+    async (_squadId: string, _agentId: string, _payload: Buffer) => '-----BEGIN SSH SIGNATURE-----\n'
+  )
   const app = new Hono()
   if (identity) {
     app.use('/api/*', async (c, next) => {
@@ -93,6 +101,8 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
       remove,
       providerFor,
       githubRepositoryAccess,
+      githubCommitSigning,
+      setGitHubCommitSigning,
       channelSettings: { get: channelGet, configure: channelConfigure },
       deploymentSettings: { get: channelGet, configure: channelConfigure },
       serviceSettings: { get: channelGet, configure: channelConfigure },
@@ -109,7 +119,7 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
   )
   app.route(
     '/api/squads',
-    createSquadIntegrationsRouter({ selection, assign, unassign, retryProjection, executionEnvironment })
+    createSquadIntegrationsRouter({ selection, assign, unassign, retryProjection, executionEnvironment, signGitObject })
   )
   return {
     app,
@@ -141,6 +151,9 @@ function createApp(identity?: Identity, loadedProvider = 'bigbrain') {
       assign,
       retryProjection,
       executionEnvironment,
+      githubCommitSigning,
+      setGitHubCommitSigning,
+      signGitObject,
     },
   }
 }
@@ -201,6 +214,144 @@ describe('integration routes', () => {
         expect(calls.executionEnvironment).toHaveBeenCalledWith(squadId, 'github', summary.id)
         expect(await response.json()).toEqual({ environment: { GH_TOKEN: 'execution-only-token' } })
       }
+    }
+  })
+
+  test('commit signing status needs GitHub read access and only exists for GitHub connections', async () => {
+    for (const [scope, provider, expected] of [
+      ['integrations:read:github', 'github', 200],
+      ['integrations:read:notion', 'github', 403],
+      ['integrations:read:github', 'notion', 404],
+    ] as const) {
+      const { app, calls } = createApp({ type: 'system', systemTokenId: 'sig', name: 'sig', scopes: [scope] }, provider)
+      const response = await app.request(`/api/integrations/connections/${summary.id}/github-commit-signing`)
+      expect(response.status).toBe(expected)
+      expect(calls.githubCommitSigning).toHaveBeenCalledTimes(expected === 200 ? 1 : 0)
+      if (expected === 200) {
+        expect(response.headers.get('cache-control')).toBe('no-store')
+        expect(await response.json()).toEqual({ state: 'off' })
+      }
+    }
+  })
+
+  test('turning commit signing on or off takes a signed-in person with GitHub write access', async () => {
+    const post = (app: Hono, body: unknown) =>
+      app.request(`/api/integrations/connections/${summary.id}/github-commit-signing`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+    const system = createApp(
+      { type: 'system', systemTokenId: 'sig', name: 'sig', scopes: ['integrations:write:github'] },
+      'github'
+    )
+    const denied = await post(system.app, { enabled: true })
+    expect(denied.status).toBe(403)
+    expect(system.calls.setGitHubCommitSigning).not.toHaveBeenCalled()
+
+    const readOnly = createApp(
+      { type: 'system', systemTokenId: 'sig', name: 'sig', scopes: ['integrations:read:github'] },
+      'github'
+    )
+    expect((await post(readOnly.app, { enabled: true })).status).toBe(403)
+    expect(readOnly.calls.setGitHubCommitSigning).not.toHaveBeenCalled()
+  })
+
+  test('commit signing failures come back as actionable codes', async () => {
+    const [user] = await db
+      .insert(users)
+      .values({ email: `signing-${crypto.randomUUID()}@example.com` })
+      .returning()
+    const [role] = await db
+      .insert(roles)
+      .values({
+        name: 'Signing writer',
+        slug: `signing-${crypto.randomUUID()}`,
+        permissions: ['integrations:write:github'],
+      })
+      .returning()
+    await db
+      .insert(roleAssignments)
+      .values({ subjectType: 'user', subjectId: user.id, roleId: role.id, scope: 'system' })
+    try {
+      const { app, calls } = createApp({ type: 'user', userId: user.id }, 'github')
+      const post = (body: unknown) =>
+        app.request(`/api/integrations/connections/${summary.id}/github-commit-signing`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+      const on = await post({ enabled: true })
+      expect(on.status).toBe(200)
+      expect(await on.json()).toEqual({ state: 'on', fingerprint: 'SHA256:abc', registeredOnGitHub: true })
+      expect(calls.setGitHubCommitSigning.mock.calls[0]?.slice(0, 2)).toEqual([summary.id, true])
+
+      calls.setGitHubCommitSigning.mockImplementation(async () => {
+        throw new GitHubSigningError('permission_missing', 'approve the updated permissions')
+      })
+      const missing = await post({ enabled: true })
+      expect(missing.status).toBe(409)
+      expect(await missing.json()).toEqual({ error: 'approve the updated permissions', code: 'permission_missing' })
+
+      calls.setGitHubCommitSigning.mockImplementation(async () => {
+        throw new GitHubSigningError('github_unavailable', 'GitHub could not be reached.')
+      })
+      expect((await post({ enabled: false })).status).toBe(502)
+      expect((await post({ enabled: 'yes' })).status).toBe(400)
+    } finally {
+      await db.delete(roleAssignments).where(eq(roleAssignments.roleId, role.id))
+      await db.delete(roles).where(eq(roles.id, role.id))
+      await db.delete(users).where(eq(users.id, user.id))
+    }
+  })
+
+  test("only the squad's agents can have commits signed, and refusals explain themselves", async () => {
+    const payload = Buffer.from('tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\n').toString('base64')
+    const sign = (app: Hono) =>
+      app.request(`/api/squads/${squadId}/integrations/github/sign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payload }),
+      })
+
+    // A system token with the permission still is not an agent.
+    const system = createApp({ type: 'system', systemTokenId: 'sig', name: 'sig', scopes: ['integrations:use'] })
+    expect((await sign(system.app)).status).toBe(403)
+    expect(system.calls.signGitObject).not.toHaveBeenCalled()
+    const noUse = createApp({ type: 'system', systemTokenId: 'sig', name: 'sig', scopes: ['integrations:read'] })
+    expect((await sign(noUse.app)).status).toBe(403)
+
+    const [agent] = await db.insert(agents).values({ agentTypeId: 'engineer', squadId }).returning()
+    // The same grant squad agents rely on for `tau integration exec github`.
+    await db.insert(agentExtraScopes).values({ agentId: agent.id, permission: 'integrations:use' })
+    try {
+      const { app, calls } = createApp({ type: 'agent', agentId: agent.id, squadId })
+      const signed = await sign(app)
+      expect(signed.status).toBe(200)
+      expect(signed.headers.get('cache-control')).toBe('no-store')
+      expect(await signed.json()).toEqual({ signature: '-----BEGIN SSH SIGNATURE-----\n' })
+      const [calledSquad, calledAgent, calledPayload] = calls.signGitObject.mock.calls[0]!
+      expect([calledSquad, calledAgent, calledPayload.toString()]).toEqual([
+        squadId,
+        agent.id,
+        'tree 4b825dc642cb6eb9a060e54bf8d69288fbee4904\n',
+      ])
+
+      for (const [code, status] of [
+        ['identity_mismatch', 403],
+        ['invalid_payload', 400],
+        ['signing_off', 409],
+        ['not_configured', 409],
+      ] as const) {
+        calls.signGitObject.mockImplementation(async () => {
+          throw new GitHubSignRefused(code, `refused: ${code}`)
+        })
+        const refused = await sign(app)
+        expect(refused.status).toBe(status)
+        expect(await refused.json()).toEqual({ error: `refused: ${code}`, code })
+      }
+    } finally {
+      await db.delete(agents).where(eq(agents.id, agent.id))
     }
   })
 

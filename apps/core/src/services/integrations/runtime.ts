@@ -102,6 +102,9 @@ import { createLogger } from '../../lib/infra/logger'
 import { materializeGitHubDispatch } from '../squad-activity/materialize'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { regenerateEnvFileForSquad } from '../squad/env'
+import { GitHubCommitSigning, githubSigningKeysApi } from './github/commit-signing'
+import { defaultGitHubConnectionId, githubConnectionIdsForUser } from './github/commit-signing-store'
+import { resolveGitHubIdentity } from '../sandbox/github-identity'
 import { DbOAuthStateRepository } from './authorization/db-state-repository'
 import { DbAuthorizationFlowReceiptRepository } from './authorization/flow-repository'
 import { AuthorizationFlowRecoveryWorker } from './authorization/flow-recovery-worker'
@@ -160,6 +163,54 @@ const log = createLogger('integration-event-polling')
 const oauthLog = createLogger('integration-oauth')
 
 export const integrationConnectionRepository = new DbIntegrationConnectionRepository()
+
+async function reprojectConnection(connectionId: string, providerKey: string) {
+  const usage = await integrationConnectionRepository.usage(connectionId)
+  for (const squad of usage.squads) {
+    await regenerateEnvFileForSquad(squad.id)
+    eventEmitter.emit('integration.projection-invalidated', { squadId: squad.id, providerKey })
+  }
+}
+
+export const githubCommitSigning = new GitHubCommitSigning({
+  secrets: {
+    get: (key) => getSecretStore().get(key),
+    refreshKey: (key) => getSecretStore().refreshKey(key),
+    set: (key, value, actor) => getSecretStore().set(key, value, actor),
+    delete: (key) => getSecretStore().delete(key),
+  },
+  keys: githubSigningKeysApi(),
+  async account(connectionId) {
+    const resolved = await resolveInstanceGitHubConnection(connectionId)
+    if (!resolved) return undefined
+    const { login, userId } = parseGitHubConfiguration(resolved.connection.configuration)
+    return { accessToken: resolved.credential.accessToken, login, userId }
+  },
+  connectionIdsFor: githubConnectionIdsForUser,
+  squadConnectionId: defaultGitHubConnectionId,
+  async signerEmails(squadId, connectionId) {
+    const emails: string[] = []
+    const connection = await integrationConnectionRepository.get(connectionId)
+    if (connection) {
+      const { login, userId } = parseGitHubConfiguration(connection.configuration)
+      emails.push(`${userId}+${login}@users.noreply.github.com`)
+    }
+    const identity = await resolveGitHubIdentity(squadId)
+    if (identity.gitUserEmail) emails.push(identity.gitUserEmail)
+    return [...new Set(emails)]
+  },
+  reproject: (connectionId) => reprojectConnection(connectionId, 'github'),
+  keyTitle() {
+    let host: string | undefined
+    try {
+      host = process.env.APP_URL ? new URL(process.env.APP_URL).host : undefined
+    } catch {
+      host = undefined
+    }
+    return `Tau commit signing${host ? ` (${host})` : ''}`
+  },
+  now: () => new Date(),
+})
 export const integrationCredentialCleanupWorker = new IntegrationCredentialCleanupWorker(
   new DbIntegrationCredentialCleanupRepository(),
   getSecretStore()
@@ -369,6 +420,12 @@ const installOAuthGrant: AuthorizationServiceDependencies['installGrant'] = asyn
     },
   })
   await authorizer.install({ intent: state, exchange, userId })
+  // Turn commit signing on for the account just connected. Best-effort: the
+  // install already committed, and the card offers "Turn on" if this fails.
+  if (plugin.key === 'github')
+    await githubCommitSigning.enableUndecided(userId).catch((error: Error) => {
+      log.warn(`GitHub commit signing setup failed: ${error.message}`)
+    })
   // Channel transports read a synchronous snapshot (30s timer refresh otherwise);
   // a managed Slack install should take effect as soon as it lands.
   if (plugin.key === 'slack') await channelConnections.refresh()
@@ -440,6 +497,21 @@ export const integrationEventPollingRuntime = new EventPollingRunner({
   maxBudgetUnitsPerTick: 40,
 })
 export const integrationConnectionService = new IntegrationConnectionService({
+  prepareRemoval: async (connection, credential) => {
+    if (connection.providerKey !== 'github') return undefined
+    // Refresh rotates (and invalidates) the token, possibly in another process: read the latest.
+    await getSecretStore()
+      .refreshKey(connection.credentialRef)
+      .catch(() => {})
+    const latest = getSecretStore().get(connection.credentialRef) ?? credential
+    let accessToken: string | undefined
+    try {
+      accessToken = latest ? parseOAuthCredential(latest).accessToken : undefined
+    } catch {
+      accessToken = undefined
+    }
+    return githubCommitSigning.prepareRemoval(connection.id, accessToken)
+  },
   repository: integrationConnectionRepository,
   assignments: integrationConnectionRepository,
   credentials: {
@@ -569,6 +641,9 @@ export const integrationRoutesService = Object.assign(integrationConnectionServi
     return row ? integrationConnectionService.safeView(row) : null
   },
   providerFor: (id: string) => integrationConnectionRepository.providerFor(id),
+  githubCommitSigning: (id: string) => githubCommitSigning.status(id),
+  setGitHubCommitSigning: (id: string, enabled: boolean, actor: string) =>
+    enabled ? githubCommitSigning.enable(id, actor) : githubCommitSigning.disable(id, actor),
   async githubRepositoryAccess(id: string) {
     const resolved = await resolveInstanceGitHubConnection(id)
     if (!resolved) return null
@@ -675,6 +750,8 @@ function hasSandboxProjection(providerKey: string): boolean {
 }
 
 export const squadIntegrationRoutesService = {
+  signGitObject: (squadId: string, agentId: string, payload: Buffer) =>
+    githubCommitSigning.sign({ squadId, agentId, payload }),
   async configureScope(squadId: string, providerKey: string, input: { enabled?: boolean; inheritDefault?: boolean }) {
     const scope = await reconcileSquadIntegration(squadId, providerKey, input)
     await regenerateEnvFileForSquad(squadId)

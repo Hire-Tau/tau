@@ -929,6 +929,7 @@ import {
   getExternalExport,
   getIntegrationOAuthApp,
   getGitHubWebhookSettings,
+  getGitHubCommitSigning,
   getGitHubRepositoryAccess,
   getLinearWebhookSettings,
   getChannelIntegrationSettings,
@@ -945,6 +946,13 @@ export const integrationQueries = {
       staleTime: 60_000,
       retry: false,
       refetchOnWindowFocus: 'always',
+    }),
+  githubCommitSigning: (connectionId: string) =>
+    queryOptions({
+      queryKey: integrationQueryKeys.githubCommitSigning(connectionId),
+      queryFn: () => getGitHubCommitSigning(connectionId),
+      staleTime: 60_000,
+      retry: false,
     }),
   outputs: () => queryOptions({ queryKey: integrationQueryKeys.outputs(), queryFn: listIntegrationOutputs }),
   credentialSettings: (provider: string, kind: 'channel' | 'deployment' | 'service') =>

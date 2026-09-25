@@ -1,6 +1,7 @@
 import { CheckIcon, ClipboardIcon } from '../icons'
 import { GitHubWebhookSettings } from './GitHubWebhookSettings'
 import { GitHubRepositoryAccess } from './GitHubRepositoryAccess'
+import { GitHubCommitSigning } from './GitHubCommitSigning'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { IntegrationAuthorizationStart } from '@tau/shared'
@@ -315,11 +316,20 @@ export function GitHubIntegrationSettings({
               · Used by {connection.usage.squadCount} squads
             </p>
             {connection.enabled && connection.authState === 'authenticated' && (
-              <GitHubRepositoryAccess
-                connectionId={connection.id}
-                login={connection.configuration.login ?? connection.displayName}
-                usesTauApp={usesTauApp}
-              />
+              <>
+                <GitHubRepositoryAccess
+                  connectionId={connection.id}
+                  login={connection.configuration.login ?? connection.displayName}
+                  usesTauApp={usesTauApp}
+                />
+                <GitHubCommitSigning
+                  connectionId={connection.id}
+                  login={connection.configuration.login ?? connection.displayName}
+                  canWrite={canWrite}
+                  onReconnect={() => authorize.mutate(connection.id)}
+                  reconnectPending={authorize.isPending || !!device}
+                />
+              </>
             )}
           </div>
           {canWrite && (

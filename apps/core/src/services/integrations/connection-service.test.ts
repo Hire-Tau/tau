@@ -3,6 +3,7 @@ import {
   IntegrationConnectionCreateCommittedError,
   IntegrationConnectionInUseError,
   IntegrationConnectionService,
+  type ConnectionServiceDependencies,
 } from './connection-service'
 import type { ProviderValidation } from './types'
 import type {
@@ -30,6 +31,7 @@ function setup(
     requiresRemoteRevocation?: (providerKey: string, adapterVersion: number, clientAuthority: string) => boolean
     operatorAlertFails?: boolean
     authorityCasLoses?: boolean
+    prepareRemoval?: ConnectionServiceDependencies['prepareRemoval']
   } = {}
 ) {
   let row: IntegrationConnectionRecord | null = null
@@ -199,6 +201,7 @@ function setup(
       operatorAlerts.push(input)
     },
     deproject: async (input) => void deprojections.push(input),
+    prepareRemoval: options.prepareRemoval,
     audit: {
       record: async (event) => {
         if (failAudit) throw new Error('audit unavailable')
@@ -574,6 +577,46 @@ describe('IntegrationConnectionService', () => {
 
     await expect(service.remove(connection.id, undefined, true)).rejects.toThrow('database unavailable')
     expect(secrets.has(credentialRef)).toBe(true)
+  })
+
+  test('removal hands provider cleanup the live credential and runs it only after the delete commits', async () => {
+    const events: string[] = []
+    const { service, getRow, secrets, deprojections, setUsage } = setup({
+      prepareRemoval: async (connection, credential) => {
+        events.push(`prepare:${connection.providerKey}:${credential}:${getRow() ? 'row' : 'gone'}`)
+        return async () => {
+          events.push(`cleanup:${getRow() ? 'row' : 'gone'}:${deprojections.length}`)
+        }
+      },
+    })
+    const connection = await service.create({
+      providerKey: 'notion',
+      adapterVersion: 1,
+      displayName: 'Workspace',
+      configuration: { version: 1 },
+      credential: 'oauth-bundle',
+      actor: 'user:user-1',
+    })
+    setUsage({ squadCount: 1, squads: [{ id: 'squad-1', name: 'Alpha' }] })
+    const credentialRef = getRow()!.credentialRef
+    await service.remove(connection.id, 'user:user-1', true)
+    // Captured while the row and token exist; cleaned up after the delete, before squads deproject.
+    expect(events).toEqual(['prepare:notion:oauth-bundle:row', 'cleanup:gone:0'])
+    expect(deprojections).toHaveLength(1)
+    expect(secrets.get(credentialRef)).toBe('oauth-bundle')
+  })
+
+  test('a removal that fails runs no provider cleanup', async () => {
+    let cleaned = false
+    const { service, failDelete } = setup({
+      prepareRemoval: async () => async () => {
+        cleaned = true
+      },
+    })
+    const connection = await create(service)
+    failDelete()
+    await expect(service.remove(connection.id, undefined, true)).rejects.toThrow('database unavailable')
+    expect(cleaned).toBe(false)
   })
 
   test('OAuth removal atomically queues remote revocation and retains the credential', async () => {
