@@ -564,3 +564,36 @@
     white-space: nowrap;
   }
 }
+
+/* Markdown inside a user bubble (bg-accent + text-on-accent). Every prose colour inherits the bubble's
+   on-accent ink, so text stays legible on any theme's primary; links are marked by underline and inline code
+   by a tint of that same ink. These selectors out-rank the page-level link, entity-reference and code colours. */
+.prose.prose-on-accent {
+  --tw-prose-body: currentColor;
+  --tw-prose-headings: currentColor;
+  --tw-prose-lead: currentColor;
+  --tw-prose-links: currentColor;
+  --tw-prose-bold: currentColor;
+  --tw-prose-counters: currentColor;
+  --tw-prose-bullets: currentColor;
+  --tw-prose-hr: currentColor;
+  --tw-prose-quotes: currentColor;
+  --tw-prose-quote-borders: currentColor;
+  --tw-prose-captions: currentColor;
+  --tw-prose-kbd: currentColor;
+  --tw-prose-code: currentColor;
+  --tw-prose-th-borders: currentColor;
+  --tw-prose-td-borders: currentColor;
+  color: inherit;
+}
+.prose.prose-on-accent :is(a, button) {
+  color: inherit;
+}
+.prose.prose-on-accent a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.prose.prose-on-accent :not(pre) > code {
+  color: inherit;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}

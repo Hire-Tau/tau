@@ -49,3 +49,14 @@ test('does not activate malformed references or references in code and retains U
     '<button'
   )
 })
+
+test('user-bubble markdown inherits the on-accent ink instead of fixed inverted prose colours', () => {
+  const html = renderToStaticMarkup(
+    <MarkdownContent variant="human">{`Hi **there** [docs](https://example.com) \`code\``}</MarkdownContent>
+  )
+  expect(html).toContain('prose-on-accent')
+  expect(html).not.toContain('prose-invert')
+  expect(html).not.toContain('syntax-human')
+  // Assistant markdown keeps its page prose colours.
+  expect(renderToStaticMarkup(<MarkdownContent>{'Hi'}</MarkdownContent>)).toContain('dark:prose-invert')
+})

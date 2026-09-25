@@ -353,6 +353,24 @@ test('hovering a circle previews the whole app after the intent delay, pure DOM 
   }
 })
 
+test('previewing a one-appearance dark theme from a light theme paints it dark, like selecting it', async () => {
+  const { container } = await renderPicker({ themeId: 'tau', appearance: 'light' })
+  await open(container)
+  const hover = useHoverTimer()
+  try {
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
+    await hoverEnter(getByRole(container, 'radio', { name: 'adzukiiro' }))
+    await hover.advance(100)
+    const root = document.documentElement
+    expect(root.getAttribute('data-theme')).toBe('adzukiiro')
+    // Its only variant is constant dark: `dark:` styles (e.g. markdown's dark:prose-invert) must apply.
+    expect(root.classList.contains('dark')).toBe(true)
+    expect(root.hasAttribute('data-appearance')).toBe(false)
+  } finally {
+    hover.restore()
+  }
+})
+
 test('sweeping quickly across circles cancels the pending preview (no strobe)', async () => {
   const { container } = await renderPicker({ themeId: 'tau' })
   await open(container)
