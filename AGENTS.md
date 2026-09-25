@@ -217,7 +217,7 @@ theme (Tau, Harbor, Ember, High contrast, or a custom theme) in light and dark.
 - After changing built-in theme CSS or anything the pre-paint script imports,
   run `bun apps/web/scripts/generate-theme-flash.ts` and commit
   `apps/web/index.html`; a test fails when it is stale.
-- Details: [web themes](docs/wiki/theme/README.md).
+- Details: [web themes](docs/wiki/theme/README.md); adding a new built-in theme has its own checklist: [Adding a built-in theme](docs/wiki/theme/builtins.md#adding-a-built-in-theme).
 
 ### Stable Refs
 

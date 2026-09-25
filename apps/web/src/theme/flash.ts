@@ -43,6 +43,7 @@ try {
   const surfaces: Record<string, Partial<Record<string, string>>> = {
     tau: { light: 'rgb(255 255 255)', dark: 'rgb(16 17 28)' },
     harbor: { light: 'rgb(255 255 255)', dark: 'rgb(15 30 40)' },
+    forest: { light: 'rgb(255 255 243)', dark: 'rgb(19 19 9)' },
     ember: { light: 'rgb(255 253 249)', dark: 'rgb(35 26 23)' },
     'high-contrast': { constant: 'rgb(255 255 255)' },
     // BigBrain-ported unified built-ins (docs/wiki/theme/builtins.md), kept in

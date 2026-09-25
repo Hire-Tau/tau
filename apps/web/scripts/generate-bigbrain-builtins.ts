@@ -52,52 +52,12 @@
 import { resolve } from 'node:path'
 import { BIGBRAIN_PALETTES, mixSrgb, type BigBrainPalette } from '@tau/shared/bigbrain-palettes'
 import { deriveThemeOverrides } from '@tau/shared/theme-derivation'
-import { THEME_TOKEN_FAMILIES, customColorChannels } from '@tau/shared/theme-schema'
-import { oklchToSrgb, srgbToOklch } from '@tau/shared/color-oklch'
-import { contrast, contrastPairs, pairBackground, tokenRgba } from '../src/theme/contrast'
+import { customColorChannels } from '@tau/shared/theme-schema'
+import { cssBlockDeclarations, DERIVABLE_TOKENS, repairContrastPairs } from './theme-builtin-shared'
 
 export const GENERATED_START =
   '\n  /* BEGIN GENERATED BIGBRAIN BUILTINS — apps/web/scripts/generate-bigbrain-builtins.ts. Do not edit by hand. */\n'
 export const GENERATED_END = '  /* END GENERATED BIGBRAIN BUILTINS */\n'
-
-/** Slices a balanced `{ ... }` block's raw custom-property declarations,
- * starting at the first match of `selector` — mirrors tokenCoverage.test.ts's
- * `cssBlock` helper so both agree on where Tau's own scopes start/end.
- * Preserves declaration order (used to keep the generated CSS's token order
- * matching Tau's own, for easy review). */
-function cssBlockDeclarations(css: string, selector: string): Record<string, string> {
-  const start = css.indexOf(selector)
-  if (start < 0) throw new Error(`selector not found: ${selector}`)
-  const open = css.indexOf('{', start)
-  let depth = 0
-  let close = -1
-  for (let i = open; i < css.length; i++) {
-    if (css[i] === '{') depth++
-    if (css[i] === '}') {
-      depth--
-      if (depth === 0) {
-        close = i
-        break
-      }
-    }
-  }
-  if (close < 0) throw new Error(`unbalanced block for selector ${selector}`)
-  const block = css.slice(open + 1, close)
-  const tokens: Record<string, string> = {}
-  for (const match of block.matchAll(/(--[a-z0-9-]+)\s*:\s*([^;]+);/g)) tokens[match[1]!] = match[2]!.trim()
-  return tokens
-}
-
-/** The only tokens the shared palette derivation is allowed to touch for a
- * built-in theme — see the module doc comment step 3. Everything else is
- * copied verbatim from Tau's own value, matching how harbor/ember/high-
- * contrast already keep every non-chrome family byte-identical to Tau. */
-const DERIVABLE_TOKENS = new Set<string>([
-  ...THEME_TOKEN_FAMILIES.find((family) => family.family === 'chrome')!.tokens,
-  '--swatch-secondary',
-  '--swatch-tertiary',
-  '--on-accent-fg',
-])
 
 /** BigBrain's own sRGB `color-mix` formulas (see docs/wiki/theme/builtins.md
  * for the full mapping table), converted to compiled "r g b" channel form. */
@@ -170,86 +130,6 @@ function fitTextContrast(fg: string, bg: string, nominalPct: number): string {
   let pct = nominalPct
   while (pct < 100 && !passes(pct)) pct += 1
   return mixSrgb(fg, pct, bg)
-}
-
-/**
- * Final corrective pass: the strict built-in contrast gate
- * (`apps/web/src/theme/builtins.test.ts`, `contrastPairs`) checks every
- * derived categorical/status foreground against EVERY chrome surface this
- * theme now has — a broader check than the shared derivation engine's own
- * internal contrast pass (which only self-corrects text/primary vs one
- * surface). Tokens like `--agent-type-N-fg` and `--status-ROLE-fg` are
- * hue-rotated/preserved-as-is by the shared engine (their lightness/chroma
- * carries over from Tau's own values, tuned against TAU's neutral gray
- * surfaces) — against BigBrain's own more saturated/darker surfaces, some
- * fall short. This nudges ONLY such a token's LIGHTNESS (hue/chroma held
- * fixed, exactly the technique `theme-derivation.ts`'s own `contrastPass`
- * uses) toward whichever extreme clears every gated pair for THIS theme,
- * never touching the derivation engine itself. Tokens already passing are
- * left untouched (byte-identical). See docs/wiki/theme/builtins.md for the
- * per-theme list of which tokens this actually moved.
- */
-function repairContrastPairs(tokens: Record<string, string>): { tokens: Record<string, string>; adjusted: string[] } {
-  const next = { ...tokens }
-  const adjusted: string[] = []
-  const fgTokenNames = [...new Set(contrastPairs.map((pair) => pair.fg))]
-  for (const fgToken of fgTokenNames) {
-    if (next[fgToken] === undefined) continue
-    const pairs = contrastPairs.filter((pair) => pair.fg === fgToken)
-    let fgRgba: number[]
-    try {
-      fgRgba = tokenRgba(next, fgToken)
-    } catch {
-      continue // not a color token (e.g. a 'none'/'auto' sentinel)
-    }
-    const alpha = fgRgba[3] ?? 1
-    const backgrounds = pairs
-      .map((pair) => ({ bg: pairBackground(next, pair), minimum: pair.minimum }))
-      .filter((b): b is { bg: number[]; minimum: number } => !!b.bg)
-    if (backgrounds.length === 0) continue
-    const oklch = srgbToOklch([fgRgba[0]!, fgRgba[1]!, fgRgba[2]!])
-    // Normalized score: min over every gated pair of (actual ratio / required
-    // minimum). >= 1 means every pair for this token passes.
-    const scoreAt = (l: number, c: number) => {
-      const rgb = oklchToSrgb({ l, c, h: oklch.h })
-      return Math.min(...backgrounds.map(({ bg, minimum }) => contrast([...rgb, alpha], bg) / minimum))
-    }
-    if (scoreAt(oklch.l, oklch.c) >= 1) continue
-    const extreme = scoreAt(1, oklch.c) > scoreAt(0, oklch.c) ? 1 : 0
-    let near = oklch.l
-    let far = extreme
-    for (let i = 0; i < 40; i++) {
-      const mid = (near + far) / 2
-      if (scoreAt(mid, oklch.c) >= 1) far = mid
-      else near = mid
-    }
-    let finalL = scoreAt(far, oklch.c) >= 1 ? far : extreme
-    let finalC = oklch.c
-    // Gamut-limited last resort: fixed chroma at the lightness extreme still
-    // doesn't clear every pair (a saturated hue can't get light/dark enough
-    // without desaturating). Bisect chroma toward 0 (a neutral gray) at that
-    // extreme instead, same technique, never touching hue.
-    if (scoreAt(finalL, finalC) < 1) {
-      let nearC = oklch.c
-      let farC = 0
-      for (let i = 0; i < 40; i++) {
-        const midC = (nearC + farC) / 2
-        if (scoreAt(extreme, midC) >= 1) farC = midC
-        else nearC = midC
-      }
-      finalL = extreme
-      finalC = scoreAt(extreme, farC) >= 1 ? farC : 0
-    }
-    const [r, g, b] = oklchToSrgb({ l: finalL, c: finalC, h: oklch.h })
-    const hex = (n: number) =>
-      Math.round(Math.min(255, Math.max(0, n)))
-        .toString(16)
-        .padStart(2, '0')
-    const alphaHex = alpha < 1 ? hex(Math.round(alpha * 255)) : ''
-    next[fgToken] = customColorChannels(`#${hex(r)}${hex(g)}${hex(b)}${alphaHex}`)!
-    adjusted.push(fgToken)
-  }
-  return { tokens: next, adjusted }
 }
 
 /** Builds the full compiled token map for one palette's unified built-in. */
