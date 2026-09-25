@@ -126,10 +126,10 @@ test('a built-in dot is checked and ringed for the active plain theme; others ar
   const grid = getByRole(container, 'radiogroup', { name: 'Color theme' })
   const harbor = getByRole(grid, 'radio', { name: 'Harbor' })
   expect(harbor.getAttribute('aria-checked')).toBe('true')
-  expect(harbor.querySelector('.ring-accent')).not.toBeNull()
+  expect(harbor.querySelector('[data-ring="on"]')).not.toBeNull()
   for (const other of getAllByRole(grid, 'radio').filter((dot) => dot !== harbor)) {
     expect(other.getAttribute('aria-checked')).toBe('false')
-    expect(other.querySelector('.ring-accent')).toBeNull()
+    expect(other.querySelector('[data-ring="on"]')).toBeNull()
   }
 })
 
@@ -220,14 +220,14 @@ test('hovering a dot previews the whole app without saving; sweeping to the next
     await pointer('mouseout', harbor, ember)
     await pointer('mouseover', ember, harbor)
     expect(document.documentElement.getAttribute('data-theme')).toBe('harbor')
-    expect(ember.querySelector('.ring-accent')).not.toBeNull()
-    expect(tau.querySelector('.ring-accent')).toBeNull()
+    expect(ember.querySelector('[data-ring="on"]')).not.toBeNull()
+    expect(tau.querySelector('[data-ring="on"]')).toBeNull()
     await hover.advance(100)
     expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
     // Leaving the grid restores the stored selection; nothing was saved.
     await pointer('mouseout', ember)
     expect(document.documentElement.getAttribute('data-theme')).toBe('tau')
-    expect(tau.querySelector('.ring-accent')).not.toBeNull()
+    expect(tau.querySelector('[data-ring="on"]')).not.toBeNull()
     expect(localStorage.getItem('tau-theme-id')).toBe('tau')
   } finally {
     hover.restore()
@@ -307,7 +307,7 @@ test('a detached custom theme (no presetId) has no matching dot: none show as ch
   for (const dot of getAllByRole(grid, 'radio')) expect(dot.getAttribute('aria-checked')).toBe('false')
 })
 
-test('the appearance segmented control applies light/dark/system and disables for a unified theme with the hint', async () => {
+test('the appearance control applies light/dark/system, and is hidden while a one-appearance theme is selected', async () => {
   const container = await renderControl('harbor', 'system')
   const appearanceGroup = getByRole(container, 'radiogroup', { name: 'Appearance' })
   expect(getByRole(appearanceGroup, 'radio', { name: 'System' }).getAttribute('aria-checked')).toBe('true')
@@ -319,18 +319,23 @@ test('the appearance segmented control applies light/dark/system and disables fo
 
   const colorGrid = getByRole(container, 'radiogroup', { name: 'Color theme' })
   await act(async () => fireEvent.click(getByRole(colorGrid, 'radio', { name: 'High contrast' })))
-  const light = getByRole(appearanceGroup, 'radio', { name: 'Light' })
-  const dark = getByRole(appearanceGroup, 'radio', { name: 'Dark' })
-  const system = getByRole(appearanceGroup, 'radio', { name: 'System' })
-  expect(light.hasAttribute('disabled')).toBe(true)
-  expect(dark.hasAttribute('disabled')).toBe(true)
-  expect(system.hasAttribute('disabled')).toBe(true)
+  expect(queryAllByRole(container, 'radiogroup', { name: 'Appearance' })).toHaveLength(0)
   expect(document.documentElement.getAttribute('data-appearance')).toBeNull()
-  expect(container.textContent).toContain('High contrast has one appearance.')
-  // The hint names whichever unified theme is selected.
-  await act(async () => fireEvent.click(getByRole(colorGrid, 'radio', { name: 'yamabukiiro' })))
-  expect(container.textContent).toContain('yamabukiiro has one appearance.')
-  expect(container.textContent).not.toContain('High contrast has one appearance.')
+  expect(container.textContent).not.toContain('has one appearance')
+  // The setting is kept: previewing a light/dark theme shows the control again and paints with Dark.
+  const hover = useHoverTimer()
+  try {
+    await pointer('mouseover', getByRole(colorGrid, 'radio', { name: 'Ember' }))
+    await hover.advance(100)
+    expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
+    expect(document.documentElement.getAttribute('data-appearance')).toBe('dark')
+    const shown = getByRole(container, 'radiogroup', { name: 'Appearance' })
+    expect(getByRole(shown, 'radio', { name: 'Dark' }).getAttribute('aria-checked')).toBe('true')
+    await pointer('mouseout', getByRole(colorGrid, 'radio', { name: 'Ember' }))
+    expect(queryAllByRole(container, 'radiogroup', { name: 'Appearance' })).toHaveLength(0)
+  } finally {
+    hover.restore()
+  }
 })
 
 for (const theme of BUILT_IN_THEMES)

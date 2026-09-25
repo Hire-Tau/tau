@@ -288,19 +288,35 @@ test('appearance toggle applies light/dark/system and stays wired to the existin
   expect(localStorage.getItem('tau-appearance')).toBe('system')
 })
 
-test('appearance is disabled for a unified theme, with the same explanatory hint as Settings', async () => {
-  const { container } = await renderPicker({ themeId: 'high-contrast' })
+test('a one-appearance theme hides the appearance control, which shows while a light/dark theme is previewed', async () => {
+  const { container } = await renderPicker({ themeId: 'high-contrast', appearance: 'dark' })
   await open(container)
-  const light = getByRole(container, 'radio', { name: 'Light' })
-  const dark = getByRole(container, 'radio', { name: 'Dark' })
-  const system = getByRole(container, 'radio', { name: 'System' })
-  expect(light.hasAttribute('disabled')).toBe(true)
-  expect(dark.hasAttribute('disabled')).toBe(true)
-  expect(system.hasAttribute('disabled')).toBe(true)
-  expect(container.textContent).toContain('High contrast has one appearance.')
+  expect(queryByRole(container, 'radiogroup', { name: 'Appearance' })).toBeNull()
+  expect(container.textContent).not.toContain('has one appearance')
+  const hover = useHoverTimer()
+  try {
+    await hoverEnter(getByRole(container, 'radio', { name: 'Harbor' }))
+    await hover.advance(100)
+    // The preview uses the kept appearance setting (Dark), not High contrast's own light appearance.
+    expect(document.documentElement.getAttribute('data-theme')).toBe('harbor')
+    expect(document.documentElement.getAttribute('data-appearance')).toBe('dark')
+    const appearance = getByRole(container, 'radiogroup', { name: 'Appearance' })
+    expect(getByRole(appearance, 'radio', { name: 'Dark' }).getAttribute('aria-checked')).toBe('true')
+    await moveBetween(
+      getByRole(container, 'radio', { name: 'Harbor' }),
+      getByRole(container, 'radio', { name: 'nurebairo' })
+    )
+    await hover.advance(100)
+    expect(queryByRole(container, 'radiogroup', { name: 'Appearance' })).toBeNull()
+    await hoverLeave(getByRole(container, 'radio', { name: 'nurebairo' }))
+    expect(document.documentElement.getAttribute('data-theme')).toBe('high-contrast')
+    expect(queryByRole(container, 'radiogroup', { name: 'Appearance' })).toBeNull()
+  } finally {
+    hover.restore()
+  }
 })
 
-test('surfaces the same account-sync notice the Settings picker shows', async () => {
+test('shows no account-sync notice or button once synced', async () => {
   const { container, storeRef } = await renderPicker()
   await act(async () => {
     storeRef.current.connect({
@@ -313,7 +329,7 @@ test('surfaces the same account-sync notice the Settings picker shows', async ()
     await storeRef.current.refresh()
   })
   await open(container)
-  expect(container.textContent).toContain('Your theme syncs across your devices.')
+  expect(container.textContent).not.toMatch(/sync/i)
   expect(queryByRole(container, 'button', { name: /synced theme/i })).toBeNull()
 })
 
@@ -371,15 +387,16 @@ test('moving straight from one circle to the next swaps the preview without rest
     // Still Harbor, never the stored Tau, until Ember's own preview lands.
     expect(document.documentElement.getAttribute('data-theme')).toBe('harbor')
     // The ring follows the previewed circle; the stored selection's ring dims.
-    expect(ember.querySelector('.ring-accent')).not.toBeNull()
-    expect(harbor.querySelector('.ring-accent')).toBeNull()
-    expect(tau.querySelector('.ring-accent')).toBeNull()
+    expect(ember.querySelector('[data-ring="on"]')).not.toBeNull()
+    expect(harbor.querySelector('[data-ring="on"]')).toBeNull()
+    expect(tau.querySelector('[data-ring="on"]')).toBeNull()
+    expect(tau.querySelector('[data-ring="dim"]')).not.toBeNull()
     expect(tau.getAttribute('aria-checked')).toBe('true')
     await hover.advance(100)
     expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
     await hoverLeave(ember)
     expect(document.documentElement.getAttribute('data-theme')).toBe('tau')
-    expect(tau.querySelector('.ring-accent')).not.toBeNull()
+    expect(tau.querySelector('[data-ring="on"]')).not.toBeNull()
     expect(localStorage.getItem('tau-theme-id')).toBe('tau')
   } finally {
     hover.restore()

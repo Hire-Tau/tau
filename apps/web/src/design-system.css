@@ -54,9 +54,8 @@
      visible lighter crescent where the two roundings didn't quite agree. An
      inset box-shadow shares the exact same clip as the gradient, so there is
      nothing left to disagree with. A fixed aspect-ratio is a safety net for
-     any future caller that forgets to size both axes explicitly. Selection
-     rings stay on a wrapping element (never on this class) so they aren't
-     clipped by this overflow: hidden. */
+     any future caller that forgets to size both axes explicitly. A picker's
+     selection ring is an outline (below), which overflow: hidden never clips. */
   .theme-swatch {
     position: relative;
     aspect-ratio: 1 / 1;
@@ -93,6 +92,20 @@
           calc(var(--custom-alpha-color-panel-border, 1) * var(--opacity-panel-border))
       );
     pointer-events: none;
+  }
+
+  /* A picker circle's ring (selected, previewed, or keyboard focus), in the
+     circle's own theme primary: the swatch is that theme's scope, so the ring
+     keeps its colour when a hover preview repaints the page, and the outline
+     offset leaves a transparent gap instead of a page-coloured one. */
+  .theme-swatch[data-ring='on'],
+  .group:focus-visible .theme-swatch {
+    outline: 2px solid rgb(var(--color-primary));
+    outline-offset: 2px;
+  }
+  .theme-swatch[data-ring='dim'] {
+    outline: 2px solid rgb(var(--color-primary) / 0.4);
+    outline-offset: 2px;
   }
 
   /* Native color inputs render a padded inner square; fill the rounded control instead. */

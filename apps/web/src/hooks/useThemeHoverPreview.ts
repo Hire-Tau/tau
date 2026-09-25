@@ -14,6 +14,11 @@ export type PreviewableTheme =
   | { kind: 'builtin'; id: string; theme: WebThemeDefinition }
   | { kind: 'preset'; id: string; preset: Pick<ThemePreset, 'document'> }
 
+/** Whether a circle's theme has both a light and a dark appearance (a preset has its base theme's). */
+export function hasAppearances(option: PreviewableTheme): boolean {
+  return (option.kind === 'builtin' ? option.theme : findWebTheme(option.preset.document.base)).kind === 'dual'
+}
+
 /**
  * Hover preview shared by the header quick picker and Settings' theme grid: hovering a circle paints the whole app
  * with it (after the intent delay) without persisting anything.

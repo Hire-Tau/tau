@@ -24,7 +24,16 @@ export type ThemeSwatchSpec =
  * the live preview and the custom-theme editor use — falling back to the
  * plain base paint (never a blank circle) if the document fails to apply.
  */
-export function ThemeSwatch({ spec, className }: { spec: ThemeSwatchSpec; className?: string }) {
+export function ThemeSwatch({
+  spec,
+  ring,
+  className,
+}: {
+  spec: ThemeSwatchSpec
+  /** A picker's ring around the circle, in the circle's own theme colour: `on`, `dim`, or none. */
+  ring?: 'on' | 'dim'
+  className?: string
+}) {
   const ref = useRef<HTMLSpanElement>(null)
   useLayoutEffect(() => {
     const element = ref.current
@@ -45,8 +54,9 @@ export function ThemeSwatch({ spec, className }: { spec: ThemeSwatchSpec; classN
         data-theme-scope=""
         data-theme={spec.theme.id}
         data-appearance={spec.theme.kind === 'unified' ? undefined : spec.appearance}
+        data-ring={ring}
         className={clsx('theme-swatch block', className)}
       />
     )
-  return <span ref={ref} data-theme-scope="" className={clsx('theme-swatch block', className)} />
+  return <span ref={ref} data-theme-scope="" data-ring={ring} className={clsx('theme-swatch block', className)} />
 }

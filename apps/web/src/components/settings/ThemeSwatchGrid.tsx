@@ -108,15 +108,12 @@ export function ThemeSwatchGrid({
               move(index, delta)
             }}
           >
-            <span
-              className={clsx(
-                'relative block h-10 w-10 rounded-full ring-offset-2 ring-offset-surface group-focus-visible:ring-2 group-focus-visible:ring-accent',
-                previewing
-                  ? 'ring-2 ring-accent'
-                  : selected && (previewingId ? 'ring-2 ring-accent/40' : 'ring-2 ring-accent')
-              )}
-            >
-              <ThemeSwatch spec={spec} className="h-full w-full" />
+            <span className="relative block h-10 w-10 rounded-full">
+              <ThemeSwatch
+                spec={spec}
+                ring={previewing ? 'on' : selected ? (previewingId ? 'dim' : 'on') : undefined}
+                className="h-full w-full"
+              />
             </span>
             <span className="w-full max-w-full line-clamp-2 break-normal text-center text-xs text-secondary">
               {option.label}
