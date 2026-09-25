@@ -265,7 +265,13 @@ describe('every built-in × appearance × OS pre-paint matrix', () => {
             })
             expect(result.dataTheme).toBe(theme.id)
             expect(result.dataAppearance).toBe(resolved === 'constant' ? null : resolved)
-            expect(result.hasDarkClass).toBe(resolved === 'dark')
+            // A unified theme's own variantClass can still carry the literal
+            // `dark` migration class at its one constant appearance (e.g. the
+            // BigBrain-ported dark palettes) — matching applyResolvedTheme's
+            // own `theme.variantClass[appearance]` lookup, not a blanket
+            // "only when resolved === 'dark'" assumption that only held while
+            // every unified theme (High contrast) was light-only.
+            expect(result.hasDarkClass).toBe(theme.variantClass[resolved] === 'dark')
             expect(result.backgroundColor).toBe(surface)
             expect(result.metaThemeColor).toBe(surface)
           })

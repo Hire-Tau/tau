@@ -14,12 +14,31 @@ describe('web theme registry', () => {
   test('enables the picker after the built-in contrast and cold-load gates', () => {
     expect(THEME_PICKER_ENABLED).toBe(true)
   })
-  test('ships Tau, two dual recolors, and a constant high-contrast theme', () => {
-    expect(BUILT_IN_THEMES).toHaveLength(4)
+  test('ships Tau, two dual recolors, a constant high-contrast theme, and six BigBrain-ported constants', () => {
+    expect(BUILT_IN_THEMES).toHaveLength(10)
     expect(findWebTheme('high-contrast').kind).toBe('unified')
     expect(TAU_THEME.kind).toBe('dual')
-    expect(KNOWN_THEME_IDS).toEqual(['tau', 'harbor', 'ember', 'high-contrast'])
+    expect(KNOWN_THEME_IDS).toEqual([
+      'tau',
+      'harbor',
+      'ember',
+      'high-contrast',
+      'nurebairo',
+      'phosphorus',
+      'yamabukiiro',
+      'moegiiro',
+      'adzukiiro',
+      'asagiiro',
+    ])
     expect(validateThemeRegistry(BUILT_IN_THEMES)).toEqual([])
+  })
+
+  test('the six BigBrain-ported themes are unified, with dark ones keeping the migration class', () => {
+    const darkIds = ['nurebairo', 'moegiiro', 'adzukiiro', 'asagiiro']
+    const lightIds = ['phosphorus', 'yamabukiiro']
+    for (const id of [...darkIds, ...lightIds]) expect(findWebTheme(id).kind).toBe('unified')
+    for (const id of darkIds) expect(findWebTheme(id).variantClass).toEqual({ constant: 'dark' })
+    for (const id of lightIds) expect(findWebTheme(id).variantClass).toEqual({ constant: null })
   })
 
   test('the tau theme keeps the literal dark class as its dark variant scope', () => {

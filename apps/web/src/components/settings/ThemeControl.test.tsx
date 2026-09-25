@@ -182,7 +182,9 @@ test('arrow keys rove within the grid, wrapping at both ends, and select as they
   const grid = getByRole(container, 'radiogroup', { name: 'Color theme' })
   const tau = getByRole(grid, 'radio', { name: 'Tau' })
   const harbor = getByRole(grid, 'radio', { name: 'Harbor' })
-  const highContrast = getByRole(grid, 'radio', { name: 'High contrast' })
+  // Wrapping lands on whichever built-in is LAST in BUILT_IN_THEMES — asagiiro,
+  // the last of the six BigBrain-ported themes (see registry.ts).
+  const last = getByRole(grid, 'radio', { name: 'asagiiro' })
   expect(tau.tabIndex).toBe(0)
   await act(async () => fireEvent.keyDown(tau, { key: 'ArrowRight' }))
   expect(document.activeElement).toBe(harbor)
@@ -194,8 +196,8 @@ test('arrow keys rove within the grid, wrapping at both ends, and select as they
   expect(localStorage.getItem('tau-theme-id')).toBe('tau')
   // Wraps from the first dot backward to the last.
   await act(async () => fireEvent.keyDown(tau, { key: 'ArrowLeft' }))
-  expect(document.activeElement).toBe(highContrast)
-  expect(localStorage.getItem('tau-theme-id')).toBe('high-contrast')
+  expect(document.activeElement).toBe(last)
+  expect(localStorage.getItem('tau-theme-id')).toBe('asagiiro')
 })
 
 test('the active shared (foreign) preset gets its own dot, labelled "(shared)"', async () => {
@@ -261,6 +263,10 @@ test('the appearance segmented control applies light/dark/system and disables fo
   expect(system.hasAttribute('disabled')).toBe(true)
   expect(document.documentElement.getAttribute('data-appearance')).toBeNull()
   expect(container.textContent).toContain('High contrast has one appearance.')
+  // The hint names whichever unified theme is selected.
+  await act(async () => fireEvent.click(getByRole(colorGrid, 'radio', { name: 'yamabukiiro' })))
+  expect(container.textContent).toContain('yamabukiiro has one appearance.')
+  expect(container.textContent).not.toContain('High contrast has one appearance.')
 })
 
 for (const theme of BUILT_IN_THEMES)

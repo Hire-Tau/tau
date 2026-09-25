@@ -45,6 +45,14 @@ try {
     harbor: { light: 'rgb(255 255 255)', dark: 'rgb(15 30 40)' },
     ember: { light: 'rgb(255 253 249)', dark: 'rgb(35 26 23)' },
     'high-contrast': { constant: 'rgb(255 255 255)' },
+    // BigBrain-ported unified built-ins (docs/wiki/theme/builtins.md), kept in
+    // sync with apps/web/scripts/generate-bigbrain-builtins.ts's own output.
+    nurebairo: { constant: 'rgb(41 33 40)' },
+    phosphorus: { constant: 'rgb(204 217 207)' },
+    yamabukiiro: { constant: 'rgb(217 165 36)' },
+    moegiiro: { constant: 'rgb(48 111 68)' },
+    adzukiiro: { constant: 'rgb(133 60 89)' },
+    asagiiro: { constant: 'rgb(61 101 128)' },
   }
   // A custom surface comes from the validated document, never a stale snapshot.
   const surface =

@@ -8,7 +8,7 @@ import { presetAppearance } from '../theme/custom'
 import { paintRoot } from '../theme/preview'
 import { useStableRef } from '../hooks/useStableRef'
 import { PaletteIcon } from './icons'
-import { THEME_CONSTANT_HINT, ThemeSyncNotice } from './settings/ThemeControl'
+import { themeConstantHint, ThemeSyncNotice } from './settings/ThemeControl'
 import { ThemeSwatch } from './ThemeSwatch'
 import { SegmentedAppearanceControl } from './SegmentedAppearanceControl'
 
@@ -247,7 +247,7 @@ export function ThemeQuickPicker({
           />
           {appearanceDisabled && (
             <p id={hintId} className="mt-2 text-xs text-muted">
-              {THEME_CONSTANT_HINT}
+              {themeConstantHint(value.customTheme?.name ?? findWebTheme(value.themeId).label)}
             </p>
           )}
           <ThemeSyncNotice value={value} />
