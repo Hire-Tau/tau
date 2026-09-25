@@ -5,6 +5,7 @@ import { validateCustomTheme, type CustomThemeDocument } from './custom-theme'
 export const SYNC_THEME_DESCRIPTORS: readonly ThemeDescriptor[] = [
   { id: 'tau', label: 'Tau', kind: 'dual' },
   { id: 'harbor', label: 'Harbor', kind: 'dual' },
+  { id: 'forest', label: 'Forest', kind: 'dual' },
   { id: 'ember', label: 'Ember', kind: 'dual' },
   { id: 'high-contrast', label: 'High contrast', kind: 'unified' },
   // Six BigBrain-ported palettes (docs/wiki/theme/builtins.md) — see

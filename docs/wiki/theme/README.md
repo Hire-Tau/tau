@@ -2,7 +2,7 @@
 
 Maintained guidance for the web theme subsystem:
 
-- [Built-in themes](builtins.md) — palette intent, contrast gates and screenshots.
+- [Built-in themes](builtins.md) — palette intent, contrast gates and screenshots; see its [Adding a built-in theme](builtins.md#adding-a-built-in-theme) checklist before adding one.
 - [Semantic colors](semantic-colors.md) — status roles and consumer conventions.
 - [Complete coverage](complete-coverage.md) — token coverage, guard exceptions and verification limits.
 - [Graph colors](graph-colors.md) — graph, canvas and chart integration.

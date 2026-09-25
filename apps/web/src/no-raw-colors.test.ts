@@ -78,10 +78,11 @@ describe('no-raw-colors guard', () => {
       { category: 'literal-hex', match: '#000000' },
       { category: 'literal-hex', match: '#ffffff' },
     ])
-    // 13 = one --color-bg-surface fallback per built-in theme (tau/harbor/ember
-    // light+dark = 6, high-contrast = 1, six BigBrain-ported constants = 6).
+    // 15 = one --color-bg-surface fallback per built-in theme (tau/harbor/
+    // forest/ember light+dark = 8, high-contrast = 1, six BigBrain-ported
+    // constants = 6).
     const flash = scanSourceForRawColors('flash.ts', readFileSync(join(srcRoot, 'theme/flash.ts'), 'utf8'))
-    expect(flash).toHaveLength(13)
+    expect(flash).toHaveLength(15)
     expect(flash.every(({ category }) => category === 'color-function')).toBe(true)
   })
   test('every raw-color category in apps/web/src is allowlisted (no NEW violations)', () => {
