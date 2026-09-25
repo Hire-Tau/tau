@@ -30,7 +30,17 @@ async function fixture(reference: EntityReference, onOpenAgent?: (agent: import(
     derivedState: 'in_progress',
     priority: 'high',
     assigneeAgentId: agentId,
-    metadata: { github: { repo: 'example/product', pr: { number: 123 } } },
+    metadata: {
+      tracked: [
+        {
+          integration: 'github',
+          repository: 'example/product',
+          kind: 'pull_request',
+          number: 123,
+          delivery: true,
+        },
+      ],
+    },
   }
   for (const [queryKey, value] of [
     [queries.agents.detail(agentId).queryKey, agent],
@@ -234,6 +244,42 @@ test('work preview offers an agent chat and a PR in a new tab, with keyboard acc
     await f.dom.act(async () => links[0]!.click())
     expect(f.tooltip()).toBeNull()
     expect(f.container.querySelector('output')?.textContent).toBe(`/squads/squad/agents?agent=${agentId}`)
+  } finally {
+    await f.cleanup()
+  }
+})
+
+test('work preview links every tracked delivery pull request', async () => {
+  const f = await fixture({ kind: 'ws', id: '42' })
+  try {
+    const multiPullRequestWork = {
+      ...f.work,
+      metadata: {
+        tracked: [
+          { integration: 'github', repository: 'example/product', kind: 'pull_request', number: 200, delivery: true },
+          { integration: 'github', repository: 'example/product', kind: 'pull_request', number: 201, delivery: true },
+        ],
+      },
+    }
+    await f.dom.act(async () => {
+      f.client.setQueryData(queries.squads.workStreamDetail(workId).queryKey, multiPullRequestWork)
+      f.client.setQueryData(queries.squads.workStreamDetail('42').queryKey, multiPullRequestWork)
+      // Flush React Query's notification queue deterministically.
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    await f.hover()
+    await f.advance(250)
+    const pullRequestLinks = [...f.tooltip()!.querySelectorAll<HTMLAnchorElement>('a')].filter((link) =>
+      link.getAttribute('href')?.includes('/pull/')
+    )
+    expect(pullRequestLinks.map((link) => link.getAttribute('href'))).toEqual([
+      'https://github.com/example/product/pull/200',
+      'https://github.com/example/product/pull/201',
+    ])
+    expect(pullRequestLinks.map((link) => link.textContent?.replace(' (opens in a new tab)', ''))).toEqual([
+      'PR #200↗',
+      'PR #201↗',
+    ])
   } finally {
     await f.cleanup()
   }

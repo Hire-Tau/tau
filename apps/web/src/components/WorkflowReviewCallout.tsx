@@ -16,7 +16,7 @@ import { client } from '../api/clientInstance'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { usePermissions } from '../hooks/usePermissions'
 import { actionErrorMessage } from '../lib/actionError'
-import { getGithubInfo } from '../lib/workStreamGithub'
+import { workStreamPullRequests } from '../lib/workStreamGithub'
 import { queries } from '../queryOptions'
 import { queryKeys } from '../queryKeys'
 import { Badge } from './Badge'
@@ -329,24 +329,36 @@ function ReviewMaterials({
   onOpenAgent?: () => void
 }) {
   const { slugFor } = useSquadSlugs()
-  const github = getGithubInfo(stream.metadata ?? {})
+  const pullRequests = workStreamPullRequests(stream.metadata ?? {})
   const files = stream.files?.length ?? 0
-  if (!github?.prUrl && !attempts.length && !files) return null
+  if (!pullRequests.length && !attempts.length && !files) return null
   return (
     <div className="space-y-2">
       <h4 className="text-xs font-medium text-secondary">What to review</h4>
-      {github?.prUrl && (
-        <a
-          href={github.prUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 text-sm text-accent-light hover:underline"
-        >
-          <PullRequestIcon className="w-3.5 h-3.5 shrink-0" />
-          Pull request {github.prNumber ? `#${github.prNumber}` : ''}
-          {github.repo ? <span className="text-muted">· {String(github.repo)}</span> : null}
-        </a>
-      )}
+      {pullRequests.map((pullRequest) => {
+        const reference = (
+          <>
+            <PullRequestIcon className="w-3.5 h-3.5 shrink-0" />
+            Pull request #{pullRequest.number}
+            <span className="text-muted">· {pullRequest.repository}</span>
+          </>
+        )
+        return pullRequest.url ? (
+          <a
+            key={pullRequest.key}
+            href={pullRequest.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-sm text-accent-light hover:underline"
+          >
+            {reference}
+          </a>
+        ) : (
+          <span key={pullRequest.key} className="inline-flex items-center gap-1.5 text-sm">
+            {reference}
+          </span>
+        )
+      })}
       {attempts.map((attempt) => {
         const agentId = run.attemptAgents[attempt.id]
         return (
