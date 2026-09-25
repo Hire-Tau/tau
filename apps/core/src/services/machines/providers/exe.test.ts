@@ -89,12 +89,12 @@ describe('exe machine provider', () => {
           return sampleVm
         },
       }),
-      image: 'ghcr.io/ficushq/tau-machine:latest',
+      image: 'ghcr.io/ficushq/ficus-machine:latest',
     })
 
     await provider.provision({ name: 'agent-42' })
 
-    expect(createArgs).toEqual({ name: 'agent-42', image: 'ghcr.io/ficushq/tau-machine:latest' })
+    expect(createArgs).toEqual({ name: 'agent-42', image: 'ghcr.io/ficushq/ficus-machine:latest' })
   })
 
   it('provision() passes no image when none is configured (exe uses its default)', async () => {

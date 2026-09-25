@@ -267,7 +267,7 @@ describe('machine script docker contract', () => {
   })
 
   it("bootstrap.sh uses a prebaked image's baked tooling (skips installs) whether or not versions match, and never claims a self-heal", () => {
-    // The marker the tau-machine image bakes (packages/machine-image/Dockerfile).
+    // The marker the ficus-machine image bakes (packages/machine-image/Dockerfile).
     expect(bootstrapSh).toContain('/opt/tau/prebaked')
     // The install block is gated on marker PRESENCE (the source of truth for
     // baked tooling); a drift only warns via the decision logger — it never

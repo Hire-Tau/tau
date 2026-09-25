@@ -96,7 +96,7 @@ SRC_MODE=$(cfg_get '.source.mode' 'git-ssh')
 SRC_REPO=$(cfg_require '.source.repo' 'git repository')
 SRC_REF=$(cfg_get '.source.ref' 'main')
 # Default dest is /opt/tau-CORE, deliberately NOT /opt/tau: the prebaked
-# tau-machine image (the default core VM image) OWNS /opt/tau for its own
+# ficus-machine image (the default core VM image) OWNS /opt/tau for its own
 # tooling (/opt/tau/bin, /opt/tau/prebaked, /opt/tau/bun, ...), so cloning the
 # app there collides with a non-empty root-owned dir. Keep them separate.
 SRC_DEST=$(expand_tilde "$(cfg_get '.source.dest' '/opt/tau-core')")
@@ -323,7 +323,7 @@ esac
 # (trimming) boot guard and then fail every isVmRuntime() comparison.
 RT_SANDBOX=$(trim_ws "$(cfg_get '.runtime.sandbox')")
 EXE_KEY_PATH=$(expand_tilde "$(cfg_get '.runtime.exe.ssh_key_path')")
-EXE_IMAGE=$(cfg_get '.runtime.exe.machine_image' 'ghcr.io/ficushq/tau-machine:latest')
+EXE_IMAGE=$(cfg_get '.runtime.exe.machine_image' 'ghcr.io/ficushq/ficus-machine:latest')
 require_sandbox_runtime "${RT_SANDBOX}"
 # Under `host` there is no sandbox image to pin gh in, so agents run this
 # machine's gh; warn (never abort) when it cannot serve `gh --attach`.
@@ -695,7 +695,7 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
   fi
   printf '\nPhase 3 — database (%s)\n' "${DB_MODE}"
   if [[ ${DB_MODE} == container ]]; then
-    plan "unmask+start docker if needed (tau-machine masks rootful docker for BOX security; the core host is not a box host)"
+    plan "unmask+start docker if needed (ficus-machine masks rootful docker for BOX security; the core host is not a box host)"
     plan "docker run -d --name ${DB_CONTAINER} --restart unless-stopped -p 127.0.0.1:5432:5432 -v ${DB_VOLUME}:/var/lib/postgresql ${DB_IMAGE}"
     plan "wait: pg_isready; ensure database 'tau' exists (reuses container + password from ${ENV_FILE} on re-run)"
   else
@@ -1059,11 +1059,11 @@ phase_database() {
     return
   fi
 
-  # The tau-machine image masks rootful docker for BOX security. This host is
+  # The ficus-machine image masks rootful docker for BOX security. This host is
   # the CORE host (not a box host), so unmasking it for the local DB container
   # is correct and intended.
   if [[ $(as_root systemctl is-enabled docker.service 2>/dev/null || true) == masked ]]; then
-    log_info "docker.service is masked (tau-machine box hardening) — unmasking for the core DB container"
+    log_info "docker.service is masked (ficus-machine box hardening) — unmasking for the core DB container"
     as_root systemctl unmask docker.service docker.socket
   fi
   as_root systemctl enable --now docker.service

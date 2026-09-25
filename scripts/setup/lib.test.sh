@@ -1274,7 +1274,7 @@ EOF
 
 Step 1 — provision VM (provider seam: exe)
   ssh -i TMPDIR/key -o IdentitiesOnly=yes -o IdentityAgent=none exe.dev \
-      new --name acme --image ghcr.io/ficushq/tau-machine:latest --json
+      new --name acme --image ghcr.io/ficushq/ficus-machine:latest --json
   (skipped if exedev@acme.exe.xyz already answers SSH — idempotent re-run)
 
 Step 2 — wait for SSH

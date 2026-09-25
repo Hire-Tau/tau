@@ -187,7 +187,7 @@ work with no operator setup.
 `bootstrap.sh` on a bare Ubuntu host installs the whole toolchain (apt base +
 rootless-docker prereqs, Docker engine, bun, multi-user nix, devbox) — a
 multi-minute cost dominated by the nix install and the release downloads. The
-**`tau-machine` image** (`packages/machine-image/Dockerfile`) bakes exactly that
+**`ficus-machine` image** (`packages/machine-image/Dockerfile`) bakes exactly that
 toolchain — same pinned versions, same paths — on top of exe.dev's base image, so
 a VM booted from it needs to install nothing. See § exe.dev in
 `docs/wiki/machines/exe-provider.md` for how the exe provider boots box VMs from it.
@@ -197,7 +197,7 @@ a VM booted from it needs to install nothing. See § exe.dev in
 (`{"bunVersion","nixVersion","devboxVersion"}`). Near the top of a run,
 `bootstrap.sh` reads it (via `jq`, baked into the image; grep/sed fallback):
 
-- **Marker present** (a VM booted from the tau-machine image) → SKIP every
+- **Marker present** (a VM booted from the ficus-machine image) → SKIP every
   install step (`install_base_packages`, `install_docker_packages`,
   `install_bun`, `install_nix`, `install_devbox`) and use the baked tooling.
   PRESENCE — **not** an exact version match — is the source of truth: a prebaked
@@ -211,7 +211,7 @@ a VM booted from it needs to install nothing. See § exe.dev in
     toolchain predates a pin bump) → **still skip the installs and boot on the
     baked tooling**, but log a `WARNING` per drifting tool naming the drift and
     recommending an image rebake (e.g. `prebaked image nix 2.24.9 != script
-2.25.0 — using baked tooling; rebake the tau-machine image to change pinned
+2.25.0 — using baked tooling; rebake the ficus-machine image to change pinned
 versions`). bootstrap does **not** attempt to reinstall over the baked
     tooling: the official nix installer refuses to run over an existing `/nix` and
     would error under `set -e`, aborting the whole run and marking the VM
