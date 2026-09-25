@@ -48,8 +48,9 @@ export function useThemeHoverPreview(appearance: 'light' | 'dark') {
           presetAppearance(option.preset.document, appearanceRef.current),
           option.preset.document
         )
-      // Palette-only preview: keep the app's current effective appearance.
-      else paintRoot(root, option.theme, appearanceRef.current, null)
+      // Keep the app's current appearance for light/dark themes; a one-appearance theme only has its constant
+      // variant, and painting it as light/dark would drop its `dark` class and leave `dark:` styles in light mode.
+      else paintRoot(root, option.theme, option.theme.kind === 'unified' ? 'constant' : appearanceRef.current, null)
     })
     clearPreview.current = next
   }

@@ -36,9 +36,7 @@ export function MarkdownContent({
     <div
       className={clsx(
         'prose prose-sm max-w-none',
-        variant === 'human'
-          ? 'prose-invert prose-a:text-[rgb(var(--syntax-human-link))] prose-code:text-[rgb(var(--syntax-human-code-fg))] prose-code:bg-[rgb(var(--custom-rgb-syntax-human-code-bg,var(--syntax-human-code-bg))/calc(var(--custom-alpha-syntax-human-code-bg,1)*0.5))]'
-          : 'prose-gray dark:prose-invert',
+        variant === 'human' ? 'prose-on-accent' : 'prose-gray dark:prose-invert',
         className
       )}
     >

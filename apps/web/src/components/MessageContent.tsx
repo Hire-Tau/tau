@@ -229,7 +229,7 @@ function StandardHumanMessageContent({
         <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
-          className="tau-button mt-1 text-xs font-medium text-status-progress-100/85 underline decoration-status-progress-100/30 underline-offset-2 hover:text-on-strong hover:decoration-status-progress-100/70"
+          className="tau-button mt-1 text-xs font-medium underline underline-offset-2 opacity-85 hover:opacity-100"
           aria-expanded={expanded}
         >
           {expanded ? 'Show less' : 'Show more'}
