@@ -2,6 +2,7 @@ import { afterEach, expect, mock, spyOn, test } from 'bun:test'
 import { act, useState } from 'react'
 import { fireEvent, getByLabelText, getByRole, getAllByRole, queryByRole, waitFor } from '@testing-library/dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { suggestPaletteSeeds } from '@tau/shared/theme-derivation'
 import { HttpResponseError } from '@tau/client-core'
 import { STATUS_TOKENS, type AssistantEditorState, type ThemePreset } from '@tau/shared'
 import { acquireDomHarness } from '../../test/domHarness'
@@ -397,8 +398,8 @@ test("an unset seed swatch reflects the active base theme's own --color-border t
   // (any fixed hex, however it's obfuscated in source) would be identical
   // across both and fail this.
   const harbor = await render({ baseId: 'harbor', appearance: 'dark' })
-  await change(harbor.container, 'Primary', '#0ea5e9') // reveals the Secondary field (requires a palette)
-  const harborSwatch = getByLabelText(harbor.container, 'Secondary color swatch') as HTMLInputElement
+  await change(harbor.container, 'Primary', '#0ea5e9') // reveals Neutral, which is never auto-filled
+  const harborSwatch = getByLabelText(harbor.container, 'Neutral color swatch') as HTMLInputElement
   const computedBorder = () =>
     toHex(
       document.documentElement.ownerDocument
@@ -412,12 +413,30 @@ test("an unset seed swatch reflects the active base theme's own --color-border t
 
   const ember = await render({ baseId: 'ember', appearance: 'dark' })
   await change(ember.container, 'Primary', '#0ea5e9')
-  const emberSwatch = getByLabelText(ember.container, 'Secondary color swatch') as HTMLInputElement
+  const emberSwatch = getByLabelText(ember.container, 'Neutral color swatch') as HTMLInputElement
   const emberBorder = computedBorder()
   expect(emberSwatch.value).toBe(emberBorder)
 
   expect(emberBorder).not.toBe(harborBorder)
   expect(emberSwatch.value).not.toBe(harborSwatch.value)
+})
+
+test('setting Primary fills blank Secondary and Tertiary with its companions, which follow Primary until edited', async () => {
+  const { container } = await render({ baseId: 'tau', appearance: 'light' })
+  const field = (name: string) => getByLabelText(container, name) as HTMLInputElement
+  await change(container, 'Primary', '#3f6b4f')
+  const first = suggestPaletteSeeds('#3f6b4f')!
+  expect([field('Secondary').value, field('Tertiary').value]).toEqual([first.secondary, first.tertiary])
+  // Still the companions: a new Primary moves them along.
+  await change(container, 'Primary', '#0ea5e9')
+  const second = suggestPaletteSeeds('#0ea5e9')!
+  expect([field('Secondary').value, field('Tertiary').value]).toEqual([second.secondary, second.tertiary])
+  // An edited seed is the user's: a later Primary leaves it alone.
+  await change(container, 'Secondary', '#f97316')
+  await change(container, 'Primary', '#97371d')
+  expect(field('Secondary').value).toBe('#f97316')
+  expect(field('Tertiary').value).toBe(suggestPaletteSeeds('#97371d')!.tertiary)
+  expect(field('Neutral').value).toBe('')
 })
 
 test('the editor draft preview survives an appearance change made elsewhere while editing', async () => {
