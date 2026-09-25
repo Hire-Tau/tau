@@ -17,7 +17,7 @@ import { applyResolvedTheme } from '../theme/apply'
 import { getThemeStorage, persistSurfaceSnapshot } from '../theme/storage'
 
 import { applyCustomTheme, customSelection, persistResolvedSnapshot, removeCustomProperties } from '../theme/custom'
-import { ThemeSyncStore, LOCAL_OVERRIDE_KEY } from '../theme/sync'
+import { ThemeSyncStore } from '../theme/sync'
 import { CUSTOM_THEME_KEY } from '../theme/custom'
 import { THEME_ID_KEY, APPEARANCE_KEY, LEGACY_THEME_KEY } from '../theme/storage'
 
@@ -29,9 +29,7 @@ import { THEME_ID_KEY, APPEARANCE_KEY, LEGACY_THEME_KEY } from '../theme/storage
 type Theme = 'light' | 'dark'
 
 interface ThemeContextValue {
-  localOverride: boolean
   syncAvailable: boolean
-  adoptSynced: () => void
   /** The registered theme id currently applied (e.g. 'tau'). */
   customTheme: CustomThemeDocument | null
   customThemeError: string | null
@@ -94,6 +92,12 @@ export function useThemePreview(): ThemePreviewApi {
   const ctx = useContext(ThemePreviewContext)
   if (!ctx) throw new Error('useThemePreview must be used within ThemeProvider')
   return ctx
+}
+
+/** The preview slot inside ThemeProvider, otherwise null (for pickers also rendered standalone). */
+// eslint-disable-next-line react-refresh/only-export-components
+export function useOptionalThemePreview(): ThemePreviewApi | null {
+  return useContext(ThemePreviewContext)
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null)
@@ -170,10 +174,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
       if (event.storageArea && event.storageArea !== getThemeStorage()) return
-      if (
-        event.key === null ||
-        [THEME_ID_KEY, APPEARANCE_KEY, LEGACY_THEME_KEY, CUSTOM_THEME_KEY, LOCAL_OVERRIDE_KEY].includes(event.key)
-      )
+      if (event.key === null || [THEME_ID_KEY, APPEARANCE_KEY, LEGACY_THEME_KEY, CUSTOM_THEME_KEY].includes(event.key))
         store.reloadFromStorage()
     }
     window.addEventListener('storage', onStorage)
@@ -368,9 +369,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     [store]
   )
   const contextValue: ThemeContextValue = {
-    localOverride: state.localOverride,
     syncAvailable: state.syncAvailable,
-    adoptSynced: store.adoptSynced,
     customTheme: custom,
     customThemeError: error,
     presetId,

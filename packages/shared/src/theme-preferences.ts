@@ -7,7 +7,6 @@ export const SYNC_THEME_DESCRIPTORS: readonly ThemeDescriptor[] = [
   { id: 'harbor', label: 'Harbor', kind: 'dual' },
   { id: 'forest', label: 'Forest', kind: 'dual' },
   { id: 'ember', label: 'Ember', kind: 'dual' },
-  { id: 'high-contrast', label: 'High contrast', kind: 'unified' },
   // Six BigBrain-ported palettes (docs/wiki/theme/builtins.md) — see
   // apps/web/src/theme/registry.ts's BUILT_IN_THEMES for the web-owned
   // variant-class metadata; this list is cross-platform id/label/kind only.
@@ -17,6 +16,8 @@ export const SYNC_THEME_DESCRIPTORS: readonly ThemeDescriptor[] = [
   { id: 'moegiiro', label: 'moegiiro', kind: 'unified' },
   { id: 'adzukiiro', label: 'adzukiiro', kind: 'unified' },
   { id: 'asagiiro', label: 'asagiiro', kind: 'unified' },
+  // Accessibility, not a palette: always listed last.
+  { id: 'high-contrast', label: 'High contrast', kind: 'unified' },
 ]
 
 export interface ThemePreference extends StoredThemeSelection {

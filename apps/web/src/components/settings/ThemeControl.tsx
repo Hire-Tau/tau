@@ -4,7 +4,8 @@ import { ThemeSwatchGrid, type ThemeGridOption } from './ThemeSwatchGrid'
 import { SegmentedAppearanceControl } from '../SegmentedAppearanceControl'
 import type { AppearanceSetting, ThemePreset } from '@tau/shared'
 import type { useTheme } from '../../providers/ThemeProvider'
-import { BUILT_IN_THEMES, findWebTheme, THEME_PICKER_ENABLED } from '../../theme/registry'
+import { BUILT_IN_THEMES, findWebTheme, highContrastLast, THEME_PICKER_ENABLED } from '../../theme/registry'
+import { useThemeHoverPreview } from '../../hooks/useThemeHoverPreview'
 import { selfServiceQueryEnabled, useOptionalAuth } from '../../providers/AuthProvider'
 import { queries } from '../../queryOptions'
 
@@ -13,27 +14,10 @@ export function themeConstantHint(label: string): string {
   return `${label} has one appearance. Your appearance preference is kept for other themes.`
 }
 
-/** Shared account-sync/device-override notice, identical on both the Settings picker and the header quick picker. */
-export function ThemeSyncNotice({
-  value,
-}: {
-  value: Pick<ReturnType<typeof useTheme>, 'syncAvailable' | 'localOverride' | 'adoptSynced'>
-}) {
+/** Account-sync note, identical on both the Settings picker and the header quick picker. */
+export function ThemeSyncNotice({ value }: { value: Pick<ReturnType<typeof useTheme>, 'syncAvailable'> }) {
   if (!value.syncAvailable) return null
-  return (
-    <div className="mt-3 text-sm text-muted">
-      <p>
-        {value.localOverride
-          ? 'This device overrides your synced theme. Changes here also update your account theme.'
-          : 'Following your account theme.'}
-      </p>
-      {value.localOverride && (
-        <button className="tau-button tau-button-secondary min-h-[44px] px-3 py-2 mt-2" onClick={value.adoptSynced}>
-          Use synced theme
-        </button>
-      )}
-    </div>
-  )
+  return <p className="mt-3 text-sm text-muted">Your theme syncs across your devices.</p>
 }
 
 // Hoisted so a caller whose "mine" list hasn't resolved yet doesn't create a
@@ -48,6 +32,7 @@ export function ThemeControl({
   enabled?: boolean
 }) {
   const { themeId, appearance, setThemeId, setAppearance, theme, toggleTheme, customTheme, presetId } = value
+  const hover = useThemeHoverPreview(theme)
   const selected = findWebTheme(themeId)
   const auth = useOptionalAuth()
   const { data: minePresets = EMPTY_PRESETS, isSuccess: mineLoaded } = useQuery({
@@ -65,7 +50,7 @@ export function ThemeControl({
   // it isn't already one of those — the currently active shared preset. This
   // mirrors ThemeQuickPicker's `circles` composition exactly (see its doc
   // comment) so both entry points show the same set for the same state.
-  const gridOptions: ThemeGridOption[] = [
+  const gridOptions: ThemeGridOption[] = highContrastLast([
     ...BUILT_IN_THEMES.map((builtin) => ({
       kind: 'builtin' as const,
       id: builtin.id,
@@ -91,7 +76,7 @@ export function ThemeControl({
           },
         ]
       : []),
-  ]
+  ])
   // A custom/preset theme active selects its dot (or, for a detached one-off
   // with no library dot to represent it, no dot at all — never the plain
   // built-in it happens to be based on, which would misrepresent it as
@@ -109,9 +94,14 @@ export function ThemeControl({
             options={gridOptions}
             selectedId={selectedId}
             currentAppearance={theme}
-            onSelect={(option) =>
-              option.kind === 'builtin' ? setThemeId(option.id) : value.applyPreset(option.preset)
-            }
+            previewingId={hover.hoveredId}
+            onPreview={hover.start}
+            onPreviewEnd={hover.end}
+            onSelect={(option) => {
+              hover.end()
+              if (option.kind === 'builtin') setThemeId(option.id)
+              else value.applyPreset(option.preset)
+            }}
           />
           <div>
             <SegmentedAppearanceControl

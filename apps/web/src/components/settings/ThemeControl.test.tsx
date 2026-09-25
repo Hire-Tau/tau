@@ -4,6 +4,7 @@ import { fireEvent, getAllByRole, getByRole, queryAllByRole } from '@testing-lib
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { ThemePreset } from '@tau/shared'
 import { acquireDomHarness } from '../../test/domHarness'
+import { useHoverTimer } from '../../test/hoverTimer'
 import { ThemeProvider, useTheme } from '../../providers/ThemeProvider'
 import { ThemeControl } from './ThemeControl'
 import { palettes, resolveToken } from '../../theme/test/builtins'
@@ -182,9 +183,9 @@ test('arrow keys rove within the grid, wrapping at both ends, and select as they
   const grid = getByRole(container, 'radiogroup', { name: 'Color theme' })
   const tau = getByRole(grid, 'radio', { name: 'Tau' })
   const harbor = getByRole(grid, 'radio', { name: 'Harbor' })
-  // Wrapping lands on whichever built-in is LAST in BUILT_IN_THEMES — asagiiro,
-  // the last of the six BigBrain-ported themes (see registry.ts).
-  const last = getByRole(grid, 'radio', { name: 'asagiiro' })
+  // Wrapping lands on the last dot: High contrast, which every picker lists
+  // last (see registry.ts's highContrastLast).
+  const last = getByRole(grid, 'radio', { name: 'High contrast' })
   expect(tau.tabIndex).toBe(0)
   await act(async () => fireEvent.keyDown(tau, { key: 'ArrowRight' }))
   expect(document.activeElement).toBe(harbor)
@@ -197,7 +198,70 @@ test('arrow keys rove within the grid, wrapping at both ends, and select as they
   // Wraps from the first dot backward to the last.
   await act(async () => fireEvent.keyDown(tau, { key: 'ArrowLeft' }))
   expect(document.activeElement).toBe(last)
-  expect(localStorage.getItem('tau-theme-id')).toBe('asagiiro')
+  expect(localStorage.getItem('tau-theme-id')).toBe('high-contrast')
+})
+
+function pointer(type: 'mouseover' | 'mouseout', element: Element, relatedTarget: Element | null = null) {
+  return act(async () => element.dispatchEvent(new window.MouseEvent(type, { bubbles: true, relatedTarget })))
+}
+
+test('hovering a dot previews the whole app without saving; sweeping to the next never restores in between', async () => {
+  const container = await renderControl('tau', 'light')
+  const grid = getByRole(container, 'radiogroup', { name: 'Color theme' })
+  const tau = getByRole(grid, 'radio', { name: 'Tau' })
+  const harbor = getByRole(grid, 'radio', { name: 'Harbor' })
+  const ember = getByRole(grid, 'radio', { name: 'Ember' })
+  const hover = useHoverTimer()
+  try {
+    await pointer('mouseover', harbor)
+    expect(document.documentElement.getAttribute('data-theme')).toBe('tau')
+    await hover.advance(100)
+    expect(document.documentElement.getAttribute('data-theme')).toBe('harbor')
+    await pointer('mouseout', harbor, ember)
+    await pointer('mouseover', ember, harbor)
+    expect(document.documentElement.getAttribute('data-theme')).toBe('harbor')
+    expect(ember.querySelector('.ring-accent')).not.toBeNull()
+    expect(tau.querySelector('.ring-accent')).toBeNull()
+    await hover.advance(100)
+    expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
+    // Leaving the grid restores the stored selection; nothing was saved.
+    await pointer('mouseout', ember)
+    expect(document.documentElement.getAttribute('data-theme')).toBe('tau')
+    expect(tau.querySelector('.ring-accent')).not.toBeNull()
+    expect(localStorage.getItem('tau-theme-id')).toBe('tau')
+  } finally {
+    hover.restore()
+  }
+})
+
+test('clicking the previewed dot ends the preview and saves that theme', async () => {
+  const container = await renderControl('tau', 'light')
+  const grid = getByRole(container, 'radiogroup', { name: 'Color theme' })
+  const ember = getByRole(grid, 'radio', { name: 'Ember' })
+  const hover = useHoverTimer()
+  try {
+    await pointer('mouseover', ember)
+    await hover.advance(100)
+    await act(async () => fireEvent.click(ember))
+    expect(hover.pending()).toBe(0)
+    expect(localStorage.getItem('tau-theme-id')).toBe('ember')
+    expect(ember.getAttribute('aria-checked')).toBe('true')
+    await pointer('mouseout', ember)
+    expect(document.documentElement.getAttribute('data-theme')).toBe('ember')
+  } finally {
+    hover.restore()
+  }
+})
+
+test('High contrast is the last dot, after the caller’s own presets', async () => {
+  const container = await renderControl('tau', 'light', false, true, {
+    minePresets: [presetFixture('p1', 'Mine', 'harbor', 'me')],
+  })
+  const labels = getAllByRole(getByRole(container, 'radiogroup', { name: 'Color theme' }), 'radio').map((dot) =>
+    dot.getAttribute('aria-label')
+  )
+  expect(labels.at(-2)).toBe('Mine')
+  expect(labels.at(-1)).toBe('High contrast')
 })
 
 test('the active shared (foreign) preset gets its own dot, labelled "(shared)"', async () => {

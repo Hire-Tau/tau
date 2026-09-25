@@ -11,9 +11,7 @@ import type { useTheme } from '../providers/ThemeProvider'
 // SettingsNavigation.tsx's PERSONAL_SECTIONS, and settingsSearch.ts.
 
 const fullThemeValue: ReturnType<typeof useTheme> = {
-  localOverride: false,
   syncAvailable: false,
-  adoptSynced: () => undefined,
   customTheme: null,
   customThemeError: null,
   presetId: null,

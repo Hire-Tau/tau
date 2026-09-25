@@ -23,18 +23,28 @@ export type ThemeGridOption =
  * (wrapping at both ends, like a native `<input type="radio">` group);
  * Enter/Space select the focused dot explicitly. Roving tabindex keeps only
  * the active dot (or the first, before anything resolves) in the Tab order.
+ *
+ * Hovering a dot previews it through `onPreview`; `onPreviewEnd` fires when the pointer leaves the whole grid. The
+ * tiles touch (no grid gap) so a sweep never crosses a gap between them.
  */
 export function ThemeSwatchGrid({
   options,
   selectedId,
   currentAppearance,
   onSelect,
+  previewingId = null,
+  onPreview,
+  onPreviewEnd,
   className,
 }: {
   options: readonly ThemeGridOption[]
   selectedId: string | null
   currentAppearance: 'light' | 'dark'
   onSelect: (option: ThemeGridOption) => void
+  /** The dot the pointer is previewing, if any. */
+  previewingId?: string | null
+  onPreview?: (option: ThemeGridOption) => void
+  onPreviewEnd?: () => void
   className?: string
 }) {
   const buttons = useRef(new Map<string, HTMLButtonElement>())
@@ -52,10 +62,12 @@ export function ThemeSwatchGrid({
     <div
       role="radiogroup"
       aria-label="Color theme"
-      className={clsx('grid grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))] gap-2', className)}
+      className={clsx('grid grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))]', className)}
+      onMouseLeave={onPreviewEnd}
     >
       {options.map((option, index) => {
         const selected = option.id === selectedId
+        const previewing = option.id === previewingId
         const spec: ThemeSwatchSpec =
           option.kind === 'builtin'
             ? { kind: 'builtin', theme: option.theme, appearance: currentAppearance }
@@ -76,7 +88,8 @@ export function ThemeSwatchGrid({
             aria-checked={selected}
             aria-label={option.accessibleLabel}
             tabIndex={index === rovingIndex ? 0 : -1}
-            className="flex min-h-[44px] flex-col items-center gap-1.5 rounded-lg p-2 text-center hover:bg-surface-hover"
+            className="group flex min-h-[44px] flex-col items-center gap-1.5 rounded-lg p-2 text-center hover:bg-surface-hover focus:outline-none"
+            onMouseEnter={() => onPreview?.(option)}
             onClick={() => onSelect(option)}
             onKeyDown={(event) => {
               if (event.key === 'Enter' || event.key === ' ') {
@@ -97,8 +110,10 @@ export function ThemeSwatchGrid({
           >
             <span
               className={clsx(
-                'relative block h-10 w-10 rounded-full',
-                selected && 'ring-2 ring-accent ring-offset-2 ring-offset-surface'
+                'relative block h-10 w-10 rounded-full ring-offset-2 ring-offset-surface group-focus-visible:ring-2 group-focus-visible:ring-accent',
+                previewing
+                  ? 'ring-2 ring-accent'
+                  : selected && (previewingId ? 'ring-2 ring-accent/40' : 'ring-2 ring-accent')
               )}
             >
               <ThemeSwatch spec={spec} className="h-full w-full" />

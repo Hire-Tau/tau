@@ -6,6 +6,7 @@ import {
   TAU_THEME,
   THEME_PICKER_ENABLED,
   findWebTheme,
+  highContrastLast,
   resolveWebTheme,
 } from './registry'
 import { applyResolvedTheme } from './apply'
@@ -23,13 +24,13 @@ describe('web theme registry', () => {
       'harbor',
       'forest',
       'ember',
-      'high-contrast',
       'nurebairo',
       'phosphorus',
       'yamabukiiro',
       'moegiiro',
       'adzukiiro',
       'asagiiro',
+      'high-contrast',
     ])
     expect(validateThemeRegistry(BUILT_IN_THEMES)).toEqual([])
   })
@@ -124,5 +125,22 @@ describe('applyResolvedTheme', () => {
     applyResolvedTheme(root, TAU_THEME, 'light')
     expect(root.classList.contains('dark')).toBe(false)
     expect(root.className.trim()).toBe('')
+  })
+})
+
+describe('highContrastLast', () => {
+  test('moves only the built-in High contrast to the end, after presets', () => {
+    const options = [
+      { kind: 'builtin', id: 'tau' },
+      { kind: 'builtin', id: 'high-contrast' },
+      { kind: 'preset', id: 'high-contrast' },
+      { kind: 'preset', id: 'mine' },
+    ]
+    expect(highContrastLast(options)).toEqual([
+      { kind: 'builtin', id: 'tau' },
+      { kind: 'preset', id: 'high-contrast' },
+      { kind: 'preset', id: 'mine' },
+      { kind: 'builtin', id: 'high-contrast' },
+    ])
   })
 })

@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'bun:test'
 import { SYNC_THEME_DESCRIPTORS, type MyThemePreferences, type ThemePreference, type ThemePreset } from '@tau/shared'
 import { HttpResponseError } from '@tau/client-core'
-import { ThemeSyncStore, LOCAL_OVERRIDE_KEY, type ThemeSyncApi, type ThemePresetLiveLinkApi } from './sync'
+import { ThemeSyncStore, LEGACY_LOCAL_OVERRIDE_KEY, type ThemeSyncApi, type ThemePresetLiveLinkApi } from './sync'
 import { BUILT_IN_THEMES } from './registry'
 
 function storage(initial: Record<string, string> = {}) {
@@ -62,18 +62,16 @@ function server(theme: ThemePreference | null = harbor) {
 test('sync metadata matches every web builtin (no duplicated palette)', () => {
   expect(SYNC_THEME_DESCRIPTORS).toEqual(BUILT_IN_THEMES.map(({ id, label, kind }) => ({ id, label, kind })))
 })
-test('fresh device adopts; reload retains non-override cache; adoption never echoes a write', async () => {
+test('fresh device adopts; reload retains the adopted cache; adoption never echoes a write', async () => {
   const local = storage()
   const store = new ThemeSyncStore(local)
   const remote = server()
-  expect(store.getSnapshot().localOverride).toBe(false)
-  expect(local.getItem(LOCAL_OVERRIDE_KEY)).toBe('0')
   store.connect(remote.api)
   await store.refresh()
   expect(store.getSnapshot().selection).toEqual({ themeId: 'harbor', appearance: 'dark' })
   expect(remote.writes).toHaveLength(0)
   const reloaded = new ThemeSyncStore(local)
-  expect(reloaded.getSnapshot().localOverride).toBe(false)
+  expect(reloaded.getSnapshot().selection).toEqual({ themeId: 'harbor', appearance: 'dark' })
   reloaded.connect(remote.api)
   await reloaded.refresh()
   expect(reloaded.getSnapshot().selection).toEqual(store.getSnapshot().selection)
@@ -81,21 +79,40 @@ test('fresh device adopts; reload retains non-override cache; adoption never ech
   store.disconnect()
   reloaded.disconnect()
 })
+test('the flag older versions used to keep a device theme is removed, and no longer stops adoption', async () => {
+  const local = storage({ [LEGACY_LOCAL_OVERRIDE_KEY]: '1', 'tau-theme-id': 'ember' })
+  const store = new ThemeSyncStore(local)
+  expect(local.getItem(LEGACY_LOCAL_OVERRIDE_KEY)).toBeNull()
+  const remote = server()
+  store.connect(remote.api)
+  await store.refresh()
+  expect(store.getSnapshot().selection).toEqual({ themeId: 'harbor', appearance: 'dark' })
+  expect(remote.writes).toHaveLength(0)
+  store.disconnect()
+})
 test.each(['tau-theme', 'tau-theme-id', 'tau-appearance'])(
-  'pre-sync %s is a local override, not uploaded on login',
+  'pre-sync %s is never uploaded on login; the account theme is adopted',
   async (key) => {
     const store = new ThemeSyncStore(storage({ [key]: key === 'tau-theme-id' ? 'ember' : 'dark' }))
-    const before = store.getSnapshot().selection
     const remote = server()
     store.connect(remote.api)
     await store.refresh()
-    expect(store.getSnapshot().selection).toEqual(before)
-    expect(store.getSnapshot().localOverride).toBe(true)
+    expect(store.getSnapshot().selection).toEqual({ themeId: 'harbor', appearance: 'dark' })
     expect(remote.writes).toHaveLength(0)
     store.disconnect()
   }
 )
-test('local edit wins over pending initial read, pushes once; clear override rereads then follows account', async () => {
+test('an account with no theme keeps the device theme and is not written to', async () => {
+  const store = new ThemeSyncStore(storage({ 'tau-theme-id': 'ember' }))
+  const remote = server(null)
+  store.connect(remote.api)
+  await store.refresh()
+  expect(store.getSnapshot().selection.themeId).toBe('ember')
+  expect(store.getSnapshot().syncAvailable).toBe(true)
+  expect(remote.writes).toHaveLength(0)
+  store.disconnect()
+})
+test('local edit wins over pending initial read and pushes once; a later change elsewhere is then adopted', async () => {
   const response = deferred<MyThemePreferences>()
   const readStarted = deferred<void>()
   const remote = server()
@@ -116,10 +133,9 @@ test('local edit wins over pending initial read, pushes once; clear override rer
   store.disconnect()
   store.connect(remote.api)
   await store.refresh()
+  // Another device chooses Harbor: this device follows on its next read.
   remote.set(harbor)
-  store.adoptSynced()
   await store.refresh()
-  expect(store.getSnapshot().localOverride).toBe(false)
   expect(store.getSnapshot().selection.themeId).toBe('harbor')
   remote.set(ember)
   await store.refresh()
@@ -212,26 +228,26 @@ test('serialized writes coalesce to latest choice; failed writes retry only with
   expect(next.writes).toHaveLength(0)
   store.disconnect()
 })
-test('adopt while write in flight rereads after it; a newer deliberate edit cancels adoption', async () => {
-  const write = deferred<MyThemePreferences>()
+test('an unsent choice made offline is kept over a successful read, then uploaded once back online', async () => {
   const remote = server()
+  let online = false
   const store = new ThemeSyncStore(storage())
   store.connect({
     ...remote.api,
     updateMine: async (input) => {
-      await write.promise
+      if (!online) throw new Error('offline')
       return remote.api.updateMine(input)
     },
   })
   await store.refresh()
   store.change(ember)
-  store.adoptSynced()
-  store.change(harbor)
-  write.resolve({ userId: 'A', theme: ember })
+  // The write fails but the read succeeds: the account's Harbor must not replace the choice that has not landed.
   await store.refresh()
-  expect(store.getSnapshot().localOverride).toBe(true)
-  expect(store.getSnapshot().selection.themeId).toBe('harbor')
-  expect(remote.writes.at(-1)?.theme).toEqual(harbor)
+  expect(store.getSnapshot().selection.themeId).toBe('ember')
+  online = true
+  await store.refresh()
+  expect(store.getSnapshot().selection.themeId).toBe('ember')
+  expect((await remote.api.getMine()).theme).toEqual(ember)
   store.disconnect()
 })
 test('invalid/oversized remote values and network failures leave local state intact; reconnect adopts once', async () => {
@@ -291,12 +307,11 @@ test('storage denial remains functional in memory and unauthenticated edits neve
     },
   })
   store.change(ember)
-  expect(store.getSnapshot().localOverride).toBe(true)
   expect(store.getSnapshot().selection.themeId).toBe('ember')
   expect(store.getSnapshot().syncAvailable).toBe(false)
 })
 
-test('another tab setting a device override invalidates slow reads without echo writes', async () => {
+test('another tab choosing a theme invalidates slow reads without echo writes', async () => {
   const local = storage()
   const store = new ThemeSyncStore(local)
   const response = deferred<MyThemePreferences>()
@@ -310,14 +325,12 @@ test('another tab setting a device override invalidates slow reads without echo 
     },
   })
   await started.promise
-  local.setItem(LOCAL_OVERRIDE_KEY, '1')
   local.setItem('tau-theme-id', 'ember')
   local.setItem('tau-appearance', 'light')
   store.reloadFromStorage()
   response.resolve({ userId: 'A', theme: harbor })
   await store.refresh()
   expect(store.getSnapshot().selection.themeId).toBe('ember')
-  expect(store.getSnapshot().localOverride).toBe(true)
   expect(remote.writes).toHaveLength(0)
   store.disconnect()
 })
@@ -340,9 +353,8 @@ test('failed in-flight PUT cannot resurrect a write invalidated by a newer stora
   store.change(ember)
   expect(writes).toEqual([ember])
 
-  // Another tab has published Harbor and persisted its deliberate device choice.
+  // Another tab has published Harbor and persisted it on this device.
   remote.set(harbor)
-  local.setItem(LOCAL_OVERRIDE_KEY, '1')
   local.setItem('tau-theme-id', 'harbor')
   local.setItem('tau-appearance', 'dark')
   store.reloadFromStorage()
@@ -353,7 +365,6 @@ test('failed in-flight PUT cannot resurrect a write invalidated by a newer stora
 
   expect(writes).toEqual([ember])
   expect(store.getSnapshot().selection).toEqual({ themeId: 'harbor', appearance: 'dark' })
-  expect(store.getSnapshot().localOverride).toBe(true)
   expect((await remote.api.getMine()).theme).toEqual(harbor)
   store.disconnect()
 })
