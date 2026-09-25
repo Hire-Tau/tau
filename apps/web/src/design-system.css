@@ -66,7 +66,8 @@
   /* A flat gradient wheel: the theme's primary, secondary and tertiary
      swatch colours softened so they run into each other with no centre
      point. Palette presets fill the swatch tokens from their own seeds. */
-  .theme-swatch::before {
+  .theme-swatch::before,
+  .theme-swatch-half::before {
     content: '';
     position: absolute;
     inset: -25%;
@@ -78,6 +79,42 @@
     );
     filter: blur(6px);
     pointer-events: none;
+  }
+
+  /* A theme with light and dark appearances shows both, like an Auto
+     appearance thumbnail: its light side over its light page on the upper-left
+     half, its dark side over its dark page on the lower-right. Each half is its
+     own theme scope; the wheel is softened over the page so the halves read as
+     light and dark, not just as two copies of the accent. */
+  .theme-swatch-split::before {
+    display: none;
+  }
+  .theme-swatch-half {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    background: rgb(var(--color-bg-page));
+  }
+  /* Each half sees only 180 degrees of the wheel, so its wheel packs all
+     three colours into that arc, starting where the half begins. */
+  .theme-swatch-half::before {
+    opacity: 0.72;
+    background: conic-gradient(
+      from var(--swatch-half-from),
+      rgb(var(--color-primary)) 0deg,
+      rgb(var(--swatch-secondary)) 60deg,
+      rgb(var(--swatch-tertiary)) 120deg,
+      rgb(var(--color-primary)) 180deg,
+      rgb(var(--color-primary)) 360deg
+    );
+  }
+  .theme-swatch-half[data-appearance='light'] {
+    --swatch-half-from: 225deg;
+    clip-path: polygon(0 0, 100% 0, 0 100%);
+  }
+  .theme-swatch-half[data-appearance='dark'] {
+    --swatch-half-from: 45deg;
+    clip-path: polygon(100% 0, 100% 100%, 0 100%);
   }
 
   /* The outline sits above the wheel so it stays visible. */

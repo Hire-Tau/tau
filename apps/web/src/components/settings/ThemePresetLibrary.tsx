@@ -9,7 +9,6 @@ import { usePermissions } from '../../hooks/usePermissions'
 import { client } from '../../api/clientInstance'
 import { queries } from '../../queryOptions'
 import { themePresetQueryKeys } from '../../queryKeys'
-import { BUILT_IN_THEMES } from '../../theme/registry'
 import { exportCustomTheme, importCustomTheme, presetAppearance } from '../../theme/custom'
 import { ThemeSwatch } from '../ThemeSwatch'
 import { OverflowMenu } from '../OverflowMenu'
@@ -50,7 +49,6 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
   const cache = useQueryClient()
   const [editing, setEditing] = useState<EditorTarget | null>(null)
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null)
-  const [newBase, setNewBase] = useState(BUILT_IN_THEMES[0]!.id)
   const [notice, setNotice] = useState('')
   const importInput = useRef<HTMLInputElement>(null)
 
@@ -126,17 +124,9 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
     }
   }
 
-  /** Rename/Share/Duplicate/Export/Delete: rendered once inline for desktop
-   * and once inside the mobile OverflowMenu (see the "My themes" row below) —
-   * a plain function call, not a shared element instance, so each placement
-   * gets its own React tree with no key collisions. Inline they are bordered
-   * secondary buttons; in the menu they are plain rows like the other
-   * OverflowMenu callers. */
-  const presetSecondaryActions = (preset: ThemePreset, placement: 'inline' | 'menu') => {
-    const buttonClass =
-      placement === 'inline'
-        ? 'tau-button min-h-[36px] px-2 py-1 tau-button-secondary'
-        : 'tau-button hover:text-primary'
+  /** A preset row's secondary actions, as plain rows in its overflow menu like the other OverflowMenu callers. */
+  const presetSecondaryActions = (preset: ThemePreset) => {
+    const buttonClass = 'tau-button hover:text-primary'
     return (
       <>
         <button className={buttonClass} onClick={() => setRenaming({ id: preset.id, name: preset.document.name })}>
@@ -179,8 +169,34 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
         </div>
       )}
       <div className="mt-4 flex flex-col gap-3 text-sm">
-        <h4 className="font-medium text-primary">My themes</h4>
-        {presets.length === 0 && <p className="text-secondary">You have no saved theme presets yet.</p>}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h4 className="font-medium text-primary">My themes</h4>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="tau-button min-h-[36px] px-3 py-1.5 tau-button-secondary"
+              // Starts from the theme in use, with the assistant panel focused when it's shown (gated on
+              // `chat:send` inside CustomThemeEditor); the editor's Based on changes the base.
+              onClick={() => setEditing({ preset: null, baseId: value.themeId, focusAssistant: true })}
+            >
+              New theme
+            </button>
+            {/* The native file input stays hidden and only opens the file picker. */}
+            <button
+              type="button"
+              className="tau-button min-h-[36px] px-3 py-1.5 tau-button-secondary"
+              onClick={() => importInput.current?.click()}
+            >
+              Import JSON…
+            </button>
+          </div>
+        </div>
+        {presets.length === 0 && (
+          <p className="rounded-lg border border-dashed border-th-border px-4 py-5 text-center text-secondary">
+            No saved themes yet. <span className="text-primary">New theme</span> starts from the theme you&rsquo;re
+            using now; <span className="text-primary">Import JSON…</span> adds one someone shared with you.
+          </p>
+        )}
         <ul className="flex flex-col gap-2">
           {presets.map((preset) => {
             const active = value.presetId === preset.id
@@ -220,9 +236,16 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
                     </button>
                   </form>
                 ) : (
-                  <span className="flex-1 font-medium">
-                    {preset.document.name} {active && <span className="text-secondary">(active)</span>}{' '}
-                    {preset.visibility === 'instance' && <span className="text-secondary text-xs">(shared)</span>}
+                  <span className="flex flex-1 flex-wrap items-center gap-2 font-medium">
+                    {preset.document.name}
+                    {active && (
+                      <span className="rounded-full bg-selection px-2 py-0.5 text-xs font-normal text-accent-light">
+                        In use
+                      </span>
+                    )}
+                    {preset.visibility === 'instance' && (
+                      <span className="text-secondary text-xs font-normal">Shared</span>
+                    )}
                   </span>
                 )}
                 <div className="flex flex-wrap items-center gap-1">
@@ -239,16 +262,13 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
                   >
                     Edit
                   </button>
-                  {/* Desktop: the rest fit inline. Narrow widths: the same
-                   * actions move into an overflow menu so the row doesn't wrap
-                   * across two lines (see web-ui.md's responsive guidance). */}
-                  <div className="hidden flex-wrap gap-1 md:flex">{presetSecondaryActions(preset, 'inline')}</div>
-                  <div className="md:hidden">
+                  {/* Use and Edit stay visible; the rest live in the overflow menu at every width. */}
+                  <div>
                     <OverflowMenu
                       label={`More actions for ${preset.document.name}`}
                       itemsMarker="data-theme-preset-actions"
                     >
-                      {presetSecondaryActions(preset, 'menu')}
+                      {presetSecondaryActions(preset)}
                     </OverflowMenu>
                   </div>
                 </div>
@@ -256,64 +276,30 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
             )
           })}
         </ul>
-        <div className="flex flex-col flex-wrap items-stretch gap-2 sm:flex-row sm:items-end">
-          <label className="flex flex-col gap-1">
-            New theme base
-            <select
-              className="tau-field min-h-[44px] w-full px-3 py-2 sm:w-auto"
-              value={newBase}
-              onChange={(event) => setNewBase(event.target.value)}
-            >
-              {BUILT_IN_THEMES.map((entry) => (
-                <option key={entry.id} value={entry.id}>
-                  {entry.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary"
-            // Opens with the assistant panel focused when it's shown (gated on
-            // `chat:send` inside CustomThemeEditor); a no-op effect otherwise,
-            // so this single action covers both "New theme" and the former
-            // "New theme with assistant" — see custom-themes.md's Assistant section.
-            onClick={() => setEditing({ preset: null, baseId: newBase, focusAssistant: true })}
-          >
-            New theme
-          </button>
-          {/* A button like New theme; the native file input stays hidden and only opens the file picker. */}
-          <button
-            type="button"
-            className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary"
-            onClick={() => importInput.current?.click()}
-          >
-            Import JSON…
-          </button>
-          <input
-            ref={importInput}
-            aria-label="Import theme preset JSON"
-            type="file"
-            accept=".json,application/json"
-            className="hidden"
-            onChange={async (event) => {
-              const file = event.target.files?.[0]
-              event.target.value = ''
-              if (!file) return
-              const result = await importCustomTheme(file)
-              if (!result.ok) {
-                setNotice(result.error)
-                return
-              }
-              try {
-                await client.themePresets.create(result.document)
-                invalidate()
-                setNotice('Imported into your theme library.')
-              } catch (error) {
-                setNotice(errorMessage(error, 'Import failed.'))
-              }
-            }}
-          />
-        </div>
+        <input
+          ref={importInput}
+          aria-label="Import theme preset JSON"
+          type="file"
+          accept=".json,application/json"
+          className="hidden"
+          onChange={async (event) => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            if (!file) return
+            const result = await importCustomTheme(file)
+            if (!result.ok) {
+              setNotice(result.error)
+              return
+            }
+            try {
+              await client.themePresets.create(result.document)
+              invalidate()
+              setNotice('Imported into your theme library.')
+            } catch (error) {
+              setNotice(errorMessage(error, 'Import failed.'))
+            }
+          }}
+        />
         {notice && <p role="status">{notice}</p>}
         {editing && (
           <CustomThemeEditor

@@ -25,7 +25,8 @@ export type ThemeGridOption =
  * the active dot (or the first, before anything resolves) in the Tab order.
  *
  * Hovering a dot previews it through `onPreview`; `onPreviewEnd` fires when the pointer leaves the whole grid. The
- * tiles touch (no grid gap) so a sweep never crosses a gap between them.
+ * tiles touch (no grid gap) so a sweep never crosses a gap between them. Every row is as tall as the tallest (a
+ * two-line name) and each tile centres its dot and a two-line name box, so all dots and names line up.
  */
 export function ThemeSwatchGrid({
   options,
@@ -62,7 +63,7 @@ export function ThemeSwatchGrid({
     <div
       role="radiogroup"
       aria-label="Color theme"
-      className={clsx('grid grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))]', className)}
+      className={clsx('grid auto-rows-fr grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))]', className)}
       onMouseLeave={onPreviewEnd}
     >
       {options.map((option, index) => {
@@ -88,7 +89,7 @@ export function ThemeSwatchGrid({
             aria-checked={selected}
             aria-label={option.accessibleLabel}
             tabIndex={index === rovingIndex ? 0 : -1}
-            className="group flex min-h-[44px] flex-col items-center gap-1.5 rounded-lg p-2 text-center hover:bg-surface-hover focus:outline-none"
+            className="group flex min-h-[44px] flex-col items-center justify-center gap-1.5 rounded-lg px-2 py-3 text-center hover:bg-surface-hover focus:outline-none"
             onMouseEnter={() => onPreview?.(option)}
             onClick={() => onSelect(option)}
             onKeyDown={(event) => {
@@ -115,7 +116,9 @@ export function ThemeSwatchGrid({
                 className="h-full w-full"
               />
             </span>
-            <span className="w-full max-w-full line-clamp-2 break-normal text-center text-xs text-secondary">
+            {/* Every name reserves two lines, so each tile's dot and name block is the same height and the dots line up
+                across a row even when one name wraps. */}
+            <span className="h-8 w-full max-w-full line-clamp-2 break-normal text-center text-xs leading-4 text-secondary">
               {option.label}
             </span>
           </button>

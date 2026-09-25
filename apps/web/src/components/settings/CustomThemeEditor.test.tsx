@@ -868,3 +868,33 @@ test('typing bumps the revision every keystroke (stale assistant edits are still
     for (const spy of [create, sync, read, close]) spy.mockRestore()
   }
 })
+
+test('setting Neutral first starts the palette from the base theme primary, with its companions', async () => {
+  const { container } = await render({ baseId: 'harbor', appearance: 'dark' })
+  const field = (name: string) => getByLabelText(container, name) as HTMLInputElement
+  // All four seed fields render before any palette exists.
+  expect([field('Primary').value, field('Secondary').value, field('Tertiary').value, field('Neutral').value]).toEqual([
+    '',
+    '',
+    '',
+    '',
+  ])
+  await change(container, 'Neutral', '#4a4a3f')
+  const primary = field('Primary').value
+  expect(primary).toMatch(/^#[0-9a-f]{6}$/)
+  const companions = suggestPaletteSeeds(primary)!
+  expect([field('Secondary').value, field('Tertiary').value, field('Neutral').value]).toEqual([
+    companions.secondary,
+    companions.tertiary,
+    '#4a4a3f',
+  ])
+  expect(queryByRole(container, 'alert')).toBeNull()
+})
+
+test('Based on sits beside the name, not under Advanced', async () => {
+  const { container } = await render({ baseId: 'harbor', appearance: 'dark' })
+  const based = getByLabelText(container, 'Based on') as HTMLSelectElement
+  expect(based.value).toBe('harbor')
+  expect(based.closest('details')).toBeNull()
+  expect(container.textContent).toContain('Colors you don’t set come from Harbor')
+})

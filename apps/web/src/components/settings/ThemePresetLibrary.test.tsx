@@ -56,10 +56,11 @@ function Harness() {
 
 async function render(
   mine: ThemePreset[],
-  opts: { shared?: ThemePreset[]; permissions?: string[]; userId?: string } = {}
+  opts: { shared?: ThemePreset[]; permissions?: string[]; userId?: string; themeId?: string } = {}
 ) {
   const dom = await acquireDomHarness({ url: 'https://tau.test' })
   cleanup = () => dom.cleanup()
+  if (opts.themeId) localStorage.setItem('tau-theme-id', opts.themeId)
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   queryClient.setQueryData(themePresetQueryKeys.list('mine'), mine)
   queryClient.setQueryData(themePresetQueryKeys.list('shared'), opts.shared ?? [])
@@ -80,9 +81,14 @@ async function render(
   return { container, queryClient }
 }
 
+/** Opens a preset row's overflow menu, where its secondary actions live. */
+async function openActions(container: HTMLElement) {
+  await act(async () => fireEvent.click(getAllByRole(container, 'button', { name: /^More actions for / })[0]!))
+}
+
 test('with no presets, shows an empty state', async () => {
   const { container } = await render([])
-  expect(container.textContent).toContain('You have no saved theme presets yet.')
+  expect(container.textContent).toContain('No saved themes yet.')
 })
 
 test('lists a preset with its name, and applies it via Use (applyPreset)', async () => {
@@ -101,6 +107,7 @@ test('Duplicate calls the server-side duplicate endpoint (works identically for 
   })
   try {
     const { container } = await render([mine])
+    await openActions(container)
     await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Duplicate' })))
     expect(duplicate).toHaveBeenCalledWith('preset-1')
   } finally {
@@ -116,6 +123,7 @@ test('Rename shows an inline form and sends a PUT with the current revision', as
   })
   try {
     const { container } = await render([mine])
+    await openActions(container)
     await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Rename' })))
     const input = container.querySelector('input.tau-field') as HTMLInputElement
     await act(async () => fireEvent.change(input, { target: { value: 'Renamed' } }))
@@ -135,6 +143,7 @@ test('Delete asks for confirmation, then sends the revision', async () => {
       confirmed = true
       return true
     }
+    await openActions(container)
     await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Delete' })))
     expect(confirmed).toBe(true)
     expect(remove).toHaveBeenCalledWith('preset-1', 1)
@@ -148,6 +157,7 @@ test('Delete does nothing when the confirmation is declined', async () => {
   try {
     const { container } = await render([mine])
     window.confirm = () => false
+    await openActions(container)
     await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Delete' })))
     expect(remove).not.toHaveBeenCalled()
   } finally {
@@ -304,6 +314,7 @@ test('My themes: Share toggles a private preset to instance visibility; the row 
   try {
     const { container } = await render([mine])
     expect(queryByRole(container, 'button', { name: 'Unshare' })).toBeNull()
+    await openActions(container)
     await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Share' })))
     expect(setVisibility).toHaveBeenCalledWith('preset-1', 1, 'instance')
   } finally {
@@ -321,6 +332,7 @@ test('My themes: an already-shared preset shows Unshare, which reverts to privat
     const shared = { ...mine, visibility: 'instance' as const }
     const { container } = await render([shared])
     expect(queryByRole(container, 'button', { name: 'Share' })).toBeNull()
+    await openActions(container)
     await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'Unshare' })))
     expect(setVisibility).toHaveBeenCalledWith('preset-1', 1, 'private')
   } finally {
@@ -440,4 +452,11 @@ test('detached-shared: a foreign preset that 404s is shown as no longer availabl
   } finally {
     create.mockRestore()
   }
+})
+
+test('New theme and Import JSON sit beside the My themes heading; New theme starts from the theme in use', async () => {
+  const { container } = await render([], { themeId: 'ember' })
+  expect(container.querySelector('select')).toBeNull()
+  await act(async () => fireEvent.click(getByRole(container, 'button', { name: 'New theme' })))
+  expect((container.querySelector('select') as HTMLSelectElement | null)?.value).toBe('ember')
 })

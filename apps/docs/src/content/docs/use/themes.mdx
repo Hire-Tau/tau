@@ -35,12 +35,13 @@ Use the **Light / Dark / System** control next to the theme grid (or in the head
 
 ## Build your own theme
 
-Under **My themes**, select **New theme** to open the theme editor. Pick a starting built-in as its base first, from the **New theme base** menu.
+Under **My themes**, select **New theme** to open the theme editor. It starts from the theme you're using; **Based on**, next to the name, changes it. The base supplies every color your theme doesn't set, and decides whether it has light and dark versions.
 
 The editor is palette-first — set a few seed colors and most of the theme derives automatically:
 
 - **Primary** — your theme's main accent color.
-- **Secondary** and **Tertiary** (optional) — supporting accents; left unset, they're derived from Primary.
+- **Secondary** — tints hover, selected and pill backgrounds. Setting Primary fills it with a matching color (the analogous hue) until you change it.
+- **Tertiary** — highlights like the logo tile. Setting Primary fills it with a contrasting color (the split-complementary hue) until you change it.
 - **Neutral** (optional) — tints the backgrounds, borders, and surfaces.
 - **Contrast: Standard / High** — how strongly text needs to stand out from its background.
 - **Status colors: Static / Harmonized** — **Static** keeps success/warning/danger colors as they are; **Harmonized** tints them toward your palette while keeping their meaning.
