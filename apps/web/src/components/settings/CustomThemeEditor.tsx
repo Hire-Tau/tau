@@ -185,6 +185,13 @@ function ColorField({
   )
 }
 
+/** A compiled "r g b" token value as a hex color, or undefined when there is none. */
+function channelsToHex(channels: string | undefined): string | undefined {
+  const parts = channels?.trim().split(/\s+/).slice(0, 3).map(Number)
+  if (!parts || parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return undefined
+  return `#${parts.map((n) => Math.round(n).toString(16).padStart(2, '0')).join('')}`
+}
+
 export function CustomThemeEditor({
   value,
   preset,
@@ -222,6 +229,7 @@ export function CustomThemeEditor({
   const { can } = usePermissions()
   const [draft, setDraft] = useState<CustomThemeDocument>(() => preset?.document ?? emptyThemeDocument(baseId))
   const base = findWebTheme(draft.base)
+  const baseHintId = useId()
   const [tab, setTab] = useState<VariantTab>(base.kind === 'unified' ? 'constant' : value.theme)
   const [token, setToken] = useState(ACTIVE_THEME_TOKENS[0]!)
   const [color, setColor] = useState('#336699')
@@ -316,11 +324,14 @@ export function CustomThemeEditor({
       return rest
     }
     const next: ThemePalette = { primary: palette?.primary ?? '', ...palette, ...patch }
-    const companions = patch.primary ? suggestPaletteSeeds(patch.primary) : null
+    // Another seed set before Primary starts from the base theme's own primary, so the palette is valid at once.
+    if (!next.primary) next.primary = channelsToHex(baseTokens.current['--color-primary']) ?? ''
+    const newPrimary = patch.primary ?? (palette?.primary ? undefined : next.primary)
+    const companions = newPrimary ? suggestPaletteSeeds(newPrimary) : null
     if (companions) {
       const previous = palette?.primary ? suggestPaletteSeeds(palette.primary) : null
       for (const seed of ['secondary', 'tertiary'] as const)
-        if (!palette?.[seed] || palette[seed] === previous?.[seed]) next[seed] = companions[seed]
+        if (!(seed in patch) && (!palette?.[seed] || palette[seed] === previous?.[seed])) next[seed] = companions[seed]
     }
     return { ...draft, palette: next }
   }
@@ -622,28 +633,55 @@ export function CustomThemeEditor({
               <RedoIcon className="h-4 w-4" />
             </button>
           </div>
-          <label className="flex flex-col gap-1">
-            Theme name
-            <input
-              className="tau-field px-3 py-2"
-              value={draft.name}
-              maxLength={40}
-              onChange={(event) => commitTypedDraft('name', { ...draft, name: event.target.value })}
-              onBlur={closeTypingSession}
-            />
-          </label>
+          <div className="flex flex-col gap-1.5">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto]">
+              <label className="flex flex-col gap-1">
+                Theme name
+                <input
+                  className="tau-field px-3 py-2"
+                  value={draft.name}
+                  maxLength={40}
+                  onChange={(event) => commitTypedDraft('name', { ...draft, name: event.target.value })}
+                  onBlur={closeTypingSession}
+                />
+              </label>
+              <label className="flex flex-col gap-1">
+                Based on
+                <select
+                  className="tau-field px-3 py-2"
+                  value={draft.base}
+                  aria-describedby={baseHintId}
+                  onChange={(event) => {
+                    const next = reshapeForBase(draft, event.target.value)
+                    commitDraft(next)
+                    setTab(findWebTheme(next.base).kind === 'unified' ? 'constant' : valueRef.current.theme)
+                  }}
+                >
+                  {BUILT_IN_THEMES.map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {entry.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <p id={baseHintId} className="text-muted text-xs">
+              Colors you don&rsquo;t set come from {base.label}, which also decides whether the theme has light and dark
+              versions.
+            </p>
+          </div>
           <div className="rounded-lg border border-th-border p-3 flex flex-col gap-4">
             <div>
               <h4 className="font-medium text-primary">Palette</h4>
               <p className="text-muted text-xs">
-                Set a primary color to derive most tokens automatically. Leave it blank for a plain, token-by-token
-                theme.
+                Pick the colors to build the theme from. Secondary and Tertiary follow Primary until you change them;
+                leave them all blank for a plain, token-by-token theme.
               </p>
             </div>
             {/* Every seed field shares one layout and width: single column on
              * mobile, an even 2x2 grid from sm up (see web-ui.md's spacing
-             * guidance) — Primary always renders; Secondary/Tertiary/Neutral
-             * only once a palette exists (setting Primary creates one). */}
+             * guidance). All four always render: a seed set before Primary
+             * starts from the base's primary (see paletteDraft). */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <ColorField
                 label="Primary"
@@ -652,34 +690,30 @@ export function CustomThemeEditor({
                 onSwatchChange={(next) => setPaletteImmediate(next ? { primary: next } : null)}
                 onBlur={closeTypingSession}
               />
-              {palette && (
-                <>
-                  <ColorField
-                    label="Secondary"
-                    value={palette.secondary ?? ''}
-                    onChange={(next) => setPaletteTyped('secondary', { secondary: next || undefined })}
-                    onSwatchChange={(next) => setPaletteImmediate({ secondary: next || undefined })}
-                    onClear={() => setPaletteImmediate({ secondary: undefined })}
-                    onBlur={closeTypingSession}
-                  />
-                  <ColorField
-                    label="Tertiary"
-                    value={palette.tertiary ?? ''}
-                    onChange={(next) => setPaletteTyped('tertiary', { tertiary: next || undefined })}
-                    onSwatchChange={(next) => setPaletteImmediate({ tertiary: next || undefined })}
-                    onClear={() => setPaletteImmediate({ tertiary: undefined })}
-                    onBlur={closeTypingSession}
-                  />
-                  <ColorField
-                    label="Neutral"
-                    value={palette.neutral ?? ''}
-                    onChange={(next) => setPaletteTyped('neutral', { neutral: next || undefined })}
-                    onSwatchChange={(next) => setPaletteImmediate({ neutral: next || undefined })}
-                    onClear={() => setPaletteImmediate({ neutral: undefined })}
-                    onBlur={closeTypingSession}
-                  />
-                </>
-              )}
+              <ColorField
+                label="Secondary"
+                value={palette?.secondary ?? ''}
+                onChange={(next) => setPaletteTyped('secondary', { secondary: next || undefined })}
+                onSwatchChange={(next) => setPaletteImmediate({ secondary: next || undefined })}
+                onClear={() => setPaletteImmediate({ secondary: undefined })}
+                onBlur={closeTypingSession}
+              />
+              <ColorField
+                label="Tertiary"
+                value={palette?.tertiary ?? ''}
+                onChange={(next) => setPaletteTyped('tertiary', { tertiary: next || undefined })}
+                onSwatchChange={(next) => setPaletteImmediate({ tertiary: next || undefined })}
+                onClear={() => setPaletteImmediate({ tertiary: undefined })}
+                onBlur={closeTypingSession}
+              />
+              <ColorField
+                label="Neutral"
+                value={palette?.neutral ?? ''}
+                onChange={(next) => setPaletteTyped('neutral', { neutral: next || undefined })}
+                onSwatchChange={(next) => setPaletteImmediate({ neutral: next || undefined })}
+                onClear={() => setPaletteImmediate({ neutral: undefined })}
+                onBlur={closeTypingSession}
+              />
             </div>
             {palette && (
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -715,24 +749,6 @@ export function CustomThemeEditor({
             <summary className="cursor-pointer font-medium text-primary">Advanced: per-token overrides</summary>
             <div className="mt-3 flex flex-col gap-3">
               <div className="flex flex-wrap gap-3">
-                <label className="flex flex-col gap-1">
-                  Base theme
-                  <select
-                    className="tau-field px-3 py-2"
-                    value={draft.base}
-                    onChange={(event) => {
-                      const next = reshapeForBase(draft, event.target.value)
-                      commitDraft(next)
-                      setTab(findWebTheme(next.base).kind === 'unified' ? 'constant' : valueRef.current.theme)
-                    }}
-                  >
-                    {BUILT_IN_THEMES.map((entry) => (
-                      <option key={entry.id} value={entry.id}>
-                        {entry.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
                 {base.kind === 'dual' && (
                   <div role="radiogroup" aria-label="Editing variant" className="flex items-end gap-1">
                     {(['light', 'dark'] as const).map((variant) => (
