@@ -382,6 +382,15 @@ test('assistant summaries show nested conversations as full rows and task update
       {
         type: 'tool_use',
         toolCall: {
+          toolName: 'navigate',
+          args: JSON.stringify({ path: '/settings?section=appearance', prompt: true }),
+          result: 'Link to /settings?section=appearance shown to user.',
+          isError: false,
+        },
+      },
+      {
+        type: 'tool_use',
+        toolCall: {
           toolName: 'delegate_task',
           result: JSON.stringify({ id: 'receipt', agentId: 'delegate' }),
           isError: false,
@@ -403,6 +412,11 @@ test('assistant summaries show nested conversations as full rows and task update
   expect(row.textContent).toContain('Open conversation')
   await f.dom.act(async () => fireEvent.click(row))
   expect(onOpenConversation).toHaveBeenCalledWith(expect.objectContaining({ agentId: 'delegate' }))
+
+  // An offered page is a row too, named from the navigation definitions.
+  const page = footer.querySelector<HTMLButtonElement>('button[aria-label="Go to Appearance"]')!
+  expect(page.textContent).toContain('Appearance')
+  expect(page.textContent).toContain('Settings')
 
   const toggle = [...footer.querySelectorAll('button')].find((button) => button.textContent?.includes('Task updates'))!
   expect(toggle.getAttribute('aria-expanded')).toBe('false')
