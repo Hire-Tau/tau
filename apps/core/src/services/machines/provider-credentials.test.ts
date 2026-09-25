@@ -94,12 +94,12 @@ describe('getExeMachineImage', () => {
   it('defaults to the tau-machine image when TAU_EXE_MACHINE_IMAGE is unset', () => {
     delete process.env.TAU_EXE_MACHINE_IMAGE
     expect(getExeMachineImage()).toBe(DEFAULT_EXE_MACHINE_IMAGE)
-    expect(DEFAULT_EXE_MACHINE_IMAGE).toBe('ghcr.io/hire-tau/tau-machine:latest')
+    expect(DEFAULT_EXE_MACHINE_IMAGE).toBe('ghcr.io/ficushq/tau-machine:latest')
   })
 
   it('returns the configured value when TAU_EXE_MACHINE_IMAGE is set', () => {
-    process.env.TAU_EXE_MACHINE_IMAGE = 'ghcr.io/hire-tau/tau-machine:v9'
-    expect(getExeMachineImage()).toBe('ghcr.io/hire-tau/tau-machine:v9')
+    process.env.TAU_EXE_MACHINE_IMAGE = 'ghcr.io/ficushq/tau-machine:v9'
+    expect(getExeMachineImage()).toBe('ghcr.io/ficushq/tau-machine:v9')
   })
 
   it("returns undefined when TAU_EXE_MACHINE_IMAGE is empty (use exe's default image)", () => {

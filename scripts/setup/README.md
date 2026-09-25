@@ -47,7 +47,7 @@ This creates the VM, waits for SSH, pushes the toolkit + config + key files
 `setup-host.sh` remotely, and prints the handoff URL. `provision.provider`
 picks the VM provider:
 
-- **exe** (default) — `ssh exe.dev new --name <n> --image ghcr.io/hire-tau/tau-machine:latest`;
+- **exe** (default) — `ssh exe.dev new --name <n> --image ghcr.io/ficushq/tau-machine:latest`;
   the VM is reachable at the stable `<name>.exe.xyz` hostname before it even exists.
 - **hetzner** — creates (or reuses, by name) a Hetzner Cloud server via the
   hcloud API (`provision.hetzner.{server_type,location,image,ssh_key_name}`),

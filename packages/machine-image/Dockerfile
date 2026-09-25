@@ -17,7 +17,7 @@
 # (the COPY below reaches into scripts/machine/):
 #   docker buildx build --platform linux/amd64 \
 #     -f packages/machine-image/Dockerfile \
-#     -t ghcr.io/hire-tau/tau-machine:latest .
+#     -t ghcr.io/ficushq/tau-machine:latest .
 
 # Base: the PUBLISHED exeuntu image (public on ghcr, pulls anonymously —
 # verified). Already provides: systemd + systemd-sysv init, the `exedev`

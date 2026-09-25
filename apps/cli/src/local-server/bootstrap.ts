@@ -4,7 +4,7 @@ import { SetupOptionsError } from './options'
 import type { Runner } from './runner'
 import { isCheckout } from './state'
 
-export const DEFAULT_REPO = 'https://github.com/Hire-Tau/tau.git'
+export const DEFAULT_REPO = 'https://github.com/ficushq/tau.git'
 export const defaultInstallDir = (home: string) => join(home, '.tau', 'tau')
 
 export interface BootstrapDeps {

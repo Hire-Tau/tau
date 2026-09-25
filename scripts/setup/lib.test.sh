@@ -1274,7 +1274,7 @@ EOF
 
 Step 1 — provision VM (provider seam: exe)
   ssh -i TMPDIR/key -o IdentitiesOnly=yes -o IdentityAgent=none exe.dev \
-      new --name acme --image ghcr.io/hire-tau/tau-machine:latest --json
+      new --name acme --image ghcr.io/ficushq/tau-machine:latest --json
   (skipped if exedev@acme.exe.xyz already answers SSH — idempotent re-run)
 
 Step 2 — wait for SSH
@@ -2538,7 +2538,7 @@ if yq_is_mikefarah; then
   cat >"${SH_TMP}/restore.yaml" <<'EOF'
 source:
   mode: git-https
-  repo: https://github.com/Hire-Tau/tau.git
+  repo: https://github.com/ficushq/tau.git
   ref: main
 core:
   origin: https://acme.hiretau.ai
@@ -2595,7 +2595,7 @@ if yq_is_mikefarah; then
   cat >"${AH_TMP}/base.yaml" <<EOF
 source:
   mode: git-https
-  repo: https://github.com/Hire-Tau/tau.git
+  repo: https://github.com/ficushq/tau.git
   ref: main
 core:
   origin: https://acme.hiretau.ai
@@ -2657,7 +2657,7 @@ if yq_is_mikefarah; then
   cat >"${SEED_TMP}/full.yaml" <<'EOF'
 source:
   mode: git-https
-  repo: https://github.com/Hire-Tau/tau.git
+  repo: https://github.com/ficushq/tau.git
   ref: main
 core:
   origin: https://acme.hiretau.ai
@@ -2683,7 +2683,7 @@ EOF
   cat >"${SEED_TMP}/minimal.yaml" <<'EOF'
 source:
   mode: git-https
-  repo: https://github.com/Hire-Tau/tau.git
+  repo: https://github.com/ficushq/tau.git
   ref: main
 core:
   origin: https://acme.hiretau.ai
@@ -2784,7 +2784,7 @@ EOF
   cat >"${SEED_TMP}/partial-ai.yaml" <<'EOF'
 source:
   mode: git-https
-  repo: https://github.com/Hire-Tau/tau.git
+  repo: https://github.com/ficushq/tau.git
   ref: main
 core:
   origin: https://acme.hiretau.ai
@@ -2824,7 +2824,7 @@ EOF
   cat >"${SEED_TMP}/squad-only.yaml" <<'EOF'
 source:
   mode: git-https
-  repo: https://github.com/Hire-Tau/tau.git
+  repo: https://github.com/ficushq/tau.git
   ref: main
 core:
   origin: https://acme.hiretau.ai
@@ -2859,7 +2859,7 @@ EOF
   cat >"${SEED_TMP}/codex-openai-mismatch.yaml" <<'EOF'
 source:
   mode: git-https
-  repo: https://github.com/Hire-Tau/tau.git
+  repo: https://github.com/ficushq/tau.git
   ref: main
 core:
   origin: https://acme.hiretau.ai
@@ -2899,7 +2899,7 @@ if yq_is_mikefarah; then
   cat >"${UH_TMP}/tau-setup.yaml" <<EOF
 source:
   mode: git-https
-  repo: https://github.com/Hire-Tau/tau.git
+  repo: https://github.com/ficushq/tau.git
   ref: main
   dest: ${UH_TMP}/no-such-checkout
 core:

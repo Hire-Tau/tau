@@ -46,7 +46,7 @@ Each manifest records the source commit so installed binaries can be identified.
 ## Machine image
 
 [Publish Images](../../.github/workflows/publish-images.yml) publishes
-`ghcr.io/hire-tau/tau-machine` for exe.dev machine provisioning. Main builds are
+`ghcr.io/ficushq/tau-machine` for exe.dev machine provisioning. Main builds are
 selected by image-source changes; version tags and manual dispatch build the
 image explicitly.
 

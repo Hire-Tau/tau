@@ -124,7 +124,7 @@ exe VMs are x86_64, so the image **must** be built for `linux/amd64`. From the
 ```
 docker buildx build --platform linux/amd64 \
   -f packages/machine-image/Dockerfile \
-  -t ghcr.io/hire-tau/tau-machine:latest .
+  -t ghcr.io/ficushq/tau-machine:latest .
 ```
 
 CI publishes it (`.github/workflows/publish-images.yml`, `build-machine-image`
@@ -145,7 +145,7 @@ The exe provider reads the image ref from `getExeMachineImage()`
 
 | `TAU_EXE_MACHINE_IMAGE` | Behavior                                                                                                      |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **unset**               | `ghcr.io/hire-tau/tau-machine:latest` (`DEFAULT_EXE_MACHINE_IMAGE`) — the default.                            |
+| **unset**               | `ghcr.io/ficushq/tau-machine:latest` (`DEFAULT_EXE_MACHINE_IMAGE`) — the default.                             |
 | a value                 | that image ref (a tenant override, e.g. a pinned `sha-<short>` tag).                                          |
 | **empty string**        | `undefined` ⇒ the provider omits `--image`, so exe boots its own default exeuntu image. The explicit opt-out. |
 
@@ -255,7 +255,7 @@ tests make no external calls.
 ### Live validation (gated/manual — not in CI)
 
 **Validated live 2026-07-13/14** on an exe VM booted from the published
-`ghcr.io/hire-tau/tau-machine:latest`: bootstrap completed in **1 second**
+`ghcr.io/ficushq/tau-machine:latest`: bootstrap completed in **1 second**
 (the log shows `prebaked tau-machine image detected … skipping install steps`,
 no apt/nix output) versus multi-minute on bare exeuntu; the caps probe
 reported `docker:"rootless"` and `forwarding:"yes"`; a box provisioned in ~0s

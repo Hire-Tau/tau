@@ -19,9 +19,9 @@ test('relay subscriptions accept exact normalized repositories and reject author
     connectionId: crypto.randomUUID(),
     connectionRevision: crypto.randomUUID(),
     accessToken: 'token',
-    repositories: ['Hire-Tau/Tau'],
+    repositories: ['ficushq/Tau'],
   }
-  expect(relaySubscribeRequest.parse(body).repositories).toEqual(['hire-tau/tau'])
+  expect(relaySubscribeRequest.parse(body).repositories).toEqual(['ficushq/tau'])
   for (const extra of [{ tenantId: crypto.randomUUID() }, { callbackUrl: 'https://other.test' }])
     expect(relaySubscribeRequest.safeParse({ ...body, ...extra }).success).toBe(false)
   for (const key of ['../private', 'owner/..', 'owner/*', 'owner/repo?token=secret', 'https://github.com/a/b'])

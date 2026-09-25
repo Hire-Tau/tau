@@ -50,7 +50,7 @@ What the one-liner does, in order:
    `TAU_SETUP_SKIP_CLI_INSTALL=1`; the installer URL comes from
    `TAU_INSTALL_URL`, default `https://hiretau.ai/cli/install.sh`.
 2. Runs `tau server install`, which installs bun with the official installer if
-   it is missing, then clones `https://github.com/Hire-Tau/tau.git` into
+   it is missing, then clones `https://github.com/ficushq/tau.git` into
    `~/.tau/tau` (`--root <dir>` to clone elsewhere; an existing checkout there
    is reused untouched, and a non-empty directory that is not a checkout is an
    error).
@@ -74,7 +74,7 @@ flags).
 ### From a checkout
 
 ```bash
-git clone --recurse-submodules https://github.com/Hire-Tau/tau.git
+git clone --recurse-submodules https://github.com/ficushq/tau.git
 cd tau
 bun install
 bun run setup
@@ -315,7 +315,7 @@ An instance is a checkout: `.env` and `ecosystem.config.js` belong to one label,
 so give the second instance its own clone.
 
 ```bash
-git clone --recurse-submodules https://github.com/Hire-Tau/tau.git tau-smoke
+git clone --recurse-submodules https://github.com/ficushq/tau.git tau-smoke
 cd tau-smoke && bun install
 bun run setup -- --instance smoke --runtime host --port 3100
 ```

@@ -96,7 +96,7 @@ esac
 SSH_USER=$(cfg_get '.provision.ssh_user' "${SSH_USER_DEFAULT}")
 ACCOUNT_KEY=$(expand_tilde "$(cfg_get '.provision.account_key_path')")
 [[ -n ${ACCOUNT_KEY} ]] || ACCOUNT_KEY=$(expand_tilde "$(cfg_get '.runtime.exe.ssh_key_path')")
-MACHINE_IMAGE=$(cfg_get '.runtime.exe.machine_image' 'ghcr.io/hire-tau/tau-machine:latest')
+MACHINE_IMAGE=$(cfg_get '.runtime.exe.machine_image' 'ghcr.io/ficushq/tau-machine:latest')
 CORE_ORIGIN=$(cfg_require '.core.origin' 'browser-facing origin')
 CORE_PORT=$(cfg_get '.core.port' '3000')
 SRC_MODE=$(cfg_get '.source.mode' 'git-ssh')

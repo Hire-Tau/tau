@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [ "$#" -ne 2 ]; then
   echo "Usage: $0 <owner/repo> <tau-api-base>" >&2
-  echo "Example: $0 Hire-Tau/tau https://tau.xyz" >&2
+  echo "Example: $0 ficushq/tau https://tau.xyz" >&2
   exit 1
 fi
 

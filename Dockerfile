@@ -101,7 +101,7 @@ WORKDIR /app
 
 # OCI image metadata
 LABEL org.opencontainers.image.title="Tau" \
-      org.opencontainers.image.source="https://github.com/Hire-Tau/tau" \
+      org.opencontainers.image.source="https://github.com/ficushq/tau" \
       org.opencontainers.image.licenses="AGPL-3.0-only"
 
 # Copy package files and install production deps only

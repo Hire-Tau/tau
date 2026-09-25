@@ -2854,8 +2854,8 @@ wizard_write_config() { # OUT_FILE
   prompt_value "source mode (git-ssh | git-https) [git-ssh]" src_mode
   src_mode=${src_mode:-git-ssh}
   [[ ${src_mode} == git-ssh || ${src_mode} == git-https ]] || die "unsupported source mode '${src_mode}' (artifact is not implemented yet)"
-  local default_repo='git@github.com:Hire-Tau/tau.git'
-  [[ ${src_mode} == git-https ]] && default_repo='https://github.com/Hire-Tau/tau.git'
+  local default_repo='git@github.com:ficushq/tau.git'
+  [[ ${src_mode} == git-https ]] && default_repo='https://github.com/ficushq/tau.git'
   prompt_value "repo [${default_repo}]" src_repo
   src_repo=${src_repo:-${default_repo}}
   prompt_value "ref (branch/tag/sha) [main]" src_ref
@@ -2890,7 +2890,7 @@ wizard_write_config() { # OUT_FILE
     die "database mode must be container or external"
   fi
 
-  local sandbox='' exe_key='' exe_image='ghcr.io/hire-tau/tau-machine:latest'
+  local sandbox='' exe_key='' exe_image='ghcr.io/ficushq/tau-machine:latest'
   # The sandbox runtime has NO default: the core refuses to start without an
   # explicit TAU_SANDBOX_RUNTIME, so the wizard must make the operator choose.
   # Bounded retries — an EOF on stdin returns an empty answer forever, and an

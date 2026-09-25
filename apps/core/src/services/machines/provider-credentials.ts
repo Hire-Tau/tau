@@ -68,7 +68,7 @@ export async function isExeBacked(
  * `--registry-auth` is needed. Booting from it turns box provisioning from a
  * multi-minute bootstrap install into a seconds-long boot.
  */
-export const DEFAULT_EXE_MACHINE_IMAGE = 'ghcr.io/hire-tau/tau-machine:latest'
+export const DEFAULT_EXE_MACHINE_IMAGE = 'ghcr.io/ficushq/tau-machine:latest'
 
 /**
  * Resolve the OCI image exe VMs boot from, configured via `TAU_EXE_MACHINE_IMAGE`:
