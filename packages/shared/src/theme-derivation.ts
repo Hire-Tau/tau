@@ -17,10 +17,14 @@
  *   proportionally different from the seed the same way it differs in Tau).
  * - --on-accent-fg is chosen (black or white) by contrast against the
  *   derived primary, not hue-derived.
- * - brand gradient/tile/ink and voice-material glows: hue interpolated
- *   primary -> secondary across the family; base lightness/chroma preserved.
- * - swatch secondary/tertiary: the palette's own secondary/tertiary, or the
- *   primary rotated +60 / -60 degrees when unset.
+ * - interaction surfaces (hover, pill, inset, secondary surface, selection
+ *   background and border): with a secondary seed, a light tint of its hue at
+ *   the base lightness, as Harbor and Ember tint theirs; without one, the
+ *   neutral/primary mapping above.
+ * - brand gradient/tile/ink and voice-material glows: the tertiary hue; base
+ *   lightness/chroma preserved.
+ * - swatch secondary/tertiary: the palette's own secondary/tertiary, or their
+ *   colour-theory companions when unset (see `suggestPaletteSeeds`).
  * - categorical families (agent-type, badge-decoration, graph chart
  *   categories/links, a curated syntax-accent subset, utility-decoration):
  *   hue picked from primary/secondary/tertiary by slot index; base
@@ -115,6 +119,18 @@ function serialize(oklch: Oklch, alpha: number): string {
   const hex = (n: number) => n.toString(16).padStart(2, '0')
   return alpha >= 1 ? `#${hex(r)}${hex(g)}${hex(b)}` : `#${hex(r)}${hex(g)}${hex(b)}${hex(Math.round(alpha * 255))}`
 }
+/** `serialize`, lowering chroma first until the colour fits sRGB, so clamping never shifts its hue or lightness. */
+function serializeInGamut(oklch: Oklch, alpha: number): string {
+  let c = oklch.c
+  for (let step = 0; step < 40; step++) {
+    const [r, g, b] = oklchToSrgb({ ...oklch, c })
+    const back = srgbToOklch([r, g, b])
+    const hueOff = c < 1e-3 ? 0 : Math.abs(circularDelta(oklch.h, back.h))
+    if (hueOff < 1.5 && Math.abs(back.l - oklch.l) < 0.01) break
+    c *= 0.9
+  }
+  return serialize({ ...oklch, c }, alpha)
+}
 function circularDelta(from: number, to: number): number {
   let delta = ((to - from + 180) % 360) - 180
   if (delta < -180) delta += 360
@@ -125,6 +141,21 @@ function normalizeHue(h: number): number {
 }
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
+}
+
+/**
+ * Colour-theory companions for a primary: an analogous secondary (+30 degrees, the calm tint used for interaction
+ * surfaces) and a split-complementary tertiary (+150 degrees, contrasting highlights), at the primary's lightness and
+ * chroma. The editor fills unset seeds with these, and derivation falls back to them.
+ */
+export function suggestPaletteSeeds(primary: string): { secondary: string; tertiary: string } | null {
+  const seed = toOklch(primary)
+  if (!seed) return null
+  const { l, c, h } = seed.oklch
+  return {
+    secondary: serializeInGamut({ l, c, h: normalizeHue(h + 30) }, 1),
+    tertiary: serializeInGamut({ l, c, h: normalizeHue(h + 150) }, 1),
+  }
 }
 
 // --- WCAG contrast (pure; mirrors apps/web/src/theme/contrast.ts's formula) ---
@@ -163,6 +194,10 @@ const SYNTAX_ACCENTS = [
   '--syntax-property',
   '--syntax-url',
 ]
+/** Surfaces a secondary seed tints, as Harbor and Ember tint theirs; the secondary surface a little less. */
+const INTERACTION_SURFACES = ['--color-bg-surface-hover', '--color-bg-pill', '--color-bg-inset', '--color-selection-bg']
+const SECONDARY_SURFACE = '--color-bg-surface-secondary'
+const SELECTION_BORDER = '--color-selection-border'
 /** Terminal/log-terminal tokens whose slot name names an ANSI color: kept unchanged (semantic). */
 const ANSI_NAMED = /-(black|red|green|yellow|blue|magenta|cyan|white)$/
 
@@ -213,12 +248,11 @@ export function deriveThemeOverrides({ baseTokens, palette }: DeriveOptions): Re
   const tertiary = palette.tertiary ? toOklch(palette.tertiary) : null
   const neutralSeed = palette.neutral ? toOklch(palette.neutral) : null
   const neutral: Oklch = neutralSeed ? neutralSeed.oklch : { l: primary.oklch.l, c: 0.01, h: primary.oklch.h }
-  const secondaryOklch: Oklch = secondary
-    ? secondary.oklch
-    : { l: primary.oklch.l, c: primary.oklch.c, h: normalizeHue(primary.oklch.h + 60) }
-  const tertiaryOklch: Oklch = tertiary
-    ? tertiary.oklch
-    : { l: primary.oklch.l, c: primary.oklch.c, h: normalizeHue(primary.oklch.h + 300) }
+  const companions = suggestPaletteSeeds(palette.primary)!
+  const secondaryOklch: Oklch = (secondary ?? toOklch(companions.secondary)!).oklch
+  const tertiaryOklch: Oklch = (tertiary ?? toOklch(companions.tertiary)!).oklch
+  // A tint, not a colour: enough chroma to read as the secondary's hue on a surface, capped so text contrast holds.
+  const tint = secondary ? clamp(secondary.oklch.c * 0.18, 0.006, 0.03) : 0
   const seeds = [primary.oklch, secondaryOklch, tertiaryOklch]
   const hueOptions = seeds.map((s) => s.h)
 
@@ -231,7 +265,13 @@ export function deriveThemeOverrides({ baseTokens, palette }: DeriveOptions): Re
     if (!base) continue
     const bucket = classify(token)
     if (bucket === 'unchanged' || bucket === 'status' || bucket === 'ink') continue
-    if (bucket === 'neutral') {
+    if (secondary && (INTERACTION_SURFACES.includes(token) || token === SECONDARY_SURFACE)) {
+      const c = token === SECONDARY_SURFACE ? tint * 0.6 : tint
+      overrides[token] = serializeInGamut({ l: base.oklch.l, c, h: secondaryOklch.h }, base.alpha)
+    } else if (secondary && token === SELECTION_BORDER) {
+      const c = clamp(secondary.oklch.c * 0.45, 0.02, 0.09)
+      overrides[token] = serializeInGamut({ l: base.oklch.l, c, h: secondaryOklch.h }, base.alpha)
+    } else if (bucket === 'neutral') {
       overrides[token] = serialize({ l: base.oklch.l, c: neutral.c, h: neutral.h }, base.alpha)
     } else if (bucket === 'primary') {
       if (!basePrimary) continue
@@ -246,11 +286,11 @@ export function deriveThemeOverrides({ baseTokens, palette }: DeriveOptions): Re
         base.alpha
       )
     } else if (bucket === 'swatch') {
-      // The swatch shows the palette's own secondary/tertiary (or their hue-rotated fallbacks).
+      // The swatch shows the palette's own secondary/tertiary (or their colour-theory companions).
       const seed = token === '--swatch-tertiary' ? tertiaryOklch : secondaryOklch
       overrides[token] = serialize(seed, base.alpha)
     } else if (bucket === 'brand') {
-      overrides[token] = serialize({ l: base.oklch.l, c: base.oklch.c, h: secondaryOklch.h }, base.alpha)
+      overrides[token] = serialize({ l: base.oklch.l, c: base.oklch.c, h: tertiaryOklch.h }, base.alpha)
     } else if (bucket === 'categorical') {
       const hue = hueOptions[slotIndex(token) % hueOptions.length]!
       overrides[token] = serialize({ l: base.oklch.l, c: base.oklch.c, h: hue }, base.alpha)

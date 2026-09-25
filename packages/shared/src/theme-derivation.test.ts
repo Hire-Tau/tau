@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { customColorChannels } from './custom-theme'
-import { deriveThemeOverrides, validateThemePalette, type ThemePalette } from './theme-derivation'
+import { deriveThemeOverrides, suggestPaletteSeeds, validateThemePalette, type ThemePalette } from './theme-derivation'
 import { STATUS_ROLES, STATUS_TOKENS } from './theme-schema'
 import { srgbToOklch } from './color-oklch'
 
@@ -223,7 +223,7 @@ describe('swatch colors', () => {
     expect(derived['--swatch-tertiary']).toBe('#22c55e')
   })
 
-  test('fall back to the primary rotated either way when seeds are unset', () => {
+  test('fall back to the colour-theory companions (+30 and +150 degrees) when seeds are unset', () => {
     const derived = deriveThemeOverrides({
       baseTokens: TAU_LIGHT,
       palette: { primary: '#0ea5e9' },
@@ -235,8 +235,92 @@ describe('swatch colors', () => {
     }
     const primaryHue = hue(customColorChannels('#0ea5e9')!)
     const delta = (value: number) => ((value - primaryHue + 540) % 360) - 180
-    expect(Math.round(delta(hue(customColorChannels(derived['--swatch-secondary'])!)))).toBeCloseTo(60, -1)
-    expect(Math.round(delta(hue(customColorChannels(derived['--swatch-tertiary'])!)))).toBeCloseTo(-60, -1)
+    expect(Math.round(delta(hue(customColorChannels(derived['--swatch-secondary'])!)))).toBeCloseTo(30, -1)
+    expect(Math.round(delta(hue(customColorChannels(derived['--swatch-tertiary'])!)))).toBeCloseTo(150, -1)
+    const companions = suggestPaletteSeeds('#0ea5e9')!
+    expect(derived['--swatch-secondary']).toBe(companions.secondary)
+    expect(derived['--swatch-tertiary']).toBe(companions.tertiary)
+  })
+})
+
+describe('suggestPaletteSeeds', () => {
+  const oklchOf = (hex: string) =>
+    srgbToOklch(customColorChannels(hex)!.split(' ').map(Number) as [number, number, number])
+  const hueDelta = (from: number, to: number) => ((to - from + 540) % 360) - 180
+
+  test('an analogous secondary and a split-complementary tertiary at the primary lightness', () => {
+    for (const primary of ['#3f6b4f', '#0ea5e9', '#97371d', '#5b21b6']) {
+      const { secondary, tertiary } = suggestPaletteSeeds(primary)!
+      const seed = oklchOf(primary)
+      expect(Math.abs(hueDelta(seed.h, oklchOf(secondary).h) - 30)).toBeLessThan(12)
+      expect(Math.abs(hueDelta(seed.h, oklchOf(tertiary).h) - 150)).toBeLessThan(12)
+      expect(oklchOf(secondary).l).toBeCloseTo(seed.l, 1)
+    }
+  })
+
+  test('returns null for an invalid primary', () => {
+    expect(suggestPaletteSeeds('not a color')).toBeNull()
+  })
+})
+
+describe('secondary and tertiary seeds', () => {
+  const base: Record<string, string> = {
+    ...TAU_LIGHT,
+    '--color-bg-surface-secondary': '245 244 249',
+    '--color-bg-surface-hover': '241 240 245',
+    '--color-bg-pill': '241 240 245',
+    '--color-bg-inset': '241 240 245',
+  }
+  const interaction = [
+    '--color-bg-surface-hover',
+    '--color-bg-pill',
+    '--color-bg-inset',
+    '--color-selection-bg',
+    '--color-bg-surface-secondary',
+    '--color-selection-border',
+  ]
+  // Accepts a hex seed/override or a base token's compiled "r g b" channels.
+  const oklchOf = (value: string) =>
+    srgbToOklch((customColorChannels(value) ?? value).split(' ').map(Number) as [number, number, number])
+  const hueDelta = (from: number, to: number) => Math.abs(((to - from + 540) % 360) - 180)
+
+  test('a secondary seed tints every interaction surface with its hue, at the base lightness', () => {
+    const derived = deriveThemeOverrides({
+      baseTokens: base,
+      palette: { primary: '#3f6b4f', secondary: '#f97316' },
+      appearance: 'light',
+    })
+    const secondaryHue = oklchOf('#f97316').h
+    for (const token of interaction) {
+      const value = oklchOf(derived[token]!)
+      expect(hueDelta(value.h, secondaryHue)).toBeLessThan(15)
+      expect(value.c).toBeGreaterThan(0.004)
+      expect(value.l).toBeCloseTo(oklchOf(base[token]!).l, 1)
+    }
+    // A tint, not a colour: surfaces stay far below the seed's own chroma.
+    expect(oklchOf(derived['--color-bg-surface-hover']!).c).toBeLessThanOrEqual(0.031)
+  })
+
+  test('without a secondary seed the interaction surfaces keep the neutral/primary mapping', () => {
+    const withSecondary = deriveThemeOverrides({
+      baseTokens: base,
+      palette: { primary: '#3f6b4f', secondary: '#f97316' },
+      appearance: 'light',
+    })
+    const without = deriveThemeOverrides({ baseTokens: base, palette: { primary: '#3f6b4f' }, appearance: 'light' })
+    for (const token of interaction) expect(without[token]).not.toBe(withSecondary[token])
+    const neutral = deriveThemeOverrides({ baseTokens: base, palette: { primary: '#3f6b4f' }, appearance: 'light' })
+    expect(without['--color-bg-surface-hover']).toBe(neutral['--color-bg-surface-hover'])
+  })
+
+  test('brand and voice highlights take the tertiary hue', () => {
+    const derived = deriveThemeOverrides({
+      baseTokens: base,
+      palette: { primary: '#3f6b4f', secondary: '#f97316', tertiary: '#2563eb' },
+      appearance: 'light',
+    })
+    const tile = oklchOf(derived['--brand-tile']!)
+    expect(hueDelta(tile.h, oklchOf('#2563eb').h)).toBeLessThan(15)
   })
 })
 

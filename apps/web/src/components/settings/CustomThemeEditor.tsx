@@ -18,6 +18,7 @@ import {
   type ThemePreset,
 } from '@tau/shared'
 import { isHttpResponseError } from '@tau/client-core'
+import { suggestPaletteSeeds } from '@tau/shared/theme-derivation'
 import type { useTheme } from '../../providers/ThemeProvider'
 import { useThemePreview } from '../../providers/ThemeProvider'
 import { usePermissions } from '../../hooks/usePermissions'
@@ -304,14 +305,24 @@ export function CustomThemeEditor({
 
   /** Setting a primary color starts derivation; clearing it removes the whole
    * palette (a preset created from a built-in with no palette is pure explicit
-   * overrides, exactly like before). Pure — callers choose whether the
-   * resulting document commits as a typed (coalesced) or immediate step. */
+   * overrides, exactly like before). A new primary also fills Secondary and
+   * Tertiary with its colour-theory companions while they are blank or still
+   * the previous primary's companions, so they follow Primary until edited.
+   * Pure — callers choose whether the resulting document commits as a typed
+   * (coalesced) or immediate step. */
   const paletteDraft = (patch: Partial<ThemePalette> | null): CustomThemeDocument => {
     if (patch === null) {
       const { palette: _drop, ...rest } = draft
       return rest
     }
-    return { ...draft, palette: { primary: palette?.primary ?? '', ...palette, ...patch } }
+    const next: ThemePalette = { primary: palette?.primary ?? '', ...palette, ...patch }
+    const companions = patch.primary ? suggestPaletteSeeds(patch.primary) : null
+    if (companions) {
+      const previous = palette?.primary ? suggestPaletteSeeds(palette.primary) : null
+      for (const seed of ['secondary', 'tertiary'] as const)
+        if (!palette?.[seed] || palette[seed] === previous?.[seed]) next[seed] = companions[seed]
+    }
+    return { ...draft, palette: next }
   }
   /** A palette hex/rgb TEXT field's onChange: coalesces with other edits to
    * the same seed while the user keeps typing. */
