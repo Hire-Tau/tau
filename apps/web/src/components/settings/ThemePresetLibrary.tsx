@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import clsx from 'clsx'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ThemePreset } from '@tau/shared'
@@ -52,6 +52,7 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null)
   const [newBase, setNewBase] = useState(BUILT_IN_THEMES[0]!.id)
   const [notice, setNotice] = useState('')
+  const importInput = useRef<HTMLInputElement>(null)
 
   const invalidate = () => void cache.invalidateQueries({ queryKey: themePresetQueryKeys.all })
 
@@ -259,7 +260,7 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
           <label className="flex flex-col gap-1">
             New theme base
             <select
-              className="tau-field w-full px-3 py-2 sm:w-auto"
+              className="tau-field min-h-[44px] w-full px-3 py-2 sm:w-auto"
               value={newBase}
               onChange={(event) => setNewBase(event.target.value)}
             >
@@ -280,32 +281,38 @@ export function ThemePresetLibrary({ value }: { value: ReturnType<typeof useThem
           >
             New theme
           </button>
-          <label className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary">
-            Import JSON
-            <input
-              aria-label="Import theme preset JSON"
-              type="file"
-              accept=".json,application/json"
-              className="max-w-full"
-              onChange={async (event) => {
-                const file = event.target.files?.[0]
-                event.target.value = ''
-                if (!file) return
-                const result = await importCustomTheme(file)
-                if (!result.ok) {
-                  setNotice(result.error)
-                  return
-                }
-                try {
-                  await client.themePresets.create(result.document)
-                  invalidate()
-                  setNotice('Imported into your theme library.')
-                } catch (error) {
-                  setNotice(errorMessage(error, 'Import failed.'))
-                }
-              }}
-            />
-          </label>
+          {/* A button like New theme; the native file input stays hidden and only opens the file picker. */}
+          <button
+            type="button"
+            className="tau-button min-h-[44px] px-3 py-2 tau-button-secondary"
+            onClick={() => importInput.current?.click()}
+          >
+            Import JSON…
+          </button>
+          <input
+            ref={importInput}
+            aria-label="Import theme preset JSON"
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={async (event) => {
+              const file = event.target.files?.[0]
+              event.target.value = ''
+              if (!file) return
+              const result = await importCustomTheme(file)
+              if (!result.ok) {
+                setNotice(result.error)
+                return
+              }
+              try {
+                await client.themePresets.create(result.document)
+                invalidate()
+                setNotice('Imported into your theme library.')
+              } catch (error) {
+                setNotice(errorMessage(error, 'Import failed.'))
+              }
+            }}
+          />
         </div>
         {notice && <p role="status">{notice}</p>}
         {editing && (

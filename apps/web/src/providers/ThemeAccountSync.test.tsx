@@ -117,7 +117,6 @@ test('cold load paints the cached theme first, reads only after paint, then adop
   // Every device follows the account: the cached Ember painted first, then the account's Harbor replaces it.
   expect(document.documentElement.getAttribute('data-theme')).toBe('harbor')
   expect(document.documentElement.getAttribute('data-appearance')).toBe('dark')
-  expect(container.textContent).toContain('Your theme syncs across your devices.')
   expect(queryByRole(container, 'button', { name: /synced theme/i })).toBeNull()
   await act(async () => {
     window.dispatchEvent(new Event('online'))

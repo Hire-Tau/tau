@@ -51,6 +51,11 @@ interface ThemeContextValue {
   appearance: AppearanceSetting
   /** The resolved appearance after 'system' is resolved against the OS. */
   theme: Theme
+  /**
+   * The user's appearance setting resolved against the OS, whatever the current theme. It differs from `theme` only on
+   * a one-appearance theme, which keeps the setting for other themes: previews and swatches of those use this.
+   */
+  preferredTheme: Theme
   toggleTheme: () => void
   setTheme: (theme: Theme) => void
   setThemeId: (themeId: string) => void
@@ -379,6 +384,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     themeId: resolvedThemeDefinition.id,
     appearance: selection.appearance,
     theme: resolvedTheme,
+    preferredTheme: selection.appearance === 'system' ? (systemPrefersDark ? 'dark' : 'light') : selection.appearance,
     toggleTheme,
     setTheme,
     setAppearance,

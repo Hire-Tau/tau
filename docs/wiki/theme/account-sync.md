@@ -64,8 +64,8 @@ for the full sharing/live-link/moderation contract.
   focus/online/visibility triggers as `refresh()` above. It is a no-op
   unless a preset with a known owner (`presetId`, `presetOwnerId` and
   `customTheme` all present) is actually applied.
-- Picker copy says the theme syncs across devices; there is no per-device override
-  or "use synced theme" action.
+- The pickers show no sync notice or "use synced theme" action; there is no per-device
+  override.
 - Deliberate edits made in a connected authenticated session push best-effort.
   In-flight writes are serialized; unsent edits coalesce to the latest value.
   Offline pending edits retry on focus, visibility or reconnect **within that

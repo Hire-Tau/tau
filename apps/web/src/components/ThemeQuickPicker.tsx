@@ -10,9 +10,8 @@ import {
   type WebThemeDefinition,
 } from '../theme/registry'
 import { presetAppearance } from '../theme/custom'
-import { useThemeHoverPreview } from '../hooks/useThemeHoverPreview'
+import { hasAppearances, useThemeHoverPreview } from '../hooks/useThemeHoverPreview'
 import { PaletteIcon } from './icons'
-import { themeConstantHint, ThemeSyncNotice } from './settings/ThemeControl'
 import { ThemeSwatch } from './ThemeSwatch'
 import { SegmentedAppearanceControl } from './SegmentedAppearanceControl'
 
@@ -48,7 +47,7 @@ export function ThemeQuickPicker({
   presets?: ThemePreset[]
   enabled?: boolean
 }) {
-  const hover = useThemeHoverPreview(value.theme)
+  const hover = useThemeHoverPreview(value.preferredTheme)
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -124,8 +123,9 @@ export function ThemeQuickPicker({
 
   if (!enabled) return null
 
-  const appearanceDisabled = findWebTheme(value.themeId).kind === 'unified'
-  const hintId = `${panelId}-hint`
+  // Light / Dark / System applies only to a theme with both appearances: the selected one, or the one being previewed.
+  const previewing = circles.find((circle) => circle.id === hover.hoveredId)
+  const showAppearance = findWebTheme(value.themeId).kind === 'dual' || (!!previewing && hasAppearances(previewing))
 
   return (
     <div
@@ -184,22 +184,16 @@ export function ThemeQuickPicker({
                     selectCircle(circle)
                   }}
                 >
-                  <span
-                    className={clsx(
-                      'block h-6 w-6 rounded-full ring-offset-2 ring-offset-surface group-focus-visible:ring-2 group-focus-visible:ring-accent',
-                      previewing
-                        ? 'ring-2 ring-accent'
-                        : selected && (hover.hoveredId ? 'ring-2 ring-accent/40' : 'ring-2 ring-accent')
-                    )}
-                  >
+                  <span className="block h-6 w-6 rounded-full">
                     <ThemeSwatch
+                      ring={previewing ? 'on' : selected ? (hover.hoveredId ? 'dim' : 'on') : undefined}
                       spec={
                         circle.kind === 'builtin'
-                          ? { kind: 'builtin', theme: circle.theme, appearance: value.theme }
+                          ? { kind: 'builtin', theme: circle.theme, appearance: value.preferredTheme }
                           : {
                               kind: 'preset',
                               document: circle.preset.document,
-                              appearance: presetAppearance(circle.preset.document, value.theme),
+                              appearance: presetAppearance(circle.preset.document, value.preferredTheme),
                             }
                       }
                       className="h-full w-full"
@@ -209,19 +203,9 @@ export function ThemeQuickPicker({
               )
             })}
           </div>
-          <SegmentedAppearanceControl
-            value={value.appearance}
-            onChange={value.setAppearance}
-            disabled={appearanceDisabled}
-            hintId={hintId}
-            className="mt-3"
-          />
-          {appearanceDisabled && (
-            <p id={hintId} className="mt-2 text-xs text-muted">
-              {themeConstantHint(value.customTheme?.name ?? findWebTheme(value.themeId).label)}
-            </p>
+          {showAppearance && (
+            <SegmentedAppearanceControl value={value.appearance} onChange={value.setAppearance} className="mt-3" />
           )}
-          <ThemeSyncNotice value={value} />
         </div>
       )}
     </div>
