@@ -52,14 +52,11 @@ export function GitHubCommitSigning({
           Could not check commit signing.
         </p>
       ) : on ? (
-        keyMissing ? (
+        // On is self-evident from the fingerprint and Turn off; only a broken key needs words.
+        keyMissing && (
           <p role="status" className="text-status-attention-600 dark:text-status-attention-400">
             The signing key was removed from @{login} on GitHub, so new commits will show as Unverified. Set signing up
             again to add a new key.
-          </p>
-        ) : (
-          <p className="text-status-success-600 dark:text-status-success-400">
-            On. Commits and tags agents make with @{login} are signed and show as Verified on GitHub.
           </p>
         )
       ) : (

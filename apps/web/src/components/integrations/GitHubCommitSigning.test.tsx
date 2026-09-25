@@ -55,10 +55,11 @@ test('off: explains what turning it on does and offers one primary action', asyn
   expect(button(container, 'Turn on signing').className).toContain('tau-button-primary')
 })
 
-test('on: confirms Verified commits, shows the key fingerprint and offers turning off', async () => {
+test('on: shows just the key fingerprint and Turn off, with no status sentence', async () => {
   const container = await render({ state: 'on', fingerprint: 'SHA256:abc', registeredOnGitHub: true })
-  expect(container.textContent).toContain('show as Verified on GitHub')
   expect(container.textContent).toContain('SHA256:abc')
+  expect(container.textContent).not.toContain('Verified')
+  expect(container.querySelectorAll('p[role="status"]')).toHaveLength(0)
   expect(button(container, 'Turn off')).toBeTruthy()
   expect(container.textContent).not.toContain('Turn on signing')
 })
