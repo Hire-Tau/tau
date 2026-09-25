@@ -66,14 +66,15 @@ test('renders only in the delivery_setup presentation state', () => {
 test('sparse facts degrade to the generic explanation without empty rows', () => {
   const html = renderToStaticMarkup(<WorkStreamDeliverySetupCallout stream={setupStream()} />)
   expect(html).toContain('delivery setup is incomplete')
-  expect(html).toContain('Completion mode pr-merge')
+  expect(html).toContain('It completes once its delivery pull request is merged.')
+  expect(html).not.toContain('pr-merge')
   expect(html).toContain('Check the delivery requirements on the linked pull request')
   expect(html).not.toContain('branch protection')
   expect(html).not.toContain('set-meta')
   expect(html).not.toContain('undefined')
 })
 
-test('a branch mismatch with a blocked merge surfaces the signature next step', () => {
+test('a branch mismatch owns the next step; a blocked merge adds the protection note', () => {
   const html = renderToStaticMarkup(
     <WorkStreamDeliverySetupCallout
       stream={setupStream({
@@ -87,13 +88,24 @@ test('a branch mismatch with a blocked merge surfaces the signature next step', 
   expect(html).toContain('The tracked pull request')
   expect(html).toContain('work/0f4f27b2')
   expect(html).toContain('rework/head')
-  expect(html).toContain('blocked by branch protection')
-  expect(html).toContain('required commit signature')
+  expect(html).toContain('blocked by branch protection or a ruleset')
   expect(html).toContain('Next step')
+  // The mismatch is the actual blocker: rebinding comes first, with the bind command.
+  expect(html.indexOf('Rebind the pull request')).toBeGreaterThan(-1)
+  expect(html.indexOf('Rebind the pull request')).toBeLessThan(html.indexOf('The merge is also blocked'))
+  expect(html).toContain('set-meta 234')
   expect(html).toContain('Signing Key')
   expect(html).toContain('github.com/settings/keys')
   expect(html).toContain('push a signed head commit')
-  expect(html).toContain('merge the pull request via the GitHub UI')
+})
+
+test('a blocked merge with no setup reason makes the protection step the next step', () => {
+  const html = renderToStaticMarkup(
+    <WorkStreamDeliverySetupCallout stream={setupStream({ gates: { mergeState: 'blocked' } })} />
+  )
+  expect(html).toContain('If the rule requires signed commits')
+  expect(html).not.toContain('The merge is also blocked')
+  expect(html).not.toContain('Check the delivery requirements')
 })
 
 test('an unbound stream shows the exact bind command as the next step', () => {
@@ -131,7 +143,7 @@ test('direct-merge facts and tracked multi-PR setups render without breaking', (
       )}
     />
   )
-  expect(direct).toContain('direct-merge')
+  expect(direct).toContain('Direct-merge delivery')
   expect(direct).toContain('git.commit')
   expect(direct).toContain('git.baseBranch')
   const multi = renderToStaticMarkup(

@@ -261,13 +261,46 @@ test('stale aggregate observations cannot claim human readiness', () => {
     ...event('pull_request.updated', { mergeState: 'clean' }),
     observedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
   }
+  // A stale snapshot's gate facts are not republished as current explanation either.
   expect(classifyDeliveryPresentation(run(), metadata, [clean])).toEqual({
     kind: 'external',
-    explanation: {
-      pullRequests: [{ number: 42, state: 'open' }],
-      gates: { mergeState: 'clean' },
-    },
+    explanation: { pullRequests: [{ number: 42, state: 'open' }] },
   })
+})
+
+test('explanations key pull requests by repository, prefer live pending checks, and drop merged gates', () => {
+  // Same PR number in two repositories: only the one actually merged is reported merged.
+  const twoRepos = {
+    ...metadata,
+    tracked: [{ integration: 'github', repository: 'acme/other', kind: 'pull_request', number: 42, delivery: true }],
+  }
+  const otherMerged = event('pull_request.merged', {
+    repository: 'acme/other',
+    pullRequest: { number: 42, headSha: 'b'.repeat(40) },
+  })
+  expect(
+    classifyDeliveryPresentation(run('pr-auto-merge'), twoRepos, [
+      event('pull_request.updated', { mergeState: 'clean' }),
+      otherMerged,
+    ])?.explanation?.pullRequests
+  ).toEqual([
+    { number: 42, state: 'open' },
+    { number: 42, state: 'merged' },
+  ])
+  // A still-running check outranks an older snapshot rollup that claimed success.
+  expect(
+    classifyDeliveryPresentation(run('pr-auto-merge'), metadata, [
+      event('pull_request.updated', { mergeState: 'clean', checksState: 'success' }),
+      event('pull_request.ci_completed', { state: 'in_progress' }, 'a'.repeat(40), '2026-09-21T11:00:00Z'),
+    ])?.explanation?.gates?.checksState
+  ).toBe('pending')
+  // Merged: nothing left to wait on, so no gate facts ride along.
+  expect(
+    classifyDeliveryPresentation(run(), metadata, [
+      event('pull_request.updated', { mergeState: 'blocked', checksState: 'pending' }),
+      event('pull_request.merged', {}, 'a'.repeat(40), '2026-09-21T11:00:00Z'),
+    ])
+  ).toEqual({ kind: 'external', explanation: { pullRequests: [{ number: 42, state: 'merged' }] } })
 })
 
 test('normalized approvals, newer native snapshots and per-workflow CI recovery clear superseded failure without losing the gate', async () => {

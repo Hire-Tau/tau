@@ -36,7 +36,7 @@ describe('delivery-external label derivation', () => {
   })
 
   test('bound open pull requests with no other known blocker are awaiting merge', () => {
-    expect(externalDeliveryLabel({ pullRequests: [{ number: 212, state: 'open' }] })).toBe('Awaiting PR merge - #212')
+    expect(externalDeliveryLabel({ pullRequests: [{ number: 212, state: 'open' }] })).toBe('Awaiting merge of #212')
     expect(
       workStreamStatusLabel(
         external({
@@ -46,7 +46,7 @@ describe('delivery-external label derivation', () => {
           ],
         })
       )
-    ).toBe('Awaiting PR merge - #212, #214')
+    ).toBe('Awaiting merge of #212, #214')
     expect(
       externalDeliveryLabel({
         pullRequests: [
@@ -57,7 +57,7 @@ describe('delivery-external label derivation', () => {
           { number: 5, state: 'open' },
         ],
       })
-    ).toBe('Awaiting PR merge - #1, #2, #3 +2 more')
+    ).toBe('Awaiting merge of #1, #2, #3 +2 more')
   })
 
   test('known gate blockers take precedence over the awaiting-merge label', () => {
@@ -98,7 +98,17 @@ describe('delivery-external label derivation', () => {
           { number: 214, state: 'open' },
         ],
       })
-    ).toBe('Awaiting PR merge - #214')
+    ).toBe('Awaiting merge of #214')
+    // All merged wins over any leftover gate facts, and the label counts the PRs.
+    expect(
+      externalDeliveryLabel({
+        pullRequests: [
+          { number: 212, state: 'merged' },
+          { number: 214, state: 'merged' },
+        ],
+        gates: { checksState: 'pending', mergeState: 'blocked' },
+      })
+    ).toBe('PRs merged — finalizing delivery')
   })
 
   test('unknown or contradictory evidence keeps the generic label', () => {

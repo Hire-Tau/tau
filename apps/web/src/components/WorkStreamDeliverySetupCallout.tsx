@@ -2,12 +2,16 @@ import { changeRequestBindCommand, type WorkStream, type WorkStreamPresentationF
 import { getWsDisplayState } from '../lib/workStreamStatusPresentation'
 import { Badge } from './Badge'
 
-/** What each PR-delivery completion mode needs before the stream can complete. */
+/** What each code-host completion mode needs before the stream can complete. */
 const MODE_REQUIREMENTS: Partial<Record<WorkStream['completionMode'], string>> = {
-  'pr-merge': 'its delivery pull request must be merged before this stream can complete',
-  'pr-auto-merge': 'its delivery pull request must be merged (auto-merge enabled) before this stream can complete',
-  'direct-merge': 'its deliverable commit must be merged into the base branch before this stream can complete',
+  'pr-merge': 'It completes once its delivery pull request is merged.',
+  'pr-auto-merge': 'It completes once its delivery pull request merges automatically.',
+  'direct-merge': 'It completes once its commit is merged into the base branch.',
 }
+
+/** Branch protection can block for many reasons; signed commits are only the most common surprise. */
+const PROTECTION_STEP =
+  'If the rule requires signed commits, add an SSH key as a Signing Key at github.com/settings/keys and push a signed head commit. Otherwise resolve the rule on GitHub, or merge through the GitHub UI if your policy allows it.'
 
 type SetupStream = Pick<WorkStream, 'id' | 'number' | 'completionMode' | 'metadata'> & WorkStreamPresentationFacts
 
@@ -55,7 +59,7 @@ export function WorkStreamDeliverySetupCallout({ stream }: { stream: SetupStream
     ? [
         ...(gates.mergeState === 'blocked'
           ? [
-              'GitHub reports the merge as blocked by branch protection — commonly a required commit signature the head commit does not carry.',
+              'GitHub reports the merge as blocked by branch protection or a ruleset (for example required signed commits, reviews or status checks).',
             ]
           : []),
         ...(gates.checksState === 'failure' ? ["Checks are failing on the pull request's head commit."] : []),
@@ -73,9 +77,10 @@ export function WorkStreamDeliverySetupCallout({ stream }: { stream: SetupStream
       ? changeRequestBindCommand(String(stream.number ?? stream.id), stream.metadata)
       : null
 
-  const nextStep = blockedByProtection
-    ? 'Add an SSH key as a Signing Key at github.com/settings/keys and push a signed head commit, or merge the pull request via the GitHub UI if your policy allows it.'
-    : setupReason === 'unbound'
+  // The setup reason is what actually blocks completion, so it owns the next step; a protection block on the
+  // tracked pull request is a supporting note unless it is the only concrete fact.
+  const setupStep =
+    setupReason === 'unbound'
       ? 'Bind the delivery pull request to this work stream:'
       : setupReason === 'branch-mismatch'
         ? "Rebind the pull request that carries this work stream's branch, or merge the intended one via the GitHub UI:"
@@ -83,7 +88,13 @@ export function WorkStreamDeliverySetupCallout({ stream }: { stream: SetupStream
           ? 'Merge the pull request via the GitHub UI, then finish delivery from this work stream.'
           : setupReason === 'direct-merge-facts'
             ? 'Record the deliverable commit (git.commit) and base branch (git.baseBranch) with a code-host binding on this work stream.'
-            : 'Check the delivery requirements on the linked pull request, then finish delivery from this work stream.'
+            : null
+  const nextStep =
+    setupStep ??
+    (blockedByProtection
+      ? PROTECTION_STEP
+      : 'Check the delivery requirements on the linked pull request, then finish delivery from this work stream.')
+  const protectionNote = setupStep && blockedByProtection ? PROTECTION_STEP : null
 
   return (
     <section aria-label="Delivery setup explanation" className="p-4 rounded-xl bg-surface-secondary space-y-3">
@@ -92,13 +103,8 @@ export function WorkStreamDeliverySetupCallout({ stream }: { stream: SetupStream
         <h3 className="text-sm font-medium text-primary">What is blocking completion</h3>
       </header>
       <p className="text-sm text-secondary">
-        The agents finished their work, but delivery setup is incomplete — the tracked deliverable cannot complete yet.
-        {requirement && (
-          <>
-            {' '}
-            <span className="font-medium">Completion mode {stream.completionMode}:</span> {requirement}.
-          </>
-        )}
+        The agents finished their work, but delivery setup is incomplete, so this stream can&apos;t complete yet.
+        {requirement && <> {requirement}</>}
       </p>
       {blocker && <p className="text-sm text-secondary">{blocker}</p>}
       {mismatchLines.length > 0 && (
@@ -122,6 +128,9 @@ export function WorkStreamDeliverySetupCallout({ stream }: { stream: SetupStream
         <p className="text-sm text-secondary">{nextStep}</p>
         {bindCommand && (
           <code className="block p-2 rounded bg-surface font-mono text-xs text-secondary break-all">{bindCommand}</code>
+        )}
+        {protectionNote && (
+          <p className="text-sm text-secondary">The merge is also blocked by branch protection. {protectionNote}</p>
         )}
       </div>
     </section>

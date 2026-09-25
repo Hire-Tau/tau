@@ -100,7 +100,7 @@ describe('WorkStreamDetailModal delivery presentation', () => {
     return { body: dom.window.document.body }
   }
 
-  test('delivery_setup shows the explanatory callout with the signing-key next step', async () => {
+  test('delivery_setup shows the explanatory callout with the rebind step and protection note', async () => {
     const { body } = await render(
       deliveryWorkStream({
         kind: 'setup',
@@ -114,7 +114,7 @@ describe('WorkStreamDetailModal delivery presentation', () => {
     )
     expect(body.textContent).toContain('Delivery Setup Required')
     expect(body.textContent).toContain('What is blocking completion')
-    expect(body.textContent).toContain('Completion mode pr-merge')
+    expect(body.textContent).toContain('It completes once its delivery pull request is merged.')
     expect(body.textContent).toContain('branch protection')
     expect(body.textContent).toContain('Signing Key')
     expect(body.textContent).toContain('github.com/settings/keys')
@@ -148,7 +148,7 @@ describe('WorkStreamDetailModal delivery presentation', () => {
         explanation: { pullRequests: [{ number: 51, state: 'open' }] },
       })
     )
-    expect(body.textContent).toContain('Awaiting PR merge - #51')
+    expect(body.textContent).toContain('Awaiting merge of #51')
     const blocked = await render(
       deliveryWorkStream({
         kind: 'external',

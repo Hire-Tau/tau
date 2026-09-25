@@ -61,7 +61,7 @@ export const getWsDisplayState = selectWorkStreamPresentationState
 function formatPullRequestNumbers(numbers: number[]): string {
   const head = numbers.slice(0, 3).map((number) => `#${number}`)
   const rest = numbers.length - head.length
-  return `- ${head.join(', ')}${rest > 0 ? ` +${rest} more` : ''}`
+  return `${head.join(', ')}${rest > 0 ? ` +${rest} more` : ''}`
 }
 
 /**
@@ -71,17 +71,18 @@ function formatPullRequestNumbers(numbers: number[]): string {
  */
 export function externalDeliveryLabel(explanation?: WorkStreamDeliveryExplanation): string | null {
   if (!explanation) return null
+  const pullRequests = explanation.pullRequests ?? []
+  // Once every delivery PR merged, leftover gate facts describe nothing still pending.
+  if (pullRequests.length && pullRequests.every((pullRequest) => pullRequest.state === 'merged'))
+    return pullRequests.length === 1 ? 'PR merged — finalizing delivery' : 'PRs merged — finalizing delivery'
   const { gates } = explanation
   // A draft cannot merge yet, and stale gates may no longer describe the head.
   if (gates?.draft === true) return null
   if (gates?.checksState === 'pending') return 'Awaiting CI'
   if (gates?.reviewDecision === 'required' || gates?.pendingHumanReview === true) return 'Awaiting review'
   if (gates?.mergeState === 'blocked') return 'Blocked by branch protection'
-  const pullRequests = explanation.pullRequests ?? []
   const open = pullRequests.filter((pullRequest) => pullRequest.state === 'open').map((p) => p.number)
-  if (open.length) return `Awaiting PR merge ${formatPullRequestNumbers(open)}`
-  if (pullRequests.length && pullRequests.every((pullRequest) => pullRequest.state === 'merged'))
-    return 'PR merged — finalizing delivery'
+  if (open.length) return `Awaiting merge of ${formatPullRequestNumbers(open)}`
   return null
 }
 

@@ -26,7 +26,7 @@ test('delivery-external pills show the derived label from server explanation fac
       }}
     />
   )
-  expect(merge).toContain('Awaiting PR merge - #212')
+  expect(merge).toContain('Awaiting merge of #212')
   expect(merge).not.toContain('Awaiting Code Host')
   const ci = renderToStaticMarkup(
     <WorkStreamStatusBadges

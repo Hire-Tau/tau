@@ -21,6 +21,16 @@ An explicit `openWaits: []` still clears stale wait-derived states. Delivery is 
 
 Core loads flow, binding, policy and routed integration evidence in batch, without provider HTTP calls in serializers. Only activated completion-ready flows participate. Missing binding/routing or mismatched branches are setup problems. Unknown provider evidence and individual successful CI runs are external waits, not proof that required checks or reviews passed. PR events must match the configured provider/repository/number/connection and observed head. Late CI for another head cannot establish the current PR head. Current conflict, failing CI, closed PR and changes-requested evidence remain alarming. A positive aggregate GitHub `mergeable_state=clean` snapshot permits a merge label for human-merge policy; auto-merge policy stays external unless squad policy requires its documented human fallback. Additional designated delivery PRs participate too. Actual completion still uses the existing live provider verification and workflow guards.
 
+### Delivery explanation
+
+`WorkStreamDeliveryPresentation.explanation` is optional, additive and server-owned. It is published only for `setup` and `external`, and carries facts the classifier already used. Omitted fields mean unknown: clients fail soft to the generic label and must not infer them from metadata.
+
+- `setupReason`: `unbound` (no bound delivery PR), `not-following-changes` (bound, but the flow does not follow code-host changes), `branch-mismatch` (with `branchMismatch` stream/PR branch pairs), or `direct-merge-facts` (missing binding, full commit SHA or base branch).
+- `pullRequests`: every designated delivery PR, primary first, with its observed state. It is open unless a merge or close was positively observed; states are matched by repository and number.
+- `gates`: merge state, checks rollup, review decision, draft and pending human review for the deciding PR. Live pending check events outrank an older rollup. A stale snapshot contributes only draft, and a merged PR contributes none.
+
+Web derives the `external` pill from these facts in order: all PRs merged → “PR merged — finalizing delivery”; draft → generic; pending checks → “Awaiting CI”; required or pending human review → “Awaiting review”; blocked merge → “Blocked by branch protection”; open PRs → “Awaiting merge of #N” (at most three numbers, then “+N more”); otherwise “Awaiting Code Host”. The detail modal's setup callout explains the setup reason, names its next step (for example the exact `tau workstream set-meta` bind command), and adds a branch-protection note only as supporting evidence.
+
 ### Asynchronous provider evidence
 
 Designated PRs in activated, completion-ready delivery flows refresh a presentation-only snapshot through the existing leased, budgeted GitHub polling runner. These watches retain the runner's active polling cadence (60–120 seconds), including when verified webhooks suppress ordinary fallback watches. One bounded GraphQL query reads the current head, merge state, aggregate check rollup, required-review decision, and explicit reviewer types. `REVIEW_REQUIRED` identifies a review gate even when no reviewer has been requested. If aggregate access is unavailable, a fresh REST response is weaker evidence (a 304 never renews cached readiness); unknown review requirements are not guessed.

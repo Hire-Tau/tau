@@ -59,7 +59,7 @@ export async function externalDeliveryStreamIds(store: DbHandle, streams: Array<
 export type DeliveryEvent = IntegrationOutputFact & { integration: string; connectionId?: string; observedAt?: string }
 
 /** Internal classification: the published kind plus the evidence that produced it. */
-type ObservedPullRequest = { number: number; state: 'open' | 'merged' | 'closed' }
+type ObservedPullRequest = { repository: string; number: number; state: 'open' | 'merged' | 'closed' }
 type GateResult = {
   kind: 'approval' | 'review' | 'merge' | 'external' | 'setup' | 'failure' | 'merged'
   explanation?: WorkStreamDeliveryExplanation & {
@@ -121,23 +121,29 @@ function classifyPrimaryDeliveryPresentation(
     })
     .sort((a, b) => snapshotTime(b) - snapshotTime(a))
   const head = (event: IntegrationOutputFact) => (event.data.pullRequest as { headSha?: string } | undefined)?.headSha
-  /** Last-observed provider gate facts for the current snapshot, when it carries any. */
-  const gateFacts = (eventsPending = false): WorkStreamDeliveryGateFacts | undefined => {
+  /**
+   * Last-observed provider gate facts for the current snapshot, when it carries any. Live check events that
+   * are still pending outrank the snapshot's rollup; `snapshotCurrent: false` drops the snapshot's own
+   * merge/check/review facts, which a stale observation can no longer vouch for.
+   */
+  const gateFacts = (eventsPending = false, snapshotCurrent = true): WorkStreamDeliveryGateFacts | undefined => {
     const facts: WorkStreamDeliveryGateFacts = {}
-    if (typeof snapshot?.data.mergeState === 'string') facts.mergeState = snapshot.data.mergeState
-    if (
+    if (snapshotCurrent && typeof snapshot?.data.mergeState === 'string') facts.mergeState = snapshot.data.mergeState
+    if (eventsPending) facts.checksState = 'pending'
+    else if (
+      snapshotCurrent &&
       typeof snapshot?.data.checksState === 'string' &&
       ['success', 'failure', 'pending', 'unknown'].includes(snapshot.data.checksState)
     )
       facts.checksState = snapshot.data.checksState as WorkStreamDeliveryGateFacts['checksState']
-    else if (eventsPending) facts.checksState = 'pending'
     if (
+      snapshotCurrent &&
       typeof snapshot?.data.reviewDecision === 'string' &&
       ['required', 'approved', 'changes_requested', 'unknown'].includes(snapshot.data.reviewDecision)
     )
       facts.reviewDecision = snapshot.data.reviewDecision as WorkStreamDeliveryGateFacts['reviewDecision']
     if (snapshot?.data.draft === true) facts.draft = true
-    if (snapshot?.data.pendingHumanReview === true) facts.pendingHumanReview = true
+    if (snapshotCurrent && snapshot?.data.pendingHumanReview === true) facts.pendingHumanReview = true
     return Object.keys(facts).length ? facts : undefined
   }
   /** This pull request's last observed lifecycle state, when any event asserts one. */
@@ -154,7 +160,9 @@ function classifyPrimaryDeliveryPresentation(
   }
   const observedPullRequest = () => {
     const state = observedState()
-    return state ? { pullRequest: { number: reference.changeRequest!.number, state } } : {}
+    return state
+      ? { pullRequest: { repository: reference.repository, number: reference.changeRequest!.number, state } }
+      : {}
   }
   // Late CI on an old commit cannot change the PR's head. Reviews may also be
   // delivered out of order, hence the provider occurrence timestamp ordering.
@@ -214,10 +222,9 @@ function classifyPrimaryDeliveryPresentation(
       event.data.pullRequestState ||
       ['pull_request.updated', 'pull_request.merged', 'pull_request.closed'].includes(event.output)
   )
-  if (lifecycle?.data.pullRequestState === 'merged' || lifecycle?.output === 'pull_request.merged') {
-    const gates = gateFacts()
-    return { kind: 'merged', explanation: { ...observedPullRequest(), ...(gates ? { gates } : {}) } }
-  }
+  // A merged pull request's gates no longer describe anything left to wait on.
+  if (lifecycle?.data.pullRequestState === 'merged' || lifecycle?.output === 'pull_request.merged')
+    return { kind: 'merged', explanation: observedPullRequest() }
   if (lifecycle?.data.pullRequestState === 'closed' || lifecycle?.output === 'pull_request.closed')
     return { kind: 'failure' }
   const latestChecks = new Map<string, DeliveryEvent>()
@@ -271,7 +278,7 @@ function classifyPrimaryDeliveryPresentation(
     (mode === 'pr-merge' || policies?.allowAutoMerge === false)
   )
     return { kind: 'merge', explanation: observedPullRequest() }
-  const finalGates = gateFacts(pending)
+  const finalGates = gateFacts(pending, fresh(snapshot))
   return { kind: 'external', explanation: { ...observedPullRequest(), ...(finalGates ? { gates: finalGates } : {}) } }
 }
 
@@ -338,11 +345,12 @@ function explainPresentation(
     gates
       .map((gate) => gate.explanation?.pullRequest)
       .filter((pullRequest): pullRequest is ObservedPullRequest => !!pullRequest)
-      .map((pullRequest) => [pullRequest.number, pullRequest.state])
+      // Designated PRs can span repositories, so a number alone is not an identity.
+      .map((pullRequest) => [`${pullRequest.repository.toLowerCase()}#${pullRequest.number}`, pullRequest.state])
   )
-  const pullRequests = deliveryView(metadata).pullRequests.map(({ number, state }) => ({
+  const pullRequests = deliveryView(metadata).pullRequests.map(({ repository, number, state }) => ({
     number,
-    state: observed.get(number) ?? state,
+    state: observed.get(`${repository.toLowerCase()}#${number}`) ?? state,
   }))
   if (pullRequests.length) explanation.pullRequests = pullRequests
   return Object.keys(explanation).length ? { kind, explanation } : { kind }
