@@ -16,6 +16,7 @@ toolkit, or the hosted platform) — any combination works. See
 | ------------------------------------------------------------------- | --------------- |
 | My laptop; I just want agents working on my own repos, fast         | `host`          |
 | My laptop or dev box; I want containers, but macOS or no sysbox     | `docker-socket` |
+| My laptop; agents must not touch my files, keys or local services   | `vm` + Lima     |
 | A Linux box where I want real container isolation                   | `docker-sysbox` |
 | Many agents, multi-tenant, per-agent VMs / the hosted product shape | `vm`            |
 | Hard isolation, resource guarantees, or I already run a cluster     | `k8s`           |
@@ -264,6 +265,38 @@ TAU_SANDBOX_RUNTIME=vm
 
 Setup toolkit: `runtime.sandbox: vm` (plus `runtime.exe.ssh_key_path` and
 `runtime.exe.machine_image` when using exe.dev).
+
+### A Lima VM as your laptop's machine
+
+On a laptop, `host` gives agents your user account and `docker-socket` gives
+them the Docker socket, which can mount your home directory. For real isolation
+without a cluster, run Core with `TAU_SANDBOX_RUNTIME=vm` and let one local
+[Lima](https://lima-vm.io) VM be its only machine:
+
+```bash
+brew install lima
+tau machines lima up                 # create, lock down, register, bootstrap
+tau machines lima up --dry-run       # print the plan, change nothing
+tau machines lima down               # stop the VM; boxes stop with it
+```
+
+`up` is idempotent. It creates an Ubuntu 24.04 VM (`tau-machine`: 4 vCPUs,
+8 GiB, 60 GiB by default; `--cpus`/`--memory`/`--disk` apply at creation) with
+no host directories mounted and Lima's port forwarding off. SSH is pinned to
+`127.0.0.1:60922` so the machine row survives VM restarts, and the VM gets an
+SSH host key kept in `~/.tau/cli/lima/<instance>/`, so Core's pinned host key
+still matches after you `limactl delete` the VM and run `up` again. It then
+installs a guest firewall that drops everything bound for the host except DNS. Lima
+otherwise lets the guest reach every service on the host's loopback, including
+Postgres and the Core API. Finally it registers the VM as a BYO-SSH machine,
+authorizes Core's key and bootstraps it. Boxes never need the host route
+because they call Core back over the machine's SSH reverse tunnel.
+
+Boxes are ordinary unix users inside that VM: they cannot read your files,
+reach your local services, or sudo, and each gets its own rootless Docker.
+The first bootstrap takes several minutes (Docker, Nix, Devbox, Chromium); later
+`up`s take seconds. Core must run on the same host, since it reaches the VM on
+loopback.
 
 ### Shared Nix source cache
 

@@ -1,6 +1,11 @@
 import { randomUUID } from 'crypto'
+import { existsSync, mkdirSync, readFileSync } from 'fs'
+import { homedir } from 'os'
+import { join } from 'path'
 import { Command } from 'commander'
-import { apiPost, apiPostSSE } from '../client'
+import { apiGet, apiPost, apiPostSSE } from '../client'
+import { LIMA_DEFAULTS, limaMachineDown, limaMachineUp, type LimaMachineDeps } from '../local-server/lima-machine'
+import { defaultRunner } from '../local-server/runner'
 import { output, outputTable, outputError, isJsonMode, isQuietMode } from '../output'
 
 interface MigrateResult {
@@ -159,6 +164,72 @@ export function registerMachinesCommands(program: Command) {
               `${unresolvable.length} unresolvable`
           )
         }
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+
+  // tau machines lima up|down — a local Lima VM as this laptop's machine.
+  const lima = machines
+    .command('lima')
+    .description('Run local agents in a Lima VM (Core must run on this host with TAU_SANDBOX_RUNTIME=vm)')
+  const limaDeps = (): LimaMachineDeps => ({
+    runner: defaultRunner,
+    platform: process.platform,
+    api: { get: apiGet, post: apiPost },
+    log: (line) => {
+      if (!isQuietMode()) console.log(line)
+    },
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    now: () => Date.now(),
+    stateDir: join(homedir(), '.tau', 'cli', 'lima'),
+    fs: {
+      exists: (path) => existsSync(path),
+      read: (path) => readFileSync(path, 'utf8'),
+      mkdirp: (path) => mkdirSync(path, { recursive: true, mode: 0o700 }),
+    },
+  })
+
+  lima
+    .command('up')
+    .description('Create/boot the VM, lock it off from the host, register it with Core, and bootstrap it')
+    .option('--instance <name>', 'Lima instance name', LIMA_DEFAULTS.instance)
+    .option('--machine-name <name>', 'Machine name in Core', LIMA_DEFAULTS.machineName)
+    .option('--cpus <n>', 'vCPUs (creation only)', String(LIMA_DEFAULTS.cpus))
+    .option('--memory <GiB>', 'Memory in GiB (creation only)', String(LIMA_DEFAULTS.memoryGiB))
+    .option('--disk <GiB>', 'Disk in GiB (creation only)', String(LIMA_DEFAULTS.diskGiB))
+    .option('--ssh-port <port>', 'Host loopback SSH port (creation only)', String(LIMA_DEFAULTS.sshPort))
+    .option('--dry-run', 'Print the plan without changing anything')
+    .action(async (options) => {
+      try {
+        const machine = await limaMachineUp(
+          {
+            instance: options.instance,
+            machineName: options.machineName,
+            cpus: Number(options.cpus),
+            memoryGiB: Number(options.memory),
+            diskGiB: Number(options.disk),
+            sshPort: Number(options.sshPort),
+            dryRun: options.dryRun === true,
+          },
+          limaDeps()
+        )
+        if (isJsonMode() && machine) {
+          const { sshPublicKey: _key, ...rest } = machine
+          output(rest)
+        }
+      } catch (error) {
+        outputError(error as Error)
+      }
+    })
+
+  lima
+    .command('down')
+    .description('Stop the Lima VM (its boxes stop with it; nothing is deleted)')
+    .option('--instance <name>', 'Lima instance name', LIMA_DEFAULTS.instance)
+    .action(async (options) => {
+      try {
+        await limaMachineDown(options.instance, limaDeps())
       } catch (error) {
         outputError(error as Error)
       }
