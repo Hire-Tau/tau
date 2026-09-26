@@ -23,10 +23,12 @@ function unquote(raw: string): string {
 
 /**
  * The key/value pairs of a .env file. One release (Ficus rename): a legacy
- * `TAU_X` line reads as `FICUS_X` (a `FICUS_X` line in the same file wins), so
- * an install whose .env predates the rename is still read correctly — for
- * example its `TAU_INSTANCE` label, where the wrong answer acts on another
- * instance.
+ * `TAU_X` line reads as `FICUS_X`, so an install whose .env predates the rename
+ * is still read correctly — for example its `TAU_INSTANCE` label, where the
+ * wrong answer acts on another instance. When both spellings are present the
+ * boot bridge's rule applies: the `FICUS_X` line wins, except for
+ * `*ENCRYPTION_KEY*`, where a differing `TAU_X` value is kept because it is the
+ * key the existing secret store was encrypted with.
  */
 export function parseEnvFile(text: string): Record<string, string> {
   const out: Record<string, string> = {}

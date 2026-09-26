@@ -70,6 +70,7 @@ describe('entrypoints import the legacy-env boot module first', () => {
     ['apps/core/src/db/run-migrations.ts', '../boot/legacy-env'],
     ['apps/core/src/box-control.ts', './boot/legacy-env'],
     ['apps/core/src/smoke-configured-extensions.ts', './boot/legacy-env'],
+    ['apps/core/src/scripts/update-offline.ts', '../boot/legacy-env'],
     ['apps/cli/src/index.ts', './boot/legacy-env'],
     ['scripts/pm2-name.ts', '../apps/cli/src/boot/legacy-env'],
     ['packages/k8s-sandbox/src/server.ts', './boot/legacy-env'],

@@ -66,6 +66,13 @@ function pushEnvArgs(args: string[], env: Record<string, string | undefined>): v
   for (const [key, value] of Object.entries(withLegacyEnvAliases(env))) args.push('-e', `${key}=${value}`)
 }
 
+/** The interactive terminal's `docker exec` env flags: the live Core URL, in both spellings. */
+export function terminalApiUrlArgs(apiUrl: string): string {
+  const args: string[] = []
+  pushEnvArgs(args, { FICUS_API_URL: apiUrl })
+  return args.join(' ')
+}
+
 const SANDBOX_IMAGE = process.env.FICUS_SANDBOX_IMAGE || 'tau-sandbox:latest'
 const DOCKER_SANDBOX_MEMORY_LIMIT = '2g'
 // Chromium (the in-container tau-browser service, dev parity with VM machines)
@@ -1572,7 +1579,7 @@ export class DockerSandboxManager implements ISandboxManager {
     // Inject the live Core URL so the terminal's `tau` CLI reaches the current Core
     // even if the container baked a now-stale port. No token/password: the box is
     // shared with squad agents, so the terminal stays a token-free environment.
-    const apiUrlArg = `-e FICUS_API_URL=${resolveDockerApiUrl()}`
+    const apiUrlArg = terminalApiUrlArgs(resolveDockerApiUrl())
     let dockerCmd: string
     if (hasDevboxBashrc) {
       dockerCmd = `docker exec ${userArgs.join(' ')} ${apiUrlArg} -it -w ${shellWorkspaceMount} ${containerId} bash --rcfile .tau/.bashrc`

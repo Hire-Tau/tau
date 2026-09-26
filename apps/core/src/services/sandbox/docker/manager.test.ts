@@ -14,6 +14,7 @@ import {
   parseDockerExitCode,
   buildDockerLogsArgs,
   resolveDockerApiUrl,
+  terminalApiUrlArgs,
   resolveReclaimableNixStorePath,
   reclaimAgentNixStore,
   ensureNixStore,
@@ -1280,6 +1281,12 @@ describe('docker-sandbox-manager', () => {
       const hook = manager.getSpawnHook(spawnHookSandboxId, tmpWorkspacePath)
       const result = hook!({ command: 'tau whoami', cwd: tmpWorkspacePath, env: {} })
       expect(result.command).toContain(`-e FICUS_API_URL=${resolveDockerApiUrl()}`)
+    })
+
+    it('gives the interactive terminal the live Core URL in both spellings (one release)', () => {
+      expect(terminalApiUrlArgs('http://host.docker.internal:3000')).toBe(
+        '-e FICUS_API_URL=http://host.docker.internal:3000 -e TAU_API_URL=http://host.docker.internal:3000'
+      )
     })
 
     it('also injects the legacy TAU_ identity names for older CLIs in the container (one release)', () => {
