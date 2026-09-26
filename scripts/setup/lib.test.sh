@@ -313,6 +313,286 @@ expect_eq 'envfile_get: a later STRIPE_WEBHOOK_SECRET wins over an earlier one' 
   "$(envfile_get "${tmp_env}" 'STRIPE_WEBHOOK_SECRET')" 'whsec_registered'
 rm -f "${tmp_env}"
 
+# --- envfile_set --------------------------------------------------------------
+# The write-side counterpart, used by retarget-origin.sh to patch APP_URL /
+# TAU_WEB_ORIGIN / TAU_PLATFORM_INGEST_URL in an already-rendered .env
+# without re-rendering the whole file (which would need secrets that are
+# deliberately unavailable off-box on a hosted tenant).
+tmp_env=$(mktemp)
+printf '# a comment\nAPP_URL=https://old.hiretau.ai\n\nTAU_WEB_ORIGIN=https://old.hiretau.ai\nTAU_ENCRYPTION_KEY=deadbeef\n' >"${tmp_env}"
+envfile_set "${tmp_env}" APP_URL 'https://acme.ficus.sh'
+envfile_set "${tmp_env}" TAU_WEB_ORIGIN 'https://acme.ficus.sh'
+expect_eq 'envfile_set: updates the targeted keys' \
+  "$(envfile_get "${tmp_env}" APP_URL)/$(envfile_get "${tmp_env}" TAU_WEB_ORIGIN)" \
+  'https://acme.ficus.sh/https://acme.ficus.sh'
+expect_eq 'envfile_set: preserves every other line byte-for-byte (comment, blank line, secret, ordering)' \
+  "$(cat "${tmp_env}")" \
+  '# a comment
+APP_URL=https://acme.ficus.sh
+
+TAU_WEB_ORIGIN=https://acme.ficus.sh
+TAU_ENCRYPTION_KEY=deadbeef'
+after_first=$(cat "${tmp_env}")
+envfile_set "${tmp_env}" APP_URL 'https://acme.ficus.sh'
+envfile_set "${tmp_env}" TAU_WEB_ORIGIN 'https://acme.ficus.sh'
+expect_eq 'envfile_set: re-running with the same values is a no-op (idempotent)' "$(cat "${tmp_env}")" "${after_first}"
+rm -f "${tmp_env}"
+
+tmp_env=$(mktemp)
+printf 'A=1\n' >"${tmp_env}"
+envfile_set "${tmp_env}" TAU_PLATFORM_INGEST_URL 'https://ficus.sh'
+expect_eq 'envfile_set: appends a key that is not already present' \
+  "$(cat "${tmp_env}")" $'A=1\nTAU_PLATFORM_INGEST_URL=https://ficus.sh'
+envfile_set "${tmp_env}" TAU_PLATFORM_INGEST_URL 'https://ficus.sh'
+expect_eq 'envfile_set: re-running an appended key is still a no-op (idempotent)' \
+  "$(cat "${tmp_env}")" $'A=1\nTAU_PLATFORM_INGEST_URL=https://ficus.sh'
+rm -f "${tmp_env}"
+
+tmp_env=$(mktemp)
+printf 'TAU_PASSWORD=first\nTAU_PASSWORD=second\n' >"${tmp_env}"
+envfile_set "${tmp_env}" TAU_PASSWORD 'third'
+expect_eq 'envfile_set: rewrites every existing assignment of a duplicated key, not just the last' \
+  "$(cat "${tmp_env}")" $'TAU_PASSWORD=third\nTAU_PASSWORD=third'
+rm -f "${tmp_env}"
+
+# envfile_set dies (exit 1) on a missing file — die() is `exit 1`, so this
+# MUST run inside a subshell, or it would end the whole runner right here.
+expect_eq 'envfile_set: a missing file dies (non-zero)' \
+  "$( (envfile_set '/nonexistent-file' A 1) >/dev/null 2>&1 && echo zero || echo nonzero)" 'nonzero'
+
+# --- envfile_set: FAILURE INJECTION -------------------------------------------
+# A round-3 regression review found the previous implementation relied on
+# errexit to catch a failing write inside a span that can be called from a
+# subshell used as an if/&&/||-condition (retarget-origin.sh's cert-restore
+# span does exactly that) — bash suppresses -e for the WHOLE dynamic extent
+# of evaluating such a condition, including a `set -e` restated inside a
+# nested subshell, so a failing write there was SILENTLY IGNORED and the
+# function returned success with a truncated file installed. Reproduced
+# before the fix: input `A=1/SECRET=keep/C=3`, the write forced to fail,
+# result was a TRUNCATED file with no error. envfile_set now builds the
+# whole replacement in memory and checks the write/mv explicitly — this
+# proves that fix holds, standing in for the `if !( … )`-suppressed-errexit
+# scenario without needing to reconstruct that exact calling context here
+# (retarget-origin.test.sh's own mutation-phase failure injection covers
+# the real end-to-end path).
+tmp_env=$(mktemp)
+printf 'A=1\nSECRET=keep\nC=3\n' >"${tmp_env}"
+envfile_set_before=$(cat "${tmp_env}")
+envfile_set_inject_rc=0
+(
+  # Shadow the printf BUILTIN so ONLY envfile_set's checked staged write
+  # (`printf '%s' "${content}" >"${tmp}"` — the one two-argument '%s' call)
+  # fails; every other printf (the read's sentinel, die()'s log_error) runs
+  # the real builtin, so this reaches — and exercises — the write check.
+  printf() {
+    [[ $# -eq 2 && $1 == '%s' ]] && return 1
+    # shellcheck disable=SC2059 # pass-through shim: forwards the caller's own format
+    builtin printf "$@"
+  }
+  envfile_set "${tmp_env}" A 9
+) >/dev/null 2>&1 || envfile_set_inject_rc=$?
+expect_eq 'envfile_set failure injection: a failing write returns non-zero' "${envfile_set_inject_rc}" '1'
+expect_eq 'envfile_set failure injection: the live .env is byte-identical to before (not truncated)' \
+  "$(cat "${tmp_env}")" "${envfile_set_before}"
+expect_eq 'envfile_set failure injection: no staged temp file is left behind' \
+  "$(find "$(dirname "${tmp_env}")" -maxdepth 1 -name ".$(basename "${tmp_env}").??????" 2>/dev/null | wc -l | tr -d ' ')" '0'
+rm -f "${tmp_env}"
+
+# --- envfile_set: READ-SIDE FAILURE INJECTION ---------------------------------
+# A round-4 review found the input read (`while read …; done <FILE`) was
+# unchecked: inside retarget-origin.sh's errexit-suppressed span, a FILE that
+# could not be opened left the rebuilt content as just `KEY=value`, which was
+# then mv'd over the live .env with rc=0 — every other line (secrets
+# included) gone. Each case below runs envfile_set in BOTH contexts:
+#   plain      — `( set -e; envfile_set … )` as a bare statement (errexit live)
+#   suppressed — the same subshell as an `if` condition, where bash ignores
+#                errexit for everything inside it (retarget-origin.sh's shape)
+# and asserts: non-zero exit, the .env byte-identical (cmp, so trailing
+# newlines/NULs count), and no staging file left next to it.
+efs_setup_none() { :; }
+efs_setup_short_read_exit0() {
+  # A read that "succeeds" (exit 0) but returns only the first line — what a
+  # file truncated mid-read looks like to the reader.
+  cat() {
+    local a
+    for a in "$@"; do
+      [[ ${a} == "${EFS_FILE}" ]] && {
+        command head -n 1 "${a}"
+        return 0
+      }
+    done
+    command cat "$@"
+  }
+}
+efs_setup_read_error_midfile() {
+  # A read that errors partway: first line delivered, then a non-zero exit.
+  cat() {
+    local a
+    for a in "$@"; do
+      [[ ${a} == "${EFS_FILE}" ]] && {
+        command head -n 1 "${a}"
+        return 1
+      }
+    done
+    command cat "$@"
+  }
+}
+efs_invoke() { # CONTEXT SETUP_FN — runs envfile_set "${EFS_FILE}" A 9; sets EFS_RC
+  EFS_RC=0
+  if [[ $1 == plain ]]; then
+    set +e
+    (
+      set -e
+      "$2"
+      envfile_set "${EFS_FILE}" A 9
+    ) >/dev/null 2>&1
+    EFS_RC=$?
+    set -e
+  elif (
+    set -e
+    "$2"
+    envfile_set "${EFS_FILE}" A 9
+  ) >/dev/null 2>&1; then
+    EFS_RC=0
+  else
+    EFS_RC=$?
+  fi
+}
+efs_case() { # LABEL SETUP_FN CONTENT_PRINTF_FORMAT [chmod-000]
+  local ctx dir
+  for ctx in plain suppressed; do
+    dir=$(mktemp -d)
+    EFS_FILE="${dir}/.env"
+    # shellcheck disable=SC2059 # the format IS the fixture (may carry \0)
+    printf "$3" >"${EFS_FILE}"
+    cp -p "${EFS_FILE}" "${dir}/pristine"
+    [[ ${4:-} == chmod-000 ]] && chmod 000 "${EFS_FILE}"
+    efs_invoke "${ctx}" "$2"
+    chmod 600 "${EFS_FILE}"
+    expect_eq "envfile_set read injection (${1}, ${ctx}): returns non-zero" \
+      "$([[ ${EFS_RC} -ne 0 ]] && echo nonzero || echo "zero")" 'nonzero'
+    expect_eq "envfile_set read injection (${1}, ${ctx}): the live .env is byte-identical" \
+      "$(cmp -s "${EFS_FILE}" "${dir}/pristine" && echo same || echo differs)" 'same'
+    expect_eq "envfile_set read injection (${1}, ${ctx}): no staging file is left behind" \
+      "$(find "${dir}" -maxdepth 1 -name '..env.??????' | wc -l | tr -d ' ')" '0'
+    rm -rf "${dir}"
+  done
+}
+EFS_FIXTURE='A=1\nSECRET=keep\nC=3\n'
+if [[ ${EUID} -eq 0 ]]; then
+  # Root reads a mode-000 file regardless, so the file cannot be made
+  # unreadable here; CI's unprivileged lib.test.sh run executes this case.
+  printf 'SKIP: envfile_set unreadable-.env injection (root ignores mode 000; covered by the unprivileged run)\n' >&2
+else
+  efs_case 'unreadable .env' efs_setup_none "${EFS_FIXTURE}" chmod-000
+fi
+efs_case 'read returns only part of the file, exit 0' efs_setup_short_read_exit0 "${EFS_FIXTURE}"
+efs_case 'read errors mid-file' efs_setup_read_error_midfile "${EFS_FIXTURE}"
+efs_case 'file contains a NUL byte the shell cannot hold' efs_setup_none 'A=1\nSEC\0RET=keep\nC=3\n'
+
+# The byte-count check must count BYTES: a multi-byte UTF-8 value must not
+# look like a short read, in either the C locale or a UTF-8 one.
+tmp_env=$(mktemp)
+printf 'A=1\nNAME=caf\xc3\xa9 \xe2\x9c\x93\nC=3\n' >"${tmp_env}"
+for efs_locale in C en_US.UTF-8 C.UTF-8; do
+  (
+    export LC_ALL=${efs_locale}
+    envfile_set "${tmp_env}" A 2
+  ) 2>/dev/null || true
+  expect_eq "envfile_set: a UTF-8 value is not mistaken for a short read (LC_ALL=${efs_locale})" \
+    "$(od -An -tx1 "${tmp_env}" | tr -d ' \n')" \
+    "$(printf 'A=2\nNAME=caf\xc3\xa9 \xe2\x9c\x93\nC=3\n' | od -An -tx1 | tr -d ' \n')"
+  printf 'A=1\nNAME=caf\xc3\xa9 \xe2\x9c\x93\nC=3\n' >"${tmp_env}"
+done
+rm -f "${tmp_env}"
+
+# --- caddy_write_and_reload: FAILURE INJECTION --------------------------------
+# Same round-3 finding, different call site: caddy_write_and_reload's own
+# Caddyfile-backup line (`[[ ${had_current} -eq 1 ]] && as_root cat
+# "${CADDYFILE_PATH}" >"${backup}"`) had no explicit check either. A failed
+# backup write there must die WITHOUT installing the new Caddyfile — not
+# silently proceed with a 0-byte backup that a later failed reload would
+# then "restore".
+cwr_tmp=$(mktemp -d)
+CWR_CADDYFILE="${cwr_tmp}/Caddyfile"
+printf 'old-content\n' >"${CWR_CADDYFILE}"
+cwr_before=$(cat "${CWR_CADDYFILE}")
+cwr_inject_rc=0
+(
+  CADDYFILE_PATH="${CWR_CADDYFILE}"
+  as_root() { "$@"; }
+  caddy() { return 0; } # caddy validate always "passes" in this test
+  systemctl() { return 0; }
+  # Drop -o/-g so caddy_install_atomically's `install -o root -g root`
+  # SUCCEEDS unprivileged too — otherwise an unprivileged run would die
+  # there (can't chown to root) and pass even without the backup-write
+  # check this test is about.
+  install() {
+    local a=()
+    while [[ $# -gt 0 ]]; do
+      case $1 in
+        -o | -g) shift 2 ;;
+        *)
+          a+=("$1")
+          shift
+          ;;
+      esac
+    done
+    command install "${a[@]}"
+  }
+  cat() {
+    # Fail only reads/backups of CWR_CADDYFILE — never `cat` in general.
+    for a in "$@"; do [[ ${a} == "${CWR_CADDYFILE}" ]] && return 1; done
+    command cat "$@"
+  }
+  caddy_write_and_reload 'new-content'
+) >/dev/null 2>&1 || cwr_inject_rc=$?
+expect_eq 'caddy_write_and_reload failure injection: a failing backup write dies (non-zero)' "${cwr_inject_rc}" '1'
+expect_eq 'caddy_write_and_reload failure injection: the live Caddyfile is completely untouched' \
+  "$(cat "${CWR_CADDYFILE}")" "${cwr_before}"
+rm -rf "${cwr_tmp}"
+
+# A failed STAGED write must die before anything is installed — with
+# `caddy validate` mocked to always pass, so the write check itself (not
+# validate as a backstop) is what is under test. Same -o/-g-dropping
+# install shim as above, so an unprivileged run cannot pass by dying at
+# the install instead.
+cwr_tmp=$(mktemp -d)
+CWR_CADDYFILE="${cwr_tmp}/Caddyfile"
+printf 'old-content\n' >"${CWR_CADDYFILE}"
+cwr_before=$(cat "${CWR_CADDYFILE}")
+cwr_inject_rc=0
+(
+  CADDYFILE_PATH="${CWR_CADDYFILE}"
+  as_root() { "$@"; }
+  caddy() { return 0; }
+  systemctl() { return 0; }
+  install() {
+    local a=()
+    while [[ $# -gt 0 ]]; do
+      case $1 in
+        -o | -g) shift 2 ;;
+        *)
+          a+=("$1")
+          shift
+          ;;
+      esac
+    done
+    command install "${a[@]}"
+  }
+  # Fail only the staged write (`printf '%s' "${rendered}" >"${staged}"`).
+  printf() {
+    [[ $# -eq 2 && $1 == '%s' && $2 == 'new-content' ]] && return 1
+    # shellcheck disable=SC2059 # pass-through shim: forwards the caller's own format
+    builtin printf "$@"
+  }
+  caddy_write_and_reload 'new-content'
+) >/dev/null 2>&1 || cwr_inject_rc=$?
+expect_eq 'caddy_write_and_reload failure injection: a failing staged write dies (non-zero)' "${cwr_inject_rc}" '1'
+expect_eq 'caddy_write_and_reload failure injection: a failing staged write leaves the live Caddyfile untouched' \
+  "$(cat "${CWR_CADDYFILE}")" "${cwr_before}"
+rm -rf "${cwr_tmp}"
+
 # --- retry_until ------------------------------------------------------------
 expect_eq 'retry_until immediate success' "$(retry_until 5 1 'true' true && echo ok)" 'ok'
 marker=$(mktemp -u)
@@ -379,6 +659,37 @@ if [[ ! -r ${tls_preflight_tmp}/unreadable.key ]]; then
     "${tls_preflight_err}" 'ingress\.apps_tls_key_path: file is not readable'
 fi
 chmod 600 "${tls_preflight_tmp}/unreadable.key"
+
+# --- tls_pair_matches ---------------------------------------------------------
+# retarget-origin.sh's key/cert-mismatch validation: catches a pushed origin
+# cert paired with the WRONG key (or vice versa) before anything on the host
+# is touched. Compares derived public keys, not moduli, so it holds for RSA
+# and EC pairs alike.
+tls_pair_a_key="${tls_preflight_tmp}/pair-a.key"
+tls_pair_a_crt="${tls_preflight_tmp}/pair-a.crt"
+tls_pair_b_key="${tls_preflight_tmp}/pair-b.key"
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=pair-a' \
+  -keyout "${tls_pair_a_key}" -out "${tls_pair_a_crt}" >/dev/null 2>&1
+openssl genrsa -out "${tls_pair_b_key}" 2048 >/dev/null 2>&1
+expect_eq 'tls_pair_matches: a certificate matches its own key' \
+  "$(tls_pair_matches "${tls_pair_a_crt}" "${tls_pair_a_key}" && echo match || echo mismatch)" 'match'
+expect_eq 'tls_pair_matches: a certificate does NOT match an unrelated key' \
+  "$(tls_pair_matches "${tls_pair_a_crt}" "${tls_pair_b_key}" && echo match || echo mismatch)" 'mismatch'
+expect_eq 'tls_pair_matches: a missing certificate is a mismatch, not a die' \
+  "$(tls_pair_matches "${tls_preflight_tmp}/nope.crt" "${tls_pair_a_key}" && echo match || echo mismatch)" 'mismatch'
+expect_eq 'tls_pair_matches: a missing key is a mismatch, not a die' \
+  "$(tls_pair_matches "${tls_pair_a_crt}" "${tls_preflight_tmp}/nope.key" && echo match || echo mismatch)" 'mismatch'
+ec_key="${tls_preflight_tmp}/ec.key"
+ec_crt="${tls_preflight_tmp}/ec.crt"
+if openssl ecparam -name prime256v1 -genkey -noout -out "${ec_key}" >/dev/null 2>&1 &&
+  openssl req -x509 -new -key "${ec_key}" -days 1 -subj '/CN=ec-pair' -out "${ec_crt}" >/dev/null 2>&1; then
+  expect_eq 'tls_pair_matches: also holds for an EC certificate/key pair' \
+    "$(tls_pair_matches "${ec_crt}" "${ec_key}" && echo match || echo mismatch)" 'match'
+  expect_eq 'tls_pair_matches: an EC certificate does not match an RSA key' \
+    "$(tls_pair_matches "${ec_crt}" "${tls_pair_a_key}" && echo match || echo mismatch)" 'mismatch'
+else
+  printf 'SKIP: openssl ecparam unavailable — skipping EC tls_pair_matches cases\n' >&2
+fi
 rm -rf "${tls_preflight_tmp}"
 
 cert_install_tmp=$(mktemp -d)
@@ -617,6 +928,51 @@ EOF
   expect_eq 'cfg_get empty string → default' "$(cfg_get '.database.dsn' 'dflt')" 'dflt'
   expect_eq 'cfg_get missing section → default' "$(cfg_get '.runtime.exe.ssh_key_path' '')" ''
   rm -f "${tmp_cfg}"
+
+  # --- cfg_set (write-side counterpart, used by retarget-origin.sh) ---------
+  cfg_set_tmp=$(mktemp)
+  cat >"${cfg_set_tmp}" <<'EOF'
+source:
+  repo: git@example.com:acme/tau.git
+  dest: /opt/tau-core
+core:
+  origin: https://old.hiretau.ai
+  port: 3000
+  env: {}
+ingress:
+  tls_cert_path: /etc/caddy/tls/origin.crt
+  tls_key_path: /etc/caddy/tls/origin.key
+EOF
+  cfg_load "${cfg_set_tmp}"
+  cfg_set '.core.origin' 'https://acme.ficus.sh'
+  cfg_set '.ingress.tls_cert_path' '/etc/caddy/tls/new.crt'
+  cfg_set '.ingress.tls_key_path' '/etc/caddy/tls/new.key'
+  cfg_set '.core.env.TAU_PLATFORM_INGEST_URL' 'https://ficus.sh'
+  expect_eq 'cfg_set: rewrote core.origin' "$(cfg_get '.core.origin')" 'https://acme.ficus.sh'
+  expect_eq 'cfg_set: rewrote ingress.tls_cert_path' "$(cfg_get '.ingress.tls_cert_path')" '/etc/caddy/tls/new.crt'
+  expect_eq 'cfg_set: rewrote ingress.tls_key_path' "$(cfg_get '.ingress.tls_key_path')" '/etc/caddy/tls/new.key'
+  expect_eq 'cfg_set: created a NEW key under an existing empty map (core.env.TAU_PLATFORM_INGEST_URL)' \
+    "$(cfg_get '.core.env.TAU_PLATFORM_INGEST_URL')" 'https://ficus.sh'
+  expect_eq 'cfg_set: touched NOTHING else — source.repo untouched' \
+    "$(cfg_get '.source.repo')" 'git@example.com:acme/tau.git'
+  expect_eq 'cfg_set: touched NOTHING else — source.dest untouched' \
+    "$(cfg_get '.source.dest')" '/opt/tau-core'
+  expect_eq 'cfg_set: touched NOTHING else — core.port untouched' "$(cfg_get '.core.port')" '3000'
+  cfg_set '.core.origin' 'https://acme.ficus.sh'
+  cfg_set '.ingress.tls_cert_path' '/etc/caddy/tls/new.crt'
+  cfg_set '.ingress.tls_key_path' '/etc/caddy/tls/new.key'
+  cfg_set '.core.env.TAU_PLATFORM_INGEST_URL' 'https://ficus.sh'
+  expect_eq 'cfg_set: re-running with the same values is idempotent (core.origin still correct)' \
+    "$(cfg_get '.core.origin')" 'https://acme.ficus.sh'
+  expect_eq 'cfg_set: idempotent re-run still touched nothing else' "$(cfg_get '.core.port')" '3000'
+  # A value carrying yq-expression-looking characters must land LITERALLY —
+  # it travels through the environment (strenv()), never spliced into the yq
+  # expression string, precisely so a cert PATH (or any future caller's
+  # value) can never be read as yq syntax.
+  cfg_set '.dns.zone' "weird'value.with:colons"
+  expect_eq "cfg_set: a value containing quotes/colons is written literally, not interpreted as yq syntax" \
+    "$(cfg_get '.dns.zone')" "weird'value.with:colons"
+  rm -f "${cfg_set_tmp}"
 
   # --- cfg_has (structural presence, unlike cfg_get's "empty means unset") --
   # do-machine-mode-part2 Task 7: provision.sh must only call

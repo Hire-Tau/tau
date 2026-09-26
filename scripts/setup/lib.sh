@@ -564,6 +564,21 @@ cfg_bool() { # .dotted.path DEFAULT(true|false)
   esac
 }
 
+# Write a single scalar VALUE to PATH in CFG_FILE, in place — the write-side
+# counterpart to cfg_get, for tools (e.g. retarget-origin.sh) that mutate an
+# already-provisioned host's config rather than only reading it. VALUE is
+# passed through the environment (yq's strenv()), never spliced into the yq
+# expression string itself, so nothing the caller passes — quotes, colons,
+# a leading '-' — can be interpreted as yq syntax. Only ever assigns a
+# scalar; a map/array literal would need exactly that unsafe interpolation
+# and no caller needs one. Creates PATH (and any missing parent maps), same
+# as a normal yq assignment.
+cfg_set() { # .dotted.path VALUE
+  local path=$1
+  TAU_CFG_SET_VALUE=$2 yq -i "${path} = strenv(TAU_CFG_SET_VALUE)" "${CFG_FILE}" ||
+    die "failed to write ${path} to ${CFG_FILE}"
+}
+
 # ------------------------------------------------------------------ digitalocean fallbacks
 
 # Ordered (size, region) pairs from provision.digitalocean.fallbacks — one
@@ -726,11 +741,143 @@ cfg_env_forward_names() { # .dotted.path
 
 # Read KEY=VALUE from an env file (no interpolation; last assignment wins).
 envfile_get() { # FILE KEY
-  local file=$1 key=$2
+  local file=$1 key=$2 line last='' found=0
   [[ -f ${file} ]] || return 1
-  local line
-  line=$(grep -E "^${key}=" "${file}" | tail -n 1) || return 1
-  printf '%s' "${line#"${key}"=}"
+  while IFS= read -r line || [[ -n ${line} ]]; do
+    # KEY is quoted in the regex so a metacharacter in it is matched
+    # literally, not as regex syntax — same reasoning as envfile_set's
+    # quoted match (its write-side counterpart).
+    if [[ ${line} =~ ^"${key}"= ]]; then
+      last=${line#"${key}"=}
+      found=1
+    fi
+  done <"${file}"
+  [[ ${found} -eq 1 ]] || return 1
+  printf '%s' "${last}"
+}
+
+# Portable "MODE OWNER:GROUP" of FILE (GNU stat, then BSD/macOS stat) — used
+# by envfile_set to carry an existing file's permissions across an atomic
+# same-directory replace.
+_file_mode_owner_group() { # FILE
+  stat -c '%a %U:%G' "$1" 2>/dev/null || stat -f '%Lp %Su:%Sg' "$1"
+}
+
+# Update (or append) KEY=VALUE in FILE in place — the write-side counterpart
+# to envfile_get, for tools (e.g. retarget-origin.sh) that patch a couple of
+# keys in an already-rendered .env without re-rendering the whole file (which
+# would need secrets that may no longer be available off-box). Preserves
+# every OTHER line byte-for-byte: comments, ordering, blank lines, and any
+# secret already sitting in the file. Every existing assignment of KEY is
+# rewritten in place (matching envfile_get's "last assignment wins" read
+# semantics — a file with a duplicate key keeps having a duplicate key, both
+# updated, rather than being silently collapsed to one); if KEY is absent,
+# one line is appended. FILE must already exist.
+#
+# Never a direct `cat > FILE` — setup-host.sh's own phase_env comment names
+# exactly why: that truncates the previous good file the instant the write
+# starts, so a write that dies partway leaves the services with a gutted
+# EnvironmentFile. Instead: build the new content in a temp file NEXT TO
+# FILE (same directory — never /tmp, both because this content carries live
+# secrets and because a same-filesystem temp is what makes the final `mv`
+# an ATOMIC rename; /tmp is very often a different filesystem, where `mv`
+# silently degrades to copy+unlink and a crash mid-copy can leave a
+# half-written .env), copy FILE's mode/owner onto it, then `mv -f` it over
+# FILE in one syscall.
+envfile_set() { # FILE KEY VALUE
+  local file=$1 key=$2 value=$3 dir tmp found=0 line mog mode owner_group content='' raw rest size
+  [[ -f ${file} ]] || die "envfile_set: file not found: ${file}"
+  dir=$(dirname -- "${file}")
+  mog=$(_file_mode_owner_group "${file}") || die "envfile_set: could not stat ${file}"
+  mode=${mog%% *}
+  owner_group=${mog#* }
+
+  # Read FILE, and prove the read got ALL of it, before building anything —
+  # the replacement is built from what was read, so a read that silently
+  # came up short would drop every line after that point from the live .env
+  # (secrets included) while "succeeding". What is checked, exactly:
+  #   1. the size probe (`wc -c <FILE`) must succeed — this fails if FILE
+  #      cannot be opened (e.g. unreadable);
+  #   2. `cat` must exit 0 — it exits non-zero if FILE cannot be opened or
+  #      if any read(2) on it returns an error, so a mid-file I/O error is
+  #      NOT mistaken for EOF (a bare `while read …; done <FILE` cannot tell
+  #      the two apart: `read` returns non-zero for both);
+  #   3. the sentinel `x` printed after cat must be present (it also keeps
+  #      the command substitution from stripping FILE's trailing newlines);
+  #   4. the byte length of what was read must equal the probed size — this
+  #      catches FILE changing size between the probe and the read, and any
+  #      bytes the shell cannot hold (a command substitution drops NUL
+  #      bytes), so such a file is refused rather than rewritten without them.
+  # Each is an explicit `|| die`/`if`, never errexit (see the write-side note
+  # below for why).
+  size=$(wc -c <"${file}") || die "envfile_set: could not read ${file}"
+  size=${size//[[:space:]]/}
+  [[ ${size} =~ ^[0-9]+$ ]] || die "envfile_set: could not determine the size of ${file}"
+  raw=$(cat -- "${file}" && printf x) || die "envfile_set: failed to read ${file}"
+  [[ ${raw} == *x ]] || die "envfile_set: failed to read ${file}"
+  raw=${raw%x}
+  # Byte length, not character length: a UTF-8 value would otherwise count
+  # short. LC_ALL is switched only inside this `( … )` subshell, whose exit
+  # status carries the comparison result.
+  if ! (
+    LC_ALL=C
+    [[ ${#raw} -eq ${size} ]]
+  ); then
+    die "envfile_set: read of ${file} came up short or contained bytes the shell cannot hold (NUL) — refusing to rewrite it"
+  fi
+
+  # Build the WHOLE replacement content in a variable — nothing has touched
+  # disk yet, so there is nothing to clean up if this part fails. Lines are
+  # split with parameter expansion rather than `read <<<"${raw}"`: a
+  # here-string may be backed by a temp file (in $TMPDIR, i.e. usually
+  # /tmp — no place for this file's secrets) and would be one more redirect
+  # to check. Every line is re-emitted with a trailing newline (a final line
+  # that lacked one gains it). KEY is quoted in the regex so a metacharacter
+  # in it (only ever a SCREAMING_SNAKE_CASE identifier in every real caller,
+  # but defense in depth costs nothing here) is matched literally, not as
+  # regex syntax.
+  rest=${raw}
+  while [[ -n ${rest} ]]; do
+    line=${rest%%$'\n'*}
+    if [[ ${line} == "${rest}" ]]; then rest=''; else rest=${rest#*$'\n'}; fi
+    if [[ ${line} =~ ^"${key}"= ]]; then
+      content+="${key}=${value}"$'\n'
+      found=1
+    else
+      content+="${line}"$'\n'
+    fi
+  done
+  [[ ${found} -eq 1 ]] || content+="${key}=${value}"$'\n'
+
+  tmp=$(mktemp "${dir}/.$(basename -- "${file}").XXXXXX") ||
+    die "envfile_set: failed to create a staging file next to ${file}"
+
+  # The staged write and the final mv are checked explicitly (die on
+  # failure, removing the staging file); chmod/chown failures only warn —
+  # mktemp created the staging file 0600 and owned by the caller, so a
+  # failure there leaves it more restrictive, never less. Never errexit, here
+  # or in the read above: a caller that invokes this from inside a subshell
+  # being used as an if/&&/||-condition (retarget-origin.sh's cert-restore
+  # span does exactly that) runs with -e silently suppressed for the entire
+  # dynamic extent of evaluating that condition, INCLUDING a `set -e`
+  # restated inside the subshell — that suppression cannot be un-suppressed
+  # from within. A single unchecked read or write in that context would not
+  # abort; it would just silently produce a truncated/wrong file that then
+  # gets `mv`'d into place as if nothing were wrong.
+  if ! printf '%s' "${content}" >"${tmp}"; then
+    rm -f "${tmp}"
+    die "envfile_set: failed to write the staged replacement for ${file}"
+  fi
+  if ! chmod "${mode}" "${tmp}" 2>/dev/null; then
+    log_warn "envfile_set: could not chmod the staged replacement for ${file} to ${mode}"
+  fi
+  if ! chown "${owner_group}" "${tmp}" 2>/dev/null; then
+    log_warn "envfile_set: could not chown the staged replacement for ${file} to ${owner_group} (needs root)"
+  fi
+  if ! mv -f "${tmp}" "${file}"; then
+    rm -f "${tmp}"
+    die "envfile_set: failed to atomically replace ${file}"
+  fi
 }
 
 # ------------------------------------------------------------------ origin/host
@@ -792,8 +939,11 @@ caddy_host_from_origin() { # ORIGIN
 # Caddy needs no port 80 for this (there is no HTTP-01 challenge to answer).
 #
 # Canonical on-host locations, installed by install_origin_cert and referenced
-# by both rendered Caddyfiles.
-CADDY_TLS_DIR='/etc/caddy/tls'
+# by both rendered Caddyfiles. Overridable via env (default unchanged) SOLELY
+# so a test can point the mutating helpers at a scratch directory instead of
+# the real /etc/caddy/tls — setup-host.sh/upgrade-host.sh never set this
+# variable, so their behavior is unaffected.
+CADDY_TLS_DIR="${CADDY_TLS_DIR:-/etc/caddy/tls}"
 CADDY_TLS_CERT_PATH="${CADDY_TLS_DIR}/origin.crt"
 CADDY_TLS_KEY_PATH="${CADDY_TLS_DIR}/origin.key"
 CADDY_APPS_TLS_CERT_PATH="${CADDY_TLS_DIR}/apps-origin.crt"
@@ -803,6 +953,24 @@ preflight_tls_source() { # CONFIG_KEY PATH
   local config_key=$1 path=$2
   [[ -f ${path} ]] || die "${config_key}: file not found: ${path}"
   [[ -r ${path} ]] || die "${config_key}: file is not readable: ${path}"
+}
+
+# True (exit 0) iff CERT's public key matches KEY's — i.e. this certificate
+# and private key are actually a pair. Compares derived public keys
+# (openssl pkey -pubout), not moduli, so it works for RSA and EC certificates
+# alike — a Cloudflare Origin CA cert can be either. Callers that want a
+# distinct "file not found"/"not readable" error should run
+# preflight_tls_source first: a missing or malformed file here just reads as
+# a mismatch (return 1), not a die. `-passin pass:` deliberately passes an
+# EMPTY passphrase rather than none: an encrypted key then fails immediately
+# as a wrong-passphrase error (→ mismatch) instead of openssl blocking on an
+# interactive passphrase prompt with no TTY to answer it — which, run as
+# root on a live tenant, would just hang the whole retarget.
+tls_pair_matches() { # CERT KEY
+  local cert=$1 key=$2 cert_pub key_pub
+  cert_pub=$(openssl x509 -in "${cert}" -noout -pubkey 2>/dev/null) || return 1
+  key_pub=$(openssl pkey -in "${key}" -passin pass: -pubout 2>/dev/null) || return 1
+  [[ -n ${cert_pub} && ${cert_pub} == "${key_pub}" ]]
 }
 
 preflight_public_certificate() { # CONFIG_KEY PATH
@@ -829,9 +997,21 @@ install_origin_cert() { # CERT_SRC KEY_SRC [CERT_DEST KEY_DEST]
     die "origin certificate destinations must be inside ${CADDY_TLS_DIR}"
   id -u caddy >/dev/null 2>&1 ||
     die "the 'caddy' service user does not exist — install caddy before the origin certificate"
-  as_root install -d -m 0755 -o root -g root "${CADDY_TLS_DIR}"
-  as_root install -m 0644 -o root -g root "${cert}" "${cert_dest}"
-  as_root install -m 0600 -o caddy -g caddy "${key}" "${key_dest}"
+  # Explicit `|| die` on each — never left to errexit. A caller that
+  # invokes this from inside a subshell being used as an if/&&/||
+  # condition (retarget-origin.sh's cert-restore span does exactly that,
+  # to contain a die()'s exit to the subshell) runs with errexit silently
+  # suppressed for everything in that subshell, INCLUDING a `set -e`
+  # restated inside it — bash disables -e for the whole dynamic extent of
+  # evaluating such a condition and that suppression is NOT one a nested
+  # `set -e` can undo. A failed install here would otherwise be silently
+  # ignored, continuing as if the cert/key had been installed.
+  as_root install -d -m 0755 -o root -g root "${CADDY_TLS_DIR}" ||
+    die "failed to create ${CADDY_TLS_DIR}"
+  as_root install -m 0644 -o root -g root "${cert}" "${cert_dest}" ||
+    die "failed to install the origin certificate to ${cert_dest}"
+  as_root install -m 0600 -o caddy -g caddy "${key}" "${key_dest}" ||
+    die "failed to install the origin private key to ${key_dest}"
   log_info "installed origin certificate ${cert_dest} (0644) + key ${key_dest} (0600, caddy-owned)"
 }
 
@@ -1222,7 +1402,9 @@ render_caddyfile() { # HOST PORT CERT_PATH KEY_PATH
   printf '%s {\n    tls %s %s\n    reverse_proxy 127.0.0.1:%s\n}\n' "${host}" "${cert}" "${key}" "${port}"
 }
 
-CADDYFILE_PATH='/etc/caddy/Caddyfile'
+# Overridable via env (default unchanged) for the same reason as
+# CADDY_TLS_DIR above — a test-only seam, not a real config knob.
+CADDYFILE_PATH="${CADDYFILE_PATH:-/etc/caddy/Caddyfile}"
 
 # Validate a staged Caddyfile as root so Caddy can also open the 0600 TLS keys.
 # The caller owns FILE and removes it after validation.
@@ -1275,15 +1457,38 @@ caddy_write_and_reload() { # CONTENT
     current=$(as_root cat "${CADDYFILE_PATH}")
   fi
   if [[ ${rendered} != "${current}" ]]; then
-    staged=$(mktemp)
-    backup=$(mktemp)
-    chmod 600 "${staged}" "${backup}"
-    printf '%s' "${rendered}" >"${staged}"
+    # Staging-file setup and the staged write are each checked explicitly,
+    # never left to errexit (see the backup-write note below for why) —
+    # `caddy validate` is NOT relied on as a backstop for them: a staging
+    # file that silently came out empty or short could still validate.
+    staged=$(mktemp) || die "failed to create a staging file for ${CADDYFILE_PATH}"
+    if ! backup=$(mktemp); then
+      rm -f "${staged}"
+      die "failed to create a backup file for ${CADDYFILE_PATH}"
+    fi
+    if ! chmod 600 "${staged}" "${backup}"; then
+      rm -f "${staged}" "${backup}"
+      die "failed to restrict the permissions of the staged ${CADDYFILE_PATH}"
+    fi
+    if ! printf '%s' "${rendered}" >"${staged}"; then
+      rm -f "${staged}" "${backup}"
+      die "failed to write the staged ${CADDYFILE_PATH}; the live Caddyfile was not changed"
+    fi
     if ! caddy_validate_file "${staged}"; then
       rm -f "${staged}" "${backup}"
       die "Caddy rejected the staged configuration; the live Caddyfile was not changed"
     fi
-    [[ ${had_current} -eq 1 ]] && as_root cat "${CADDYFILE_PATH}" >"${backup}"
+    # Explicit check, never left to errexit (same reasoning as
+    # install_origin_cert above: a caller running this from inside an
+    # if/&&/||-condition subshell has errexit silently suppressed for
+    # everything in it, unrecoverably by a nested `set -e`). Without this
+    # check, a failed backup write here would leave `${backup}` a 0-byte
+    # file that a later failed enable/reload below would then "restore",
+    # taking Caddy down with an EMPTY config instead of the real prior one.
+    if [[ ${had_current} -eq 1 ]] && ! as_root cat "${CADDYFILE_PATH}" >"${backup}"; then
+      rm -f "${staged}" "${backup}"
+      die "failed to back up the current ${CADDYFILE_PATH} before installing the new one — refusing to proceed without a valid rollback target"
+    fi
     caddy_install_atomically "${staged}"
     changed=1
   fi

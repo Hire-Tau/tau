@@ -34,6 +34,22 @@ describe('setup helper CI gate', () => {
     expect(step).not.toContain('continue-on-error')
     expect(step).not.toContain('if:')
   })
+
+  test('runs the retarget-origin mutation-phase suite AS ROOT so its steps 1-6 execute for real, gated on its summary line', () => {
+    const start = workflow.indexOf('- name: Run retarget-origin mutation-phase suite (root)')
+    expect(start).toBeGreaterThan(-1)
+    const nextStep = workflow.indexOf('\n      - name:', start + 1)
+    const step = workflow.slice(start, nextStep === -1 ? undefined : nextStep)
+    expect(step).toContain('sudo env "PATH=$PATH" bash scripts/setup/retarget-origin.test.sh')
+    expect(step).toContain('passed, 0 failed') // summary-line gate
+    // Same reasoning as the lib.test.sh root marker above: retarget-origin.sh
+    // has no sudo fallback (hard EUID check), so its mutation-phase section
+    // self-skips unless the WHOLE process is root — a green summary alone
+    // cannot tell "executed" from "self-skipped again".
+    expect(step).toContain('TAU retarget-origin mutation-phase section: ENABLED')
+    expect(step).not.toContain('continue-on-error')
+    expect(step).not.toContain('if:')
+  })
 })
 
 describe('lib.test.sh root-install marker', () => {
@@ -58,6 +74,31 @@ describe('lib.test.sh root-install marker', () => {
     // And the unprivileged run must stay quiet: the marker echo sits before
     // the summary line (tail -n 1 gates are unaffected by construction).
     const summaryAt = libTest.indexOf('passed, %d failed')
+    expect(summaryAt).toBeGreaterThan(markerAt)
+  })
+})
+
+describe('retarget-origin.test.sh mutation-phase marker', () => {
+  const retargetTest = readFileSync(join(import.meta.dir, '../scripts/setup/retarget-origin.test.sh'), 'utf8')
+
+  // The root CI step greps for this exact token; retarget-origin.test.sh must
+  // emit it ONLY inside the branch gated on BOTH real root and a real caddy
+  // system user (checked via `command -p id`, bypassing the test's own `id`
+  // PATH shim — the shim always reports caddy as present, so gating on the
+  // shimmed check would never actually skip when it should).
+  test('emits the exact token the root gate greps, only inside the real-root + real-caddy-user branch', () => {
+    const marker = "echo 'TAU retarget-origin mutation-phase section: ENABLED'"
+    expect(retargetTest).toContain(marker)
+    expect(retargetTest.split(marker).length - 1).toBe(1) // exactly once
+    const gate = retargetTest.indexOf('if [[ ${EUID} -eq 0 ]] && command -p id -u caddy')
+    expect(gate).toBeGreaterThan(-1)
+    const markerAt = retargetTest.indexOf(marker)
+    expect(markerAt).toBeGreaterThan(gate)
+    // The marker must precede the FINAL "N passed, M failed" summary — using
+    // the LAST occurrence deliberately: an earlier, unrelated "yq missing"
+    // skip-and-exit-0 path prints the same-shaped line first, and checking
+    // the first occurrence here would wrongly fail against that path.
+    const summaryAt = retargetTest.lastIndexOf('passed, %d failed')
     expect(summaryAt).toBeGreaterThan(markerAt)
   })
 })
