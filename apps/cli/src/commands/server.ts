@@ -245,7 +245,8 @@ Examples:
         const markedSupervisor = (LOCAL_SUPERVISORS as readonly string[]).includes(marked ?? '')
           ? (marked as LocalSupervisor)
           : undefined
-        const legacyPm2 = existsSync(join(dir, 'ecosystem.config.js')) || persistedEnv.FICUS_SYSTEM_LOG_PROVIDER === 'pm2'
+        const legacyPm2 =
+          existsSync(join(dir, 'ecosystem.config.js')) || persistedEnv.FICUS_SYSTEM_LOG_PROVIDER === 'pm2'
         const options = await resolveSetupOptions(
           { ...(raw as RawSetupFlags), root: dir },
           deps.env,

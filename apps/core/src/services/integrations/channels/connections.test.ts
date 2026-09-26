@@ -42,7 +42,12 @@ async function wipe() {
 }
 
 beforeEach(async () => {
-  for (const key of [...legacyChannelCredentialKeys, 'FICUS_ENCRYPTION_KEY', 'FICUS_MANAGED', 'FICUS_MANAGED_SECRET_KEYS']) {
+  for (const key of [
+    ...legacyChannelCredentialKeys,
+    'FICUS_ENCRYPTION_KEY',
+    'FICUS_MANAGED',
+    'FICUS_MANAGED_SECRET_KEYS',
+  ]) {
     priorEnv.set(key, process.env[key])
     delete process.env[key]
   }

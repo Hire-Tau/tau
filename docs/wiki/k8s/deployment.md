@@ -223,21 +223,21 @@ kubectl -n tau-sandboxes logs -l app=tau-sandbox       # Sandbox logs
 
 ### Core (tau-api / tau-worker)
 
-| Variable                   | Default                             | Description                                                                                                                                     |
-| -------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `FICUS_SANDBOX_RUNTIME`      | (required, no default)              | One of `docker-sysbox`, `docker-socket`, `k8s`, `vm`, `host` — use `k8s` for this deployment. See [sandbox-runtimes.md](../sandbox-runtimes.md) |
-| `FICUS_K8S_NAMESPACE`        | `tau-sandboxes`                     | K8s namespace for sandbox pods                                                                                                                  |
-| `FICUS_SANDBOX_IMAGE`        | `tau-sandbox:latest`                | Docker image for sandbox pods                                                                                                                   |
-| `FICUS_K8S_RUNTIME_CLASS`    | `sysbox-runc`                       | K8s RuntimeClass for sandbox pods. Set to `""` to disable                                                                                       |
-| `FICUS_ENCRYPTION_KEY`       | (required)                          | 64-char hex key for encrypting secrets in DB                                                                                                    |
-| `DATABASE_URL`             | (required)                          | PostgreSQL connection string                                                                                                                    |
-| `PORT`                     | `3000`                              | API server port                                                                                                                                 |
-| `WORKER_PORT`              | `3002`                              | Worker RPC port                                                                                                                                 |
-| `WORKER_URL`               | `http://tau-worker:3002`            | Worker URL (set on API deployment)                                                                                                              |
-| `FICUS_WORKER_EVENT_PORT`    | `3003`                              | Port for the worker's api↔worker event listener (see the note below)                                                                            |
+| Variable                     | Default                               | Description                                                                                                                                     |
+| ---------------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `FICUS_SANDBOX_RUNTIME`      | (required, no default)                | One of `docker-sysbox`, `docker-socket`, `k8s`, `vm`, `host` — use `k8s` for this deployment. See [sandbox-runtimes.md](../sandbox-runtimes.md) |
+| `FICUS_K8S_NAMESPACE`        | `tau-sandboxes`                       | K8s namespace for sandbox pods                                                                                                                  |
+| `FICUS_SANDBOX_IMAGE`        | `tau-sandbox:latest`                  | Docker image for sandbox pods                                                                                                                   |
+| `FICUS_K8S_RUNTIME_CLASS`    | `sysbox-runc`                         | K8s RuntimeClass for sandbox pods. Set to `""` to disable                                                                                       |
+| `FICUS_ENCRYPTION_KEY`       | (required)                            | 64-char hex key for encrypting secrets in DB                                                                                                    |
+| `DATABASE_URL`               | (required)                            | PostgreSQL connection string                                                                                                                    |
+| `PORT`                       | `3000`                                | API server port                                                                                                                                 |
+| `WORKER_PORT`                | `3002`                                | Worker RPC port                                                                                                                                 |
+| `WORKER_URL`                 | `http://tau-worker:3002`              | Worker URL (set on API deployment)                                                                                                              |
+| `FICUS_WORKER_EVENT_PORT`    | `3003`                                | Port for the worker's api↔worker event listener (see the note below)                                                                            |
 | `FICUS_INTERNAL_EVENT_TOKEN` | (derived from `FICUS_ENCRYPTION_KEY`) | Shared secret authenticating api↔worker events; must resolve identically in both                                                                |
-| `MAX_CONCURRENT_AGENTS`    | `10`                                | Max concurrent agent runs per worker                                                                                                            |
-| `HOME_DIR`                 | `/data` (K8s), `~/.tau` (local)     | Root directory for all persistent data                                                                                                          |
+| `MAX_CONCURRENT_AGENTS`      | `10`                                  | Max concurrent agent runs per worker                                                                                                            |
+| `HOME_DIR`                   | `/data` (K8s), `~/.tau` (local)       | Root directory for all persistent data                                                                                                          |
 
 > **Cross-process events.** The seven channels documented in
 > [`event-emitter.md`](../event-emitter.md#local-events-channels) travel over an
@@ -265,9 +265,9 @@ kubectl -n tau-sandboxes logs -l app=tau-sandbox       # Sandbox logs
 | `EXECUTOR_PORT`    | `50051`       | HTTP server port            |
 | `EXECUTOR_VERSION` | `0.2.0`       | Reported in `/healthz`      |
 | `WORKSPACE_PATH`   | `/workspace`  | Agent working directory     |
-| `FICUS_SANDBOX_ID`   | (set by Core) | Sandbox identifier          |
-| `FICUS_SQUAD_ID`     | (set by Core) | Squad identifier            |
-| `FICUS_API_URL`      | (set by Core) | Core API URL for Tau CLI    |
+| `FICUS_SANDBOX_ID` | (set by Core) | Sandbox identifier          |
+| `FICUS_SQUAD_ID`   | (set by Core) | Squad identifier            |
+| `FICUS_API_URL`    | (set by Core) | Core API URL for Tau CLI    |
 | `GITHUB_TOKEN`     | (optional)    | Git credential helper token |
 | `GIT_USER_NAME`    | (optional)    | Git commit author name      |
 | `GIT_USER_EMAIL`   | (optional)    | Git commit author email     |
@@ -347,8 +347,8 @@ allowVolumeExpansion: true
 
 Cold sandbox creation is coordinated through PostgreSQL across API and worker processes. Existing fully ready sandboxes remain usable while the circuit is open. Circuit state and cooldown survive process restarts, preventing a restart stampede. Provisioning endpoints return HTTP 503 with `Retry-After` and stable error codes while scheduling is unavailable or capacity is exhausted.
 
-| Variable                              | Default | Description                                                                                 |
-| ------------------------------------- | ------: | ------------------------------------------------------------------------------------------- |
+| Variable                                | Default | Description                                                                                 |
+| --------------------------------------- | ------: | ------------------------------------------------------------------------------------------- |
 | `FICUS_K8S_PROVISION_MAX_CONCURRENT`    |     `4` | Maximum cluster-wide cold or destructive provisioning operations; excess work is not queued |
 | `FICUS_K8S_PROVISION_MAX_WAITERS`       |    `32` | Maximum callers per process sharing one sandbox operation                                   |
 | `FICUS_K8S_PROVISION_FAILURE_THRESHOLD` |     `3` | Qualifying failures required to open the circuit                                            |

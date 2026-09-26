@@ -75,7 +75,10 @@ describe('agent context', () => {
     // dotenv-implicit there too and change ITS resolution (cross-file leakage).
     const dir = await mkdtemp(join(tmpdir(), 'tau-agent-dotenv-'))
     tempDirs.push(dir)
-    await writeFile(join(dir, '.env'), 'FICUS_API_URL=http://127.0.0.1:39991\nFICUS_TOKEN=agent-token-shadowed-by-dotenv\n')
+    await writeFile(
+      join(dir, '.env'),
+      'FICUS_API_URL=http://127.0.0.1:39991\nFICUS_TOKEN=agent-token-shadowed-by-dotenv\n'
+    )
     process.env.FICUS_API_URL = 'http://127.0.0.1:39991'
     process.env.FICUS_TOKEN = 'agent-token-shadowed-by-dotenv'
     loadEnv({ cwd: dir })

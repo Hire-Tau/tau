@@ -30,7 +30,10 @@ export function parseProvisionConfig(env: Environment = process.env): ProvisionC
       env.FICUS_K8S_PROVISION_FAILURE_THRESHOLD,
       DEFAULT_PROVISION_CONFIG.failureThreshold
     ),
-    failureWindowMs: positiveInteger(env.FICUS_K8S_PROVISION_FAILURE_WINDOW_MS, DEFAULT_PROVISION_CONFIG.failureWindowMs),
+    failureWindowMs: positiveInteger(
+      env.FICUS_K8S_PROVISION_FAILURE_WINDOW_MS,
+      DEFAULT_PROVISION_CONFIG.failureWindowMs
+    ),
     cooldownMs: positiveInteger(env.FICUS_K8S_PROVISION_COOLDOWN_MS, DEFAULT_PROVISION_CONFIG.cooldownMs),
   }
 }

@@ -100,12 +100,12 @@ fallback it is `/api/app/<id>/`; without that prefix, root-absolute assets such
 as `/assets/index-*.js` miss the app. Use the same environment variable in both
 modes so the project remains portable. Tell the framework:
 
-| Framework           | Setting                                                                                              |
-| ------------------- | ---------------------------------------------------------------------------------------------------- |
+| Framework           | Setting                                                                                                  |
+| ------------------- | -------------------------------------------------------------------------------------------------------- |
 | Vite                | `base` — flag `--base $FICUS_APP_BASE_PATH`, or `base: process.env.FICUS_APP_BASE_PATH` in `vite.config` |
-| Next.js             | `basePath: process.env.FICUS_APP_BASE_PATH?.replace(/\/$/, '')`                                        |
-| Create React App    | `PUBLIC_URL=$FICUS_APP_BASE_PATH`                                                                      |
-| Plain static/server | emit RELATIVE asset URLs (`./assets/…`), or prefix them with the base path                           |
+| Next.js             | `basePath: process.env.FICUS_APP_BASE_PATH?.replace(/\/$/, '')`                                          |
+| Create React App    | `PUBLIC_URL=$FICUS_APP_BASE_PATH`                                                                        |
+| Plain static/server | emit RELATIVE asset URLs (`./assets/…`), or prefix them with the base path                               |
 
 Symptom when this is wrong: the app's root URL returns 200 and renders a blank
 page, and the browser console shows 404s (or Tau's own HTML) for every

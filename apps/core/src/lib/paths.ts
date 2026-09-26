@@ -15,7 +15,9 @@ import { expandTilde } from '@ficus/shared/node'
 // left in a repo-root `.env` would otherwise redirect every config path
 // wherever the process happened to be started from.
 const inferredMonorepoRoot = join(process.cwd().split('apps/core')[0])
-export const MONOREPO_ROOT = process.env.FICUS_ROOT ? resolve(expandTilde(process.env.FICUS_ROOT)) : inferredMonorepoRoot
+export const MONOREPO_ROOT = process.env.FICUS_ROOT
+  ? resolve(expandTilde(process.env.FICUS_ROOT))
+  : inferredMonorepoRoot
 export const CONFIG_DIR = join(MONOREPO_ROOT, 'config')
 
 export const AGENT_DIR = join(CONFIG_DIR, 'agent')

@@ -144,10 +144,10 @@ The exe provider reads the image ref from `getExeMachineImage()`
 (`provider-credentials.ts`), which resolves `FICUS_EXE_MACHINE_IMAGE`:
 
 | `FICUS_EXE_MACHINE_IMAGE` | Behavior                                                                                                      |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **unset**               | `ghcr.io/ficushq/ficus-machine:latest` (`DEFAULT_EXE_MACHINE_IMAGE`) — the default.                           |
-| a value                 | that image ref (a tenant override, e.g. a pinned `sha-<short>` tag).                                          |
-| **empty string**        | `undefined` ⇒ the provider omits `--image`, so exe boots its own default exeuntu image. The explicit opt-out. |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **unset**                 | `ghcr.io/ficushq/ficus-machine:latest` (`DEFAULT_EXE_MACHINE_IMAGE`) — the default.                           |
+| a value                   | that image ref (a tenant override, e.g. a pinned `sha-<short>` tag).                                          |
+| **empty string**          | `undefined` ⇒ the provider omits `--image`, so exe boots its own default exeuntu image. The explicit opt-out. |
 
 The provider passes the resolved image on **every** provision:
 `ExeApi.createVm({ name, image })` appends `--image <ref>` to `new` (VERIFIED
@@ -194,8 +194,8 @@ path, VM/image names, credentials, or raw command arguments.
 **Operator overrides (no redeploy).** Because 20s is a bound rather than a
 measurement, each class's deadline can be widened on a running instance:
 
-| Env var                           | Class     |
-| --------------------------------- | --------- |
+| Env var                             | Class     |
+| ----------------------------------- | --------- |
 | `FICUS_EXE_EXEC_CREATE_TIMEOUT_MS`  | `create`  |
 | `FICUS_EXE_EXEC_DESTROY_TIMEOUT_MS` | `destroy` |
 | `FICUS_EXE_EXEC_LIST_TIMEOUT_MS`    | `list`    |

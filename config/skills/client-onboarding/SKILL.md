@@ -193,7 +193,7 @@ tau channel list                      # Channel instances exist
 
 | Secret                              | Required    | Purpose                                                                          |
 | ----------------------------------- | ----------- | -------------------------------------------------------------------------------- |
-| `FICUS_PASSWORD`                      | Yes         | Web UI / API authentication                                                      |
+| `FICUS_PASSWORD`                    | Yes         | Web UI / API authentication                                                      |
 | GitHub integration connection       | If GitHub   | Authorize an account and assign it to the squad                                  |
 | GitHub integration webhook settings | Optional    | Direct webhook signature verification                                            |
 | Linear integration webhook settings | If Linear   | Webhook signature verification (legacy `LINEAR_WEBHOOK_SECRET` is imported once) |

@@ -33,10 +33,10 @@ After changing server environment settings, restart the local installation with 
 
 ## Data and required settings
 
-| Setting                    | Meaning                                                                                                                                 |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`             | PostgreSQL connection for this instance. Setup writes the connection for its managed container, or uses your explicit `--database-url`. |
-| `HOME_DIR`                 | Root for Tau's local data. Normally `~/.tau`; named installs default to `~/.tau-<label>`. Prefer an absolute path.                      |
+| Setting                      | Meaning                                                                                                                                 |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`               | PostgreSQL connection for this instance. Setup writes the connection for its managed container, or uses your explicit `--database-url`. |
+| `HOME_DIR`                   | Root for Tau's local data. Normally `~/.tau`; named installs default to `~/.tau-<label>`. Prefer an absolute path.                      |
 | `FICUS_SANDBOX_RUNTIME`      | Required: `host`, `docker-socket`, `docker-sysbox`, `vm` or `k8s`. No implicit default.                                                 |
 | `FICUS_ENCRYPTION_KEY`       | A 32-byte hex key used to encrypt credentials in the database. Setup generates it only when missing. Preserve it with backups.          |
 | `FICUS_INTERNAL_EVENT_TOKEN` | Shared authentication for communication between the API and worker. Setup writes a matching value for the instance.                     |
@@ -46,14 +46,14 @@ Changing `HOME_DIR` or `DATABASE_URL` selects different storage; it does not mov
 
 ## Browser addresses and ports
 
-| Setting                 | Meaning and local behavior                                                                                                                    |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                  | API and built-in web port; fresh local setup uses 3000.                                                                                       |
-| `HOST`                  | API bind address. Outside Kubernetes, the default is `127.0.0.1`; setting it can expose the listener beyond the local machine.                |
-| `WORKER_PORT`           | Worker HTTP port; setup derives the API port plus 2. Not the browser entrypoint.                                                              |
+| Setting                   | Meaning and local behavior                                                                                                                    |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                    | API and built-in web port; fresh local setup uses 3000.                                                                                       |
+| `HOST`                    | API bind address. Outside Kubernetes, the default is `127.0.0.1`; setting it can expose the listener beyond the local machine.                |
+| `WORKER_PORT`             | Worker HTTP port; setup derives the API port plus 2. Not the browser entrypoint.                                                              |
 | `FICUS_WORKER_BIND`       | Worker bind address. Overrides `HOST`; otherwise the worker defaults to loopback outside Kubernetes.                                          |
 | `FICUS_WORKER_EVENT_PORT` | Internal event port; setup derives the API port plus 3.                                                                                       |
-| `APP_URL`               | User-facing application URL, including links Tau generates. Local setup uses `http://localhost:<port>`.                                       |
+| `APP_URL`                 | User-facing application URL, including links Tau generates. Local setup uses `http://localhost:<port>`.                                       |
 | `FICUS_WEB_ORIGIN`        | Exact browser origin for passkeys and browser access policy: `scheme://host[:port]`, with no path.                                            |
 | `FICUS_API_URL`           | API address used by clients and runtime connections. Keep it reachable from the components that use it.                                       |
 | `FICUS_SERVE_WEB`         | `1`, `true` or `yes` serves the built web app from Core. `0`, `false` or `no` disables it. If unset, Core serves it only when a build exists. |

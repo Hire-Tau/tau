@@ -64,8 +64,8 @@ worker boot, tau re-materializes every granted squad's SSH config once
 
 An agent shell is one the runtime gave a scoped token. Those shells get:
 
-| Variable            | Value                                                                      |
-| ------------------- | -------------------------------------------------------------------------- |
+| Variable              | Value                                                                      |
+| --------------------- | -------------------------------------------------------------------------- |
 | `FICUS_API_URL`       | This instance, `http://127.0.0.1:<PORT>` — never another one               |
 | `FICUS_TOKEN`         | The agent's own scoped token                                               |
 | `FICUS_AUTH_STORE`    | `<HOME_DIR>/host/cli-auth/<agentId>.json` (`anonymous.json` with no agent) |

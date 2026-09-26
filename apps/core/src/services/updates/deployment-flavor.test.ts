@@ -16,7 +16,9 @@ describe('detectDeploymentFlavor', () => {
   })
 
   it('env override wins over ambient signals and ignores invalid values', () => {
-    expect(detectDeploymentFlavor({ env: { FICUS_UPDATE_SUPERVISOR: 'systemd', pm_id: '0' } }).supervisor).toBe('systemd')
+    expect(detectDeploymentFlavor({ env: { FICUS_UPDATE_SUPERVISOR: 'systemd', pm_id: '0' } }).supervisor).toBe(
+      'systemd'
+    )
     expect(detectDeploymentFlavor({ env: { FICUS_UPDATE_SUPERVISOR: 'launchd' } }).supervisor).toBe('launchd')
     expect(detectDeploymentFlavor({ env: { FICUS_UPDATE_SUPERVISOR: 'systemd-user' } }).supervisor).toBe('systemd-user')
   })
@@ -24,9 +26,9 @@ describe('detectDeploymentFlavor', () => {
   it('maps sandbox runtime envs', () => {
     // k3d-local — the one flavor whose sandbox image is rebuilt/imported
     // locally (bun run k3d:import) — is the k8s runtime PLUS FICUS_K8S_LOCAL.
-    expect(detectDeploymentFlavor({ env: { FICUS_SANDBOX_RUNTIME: 'k8s', FICUS_K8S_LOCAL: 'true' } }).sandboxRuntime).toBe(
-      'k3d-local'
-    )
+    expect(
+      detectDeploymentFlavor({ env: { FICUS_SANDBOX_RUNTIME: 'k8s', FICUS_K8S_LOCAL: 'true' } }).sandboxRuntime
+    ).toBe('k3d-local')
     // FICUS_K8S_LOCAL on its own names no runtime the core would boot on, so it
     // labels nothing (it used to short-circuit to k3d-local before the runtime
     // was even read).
@@ -56,15 +58,16 @@ describe('detectDeploymentFlavor', () => {
     // left FICUS_K8S_LOCAL=true in .env. FICUS_K8S_LOCAL used to be read BEFORE the
     // runtime, so the install stayed labelled k3d-local and the in-app updater
     // planned `bun run k3d:import` on every update. The runtime decides.
-    expect(detectDeploymentFlavor({ env: { FICUS_SANDBOX_RUNTIME: 'host', FICUS_K8S_LOCAL: 'true' } }).sandboxRuntime).toBe(
-      'host'
-    )
     expect(
-      detectDeploymentFlavor({ env: { FICUS_SANDBOX_RUNTIME: 'docker-sysbox', FICUS_K8S_LOCAL: 'true' } }).sandboxRuntime
+      detectDeploymentFlavor({ env: { FICUS_SANDBOX_RUNTIME: 'host', FICUS_K8S_LOCAL: 'true' } }).sandboxRuntime
+    ).toBe('host')
+    expect(
+      detectDeploymentFlavor({ env: { FICUS_SANDBOX_RUNTIME: 'docker-sysbox', FICUS_K8S_LOCAL: 'true' } })
+        .sandboxRuntime
     ).toBe('docker-sysbox')
-    expect(detectDeploymentFlavor({ env: { FICUS_SANDBOX_RUNTIME: 'vm', FICUS_K8S_LOCAL: 'true' } }).sandboxRuntime).toBe(
-      'vm'
-    )
+    expect(
+      detectDeploymentFlavor({ env: { FICUS_SANDBOX_RUNTIME: 'vm', FICUS_K8S_LOCAL: 'true' } }).sandboxRuntime
+    ).toBe('vm')
   })
 
   it('trims whitespace around FICUS_SANDBOX_RUNTIME before matching, like the boot guard', () => {

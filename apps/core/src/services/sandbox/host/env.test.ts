@@ -341,7 +341,9 @@ describe('host env', () => {
     expect(pre).toContain('FICUS_AGENT_CONTEXT="1"')
     expect(pre).toContain(`FICUS_AGENT_ID="$${names.agent}"`)
     expect(pre.indexOf(`unset ${names.url}`)).toBeGreaterThan(exportIndex)
-    expect(pre).toContain('FICUS_IDENTITY_API_URL FICUS_IDENTITY_TOKEN FICUS_IDENTITY_AUTH_STORE FICUS_IDENTITY_AGENT_ID')
+    expect(pre).toContain(
+      'FICUS_IDENTITY_API_URL FICUS_IDENTITY_TOKEN FICUS_IDENTITY_AUTH_STORE FICUS_IDENTITY_AGENT_ID'
+    )
   })
 
   test('buildHostPreamble uses fresh snapshot names on every command', () => {

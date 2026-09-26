@@ -128,14 +128,14 @@ checkout.
 `host` is the cheapest way to try tau next to an install you already run, but
 the two share a machine, so everything they both hold has to be moved apart:
 
-| Knob                       | Why                                                             |
-| -------------------------- | --------------------------------------------------------------- |
-| `PORT`                     | API/web port (3000 by default)                                  |
+| Knob                         | Why                                                             |
+| ---------------------------- | --------------------------------------------------------------- |
+| `PORT`                       | API/web port (3000 by default)                                  |
 | `FICUS_WORKER_EVENT_PORT`    | the worker's loopback listener (3003 by default)                |
 | `FICUS_INTERNAL_EVENT_TOKEN` | must match between _this_ api and worker; give the pair its own |
-| `DATABASE_URL`             | its own database                                                |
-| `HOME_DIR`                 | its own data root (`~` ok) — agents run on this machine         |
-| `APP_URL`                  | so notification links point at the right instance               |
+| `DATABASE_URL`               | its own database                                                |
+| `HOME_DIR`                   | its own data root (`~` ok) — agents run on this machine         |
+| `APP_URL`                    | so notification links point at the right instance               |
 
 A second database in the same Postgres container, then migrate it:
 

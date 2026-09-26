@@ -10,8 +10,8 @@ The `tau` CLI is the primary interface for interacting with the Tau API. It cove
 
 ## Environment Variables
 
-| Variable         | Description                                                                                       | Default                 |
-| ---------------- | ------------------------------------------------------------------------------------------------- | ----------------------- |
+| Variable           | Description                                                                                       | Default                 |
+| ------------------ | ------------------------------------------------------------------------------------------------- | ----------------------- |
 | `FICUS_API_URL`    | URL of the Tau API server                                                                         | `http://localhost:3000` |
 | `FICUS_TOKEN`      | Scoped agent token or other explicitly supplied token                                             | —                       |
 | `FICUS_PASSWORD`   | Explicit human credential; legacy `/etc/tau/password` fallback applies only outside agent context | —                       |

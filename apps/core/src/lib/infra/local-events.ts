@@ -188,7 +188,8 @@ export function workerPeerUrl(): string {
  */
 export function apiPeerUrl(): string {
   return (
-    process.env.FICUS_API_EVENT_URL?.trim() || `http://localhost:${port('PORT', DEFAULT_API_PORT)}${INTERNAL_EVENTS_PATH}`
+    process.env.FICUS_API_EVENT_URL?.trim() ||
+    `http://localhost:${port('PORT', DEFAULT_API_PORT)}${INTERNAL_EVENTS_PATH}`
   )
 }
 

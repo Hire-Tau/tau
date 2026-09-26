@@ -45,7 +45,9 @@ export async function runSshKeygenCompat(args: string[], deps: GitSigningDepende
   }
   const squadId = deps.env.FICUS_GIT_SIGNING_SQUAD
   if (!squadId) {
-    deps.stderr('tau: commit signing is only available through the squad git wrapper (FICUS_GIT_SIGNING_SQUAD is unset)')
+    deps.stderr(
+      'tau: commit signing is only available through the squad git wrapper (FICUS_GIT_SIGNING_SQUAD is unset)'
+    )
     return 1
   }
   const file = files[0]!

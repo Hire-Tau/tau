@@ -82,7 +82,9 @@ function targetSuffix(value: string | undefined): string {
  */
 export function checkMigrationSafety(input: MigrationSafetyInput): MigrationSafetyResult {
   if (input.liveEnvValue !== undefined && input.liveEnvValue !== '1') {
-    throw new Error('FICUS_MIGRATE_LIVE must be exactly 1 when set. Remove it, set FICUS_MIGRATE_LIVE=1, or pass --live.')
+    throw new Error(
+      'FICUS_MIGRATE_LIVE must be exactly 1 when set. Remove it, set FICUS_MIGRATE_LIVE=1, or pass --live.'
+    )
   }
 
   const hasLiveFlag = input.argv.includes('--live')

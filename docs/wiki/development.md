@@ -147,43 +147,43 @@ ports.
 
 ## Scripts
 
-| Command                                 | Description                                                                   |
-| --------------------------------------- | ----------------------------------------------------------------------------- |
-| `bun run setup`                         | Install/refresh this checkout into a running instance                         |
-| `bun run start`                         | Legacy PM2 path: start Compose and the configured ecosystem apps              |
-| `bun run stop`                          | Legacy PM2 path: stop the ecosystem and run Compose down                      |
-| `bun run dev`                           | Start API, worker and Vite in watch/dev mode; no generated dev access token   |
-| `bun run build`                         | Build all packages                                                            |
-| `bun run build:cli`                     | Compile the CLI binary                                                        |
-| `bun run test`                          | Prepare this worktree’s test DB, then run configured package test entrypoints |
+| Command                                   | Description                                                                   |
+| ----------------------------------------- | ----------------------------------------------------------------------------- |
+| `bun run setup`                           | Install/refresh this checkout into a running instance                         |
+| `bun run start`                           | Legacy PM2 path: start Compose and the configured ecosystem apps              |
+| `bun run stop`                            | Legacy PM2 path: stop the ecosystem and run Compose down                      |
+| `bun run dev`                             | Start API, worker and Vite in watch/dev mode; no generated dev access token   |
+| `bun run build`                           | Build all packages                                                            |
+| `bun run build:cli`                       | Compile the CLI binary                                                        |
+| `bun run test`                            | Prepare this worktree’s test DB, then run configured package test entrypoints |
 | `FICUS_MIGRATE_LIVE=1 bun run db:migrate` | Deliberately migrate the root `.env` database                                 |
-| `bun run db:generate`                   | Generate migration files from schema changes                                  |
-| `bun run logs`                          | Tail pm2 service logs                                                         |
-| `bun run pm2:status`                    | Show pm2 process status                                                       |
-| `bun run pm2:restart`                   | Restart the apps in this checkout’s PM2 ecosystem                             |
-| `bun run lint`                          | Lint all packages with ESLint                                                 |
-| `bun run format`                        | ESLint `--fix` plus Prettier over markdown                                    |
-| `bun run typecheck`                     | Type-check all packages                                                       |
-| `bun run submodules`                    | Initialize/update git submodules (extensions, etc.)                           |
-| `bun run sandbox:build:docker`          | Rebuild the Docker sandbox image (sysbox/socket mode)                         |
-| `bun run sandbox:kill <id>`             | Kill a sandbox container so it restarts next run                              |
-| `bun run sandbox:build:k8s`             | Build the K8s sandbox image                                                   |
-| `bun run k3d:setup`                     | Create local k3d cluster for K8s sandbox dev                                  |
-| `bun run k3d:start`                     | Start a stopped k3d cluster                                                   |
-| `bun run k3d:stop`                      | Stop the k3d cluster (preserves state)                                        |
-| `bun run k3d:status`                    | Show cluster status, pods, PVC                                                |
-| `bun run k3d:pods`                      | List sandbox pods                                                             |
-| `bun run k3d:logs`                      | Tail logs from a sandbox pod                                                  |
-| `bun run k3d:shell`                     | Shell into a sandbox pod                                                      |
-| `bun run k3d:kill`                      | Kill sandbox pods (recreated on next use)                                     |
-| `bun run k3d:import`                    | Rebuild sandbox image and import into k3d                                     |
-| `bun run k3d:teardown`                  | Delete the k3d cluster entirely                                               |
-| `bun run docker:gc`                     | Reclaim dev docker disk (orphaned test DBs, registry)                         |
-| `bun run docker:gc -- --install`        | Install the daily 13:00 launchd job for the above                             |
-| `bun run core:build`                    | Build the Core Docker image (API + worker + web)                              |
-| `bun run ecr:login`                     | Log in to AWS ECR (required before push)                                      |
-| `bun run ecr:push`                      | Build and push both images to ECR                                             |
-| `bun run deploy`                        | Full deploy: build, push to ECR, restart K8s                                  |
+| `bun run db:generate`                     | Generate migration files from schema changes                                  |
+| `bun run logs`                            | Tail pm2 service logs                                                         |
+| `bun run pm2:status`                      | Show pm2 process status                                                       |
+| `bun run pm2:restart`                     | Restart the apps in this checkout’s PM2 ecosystem                             |
+| `bun run lint`                            | Lint all packages with ESLint                                                 |
+| `bun run format`                          | ESLint `--fix` plus Prettier over markdown                                    |
+| `bun run typecheck`                       | Type-check all packages                                                       |
+| `bun run submodules`                      | Initialize/update git submodules (extensions, etc.)                           |
+| `bun run sandbox:build:docker`            | Rebuild the Docker sandbox image (sysbox/socket mode)                         |
+| `bun run sandbox:kill <id>`               | Kill a sandbox container so it restarts next run                              |
+| `bun run sandbox:build:k8s`               | Build the K8s sandbox image                                                   |
+| `bun run k3d:setup`                       | Create local k3d cluster for K8s sandbox dev                                  |
+| `bun run k3d:start`                       | Start a stopped k3d cluster                                                   |
+| `bun run k3d:stop`                        | Stop the k3d cluster (preserves state)                                        |
+| `bun run k3d:status`                      | Show cluster status, pods, PVC                                                |
+| `bun run k3d:pods`                        | List sandbox pods                                                             |
+| `bun run k3d:logs`                        | Tail logs from a sandbox pod                                                  |
+| `bun run k3d:shell`                       | Shell into a sandbox pod                                                      |
+| `bun run k3d:kill`                        | Kill sandbox pods (recreated on next use)                                     |
+| `bun run k3d:import`                      | Rebuild sandbox image and import into k3d                                     |
+| `bun run k3d:teardown`                    | Delete the k3d cluster entirely                                               |
+| `bun run docker:gc`                       | Reclaim dev docker disk (orphaned test DBs, registry)                         |
+| `bun run docker:gc -- --install`          | Install the daily 13:00 launchd job for the above                             |
+| `bun run core:build`                      | Build the Core Docker image (API + worker + web)                              |
+| `bun run ecr:login`                       | Log in to AWS ECR (required before push)                                      |
+| `bun run ecr:push`                        | Build and push both images to ECR                                             |
+| `bun run deploy`                          | Full deploy: build, push to ECR, restart K8s                                  |
 
 The PM2 scripts require an installation configured to use PM2 and its ecosystem
 file; they do not manage native launchd/systemd-user services. In particular,

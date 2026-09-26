@@ -2,11 +2,11 @@
 
 Tau can run behind one public hostname in two ways:
 
-| Mode                                       | Pick this when                                                                                                                 |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| Mode                                         | Pick this when                                                                                                                 |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | Built-in single-origin (`FICUS_SERVE_WEB=1`) | You want the simplest self-hosted VM or Docker deploy: `/`, `/api/*`, `/ws`, and `/ws/terminal` all come from Core on `:3000`. |
-| Split-port reverse proxy                   | You want Core on `:3000` and a separately served web build or Vite server on `:5173`.                                          |
-| Kubernetes/CDN split                       | You run the hosted-style Kubernetes topology with separate `tau-api`/`tau-web` deployments and CDN/static hosting.             |
+| Split-port reverse proxy                     | You want Core on `:3000` and a separately served web build or Vite server on `:5173`.                                          |
+| Kubernetes/CDN split                         | You run the hosted-style Kubernetes topology with separate `tau-api`/`tau-web` deployments and CDN/static hosting.             |
 
 ## Built-in single-origin serving
 

@@ -77,7 +77,11 @@ export function loadExplicitSystemLogConfig(env: NodeJS.ProcessEnv = process.env
         },
         containers: {
           api: clean(env.FICUS_SYSTEM_LOG_K8S_API_CONTAINER, 'FICUS_SYSTEM_LOG_K8S_API_CONTAINER', 'tau-api'),
-          worker: clean(env.FICUS_SYSTEM_LOG_K8S_WORKER_CONTAINER, 'FICUS_SYSTEM_LOG_K8S_WORKER_CONTAINER', 'tau-worker'),
+          worker: clean(
+            env.FICUS_SYSTEM_LOG_K8S_WORKER_CONTAINER,
+            'FICUS_SYSTEM_LOG_K8S_WORKER_CONTAINER',
+            'tau-worker'
+          ),
         },
       }
     default:

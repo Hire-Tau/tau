@@ -133,7 +133,9 @@ describe('updates routes', () => {
       updater: {
         ...fakeUpdater(),
         applyInBackground: () => {
-          throw new UnsupportedDeploymentError('Unknown process supervisor; set FICUS_UPDATE_SUPERVISOR=pm2 or =systemd')
+          throw new UnsupportedDeploymentError(
+            'Unknown process supervisor; set FICUS_UPDATE_SUPERVISOR=pm2 or =systemd'
+          )
         },
       },
     })

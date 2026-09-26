@@ -221,7 +221,9 @@ describe('resolveRoot', () => {
     expect(
       resolveRoot({ flag: flagRoot, env: { FICUS_SERVER_ROOT: envRoot }, instance: 'smoke', statePath, cwd: nested })
     ).toBe(flagRoot)
-    expect(resolveRoot({ env: { FICUS_SERVER_ROOT: envRoot }, instance: 'smoke', statePath, cwd: nested })).toBe(envRoot)
+    expect(resolveRoot({ env: { FICUS_SERVER_ROOT: envRoot }, instance: 'smoke', statePath, cwd: nested })).toBe(
+      envRoot
+    )
     expect(resolveRoot({ env: {}, instance: 'smoke', statePath, cwd: nested })).toBe(instRoot)
     // FICUS_INSTANCE is the env form of --instance.
     expect(resolveRoot({ env: { FICUS_INSTANCE: 'smoke' }, statePath, cwd: nested })).toBe(instRoot)

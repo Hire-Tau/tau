@@ -68,7 +68,7 @@ The store has a fixed list of known secret keys used across the application:
 
 | Category      | Keys                                                                                 |
 | ------------- | ------------------------------------------------------------------------------------ |
-| Auth          | `FICUS_PASSWORD`                                                                       |
+| Auth          | `FICUS_PASSWORD`                                                                     |
 | AI Providers  | `OPENAI_API_KEY`, `PROVIDER_AUTH_DATA`                                               |
 | Git           | `GIT_USER_NAME`, `GIT_USER_EMAIL`                                                    |
 | Linear        | `LINEAR_WEBHOOK_SECRET` (legacy; one-time import into integration webhook settings)  |

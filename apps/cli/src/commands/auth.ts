@@ -32,7 +32,10 @@ export function registerAuthCommands(program: Command): void {
     .description('Add or update a labeled Tau backend')
     .option('--label <label>', 'Backend label (alternative to positional label)')
     .option('--api-url <url>', 'Tau Core base URL')
-    .option('--password <password>', 'Tau password/bearer token (prefer FICUS_PASSWORD or prompt to avoid shell history)')
+    .option(
+      '--password <password>',
+      'Tau password/bearer token (prefer FICUS_PASSWORD or prompt to avoid shell history)'
+    )
     .option('--no-switch', 'Do not set this backend as active')
     .action(async (positionalLabel, options) => {
       try {

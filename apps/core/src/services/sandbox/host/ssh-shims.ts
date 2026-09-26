@@ -71,7 +71,12 @@ const TOOL_COMMENTS: Record<SshFamilyTool, string> = {
 
 /** Header + squad-dir read: identical shape for all three tools. */
 function preludeLines(tool: SshFamilyTool): string[] {
-  return ['#!/bin/sh', ...TOOL_COMMENTS[tool].split('\n'), 'SQUAD_DIR=${FICUS_SQUAD_SSH_DIR:-}', 'CFG=$SQUAD_DIR/config']
+  return [
+    '#!/bin/sh',
+    ...TOOL_COMMENTS[tool].split('\n'),
+    'SQUAD_DIR=${FICUS_SQUAD_SSH_DIR:-}',
+    'CFG=$SQUAD_DIR/config',
+  ]
 }
 
 /**

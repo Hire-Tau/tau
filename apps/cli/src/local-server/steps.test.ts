@@ -397,7 +397,11 @@ describe('native supervisor config', () => {
       const byKey = Object.fromEntries(
         computeEnvUpdates(opts({ supervisor, instance: 'smoke' }), secrets).map((u) => [u.key, u])
       )
-      expect(byKey.FICUS_UPDATE_SUPERVISOR).toEqual({ key: 'FICUS_UPDATE_SUPERVISOR', value: supervisor, explicit: true })
+      expect(byKey.FICUS_UPDATE_SUPERVISOR).toEqual({
+        key: 'FICUS_UPDATE_SUPERVISOR',
+        value: supervisor,
+        explicit: true,
+      })
       expect(byKey.FICUS_SYSTEM_LOG_PROVIDER.value).toBe('file')
       expect(byKey.FICUS_LOG_FILE_API.value).toEndWith('/.tau/logs/tau-smoke-api.log')
       expect(byKey.FICUS_LOG_FILE_WORKER.value).toEndWith('/.tau/logs/tau-smoke-worker.log')
