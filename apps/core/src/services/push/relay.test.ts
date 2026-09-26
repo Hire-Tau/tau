@@ -1,6 +1,6 @@
-import { expect, test } from 'bun:test'
+import { expect, spyOn, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
-import { pushRelayConfig, sendRelayAlert } from './relay'
+import { pushRelayConfig, resolvePushRelayBaseUrl, sendRelayAlert } from './relay'
 const token = `tau_pri_${randomUUID()}_${'a'.repeat(43)}`
 const config = pushRelayConfig({ TAU_PUSH_RELAY_TOKEN: token })!
 
@@ -84,4 +84,72 @@ test('account tokens and malformed credentials cannot configure the relay', () =
   expect(() => pushRelayConfig({ TAU_PUSH_RELAY_TOKEN: 'tau_pat_account-token' })).toThrow('push-only')
   expect(pushRelayConfig({})).toBeNull()
   expect(config.instanceId).toHaveLength(36)
+})
+
+test('resolvePushRelayBaseUrl prefers TAU_PUSH_RELAY_URL, then TAU_PLATFORM_BASE_URL, then the built-in default', () => {
+  expect(
+    resolvePushRelayBaseUrl({
+      TAU_PUSH_RELAY_URL: 'https://relay.example',
+      TAU_PLATFORM_BASE_URL: 'https://platform.example',
+    })
+  ).toBe('https://relay.example')
+  expect(resolvePushRelayBaseUrl({ TAU_PLATFORM_BASE_URL: 'https://platform.example' })).toBe(
+    'https://platform.example'
+  )
+  expect(resolvePushRelayBaseUrl({})).toBe('https://hiretau.ai')
+})
+
+test('resolvePushRelayBaseUrl trims whitespace and a trailing slash', () => {
+  expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: '  https://relay.example/  ' })).toBe('https://relay.example')
+})
+
+test('resolvePushRelayBaseUrl allows http only for localhost origins', () => {
+  expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: 'http://localhost:4000' })).toBe('http://localhost:4000')
+  expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: 'http://127.0.0.1:4000' })).toBe('http://127.0.0.1:4000')
+  expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: 'http://[::1]:4000' })).toBe('http://[::1]:4000')
+
+  const warn = spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: 'http://relay.example' })).toBe('https://hiretau.ai')
+  } finally {
+    warn.mockRestore()
+  }
+})
+
+test('resolvePushRelayBaseUrl rejects a path, query, fragment, or malformed value and falls back to the default, warning once per distinct bad value', () => {
+  const warn = spyOn(console, 'warn').mockImplementation(() => {})
+  try {
+    for (const bad of [
+      'https://relay.example/api',
+      'https://relay.example?x=1',
+      'https://relay.example#frag',
+      'not a url',
+    ]) {
+      expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: bad })).toBe('https://hiretau.ai')
+    }
+    expect(warn).toHaveBeenCalledTimes(4)
+
+    warn.mockClear()
+    expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: 'https://relay.example/api' })).toBe('https://hiretau.ai')
+    expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: 'https://relay.example/api' })).toBe('https://hiretau.ai')
+    expect(warn).not.toHaveBeenCalled()
+  } finally {
+    warn.mockRestore()
+  }
+})
+
+test('sendRelayAlert posts to the resolved base URL, not the built-in default', async () => {
+  const overriddenConfig = pushRelayConfig({
+    TAU_PUSH_RELAY_TOKEN: token,
+    TAU_PUSH_RELAY_URL: 'https://relay.example',
+  })!
+  expect(overriddenConfig.baseUrl).toBe('https://relay.example')
+
+  let requestedUrl = ''
+  const fetcher = (async (url, _init) => {
+    requestedUrl = url
+    return Response.json({ accepted: true })
+  }) as (url: string, init: RequestInit) => Promise<Response>
+  await sendRelayAlert(`tau_prd_${'b'.repeat(43)}`, {}, { config: overriddenConfig, fetch: fetcher })
+  expect(requestedUrl).toBe('https://relay.example/api/push-relay/send')
 })
