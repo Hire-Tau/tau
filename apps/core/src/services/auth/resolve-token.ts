@@ -91,12 +91,12 @@ export async function resolveTokenContext(token: string): Promise<AuthContext | 
     }
   }
 
-  // 3. Check TAU_PASSWORD (legacy auth, only while no admin user has a passkey).
+  // 3. Check FICUS_PASSWORD (legacy auth, only while no admin user has a passkey).
   // Gating on "no usable admin credential" rather than "no admin user" lets the
   // env-held bootstrap password recover a cross-subdomain restore, where the
   // admin/role rows survive but every origin-bound WebAuthn credential is dead.
   const secretStore = getSecretStore()
-  const tauPassword = secretStore.get('TAU_PASSWORD')
+  const tauPassword = secretStore.get('FICUS_PASSWORD')
   if (tauPassword) {
     const tokenDigest = Buffer.from(tokenHash, 'hex')
     const passwordDigest = Buffer.from(hashToken(tauPassword), 'hex')

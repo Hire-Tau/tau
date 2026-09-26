@@ -5,7 +5,7 @@
  */
 
 import { createHmac, timingSafeEqual } from 'crypto'
-import { TAU_SLASH_COMMANDS } from '../../lib/channels'
+import { FICUS_SLASH_COMMANDS } from '../../lib/channels'
 import type { ChannelProvider, ChannelEvent, ThreadMessage, PostMessageResult, ChannelAttachment } from '../provider'
 import { Image, type ImageContent } from '../../entities/Image'
 import { createLogger } from '../../lib/infra/logger'
@@ -494,9 +494,9 @@ export const slackProvider: ChannelProvider = {
       const parts = text.split(/\s+/)
       const firstWord = parts[0]?.toLowerCase() || 'ask'
 
-      const command = (TAU_SLASH_COMMANDS as readonly string[]).includes(firstWord) ? firstWord : 'ask'
+      const command = (FICUS_SLASH_COMMANDS as readonly string[]).includes(firstWord) ? firstWord : 'ask'
       const content =
-        command === 'ask' && !(TAU_SLASH_COMMANDS as readonly string[]).includes(firstWord)
+        command === 'ask' && !(FICUS_SLASH_COMMANDS as readonly string[]).includes(firstWord)
           ? text
           : parts.slice(1).join(' ')
 

@@ -116,7 +116,7 @@ instance to the CLI auth store, then select its label when starting Vite:
 
 ```bash
 tau auth login cloud --api-url https://your-instance.ficus.sh
-TAU_DEV_BACKEND=cloud bun run dev:web
+FICUS_DEV_BACKEND=cloud bun run dev:web
 ```
 
 The dev server keeps the paired device token on the server side and proxies both
@@ -128,14 +128,14 @@ to off whenever the backend changes or Vite restarts.
 
 `bun run dev:web` also prints a one-time dev access token. The browser prompts
 for it before serving the app or proxying any API or WebSocket traffic, then
-stores it in an HttpOnly session cookie. Set `TAU_DEV_ACCESS_TOKEN` to a value of
+stores it in an HttpOnly session cookie. Set `FICUS_DEV_ACCESS_TOKEN` to a value of
 at least 16 characters when a stable shared token is needed. The Vite server
 serves plain HTTP, so only expose it through an encrypted transport. Do not use
 `VITE_TAU_API_URL` for this workflow; a direct browser connection cannot safely
 reuse the production instance's cookie/passkey session.
 
 To serve the UI from the core itself instead, run `bun run build:web` and start
-the core with `TAU_SERVE_WEB=1`; the app, `/api/*` and `/ws` are then all on
+the core with `FICUS_SERVE_WEB=1`; the app, `/api/*` and `/ws` are then all on
 `PORT` (this is what setup configures).
 
 The installed services and the foreground dev processes are separate.
@@ -147,43 +147,43 @@ ports.
 
 ## Scripts
 
-| Command                                 | Description                                                                   |
-| --------------------------------------- | ----------------------------------------------------------------------------- |
-| `bun run setup`                         | Install/refresh this checkout into a running instance                         |
-| `bun run start`                         | Legacy PM2 path: start Compose and the configured ecosystem apps              |
-| `bun run stop`                          | Legacy PM2 path: stop the ecosystem and run Compose down                      |
-| `bun run dev`                           | Start API, worker and Vite in watch/dev mode; no generated dev access token   |
-| `bun run build`                         | Build all packages                                                            |
-| `bun run build:cli`                     | Compile the CLI binary                                                        |
-| `bun run test`                          | Prepare this worktree’s test DB, then run configured package test entrypoints |
-| `TAU_MIGRATE_LIVE=1 bun run db:migrate` | Deliberately migrate the root `.env` database                                 |
-| `bun run db:generate`                   | Generate migration files from schema changes                                  |
-| `bun run logs`                          | Tail pm2 service logs                                                         |
-| `bun run pm2:status`                    | Show pm2 process status                                                       |
-| `bun run pm2:restart`                   | Restart the apps in this checkout’s PM2 ecosystem                             |
-| `bun run lint`                          | Lint all packages with ESLint                                                 |
-| `bun run format`                        | ESLint `--fix` plus Prettier over markdown                                    |
-| `bun run typecheck`                     | Type-check all packages                                                       |
-| `bun run submodules`                    | Initialize/update git submodules (extensions, etc.)                           |
-| `bun run sandbox:build:docker`          | Rebuild the Docker sandbox image (sysbox/socket mode)                         |
-| `bun run sandbox:kill <id>`             | Kill a sandbox container so it restarts next run                              |
-| `bun run sandbox:build:k8s`             | Build the K8s sandbox image                                                   |
-| `bun run k3d:setup`                     | Create local k3d cluster for K8s sandbox dev                                  |
-| `bun run k3d:start`                     | Start a stopped k3d cluster                                                   |
-| `bun run k3d:stop`                      | Stop the k3d cluster (preserves state)                                        |
-| `bun run k3d:status`                    | Show cluster status, pods, PVC                                                |
-| `bun run k3d:pods`                      | List sandbox pods                                                             |
-| `bun run k3d:logs`                      | Tail logs from a sandbox pod                                                  |
-| `bun run k3d:shell`                     | Shell into a sandbox pod                                                      |
-| `bun run k3d:kill`                      | Kill sandbox pods (recreated on next use)                                     |
-| `bun run k3d:import`                    | Rebuild sandbox image and import into k3d                                     |
-| `bun run k3d:teardown`                  | Delete the k3d cluster entirely                                               |
-| `bun run docker:gc`                     | Reclaim dev docker disk (orphaned test DBs, registry)                         |
-| `bun run docker:gc -- --install`        | Install the daily 13:00 launchd job for the above                             |
-| `bun run core:build`                    | Build the Core Docker image (API + worker + web)                              |
-| `bun run ecr:login`                     | Log in to AWS ECR (required before push)                                      |
-| `bun run ecr:push`                      | Build and push both images to ECR                                             |
-| `bun run deploy`                        | Full deploy: build, push to ECR, restart K8s                                  |
+| Command                                   | Description                                                                   |
+| ----------------------------------------- | ----------------------------------------------------------------------------- |
+| `bun run setup`                           | Install/refresh this checkout into a running instance                         |
+| `bun run start`                           | Legacy PM2 path: start Compose and the configured ecosystem apps              |
+| `bun run stop`                            | Legacy PM2 path: stop the ecosystem and run Compose down                      |
+| `bun run dev`                             | Start API, worker and Vite in watch/dev mode; no generated dev access token   |
+| `bun run build`                           | Build all packages                                                            |
+| `bun run build:cli`                       | Compile the CLI binary                                                        |
+| `bun run test`                            | Prepare this worktree’s test DB, then run configured package test entrypoints |
+| `FICUS_MIGRATE_LIVE=1 bun run db:migrate` | Deliberately migrate the root `.env` database                                 |
+| `bun run db:generate`                     | Generate migration files from schema changes                                  |
+| `bun run logs`                            | Tail pm2 service logs                                                         |
+| `bun run pm2:status`                      | Show pm2 process status                                                       |
+| `bun run pm2:restart`                     | Restart the apps in this checkout’s PM2 ecosystem                             |
+| `bun run lint`                            | Lint all packages with ESLint                                                 |
+| `bun run format`                          | ESLint `--fix` plus Prettier over markdown                                    |
+| `bun run typecheck`                       | Type-check all packages                                                       |
+| `bun run submodules`                      | Initialize/update git submodules (extensions, etc.)                           |
+| `bun run sandbox:build:docker`            | Rebuild the Docker sandbox image (sysbox/socket mode)                         |
+| `bun run sandbox:kill <id>`               | Kill a sandbox container so it restarts next run                              |
+| `bun run sandbox:build:k8s`               | Build the K8s sandbox image                                                   |
+| `bun run k3d:setup`                       | Create local k3d cluster for K8s sandbox dev                                  |
+| `bun run k3d:start`                       | Start a stopped k3d cluster                                                   |
+| `bun run k3d:stop`                        | Stop the k3d cluster (preserves state)                                        |
+| `bun run k3d:status`                      | Show cluster status, pods, PVC                                                |
+| `bun run k3d:pods`                        | List sandbox pods                                                             |
+| `bun run k3d:logs`                        | Tail logs from a sandbox pod                                                  |
+| `bun run k3d:shell`                       | Shell into a sandbox pod                                                      |
+| `bun run k3d:kill`                        | Kill sandbox pods (recreated on next use)                                     |
+| `bun run k3d:import`                      | Rebuild sandbox image and import into k3d                                     |
+| `bun run k3d:teardown`                    | Delete the k3d cluster entirely                                               |
+| `bun run docker:gc`                       | Reclaim dev docker disk (orphaned test DBs, registry)                         |
+| `bun run docker:gc -- --install`          | Install the daily 13:00 launchd job for the above                             |
+| `bun run core:build`                      | Build the Core Docker image (API + worker + web)                              |
+| `bun run ecr:login`                       | Log in to AWS ECR (required before push)                                      |
+| `bun run ecr:push`                        | Build and push both images to ECR                                             |
+| `bun run deploy`                          | Full deploy: build, push to ECR, restart K8s                                  |
 
 The PM2 scripts require an installation configured to use PM2 and its ecosystem
 file; they do not manage native launchd/systemd-user services. In particular,
@@ -193,8 +193,8 @@ serves the built web app through Core.
 
 The pm2 scripts (`start:core`, `stop:core`, `reload:api`, `reload:worker`) do not
 hard-code `tau-api` / `tau-worker`: they resolve this checkout's app names with
-`$(bun scripts/pm2-name.ts api|worker)`, which reads `TAU_PM2_API_NAME` /
-`TAU_PM2_WORKER_NAME` from the checkout's `.env`, so they address the right
+`$(bun scripts/pm2-name.ts api|worker)`, which reads `FICUS_PM2_API_NAME` /
+`FICUS_PM2_WORKER_NAME` from the checkout's `.env`, so they address the right
 instance when several are installed
 ([docs/wiki/setup.md → Multiple instances](setup.md#multiple-instances)).
 
@@ -281,12 +281,12 @@ replace validation on the deployment topology you are changing.
 bun run k3d:setup
 
 # Add to your .env:
-TAU_SANDBOX_RUNTIME=k8s
-TAU_K8S_LOCAL=true
-TAU_K8S_NAMESPACE=tau-sandboxes-dev
-TAU_K8S_RUNTIME_CLASS=
+FICUS_SANDBOX_RUNTIME=k8s
+FICUS_K8S_LOCAL=true
+FICUS_K8S_NAMESPACE=tau-sandboxes-dev
+FICUS_K8S_RUNTIME_CLASS=
 # Optional: override sandbox pod memory limit (local default is 8Gi)
-# TAU_SANDBOX_MEMORY_LIMIT=8Gi
+# FICUS_SANDBOX_MEMORY_LIMIT=8Gi
 
 # Installed build: restart using its recorded supervisor
 tau server restart
@@ -338,7 +338,7 @@ bun run docker:gc -- --install  # Install/refresh a daily 13:00 launchd agent
 
 Normal test runs do not sweep other worktrees' database projects. Orphan
 cleanup is explicit through `bun run docker:gc`; the test preload also supports
-the opt-in `TAU_TEST_SWEEP_ORPHANS=1` maintenance path, throttled to at most once
+the opt-in `FICUS_TEST_SWEEP_ORPHANS=1` maintenance path, throttled to at most once
 an hour. A project is eligible only after its owning worktree no longer exists.
 
 For installations that explicitly use PM2, its logs can grow without a

@@ -1363,7 +1363,7 @@ export class Agent extends BaseEntity<AgentJson, UpdateAgentInput> implements Ag
 
   /**
    * Return a usable plaintext agent token for sandbox CLI auth (injected as
-   * TAU_TOKEN into each bash command). Reuses the cached plaintext when present
+   * FICUS_TOKEN into each bash command). Reuses the cached plaintext when present
    * and mints + caches a fresh one on a cache miss (e.g. after a server restart,
    * where only the hash survives in the DB). Squad agents are scoped by their
    * squad; squad-less agents (system-managers) are scoped by their owning user so

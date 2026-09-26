@@ -169,9 +169,9 @@ test('command actions call the exact encoded squad API paths and bodies', async 
   }
 })
 
-test('command actions use TAU_SQUAD_ID when explicit squad is absent', async () => {
-  const prior = process.env.TAU_SQUAD_ID
-  process.env.TAU_SQUAD_ID = 'environment-squad'
+test('command actions use FICUS_SQUAD_ID when explicit squad is absent', async () => {
+  const prior = process.env.FICUS_SQUAD_ID
+  process.env.FICUS_SQUAD_ID = 'environment-squad'
   let path = ''
   const dependencies = {
     apiGet: async (value: string) => {
@@ -189,8 +189,8 @@ test('command actions use TAU_SQUAD_ID when explicit squad is absent', async () 
     await program.parseAsync(['node', 'tau', 'slot', 'list'])
     expect(path).toBe('/api/squads/environment-squad/slots')
   } finally {
-    if (prior === undefined) delete process.env.TAU_SQUAD_ID
-    else process.env.TAU_SQUAD_ID = prior
+    if (prior === undefined) delete process.env.FICUS_SQUAD_ID
+    else process.env.FICUS_SQUAD_ID = prior
   }
 })
 
@@ -272,8 +272,8 @@ test('passes the complete server object to output unchanged', async () => {
 })
 
 test('a command without squad context fails before making an API call', async () => {
-  const prior = process.env.TAU_SQUAD_ID
-  delete process.env.TAU_SQUAD_ID
+  const prior = process.env.FICUS_SQUAD_ID
+  delete process.env.FICUS_SQUAD_ID
   const apiGet = mock(async () => [])
   const dependencies = {
     apiGet,
@@ -292,14 +292,14 @@ test('a command without squad context fails before making an API call', async ()
   } finally {
     error.mockRestore()
     exit.mockRestore()
-    if (prior !== undefined) process.env.TAU_SQUAD_ID = prior
+    if (prior !== undefined) process.env.FICUS_SQUAD_ID = prior
   }
 })
 
 test('resolves explicit squad before environment and errors without either', () => {
   expect(resolveSlotSquadId('explicit', 'environment')).toBe('explicit')
   expect(resolveSlotSquadId(undefined, 'environment')).toBe('environment')
-  expect(() => resolveSlotSquadId(undefined, '')).toThrow(/--squad.*TAU_SQUAD_ID/)
+  expect(() => resolveSlotSquadId(undefined, '')).toThrow(/--squad.*FICUS_SQUAD_ID/)
 })
 
 test('parses bounded slot capacity', () => {

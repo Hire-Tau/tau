@@ -228,8 +228,8 @@ describe('APNs', () => {
     const p8Path = join(dir, 'apns.p8')
     writeFileSync(p8Path, pem)
 
-    process.env.TAU_MANAGED = '1'
-    process.env.TAU_MANAGED_SECRET_KEYS = 'APNS_KEY_P8_FILE,APNS_KEY_ID,APNS_TEAM_ID,APNS_BUNDLE_ID,APNS_ENV'
+    process.env.FICUS_MANAGED = '1'
+    process.env.FICUS_MANAGED_SECRET_KEYS = 'APNS_KEY_P8_FILE,APNS_KEY_ID,APNS_TEAM_ID,APNS_BUNDLE_ID,APNS_ENV'
     process.env.APNS_KEY_P8_FILE = p8Path
     process.env.APNS_KEY_ID = 'KID123'
     process.env.APNS_TEAM_ID = 'TEAM456'
@@ -247,8 +247,8 @@ describe('APNs', () => {
       expect(config?.environment).toBe('sandbox')
       expect(isApnsConfigured()).toBe(true)
     } finally {
-      delete process.env.TAU_MANAGED
-      delete process.env.TAU_MANAGED_SECRET_KEYS
+      delete process.env.FICUS_MANAGED
+      delete process.env.FICUS_MANAGED_SECRET_KEYS
       delete process.env.APNS_KEY_P8_FILE
       delete process.env.APNS_KEY_ID
       delete process.env.APNS_TEAM_ID
@@ -271,8 +271,8 @@ describe('APNs', () => {
     const p8Path = join(dir, 'apns.p8')
     writeFileSync(p8Path, pem)
 
-    process.env.TAU_MANAGED = '1'
-    process.env.TAU_MANAGED_SECRET_KEYS = 'APNS_KEY_P8_FILE,APNS_KEY_ID,APNS_TEAM_ID,APNS_BUNDLE_ID,APNS_ENV'
+    process.env.FICUS_MANAGED = '1'
+    process.env.FICUS_MANAGED_SECRET_KEYS = 'APNS_KEY_P8_FILE,APNS_KEY_ID,APNS_TEAM_ID,APNS_BUNDLE_ID,APNS_ENV'
     process.env.APNS_KEY_P8_FILE = p8Path
     process.env.APNS_KEY_ID = 'KID123'
     process.env.APNS_TEAM_ID = 'TEAM456'
@@ -284,8 +284,8 @@ describe('APNs', () => {
       expect(getSecretStore().get('APNS_KEY_P8')).toBeUndefined()
       expect(getApnsConfig()?.keyP8).toBe(pem)
     } finally {
-      delete process.env.TAU_MANAGED
-      delete process.env.TAU_MANAGED_SECRET_KEYS
+      delete process.env.FICUS_MANAGED
+      delete process.env.FICUS_MANAGED_SECRET_KEYS
       delete process.env.APNS_KEY_P8_FILE
       rmSync(dir, { recursive: true, force: true })
       resetSecretStore()

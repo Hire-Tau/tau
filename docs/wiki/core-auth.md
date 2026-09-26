@@ -1,12 +1,12 @@
 # Core API Authentication
 
-Tau authenticates people with accounts and passkeys, browser sessions, and revocable device tokens. Route permissions govern access to resources. `TAU_PASSWORD` remains a bootstrap/legacy credential while no administrator has a passkey; it is not the normal credential for an established instance.
+Tau authenticates people with accounts and passkeys, browser sessions, and revocable device tokens. Route permissions govern access to resources. `FICUS_PASSWORD` remains a bootstrap/legacy credential while no administrator has a passkey; it is not the normal credential for an established instance.
 
 ## Security Model
 
 User identities resolve permissions from role assignments, including squad-scoped access. Agents and scoped system API tokens have their own identities and authorization rules. Authentication establishes the caller; each protected route also checks authorization.
 
-`TAU_PASSWORD` is read through the [Secret Store](secret-store.md), including deployment configuration. Setup generates it to protect first-admin registration. When configured, the first-user registration flow requires a valid bootstrap-password identity. A bare installation without it permits first-user registration without that bootstrap gate, but protected API routes still require an identity. Removing `TAU_PASSWORD` does not turn off account authentication or open all routes.
+`FICUS_PASSWORD` is read through the [Secret Store](secret-store.md), including deployment configuration. Setup generates it to protect first-admin registration. When configured, the first-user registration flow requires a valid bootstrap-password identity. A bare installation without it permits first-user registration without that bootstrap gate, but protected API routes still require an identity. Removing `FICUS_PASSWORD` does not turn off account authentication or open all routes.
 
 Password login and password bearer authentication stop working once an admin has a passkey. They remain available when admin records exist but no admin has a passkey, such as a restore that removed origin-bound credentials.
 
@@ -74,9 +74,9 @@ The mobile-side UX — QR scan, the `tau://pair` deep link, web auto-detection, 
 
 The raw token is returned exactly once, stored in the CLI auth store with mode `0600`, and listed with mobile tokens under Paired Devices. Platforms are `ios`, `android`, `cli`, or `desktop`; unknown historical values render generically. Paired Devices labels a `desktop` token "Tau Desktop", and the approval screen reads "Approve Tau Desktop sign-in" for a desktop-originated request instead of the CLI wording. Web revocation and default CLI logout both revoke the token. Existing mobile QR payloads and `/pair/start` plus `/pair/claim` contracts are unchanged.
 
-The verification URI a user is told to open is built from `TAU_WEB_ORIGIN` (via `primaryWebOrigin()`), never from the request. Core never terminates TLS — every HTTPS deployment fronts it with caddy/nginx on plain `127.0.0.1` — so deriving the origin from the request would see `http:` and reject its own CLI; and a caller-supplied `Origin` must never be echoed into a URL a human is asked to trust. If `TAU_WEB_ORIGIN` is missing or is not a secure origin, `/device/start` answers `400`.
+The verification URI a user is told to open is built from `FICUS_WEB_ORIGIN` (via `primaryWebOrigin()`), never from the request. Core never terminates TLS — every HTTPS deployment fronts it with caddy/nginx on plain `127.0.0.1` — so deriving the origin from the request would see `http:` and reject its own CLI; and a caller-supplied `Origin` must never be echoed into a URL a human is asked to trust. If `FICUS_WEB_ORIGIN` is missing or is not a secure origin, `/device/start` answers `400`.
 
-Device-start rate limiting keys direct connections by Bun's socket peer address. A **loopback** peer is trusted as a proxy hop implicitly, because a same-host reverse proxy is the standard deployment and without it every caller on the instance shares one bucket. `TAU_TRUSTED_PROXY_ADDRESSES` (comma-separated exact IPs) additionally trusts non-loopback proxies. `X-Forwarded-For` is honored **only** when the peer itself is trusted, so a remote caller cannot forge its way into the chain.
+Device-start rate limiting keys direct connections by Bun's socket peer address. A **loopback** peer is trusted as a proxy hop implicitly, because a same-host reverse proxy is the standard deployment and without it every caller on the instance shares one bucket. `FICUS_TRUSTED_PROXY_ADDRESSES` (comma-separated exact IPs) additionally trusts non-loopback proxies. `X-Forwarded-For` is honored **only** when the peer itself is trusted, so a remote caller cannot forge its way into the chain.
 
 ### Live-connection revocation
 

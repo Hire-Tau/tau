@@ -507,7 +507,7 @@ describe('LocalUpdateManager', () => {
       const run = await updater.apply({ manual: false })
       expect(run.status).toBe('skipped')
       expect(run.supported).toBe(false)
-      expect(run.supportReason).toContain('TAU_UPDATE_SUPERVISOR')
+      expect(run.supportReason).toContain('FICUS_UPDATE_SUPERVISOR')
       expect(run.flavor).toEqual(UNKNOWN_FLAVOR)
     })
 
@@ -690,11 +690,11 @@ describe('cross-process update run lock (real advisory lock)', () => {
 })
 
 // The last thing an update does is restart tau-api and tau-worker, and it
-// rewrites no .env. Since TAU_SANDBOX_RUNTIME became mandatory and explicit,
+// rewrites no .env. Since FICUS_SANDBOX_RUNTIME became mandatory and explicit,
 // an install whose environment never named one comes back from that restart
 // with both services DEAD — after the merge and the build already landed.
 describe('sandboxRuntimeRestartBlocker', () => {
-  const LIST = 'TAU_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host'
+  const LIST = 'FICUS_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host'
   let dir: string
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'tau-update-runtime-'))
@@ -704,12 +704,17 @@ describe('sandboxRuntimeRestartBlocker', () => {
   })
 
   it('allows the restart when the env file names a supported runtime', () => {
+    writeFileSync(join(dir, '.env'), 'DATABASE_URL=postgres://x\nFICUS_SANDBOX_RUNTIME=vm\n')
+    expect(sandboxRuntimeRestartBlocker(join(dir, '.env'), {})).toBeNull()
+  })
+
+  it('reads a pre-rename TAU_SANDBOX_RUNTIME line for one release', () => {
     writeFileSync(join(dir, '.env'), 'DATABASE_URL=postgres://x\nTAU_SANDBOX_RUNTIME=vm\n')
     expect(sandboxRuntimeRestartBlocker(join(dir, '.env'), {})).toBeNull()
   })
 
   it('blocks a legacy spelling, quoting the value and naming the file', () => {
-    writeFileSync(join(dir, '.env'), 'TAU_SANDBOX_RUNTIME=sysbox\n')
+    writeFileSync(join(dir, '.env'), 'FICUS_SANDBOX_RUNTIME=sysbox\n')
     const blocker = sandboxRuntimeRestartBlocker(join(dir, '.env'), {})
     expect(blocker).toContain(LIST)
     expect(blocker).toContain('(got "sysbox")')
@@ -727,11 +732,11 @@ describe('sandboxRuntimeRestartBlocker', () => {
   // from the unit/managed.env instead of the file — so the file wins only when
   // it actually declares the key.
   it('tolerates quotes and falls back to the running process environment', () => {
-    writeFileSync(join(dir, '.env'), 'TAU_SANDBOX_RUNTIME="docker-socket"\n')
-    expect(sandboxRuntimeRestartBlocker(join(dir, '.env'), { TAU_SANDBOX_RUNTIME: 'auto' })).toBeNull()
+    writeFileSync(join(dir, '.env'), 'FICUS_SANDBOX_RUNTIME="docker-socket"\n')
+    expect(sandboxRuntimeRestartBlocker(join(dir, '.env'), { FICUS_SANDBOX_RUNTIME: 'auto' })).toBeNull()
     writeFileSync(join(dir, '.env'), 'DATABASE_URL=postgres://x\n')
-    expect(sandboxRuntimeRestartBlocker(join(dir, '.env'), { TAU_SANDBOX_RUNTIME: 'k8s' })).toBeNull()
-    expect(sandboxRuntimeRestartBlocker(join(dir, '.env'), { TAU_SANDBOX_RUNTIME: 'auto' })).toContain('(got "auto")')
+    expect(sandboxRuntimeRestartBlocker(join(dir, '.env'), { FICUS_SANDBOX_RUNTIME: 'k8s' })).toBeNull()
+    expect(sandboxRuntimeRestartBlocker(join(dir, '.env'), { FICUS_SANDBOX_RUNTIME: 'auto' })).toContain('(got "auto")')
   })
 })
 
@@ -750,7 +755,7 @@ describe('LocalUpdateManager sandbox-runtime preflight', () => {
   it('aborts before the merge when the env file names a retired runtime', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tau-update-preflight-'))
     try {
-      writeFileSync(join(dir, '.env'), 'DATABASE_URL=postgres://x\nTAU_SANDBOX_RUNTIME=auto\n')
+      writeFileSync(join(dir, '.env'), 'DATABASE_URL=postgres://x\nFICUS_SANDBOX_RUNTIME=auto\n')
       let ran = false
       const { updater, calls } = manager({
         repoRoot: dir,
@@ -766,7 +771,7 @@ describe('LocalUpdateManager sandbox-runtime preflight', () => {
         gitResponses: CORE_CHANGE,
       })
       await expect(updater.apply({ manual: true })).rejects.toThrow(
-        'TAU_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host (got "auto")'
+        'FICUS_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host (got "auto")'
       )
       expect(ran).toBe(false)
       // The checkout is untouched: no merge, and no diff against a new head.
@@ -782,7 +787,7 @@ describe('LocalUpdateManager sandbox-runtime preflight', () => {
   it('runs the update when the env file names a supported runtime', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tau-update-preflight-ok-'))
     try {
-      writeFileSync(join(dir, '.env'), 'TAU_SANDBOX_RUNTIME=docker-socket\n')
+      writeFileSync(join(dir, '.env'), 'FICUS_SANDBOX_RUNTIME=docker-socket\n')
       let ran = false
       const { updater } = manager({
         repoRoot: dir,
@@ -814,7 +819,7 @@ describe('LocalUpdateManager sandbox-runtime preflight', () => {
     try {
       // Same broken .env as the aborting case above — the ONLY difference is
       // that a web-only rebuild restarts nothing.
-      writeFileSync(join(dir, '.env'), 'DATABASE_URL=postgres://x\nTAU_SANDBOX_RUNTIME=auto\n')
+      writeFileSync(join(dir, '.env'), 'DATABASE_URL=postgres://x\nFICUS_SANDBOX_RUNTIME=auto\n')
       let ran = false
       const { updater } = manager({
         repoRoot: dir,
@@ -841,7 +846,7 @@ describe('LocalUpdateManager sandbox-runtime preflight', () => {
   it('blocks a targeted rebuild whose plan restarts the services', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'tau-update-preflight-targeted-'))
     try {
-      writeFileSync(join(dir, '.env'), 'DATABASE_URL=postgres://x\nTAU_SANDBOX_RUNTIME=auto\n')
+      writeFileSync(join(dir, '.env'), 'DATABASE_URL=postgres://x\nFICUS_SANDBOX_RUNTIME=auto\n')
       let ran = false
       const { updater } = manager({
         repoRoot: dir,

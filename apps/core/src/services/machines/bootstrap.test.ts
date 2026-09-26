@@ -74,10 +74,10 @@ function makeFakeRunner(handler: (command: string, stdin: string | undefined) =>
 }
 
 const CAPS_LINE =
-  'TAU_CAPS_JSON: {"arch":"aarch64","cpus":8,"memMb":16000,"diskGb":100,"kernel":"6.8.0-generic","docker":"none"}'
+  'FICUS_CAPS_JSON: {"arch":"aarch64","cpus":8,"memMb":16000,"diskGb":100,"kernel":"6.8.0-generic","docker":"none"}'
 
 describe('parseCapabilities', () => {
-  it('parses the final TAU_CAPS_JSON line into typed capabilities', () => {
+  it('parses the final FICUS_CAPS_JSON line into typed capabilities', () => {
     const caps = parseCapabilities(`some noise\n${CAPS_LINE}\n`)
     expect(caps).toEqual({
       arch: 'aarch64',
@@ -89,11 +89,17 @@ describe('parseCapabilities', () => {
     })
   })
 
+  it('also parses the legacy TAU_CAPS_JSON marker that bootstrap.sh still prints (one release)', () => {
+    const caps = parseCapabilities(`some noise\n${CAPS_LINE.replace(/^FICUS_/, 'TAU_')}\n`)
+    expect(caps.arch).toBe('aarch64')
+    expect(caps.cpus).toBe(8)
+  })
+
   it('ignores garbage before the line and apt/install chatter', () => {
     const stdout = [
       'Reading package lists...',
       'Setting up jq (1.7) ...',
-      'TAU_CAPS_JSON: not-json-here',
+      'FICUS_CAPS_JSON: not-json-here',
       'more chatter',
       CAPS_LINE,
     ].join('\n')
@@ -104,19 +110,19 @@ describe('parseCapabilities', () => {
 
   it('picks the LAST valid caps line when several are present', () => {
     const stdout = [
-      'TAU_CAPS_JSON: {"arch":"x86_64","cpus":2,"memMb":2000,"diskGb":20,"kernel":"5.x","docker":"none"}',
+      'FICUS_CAPS_JSON: {"arch":"x86_64","cpus":2,"memMb":2000,"diskGb":20,"kernel":"5.x","docker":"none"}',
       CAPS_LINE,
     ].join('\n')
     expect(parseCapabilities(stdout).arch).toBe('aarch64')
   })
 
   it('throws when no caps line is present', () => {
-    expect(() => parseCapabilities('nothing to see here')).toThrow(/TAU_CAPS_JSON/)
+    expect(() => parseCapabilities('nothing to see here')).toThrow(/FICUS_CAPS_JSON/)
   })
 
   it("parses docker:'rootless' (the capability bootstrap reports once the engine is installed)", () => {
     const line =
-      'TAU_CAPS_JSON: {"arch":"aarch64","cpus":8,"memMb":16000,"diskGb":100,"kernel":"6.8","docker":"rootless","forwarding":"yes"}'
+      'FICUS_CAPS_JSON: {"arch":"aarch64","cpus":8,"memMb":16000,"diskGb":100,"kernel":"6.8","docker":"rootless","forwarding":"yes"}'
     expect(parseCapabilities(line).docker).toBe('rootless')
   })
 
@@ -125,7 +131,7 @@ describe('parseCapabilities', () => {
   // channel a misconfigured host surfaces on.
   it("parses browser:'available' (happy path)", () => {
     const line =
-      'TAU_CAPS_JSON: {"arch":"x86_64","cpus":2,"memMb":2000,"diskGb":20,"kernel":"6.8","docker":"rootless","forwarding":"yes","browser":"available"}'
+      'FICUS_CAPS_JSON: {"arch":"x86_64","cpus":2,"memMb":2000,"diskGb":20,"kernel":"6.8","docker":"rootless","forwarding":"yes","browser":"available"}'
     const caps = parseCapabilities(line)
     expect(caps.browser).toBe('available')
     expect(caps.browserReason).toBeUndefined()
@@ -133,7 +139,7 @@ describe('parseCapabilities', () => {
 
   it("parses browser:'unavailable' with its reason token (softened gate)", () => {
     const line =
-      'TAU_CAPS_JSON: {"arch":"x86_64","cpus":2,"memMb":2000,"diskGb":20,"kernel":"6.8","docker":"rootless","forwarding":"yes","browser":"unavailable","browserReason":"sandbox_check_failed"}'
+      'FICUS_CAPS_JSON: {"arch":"x86_64","cpus":2,"memMb":2000,"diskGb":20,"kernel":"6.8","docker":"rootless","forwarding":"yes","browser":"unavailable","browserReason":"sandbox_check_failed"}'
     const caps = parseCapabilities(line)
     expect(caps.browser).toBe('unavailable')
     expect(caps.browserReason).toBe('sandbox_check_failed')
@@ -419,9 +425,9 @@ describe('bootstrapMachine', () => {
     expect(run.command).not.toContain('--core-cidr')
   })
 
-  it('derives the core CIDRs from TAU_CORE_EGRESS_CIDR (comma/space separated) when not injected', async () => {
-    const prior = process.env.TAU_CORE_EGRESS_CIDR
-    process.env.TAU_CORE_EGRESS_CIDR = '10.20.0.0/16, 198.51.100.9/32'
+  it('derives the core CIDRs from FICUS_CORE_EGRESS_CIDR (comma/space separated) when not injected', async () => {
+    const prior = process.env.FICUS_CORE_EGRESS_CIDR
+    process.env.FICUS_CORE_EGRESS_CIDR = '10.20.0.0/16, 198.51.100.9/32'
     try {
       const { runner, calls } = makeFakeRunner((command) => {
         if (command.startsWith('install ') || command.startsWith('sudo install ')) {
@@ -440,8 +446,8 @@ describe('bootstrapMachine', () => {
       expect(run.command).toContain('10.20.0.0/16')
       expect(run.command).toContain('198.51.100.9/32')
     } finally {
-      if (prior === undefined) delete process.env.TAU_CORE_EGRESS_CIDR
-      else process.env.TAU_CORE_EGRESS_CIDR = prior
+      if (prior === undefined) delete process.env.FICUS_CORE_EGRESS_CIDR
+      else process.env.FICUS_CORE_EGRESS_CIDR = prior
     }
   })
 

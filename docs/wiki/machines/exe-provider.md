@@ -138,16 +138,16 @@ pull the image and provisioning fails at boot. (A future _private_ image would
 instead thread `--registry-auth` from a secret — a documented hook in
 `exe-api.ts` `createVm`, intentionally not built yet.)
 
-### Config: `TAU_EXE_MACHINE_IMAGE`
+### Config: `FICUS_EXE_MACHINE_IMAGE`
 
 The exe provider reads the image ref from `getExeMachineImage()`
-(`provider-credentials.ts`), which resolves `TAU_EXE_MACHINE_IMAGE`:
+(`provider-credentials.ts`), which resolves `FICUS_EXE_MACHINE_IMAGE`:
 
-| `TAU_EXE_MACHINE_IMAGE` | Behavior                                                                                                      |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **unset**               | `ghcr.io/ficushq/ficus-machine:latest` (`DEFAULT_EXE_MACHINE_IMAGE`) — the default.                           |
-| a value                 | that image ref (a tenant override, e.g. a pinned `sha-<short>` tag).                                          |
-| **empty string**        | `undefined` ⇒ the provider omits `--image`, so exe boots its own default exeuntu image. The explicit opt-out. |
+| `FICUS_EXE_MACHINE_IMAGE` | Behavior                                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **unset**                 | `ghcr.io/ficushq/ficus-machine:latest` (`DEFAULT_EXE_MACHINE_IMAGE`) — the default.                           |
+| a value                   | that image ref (a tenant override, e.g. a pinned `sha-<short>` tag).                                          |
+| **empty string**          | `undefined` ⇒ the provider omits `--image`, so exe boots its own default exeuntu image. The explicit opt-out. |
 
 The provider passes the resolved image on **every** provision:
 `ExeApi.createVm({ name, image })` appends `--image <ref>` to `new` (VERIFIED
@@ -156,7 +156,7 @@ live 2026-07-13); when the ref is `undefined` the flag is omitted.
 ### Version drift → rebake the image (bootstrap never reinstalls over it)
 
 If the running Core's `bootstrap.sh` pins ever get ahead of the image (a bump
-merged but the image not yet rebaked/republished, or `TAU_EXE_MACHINE_IMAGE`
+merged but the image not yet rebaked/republished, or `FICUS_EXE_MACHINE_IMAGE`
 pinned to an old tag), the marker's baked versions won't match the script's
 pins. Because the `/opt/tau/prebaked` marker is **present**, bootstrap **keeps
 using the baked tooling** — it does **not** reinstall over the image — and logs a
@@ -194,12 +194,12 @@ path, VM/image names, credentials, or raw command arguments.
 **Operator overrides (no redeploy).** Because 20s is a bound rather than a
 measurement, each class's deadline can be widened on a running instance:
 
-| Env var                           | Class     |
-| --------------------------------- | --------- |
-| `TAU_EXE_EXEC_CREATE_TIMEOUT_MS`  | `create`  |
-| `TAU_EXE_EXEC_DESTROY_TIMEOUT_MS` | `destroy` |
-| `TAU_EXE_EXEC_LIST_TIMEOUT_MS`    | `list`    |
-| `TAU_EXE_EXEC_CLONE_TIMEOUT_MS`   | `clone`   |
+| Env var                             | Class     |
+| ----------------------------------- | --------- |
+| `FICUS_EXE_EXEC_CREATE_TIMEOUT_MS`  | `create`  |
+| `FICUS_EXE_EXEC_DESTROY_TIMEOUT_MS` | `destroy` |
+| `FICUS_EXE_EXEC_LIST_TIMEOUT_MS`    | `list`    |
+| `FICUS_EXE_EXEC_CLONE_TIMEOUT_MS`   | `clone`   |
 
 Each takes unsigned decimal integer milliseconds from `1` through
 `2,147,483,647` (the signed 32-bit maximum safely supported by Bun/Node timers).
@@ -299,12 +299,12 @@ ONE real VM, runs the full production flow, destroys it; costs real exe.dev
 usage — never run in CI):
 
 ```
-TAU_TEST_EXE_SSH_KEY=~/.ssh/<your exe account key> \
-TAU_ENCRYPTION_KEY=$(printf '0%.0s' {1..64}) \
+FICUS_TEST_EXE_SSH_KEY=~/.ssh/<your exe account key> \
+FICUS_ENCRYPTION_KEY=$(printf '0%.0s' {1..64}) \
 bun test src/services/machines/integration-exe.test.ts
 ```
 
-Skipped-mode collection (no `TAU_TEST_EXE_SSH_KEY`) makes zero exe.dev network
+Skipped-mode collection (no `FICUS_TEST_EXE_SSH_KEY`) makes zero exe.dev network
 calls and zero DB writes — `describe.skipIf` skips its `beforeAll`/`afterAll`
 too.
 
@@ -340,7 +340,7 @@ operator or the placement/lifecycle machinery explicitly terminates it.
 
 See `docs/wiki/machines/runtime.md` § Placement for the full role/scope-aware
 policy (squad-per-VM, the tenant commons singleton, dedicated VMs, and the
-`TAU_MAX_MACHINES` provisioning cap). In short: when the exe provider is
+`FICUS_MAX_MACHINES` provisioning cap). In short: when the exe provider is
 registered, tau auto-provisions and reuses exe machines by role instead of
 falling back to the BYO least-loaded rule; when it isn't, placement is
 byte-identical to the pre-exe BYO-only behavior.

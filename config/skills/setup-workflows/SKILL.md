@@ -68,10 +68,10 @@ temporary file:
 
 ```bash
 tau workflow resolve --squad <squad-id> --content '{"kind":"preset","id":"solo"}'
-tau workflow resolve --squad <squad-id> --stdin <<'TAU_FLOW'
+tau workflow resolve --squad <squad-id> --stdin <<'FICUS_FLOW'
 kind: preset
 id: solo
-TAU_FLOW
+FICUS_FLOW
 ```
 
 For a new reusable preset, provide a JSON/YAML envelope with `id`, `description`,

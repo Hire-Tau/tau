@@ -418,9 +418,9 @@ describe('deployments routes', () => {
   })
 
   it('POST /api/squads/:id/local-deployments returns the hosted URL', async () => {
-    const previousAppsDomain = process.env.TAU_APPS_DOMAIN
+    const previousAppsDomain = process.env.FICUS_APPS_DOMAIN
     const previousAppUrl = process.env.APP_URL
-    process.env.TAU_APPS_DOMAIN = 'hiretau.app'
+    process.env.FICUS_APPS_DOMAIN = 'hiretau.app'
     process.env.APP_URL = 'https://team--blue.hiretau.ai'
 
     try {
@@ -438,8 +438,8 @@ describe('deployments routes', () => {
         new RegExp(`^https://team--blue--${compactId}\\.hiretau\\.app/\\?_tau_token=.+$`)
       )
     } finally {
-      if (previousAppsDomain === undefined) delete process.env.TAU_APPS_DOMAIN
-      else process.env.TAU_APPS_DOMAIN = previousAppsDomain
+      if (previousAppsDomain === undefined) delete process.env.FICUS_APPS_DOMAIN
+      else process.env.FICUS_APPS_DOMAIN = previousAppsDomain
       if (previousAppUrl === undefined) delete process.env.APP_URL
       else process.env.APP_URL = previousAppUrl
     }

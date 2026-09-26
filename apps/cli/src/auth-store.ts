@@ -19,7 +19,7 @@ function getDefaultAuthStorePath(): string {
 }
 
 export function getAuthStorePath(): string {
-  return expandTilde(process.env.TAU_AUTH_STORE || getDefaultAuthStorePath())
+  return expandTilde(process.env.FICUS_AUTH_STORE || getDefaultAuthStorePath())
 }
 
 export function emptyAuthStore(): AuthStore {

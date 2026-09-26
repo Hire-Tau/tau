@@ -867,10 +867,10 @@ async function buildDockerAssetVolumes(ctx: AssetContext): Promise<string[]> {
 function buildDockerEnv(): Record<string, string> {
   const port = process.env.PORT || '3000'
   const env: Record<string, string> = {
-    TAU_API_URL: `http://host.docker.internal:${port}`,
+    FICUS_API_URL: `http://host.docker.internal:${port}`,
   }
-  // NOTE: TAU_PASSWORD is intentionally NOT injected. Agents authenticate via the
-  // per-command TAU_TOKEN; the shared legacy password is a dead credential under
+  // NOTE: FICUS_PASSWORD is intentionally NOT injected. Agents authenticate via the
+  // per-command FICUS_TOKEN; the shared legacy password is a dead credential under
   // multi-admin setups and pure exfil surface in a shared box.
   const sandboxCallbackSecret = getSecretStore().get('SANDBOX_CALLBACK_SECRET')
   if (sandboxCallbackSecret) {

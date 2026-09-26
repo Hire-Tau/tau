@@ -34,14 +34,14 @@ CI failures, requested changes, or merge conflicts can arrive after the graph re
 then read `tau workstream flow STREAM_ID` and submit:
 
 ```bash
-tau workstream advance STREAM_ID --stdin --request-id REQUEST_UUID <<'TAU_COMMAND'
+tau workstream advance STREAM_ID --stdin --request-id REQUEST_UUID <<'FICUS_COMMAND'
 {
   "action": "rework",
   "expectedVersion": 4,
   "attemptId": 3,
   "feedback": "Current CI failure and the correction required"
 }
-TAU_COMMAND
+FICUS_COMMAND
 ```
 
 Use the current version and the latest completed attempt ID for `completion.changeEventsTo.step`

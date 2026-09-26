@@ -112,7 +112,7 @@ export interface SquadSandboxConfig {
   /**
    * Per-squad ephemeral-storage limit for the sandbox pod, in GiB. Raise this
    * for squads with heavy toolchains whose nix install exceeds the global
-   * default. Falls back to the global default (TAU_SANDBOX_EPHEMERAL_STORAGE_LIMIT)
+   * default. Falls back to the global default (FICUS_SANDBOX_EPHEMERAL_STORAGE_LIMIT)
    * when unset.
    */
   ephemeralStorageLimitGi?: number

@@ -30,7 +30,7 @@ describe('LoginPage auth modes', () => {
   })
 
   test('first-run requires the bootstrap password step when mode is password', async () => {
-    // Hosted per-tenant instances report mode:'password' (a TAU_PASSWORD bootstrap
+    // Hosted per-tenant instances report mode:'password' (a FICUS_PASSWORD bootstrap
     // credential is provisioned) with no admin yet — the setup UI must gate on it.
     authStatus = { authEnabled: true, mode: 'password', hasUsers: false, hasAdminUser: false }
     const html = renderToStaticMarkup(

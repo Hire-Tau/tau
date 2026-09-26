@@ -13,7 +13,7 @@ Use the Tau CLI path shown in the installed skill's **Installed Tau CLI** sectio
 <tau-cli> squad list
 ```
 
-Prefer the hidden prompt or `TAU_PASSWORD` environment variable over passing secrets on the command line. Never print, commit, or write `TAU_PASSWORD` or `$HOME/.tau/cli/auth.json` contents into memory.
+Prefer the hidden prompt or `FICUS_PASSWORD` environment variable over passing secrets on the command line. Never print, commit, or write `FICUS_PASSWORD` or `$HOME/.tau/cli/auth.json` contents into memory.
 
 ## Search
 

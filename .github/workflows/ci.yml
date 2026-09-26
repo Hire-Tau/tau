@@ -443,7 +443,7 @@ jobs:
   # runs. They have 8-25x local headroom but flake under CI scheduling
   # jitter when packed onto the shared `test` runner alongside everything
   # else, so they run here alone (only postgres beside them) and are
-  # skipped in the main sweep via TAU_TEST_SKIP_SUBPROCESS=1 (see the
+  # skipped in the main sweep via FICUS_TEST_SKIP_SUBPROCESS=1 (see the
   # `test` job's "Run tests" step). No `needs:` — runs in parallel with
   # `test`.
 
@@ -571,7 +571,7 @@ jobs:
         working-directory: apps/core
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5433/tau_test
-          TAU_TEST_SKIP_SUBPROCESS: '1'
+          FICUS_TEST_SKIP_SUBPROCESS: '1'
 
       - name: Create isolated sterile secret-boundary database
         run: |
@@ -935,8 +935,8 @@ jobs:
         run: |
           bun run setup -- --runtime host --database-url postgres://postgres:postgres@localhost:5433/tau_local_setup --port 3100 --yes 2>&1 | tee /tmp/setup.log
           grep -q 'Tau is running at http://localhost:3100' /tmp/setup.log
-          grep -q 'TAU_SANDBOX_RUNTIME=host' .env
-          grep -Eq '^TAU_ENCRYPTION_KEY=[0-9a-f]{64}$' .env
+          grep -q 'FICUS_SANDBOX_RUNTIME=host' .env
+          grep -Eq '^FICUS_ENCRYPTION_KEY=[0-9a-f]{64}$' .env
 
       # Exercise authenticated updates using a disposable integration connection
       # with the job token; interactive user
@@ -958,7 +958,7 @@ jobs:
           bun apps/cli/src/index.ts server status --json | tee /tmp/status.json
           node -e "const s=require('/tmp/status.json'); if (s.health!=='ok' || s.supervisor!=='systemd-user') { console.error(JSON.stringify(s)); process.exit(1) } for (const n of ['tau-api','tau-worker']) if (!s.processes.find(p=>p.name===n&&p.status==='online')) { console.error('not online: '+n); process.exit(1) }"
 
-          PW=$(grep '^TAU_PASSWORD=' .env | cut -d= -f2-)
+          PW=$(grep '^FICUS_PASSWORD=' .env | cut -d= -f2-)
 
           # Point the in-app updater at the exact code under test. On
           # pull_request runs the tree is the PR merge commit; targeting
@@ -1013,7 +1013,7 @@ jobs:
           echo "check HTTP $CHECK_STATUS:"; cat /tmp/check.json
           if [ "$CHECK_STATUS" -lt 200 ] || [ "$CHECK_STATUS" -ge 300 ]; then
             echo "curl /api/updates/check rejected the bootstrap bearer — falling back to the CLI"
-            TAU_PASSWORD="$PW" bun apps/cli/src/index.ts update check --json | tee /tmp/check.json
+            FICUS_PASSWORD="$PW" bun apps/cli/src/index.ts update check --json | tee /tmp/check.json
           fi
           node -e "const r=require('/tmp/check.json'); if (r.supported!==true || r.flavor.supervisor!=='systemd-user' || r.flavor.source!=='git-checkout') { console.error(JSON.stringify(r)); process.exit(1) }"
 
@@ -1021,7 +1021,7 @@ jobs:
           echo "apply HTTP $APPLY_STATUS:"; cat /tmp/apply.json
           if [ "$APPLY_STATUS" -lt 200 ] || [ "$APPLY_STATUS" -ge 300 ]; then
             echo "curl /api/updates/apply rejected the bootstrap bearer — falling back to the CLI"
-            TAU_PASSWORD="$PW" bun apps/cli/src/index.ts update apply --json | tee /tmp/apply.json
+            FICUS_PASSWORD="$PW" bun apps/cli/src/index.ts update apply --json | tee /tmp/apply.json
           fi
 
           # /api/updates/apply returns the run the instant the background job
@@ -1091,7 +1091,7 @@ jobs:
 
       # An instance is a CHECKOUT: .env and ecosystem.config.js belong to one
       # label, and setup refuses to relabel a checkout that already carries
-      # another (TAU_INSTANCE=tau is in the .env the step above wrote). So the
+      # another (FICUS_INSTANCE=tau is in the .env the step above wrote). So the
       # second instance gets its own clone. --shared points the clone at the
       # workspace's object store, and --no-checkout + an explicit detach is the
       # only order that works for every event: on pull_request the commit under

@@ -274,7 +274,7 @@ export const PASSKEY_RECOVERY_TTL_MS = 60 * 60 * 1000
 export const VERIFICATION_RATE_LIMIT = 3
 
 /**
- * Where a deep link must land. Deliberately `primaryWebOrigin()` (TAU_WEB_ORIGIN
+ * Where a deep link must land. Deliberately `primaryWebOrigin()` (FICUS_WEB_ORIGIN
  * → WEBAUTHN_ORIGIN → APP_URL) rather than APP_URL directly: the link's whole
  * purpose is to open a WebAuthn ceremony, and a ceremony only verifies on the RP
  * origin, so the link has to point at the same origin WebAuthn is pinned to.

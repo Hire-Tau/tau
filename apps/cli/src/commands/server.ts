@@ -108,11 +108,11 @@ export function registerServerCommands(program: Command, deps: ServerDeps = defa
     cmd
       .option(
         '--root <dir>',
-        'Checkout to operate on (default: TAU_SERVER_ROOT, then --instance, then the current checkout, then the default instance)'
+        'Checkout to operate on (default: FICUS_SERVER_ROOT, then --instance, then the current checkout, then the default instance)'
       )
       .option(
         '--instance <label>',
-        'Instance to act on (default: TAU_INSTANCE, the current checkout, then the default)'
+        'Instance to act on (default: FICUS_INSTANCE, the current checkout, then the default)'
       )
   const root = (opts: { root?: string; instance?: string }) =>
     resolveRoot({
@@ -217,7 +217,7 @@ Examples:
     .description('Configure, build, migrate and start tau in a checkout (idempotent)')
     .option(
       '--root <dir>',
-      'Checkout to configure (default: TAU_SERVER_ROOT, then the checkout the current directory is in)'
+      'Checkout to configure (default: FICUS_SERVER_ROOT, then the checkout the current directory is in)'
     )
     .option('--runtime <runtime>', 'host | docker-socket | docker-sysbox | k3d')
     .option('--supervisor <supervisor>', 'pm2 | launchd | systemd-user')
@@ -237,22 +237,23 @@ Examples:
       guarded(async (raw) => {
         const dir = setupRoot(raw as { root?: string })
         // A re-run keeps what this checkout already is: its label and port come
-        // from its own .env unless a flag or TAU_SETUP_* says otherwise.
+        // from its own .env unless a flag or FICUS_SETUP_* says otherwise.
         const persistedEnv = rootEnv(dir)
         const persistedPort = Number(persistedEnv.PORT)
         const registered = findInstanceByRoot(dir, deps.statePath)?.record
-        const marked = persistedEnv.TAU_UPDATE_SUPERVISOR
+        const marked = persistedEnv.FICUS_UPDATE_SUPERVISOR
         const markedSupervisor = (LOCAL_SUPERVISORS as readonly string[]).includes(marked ?? '')
           ? (marked as LocalSupervisor)
           : undefined
-        const legacyPm2 = existsSync(join(dir, 'ecosystem.config.js')) || persistedEnv.TAU_SYSTEM_LOG_PROVIDER === 'pm2'
+        const legacyPm2 =
+          existsSync(join(dir, 'ecosystem.config.js')) || persistedEnv.FICUS_SYSTEM_LOG_PROVIDER === 'pm2'
         const options = await resolveSetupOptions(
           { ...(raw as RawSetupFlags), root: dir },
           deps.env,
           deps.prompter,
           deps.isTTY,
           {
-            instance: persistedEnv.TAU_INSTANCE || undefined,
+            instance: persistedEnv.FICUS_INSTANCE || undefined,
             port: Number.isInteger(persistedPort) && persistedPort > 0 ? persistedPort : undefined,
             supervisor: registered?.supervisor ?? markedSupervisor ?? (legacyPm2 ? 'pm2' : undefined),
           }
@@ -444,7 +445,7 @@ Examples:
         port,
         api: `http://localhost:${port}`,
         supervisor: registered.record.supervisor,
-        runtime: rootEnv(dir).TAU_SANDBOX_RUNTIME ?? '(unset)',
+        runtime: rootEnv(dir).FICUS_SANDBOX_RUNTIME ?? '(unset)',
         commit,
         processes,
         health,
@@ -593,7 +594,7 @@ Examples:
         const volume = await containerVolumeName(deps.runner, names.container, names.volume)
         const home = rootEnv(dir).HOME_DIR ?? names.homeDir ?? '~/.tau'
         // Name the registry this command actually read and wrote — under a
-        // TAU_LOCAL_SERVER_STATE override the default location is the wrong
+        // FICUS_LOCAL_SERVER_STATE override the default location is the wrong
         // file to go looking in.
         const registryLine = registered
           ? `removed instance "${registered.label}"`

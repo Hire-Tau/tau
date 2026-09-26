@@ -1110,7 +1110,7 @@ export const squadsRouter = new Hono()
     }
 
     // Remote runtime (k8s or vm) — query actual live sandbox status. `runtime`
-    // is server-driven config (TAU_SANDBOX_RUNTIME), never client-guessed: the
+    // is server-driven config (FICUS_SANDBOX_RUNTIME), never client-guessed: the
     // web UI switches its VM chain-health presentation off this field.
     const manager = getSandboxManager() as K8sSandboxManager
     const status = await manager.getSandboxStatus(squad.sandboxId)

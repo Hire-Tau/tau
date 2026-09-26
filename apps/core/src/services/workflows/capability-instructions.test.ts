@@ -23,8 +23,8 @@ test('adaptive assignments explain their remaining budget and include a valid ve
   expect(message).toContain('do not increase limits')
   expect(message).not.toContain('COMMAND.json')
   expect(message).toContain('--content')
-  expect(message).toContain("tau workstream advance STREAM_ID --stdin <<'TAU_COMMAND'")
-  const example = JSON.parse(message.match(/<<'TAU_COMMAND'\n([\s\S]*?)\nTAU_COMMAND/)![1]!)
+  expect(message).toContain("tau workstream advance STREAM_ID --stdin <<'FICUS_COMMAND'")
+  const example = JSON.parse(message.match(/<<'FICUS_COMMAND'\n([\s\S]*?)\nFICUS_COMMAND/)![1]!)
   expect(workflowCommandSchema.parse(example)).toMatchObject({ action: 'delegate', expectedVersion: 7, attemptId: 1 })
   run.delegationCount = 3
   const exhausted = flowCapabilityInstructions(run, run.attempts[0]!)

@@ -24,11 +24,16 @@ async function wipe() {
 }
 
 beforeEach(async () => {
-  for (const key of [...legacyChannelCredentialKeys, 'TAU_ENCRYPTION_KEY', 'TAU_MANAGED', 'TAU_MANAGED_SECRET_KEYS']) {
+  for (const key of [
+    ...legacyChannelCredentialKeys,
+    'FICUS_ENCRYPTION_KEY',
+    'FICUS_MANAGED',
+    'FICUS_MANAGED_SECRET_KEYS',
+  ]) {
     priorEnv.set(key, process.env[key])
     delete process.env[key]
   }
-  process.env.TAU_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+  process.env.FICUS_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
   await wipe()
   resetSecretStore()
   resetSettingsStore()

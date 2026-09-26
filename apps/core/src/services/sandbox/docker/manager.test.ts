@@ -14,6 +14,7 @@ import {
   parseDockerExitCode,
   buildDockerLogsArgs,
   resolveDockerApiUrl,
+  terminalApiUrlArgs,
   resolveReclaimableNixStorePath,
   reclaimAgentNixStore,
   ensureNixStore,
@@ -375,16 +376,16 @@ describe('reclaimAgentNixStore', () => {
 })
 
 describe('computeDockerSpecHash', () => {
-  const original = process.env.TAU_SANDBOX_RUNTIME
+  const original = process.env.FICUS_SANDBOX_RUNTIME
 
   beforeEach(() => {
-    process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+    process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
     clearRuntimeCache()
   })
 
   afterEach(() => {
-    if (original === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = original
+    if (original === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = original
     clearRuntimeCache()
   })
 
@@ -392,13 +393,13 @@ describe('computeDockerSpecHash', () => {
     workspacePath: '/host/ws',
     privateVolumePath: '/host/private/agent_x',
     volumes: ['/a:/a:ro', '/b:/b', '/c:/c:ro'],
-    env: { TAU_API_URL: 'http://host.docker.internal:3000', GITHUB_TOKEN: 'tok-1' },
+    env: { FICUS_API_URL: 'http://host.docker.internal:3000', GITHUB_TOKEN: 'tok-1' },
   }
 
   it('is stable and identical across reordered keys AND reordered volumes AND changed env (anti-loop)', () => {
     const reordered: SandboxOptions = {
       // keys in a different order
-      env: { GITHUB_TOKEN: 'tok-2-DIFFERENT', TAU_API_URL: 'http://host.docker.internal:9999-DIFFERENT' },
+      env: { GITHUB_TOKEN: 'tok-2-DIFFERENT', FICUS_API_URL: 'http://host.docker.internal:9999-DIFFERENT' },
       volumes: ['/c:/c:ro', '/a:/a:ro', '/b:/b'], // reordered
       privateVolumePath: '/host/private/agent_x',
       workspacePath: '/host/ws',
@@ -496,23 +497,23 @@ describe('docker --shm-size=512m (browser parity, Phase 2)', () => {
 })
 
 describe('ensureSandbox spec-hash drift detection', () => {
-  const original = process.env.TAU_SANDBOX_RUNTIME
+  const original = process.env.FICUS_SANDBOX_RUNTIME
 
   beforeEach(() => {
-    process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+    process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
     clearRuntimeCache()
   })
 
   afterEach(() => {
-    if (original === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = original
+    if (original === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = original
     clearRuntimeCache()
   })
 
   const opts: SandboxOptions = {
     workspacePath: '/host/ws',
     volumes: ['/cli:/usr/local/bin/tau:ro'],
-    env: { TAU_API_URL: 'http://host.docker.internal:3000' },
+    env: { FICUS_API_URL: 'http://host.docker.internal:3000' },
   }
 
   // A minimal fake `this` covering only the seams ensureSandbox touches on the
@@ -1110,7 +1111,7 @@ describe('docker-sandbox-manager', () => {
   })
 
   describe('runtime detection', () => {
-    const prevRuntime = process.env.TAU_SANDBOX_RUNTIME
+    const prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
     beforeEach(() => {
       clearRuntimeCache()
     })
@@ -1118,8 +1119,8 @@ describe('docker-sandbox-manager', () => {
     afterEach(() => {
       clearRuntimeCache()
       // Clean up env vars
-      if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+      if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
     })
 
     /**
@@ -1148,14 +1149,14 @@ describe('docker-sandbox-manager', () => {
       expect(typeof result).toBe('boolean')
     })
 
-    it('selectRuntime respects TAU_SANDBOX_RUNTIME=docker-socket', () => {
-      process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+    it('selectRuntime respects FICUS_SANDBOX_RUNTIME=docker-socket', () => {
+      process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
       clearRuntimeCache()
       expect(selectRuntime()).toBe('docker-socket')
     })
 
     it('selectRuntime throws for docker-sysbox when sysbox is not installed (no silent socket fallback)', () => {
-      process.env.TAU_SANDBOX_RUNTIME = 'docker-sysbox'
+      process.env.FICUS_SANDBOX_RUNTIME = 'docker-sysbox'
       const restore = pretendSysboxMissing()
       try {
         expect(() => selectRuntime()).toThrow(
@@ -1167,29 +1168,29 @@ describe('docker-sandbox-manager', () => {
     })
 
     it('selectRuntime throws on an unknown runtime value instead of auto-detecting', () => {
-      process.env.TAU_SANDBOX_RUNTIME = 'unknown-runtime'
+      process.env.FICUS_SANDBOX_RUNTIME = 'unknown-runtime'
       clearRuntimeCache()
       expect(() => selectRuntime()).toThrow(
-        'TAU_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host (got "unknown-runtime")'
+        'FICUS_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host (got "unknown-runtime")'
       )
     })
 
     it('selectRuntime throws for the legacy "socket" spelling, naming the replacement', () => {
-      process.env.TAU_SANDBOX_RUNTIME = 'socket'
+      process.env.FICUS_SANDBOX_RUNTIME = 'socket'
       clearRuntimeCache()
       expect(() => selectRuntime()).toThrow('Use docker-socket.')
     })
 
-    it('selectRuntime throws when TAU_SANDBOX_RUNTIME is unset', () => {
-      delete process.env.TAU_SANDBOX_RUNTIME
+    it('selectRuntime throws when FICUS_SANDBOX_RUNTIME is unset', () => {
+      delete process.env.FICUS_SANDBOX_RUNTIME
       clearRuntimeCache()
       expect(() => selectRuntime()).toThrow(
-        'TAU_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host (is unset)'
+        'FICUS_SANDBOX_RUNTIME must be one of docker-sysbox, docker-socket, k8s, vm, host (is unset)'
       )
     })
 
     it('getRuntimeInfo returns platform info', () => {
-      process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+      process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
       clearRuntimeCache()
       const info = getRuntimeInfo()
       expect(info).toHaveProperty('runtime')
@@ -1201,14 +1202,14 @@ describe('docker-sandbox-manager', () => {
     })
 
     it('clearRuntimeCache resets cached values', () => {
-      process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+      process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
       // First call caches the value
       expect(selectRuntime()).toBe('docker-socket')
       // A changed env var is ignored until the cache is cleared
-      process.env.TAU_SANDBOX_RUNTIME = 'bogus'
+      process.env.FICUS_SANDBOX_RUNTIME = 'bogus'
       expect(selectRuntime()).toBe('docker-socket')
       clearRuntimeCache()
-      expect(() => selectRuntime()).toThrow('TAU_SANDBOX_RUNTIME must be one of')
+      expect(() => selectRuntime()).toThrow('FICUS_SANDBOX_RUNTIME must be one of')
     })
   })
 
@@ -1279,6 +1280,20 @@ describe('docker-sandbox-manager', () => {
     it('injects the live Core URL so the `tau` CLI survives a Core port change', () => {
       const hook = manager.getSpawnHook(spawnHookSandboxId, tmpWorkspacePath)
       const result = hook!({ command: 'tau whoami', cwd: tmpWorkspacePath, env: {} })
+      expect(result.command).toContain(`-e FICUS_API_URL=${resolveDockerApiUrl()}`)
+    })
+
+    it('gives the interactive terminal the live Core URL in both spellings (one release)', () => {
+      expect(terminalApiUrlArgs('http://host.docker.internal:3000')).toBe(
+        '-e FICUS_API_URL=http://host.docker.internal:3000 -e TAU_API_URL=http://host.docker.internal:3000'
+      )
+    })
+
+    it('also injects the legacy TAU_ identity names for older CLIs in the container (one release)', () => {
+      const hook = manager.getSpawnHook(spawnHookSandboxId, tmpWorkspacePath, 'tau_agent_x')
+      const result = hook!({ command: 'tau whoami', cwd: tmpWorkspacePath, env: {} })
+      expect(result.command).toContain('-e FICUS_TOKEN=tau_agent_x')
+      expect(result.command).toContain('-e TAU_TOKEN=tau_agent_x')
       expect(result.command).toContain(`-e TAU_API_URL=${resolveDockerApiUrl()}`)
     })
   })

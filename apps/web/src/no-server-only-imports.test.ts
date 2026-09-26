@@ -46,7 +46,7 @@ describe('web bundle boundary', () => {
       writeFileSync(join(root, 'broker.ts'), "export * from '@ficus/shared/oauth-broker'\n")
       writeFileSync(join(root, 'dynamic.ts'), "import('@ficus/shared/oauth-providers/github/client')\n")
       writeFileSync(join(root, 'require.ts'), "require('@ficus/shared/oauth-broker')\n")
-      writeFileSync(join(root, 'safe.ts'), "import { TAU_GITHUB_APP_CLIENT_ID } from '@ficus/shared/github-app'\n")
+      writeFileSync(join(root, 'safe.ts'), "import { FICUS_GITHUB_APP_CLIENT_ID } from '@ficus/shared/github-app'\n")
       for (const name of ['fixture.test.ts', 'fixture.test.tsx', 'fixture.spec.ts', 'fixture_spec.tsx']) {
         writeFileSync(join(root, name), "const fixture = '@ficus/shared/oauth-broker'\n")
       }

@@ -5,7 +5,7 @@
  */
 
 import { timingSafeEqual } from 'crypto'
-import { TAU_SLASH_COMMANDS } from '../../lib/channels'
+import { FICUS_SLASH_COMMANDS } from '../../lib/channels'
 import type { ChannelProvider, ChannelEvent, ThreadMessage, PostMessageResult } from '../provider'
 import { createLogger } from '../../lib/infra/logger'
 import { getChannelIntegrationValue } from '../../services/integrations/channels/settings'
@@ -89,9 +89,9 @@ function parseCommand(text: string): { command: string; content: string } {
     const commandText = trimmed.slice(prefix[0].length).trim()
     const parts = commandText.split(/\s+/)
     const firstWord = parts[0]?.toLowerCase() || 'help'
-    const command = (TAU_SLASH_COMMANDS as readonly string[]).includes(firstWord) ? firstWord : 'ask'
+    const command = (FICUS_SLASH_COMMANDS as readonly string[]).includes(firstWord) ? firstWord : 'ask'
     const content =
-      command === 'ask' && !(TAU_SLASH_COMMANDS as readonly string[]).includes(firstWord)
+      command === 'ask' && !(FICUS_SLASH_COMMANDS as readonly string[]).includes(firstWord)
         ? commandText
         : parts.slice(1).join(' ')
     return { command, content }

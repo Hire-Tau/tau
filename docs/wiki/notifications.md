@@ -79,7 +79,7 @@ Logs `<event>: <summary>` through the `notify` logger. Useful for development an
 
 ### Push channel
 
-The `push` channel resolves recipients and applies preferences once, then fans out to Web Push, APNs, and (only when `TAU_DESKTOP_MANAGED=1`) the desktop feed. Each delivery path has its own transport configuration; desktop delivery does not require Web Push subscriptions or APNs credentials.
+The `push` channel resolves recipients and applies preferences once, then fans out to Web Push, APNs, and (only when `FICUS_DESKTOP_MANAGED=1`) the desktop feed. Each delivery path has its own transport configuration; desktop delivery does not require Web Push subscriptions or APNs credentials.
 
 ### Web Push
 
@@ -256,4 +256,4 @@ Logs to look for in API process:
 - `Failed to send push to <id>: <error>` — push delivery failure
 - `Removed invalid push subscription <id>` — stale subscription cleaned up
 
-If no `[NOTIFY]` logs appear for worker-originated events, the distributed event emitter is not forwarding — check the loopback event transport (`apps/core/src/lib/infra/local-events.ts`): the worker logs `Failed to forward 'app_events'` when it cannot reach the API, and a mismatched `TAU_INTERNAL_EVENT_TOKEN` between the two units shows up as `HTTP 401`.
+If no `[NOTIFY]` logs appear for worker-originated events, the distributed event emitter is not forwarding — check the loopback event transport (`apps/core/src/lib/infra/local-events.ts`): the worker logs `Failed to forward 'app_events'` when it cannot reach the API, and a mismatched `FICUS_INTERNAL_EVENT_TOKEN` between the two units shows up as `HTTP 401`.

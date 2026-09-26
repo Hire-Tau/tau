@@ -249,7 +249,7 @@ function registerLocalCommands(deploy: Command): void {
     .requiredOption(
       '--command <command>',
       'Command to start the local app. The app is served under a PATH PREFIX, not a domain root, so build it ' +
-        'with that prefix as its base ($TAU_APP_BASE_PATH is exported to the process): Vite `base`, Next ' +
+        'with that prefix as its base ($FICUS_APP_BASE_PATH is exported to the process): Vite `base`, Next ' +
         '`basePath`, CRA `PUBLIC_URL`. A default build emitting /assets/... will 404 against the Tau origin.'
     )
     .option('--cwd <cwd>', 'Working directory inside the sandbox')

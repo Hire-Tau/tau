@@ -38,8 +38,9 @@ function isCurrent(manifest: CliManifest): boolean {
 function runInstaller(url: string, options: InstallOptions): Promise<void> {
   return new Promise((resolve, reject) => {
     const env: NodeJS.ProcessEnv = { ...process.env }
-    if (options.auth === true) env.TAU_INSTALL_AUTH = '1'
-    if (options.noAuth === true) env.TAU_INSTALL_AUTH = '0'
+    // One release (Ficus rename): the published installer may still read TAU_INSTALL_AUTH.
+    const auth = options.noAuth === true ? '0' : options.auth === true ? '1' : undefined
+    if (auth !== undefined) env.FICUS_INSTALL_AUTH = env.TAU_INSTALL_AUTH = auth
 
     const child = spawn('sh', ['-c', `curl -fsSL "$1" | sh`, 'tau-install', url], {
       stdio: 'inherit',

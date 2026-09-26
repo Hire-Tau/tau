@@ -799,7 +799,7 @@ export async function pushSquadSshToBox(
 }
 
 // ---------------------------------------------------------------------------
-// resolveBoxApiUrl — the box's callback URL (BoxEnv.TAU_API_URL)
+// resolveBoxApiUrl — the box's callback URL (BoxEnv.FICUS_API_URL)
 // ---------------------------------------------------------------------------
 
 /** Injectable seams for {@link resolveBoxApiUrl}; each defaults to production. */
@@ -847,7 +847,7 @@ function defaultCorePort(): number {
 }
 
 /**
- * The URL a box should call Core back on (baked into `BoxEnv.TAU_API_URL`).
+ * The URL a box should call Core back on (baked into `BoxEnv.FICUS_API_URL`).
  *
  * The SSH **reverse tunnel is the DEFAULT** path: allocate one
  * (`machineTunnels.addReverse(machine, corePort)` → the box's sshd picks a

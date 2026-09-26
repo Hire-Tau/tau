@@ -65,13 +65,13 @@ retry `--request-id`. `--json` only controls output.
 
 ```bash
 tau workflow resolve --squad SQUAD_ID --content '{"kind":"preset","id":"solo"}'
-tau workflow resolve --squad SQUAD_ID --stdin <<'TAU_FLOW'
+tau workflow resolve --squad SQUAD_ID --stdin <<'FICUS_FLOW'
 kind: preset
 id: solo
 customizations:
   - op: set-name
     name: Daily audit
-TAU_FLOW
+FICUS_FLOW
 
 printf '%s\n' '{"kind":"preset","id":"solo"}' | tau schedule update SCHEDULE_ID --flow-stdin
 ```

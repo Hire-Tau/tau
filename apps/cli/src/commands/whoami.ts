@@ -103,11 +103,11 @@ function describeSource(result: WhoamiResult): string {
     case 'auth-store':
       return `stored backend '${result.label}'`
     case 'env-token':
-      return 'TAU_TOKEN from the environment'
+      return 'FICUS_TOKEN from the environment'
     case 'env-password':
-      return 'TAU_PASSWORD from the environment'
+      return 'FICUS_PASSWORD from the environment'
     case 'dotenv':
-      return 'TAU_PASSWORD from a .env file'
+      return 'FICUS_PASSWORD from a .env file'
     case 'secret-file':
       return 'the mounted /etc/tau/password secret'
     case 'none':

@@ -4,7 +4,7 @@ import { prefixDocsLinks } from './scripts/embedded-links.mjs'
 import { defineConfig } from 'astro/config'
 import starlight from '@astrojs/starlight'
 
-const embedded = process.env.TAU_DOCS_EMBEDDED === '1'
+const embedded = process.env.FICUS_DOCS_EMBEDDED === '1'
 
 export default defineConfig({
   base: embedded ? '/docs' : '/',

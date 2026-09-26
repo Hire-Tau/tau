@@ -11,7 +11,7 @@ export const USER_SESSION_REQUIRED = 'user_session_required'
  * The 403 for a route that acts on behalf of one person (a connected account, a
  * subscription, a session list) when the caller is not a person.
  *
- * The bootstrap `TAU_PASSWORD` session passes admin RBAC, so it reaches these
+ * The bootstrap `FICUS_PASSWORD` session passes admin RBAC, so it reaches these
  * routes during first-admin setup — but it belongs to nobody, so there is no user
  * to connect or subscribe. It gets a stable code and a message that says what to
  * do next instead of a bare "user required". `action` completes the sentence

@@ -201,8 +201,8 @@ describe('inbox send amtp:// (federation)', () => {
       join(dir, 'identity.json'),
       JSON.stringify({ handle: 'alice', address: 'amtp://us/alice', identityPublicKey: 'PUB' })
     )
-    process.env.TAU_IDENTITY_PEM = join(dir, 'identity.pem')
-    process.env.TAU_IDENTITY_CACHE = join(dir, 'identity.json')
+    process.env.FICUS_IDENTITY_PEM = join(dir, 'identity.pem')
+    process.env.FICUS_IDENTITY_CACHE = join(dir, 'identity.json')
     ;(apiPost as ReturnType<typeof mock>).mockClear()
     ;(apiPost as ReturnType<typeof mock>).mockResolvedValue({ enqueued: true, outboxId: 'outbox-abcdef12' })
     ;(apiGet as ReturnType<typeof mock>).mockClear()
@@ -228,8 +228,8 @@ describe('inbox send amtp:// (federation)', () => {
     ;(outputError as ReturnType<typeof mock>).mockClear()
   })
   afterEach(() => {
-    delete process.env.TAU_IDENTITY_PEM
-    delete process.env.TAU_IDENTITY_CACHE
+    delete process.env.FICUS_IDENTITY_PEM
+    delete process.env.FICUS_IDENTITY_CACHE
     rmSync(dir, { recursive: true, force: true })
   })
 
@@ -255,7 +255,7 @@ describe('inbox send amtp:// (federation)', () => {
   })
 
   test('fails before POST and attachment resolution when the local PEM is missing', async () => {
-    rmSync(process.env.TAU_IDENTITY_PEM!)
+    rmSync(process.env.FICUS_IDENTITY_PEM!)
     await run(['inbox', 'send', 'amtp://peerinst/bob', 'hello', '--attachment-id', 'att-1'])
     expect(apiPost).not.toHaveBeenCalled()
     expect(apiGetRaw).not.toHaveBeenCalled()
@@ -263,7 +263,7 @@ describe('inbox send amtp:// (federation)', () => {
 
   test('fails before POST and attachment resolution when local and server keys mismatch', async () => {
     writeFileSync(
-      process.env.TAU_IDENTITY_PEM!,
+      process.env.FICUS_IDENTITY_PEM!,
       generateKeyPairSync('ed25519').privateKey.export({ type: 'pkcs8', format: 'pem' }) as string
     )
     await run(['inbox', 'send', 'amtp://peerinst/bob', 'hello', '--attachment-id', 'att-1'])
@@ -273,7 +273,7 @@ describe('inbox send amtp:// (federation)', () => {
 
   test('ignores a stale cached address and uses live status', async () => {
     writeFileSync(
-      process.env.TAU_IDENTITY_CACHE!,
+      process.env.FICUS_IDENTITY_CACHE!,
       JSON.stringify({ handle: 'old', address: 'amtp://old/old', identityPublicKey: publicPem })
     )
     await run(['inbox', 'send', 'amtp://peerinst/bob', 'hello'])

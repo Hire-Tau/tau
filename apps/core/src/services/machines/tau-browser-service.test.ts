@@ -692,7 +692,7 @@ describe('tau-browser service', () => {
     })
   })
 
-  // The host sandbox runtime (TAU_SANDBOX_RUNTIME=host) injects its own
+  // The host sandbox runtime (FICUS_SANDBOX_RUNTIME=host) injects its own
   // always-false blocklist: there the browser runs on the user's own machine
   // with exactly the reach the agent's `bash` already has, so the machine-host
   // SSRF guard protects nothing and breaks localhost screenshots.

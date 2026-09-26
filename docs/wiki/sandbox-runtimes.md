@@ -1,6 +1,6 @@
 # Choosing a sandbox runtime
 
-Every tau install must choose where agent work executes. `TAU_SANDBOX_RUNTIME`
+Every tau install must choose where agent work executes. `FICUS_SANDBOX_RUNTIME`
 is **required** and takes exactly one of five values — `docker-sysbox`,
 `docker-socket`, `k8s`, `vm`, `host`. There is no default and nothing is
 detected for you: the api and the worker refuse to start when it is unset or
@@ -43,10 +43,10 @@ Chrome/Chromium/Edge in-process — see
 > describes the designed per-squad runtime selection from
 > the per-squad runtime design
 > (issue #1336). It lands as a phased implementation; until then
-> `TAU_SANDBOX_RUNTIME` remains the single process-wide choice.
+> `FICUS_SANDBOX_RUNTIME` remains the single process-wide choice.
 
 The design lets **one instance run several runtimes at once**: the instance
-default stays `TAU_SANDBOX_RUNTIME`, and a nullable per-squad override
+default stays `FICUS_SANDBOX_RUNTIME`, and a nullable per-squad override
 (`squads.runtime`) — plus a solo-agent override (`agents.runtime`, for agents
 in no squad) — selects a different runtime for that squad's shared box and
 its member agents' boxes, or that solo agent's box. `null` everywhere means
@@ -60,7 +60,7 @@ Rules, in user terms:
   and runtime.
 - **Every runtime in use is validated at startup.** A value nobody can serve
   (unknown spelling, missing docker image, no `bash` for `host`) refuses to
-  start, exactly as a bad `TAU_SANDBOX_RUNTIME` does today; cluster/machine
+  start, exactly as a bad `FICUS_SANDBOX_RUNTIME` does today; cluster/machine
   reachability stays a warning, as today.
 - **Per-runtime subsystems run for any runtime in use.** The VM reaper and
   K8s prepull/reconcile loops start when any squad uses that runtime, not
@@ -79,7 +79,7 @@ Rules, in user terms:
   run the new code; older processes ignore the columns. Rolling back needs
   no data fix — overridden squads simply return to the default.
 - **Hosted operators** can structurally disable mixing with
-  `TAU_DISABLE_RUNTIME_OVERRIDE=1`.
+  `FICUS_DISABLE_RUNTIME_OVERRIDE=1`.
 
 ## Local quick start (dev checkout)
 
@@ -89,13 +89,13 @@ this for a checkout: it writes the runtime and the secrets the UI needs into
 instance — see [docs/wiki/setup.md](setup.md#local-setup). `k8s` and `vm` are not local
 installs; their sections below list what they need instead.
 
-Setup writes `TAU_SERVE_WEB=1`, so the whole app is on one port. The
+Setup writes `FICUS_SERVE_WEB=1`, so the whole app is on one port. The
 alternative, for hot-reload work on the frontend, is the vite dev server:
 
-- **`TAU_SERVE_WEB`** — to reach the UI from the core itself, run
-  `bun run build:web` and start the core with `TAU_SERVE_WEB=1`; the app,
+- **`FICUS_SERVE_WEB`** — to reach the UI from the core itself, run
+  `bun run build:web` and start the core with `FICUS_SERVE_WEB=1`; the app,
   `/api/*` and `/ws` are then all on `PORT` (3000 by default). `.env.example`
-  ships `TAU_SERVE_WEB=1` — `1`/`true`/`yes` force serving on (warning if no
+  ships `FICUS_SERVE_WEB=1` — `1`/`true`/`yes` force serving on (warning if no
   build exists yet), `0`/`false`/`no` never serve, and leaving it unset serves
   only when a build already exists. The vite dev server (`bun run dev:web`,
   port 5173) is the alternative, but its proxy targets `localhost:3000`
@@ -110,7 +110,7 @@ machine — pick it for a personal machine or a trusted single-user VM.
 **Prerequisites:** `bash`; `tmux` if agents run local deployments. No Docker.
 
 ```bash
-TAU_SANDBOX_RUNTIME=host
+FICUS_SANDBOX_RUNTIME=host
 ```
 
 Setup toolkit: `runtime.sandbox: host`.
@@ -128,14 +128,14 @@ checkout.
 `host` is the cheapest way to try tau next to an install you already run, but
 the two share a machine, so everything they both hold has to be moved apart:
 
-| Knob                       | Why                                                             |
-| -------------------------- | --------------------------------------------------------------- |
-| `PORT`                     | API/web port (3000 by default)                                  |
-| `TAU_WORKER_EVENT_PORT`    | the worker's loopback listener (3003 by default)                |
-| `TAU_INTERNAL_EVENT_TOKEN` | must match between _this_ api and worker; give the pair its own |
-| `DATABASE_URL`             | its own database                                                |
-| `HOME_DIR`                 | its own data root (`~` ok) — agents run on this machine         |
-| `APP_URL`                  | so notification links point at the right instance               |
+| Knob                         | Why                                                             |
+| ---------------------------- | --------------------------------------------------------------- |
+| `PORT`                       | API/web port (3000 by default)                                  |
+| `FICUS_WORKER_EVENT_PORT`    | the worker's loopback listener (3003 by default)                |
+| `FICUS_INTERNAL_EVENT_TOKEN` | must match between _this_ api and worker; give the pair its own |
+| `DATABASE_URL`               | its own database                                                |
+| `HOME_DIR`                   | its own data root (`~` ok) — agents run on this machine         |
+| `APP_URL`                    | so notification links point at the right instance               |
 
 A second database in the same Postgres container, then migrate it:
 
@@ -167,8 +167,8 @@ bun run sandbox:build:docker
 ```
 
 ```bash
-TAU_SANDBOX_RUNTIME=docker-socket
-# TAU_SANDBOX_IMAGE=tau-sandbox:latest   # optional override
+FICUS_SANDBOX_RUNTIME=docker-socket
+# FICUS_SANDBOX_IMAGE=tau-sandbox:latest   # optional override
 ```
 
 Setup toolkit: `runtime.sandbox: docker-socket`.
@@ -189,8 +189,8 @@ quietly handing agents the host socket.
 image as above.
 
 ```bash
-TAU_SANDBOX_RUNTIME=docker-sysbox
-# TAU_SANDBOX_IMAGE=tau-sandbox:latest   # optional override
+FICUS_SANDBOX_RUNTIME=docker-sysbox
+# FICUS_SANDBOX_IMAGE=tau-sandbox:latest   # optional override
 ```
 
 Setup toolkit: `runtime.sandbox: docker-sysbox`.
@@ -258,8 +258,8 @@ Register machines from Settings → Machines in the web UI (or `POST
 /api/machines`).
 
 ```bash
-TAU_SANDBOX_RUNTIME=vm
-# TAU_EXE_MACHINE_IMAGE=ghcr.io/ficushq/ficus-machine:latest   # optional; exe provider only
+FICUS_SANDBOX_RUNTIME=vm
+# FICUS_EXE_MACHINE_IMAGE=ghcr.io/ficushq/ficus-machine:latest   # optional; exe provider only
 ```
 
 Setup toolkit: `runtime.sandbox: vm` (plus `runtime.exe.ssh_key_path` and
@@ -307,11 +307,11 @@ the same runtime on one machine.
 Build and push the sandbox image with `bun run sandbox:build:k8s`.
 
 ```bash
-TAU_SANDBOX_RUNTIME=k8s
-TAU_K8S_NAMESPACE=tau-sandboxes
-# TAU_K8S_RUNTIME_CLASS=sysbox-runc        # set empty to disable
-# TAU_K8S_STORAGE_CLASS_RWX=...            # workspace/memory volumes
-# TAU_K8S_STORAGE_CLASS_RWO=...            # nix store volumes
+FICUS_SANDBOX_RUNTIME=k8s
+FICUS_K8S_NAMESPACE=tau-sandboxes
+# FICUS_K8S_RUNTIME_CLASS=sysbox-runc        # set empty to disable
+# FICUS_K8S_STORAGE_CLASS_RWX=...            # workspace/memory volumes
+# FICUS_K8S_STORAGE_CLASS_RWO=...            # nix store volumes
 ```
 
 Local k3d instead:
@@ -321,10 +321,10 @@ bun run k3d:setup            # one-time: cluster, image, namespace, PVC
 ```
 
 ```bash
-TAU_SANDBOX_RUNTIME=k8s
-TAU_K8S_LOCAL=true
-TAU_K8S_NAMESPACE=tau-sandboxes-dev
-TAU_K8S_RUNTIME_CLASS=
+FICUS_SANDBOX_RUNTIME=k8s
+FICUS_K8S_LOCAL=true
+FICUS_K8S_NAMESPACE=tau-sandboxes-dev
+FICUS_K8S_RUNTIME_CLASS=
 ```
 
 Setup toolkit: `runtime.sandbox: k8s` (the toolkit does **not** build the
@@ -403,7 +403,7 @@ That is the **instance-wide** switch. For changing a single squad without
 restarting the instance into a different runtime, see
 [Mixing runtimes](#mixing-runtimes-design--not-yet-shipped) (design status).
 
-Change `TAU_SANDBOX_RUNTIME` (or `runtime.sandbox` in the toolkit config) and
+Change `FICUS_SANDBOX_RUNTIME` (or `runtime.sandbox` in the toolkit config) and
 restart the api and worker. Existing sandboxes on the old runtime are not
 migrated: agents get a fresh sandbox on the new runtime, and the old
 containers/pods/boxes are left for you to clean up. Squad workspaces and memory
@@ -418,7 +418,7 @@ value at all) must be edited **before** the api and worker are restarted — the
 refuse to start otherwise, and both the setup toolkit's `upgrade-host.sh` and
 the in-app updater stop before restarting rather than leave the instance down.
 The in-app preflight ships WITH this change, so an instance still running
-pre-rename code must set `TAU_SANDBOX_RUNTIME` in `.env` BEFORE applying the
+pre-rename code must set `FICUS_SANDBOX_RUNTIME` in `.env` BEFORE applying the
 update that introduces it; `upgrade-host.sh` from this checkout is safe either
 way.
 On the docker runtimes, expect every existing `tau-sandbox-*` container to be

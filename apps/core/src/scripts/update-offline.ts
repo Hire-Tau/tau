@@ -12,6 +12,7 @@
  * leaves a half-restarted pair. This module must not import anything that
  * opens a database connection at load time.
  */
+import '../boot/legacy-env'
 import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'

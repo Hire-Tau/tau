@@ -172,7 +172,7 @@ export interface SandboxStatus {
    */
   controllable?: boolean
   /**
-   * Server-driven runtime this sandbox is running under (TAU_SANDBOX_RUNTIME)
+   * Server-driven runtime this sandbox is running under (FICUS_SANDBOX_RUNTIME)
    * — never inferred client-side. Docker/k8s keep the classic Start/Stop
    * controls; VM mode replaces them with the chain-health status (see
    * {@link SandboxChainHealth}) since Stop is not a meaningful goal state there

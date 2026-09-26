@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test'
-import { resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
 
 const REPO_ROOT = resolve(import.meta.dir, '../../../..')
 
@@ -58,5 +59,26 @@ describe('core legacy-env boot module', () => {
     expect(logs).not.toContain('legacy-key-value')
     expect(logs).not.toContain('stray-key-value')
     expect(result.stdout).toContain('value=legacy-key-value')
+  })
+})
+
+describe('entrypoints import the legacy-env boot module first', () => {
+  // Later imports read process.env at module load, so the bridge must run before any of them.
+  const ENTRYPOINTS: Array<[file: string, specifier: string]> = [
+    ['apps/core/src/index.ts', './boot/legacy-env'],
+    ['apps/core/src/worker.ts', './boot/legacy-env'],
+    ['apps/core/src/db/run-migrations.ts', '../boot/legacy-env'],
+    ['apps/core/src/box-control.ts', './boot/legacy-env'],
+    ['apps/core/src/smoke-configured-extensions.ts', './boot/legacy-env'],
+    ['apps/core/src/scripts/update-offline.ts', '../boot/legacy-env'],
+    ['apps/cli/src/index.ts', './boot/legacy-env'],
+    ['scripts/pm2-name.ts', '../apps/cli/src/boot/legacy-env'],
+    ['packages/k8s-sandbox/src/server.ts', './boot/legacy-env'],
+  ]
+
+  test.each(ENTRYPOINTS)('%s', (file, specifier) => {
+    const source = readFileSync(join(REPO_ROOT, file), 'utf8')
+    const firstImport = source.match(/^import\b[^\n]*$/m)?.[0]
+    expect(firstImport).toBe(`import '${specifier}'`)
   })
 })

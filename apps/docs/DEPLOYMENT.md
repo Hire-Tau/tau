@@ -26,7 +26,7 @@ website. Publish the build output, not the source checkout.
 
 Every Core build also builds this content with base `/docs/` into
 `apps/core/docs-dist/`. Both cloud and self-hosted instances serve it on the Core
-port, even with `TAU_SERVE_WEB` disabled. Open `/docs/` on the instance origin.
+port, even with `FICUS_SERVE_WEB` disabled. Open `/docs/` on the instance origin.
 Core release artifacts and Docker images include the complete output; upgrading
 the release upgrades its docs at the same time. No separate docs service or
 runtime Node installation is required. Builders need Node.js 22.12 or newer.

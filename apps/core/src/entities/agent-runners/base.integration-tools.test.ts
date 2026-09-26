@@ -17,14 +17,14 @@ test('integration tools require both type capability and explicit tool allow', (
 })
 
 test('managed registry wiring applies deployment authority only to OAuth providers', () => {
-  const previousManaged = process.env.TAU_MANAGED
-  process.env.TAU_MANAGED = '1'
+  const previousManaged = process.env.FICUS_MANAGED
+  process.env.FICUS_MANAGED = '1'
   try {
     expect(deploymentOAuthAuthorityForProvider('bigbrain')).toBeUndefined()
     expect(deploymentOAuthAuthorityForProvider('notion')).toBe('platform_broker')
   } finally {
-    if (previousManaged === undefined) delete process.env.TAU_MANAGED
-    else process.env.TAU_MANAGED = previousManaged
+    if (previousManaged === undefined) delete process.env.FICUS_MANAGED
+    else process.env.FICUS_MANAGED = previousManaged
   }
 })
 

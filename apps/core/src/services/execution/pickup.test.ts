@@ -79,16 +79,16 @@ import {
 // admission-lock holders) and drives real execution-lifecycle timing under
 // waitFor budgets — too jitter-prone for the shared CI runner. It runs only
 // in the dedicated `subprocess-tests` CI job (see ci.yml); the main sweep
-// sets TAU_TEST_SKIP_SUBPROCESS=1 to skip it here.
-const describeSubprocess = describe.skipIf(process.env.TAU_TEST_SKIP_SUBPROCESS === '1')
+// sets FICUS_TEST_SKIP_SUBPROCESS=1 to skip it here.
+const describeSubprocess = describe.skipIf(process.env.FICUS_TEST_SKIP_SUBPROCESS === '1')
 
 let releaseMaintenanceIsolation: (() => Promise<void>) | undefined
 beforeAll(async () => {
-  if (process.env.TAU_TEST_SKIP_SUBPROCESS === '1') return
+  if (process.env.FICUS_TEST_SKIP_SUBPROCESS === '1') return
   releaseMaintenanceIsolation = await acquireMaintenanceTestIsolation()
 })
 afterAll(() => {
-  if (process.env.TAU_TEST_SKIP_SUBPROCESS === '1') return
+  if (process.env.FICUS_TEST_SKIP_SUBPROCESS === '1') return
   return releaseMaintenanceIsolation?.()
 })
 
@@ -105,7 +105,7 @@ const secondConnection = createPostgresConnection(getConnectionString(), { max: 
 // ManagedRestartWorker.close() for why close() must WAIT for that proof.
 const livenessProofConnection = createPostgresConnection(getConnectionString(), { max: 1, onnotice: () => {} })
 afterAll(async () => {
-  if (process.env.TAU_TEST_SKIP_SUBPROCESS === '1') return
+  if (process.env.FICUS_TEST_SKIP_SUBPROCESS === '1') return
   await Promise.all([secondConnection.end(), livenessProofConnection.end()])
 })
 

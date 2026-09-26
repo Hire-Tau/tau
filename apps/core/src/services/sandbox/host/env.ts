@@ -11,6 +11,7 @@
 import { randomBytes, randomUUID } from 'crypto'
 import { chmodSync, existsSync, mkdirSync, renameSync, writeFileSync } from 'fs'
 import { join } from 'path'
+import { ENV_PREFIX, LEGACY_ENV_PREFIX } from '@ficus/shared/legacy-env'
 import { getHomeDir } from '../../../lib/utils/home'
 import { getCliHostPath } from '../../../lib/utils/cli-help'
 import { getSquadSshPath } from '../../squad/ssh'
@@ -252,10 +253,10 @@ export function hostCliAuthStorePath(agentId?: string): string {
 
 /** Env names the preamble restores the injected identity from; see {@link buildHostPreamble}. */
 export const IDENTITY_ALIAS_KEYS = [
-  'TAU_IDENTITY_API_URL',
-  'TAU_IDENTITY_TOKEN',
-  'TAU_IDENTITY_AUTH_STORE',
-  'TAU_IDENTITY_AGENT_ID',
+  'FICUS_IDENTITY_API_URL',
+  'FICUS_IDENTITY_TOKEN',
+  'FICUS_IDENTITY_AUTH_STORE',
+  'FICUS_IDENTITY_AGENT_ID',
 ] as const
 
 /**
@@ -264,16 +265,34 @@ export const IDENTITY_ALIAS_KEYS = [
  * `.tau/.env` can neither replace nor supply one.
  */
 export const IDENTITY_ENV_KEYS = [
-  'TAU_API_URL',
-  'TAU_TOKEN',
-  'TAU_AUTH_STORE',
-  'TAU_AGENT_CONTEXT',
-  'TAU_AGENT_ID',
+  'FICUS_API_URL',
+  'FICUS_TOKEN',
+  'FICUS_AUTH_STORE',
+  'FICUS_AGENT_CONTEXT',
+  'FICUS_AGENT_ID',
   // Never granted to an agent shell, so it is always in the unset list. The CLI
-  // still accepts TAU_PASSWORD as a human credential (`tau auth login`), so a
+  // still accepts FICUS_PASSWORD as a human credential (`tau auth login`), so a
   // stale squad env — or an operator's own shell profile — would otherwise hand
   // the instance's admin password to every agent.
-  'TAU_PASSWORD',
+  'FICUS_PASSWORD',
+] as const
+
+/**
+ * One release (Ficus rename): the legacy spelling of a `FICUS_` name. Older `tau`
+ * CLIs, user scripts and ssh shims written by an older Core read these.
+ */
+function legacyName(key: string): string {
+  return `${LEGACY_ENV_PREFIX}${key.slice(ENV_PREFIX.length)}`
+}
+
+/** Runtime-injected names that are also emitted under their legacy `TAU_` spelling this release. */
+const LEGACY_ALIASED_KEYS = [
+  'FICUS_API_URL',
+  'FICUS_TOKEN',
+  'FICUS_AUTH_STORE',
+  'FICUS_AGENT_CONTEXT',
+  'FICUS_AGENT_ID',
+  'FICUS_SQUAD_SSH_DIR',
 ] as const
 
 /** Identity of the shell being built: which agent it is and which instance/credential it uses. */
@@ -292,7 +311,7 @@ export function buildHostCommandEnv(
   const base = opts.base ?? getHostBaseEnv()
   const env: Record<string, string> = { ...base }
   env.PATH = `${hostBinDir()}:${base.PATH ?? FALLBACK_PATH}`
-  env.TAU_API_URL = resolveHostApiUrl()
+  env.FICUS_API_URL = resolveHostApiUrl()
   if (process.env.APP_URL) env.APP_URL = process.env.APP_URL
   // An INJECTED TOKEN is what makes a shell an agent's. Operator-driven shells
   // (web terminals, `exec`, the manager's spawns) get no token, and must keep
@@ -300,25 +319,25 @@ export function buildHostCommandEnv(
   // only break the human's `tau` without protecting anything.
   const agentId = normalizeAgentId(opts.agentId)
   if (opts.tauToken) {
-    env.TAU_TOKEN = opts.tauToken
-    env.TAU_AUTH_STORE = hostCliAuthStorePath(agentId)
-    env.TAU_AGENT_CONTEXT = '1'
-    if (agentId) env.TAU_AGENT_ID = agentId
+    env.FICUS_TOKEN = opts.tauToken
+    env.FICUS_AUTH_STORE = hostCliAuthStorePath(agentId)
+    env.FICUS_AGENT_CONTEXT = '1'
+    if (agentId) env.FICUS_AGENT_ID = agentId
   }
   // Aliases the preamble restores the identity from after the squad env file is
   // sourced. They travel in the process env, never in the command string, and
   // mirror exactly the names that were set above.
-  env.TAU_IDENTITY_API_URL = env.TAU_API_URL
-  if (env.TAU_TOKEN) env.TAU_IDENTITY_TOKEN = env.TAU_TOKEN
-  if (env.TAU_AUTH_STORE) env.TAU_IDENTITY_AUTH_STORE = env.TAU_AUTH_STORE
-  if (env.TAU_AGENT_ID) env.TAU_IDENTITY_AGENT_ID = env.TAU_AGENT_ID
+  env.FICUS_IDENTITY_API_URL = env.FICUS_API_URL
+  if (env.FICUS_TOKEN) env.FICUS_IDENTITY_TOKEN = env.FICUS_TOKEN
+  if (env.FICUS_AUTH_STORE) env.FICUS_IDENTITY_AUTH_STORE = env.FICUS_AUTH_STORE
+  if (env.FICUS_AGENT_ID) env.FICUS_IDENTITY_AGENT_ID = env.FICUS_AGENT_ID
   if (opts.squadId) {
     const sshDir = getSquadSshPath(opts.squadId)
     const sshConfig = join(sshDir, 'config')
     if (existsSync(sshConfig)) {
       // Host-runtime SSH-family shims (ssh-shims.ts) read this to resolve the
       // squad's managed config + known_hosts; see docs/wiki/host-runtime.md § Environment.
-      env.TAU_SQUAD_SSH_DIR = sshDir
+      env.FICUS_SQUAD_SSH_DIR = sshDir
       // The squad's known_hosts must be named explicitly: on host there is no
       // `~/.ssh` mount, so ssh would otherwise consult (and append learned host
       // keys to) the OPERATOR's own known_hosts and ignore the squad's.
@@ -327,6 +346,9 @@ export function buildHostCommandEnv(
       env.GIT_SSH_COMMAND = `ssh -F ${shellQuote(sshConfig)}${knownHostsOpt}`
     }
   }
+  // Dual-emit, overwriting whatever the operator's login env carried under the
+  // legacy name, so an older `tau` CLI resolves the same instance and identity.
+  for (const key of LEGACY_ALIASED_KEYS) if (env[key] !== undefined) env[legacyName(key)] = env[key]
   return env
 }
 
@@ -340,10 +362,10 @@ export function buildHostCommandEnv(
  * Every step is load-bearing:
  *
  * - `set -a && . envfile` runs INSIDE this shell, after the process env exists,
- *   so a `TAU_API_URL`/`TAU_TOKEN`/`TAU_AUTH_STORE` in the squad env would
+ *   so a `FICUS_API_URL`/`FICUS_TOKEN`/`FICUS_AUTH_STORE` in the squad env would
  *   otherwise replace the agent's identity and let it act as another identity
  *   against another instance.
- * - The snapshots are taken BEFORE the source line because the `TAU_IDENTITY_*`
+ * - The snapshots are taken BEFORE the source line because the `FICUS_IDENTITY_*`
  *   aliases are ordinary variables: a squad env that sets THOSE would poison an
  *   export that read them afterwards.
  * - The snapshot names carry a per-command random suffix, so a squad env cannot
@@ -358,7 +380,7 @@ export function buildHostCommandEnv(
  *   keeping whatever the squad env added, which stays a supported thing to do.
  * - Values travel in the process env, never in this string: the command string
  *   becomes argv, which is world-readable through /proc on Linux.
- *   `opts.tauToken` only decides WHETHER a `TAU_TOKEN` assignment is emitted;
+ *   `opts.tauToken` only decides WHETHER a `FICUS_TOKEN` assignment is emitted;
  *   its value never reaches the output.
  */
 export function buildHostPreamble(opts: HostIdentityOptions & { squadId?: string } = {}): string {
@@ -371,21 +393,21 @@ export function buildHostPreamble(opts: HostIdentityOptions & { squadId?: string
   const storeVar = local('store')
   const agentVar = local('agent')
 
-  const set = new Map<string, string>([['TAU_API_URL', `$${urlVar}`]])
+  const set = new Map<string, string>([['FICUS_API_URL', `$${urlVar}`]])
   if (opts.tauToken) {
-    set.set('TAU_TOKEN', `$${tokenVar}`)
-    set.set('TAU_AUTH_STORE', `$${storeVar}`)
-    set.set('TAU_AGENT_CONTEXT', '1')
-    if (agentId) set.set('TAU_AGENT_ID', `$${agentVar}`)
+    set.set('FICUS_TOKEN', `$${tokenVar}`)
+    set.set('FICUS_AUTH_STORE', `$${storeVar}`)
+    set.set('FICUS_AGENT_CONTEXT', '1')
+    if (agentId) set.set('FICUS_AGENT_ID', `$${agentVar}`)
   }
 
   const locals = [urlVar, binVar]
-  const snapshots = [`${urlVar}="$TAU_IDENTITY_API_URL"`, `${binVar}=${shellQuote(hostBinDir())}`]
+  const snapshots = [`${urlVar}="$FICUS_IDENTITY_API_URL"`, `${binVar}=${shellQuote(hostBinDir())}`]
   if (opts.tauToken) {
-    snapshots.push(`${tokenVar}="$TAU_IDENTITY_TOKEN"`, `${storeVar}="$TAU_IDENTITY_AUTH_STORE"`)
+    snapshots.push(`${tokenVar}="$FICUS_IDENTITY_TOKEN"`, `${storeVar}="$FICUS_IDENTITY_AUTH_STORE"`)
     locals.push(tokenVar, storeVar)
     if (agentId) {
-      snapshots.push(`${agentVar}="$TAU_IDENTITY_AGENT_ID"`)
+      snapshots.push(`${agentVar}="$FICUS_IDENTITY_AGENT_ID"`)
       locals.push(agentVar)
     }
   }
@@ -402,6 +424,12 @@ export function buildHostPreamble(opts: HostIdentityOptions & { squadId?: string
   lines.push(`export ${[...set].map(([key, value]) => `${key}="${value}"`).join(' ')}`)
   const unmanaged = IDENTITY_ENV_KEYS.filter((key) => !set.has(key))
   if (unmanaged.length > 0) lines.push(`unset ${unmanaged.join(' ')}`)
+  // One release (Ficus rename): re-assert the legacy spellings from the restored
+  // values and unset the legacy spelling of every name this shell was not given,
+  // so neither an older CLI nor the new CLI's TAU_→FICUS_ bridge picks up a
+  // squad env's TAU_TOKEN or TAU_PASSWORD.
+  lines.push(`export ${[...set.keys()].map((key) => `${legacyName(key)}="$${key}"`).join(' ')}`)
+  if (unmanaged.length > 0) lines.push(`unset ${unmanaged.map(legacyName).join(' ')}`)
   lines.push(`export PATH="$${binVar}:$PATH"`)
   lines.push(`unset ${locals.join(' ')} ${IDENTITY_ALIAS_KEYS.join(' ')}`)
   return `${lines.join('\n')}\n`

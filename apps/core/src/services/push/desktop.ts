@@ -9,7 +9,7 @@ import { UserNotificationPreferences } from '../../entities/UserNotificationPref
 /** Managed desktop homes get every alert; everyone else only gets one once they've paired a Tau Desktop device. */
 async function desktopRecipients(userIds: string[]): Promise<string[]> {
   const unique = [...new Set(userIds)]
-  if (!unique.length || process.env.TAU_DESKTOP_MANAGED === '1') return unique
+  if (!unique.length || process.env.FICUS_DESKTOP_MANAGED === '1') return unique
   const rows = await db
     .selectDistinct({ userId: deviceTokens.userId })
     .from(deviceTokens)

@@ -102,8 +102,8 @@ const stamp = (info: { version: string; commit: string; buildDate: string }) =>
 // This file spawns real `bun build` subprocesses and drives real cross-process
 // exclusion — too jitter-prone for the shared CI runner. It runs only in the
 // dedicated `subprocess-tests` CI job (see ci.yml); the main sweep sets
-// TAU_TEST_SKIP_SUBPROCESS=1 to skip it here.
-const describeSubprocess = describe.skipIf(process.env.TAU_TEST_SKIP_SUBPROCESS === '1')
+// FICUS_TEST_SKIP_SUBPROCESS=1 to skip it here.
+const describeSubprocess = describe.skipIf(process.env.FICUS_TEST_SKIP_SUBPROCESS === '1')
 
 describeSubprocess('CLI wrapper constants', () => {
   it('pins the exact wrapper script: sh shebang exec-ing the machine bun against the pushed bundle', () => {

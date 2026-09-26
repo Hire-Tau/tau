@@ -142,7 +142,7 @@ Template syntax: `{{ payload.dot.path }}`. The path is walked through the payloa
 
 Environment variables from templates are merged with `process.env` and passed to all commands in the rule.
 
-Webhook scripts receive `TAU_WEBHOOK_CONTEXT=1`, the local Core listener as `TAU_API_URL`, and a scoped system token. The CLI uses that injected identity directly, even if the host user has a different active login or matching values in `.env`. Missing credentials or an API URL fail closed; `--backend` cannot substitute a saved human login. Bootstrap scripts may receive the instance's legacy password when a system token cannot yet be persisted.
+Webhook scripts receive `FICUS_WEBHOOK_CONTEXT=1`, the local Core listener as `FICUS_API_URL`, and a scoped system token. The CLI uses that injected identity directly, even if the host user has a different active login or matching values in `.env`. Missing credentials or an API URL fail closed; `--backend` cannot substitute a saved human login. Bootstrap scripts may receive the instance's legacy password when a system token cannot yet be persisted.
 
 ## GitHub Provider
 
@@ -224,12 +224,12 @@ gh api repos/$REPO/hooks --method POST \
 #### 3. Verify it is working
 
 The status route requires the `webhooks:read` permission, so it needs a
-credential. Before the first admin passkey exists, the bootstrap `TAU_PASSWORD`
+credential. Before the first admin passkey exists, the bootstrap `FICUS_PASSWORD`
 from `.env` works as a bearer token; afterwards it stops being accepted and you
 need a signed-in session or a system token.
 
 ```bash
-curl -H "Authorization: Bearer $TAU_PASSWORD" https://YOUR-DOMAIN/api/webhooks/github/status
+curl -H "Authorization: Bearer $FICUS_PASSWORD" https://YOUR-DOMAIN/api/webhooks/github/status
 # {"provider":"github","registered":true,"secretConfigured":true}
 ```
 
@@ -281,7 +281,7 @@ uses, but not `push` — add that one in the GitHub UI (or with `gh`) when you
 want auto-deploy:
 
 ```bash
-export TAU_GITHUB_HOOK_SETUP_SECRET='same-new-secret-entered-in-integration-settings'
+export FICUS_GITHUB_HOOK_SETUP_SECRET='same-new-secret-entered-in-integration-settings'
 scripts/setup-github-webhook.sh owner/repo https://your-domain.com
 ```
 
@@ -337,8 +337,8 @@ Open **Settings → Integrations → Linear → Webhook delivery**, generate or 
 #### 3. Verify setup
 
 ```bash
-# webhooks:read required — the bootstrap TAU_PASSWORD works until the first admin passkey exists
-curl -H "Authorization: Bearer $TAU_PASSWORD" https://your-domain.com/api/webhooks/linear/status
+# webhooks:read required — the bootstrap FICUS_PASSWORD works until the first admin passkey exists
+curl -H "Authorization: Bearer $FICUS_PASSWORD" https://your-domain.com/api/webhooks/linear/status
 # {"provider":"linear","registered":true,"secretConfigured":true}
 ```
 
@@ -488,7 +488,7 @@ Check whether a provider is registered and holds a secret (needs the
 `webhooks:read` permission):
 
 ```bash
-curl -H "Authorization: Bearer $TAU_PASSWORD" https://your-domain.com/api/webhooks/github/status
+curl -H "Authorization: Bearer $FICUS_PASSWORD" https://your-domain.com/api/webhooks/github/status
 ```
 
 Common causes: a `401` means the integration webhook secret and the one on the provider

@@ -300,9 +300,9 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 | `EXECUTOR_PORT`    | `50051`       | HTTP server port            |
 | `EXECUTOR_VERSION` | `0.2.0`       | Reported in health check    |
 | `WORKSPACE_PATH`   | `/workspace`  | Primary working directory   |
-| `TAU_SANDBOX_ID`   | (set by Core) | Sandbox identifier          |
-| `TAU_SQUAD_ID`     | (set by Core) | Squad identifier            |
-| `TAU_API_URL`      | (set by Core) | Core API URL for Tau CLI    |
+| `FICUS_SANDBOX_ID` | (set by Core) | Sandbox identifier          |
+| `FICUS_SQUAD_ID`   | (set by Core) | Squad identifier            |
+| `FICUS_API_URL`    | (set by Core) | Core API URL for Tau CLI    |
 | `GITHUB_TOKEN`     | (optional)    | Git credential helper token |
 | `GIT_USER_NAME`    | (optional)    | Git commit author name      |
 | `GIT_USER_EMAIL`   | (optional)    | Git commit author email     |

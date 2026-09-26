@@ -532,10 +532,10 @@ describe('managed connection revocation falls back the live ChannelConnections t
   }
 
   beforeEach(async () => {
-    for (const key of ['TAU_ENCRYPTION_KEY']) {
+    for (const key of ['FICUS_ENCRYPTION_KEY']) {
       priorEnv.set(key, process.env[key])
     }
-    process.env.TAU_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+    process.env.FICUS_ENCRYPTION_KEY = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
     await wipe()
     resetSecretStore()
     resetSettingsStore()

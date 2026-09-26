@@ -35,7 +35,7 @@ interface MutableDevProxyState {
 }
 
 function cliAuthStorePath(): string {
-  return process.env.TAU_DEV_AUTH_STORE_PATH ?? ''
+  return process.env.FICUS_DEV_AUTH_STORE_PATH ?? ''
 }
 
 function readCliBackends(): Record<string, CliBackend> {
@@ -407,7 +407,7 @@ function devProxyOptions(kind: 'api' | 'ws', state: MutableDevProxyState, access
  * prompts users to update) and unique per distinct build otherwise.
  */
 function resolveBuildId(): string {
-  if (process.env.TAU_BUILD_ID) return process.env.TAU_BUILD_ID
+  if (process.env.FICUS_BUILD_ID) return process.env.FICUS_BUILD_ID
   try {
     const git = (cmd: string) =>
       execSync(cmd, { stdio: ['ignore', 'pipe', 'ignore'] })
@@ -449,9 +449,9 @@ export default defineConfig(({ mode, command }) => {
   const proxyRoot = isViteDev ? '' : deployedBase.replace(/\/?$/, '')
   const serviceWorkerCacheVersion = resolveBuildId()
   const builtinCssFingerprint = computeBuiltinCssFingerprint()
-  const devAccessToken = isViteDev ? process.env.TAU_DEV_ACCESS_TOKEN?.trim() : undefined
+  const devAccessToken = isViteDev ? process.env.FICUS_DEV_ACCESS_TOKEN?.trim() : undefined
   const devBackendState: MutableDevProxyState = {
-    selectedLabel: isViteDev ? (process.env.TAU_DEV_BACKEND ?? LOCAL_BACKEND_LABEL) : LOCAL_BACKEND_LABEL,
+    selectedLabel: isViteDev ? (process.env.FICUS_DEV_BACKEND ?? LOCAL_BACKEND_LABEL) : LOCAL_BACKEND_LABEL,
     productionWritesEnabled: false,
   }
   // Fail at startup with the requested label, before Vite starts serving a UI

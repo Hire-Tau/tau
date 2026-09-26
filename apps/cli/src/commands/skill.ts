@@ -85,7 +85,7 @@ function isSupportedSkill(skill: string): skill is SupportedSkill {
 
 function getBundledSkillDir(skill: SupportedSkill): string {
   const thisFile = fileURLToPath(import.meta.url)
-  const tauShareDir = process.env.TAU_SHARE_DIR ?? join(process.env.HOME ?? '', '.tau/share')
+  const tauShareDir = process.env.FICUS_SHARE_DIR ?? join(process.env.HOME ?? '', '.tau/share')
   const sourceCandidates = [
     // Running installed CLI with bundled skills copied to ~/.tau/share/skills.
     resolve(expandTilde(tauShareDir), 'skills', skill),

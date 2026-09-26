@@ -449,13 +449,13 @@ describe('ensureWorkspaceSandbox private + squad-aware', () => {
 })
 
 describe('ensureWorkspaceSandbox vm runtime (env-driven)', () => {
-  const prevRuntime = process.env.TAU_SANDBOX_RUNTIME
+  const prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
   afterEach(() => {
-    if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+    if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
   })
 
-  // Drive the REAL factory runtime predicates off TAU_SANDBOX_RUNTIME=vm, faking
+  // Drive the REAL factory runtime predicates off FICUS_SANDBOX_RUNTIME=vm, faking
   // only the manager — this proves the vm env selects the remote manager flow.
   // getCliHostPath points at a non-existent build on purpose: if the vm path
   // wrongly ran the k8s CLI subPath staging it would throw "Tau CLI build not
@@ -473,7 +473,7 @@ describe('ensureWorkspaceSandbox vm runtime (env-driven)', () => {
   }
 
   it('(solo agent) routes to the vm manager ensureSandbox with agent opts + machineId, skipping k8s CLI staging', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const tmp = mkdtempSync(join(tmpdir(), 'tau-vm-solo-'))
     let captured: any = null
     const manager = {
@@ -506,7 +506,7 @@ describe('ensureWorkspaceSandbox vm runtime (env-driven)', () => {
   })
 
   it('(squad member) passes squadId + shared squad workspace to the vm manager', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const squadId = randomUUID()
     const tmp = mkdtempSync(join(tmpdir(), 'tau-vm-squad-'))
     let captured: any = null
@@ -538,7 +538,7 @@ describe('ensureWorkspaceSandbox vm runtime (env-driven)', () => {
   })
 
   it('(system-manager) reaches ensureSandbox without drift-recreate (non-agent_ prefix)', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const tmp = mkdtempSync(join(tmpdir(), 'tau-vm-sysmgr-'))
     let ensureCalls = 0
     let recreateCalls = 0
@@ -1015,10 +1015,10 @@ describe('ensureSquadSandbox setup progress extent', () => {
 })
 
 describe('ensureWorkspaceSandbox managed toolchain gate', () => {
-  const prevRuntime = process.env.TAU_SANDBOX_RUNTIME
+  const prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
   afterEach(() => {
-    if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+    if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
   })
 
   // The orchestrator and every runtime adapter are unit-tested in
@@ -1059,7 +1059,7 @@ describe('ensureWorkspaceSandbox managed toolchain gate', () => {
   }
 
   it('provisions the squad declaration only after the physical box is ready', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const squad = await Squad.create({
       name: `toolchain gate ${randomUUID()}`,
       purpose: 'test',
@@ -1083,7 +1083,7 @@ describe('ensureWorkspaceSandbox managed toolchain gate', () => {
   })
 
   it('fails the ensure when the declaration cannot be provisioned', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const squad = await Squad.create({
       name: `toolchain gate fail ${randomUUID()}`,
       purpose: 'test',
@@ -1113,7 +1113,7 @@ describe('ensureWorkspaceSandbox managed toolchain gate', () => {
   })
 
   it('does not gate readiness for a squad without a declaration', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'vm'
+    process.env.FICUS_SANDBOX_RUNTIME = 'vm'
     const squad = await Squad.create({ name: `toolchain none ${randomUUID()}`, purpose: 'test' })
     const gateSandboxUuid = randomUUID()
     const tmp = mkdtempSync(join(tmpdir(), 'tau-toolchain-none-'))

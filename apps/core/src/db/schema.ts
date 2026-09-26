@@ -937,7 +937,7 @@ export const squads = pgTable('squads', {
   machineId: uuid('machine_id').references((): AnyPgColumn => machines.id, { onDelete: 'set null' }),
   // Host sandbox runtime only: absolute directory on the core's machine this
   // squad's workspace lives in (NULL = <HOME_DIR>/workspaces/squads/<id>).
-  // Stored on any runtime, honoured only by TAU_SANDBOX_RUNTIME=host. Tau never
+  // Stored on any runtime, honoured only by FICUS_SANDBOX_RUNTIME=host. Tau never
   // deletes this directory.
   hostWorkspacePath: text('host_workspace_path'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -2693,7 +2693,7 @@ export const machines = pgTable('machines', {
   // and on a machine that has NEVER lost a box, so a freshly provisioned VM is
   // exempt from reaping until it has hosted and drained. The empty-machine
   // reaper terminates a ready, auto-provisioned, non-dedicated machine once
-  // now - empty_since exceeds TAU_MACHINE_IDLE_GRACE_MS (re-verifying zero
+  // now - empty_since exceeds FICUS_MACHINE_IDLE_GRACE_MS (re-verifying zero
   // boxes at terminate time).
   emptySince: timestamp('empty_since', { withTimezone: true }),
   // The squad a legacy 'squad'-purpose machine belongs to; null for every other
@@ -2750,7 +2750,7 @@ export const machineBoxes = pgTable(
     // field name this is NOT the bare reconcilable spec hash (role +
     // bundle/provision-script version + squad membership —
     // `computeSpecHash`, used for recreateSandbox's drift detection and
-    // baked into TAU_BOX_SPEC_HASH): it additionally folds in a HASH of the
+    // baked into FICUS_BOX_SPEC_HASH): it additionally folds in a HASH of the
     // caller env (never the raw secret values), because the resume fast
     // path this drives skips the server.env push a full provision does — a
     // rotated GITHUB_TOKEN/callback secret/API URL must also bust the fast
@@ -2767,7 +2767,7 @@ export const machineBoxes = pgTable(
     // secret rotation) is never silently skipped. Null for rows predating
     // this column.
     provisionedSpecHash: text('provisioned_spec_hash'),
-    // Bare reconcilable sandbox spec mirrored from TAU_BOX_SPEC_HASH. Unlike
+    // Bare reconcilable sandbox spec mirrored from FICUS_BOX_SPEC_HASH. Unlike
     // provisionedSpecHash this excludes environment/secret hashes, so drift
     // checks can compare it directly after a Core restart.
     reconcilableSpecHash: text('reconcilable_spec_hash'),

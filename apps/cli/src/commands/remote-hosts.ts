@@ -98,12 +98,12 @@ function validatePort(port: string): number {
   return n
 }
 
-/** Resolve the squad to act as: `--squad` wins, else `TAU_SQUAD_ID` (set automatically inside a squad box). */
+/** Resolve the squad to act as: `--squad` wins, else `FICUS_SQUAD_ID` (set automatically inside a squad box). */
 function resolveSquadId(explicit?: string): string {
-  const squadId = explicit ?? process.env.TAU_SQUAD_ID
+  const squadId = explicit ?? process.env.FICUS_SQUAD_ID
   if (!squadId) {
     throw new Error(
-      'No squad context: run this from a squad agent box (TAU_SQUAD_ID is set automatically) or pass --squad <id>.'
+      'No squad context: run this from a squad agent box (FICUS_SQUAD_ID is set automatically) or pass --squad <id>.'
     )
   }
   return squadId
@@ -182,7 +182,7 @@ export function registerRemoteHostsCommands(program: Command) {
     .requiredOption('--user <user>', 'ssh user')
     .option('--port <port>', 'ssh port (default 22)')
     .option('--description <description>', 'free-text description')
-    .option('--squad <id>', 'grant to this squad instead of TAU_SQUAD_ID')
+    .option('--squad <id>', 'grant to this squad instead of FICUS_SQUAD_ID')
     .option('--global', 'register without granting any squad (needs global remote-hosts:write)')
     .action(
       async (opts: {

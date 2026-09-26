@@ -27,7 +27,7 @@ export async function handleBrowserProxy(
   body: unknown,
   authToken: string | undefined
 ): Promise<Response> {
-  const sock = process.env.TAU_BROWSER_SOCK || DEFAULT_SOCK
+  const sock = process.env.FICUS_BROWSER_SOCK || DEFAULT_SOCK
   const subpath = pathname.slice('/browser'.length) // '/open', '/click', ...
 
   let upstream: Response

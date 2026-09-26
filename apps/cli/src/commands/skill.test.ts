@@ -39,7 +39,7 @@ describe('skill CLI commands', () => {
     expect(skill).toContain('name: tau-memory')
     expect(skill).toContain('## Installed Tau CLI')
     expect(skill).not.toContain('<tau-cli>')
-    expect(skill).not.toContain('TAU_BIN')
+    expect(skill).not.toContain('FICUS_BIN')
     await expect(stat(join(cwd, '.agents/skills/tau-memory/install'))).rejects.toThrow()
   })
 

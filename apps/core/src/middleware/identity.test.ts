@@ -251,12 +251,12 @@ describe('identityMiddleware', () => {
     expect(body.userId).toBe(user.id)
   })
 
-  test('rejects TAU_PASSWORD once an admin user has a passkey', async () => {
-    const originalPassword = process.env.TAU_PASSWORD
+  test('rejects FICUS_PASSWORD once an admin user has a passkey', async () => {
+    const originalPassword = process.env.FICUS_PASSWORD
 
     try {
       const testPassword = `test-password-${Date.now()}`
-      process.env.TAU_PASSWORD = testPassword
+      process.env.FICUS_PASSWORD = testPassword
 
       // Reset the secret store cache so it picks up the env var
       resetSecretStore()
@@ -267,7 +267,7 @@ describe('identityMiddleware', () => {
 
       const app = createTestApp()
 
-      // TAU_PASSWORD should be rejected since an admin holds a passkey
+      // FICUS_PASSWORD should be rejected since an admin holds a passkey
       const res = await app.request('/whoami', {
         headers: authHeaders(testPassword),
       })
@@ -281,21 +281,21 @@ describe('identityMiddleware', () => {
     } finally {
       // Restore original password
       if (originalPassword) {
-        process.env.TAU_PASSWORD = originalPassword
+        process.env.FICUS_PASSWORD = originalPassword
       } else {
-        delete process.env.TAU_PASSWORD
+        delete process.env.FICUS_PASSWORD
       }
       resetSecretStore()
       await cleanupTestRbac(`${PREFIX}-pw`)
     }
   })
 
-  test('accepts TAU_PASSWORD in the restored state (admin rows exist, zero credentials)', async () => {
-    const originalPassword = process.env.TAU_PASSWORD
+  test('accepts FICUS_PASSWORD in the restored state (admin rows exist, zero credentials)', async () => {
+    const originalPassword = process.env.FICUS_PASSWORD
 
     try {
       const testPassword = `test-password-restore-${Date.now()}`
-      process.env.TAU_PASSWORD = testPassword
+      process.env.FICUS_PASSWORD = testPassword
       resetSecretStore()
 
       // Cross-subdomain restore: admin user/role rows survive, but the
@@ -313,9 +313,9 @@ describe('identityMiddleware', () => {
       expect(body.type).toBe('legacy')
     } finally {
       if (originalPassword) {
-        process.env.TAU_PASSWORD = originalPassword
+        process.env.FICUS_PASSWORD = originalPassword
       } else {
-        delete process.env.TAU_PASSWORD
+        delete process.env.FICUS_PASSWORD
       }
       resetSecretStore()
       await cleanupTestRbac(`${PREFIX}-restore`)
@@ -323,11 +323,11 @@ describe('identityMiddleware', () => {
   })
 
   test('self-heals: password auth turns off the moment an admin registers a passkey', async () => {
-    const originalPassword = process.env.TAU_PASSWORD
+    const originalPassword = process.env.FICUS_PASSWORD
 
     try {
       const testPassword = `test-password-heal-${Date.now()}`
-      process.env.TAU_PASSWORD = testPassword
+      process.env.FICUS_PASSWORD = testPassword
       resetSecretStore()
 
       const admin = await createTestAdmin({ prefix: `${PREFIX}-heal`, canonicalAdmin: true })
@@ -345,9 +345,9 @@ describe('identityMiddleware', () => {
       expect(after.status).toBe(401)
     } finally {
       if (originalPassword) {
-        process.env.TAU_PASSWORD = originalPassword
+        process.env.FICUS_PASSWORD = originalPassword
       } else {
-        delete process.env.TAU_PASSWORD
+        delete process.env.FICUS_PASSWORD
       }
       resetSecretStore()
       await cleanupTestRbac(`${PREFIX}-heal`)

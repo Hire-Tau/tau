@@ -17,7 +17,7 @@ declare const __TAU_SW_CACHE_VERSION__: string
 const CACHE_VERSION = __TAU_SW_CACHE_VERSION__
 const CACHE_NAME = `tau-cache-${CACHE_VERSION}`
 const API_CACHE_NAME = `tau-api-cache-${CACHE_VERSION}`
-const TAU_RUNTIME_CACHE_PREFIXES = ['tau-cache-', 'tau-api-cache-']
+const FICUS_RUNTIME_CACHE_PREFIXES = ['tau-cache-', 'tau-api-cache-']
 
 // Workbox injects the precache manifest here at build time
 // (replaces your PRECACHE_ASSETS array with content-hashed assets)
@@ -36,7 +36,7 @@ self.addEventListener('activate', (event) => {
             keys
               .filter(
                 (key) =>
-                  TAU_RUNTIME_CACHE_PREFIXES.some((prefix) => key.startsWith(prefix)) &&
+                  FICUS_RUNTIME_CACHE_PREFIXES.some((prefix) => key.startsWith(prefix)) &&
                   key !== CACHE_NAME &&
                   key !== API_CACHE_NAME
               )
@@ -249,7 +249,7 @@ self.addEventListener('message', (event) => {
       caches.keys().then((keys) =>
         Promise.all(
           keys
-            .filter((key) => TAU_RUNTIME_CACHE_PREFIXES.some((prefix) => key.startsWith(prefix)))
+            .filter((key) => FICUS_RUNTIME_CACHE_PREFIXES.some((prefix) => key.startsWith(prefix)))
             .map((key) => caches.delete(key))
         ).then(() => {
           event.ports[0]?.postMessage({ success: true })

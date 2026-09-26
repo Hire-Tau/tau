@@ -1,3 +1,4 @@
+import './boot/legacy-env'
 import { RuntimeReadiness } from './lib/infra/readiness'
 import { mountCoreDocs } from './lib/docs-serve'
 import {
@@ -165,7 +166,7 @@ installConsoleContentSanitizer()
 const log = createLogger('server', undefined, { color: 'cyan' })
 const httpLog = createLogger('http', undefined, { color: 'cyan' })
 
-const heapSnapshotDirectory = process.env.TAU_HEAP_SNAPSHOT_DIR
+const heapSnapshotDirectory = process.env.FICUS_HEAP_SNAPSHOT_DIR
 if (heapSnapshotDirectory) {
   process.on('SIGUSR2', () => {
     void captureHeapSnapshot({ role: 'api', directory: heapSnapshotDirectory })
@@ -238,7 +239,7 @@ app.use(
   })
 )
 
-const readiness = new RuntimeReadiness('api', process.env.TAU_RUNTIME_INSTANCE_ID)
+const readiness = new RuntimeReadiness('api', process.env.FICUS_RUNTIME_INSTANCE_ID)
 app.get('/ready', () => readiness.response())
 app.get('/health', (c) => c.json({ status: 'ok' }))
 
@@ -712,7 +713,7 @@ export function runSandboxSetupValidation(validate: () => void = validateSandbox
 }
 
 if (import.meta.main) {
-  // TAU_SANDBOX_RUNTIME is mandatory and explicit — no default, no
+  // FICUS_SANDBOX_RUNTIME is mandatory and explicit — no default, no
   // auto-detection. Refuse to boot rather than serve an api whose agents can
   // never get a sandbox. This is deliberately OUTSIDE the sandbox-image
   // validation try/catch below: that one swallows its error so a missing sandbox
@@ -724,7 +725,7 @@ if (import.meta.main) {
     process.exit(1)
   }
 
-  // Every TAU_K8S_* key applies ONLY to the k8s runtime. Say so once at boot,
+  // Every FICUS_K8S_* key applies ONLY to the k8s runtime. Say so once at boot,
   // or a stale line an operator left behind when they switched runtimes reads
   // as live configuration.
   const ignoredK8sEnv = ignoredK8sEnvWarning()

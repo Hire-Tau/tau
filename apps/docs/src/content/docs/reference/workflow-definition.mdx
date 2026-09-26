@@ -14,7 +14,7 @@ This preset uses two participants with the same `general` agent type: one writes
 Pass this envelope to `tau workflow create --stdin` with a quoted heredoc (shown below), or use `--content` for short JSON/YAML. You may also save it as `brief-review.yaml` and use `tau workflow create brief-review.yaml` for reuse. In the visual editor's complete-definition field, use only the contents beneath `definition`.
 
 ```bash
-tau workflow create --stdin <<'TAU_PRESET'
+tau workflow create --stdin <<'FICUS_PRESET'
 id: brief-review
 description: Produce a concise brief with an independent evidence review.
 scope: { kind: instance }
@@ -56,7 +56,7 @@ definition:
         changes-requested: { returnTo: draft, afterRework: follow-graph }
   completion:
     mode: deliverable
-TAU_PRESET
+FICUS_PRESET
 ```
 
 Attempts are unlimited by default. An optional `maxStepAttempts: 3` permits the initial attempt and up to two further attempts **per step**. It is not three revisions after the first attempt. Workers start only when their steps become active; saving this preset starts no agents.
@@ -365,13 +365,13 @@ retry `--request-id`. `--json` only controls output.
 
 ```bash
 tau workflow resolve --squad SQUAD_ID --content '{"kind":"preset","id":"solo"}'
-tau workflow resolve --squad SQUAD_ID --stdin <<'TAU_FLOW'
+tau workflow resolve --squad SQUAD_ID --stdin <<'FICUS_FLOW'
 kind: preset
 id: solo
 customizations:
   - op: set-name
     name: Daily audit
-TAU_FLOW
+FICUS_FLOW
 
 printf '%s\n' '{"kind":"preset","id":"solo"}' | tau schedule update SCHEDULE_ID --flow-stdin
 ```
@@ -399,7 +399,7 @@ Catalog access uses `workflows:read`, `workflows:create`, `workflows:update`, an
 While executing, inspect `tau workstream flow STREAM_ID`. Advance using the current `expectedVersion`, your current `attemptId`, an allowed action, and evidence. For example:
 
 ```bash
-tau workstream advance STREAM_ID --stdin --request-id REQUEST_UUID <<'TAU_COMMAND'
+tau workstream advance STREAM_ID --stdin --request-id REQUEST_UUID <<'FICUS_COMMAND'
 {
   "expectedVersion": 1,
   "attemptId": 1,
@@ -407,7 +407,7 @@ tau workstream advance STREAM_ID --stdin --request-id REQUEST_UUID <<'TAU_COMMAN
   "outcome": "ready",
   "evidence": "Brief written; each factual claim has a source."
 }
-TAU_COMMAND
+FICUS_COMMAND
 ```
 
 The numbers above are examples; always use the current run's values. For short commands you can also use single-quoted JSON with `--content`. Saved command files remain supported via `--file`. Reuse the request ID only when retrying that exact command. Parallel branches can change the run version; re-read on conflict and proceed only if your attempt remains current. Do not advance by changing the legacy assignee or status directly.

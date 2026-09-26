@@ -26,7 +26,7 @@
  *   (pinned by a regression test).
  *
  * The scripts are POSIX `/bin/sh` (like the `tau` shim) and deliberately
- * dependency-free: the squad ssh dir is read from `TAU_SQUAD_SSH_DIR` at
+ * dependency-free: the squad ssh dir is read from `FICUS_SQUAD_SSH_DIR` at
  * run time (exported by `buildHostCommandEnv`), so solo agents — which have
  * no squad ssh config — get a plain pass-through. Line arrays are used
  * instead of a template literal because the shell body is full of literal
@@ -71,7 +71,12 @@ const TOOL_COMMENTS: Record<SshFamilyTool, string> = {
 
 /** Header + squad-dir read: identical shape for all three tools. */
 function preludeLines(tool: SshFamilyTool): string[] {
-  return ['#!/bin/sh', ...TOOL_COMMENTS[tool].split('\n'), 'SQUAD_DIR=${TAU_SQUAD_SSH_DIR:-}', 'CFG=$SQUAD_DIR/config']
+  return [
+    '#!/bin/sh',
+    ...TOOL_COMMENTS[tool].split('\n'),
+    'SQUAD_DIR=${FICUS_SQUAD_SSH_DIR:-}',
+    'CFG=$SQUAD_DIR/config',
+  ]
 }
 
 /**

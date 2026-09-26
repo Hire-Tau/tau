@@ -6,8 +6,8 @@
  * pod names, namespaces, or label selectors.
  *
  * Env configuration:
- *   TAU_SYSTEM_LOG_PROVIDER=k8s selects this provider explicitly.
- *   TAU_SYSTEM_LOG_K8S_NAMESPACE sets the required core namespace.
+ *   FICUS_SYSTEM_LOG_PROVIDER=k8s selects this provider explicitly.
+ *   FICUS_SYSTEM_LOG_K8S_NAMESPACE sets the required core namespace.
  */
 
 import { Writable } from 'node:stream'

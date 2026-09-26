@@ -635,7 +635,7 @@ describe('integration routes', () => {
   })
 
   test('the bootstrap password session is told to finish admin setup before connecting an account', async () => {
-    // No admin holds a passkey in this suite's database, so TAU_PASSWORD is still a
+    // No admin holds a passkey in this suite's database, so FICUS_PASSWORD is still a
     // live identity: it passes admin RBAC, but there is no person to connect for.
     const { app, calls } = createApp({ type: 'legacy' })
     const response = await app.request('/api/integrations/providers/github/authorization/start', {

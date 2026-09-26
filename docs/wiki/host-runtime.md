@@ -1,4 +1,4 @@
-# Host sandbox runtime (`TAU_SANDBOX_RUNTIME=host`)
+# Host sandbox runtime (`FICUS_SANDBOX_RUNTIME=host`)
 
 No sandbox. Agent `bash`, file tools, terminals and local deployments run
 directly on the machine the core runs on, as the core's unix user, with
@@ -11,7 +11,7 @@ trusted single-user VM; pick docker/k8s/vm when you need isolation. See
 Put this in `.env` and restart the api + worker (setup toolkit: `runtime.sandbox: host`):
 
 ```bash
-TAU_SANDBOX_RUNTIME=host
+FICUS_SANDBOX_RUNTIME=host
 ```
 
 Prerequisites: `bash`, plus `tmux` on the machine if agents run local deployments. No Docker.
@@ -46,7 +46,7 @@ PATH (`<HOME_DIR>/host/bin`) and, for squads, `GIT_SSH_COMMAND` pointing at the
 squad's ssh config plus the squad's `.tau/.env` sourced from the storage
 workspace.
 
-For squads, `TAU_SQUAD_SSH_DIR` names the squad's SSH directory, and `ssh`,
+For squads, `FICUS_SQUAD_SSH_DIR` names the squad's SSH directory, and `ssh`,
 `scp`, and `rsync` on PATH are tau shims that transparently use that config
 when — and only when — every remote destination is a tau-managed
 remote-host alias and no explicit `-F`/`-e`/`--rsh` was given; anything
@@ -56,7 +56,7 @@ precedence). The shims only ever ADD the squad config and pinned
 `known_hosts` — host-key checking is never weakened, and commands naming
 operator destinations stay byte-identical. Aliases a squad user adds to
 the _user_ section of the squad config are not auto-resolved by the shims —
-`ssh -F "$TAU_SQUAD_SSH_DIR/config" <alias>` still works for those. At
+`ssh -F "$FICUS_SQUAD_SSH_DIR/config" <alias>` still works for those. At
 worker boot, tau re-materializes every granted squad's SSH config once
 (idempotently), so grants made before a host-mode switch keep working.
 
@@ -64,13 +64,13 @@ worker boot, tau re-materializes every granted squad's SSH config once
 
 An agent shell is one the runtime gave a scoped token. Those shells get:
 
-| Variable            | Value                                                                      |
-| ------------------- | -------------------------------------------------------------------------- |
-| `TAU_API_URL`       | This instance, `http://127.0.0.1:<PORT>` — never another one               |
-| `TAU_TOKEN`         | The agent's own scoped token                                               |
-| `TAU_AUTH_STORE`    | `<HOME_DIR>/host/cli-auth/<agentId>.json` (`anonymous.json` with no agent) |
-| `TAU_AGENT_CONTEXT` | `1`                                                                        |
-| `TAU_AGENT_ID`      | That agent's id, passed by the runner (not guessed from the sandbox id)    |
+| Variable              | Value                                                                      |
+| --------------------- | -------------------------------------------------------------------------- |
+| `FICUS_API_URL`       | This instance, `http://127.0.0.1:<PORT>` — never another one               |
+| `FICUS_TOKEN`         | The agent's own scoped token                                               |
+| `FICUS_AUTH_STORE`    | `<HOME_DIR>/host/cli-auth/<agentId>.json` (`anonymous.json` with no agent) |
+| `FICUS_AGENT_CONTEXT` | `1`                                                                        |
+| `FICUS_AGENT_ID`      | That agent's id, passed by the runner (not guessed from the sandbox id)    |
 
 Shells the runtime does NOT give a token — web terminals, `exec`, anything the
 sandbox manager spawns — are operator-driven and unchanged: they keep your
@@ -83,15 +83,15 @@ What is actually enforced for an agent shell:
   file is sourced INSIDE the shell, after the process env exists, so it used to
   win. The preamble now snapshots the injected values into shell-local names
   BEFORE the source line, sources the file, then exports the identity from the
-  snapshots. The values travel in the process env (under `TAU_IDENTITY_*`
+  snapshots. The values travel in the process env (under `FICUS_IDENTITY_*`
   names), never in the command string, which is world-readable argv.
 - **The snapshot names are generated per command** (`__tau_<random>_url`, …),
   so a squad env cannot name them in advance — neither the real names, nor the
-  `TAU_IDENTITY_*` aliases, nor the snapshots themselves can be reached by a
+  `FICUS_IDENTITY_*` aliases, nor the snapshots themselves can be reached by a
   variable someone left in a squad env.
 - **Identity names the shell was not given are unset** after sourcing, so a
   stale squad env cannot hand a credential to a shell that has none. That
-  includes `TAU_PASSWORD`, which an agent shell is never given: the CLI accepts
+  includes `FICUS_PASSWORD`, which an agent shell is never given: the CLI accepts
   it as a human credential, so an operator's own shell profile — or a squad env
   written before these keys were reserved — would otherwise hand the instance
   password to every agent.
@@ -102,15 +102,15 @@ What is actually enforced for an agent shell:
 - **Reserved keys are rejected at write time** — see
   [Reserved squad env keys](#reserved-squad-env-keys) — and are also filtered
   out of Secret Store rendering, so a Secret Store key literally named
-  `TAU_API_URL` cannot reach `.tau/.env` either.
+  `FICUS_API_URL` cannot reach `.tau/.env` either.
 - **A per-agent CLI auth store.** Host agents run as your unix user with your
-  `$HOME`, so without `TAU_AUTH_STORE` the `tau` CLI falls back to
+  `$HOME`, so without `FICUS_AUTH_STORE` the `tau` CLI falls back to
   `~/.tau/cli/auth.json` — YOUR login, against whatever instance you last
   logged into. Each agent gets its own store path instead; the file is not
-  created, and a missing store reads as empty. With `TAU_AGENT_CONTEXT=1` the
+  created, and a missing store reads as empty. With `FICUS_AGENT_CONTEXT=1` the
   CLI resolves the API URL and credential from the env ONLY: no auth store, no
-  `.env` fallback, and `--backend` is refused. A missing `TAU_API_URL`/
-  `TAU_TOKEN` is an error when a command needs the credential — never a fall
+  `.env` fallback, and `--backend` is refused. A missing `FICUS_API_URL`/
+  `FICUS_TOKEN` is an error when a command needs the credential — never a fall
   back to a human login — while `tau whoami` and `tau auth status` still report
   which variable is missing.
 
@@ -132,9 +132,9 @@ Use docker/k8s/vm when the deliberate case must be covered too.
 ### Reserved squad env keys
 
 A squad env (`tau squad-env set`, or the squad's Environment settings) may not
-assign `TAU_TOKEN`, `TAU_API_URL`, `TAU_PASSWORD`, `TAU_AUTH_STORE`,
-`TAU_AGENT_CONTEXT`, `TAU_AGENT_ID`, or the `TAU_IDENTITY_API_URL`,
-`TAU_IDENTITY_TOKEN`, `TAU_IDENTITY_AUTH_STORE` and `TAU_IDENTITY_AGENT_ID`
+assign `FICUS_TOKEN`, `FICUS_API_URL`, `FICUS_PASSWORD`, `FICUS_AUTH_STORE`,
+`FICUS_AGENT_CONTEXT`, `FICUS_AGENT_ID`, or the `FICUS_IDENTITY_API_URL`,
+`FICUS_IDENTITY_TOKEN`, `FICUS_IDENTITY_AUTH_STORE` and `FICUS_IDENTITY_AGENT_ID`
 aliases: the agent's identity is injected by tau, and setting it there would
 make every agent in the squad act as a different identity. Writes naming one
 are rejected with a 400 naming the key and the reason, and the same names are
@@ -176,17 +176,17 @@ this machine** in-process, through `playwright-core` — nothing is ever
 downloaded. Install one first: macOS `brew install --cask google-chrome` (or
 Chrome from <https://google.com/chrome>); Debian/Ubuntu `sudo apt install
 chromium`; Fedora `sudo dnf install chromium`; or point Tau at any
-Chromium-family binary with `TAU_BROWSER_EXECUTABLE_PATH`. With none of them
+Chromium-family binary with `FICUS_BROWSER_EXECUTABLE_PATH`. With none of them
 present the tools answer "Browser is unavailable on this machine."
 
 Resolution order, first hit wins:
 
-1. `TAU_BROWSER_EXECUTABLE_PATH` — an absolute path to the executable FILE, not
+1. `FICUS_BROWSER_EXECUTABLE_PATH` — an absolute path to the executable FILE, not
    to a bundle or directory. A leading `~` is expanded to your home directory
    before that check. On macOS that means
    `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`, not
    `/Applications/Google Chrome.app`. Anything else is ignored with a warning.
-2. `TAU_BROWSER_CHANNEL` — a Playwright channel (`chrome`, `chrome-beta`,
+2. `FICUS_BROWSER_CHANNEL` — a Playwright channel (`chrome`, `chrome-beta`,
    `chrome-dev`, `chrome-canary`, `msedge`, `msedge-beta`, `msedge-dev`,
    `msedge-canary`, `chromium`).
 3. The usual install locations: Google Chrome / Chromium / Edge / Brave under
@@ -217,7 +217,7 @@ proxied URLs. Non-`http(s)` URLs (`file://`, …) are still refused.
 
 Each agent gets its own browser context, so cookies, storage and logins are not
 shared between agents — but they are not isolated from each other beyond that
-(same as everything else on host). Set `TAU_BROWSER_MEMORY_HIGH_MB` to change
+(same as everything else on host). Set `FICUS_BROWSER_MEMORY_HIGH_MB` to change
 the page budget (default: a quarter of this machine's RAM, capped at 4 GB,
 ~256 MB per page — the core and your desktop share this RAM).
 

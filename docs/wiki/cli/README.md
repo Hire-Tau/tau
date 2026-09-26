@@ -10,19 +10,19 @@ The `tau` CLI is the primary interface for interacting with the Tau API. It cove
 
 ## Environment Variables
 
-| Variable         | Description                                                                                       | Default                 |
-| ---------------- | ------------------------------------------------------------------------------------------------- | ----------------------- |
-| `TAU_API_URL`    | URL of the Tau API server                                                                         | `http://localhost:3000` |
-| `TAU_TOKEN`      | Scoped agent token or other explicitly supplied token                                             | —                       |
-| `TAU_PASSWORD`   | Explicit human credential; legacy `/etc/tau/password` fallback applies only outside agent context | —                       |
-| `TAU_AUTH_STORE` | Override path for labeled CLI backends                                                            | `~/.tau/cli/auth.json`  |
-| `TAU_SQUAD_ID`   | Default squad context for squad-scoped commands                                                   | —                       |
+| Variable           | Description                                                                                       | Default                 |
+| ------------------ | ------------------------------------------------------------------------------------------------- | ----------------------- |
+| `FICUS_API_URL`    | URL of the Tau API server                                                                         | `http://localhost:3000` |
+| `FICUS_TOKEN`      | Scoped agent token or other explicitly supplied token                                             | —                       |
+| `FICUS_PASSWORD`   | Explicit human credential; legacy `/etc/tau/password` fallback applies only outside agent context | —                       |
+| `FICUS_AUTH_STORE` | Override path for labeled CLI backends                                                            | `~/.tau/cli/auth.json`  |
+| `FICUS_SQUAD_ID`   | Default squad context for squad-scoped commands                                                   | —                       |
 
 Outside agent context, the CLI can use labeled backends saved by `tau auth login`, explicit environment credentials, and legacy `.env` or mounted-password fallbacks. See `tau auth status` and [Core authentication](../core-auth.md) for the current login model.
 
-Inside a shell Tau built for an agent — one it gave a scoped token — the runtime sets `TAU_AGENT_CONTEXT=1`
-(plus `TAU_AGENT_ID`, `TAU_TOKEN`, `TAU_API_URL` and a per-agent
-`TAU_AUTH_STORE`). There, resolution is env-only: the auth store, the `.env`
+Inside a shell Tau built for an agent — one it gave a scoped token — the runtime sets `FICUS_AGENT_CONTEXT=1`
+(plus `FICUS_AGENT_ID`, `FICUS_TOKEN`, `FICUS_API_URL` and a per-agent
+`FICUS_AUTH_STORE`). There, resolution is env-only: the auth store, the `.env`
 fallback and `/etc/tau/password` are never consulted and `--backend` is refused,
 so no ambient operator login can be picked up by accident. On the host runtime
 that closes the accident, not the deliberate case — see
@@ -112,7 +112,7 @@ tau squad link <a> <b>      # Link two squads
 
 ### Slot Coordination Commands
 
-Pool-scoped commands accept `--squad <id>` and otherwise use `TAU_SQUAD_ID`.
+Pool-scoped commands accept `--squad <id>` and otherwise use `FICUS_SQUAD_ID`.
 Claim and waiter ids are globally unique, so the commands that address one take
 the id alone: the server resolves its pool and squad, and checks your authority
 against that squad.
@@ -229,8 +229,8 @@ tau whoami --json           # Same, as JSON
 ### Squad Environment Commands
 
 Squad env content may not assign the keys tau injects to give an agent its
-identity (`TAU_TOKEN`, `TAU_API_URL`, `TAU_PASSWORD`, `TAU_AUTH_STORE`,
-`TAU_AGENT_CONTEXT`, `TAU_AGENT_ID`, `TAU_IDENTITY_*`) — such a write is
+identity (`FICUS_TOKEN`, `FICUS_API_URL`, `FICUS_PASSWORD`, `FICUS_AUTH_STORE`,
+`FICUS_AGENT_CONTEXT`, `FICUS_AGENT_ID`, `FICUS_IDENTITY_*`) — such a write is
 rejected with a 400 naming the key and why. `PATH` may be extended as usual; on
 the host runtime tau re-prepends its own shim directory afterwards, so squad
 PATH additions apply but cannot displace `tau`.
@@ -293,7 +293,7 @@ tau system logs -c api -t 50 --no-follow
 
 ## Sandbox Usage
 
-Tau injects a scoped `TAU_TOKEN`, the instance `TAU_API_URL`, and `TAU_AGENT_CONTEXT=1` into agent shells. The CLI authenticates as that agent and resolves credentials only from the injected environment. It does not read the operator’s saved backend, `.env` password, or `/etc/tau/password` in agent context. The mounted-password fallback remains a legacy option for non-agent CLI use.
+Tau injects a scoped `FICUS_TOKEN`, the instance `FICUS_API_URL`, and `FICUS_AGENT_CONTEXT=1` into agent shells. The CLI authenticates as that agent and resolves credentials only from the injected environment. It does not read the operator’s saved backend, `.env` password, or `/etc/tau/password` in agent context. The mounted-password fallback remains a legacy option for non-agent CLI use.
 
 ## See Also
 

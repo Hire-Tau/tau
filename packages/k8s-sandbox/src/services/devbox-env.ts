@@ -185,7 +185,7 @@ export async function cacheManagedToolchainEnv(
   fingerprint?: string,
   runShellenv: (cwd: string) => string | Promise<string> = runManagedShellenv
 ): Promise<'cleared' | 'cached' | 'refreshed'> {
-  const dir = process.env.TAU_TOOLCHAIN_DIR
+  const dir = process.env.FICUS_TOOLCHAIN_DIR
   if (!active) {
     clearManagedToolchainEnv()
     return 'cleared'
@@ -208,7 +208,7 @@ export async function cacheManagedToolchainEnv(
 
 /** Refresh the VM shellenv cache after a routed `devbox add` mutation. */
 export function refreshDevboxShellEnvIfDirty(runShellenv?: (cwd: string) => string): void {
-  if (!process.env.TAU_BOX_HOME) return
+  if (!process.env.FICUS_BOX_HOME) return
   try {
     const dir = getDevboxDir()
     const markers = readdirSync(dir).filter((name) => name.startsWith('.shellenv-dirty.'))
@@ -233,14 +233,14 @@ export function refreshDevboxShellEnvIfDirty(runShellenv?: (cwd: string) => stri
  * lost on the next unit restart — so the server self-caches at boot too (the
  * belt).
  *
- * Gated STRICTLY on `TAU_BOX_HOME`, which ONLY a vm box sets, so on k8s/docker
+ * Gated STRICTLY on `FICUS_BOX_HOME`, which ONLY a vm box sets, so on k8s/docker
  * this is always false and server boot stays byte-identical (no shellenv work).
  * Also requires a devbox.json that DECLARES packages: an empty/un-realized devbox
  * must never be shellenv'd — `devbox shellenv` HANGS ~30s against it (see
  * {@link devboxHasPackages}), and a boot-time hang would freeze /healthz.
  */
 export function shouldSelfCacheDevboxEnvOnBoot(): boolean {
-  if (!process.env.TAU_BOX_HOME) return false
+  if (!process.env.FICUS_BOX_HOME) return false
   const devboxJson = getDevboxJsonPath()
   return existsSync(devboxJson) && devboxHasPackages(devboxJson)
 }
