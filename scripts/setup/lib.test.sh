@@ -5294,7 +5294,17 @@ sep_err=$(sh_env_parse "A='x'
 SNEAKY='hunter2-value'
 " 'test file' A:sep_a 2>&1) && sep_rc=0 || sep_rc=$?
 expect_eq 'sh_env_parse: an unexpected key fails' "${sep_rc}" '1'
-expect_match 'sh_env_parse: names the unexpected key and the line' "${sep_err}" "test file line 2: unexpected key 'SNEAKY'"
+expect_match 'sh_env_parse: names the line of the unexpected key' "${sep_err}" 'test file line 2: unexpected key'
+expect_not_match 'sh_env_parse: never prints the unexpected key text (it may be secret bytes)' "${sep_err}" 'SNEAKY'
+# A passphrase spanning lines: its continuation looks like KEY=VALUE, and the
+# "key" is part of the secret — only the line number may be printed.
+sep_err=$(sh_env_parse "A='x'
+PASS='first half
+HUNTER2PART='second half'
+" 'test file' A:sep_a PASS:sep_b 2>&1) && sep_rc=0 || sep_rc=$?
+expect_eq 'sh_env_parse: a multi-line quoted value fails' "${sep_rc}" '1'
+expect_not_match 'sh_env_parse: a multi-line value leaks none of its continuation' "${sep_err}" 'HUNTER2PART|second half|first half'
+
 expect_not_match 'sh_env_parse: never prints the value' "${sep_err}" 'hunter2'
 sep_err=$(sh_env_parse "A=\"hunter2-value\"" 'test file' A:sep_a 2>&1) && sep_rc=0 || sep_rc=$?
 expect_eq 'sh_env_parse: a double-quoted (shell-evaluated) value fails' "${sep_rc}" '1'
@@ -5302,6 +5312,21 @@ expect_not_match 'sh_env_parse: a bad value is not printed' "${sep_err}" 'hunter
 sep_err=$(sh_env_parse "export A='hunter2-value'" 'test file' A:sep_a 2>&1) && sep_rc=0 || sep_rc=$?
 expect_eq 'sh_env_parse: a non-assignment line fails' "${sep_rc}" '1'
 expect_not_match 'sh_env_parse: a bad line is not printed' "${sep_err}" 'hunter2'
+# Non-ASCII bytes (valid UTF-8, and an invalid lone 0xff) inside single
+# quotes are passed through byte-for-byte under LC_ALL=C — what
+# retarget-backup.sh runs with.
+sep_bytes=$'p\xc3\xa4ss \xe2\x9c\x93 \xff end'
+sep_bytes_raw="PASS=$(sh_single_quote "${sep_bytes}")"
+sep_b=''
+# shellcheck disable=SC2030,SC2031 # the locale change is meant to stay inside the subshell
+(
+  export LC_ALL=C
+  sh_env_parse "${sep_bytes_raw}" 'test file' PASS:sep_b &&
+    printf '%s' "${sep_b}" >"${HI_OUT_FILE}.bytes"
+) 2>/dev/null || true
+expect_eq 'sh_env_parse under LC_ALL=C: a non-ASCII single-quoted value round-trips byte-exactly' \
+  "$(od -An -tx1 "${HI_OUT_FILE}.bytes" 2>/dev/null | tr -d ' \n')" "$(printf '%s' "${sep_bytes}" | od -An -tx1 | tr -d ' \n')"
+rm -f "${HI_OUT_FILE}.bytes"
 # In a suppressed context it must still RETURN non-zero on its own.
 if sh_env_parse "BAD LINE" 'test file' A:sep_a 2>/dev/null; then sep_rc=0; else sep_rc=$?; fi
 expect_eq 'sh_env_parse: returns non-zero in an if-condition too' "${sep_rc}" '1'

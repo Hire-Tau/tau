@@ -1886,8 +1886,8 @@ sh_single_unquote() { # VALUE VAR
 # is one of the listed keys and VALUE decodes with sh_single_unquote. Each
 # KEY:VAR pair sets VAR to KEY's decoded value (last assignment wins, as when
 # sourced); VAR is set to '' first, so a key that is absent reads as empty.
-# Returns 1 after a log_error naming LABEL, the line number and (for an
-# unexpected key) the key — never a value, since these files hold secrets.
+# Returns 1 after a log_error naming LABEL and the line number — never the
+# line's key or value, since these files hold secrets.
 # Lines are split with parameter expansion, not `read <<<`, so the content
 # never passes through a here-string temp file.
 sh_env_parse() { # RAW LABEL KEY:VAR...
@@ -1912,7 +1912,9 @@ sh_env_parse() { # RAW LABEL KEY:VAR...
       [[ ${_sep_pair%%:*} == "${_sep_key}" ]] && _sep_hit=${_sep_pair#*:}
     done
     if [[ -z ${_sep_hit} ]]; then
-      log_error "${_sep_label} line ${_sep_n}: unexpected key '${_sep_key}' (expected only: ${*%%:*})"
+      # The line number only, never the key text: in a file whose quoting is
+      # off (a passphrase spanning lines), the "key" may be secret bytes.
+      log_error "${_sep_label} line ${_sep_n}: unexpected key (expected only: ${*%%:*})"
       return 1
     fi
     if ! sh_single_unquote "${_sep_val}" _sep_dec; then

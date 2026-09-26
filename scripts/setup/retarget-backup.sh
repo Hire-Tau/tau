@@ -57,7 +57,8 @@
 # after the host is already retargeted: the files are live and verified, the
 # yaml still names the old target, and a re-run finishes it (it rewrites only
 # the yaml). A step-5 mismatch means something rewrote a file under us: the
-# message names it; re-run. A nightly run starting mid-swap is harmless: the
+# message names it; re-run. SIGHUP (a dropped SSH session) is ignored across
+# the two renames and their rollback. A nightly run starting mid-swap is harmless: the
 # rename leaves any running copy reading the file it opened, and at worst
 # that one night's upload is refused and systemd marks the unit failed.
 #
@@ -78,6 +79,14 @@
 # directory holding the copied toolkit: this script, lib.sh and
 # tau-backup.sh.tmpl side by side.
 set -euo pipefail
+# Never trace: an inherited `bash -x` / SHELLOPTS=xtrace would print every
+# assignment below, secret key and passphrase included.
+set +x
+# Byte semantics for everything this script parses and compares (backup.env,
+# the secrets file, the live tau-backup.sh): whatever locale root's session
+# carries, a non-ASCII passphrase byte is a byte, never a (possibly invalid)
+# multibyte character. Exported so the render (sed) and yq see the same.
+export LC_ALL=C
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)
 # shellcheck source=lib.sh
@@ -211,7 +220,12 @@ else
 fi
 cfg_load "${CONFIG}"
 
-if [[ $(cfg_bool '.backup.enabled' 'false') != true ]]; then
+# Captured first, never inside [[ … ]]: a die() in a command substitution only
+# ends that subshell, so `[[ $(cfg_bool …) != true ]]` would read an invalid
+# value or a yq failure as "not enabled" and exit 3 instead of failing.
+BACKUP_ENABLED=$(cfg_bool '.backup.enabled' 'false') ||
+  die "could not read backup.enabled from ${CONFIG} (see the error above)"
+if [[ ${BACKUP_ENABLED} != true ]]; then
   log_warn "backup.enabled is not true in ${CONFIG} — this host has no nightly backup to retarget; nothing to do"
   emit_result not-applicable
   exit "${EXIT_NOT_APPLICABLE}"
@@ -263,7 +277,7 @@ unset _tok _val
 [[ ${REGION} =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] ||
   die "no usable region: pass --region (the current tau-backup.sh has '${REGION}')"
 
-YAML_PREFIX=$(cfg_get '.backup.s3_prefix' '')
+YAML_PREFIX=$(cfg_get '.backup.s3_prefix' '') || die "could not read backup.s3_prefix from ${CONFIG}"
 [[ ${YAML_PREFIX} == "${LIVE_S3_PREFIX}" ]] ||
   log_warn "backup.s3_prefix in ${CONFIG} ('${YAML_PREFIX}') differs from the prefix tau-backup.sh actually uses ('${LIVE_S3_PREFIX}') — keeping the live one"
 
@@ -308,9 +322,9 @@ unset CHECK_ACCESS_KEY CHECK_SECRET_KEY CHECK_PASSPHRASE
 SCRIPT_CHANGED=0 ENV_CHANGED=0 YAML_CHANGED=0
 [[ ${NEW_SCRIPT} == "${LIVE_SCRIPT}" ]] || SCRIPT_CHANGED=1
 [[ ${NEW_ENV} == "${LIVE_ENV}" ]] || ENV_CHANGED=1
-YAML_ENDPOINT=$(cfg_get '.backup.s3_endpoint' '')
-YAML_REGION=$(cfg_get '.backup.s3_region' '')
-YAML_BUCKET=$(cfg_get '.backup.s3_bucket' '')
+YAML_ENDPOINT=$(cfg_get '.backup.s3_endpoint' '') || die "could not read backup.s3_endpoint from ${CONFIG}"
+YAML_REGION=$(cfg_get '.backup.s3_region' '') || die "could not read backup.s3_region from ${CONFIG}"
+YAML_BUCKET=$(cfg_get '.backup.s3_bucket' '') || die "could not read backup.s3_bucket from ${CONFIG}"
 [[ ${YAML_ENDPOINT} == "${ENDPOINT}" && ${YAML_REGION} == "${REGION}" && ${YAML_BUCKET} == "${BUCKET}" ]] || YAML_CHANGED=1
 
 changed_word() { [[ $1 -eq 1 ]] && printf 'rewrite' || printf 'already current, not touched'; }
@@ -396,6 +410,12 @@ if [[ ${ENV_CHANGED} -eq 1 ]]; then
     die "could not stage the new ${BACKUP_ENV_TARGET} — nothing was changed"
 fi
 
+# From the first rename to the end of the rollback, a dropped SSH session
+# (SIGHUP) must not kill this script between the two renames — that would
+# leave the new tau-backup.sh with the old key. The previous HUP disposition
+# (if any) is put back right after.
+PREV_HUP_TRAP=$(trap -p HUP)
+trap '' HUP
 if [[ ${SCRIPT_CHANGED} -eq 1 ]]; then
   mv -f -- "${STAGED_SCRIPT}" "${BACKUP_SCRIPT_PATH}" ||
     die "could not install the new ${BACKUP_SCRIPT_PATH} — nothing was changed"
@@ -415,6 +435,8 @@ if [[ ${ENV_CHANGED} -eq 1 ]] && ! mv -f -- "${STAGED_ENV}" "${BACKUP_ENV_TARGET
   die "could not install the new ${BACKUP_ENV_TARGET}, and FAILED to restore ${BACKUP_SCRIPT_PATH} — it now targets s3://${BUCKET} while ${BACKUP_ENV_TARGET} still holds the OLD key, so the next backup will fail; copy ${SCRIPT_BACKUP} back over ${BACKUP_SCRIPT_PATH} by hand (cp -p) or re-run this script"
 fi
 STAGED_ENV=''
+if [[ -n ${PREV_HUP_TRAP} ]]; then eval "${PREV_HUP_TRAP}"; else trap - HUP; fi
+unset PREV_HUP_TRAP
 if [[ $((SCRIPT_CHANGED + ENV_CHANGED)) -eq 0 ]]; then
   log_info "${BACKUP_SCRIPT_PATH} and ${BACKUP_ENV_TARGET} were already current — not touched"
 else
@@ -437,8 +459,13 @@ if [[ ${YAML_CHANGED} -eq 1 ]]; then
   # Each cfg_set above is `yq … || die`, and die() is a literal exit, so the
   # subshell's status is trustworthy even though errexit is suppressed in an
   # `if` condition. Read the result back anyway: cheap, and it is the record.
-  [[ $(cfg_get '.backup.s3_endpoint' '') == "${ENDPOINT}" && $(cfg_get '.backup.s3_region' '') == "${REGION}" && $(cfg_get '.backup.s3_bucket' '') == "${BUCKET}" ]] ||
+  if ! _rb_endpoint=$(cfg_get '.backup.s3_endpoint' '') || ! _rb_region=$(cfg_get '.backup.s3_region' '') ||
+    ! _rb_bucket=$(cfg_get '.backup.s3_bucket' ''); then
+    die "the backup files ARE retargeted, but ${CONFIG} could not be read back — re-run this script to finish"
+  fi
+  [[ ${_rb_endpoint} == "${ENDPOINT}" && ${_rb_region} == "${REGION}" && ${_rb_bucket} == "${BUCKET}" ]] ||
     die "the backup files ARE retargeted, but ${CONFIG} does not read back as the new target — re-run this script to finish"
+  unset _rb_endpoint _rb_region _rb_bucket
 fi
 
 # ============================================================== 5. read back

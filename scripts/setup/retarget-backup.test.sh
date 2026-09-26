@@ -121,6 +121,9 @@ printf '%s' "\${n}" >"${MV_COUNT_DIR}/\${dest}"
 for rule in \${TAU_TEST_FAIL_MV:-}; do
   [[ \${rule} == "\${dest}:\${n}" ]] && exit 1
 done
+# TAU_TEST_HUP_ON_MV=<dest basename>: SIGHUP the calling script first (a
+# dropped SSH session mid-swap), then do the rename anyway.
+[[ -n \${TAU_TEST_HUP_ON_MV:-} && \${dest} == "\${TAU_TEST_HUP_ON_MV}" ]] && kill -HUP "\${PPID}"
 exec ${REAL_MV} "\$@"
 SHIM
 
@@ -158,12 +161,23 @@ done
 exec ${REAL_CAT} "\$@"
 SHIM
 
-# yq: TAU_TEST_FAIL_YQ_WRITE=1 fails any in-place write (yq -i).
+# yq: TAU_TEST_FAIL_YQ_WRITE=1 fails any in-place write (yq -i);
+# TAU_TEST_FAIL_YQ_READ=<substring> fails any call with an argument
+# containing it; TAU_TEST_HUP_ON_YQ_WRITE=1 sends SIGHUP to the script's MAIN
+# shell (the yq -i calls run inside a ( … ) subshell, so that is the
+# grandparent — Linux /proc) before an in-place write.
 cat >"${SHIM_DIR}/yq" <<SHIM
 #!/usr/bin/env bash
-if [[ -n \${TAU_TEST_FAIL_YQ_WRITE:-} ]]; then
-  for a in "\$@"; do [[ \${a} == -i ]] && exit 1; done
-fi
+for a in "\$@"; do
+  [[ -n \${TAU_TEST_FAIL_YQ_READ:-} && \${a} == *"\${TAU_TEST_FAIL_YQ_READ}"* ]] && exit 1
+  if [[ \${a} == -i ]]; then
+    [[ -n \${TAU_TEST_FAIL_YQ_WRITE:-} ]] && exit 1
+    if [[ -n \${TAU_TEST_HUP_ON_YQ_WRITE:-} ]]; then
+      gp=\$(awk '{print \$4}' "/proc/\${PPID}/stat")
+      kill -HUP "\${gp}"
+    fi
+  fi
+done
 exec ${REAL_YQ} "\$@"
 SHIM
 
@@ -379,7 +393,7 @@ secrets_case() { # LABEL MESSAGE CONTENT
   expect_run_fails "$1" "$2" "${ARGS[@]}" --dry-run
   assert_untouched "$1"
 }
-secrets_case 'secrets file that tries to change the passphrase' "unexpected key 'TAU_BACKUP_PASSPHRASE'" \
+secrets_case 'secrets file that tries to change the passphrase' 'line 3: unexpected key' \
   "TAU_BACKUP_S3_ACCESS_KEY=${NEW_AK}
 TAU_BACKUP_S3_SECRET_KEY='${OLD_SK}'
 TAU_BACKUP_PASSPHRASE='${OLD_SK}'
@@ -405,6 +419,47 @@ expect_contains 'backup.enabled false: says so' "${OUT}" 'TAU_RETARGET_BACKUP_RE
 cp "${PRISTINE}/tau-setup.yaml" "${CONFIG}"
 assert_untouched 'backup.enabled false'
 
+# --- backup.enabled that cannot be read is a FAILURE (exit 1), never "not
+# applicable" (exit 3): an invalid value, and a yq read error.
+enabled_fails() { # LABEL [ENV_ASSIGNMENT]
+  local label=$1
+  shift
+  RC=0
+  OUT=$(env "$@" "${RETARGET}" "${ARGS[@]}" 2>&1) || RC=$?
+  expect_eq "${label}: exits 1, not 3" "${RC}" 1
+  expect_not_contains "${label}: prints no RESULT marker" "${OUT}" 'TAU_RETARGET_BACKUP_RESULT='
+  expect_contains "${label}: says it could not read backup.enabled" "${OUT}" 'could not read backup.enabled'
+}
+yq -i '.backup.enabled = "maybe"' "${CONFIG}"
+enabled_fails 'backup.enabled: maybe'
+cp "${PRISTINE}/tau-setup.yaml" "${CONFIG}"
+enabled_fails 'a yq failure reading backup.enabled' TAU_TEST_FAIL_YQ_READ=.backup.enabled
+assert_untouched 'unreadable backup.enabled'
+expect_eq 'unreadable backup.enabled: backs nothing up' "$(backup_count)" 0
+
+# --- xtrace inherited from the caller must never trace a secret
+RC=0
+OUT=$(bash -x "${RETARGET}" "${ARGS[@]}" --dry-run 2>&1) || RC=$?
+expect_eq 'bash -x --dry-run: exits zero' "${RC}" 0
+assert_no_secrets 'bash -x --dry-run' "${OUT}"
+RC=0
+OUT=$(SHELLOPTS=xtrace "${RETARGET}" "${ARGS[@]}" --dry-run 2>&1) || RC=$?
+expect_eq 'SHELLOPTS=xtrace --dry-run: exits zero' "${RC}" 0
+assert_no_secrets 'SHELLOPTS=xtrace --dry-run' "${OUT}"
+
+# --- a non-ASCII passphrase (valid UTF-8 + a lone 0xff byte) is carried over,
+# not refused, whatever locale the caller runs in (the script forces C).
+NONASCII_PASSPHRASE=$'p\xc3\xa4ss \xe2\x9c\x93 \xff \'q\' end'
+lib render_backup_env_content real "${OLD_AK}" "${OLD_SK}" "${NONASCII_PASSPHRASE}" >"${SCRATCH}/nonascii-backup.env"
+for loc in C C.UTF-8 en_US.UTF-8; do
+  cp "${SCRATCH}/nonascii-backup.env" "${BACKUP_ENV_TARGET}"
+  RC=0
+  OUT=$(LC_ALL=${loc} "${RETARGET}" "${ARGS[@]}" --dry-run 2>&1) || RC=$?
+  expect_eq "non-ASCII passphrase (caller LC_ALL=${loc}): accepted" "${RC}" 0
+  expect_not_contains "non-ASCII passphrase (caller LC_ALL=${loc}): never printed" "${OUT}" "${NONASCII_PASSPHRASE}"
+done
+cp "${PRISTINE}/backup.env" "${BACKUP_ENV_TARGET}"
+
 # --- the live files ---------------------------------------------------------------
 mv "${BACKUP_SCRIPT_PATH}" "${SCRATCH}/held"
 expect_run_fails 'no installed tau-backup.sh' 'phase_backup never completed' "${ARGS[@]}" --dry-run
@@ -422,7 +477,7 @@ live_env_case 'backup.env without a passphrase' 'has no TAU_BACKUP_PASSPHRASE' \
   "TAU_BACKUP_S3_ACCESS_KEY='${OLD_AK}'
 TAU_BACKUP_S3_SECRET_KEY='${OLD_SK}'
 "
-live_env_case 'backup.env with a key re-rendering would drop' "unexpected key 'EXTRA_THING'" \
+live_env_case 'backup.env with a key re-rendering would drop' 'line 8: unexpected key' \
   "$(cat "${PRISTINE}/backup.env")
 EXTRA_THING='keep me'
 "
@@ -622,6 +677,62 @@ TAU_RETARGET_BACKUP_BUCKET=${NEW_BUCKET}"
   else
     printf 'SKIP: staged-write injection needs /proc (Linux)\n' >&2
   fi
+
+  # --- xtrace on a REAL run: still no secret in the output --------------------
+  reset_fixture
+  set_modes
+  RC=0
+  OUT=$(bash -x "${RETARGET}" "${ARGS[@]}" 2>&1) || RC=$?
+  expect_eq 'bash -x real run: exits zero' "${RC}" 0
+  assert_no_secrets 'bash -x real run' "${OUT}"
+  assert_retargeted 'bash -x real run'
+
+  # --- non-ASCII passphrase survives a real run byte-for-byte, any caller locale
+  for loc in C C.UTF-8 en_US.UTF-8; do
+    reset_fixture
+    set_modes
+    cp "${SCRATCH}/nonascii-backup.env" "${BACKUP_ENV_TARGET}"
+    before_line=$(grep '^TAU_BACKUP_PASSPHRASE=' "${BACKUP_ENV_TARGET}" | od -An -tx1 | tr -d ' \n')
+    RC=0
+    OUT=$(LC_ALL=${loc} "${RETARGET}" "${ARGS[@]}" 2>&1) || RC=$?
+    expect_eq "non-ASCII passphrase real run (caller LC_ALL=${loc}): exits zero" "${RC}" 0
+    expect_eq "non-ASCII passphrase real run (caller LC_ALL=${loc}): passphrase line byte-identical" \
+      "$(grep '^TAU_BACKUP_PASSPHRASE=' "${BACKUP_ENV_TARGET}" | od -An -tx1 | tr -d ' \n')" "${before_line}"
+    expect_eq "non-ASCII passphrase real run (caller LC_ALL=${loc}): sources to the exact bytes" \
+      "$(bash -c '. "$1"; printf %s "${TAU_BACKUP_PASSPHRASE}"' _ "${BACKUP_ENV_TARGET}" | od -An -tx1 | tr -d ' \n')" \
+      "$(printf '%s' "${NONASCII_PASSPHRASE}" | od -An -tx1 | tr -d ' \n')"
+    expect_eq "non-ASCII passphrase real run (caller LC_ALL=${loc}): new secret key installed" \
+      "$(bash -c '. "$1"; printf %s "${TAU_BACKUP_S3_SECRET_KEY}"' _ "${BACKUP_ENV_TARGET}")" "${NEW_SK}"
+    expect_not_contains "non-ASCII passphrase real run (caller LC_ALL=${loc}): never printed" "${OUT}" "${NONASCII_PASSPHRASE}"
+  done
+
+  # --- SIGHUP (a dropped SSH session) during the two renames is ignored -------
+  reset_fixture
+  set_modes
+  RC=0
+  OUT=$(TAU_TEST_HUP_ON_MV=tau-backup.sh "${RETARGET}" "${ARGS[@]}" 2>&1) || RC=$?
+  expect_eq 'SIGHUP between the renames: the run still completes (exit 0)' "${RC}" 0
+  expect_contains 'SIGHUP between the renames: reports retargeted' "${OUT}" 'TAU_RETARGET_BACKUP_RESULT=retargeted'
+  assert_retargeted 'SIGHUP between the renames'
+  # ...and the default disposition is back afterwards: a SIGHUP during the
+  # yaml step (after the swap block) terminates the script as usual.
+  reset_fixture
+  set_modes
+  RC=0
+  OUT=$(TAU_TEST_HUP_ON_YQ_WRITE=1 "${RETARGET}" "${ARGS[@]}" 2>&1) || RC=$?
+  expect_eq 'SIGHUP after the swap block: default disposition restored (killed, 128+1)' "${RC}" 129
+  expect_eq 'SIGHUP after the swap block: both files were already swapped together' \
+    "$(same "${BACKUP_SCRIPT_PATH}" "${SCRATCH}/expected-tau-backup.sh") $(same "${BACKUP_ENV_TARGET}" "${SCRATCH}/expected-backup.env")" 'same same'
+  # ...and a HUP handler the caller already had is put back, not dropped.
+  HUP_TRAP_ENV="${SCRATCH}/hup-trap.bash"
+  printf '%s\n' "trap 'builtin printf \"hup-handler-ran\\n\" >&2' HUP" >"${HUP_TRAP_ENV}"
+  reset_fixture
+  set_modes
+  RC=0
+  OUT=$(BASH_ENV="${HUP_TRAP_ENV}" TAU_TEST_HUP_ON_MV=tau-backup.sh TAU_TEST_HUP_ON_YQ_WRITE=1 "${RETARGET}" "${ARGS[@]}" 2>&1) || RC=$?
+  expect_eq 'pre-existing HUP handler: the run completes' "${RC}" 0
+  expect_contains 'pre-existing HUP handler: restored after the swap (it ran for the yaml-step SIGHUP)' "${OUT}" 'hup-handler-ran'
+  assert_retargeted 'pre-existing HUP handler'
 
   # backup.env's rename fails AND putting tau-backup.sh back fails: the
   # message must say the restore FAILED and name the backup to copy back.
