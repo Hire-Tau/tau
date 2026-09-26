@@ -748,6 +748,13 @@ envfile_get() { # FILE KEY
   printf '%s' "${line#"${key}"=}"
 }
 
+# Portable "MODE OWNER:GROUP" of FILE (GNU stat, then BSD/macOS stat) — used
+# by envfile_set to carry an existing file's permissions across an atomic
+# same-directory replace.
+_file_mode_owner_group() { # FILE
+  stat -c '%a %U:%G' "$1" 2>/dev/null || stat -f '%Lp %Su:%Sg' "$1"
+}
+
 # Update (or append) KEY=VALUE in FILE in place — the write-side counterpart
 # to envfile_get, for tools (e.g. retarget-origin.sh) that patch a couple of
 # keys in an already-rendered .env without re-rendering the whole file (which
@@ -758,12 +765,31 @@ envfile_get() { # FILE KEY
 # semantics — a file with a duplicate key keeps having a duplicate key, both
 # updated, rather than being silently collapsed to one); if KEY is absent,
 # one line is appended. FILE must already exist.
+#
+# Never a direct `cat > FILE` — setup-host.sh's own phase_env comment names
+# exactly why: that truncates the previous good file the instant the write
+# starts, so a write that dies partway leaves the services with a gutted
+# EnvironmentFile. Instead: build the new content in a temp file NEXT TO
+# FILE (same directory — never /tmp, both because this content carries live
+# secrets and because a same-filesystem temp is what makes the final `mv`
+# an ATOMIC rename; /tmp is very often a different filesystem, where `mv`
+# silently degrades to copy+unlink and a crash mid-copy can leave a
+# half-written .env), copy FILE's mode/owner onto it, then `mv -f` it over
+# FILE in one syscall.
 envfile_set() { # FILE KEY VALUE
-  local file=$1 key=$2 value=$3 tmp found=0 line
+  local file=$1 key=$2 value=$3 dir tmp found=0 line mog mode owner_group
   [[ -f ${file} ]] || die "envfile_set: file not found: ${file}"
-  tmp=$(mktemp)
+  dir=$(dirname -- "${file}")
+  mog=$(_file_mode_owner_group "${file}") || die "envfile_set: could not stat ${file}"
+  mode=${mog%% *}
+  owner_group=${mog#* }
+  tmp=$(mktemp "${dir}/.$(basename -- "${file}").XXXXXX") ||
+    die "envfile_set: failed to create a staging file next to ${file}"
   while IFS= read -r line || [[ -n ${line} ]]; do
-    if [[ ${line} =~ ^${key}= ]]; then
+    # KEY is quoted in the regex so a metacharacter in it (only ever a
+    # SCREAMING_SNAKE_CASE identifier in every real caller, but defense in
+    # depth costs nothing here) is matched literally, not as regex syntax.
+    if [[ ${line} =~ ^"${key}"= ]]; then
       printf '%s=%s\n' "${key}" "${value}" >>"${tmp}"
       found=1
     else
@@ -771,8 +797,12 @@ envfile_set() { # FILE KEY VALUE
     fi
   done <"${file}"
   [[ ${found} -eq 1 ]] || printf '%s=%s\n' "${key}" "${value}" >>"${tmp}"
-  cat "${tmp}" >"${file}"
-  rm -f "${tmp}"
+  chmod "${mode}" "${tmp}" 2>/dev/null || log_warn "envfile_set: could not chmod the staged replacement for ${file} to ${mode}"
+  chown "${owner_group}" "${tmp}" 2>/dev/null || log_warn "envfile_set: could not chown the staged replacement for ${file} to ${owner_group} (needs root)"
+  mv -f "${tmp}" "${file}" || {
+    rm -f "${tmp}"
+    die "envfile_set: failed to atomically replace ${file}"
+  }
 }
 
 # ------------------------------------------------------------------ origin/host
@@ -834,8 +864,11 @@ caddy_host_from_origin() { # ORIGIN
 # Caddy needs no port 80 for this (there is no HTTP-01 challenge to answer).
 #
 # Canonical on-host locations, installed by install_origin_cert and referenced
-# by both rendered Caddyfiles.
-CADDY_TLS_DIR='/etc/caddy/tls'
+# by both rendered Caddyfiles. Overridable via env (default unchanged) SOLELY
+# so a test can point the mutating helpers at a scratch directory instead of
+# the real /etc/caddy/tls — setup-host.sh/upgrade-host.sh never set this
+# variable, so their behavior is unaffected.
+CADDY_TLS_DIR="${CADDY_TLS_DIR:-/etc/caddy/tls}"
 CADDY_TLS_CERT_PATH="${CADDY_TLS_DIR}/origin.crt"
 CADDY_TLS_KEY_PATH="${CADDY_TLS_DIR}/origin.key"
 CADDY_APPS_TLS_CERT_PATH="${CADDY_TLS_DIR}/apps-origin.crt"
@@ -853,11 +886,15 @@ preflight_tls_source() { # CONFIG_KEY PATH
 # alike — a Cloudflare Origin CA cert can be either. Callers that want a
 # distinct "file not found"/"not readable" error should run
 # preflight_tls_source first: a missing or malformed file here just reads as
-# a mismatch (return 1), not a die.
+# a mismatch (return 1), not a die. `-passin pass:` deliberately passes an
+# EMPTY passphrase rather than none: an encrypted key then fails immediately
+# as a wrong-passphrase error (→ mismatch) instead of openssl blocking on an
+# interactive passphrase prompt with no TTY to answer it — which, run as
+# root on a live tenant, would just hang the whole retarget.
 tls_pair_matches() { # CERT KEY
   local cert=$1 key=$2 cert_pub key_pub
   cert_pub=$(openssl x509 -in "${cert}" -noout -pubkey 2>/dev/null) || return 1
-  key_pub=$(openssl pkey -in "${key}" -pubout 2>/dev/null) || return 1
+  key_pub=$(openssl pkey -in "${key}" -passin pass: -pubout 2>/dev/null) || return 1
   [[ -n ${cert_pub} && ${cert_pub} == "${key_pub}" ]]
 }
 
@@ -1278,7 +1315,9 @@ render_caddyfile() { # HOST PORT CERT_PATH KEY_PATH
   printf '%s {\n    tls %s %s\n    reverse_proxy 127.0.0.1:%s\n}\n' "${host}" "${cert}" "${key}" "${port}"
 }
 
-CADDYFILE_PATH='/etc/caddy/Caddyfile'
+# Overridable via env (default unchanged) for the same reason as
+# CADDY_TLS_DIR above — a test-only seam, not a real config knob.
+CADDYFILE_PATH="${CADDYFILE_PATH:-/etc/caddy/Caddyfile}"
 
 # Validate a staged Caddyfile as root so Caddy can also open the 0600 TLS keys.
 # The caller owns FILE and removes it after validation.
