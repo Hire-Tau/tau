@@ -244,6 +244,28 @@ jobs:
           }
           if (( status != 0 )); then exit $(( status )); fi
 
+      # Same shape for retarget-backup.sh: its real run (and the failure
+      # injection around it) needs real root — no sudo fallback — so the
+      # mutation-phase section self-skips unless the whole test process is
+      # root. The test PATH-shims curl/systemctl and the file tools it injects
+      # failures into, and points the backup paths at a scratch directory, so
+      # this step needs nothing beyond root + yq (already on PATH above).
+      - name: Run retarget-backup mutation-phase suite (root)
+        run: |
+          set -o pipefail
+          status=0
+          out=$(sudo env "PATH=$PATH" bash scripts/setup/retarget-backup.test.sh 2>&1) || status=$?
+          printf '%s\n' "${out}"
+          tail -n 1 <<<"${out}" | grep -Eq '^[0-9]+ passed, 0 failed$' || {
+            echo '::error::retarget-backup.test.sh (root) ended without a clean "N passed, 0 failed" summary.'
+            exit 1
+          }
+          grep -Fq 'TAU retarget-backup mutation-phase section: ENABLED' <<<"${out}" || {
+            echo '::error::retarget-backup.test.sh (root) skipped the mutation-phase section (no "TAU retarget-backup mutation-phase section: ENABLED" marker) — this step exists to execute it.'
+            exit 1
+          }
+          if (( status != 0 )); then exit $(( status )); fi
+
       # Cache downloaded packages only. Installed module trees are worktree/layout-specific.
       - name: Verify deterministic Pi patch regeneration has no drift
         run: |

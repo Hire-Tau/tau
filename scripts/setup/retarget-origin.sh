@@ -251,28 +251,9 @@ fi
 
 # ============================================================ 1. back up
 
-# Prints the backup path on stdout (in addition to the log_info line, which
-# goes to stderr) so a caller can capture it — used below to remember the
-# PREVIOUS origin cert/key so they can be restored if the caddy step fails.
-backup_file() { # FILE
-  local file=$1 ts dest
-  [[ -f ${file} ]] || return 0
-  ts=$(date -u '+%Y%m%dT%H%M%SZ')
-  # The XXXXXX suffix (via `mktemp -u` — a dry run, no file created by this
-  # call) makes the name unique even when two backups of the same file land
-  # in the same wall-clock SECOND (this timestamp has no finer resolution),
-  # e.g. a quick re-run right after a failure — without it, the second
-  # backup would silently overwrite the first, destroying the only copy of
-  # what was there before this run started.
-  dest=$(mktemp -u "${file}.bak-${ts}-XXXXXX") || die "backup_file: failed to compute a unique backup name for ${file}"
-  # Explicit check: callers capture this function's output with `$(...)`,
-  # and bash does not carry errexit into a command substitution (no
-  # inherit_errexit here), so an unchecked failed copy would still print
-  # a backup path that does not hold the original.
-  cp -p "${file}" "${dest}" || die "backup_file: failed to back up ${file} to ${dest}"
-  log_info "backed up ${file} -> ${dest}"
-  printf '%s' "${dest}"
-}
+# backup_file (lib.sh) prints the backup path on stdout so a caller can
+# capture it — used below to remember the PREVIOUS origin cert/key so they
+# can be restored if the caddy step fails.
 
 log_step "1/6: back up ${CONFIG} and ${ENV_FILE}"
 backup_file "${CONFIG}" >/dev/null

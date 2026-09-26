@@ -880,6 +880,112 @@ envfile_set() { # FILE KEY VALUE
   fi
 }
 
+# Read FILE's exact bytes into the variable named VAR, proving the read got
+# all of it — the same four checks envfile_set's read makes (see there): the
+# size probe must succeed, `cat` must exit 0, the sentinel must survive, and
+# the byte count must match the probe (catches a short read, a file changing
+# under us, and NUL bytes the shell cannot hold). Every step is an explicit
+# check, so this is safe to call where errexit is suppressed. Never dies:
+# returns 1 after a log_error naming FILE (never its content), leaving VAR
+# untouched.
+read_file_exact() { # FILE VAR
+  local _rfe_file=$1 _rfe_var=$2 _rfe_size _rfe_raw
+  if ! _rfe_size=$(wc -c <"${_rfe_file}"); then
+    log_error "could not read ${_rfe_file}"
+    return 1
+  fi
+  _rfe_size=${_rfe_size//[[:space:]]/}
+  if [[ ! ${_rfe_size} =~ ^[0-9]+$ ]]; then
+    log_error "could not determine the size of ${_rfe_file}"
+    return 1
+  fi
+  if ! _rfe_raw=$(cat -- "${_rfe_file}" && printf x) || [[ ${_rfe_raw} != *x ]]; then
+    log_error "failed to read ${_rfe_file}"
+    return 1
+  fi
+  _rfe_raw=${_rfe_raw%x}
+  if ! (
+    LC_ALL=C
+    [[ ${#_rfe_raw} -eq ${_rfe_size} ]]
+  ); then
+    log_error "read of ${_rfe_file} came up short or it contains bytes the shell cannot hold (NUL)"
+    return 1
+  fi
+  printf -v "${_rfe_var}" '%s' "${_rfe_raw}"
+}
+
+# Stage CONTENT as the replacement for the EXISTING file DEST, for a caller
+# that then commits it with `mv -f STAGED DEST`: a new file created next to
+# DEST (same directory, so that mv is an atomic rename — and never /tmp,
+# since CONTENT may be a secret), holding exactly CONTENT, carrying DEST's
+# mode and owner:group. Sets the variable named VAR to the staged path.
+#
+# Every step is explicitly checked, so this is safe where errexit is
+# suppressed. On ANY failure the staged file is removed, VAR is left empty,
+# DEST is untouched, and it returns 1 after a log_error. Unlike envfile_set,
+# a chmod/chown failure is fatal: a script staged at mktemp's 0600 would
+# install as a file systemd cannot execute.
+stage_file_replacement() { # DEST CONTENT VAR
+  local _sfr_dest=$1 _sfr_content=$2 _sfr_var=$3 _sfr_dir _sfr_base _sfr_mog _sfr_tmp
+  printf -v "${_sfr_var}" '%s' ''
+  if [[ ! -f ${_sfr_dest} ]]; then
+    log_error "cannot stage a replacement for ${_sfr_dest}: it does not exist"
+    return 1
+  fi
+  if ! _sfr_dir=$(dirname -- "${_sfr_dest}") || ! _sfr_base=$(basename -- "${_sfr_dest}"); then
+    log_error "cannot stage a replacement for ${_sfr_dest}: bad path"
+    return 1
+  fi
+  if ! _sfr_mog=$(_file_mode_owner_group "${_sfr_dest}") || [[ ${_sfr_mog} != *' '*:* ]]; then
+    log_error "cannot stage a replacement for ${_sfr_dest}: could not read its mode/owner"
+    return 1
+  fi
+  if ! _sfr_tmp=$(mktemp "${_sfr_dir}/.${_sfr_base}.XXXXXX") || [[ -z ${_sfr_tmp} ]]; then
+    log_error "failed to create a staging file next to ${_sfr_dest}"
+    return 1
+  fi
+  if ! printf '%s' "${_sfr_content}" >"${_sfr_tmp}"; then
+    rm -f "${_sfr_tmp}"
+    log_error "failed to write the staged replacement for ${_sfr_dest}"
+    return 1
+  fi
+  if ! chmod "${_sfr_mog%% *}" "${_sfr_tmp}"; then
+    rm -f "${_sfr_tmp}"
+    log_error "failed to set mode ${_sfr_mog%% *} on the staged replacement for ${_sfr_dest}"
+    return 1
+  fi
+  if ! chown "${_sfr_mog#* }" "${_sfr_tmp}"; then
+    rm -f "${_sfr_tmp}"
+    log_error "failed to set owner ${_sfr_mog#* } on the staged replacement for ${_sfr_dest}"
+    return 1
+  fi
+  printf -v "${_sfr_var}" '%s' "${_sfr_tmp}"
+}
+
+# Timestamped copy of FILE next to it (`cp -p`, so a 0600 secret stays 0600).
+# Prints the backup path on stdout (the log_info line goes to stderr) so a
+# caller can capture it; a missing FILE is a no-op that prints nothing. Used
+# by the retarget-*.sh primitives before they rewrite a live file.
+backup_file() { # FILE
+  local file=$1 ts dest
+  [[ -f ${file} ]] || return 0
+  ts=$(date -u '+%Y%m%dT%H%M%SZ')
+  # The XXXXXX suffix (via `mktemp -u` — a dry run, no file created by this
+  # call) makes the name unique even when two backups of the same file land
+  # in the same wall-clock SECOND (this timestamp has no finer resolution),
+  # e.g. a quick re-run right after a failure — without it, the second
+  # backup would silently overwrite the first, destroying the only copy of
+  # what was there before this run started.
+  dest=$(mktemp -u "${file}.bak-${ts}-XXXXXX") || die "backup_file: failed to compute a unique backup name for ${file}"
+  # Explicit check: callers capture this function's output with `$(...)`,
+  # and bash does not carry errexit into a command substitution (no
+  # inherit_errexit here), so an unchecked failed copy would still print
+  # a backup path that does not hold the original.
+  cp -p "${file}" "${dest}" || die "backup_file: failed to back up ${file} to ${dest}"
+  log_info "backed up ${file} -> ${dest}"
+  printf '%s' "${dest}"
+}
+
 # ------------------------------------------------------------------ origin/host
 
 # Bare host (no scheme, no port) of an origin like https://acme.example.com or
@@ -1713,6 +1819,143 @@ TAU_BACKUP_S3_ACCESS_KEY=$(sh_single_quote "${access}")
 TAU_BACKUP_S3_SECRET_KEY=$(sh_single_quote "${secret}")
 TAU_BACKUP_PASSPHRASE=$(sh_single_quote "${passphrase}")
 EOF
+}
+
+# Where the nightly backup's two rendered files live. Written by setup-host.sh
+# (phase_backup) and rewritten in place by retarget-backup.sh. Env-overridable
+# only so tests can point them at a scratch directory (the same idiom as
+# CADDY_TLS_DIR/CADDYFILE_PATH); setup-host.sh and upgrade-host.sh never set
+# either.
+BACKUP_SCRIPT_PATH="${BACKUP_SCRIPT_PATH:-/usr/local/bin/tau-backup.sh}"
+BACKUP_ENV_TARGET="${BACKUP_ENV_TARGET:-/etc/tau/backup.env}"
+
+# Render tau-backup.sh.tmpl with its @TOKEN@ substitutions. Explicit args, no
+# globals, so setup-host.sh (fresh render from its config) and
+# retarget-backup.sh (re-render of a live host, non-S3 values carried over
+# from the installed script) share exactly one render. The sed program is the
+# one setup-host.sh has always used: values are spliced in verbatim, so a
+# value containing '|', '&' or '\' would corrupt the output — callers that
+# take values from outside the toolkit validate them first.
+render_backup_script_content() { # TEMPLATE DEST HOME_DIR DB_MODE DB_CONTAINER S3_ENDPOINT S3_REGION S3_BUCKET S3_PREFIX BACKUP_ENV_FILE
+  sed -e "s|@DEST@|${2}|g" \
+    -e "s|@HOME_DIR@|${3}|g" \
+    -e "s|@DB_MODE@|${4}|g" \
+    -e "s|@DB_CONTAINER@|${5}|g" \
+    -e "s|@S3_ENDPOINT@|${6}|g" \
+    -e "s|@S3_REGION@|${7}|g" \
+    -e "s|@S3_BUCKET@|${8}|g" \
+    -e "s|@S3_PREFIX@|${9}|g" \
+    -e "s|@BACKUP_ENV_FILE@|${10}|g" \
+    "$1"
+}
+
+# Inverse of sh_single_quote, for reading back a file this toolkit (or the
+# control plane, which quotes the same way) wrote as sourced `KEY='value'`
+# lines — backup.env, a pushed secrets.env. Accepts exactly two shapes and
+# evaluates nothing:
+#   - a bare word of shell-inert characters (e.g. an access key id);
+#   - a sequence of '...' segments and \' escapes, and nothing else (what
+#     sh_single_quote produces).
+# Anything else — double quotes, $, backticks, spaces outside quotes, an
+# unterminated quote — returns 1 instead of guessing what a shell would make
+# of it. Sets the variable named VAR; leaves it untouched on failure.
+sh_single_unquote() { # VALUE VAR
+  local _ssu_in=$1 _ssu_var=$2 _ssu_out='' _ssu_bare='^[A-Za-z0-9_./:@%+,=-]*$'
+  if [[ ${_ssu_in} =~ ${_ssu_bare} ]]; then
+    printf -v "${_ssu_var}" '%s' "${_ssu_in}"
+    return 0
+  fi
+  while [[ -n ${_ssu_in} ]]; do
+    if [[ ${_ssu_in} == "'"* ]]; then
+      _ssu_in=${_ssu_in#"'"}
+      [[ ${_ssu_in} == *"'"* ]] || return 1
+      _ssu_out+=${_ssu_in%%"'"*}
+      _ssu_in=${_ssu_in#*"'"}
+    elif [[ ${_ssu_in} == "\\'"* ]]; then
+      _ssu_out+="'"
+      _ssu_in=${_ssu_in#"\\'"}
+    else
+      return 1
+    fi
+  done
+  printf -v "${_ssu_var}" '%s' "${_ssu_out}"
+}
+
+# Strictly parse RAW, the contents of a sourced-style env file, WITHOUT
+# sourcing it. Every line must be blank, a `#` comment, or KEY=VALUE where KEY
+# is one of the listed keys and VALUE decodes with sh_single_unquote. Each
+# KEY:VAR pair sets VAR to KEY's decoded value (last assignment wins, as when
+# sourced); VAR is set to '' first, so a key that is absent reads as empty.
+# Returns 1 after a log_error naming LABEL, the line number and (for an
+# unexpected key) the key — never a value, since these files hold secrets.
+# Lines are split with parameter expansion, not `read <<<`, so the content
+# never passes through a here-string temp file.
+sh_env_parse() { # RAW LABEL KEY:VAR...
+  local _sep_rest=$1 _sep_label=$2 _sep_line _sep_n=0 _sep_key _sep_val _sep_dec _sep_pair _sep_hit
+  shift 2
+  for _sep_pair in "$@"; do
+    printf -v "${_sep_pair#*:}" '%s' ''
+  done
+  while [[ -n ${_sep_rest} ]]; do
+    _sep_line=${_sep_rest%%$'\n'*}
+    if [[ ${_sep_line} == "${_sep_rest}" ]]; then _sep_rest=''; else _sep_rest=${_sep_rest#*$'\n'}; fi
+    _sep_n=$((_sep_n + 1))
+    [[ ${_sep_line} =~ ^[[:space:]]*$ || ${_sep_line} =~ ^[[:space:]]*# ]] && continue
+    if [[ ! ${_sep_line} =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+      log_error "${_sep_label} line ${_sep_n} is not a KEY=VALUE assignment"
+      return 1
+    fi
+    _sep_key=${BASH_REMATCH[1]}
+    _sep_val=${BASH_REMATCH[2]}
+    _sep_hit=''
+    for _sep_pair in "$@"; do
+      [[ ${_sep_pair%%:*} == "${_sep_key}" ]] && _sep_hit=${_sep_pair#*:}
+    done
+    if [[ -z ${_sep_hit} ]]; then
+      log_error "${_sep_label} line ${_sep_n}: unexpected key '${_sep_key}' (expected only: ${*%%:*})"
+      return 1
+    fi
+    if ! sh_single_unquote "${_sep_val}" _sep_dec; then
+      log_error "${_sep_label} line ${_sep_n}: the value of ${_sep_key} is not a bare word or a single-quoted string (value not shown)"
+      return 1
+    fi
+    printf -v "${_sep_hit}" '%s' "${_sep_dec}"
+  done
+}
+
+# curl config-file credentials, never argv (ps-visible) — the same user line
+# tau-backup.sh.tmpl builds for its own requests (that script is standalone
+# and keeps its own copy). Escapes \ and " for the curl config quoted string.
+_s3_curl_user_config() { # ACCESS SECRET
+  local a=${1//\\/\\\\} s=${2//\\/\\\\}
+  a=${a//\"/\\\"}
+  s=${s//\"/\\\"}
+  printf 'user = "%s:%s"\n' "${a}" "${s}"
+}
+
+# Read-only credential + reachability check for a backup target: ONE signed
+# ListObjectsV2 (max-keys=1) under PREFIX — the same request shape, auth
+# (curl --aws-sigv4) and URL form tau-backup.sh's retention step uses, so a
+# pass means the nightly job can authenticate to and list this bucket with
+# this key. Writes nothing. Credentials travel in a curl --config file over a
+# process-substitution fd (never argv, never disk). Returns 1 after a
+# log_error naming the endpoint, bucket, prefix and curl exit / HTTP status —
+# never a credential.
+s3_list_probe() { # ENDPOINT REGION BUCKET PREFIX ACCESS SECRET
+  local endpoint=$1 region=$2 bucket=$3 prefix=$4 access=$5 secret=$6 key_prefix code rc=0
+  key_prefix="${prefix:+${prefix%/}/}"
+  code=$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 10 --max-time 30 \
+    --aws-sigv4 "aws:amz:${region}:s3" \
+    --config <(_s3_curl_user_config "${access}" "${secret}") \
+    "${endpoint%/}/${bucket}?list-type=2&max-keys=1&prefix=${key_prefix}") || rc=$?
+  if [[ ${rc} -ne 0 ]]; then
+    log_error "could not reach ${endpoint} to list s3://${bucket}/${key_prefix} (curl exit ${rc})"
+    return 1
+  fi
+  if [[ ${code} != 200 ]]; then
+    log_error "listing s3://${bucket}/${key_prefix} at ${endpoint} returned HTTP ${code:-<none>} (403: the key is wrong or not granted this bucket; 404: no such bucket)"
+    return 1
+  fi
 }
 
 # ------------------------------------------------------------------ tau API
