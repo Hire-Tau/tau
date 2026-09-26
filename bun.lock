@@ -3,7 +3,7 @@
   "configVersion": 0,
   "workspaces": {
     "": {
-      "name": "tau",
+      "name": "ficus",
       "dependencies": {
         "eslint-plugin-prettier": "^5.5.5",
       },
