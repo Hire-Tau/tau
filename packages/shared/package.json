@@ -41,7 +41,8 @@
     "./push-relay": "./src/push-relay.ts",
     "./platform-usage": "./src/platform-usage.ts",
     "./testDbUp": "./src/testDbUp.ts",
-    "./identity": "./src/identity.ts"
+    "./identity": "./src/identity.ts",
+    "./legacy-env": "./src/legacy-env.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
