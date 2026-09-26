@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { Monitor, MonitorStatus } from '@tau/shared'
+import type { Monitor, MonitorStatus } from '@ficus/shared'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import { monitorsApi } from '../../api/monitors'

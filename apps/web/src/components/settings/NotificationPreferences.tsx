@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import { updateMyNotificationPrefs } from '../../api/config'
-import { PUSH_CATEGORIES } from '@tau/shared'
+import { PUSH_CATEGORIES } from '@ficus/shared'
 
 const categoryById = new Map(PUSH_CATEGORIES.map((category) => [category.id as string, category]))
 

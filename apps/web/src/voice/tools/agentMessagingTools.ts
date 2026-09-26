@@ -1,4 +1,4 @@
-import type { Agent, DeliveryMode } from '@tau/shared'
+import type { Agent, DeliveryMode } from '@ficus/shared'
 import { getAgent, listAgents, sendAgentMessage, stopAgent } from '../../api/agents'
 import { sendInboxMessage } from '../../api/inbox'
 import { resolveAgentByReference } from './agentResolution'

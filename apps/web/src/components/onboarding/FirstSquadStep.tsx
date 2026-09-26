@@ -1,7 +1,7 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import type { Squad } from '@tau/shared'
+import type { Squad } from '@ficus/shared'
 import { createSquad } from '../../api/squads'
 import { sendChatMessage } from '../../api/chat'
 import { onboardingQueryKeys, queryKeys } from '../../queryKeys'

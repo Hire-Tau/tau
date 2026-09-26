@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import clsx from 'clsx'
-import { isWorkspaceVoiceRecipient, type Squad } from '@tau/shared'
+import { isWorkspaceVoiceRecipient, type Squad } from '@ficus/shared'
 import type { InboxMessageResponse } from '../api/inbox'
 import { apiUrl } from '../api/client'
 import { MarkdownContent } from './MarkdownContent'

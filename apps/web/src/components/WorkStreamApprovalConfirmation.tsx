@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { WorkStreamCompletionMode } from '@tau/shared'
+import type { WorkStreamCompletionMode } from '@ficus/shared'
 import { useStableRef } from '../hooks/useStableRef'
 import { Modal } from './Modal'
 

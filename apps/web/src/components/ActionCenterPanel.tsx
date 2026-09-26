@@ -1,6 +1,6 @@
 import { ActionCenterContent } from './ActionCenterContent'
 import { CloseIcon } from './icons'
-import type { PendingAction } from '@tau/shared'
+import type { PendingAction } from '@ficus/shared'
 
 interface ActionCenterPanelProps {
   isOpen: boolean

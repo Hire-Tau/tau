@@ -16,7 +16,7 @@ import {
 } from '../test-utils'
 import { db, squads, agents, roles, images } from '../db'
 import { eq, inArray } from 'drizzle-orm'
-import { MAX_IMAGE_ATTACHMENTS_PER_MESSAGE } from '@tau/shared'
+import { MAX_IMAGE_ATTACHMENTS_PER_MESSAGE } from '@ficus/shared'
 import { deflateSync } from 'node:zlib'
 
 const PASSWORD = 'test-password-xyz'

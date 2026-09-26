@@ -27,7 +27,7 @@ import {
   type WorkStreamWait,
   type WorkflowDefinition,
   type WorkflowRun,
-} from '@tau/shared'
+} from '@ficus/shared'
 import {
   fitWorkflowGraph,
   placeNewWorkflowNodes,

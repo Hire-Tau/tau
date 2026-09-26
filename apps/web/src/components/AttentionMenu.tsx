@@ -11,7 +11,7 @@ import {
   type Attention,
   type AttentionKind,
   type AttentionLevel,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { queries } from '../queryOptions'
 import { queryKeys } from '../queryKeys'
 import {

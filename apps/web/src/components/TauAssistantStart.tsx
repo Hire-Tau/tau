@@ -1,4 +1,4 @@
-import type { Agent } from '@tau/shared'
+import type { Agent } from '@ficus/shared'
 import { AssistantConversationList } from './AssistantConversations'
 import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'

@@ -403,9 +403,9 @@ jobs:
           fi
           NODE_OPTIONS=--max-old-space-size=6144 node -e "const v8 = require('node:v8'); console.log('v8_heap_size_limit=' + v8.getHeapStatistics().heap_size_limit)"
 
-      # Every package, not just @tau/shared. `bun build` (used for the CLI and
+      # Every package, not just @ficus/shared. `bun build` (used for the CLI and
       # for apps/core) transpiles without type-checking, so before this step the
-      # only code CI ever type-checked was @tau/shared — which is how main once
+      # only code CI ever type-checked was @ficus/shared — which is how main once
       # shipped a TS2677 error in apps/core that no test could catch. Each
       # package's typecheck is `tsc --noEmit`, so this builds nothing and the
       # step it replaced ("Build shared package") never built anything either.
@@ -433,7 +433,7 @@ jobs:
       # (scripts/setup/setup-host.sh's build phase), so a broken web build is a
       # broken tenant — provisioning fails after the customer has paid. Nothing
       # here built apps/web, which is how a node builtin reaching the browser
-      # bundle (`@tau/shared` re-exporting ./crypto) shipped to main and blocked
+      # bundle (`@ficus/shared` re-exporting ./crypto) shipped to main and blocked
       # every provision. Build it in CI so that class of break is caught here.
       - name: Build web
         run: bun run --filter web build

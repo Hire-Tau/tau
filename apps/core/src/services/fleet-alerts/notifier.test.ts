@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { SYSTEM_RECIPIENT_ID } from '@tau/shared'
+import { SYSTEM_RECIPIENT_ID } from '@ficus/shared'
 import { eq, inArray, like } from 'drizzle-orm'
 import { db } from '../../db'
 import { agents, fleetIncidentNotifications, fleetIncidents, inbox, squads } from '../../db/schema'

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { effectiveSquadEventRules, squadEventRulesSchema, type SquadEventRule } from '@tau/shared'
+import { effectiveSquadEventRules, squadEventRulesSchema, type SquadEventRule } from '@ficus/shared'
 import { SquadEventRulesEditor } from './SquadEventRulesEditor'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { updateSquad } from '../../api/squads'

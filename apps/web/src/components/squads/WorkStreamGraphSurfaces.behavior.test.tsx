@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
-import type { Squad, WorkStream } from '@tau/shared'
+import type { Squad, WorkStream } from '@ficus/shared'
 import { queryKeys } from '../../queryKeys'
 import { acquireDomHarness } from '../../test/domHarness'
 import { QueryInvalidator } from '../QueryInvalidator'

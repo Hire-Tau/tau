@@ -3,7 +3,7 @@ import {
   parseAssistantInboxConversationId,
   parseInboxPushPresentation,
   workStreamTitle,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { eq } from 'drizzle-orm'
 import { agentQuestionWorkStreamOrigins } from '../../db/schema'
 import type { NotificationEvent } from '../../channels/provider'

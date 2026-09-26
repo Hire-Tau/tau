@@ -1,5 +1,5 @@
-import { sortCanonicalWorkStreams } from '@tau/shared'
-import type { CanonicalWorkStreamOrderInput, WorkStreamDerivedState } from '@tau/shared'
+import { sortCanonicalWorkStreams } from '@ficus/shared'
+import type { CanonicalWorkStreamOrderInput, WorkStreamDerivedState } from '@ficus/shared'
 
 const DISPLAY_LIMIT = 10
 const PROVIDER_LIMIT = { slack: 3000, discord: 2000 } as const

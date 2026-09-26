@@ -23,8 +23,8 @@ import type {
   AgentErrorActionData,
   AssistantTaskActionData,
   WorkStreamActionData,
-} from '@tau/shared'
-import type { StatusRole } from '@tau/shared'
+} from '@ficus/shared'
+import type { StatusRole } from '@ficus/shared'
 import { webStatus } from '../lib/statusPresentation'
 
 // Icons for each action type

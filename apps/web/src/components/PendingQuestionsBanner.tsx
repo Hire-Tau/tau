@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ComponentType } from 'react'
-import type { AgentQuestion } from '@tau/shared'
+import type { AgentQuestion } from '@ficus/shared'
 import { AgentQuestionCard } from './AgentQuestionCard'
 import { Modal } from './Modal'
 import { ChevronRightIcon } from './icons'

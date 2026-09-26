@@ -5,7 +5,7 @@ import {
   trackedResourceLabel,
   type WorkflowDefinition,
   type WorkflowRun,
-} from '@tau/shared'
+} from '@ficus/shared'
 
 /** Delivery guidance is shared by every flow participant, independent of squad or agent type. */
 export function flowCompletionInstructions(mode: WorkflowDefinition['completion']['mode']): string {

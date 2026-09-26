@@ -1,6 +1,6 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { isAbsolute, join } from 'path'
-import { localProcessNames } from '@tau/shared'
+import { localProcessNames } from '@ficus/shared'
 import { bunPtyLibrary, nativeLogPath, type NativeComponent } from './launchd'
 import type { SupervisorAdapter, SupervisorContext, SupervisorProcess } from './supervisor'
 

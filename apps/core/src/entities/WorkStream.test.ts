@@ -1,7 +1,7 @@
 import * as schema from '../db/schema'
 import * as repositorySetup from '../services/work-streams/repository-setup'
 import { storedLegacyWorkStream } from '../test-utils/stored-legacy-work-stream'
-import { createBlankWorkflow } from '@tau/shared'
+import { createBlankWorkflow } from '@ficus/shared'
 import { describe, it, expect, beforeEach, afterEach, spyOn } from 'bun:test'
 import { eq, like, inArray, and, sql } from 'drizzle-orm'
 import { Squad } from './Squad'

@@ -1,6 +1,6 @@
 import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
-import type { AssistantActivityUpdate, AssistantTaskSummary } from '@tau/shared'
+import type { AssistantActivityUpdate, AssistantTaskSummary } from '@ficus/shared'
 import { useStableRef } from '../hooks/useStableRef'
 import { shouldAcknowledgeAssistantUpdate } from '../lib/assistantActivityPresentation'
 import { AssistantUpdateCard } from './AssistantUpdateCard'

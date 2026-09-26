@@ -1,4 +1,4 @@
-import { artifactReferenceSchema as sharedArtifactReferenceSchema } from '@tau/shared'
+import { artifactReferenceSchema as sharedArtifactReferenceSchema } from '@ficus/shared'
 import {
   editArtifactFile,
   getArtifactContext,

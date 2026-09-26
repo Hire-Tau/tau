@@ -9,7 +9,7 @@ import {
   type AmtpSignedAgentCard,
   type AgentFederationStatusResponse,
   type AgentRegisterResponse,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { readIdentityCache, writeIdentityCache, requireMatchingSigningIdentity } from '../amtp/identity'
 import { buildSignedCardBody } from '../amtp/card'
 

@@ -1,4 +1,4 @@
-import { isUserAssistantAgentType } from '@tau/shared'
+import { isUserAssistantAgentType } from '@ficus/shared'
 import { consultantSandboxId } from '../services/sandbox/consultant-sandbox'
 import { lockFlowInboxDelivery } from '../services/work-streams/wait-scope'
 import { and, asc, desc, eq, gt, ilike, inArray, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm'
@@ -30,7 +30,7 @@ import {
   extractAgentAttachmentReferences,
   isLiveAgentStatus,
   LIVE_AGENT_STATUSES,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { AgentRunnerType } from './agent-runners/base'
 import { ARTIFACT_BUILDER_AGENT_TYPE_ID, ARTIFACT_BUILDER_RUNNER_TYPE } from './agent-runners/constants'
 import { generateAgentName } from '../lib/utils/agent-names'

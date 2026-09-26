@@ -35,7 +35,7 @@
 import { createHash } from 'crypto'
 import { relative } from 'path'
 import type { IPty } from 'bun-pty'
-import type { SandboxPressure } from '@tau/shared'
+import type { SandboxPressure } from '@ficus/shared'
 import {
   getSquadIdFromSandbox,
   type ISandboxManager,

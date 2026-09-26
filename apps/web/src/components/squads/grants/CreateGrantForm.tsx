@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { GrantPolicy } from '@tau/shared'
+import type { GrantPolicy } from '@ficus/shared'
 import { createGrant } from '../../../api/grants'
 import { queries } from '../../../queryOptions'
 import { queryKeys } from '../../../queryKeys'

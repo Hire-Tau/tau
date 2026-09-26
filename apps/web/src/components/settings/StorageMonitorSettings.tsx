@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { StorageMonitoring } from '@tau/shared'
+import type { StorageMonitoring } from '@ficus/shared'
 import { setSetting } from '../../api/settings'
 import { queryKeys } from '../../queryKeys'
 

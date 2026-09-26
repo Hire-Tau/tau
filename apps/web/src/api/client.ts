@@ -1,5 +1,5 @@
-import { readApiErrorMessage } from '@tau/client-core'
-export { readApiErrorMessage } from '@tau/client-core'
+import { readApiErrorMessage } from '@ficus/client-core'
+export { readApiErrorMessage } from '@ficus/client-core'
 
 const BASE_URL = (import.meta.env?.BASE_URL ?? '/').replace(/\/$/, '')
 

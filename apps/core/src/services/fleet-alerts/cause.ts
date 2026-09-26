@@ -1,4 +1,4 @@
-import type { ProviderHealthKind, ProviderHealthRecord } from '@tau/shared/provider-health'
+import type { ProviderHealthKind, ProviderHealthRecord } from '@ficus/shared/provider-health'
 
 export interface SanitizedProviderCause {
   kind: ProviderHealthKind

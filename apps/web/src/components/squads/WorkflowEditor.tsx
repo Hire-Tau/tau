@@ -1,7 +1,7 @@
 import { WorkflowParticipantTierField } from './WorkflowParticipantEditor'
 import type { PageEditorAssistant } from '../PageEditorAssistant'
 import { isWorkflowTextTarget, workflowHistoryKey } from '../../lib/workflowEditing'
-import { isWorkerAgentType } from '@tau/shared'
+import { isWorkerAgentType } from '@ficus/shared'
 import { WorkflowBuilder } from './WorkflowBuilder'
 import { useStableRef } from '../../hooks/useStableRef'
 import { WorkflowGraph } from '../WorkflowGraph'
@@ -16,7 +16,7 @@ import {
   type WorkflowDefinition,
   type AssistantEditorPreset,
   type WorkflowSource,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { queries } from '../../queryOptions'
 import { client } from '../../api/clientInstance'
 

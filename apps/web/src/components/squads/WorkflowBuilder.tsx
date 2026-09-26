@@ -11,7 +11,7 @@ import {
   type AssistantEditorPreset,
   type AssistantEditorProposal,
   type WorkflowDefinition,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { usePermissions } from '../../hooks/usePermissions'
 import { PageEditorAssistant } from '../PageEditorAssistant'
 import { WorkflowGraph } from '../WorkflowGraph'

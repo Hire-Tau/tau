@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
-import type { Agent, Squad, WorkStream } from '@tau/shared'
+import type { Agent, Squad, WorkStream } from '@ficus/shared'
 import type { ComponentProps } from 'react'
 
 let domHarness: Awaited<ReturnType<typeof acquireDomHarness>> | undefined

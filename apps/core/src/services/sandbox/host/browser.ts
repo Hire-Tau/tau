@@ -39,7 +39,7 @@ import type { Browser } from 'playwright-core'
 // step, no .d.ts) — see the header above and the script's own.
 // @ts-expect-error no type declarations for this untyped machine script
 import { createService } from '../../../../../../scripts/machine/browser/tau-browser.js'
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 import { boxUnixUser } from '../../machines/box-paths'
 import { getHomeDir } from '../../../lib/utils/home'
 import { createLogger } from '../../../lib/infra/logger'

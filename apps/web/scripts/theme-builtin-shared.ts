@@ -3,8 +3,8 @@
 // generate-bigbrain-builtins.ts (six unified BigBrain-ported palettes) and
 // generate-palette-builtins.ts (dual primary/secondary/tertiary/neutral
 // palettes, e.g. Forest). See docs/wiki/theme/builtins.md.
-import { THEME_TOKEN_FAMILIES, customColorChannels } from '@tau/shared/theme-schema'
-import { oklchToSrgb, srgbToOklch } from '@tau/shared/color-oklch'
+import { THEME_TOKEN_FAMILIES, customColorChannels } from '@ficus/shared/theme-schema'
+import { oklchToSrgb, srgbToOklch } from '@ficus/shared/color-oklch'
 import { contrast, contrastPairs, pairBackground, tokenRgba } from '../src/theme/contrast'
 
 /** Slices a balanced `{ ... }` block's raw custom-property declarations,

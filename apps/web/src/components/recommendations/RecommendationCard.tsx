@@ -1,4 +1,4 @@
-import type { OperationsRecommendationSummary } from '@tau/shared'
+import type { OperationsRecommendationSummary } from '@ficus/shared'
 import { Badge, type BadgeColor } from '../Badge'
 
 const CONFIDENCE_COLORS: Record<string, BadgeColor> = {

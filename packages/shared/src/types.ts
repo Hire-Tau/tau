@@ -1776,11 +1776,11 @@ export interface PeerResponse {
 }
 
 // AmtpEnvelope + AmtpAttachmentRef (the envelope's attachment reference) live in
-// amtp-protocol; re-exported here so existing `@tau/shared` importers keep working.
+// amtp-protocol; re-exported here so existing `@ficus/shared` importers keep working.
 export type { AmtpEnvelope, AmtpAttachmentRef } from 'amtp-protocol/envelope'
 
 // AmtpAgentCard + AmtpSignedAgentCard(SansSig) live in amtp-protocol (browser-safe: zod + ./jcs
-// only); re-exported here so existing `@tau/shared` importers keep working. Import from the
+// only); re-exported here so existing `@ficus/shared` importers keep working. Import from the
 // `/card` submodule, NOT the barrel `amtp-protocol`, so the browser bundle never pulls in
 // ./crypto (node:crypto).
 export type { AmtpAgentCard, AmtpSignedAgentCard, AmtpSignedAgentCardSansSig } from 'amtp-protocol/card'

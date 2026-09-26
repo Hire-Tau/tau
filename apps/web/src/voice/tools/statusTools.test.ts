@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import type { WorkStream } from '@tau/shared'
+import type { WorkStream } from '@ficus/shared'
 import { createStatusTools, voiceWorkStreamStatus } from './statusTools'
 
 function stream(overrides: Partial<WorkStream> = {}): WorkStream {

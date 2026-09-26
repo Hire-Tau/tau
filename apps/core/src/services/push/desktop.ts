@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { and, desc, eq, gt, inArray, isNull, lt, sql } from 'drizzle-orm'
-import type { PushCategory } from '@tau/shared'
+import type { PushCategory } from '@ficus/shared'
 import type { NotificationEvent } from '../../channels/provider'
 import { db, desktopNotifications } from '../../db'
 import { deviceTokens } from '../../db/schema'

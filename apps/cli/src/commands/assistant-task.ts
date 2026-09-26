@@ -5,7 +5,7 @@
  */
 
 import { Command, Option } from 'commander'
-import type { AssistantTaskSummary } from '@tau/shared'
+import type { AssistantTaskSummary } from '@ficus/shared'
 import { apiGet, apiPost } from '../client'
 import { output, outputError } from '../output'
 

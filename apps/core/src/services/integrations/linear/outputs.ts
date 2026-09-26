@@ -1,4 +1,4 @@
-import { linearOutputCatalog } from '@tau/shared'
+import { linearOutputCatalog } from '@ficus/shared'
 import { createHash } from 'node:crypto'
 import type { IntegrationOutputAdapter } from '../outputs/types'
 

@@ -1,5 +1,5 @@
-import { workStreamRef } from '@tau/shared'
-import { workStreamTitle } from '@tau/shared'
+import { workStreamRef } from '@ficus/shared'
+import { workStreamTitle } from '@ficus/shared'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -28,7 +28,7 @@ import { AgentChat } from './AgentChat'
 import { ActionItem } from './ActionItem'
 import { MarkdownContent } from './MarkdownContent'
 import { SparklesIcon, ChevronRightIcon } from './icons'
-import type { Agent, PendingAction, Squad, WorkStream, WorkStreamActionData } from '@tau/shared'
+import type { Agent, PendingAction, Squad, WorkStream, WorkStreamActionData } from '@ficus/shared'
 
 const suggestions = ['What needs my attention?', 'Summarize progress across my squads', 'Help me set up a new project']
 type CompletedPreferences = { expanded: boolean; days: 7 | 30 }

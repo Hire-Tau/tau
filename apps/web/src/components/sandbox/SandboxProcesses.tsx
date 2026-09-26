@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { isSandboxOverloaded, type SandboxPressure, type SandboxProcessSignal } from '@tau/shared'
+import { isSandboxOverloaded, type SandboxPressure, type SandboxProcessSignal } from '@ficus/shared'
 import { signalAgentSandboxProcess, stopAgentSandboxContainer } from '../../api/agents'
 import { signalSandboxProcess, stopSandboxContainer } from '../../api/workspace'
 import { actionErrorMessage } from '../../lib/actionError'

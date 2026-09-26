@@ -1,4 +1,4 @@
-import { isEarlierWorkflowStep, type WorkflowAttempt, type WorkflowRun } from '@tau/shared'
+import { isEarlierWorkflowStep, type WorkflowAttempt, type WorkflowRun } from '@ficus/shared'
 
 /** Explain the actual run's capabilities, including the active attempt's pinned handoffs. */
 export function flowCapabilityInstructions(state: WorkflowRun, attempt: WorkflowAttempt, version = state.version) {

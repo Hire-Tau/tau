@@ -1,6 +1,6 @@
 import { CatalogSearch } from './CatalogSearch'
 import { Modal } from '../Modal'
-import { providerLabel, type ModelCatalogEntry } from '@tau/shared'
+import { providerLabel, type ModelCatalogEntry } from '@ficus/shared'
 import { parseDisplayModelSpec } from '../../lib/displayModelSpec'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'

@@ -2,7 +2,7 @@ import { storedLegacyWorkStream } from '../../test-utils/stored-legacy-work-stre
 import { describe, it, expect, beforeEach, afterEach, afterAll, spyOn } from 'bun:test'
 import { eq, inArray, like, sql } from 'drizzle-orm'
 import type postgres from 'postgres'
-import { WORK_STREAM_ADMITTED_STATUSES } from '@tau/shared'
+import { WORK_STREAM_ADMITTED_STATUSES } from '@ficus/shared'
 import { db } from '../../db'
 import { createPostgresConnection, getConnectionString } from '../../db/connection'
 import { agentTypes, agents, executions, inbox, squads, workStreams, workStreamContinuations } from '../../db/schema'

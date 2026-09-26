@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { queryKeys } from '../queryKeys'
-import type { Agent, Squad, WorkStream, WorkStreamMetrics, WorkStreamWait } from '@tau/shared'
+import type { Agent, Squad, WorkStream, WorkStreamMetrics, WorkStreamWait } from '@ficus/shared'
 import { acquireDomHarness, withDomOwnership } from '../test/domHarness'
 
 const { WorkStreamList } = await import('./WorkStreamList')

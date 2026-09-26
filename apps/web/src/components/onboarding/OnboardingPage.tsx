@@ -1,4 +1,4 @@
-import { squadSlugMap, type Squad } from '@tau/shared'
+import { squadSlugMap, type Squad } from '@ficus/shared'
 import { queries } from '../../queryOptions'
 import { useState, type ComponentType } from 'react'
 import { Link, useLocation } from 'react-router-dom'

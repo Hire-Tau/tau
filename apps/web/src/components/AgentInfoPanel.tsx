@@ -1,4 +1,4 @@
-import { providerLabel, type ModelCatalogEntry, type Agent } from '@tau/shared'
+import { providerLabel, type ModelCatalogEntry, type Agent } from '@ficus/shared'
 import type { AgentTypeConfig } from '../api/config'
 import { AgentSandboxControls } from './AgentSandboxControls'
 import { AgentScopesPanel } from './AgentScopesPanel'

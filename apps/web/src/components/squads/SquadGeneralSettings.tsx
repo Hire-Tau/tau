@@ -7,7 +7,7 @@ import { queries } from '../../queryOptions'
 import clsx from 'clsx'
 import { usePermissions } from '../../hooks/usePermissions'
 import { SquadAvatarSettings } from './SquadAvatarSettings'
-import { updateSquadSchema, type UpdateSquadInput } from '@tau/shared'
+import { updateSquadSchema, type UpdateSquadInput } from '@ficus/shared'
 
 type SettingsSection = 'general' | 'workflows' | 'workspace'
 

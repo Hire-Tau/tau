@@ -7,7 +7,7 @@ import {
   inferWorkflowJoin,
   type WorkflowDefinition,
   type WorkflowStep,
-} from '@tau/shared'
+} from '@ficus/shared'
 
 const field = 'tau-field w-full px-3 py-2 border border-th-border rounded-md bg-surface text-primary'
 function Help({ children }: { children: ReactNode }) {

@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
-import type { Agent } from '@tau/shared'
+import type { Agent } from '@ficus/shared'
 import { getAgentPurpose, getAgentName } from '../lib/agentDisplay'
 import { Presence } from './Presence'
 import { ChevronDownIcon, PlusIcon } from './icons'

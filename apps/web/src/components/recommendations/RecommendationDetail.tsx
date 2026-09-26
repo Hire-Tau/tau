@@ -2,7 +2,7 @@ import {
   OPERATIONS_RECOMMENDATION_TRANSITIONS,
   type OperationsRecommendationDetail,
   type OperationsRecommendationStatus,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { Badge, type BadgeColor } from '../Badge'
 
 const CONFIDENCE_COLORS: Record<string, BadgeColor> = {

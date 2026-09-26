@@ -6,7 +6,7 @@ import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense } fro
 import { useNavigate } from 'react-router-dom'
 import { CanvasSkeleton } from '../loading/Skeleton'
 import { useSquadSlugs } from '../../hooks/useSquadSlugs'
-import type { Squad, SquadRelationship } from '@tau/shared'
+import type { Squad, SquadRelationship } from '@ficus/shared'
 
 // Lazy load force graph components
 const ForceGraph2DLazy = lazy(() => import('react-force-graph-2d'))

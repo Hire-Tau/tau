@@ -1,7 +1,7 @@
 import { useVoiceEnabled } from '../hooks/useVoiceEnabled'
 import clsx from 'clsx'
 import { useCallback, useRef, useState } from 'react'
-import type { QuestionData, QuestionItem } from '@tau/shared'
+import type { QuestionData, QuestionItem } from '@ficus/shared'
 import { useVoiceRecorder, type RecorderState } from '../hooks/useVoiceRecorder'
 import { useVoiceKeyboardShortcuts } from '../hooks/useVoiceKeyboardShortcuts'
 import { useStableRef } from '../hooks/useStableRef'

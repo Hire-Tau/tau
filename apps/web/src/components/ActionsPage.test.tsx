@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import type { PendingAction } from '@tau/shared'
+import type { PendingAction } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { ActionsPage } from './ActionsPage'
 

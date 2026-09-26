@@ -6,7 +6,7 @@ import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense } fro
 import { useSearchParams } from 'react-router-dom'
 import { AgentInboxPanel } from './AgentInboxPanel'
 import { InboxIcon } from '../icons'
-import { AGENT_STATUS_ROLE, type Agent } from '@tau/shared'
+import { AGENT_STATUS_ROLE, type Agent } from '@ficus/shared'
 import { getAgentPrimaryLabel } from '../../lib/agentDisplay'
 import { webStatus } from '../../lib/statusPresentation'
 import { CanvasSkeleton } from '../loading/Skeleton'

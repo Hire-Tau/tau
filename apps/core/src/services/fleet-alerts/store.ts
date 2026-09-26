@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm'
-import { isSandboxOverloaded, SYSTEM_RECIPIENT_ID, type SandboxPressure } from '@tau/shared'
-import type { ProviderHealthRecord } from '@tau/shared/provider-health'
+import { isSandboxOverloaded, SYSTEM_RECIPIENT_ID, type SandboxPressure } from '@ficus/shared'
+import type { ProviderHealthRecord } from '@ficus/shared/provider-health'
 import { db } from '../../db'
 import { agents, fleetIncidentNotifications, fleetIncidents, squads, type FleetIncidentKind } from '../../db/schema'
 import {

@@ -6,7 +6,7 @@ import { queryKeys } from '../../queryKeys'
 import { useSquadSlugs } from '../../hooks/useSquadSlugs'
 import { createSquadRelationship } from '../../api/squads'
 import { usePermissions } from '../../hooks/usePermissions'
-import type { SquadRelationshipSummary, SquadRelationshipType, SquadRelationships } from '@tau/shared'
+import type { SquadRelationshipSummary, SquadRelationshipType, SquadRelationships } from '@ficus/shared'
 
 interface Props {
   squadId: string

@@ -1,4 +1,4 @@
-import type { ServerInfo } from '@tau/shared'
+import type { ServerInfo } from '@ficus/shared'
 import corePackage from '../../package.json'
 import { getBuildVersion } from './machines/usage-reporter'
 

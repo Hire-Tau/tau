@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { TAU_DISCORD_COMMANDS, TAU_DISCORD_DM_COMMANDS } from '@tau/shared/discord-commands'
+import { TAU_DISCORD_COMMANDS, TAU_DISCORD_DM_COMMANDS } from '@ficus/shared/discord-commands'
 import type { ChannelConnectionState } from './connections'
 import { ChannelLifecycle } from './lifecycle'
 

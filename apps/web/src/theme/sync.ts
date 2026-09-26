@@ -1,5 +1,5 @@
-import { validateThemePreference, type MyThemePreferences, type ThemePreference, type ThemePreset } from '@tau/shared'
-import { isHttpResponseError } from '@tau/client-core'
+import { validateThemePreference, type MyThemePreferences, type ThemePreference, type ThemePreset } from '@ficus/shared'
+import { isHttpResponseError } from '@ficus/client-core'
 import {
   clearCustomTheme,
   hashCustomThemeDocument,

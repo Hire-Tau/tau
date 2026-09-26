@@ -1,6 +1,6 @@
 import type { DeploymentFlavor, ProcessSupervisor } from './deployment-flavor'
 import type { PlannedCommand, UpdateTask } from './types'
-import { localProcessNames } from '@tau/shared'
+import { localProcessNames } from '@ficus/shared'
 
 type PathMatcher = {
   exact?: string[]

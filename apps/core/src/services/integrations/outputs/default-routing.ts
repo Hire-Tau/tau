@@ -7,7 +7,7 @@ import {
   selectSquadEventRule,
   eventRuleWorkflow,
   trackedResourceLabel,
-} from '@tau/shared'
+} from '@ficus/shared'
 import {
   db,
   agents,
@@ -23,7 +23,7 @@ import { findOrCreateConsultant } from '../../chat/consultant'
 import { integrationOutputRegistry } from './registry'
 import { eventTrackedResource, streamTracksEvent } from './tracked-match'
 import { consultantAgentId } from '../../chat/consultant-idempotency'
-export { matchesGitHubRouting } from '@tau/shared'
+export { matchesGitHubRouting } from '@ficus/shared'
 import { ciNotificationSchema, settleCiNotification } from '../../work-streams/ci-notifications'
 
 type Event = typeof integrationOutputEvents.$inferSelect

@@ -5,9 +5,9 @@ import { existsSync, readFileSync, writeFileSync, statSync, mkdtempSync, rmSync 
 import { sweepOrphanTestDbs } from './test-db-sweep'
 import { beforeEach, mock } from 'bun:test'
 import { sesSendMock } from './test-utils/ses-mock'
-import { withTestDbLockSync } from '@tau/shared/testDbLock'
-import { canExecuteQuery, isComposePostgresReady } from '@tau/shared/testDbReady'
-import { findFreeTestDbPort, testDbPortFile, testDbProjectName } from '@tau/shared/testDbPort'
+import { withTestDbLockSync } from '@ficus/shared/testDbLock'
+import { canExecuteQuery, isComposePostgresReady } from '@ficus/shared/testDbReady'
+import { findFreeTestDbPort, testDbPortFile, testDbProjectName } from '@ficus/shared/testDbPort'
 import { expectedCheckConstraints, expectedTableColumns, findSchemaDrift, parseColumnRows } from './db/expected-schema'
 import { expectedForeignKeys, foreignKeyStatements } from './db/expected-foreign-keys'
 import { runnerTestSchemaCache } from './test-utils/schema-cache'
@@ -567,7 +567,7 @@ if (useExternalDb) {
   // Local development: set up our own postgres container.
   //
   // The whole probe -> maybe tear down -> maybe recreate sequence runs under
-  // a cross-process lock (see @tau/shared/testDbLock's doc comment for the
+  // a cross-process lock (see @ficus/shared/testDbLock's doc comment for the
   // full story — tau issue #795). Without it, apps/core's and the hosted control plane's
   // `bun test` processes (launched ~simultaneously by the root `bun run
   // test`) can both probe the same container, both decide it's dead, and

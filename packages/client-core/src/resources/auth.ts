@@ -1,4 +1,4 @@
-import type { ServerInfo } from '@tau/shared'
+import type { ServerInfo } from '@ficus/shared'
 import type { Transport } from '../transport'
 
 export interface AuthStatus {

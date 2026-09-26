@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm'
-import { WATCH_ATTENTION, parseAttention, type Attention } from '@tau/shared'
+import { WATCH_ATTENTION, parseAttention, type Attention } from '@ficus/shared'
 import { db } from '../../db'
 import { squadSubscriptions } from '../../db/schema'
 import { eventEmitter } from '../../lib/infra/event-emitter'

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import type { Agent, Squad, WorkStream, SquadActivityItem } from '@tau/shared'
+import type { Agent, Squad, WorkStream, SquadActivityItem } from '@ficus/shared'
 import { queryKeys } from '../queryKeys'
 import { WebSocketContext } from '../hooks/useWebSocket'
 

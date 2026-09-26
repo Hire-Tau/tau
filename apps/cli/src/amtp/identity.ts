@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
 import { homedir } from 'os'
 import { createPrivateKey, createPublicKey, sign } from 'crypto'
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 
 function privateRoot(): string {
   const configured = process.env.TAU_PRIVATE_DIR
@@ -33,7 +33,7 @@ export function readIdentityPrivateKeyPem(): string {
 /**
  * Detached Ed25519 signature (base64) over raw bytes. For Ed25519 the algorithm
  * argument MUST be null — byte-for-byte identical to apps/core crypto.ts signEnvelope,
- * so the server verifies it over the same @tau/shared canonical bytes.
+ * so the server verifies it over the same @ficus/shared canonical bytes.
  */
 export function signAgentSig(privateKeyPem: string, bytes: Uint8Array): string {
   return sign(null, bytes, createPrivateKey(privateKeyPem)).toString('base64')

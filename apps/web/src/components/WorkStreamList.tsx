@@ -1,5 +1,5 @@
-import { workStreamRef } from '@tau/shared'
-import { workStreamTitle } from '@tau/shared'
+import { workStreamRef } from '@ficus/shared'
+import { workStreamTitle } from '@ficus/shared'
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
 import clsx from 'clsx'
 import { createPortal } from 'react-dom'
@@ -28,8 +28,8 @@ import {
   SkeletonText,
   SkeletonRows,
 } from './loading/Skeleton'
-import { WORK_STREAM_STATUS_ROLE, type WorkStreamPresentationState } from '@tau/shared'
-import type { WorkStream, WorkStreamStatus, WorkStreamDerivedState, Squad, Agent } from '@tau/shared'
+import { WORK_STREAM_STATUS_ROLE, type WorkStreamPresentationState } from '@ficus/shared'
+import type { WorkStream, WorkStreamStatus, WorkStreamDerivedState, Squad, Agent } from '@ficus/shared'
 
 // --- Status constants ---
 

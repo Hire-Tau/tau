@@ -10,7 +10,7 @@ import {
   type IntegrationOutputFact,
   type IntegrationSubscription,
   type TrackedResource,
-} from '@tau/shared'
+} from '@ficus/shared'
 import {
   db,
   agents,
@@ -875,7 +875,7 @@ test('native review requests reuse provider-neutral PR bindings instead of creat
 })
 
 async function setRule(type: 'notify-manager' | 'notify-consultant' | 'ignore', additionalContext?: string) {
-  const { squadEventRuleSchema } = await import('@tau/shared')
+  const { squadEventRuleSchema } = await import('@ficus/shared')
   const rule = squadEventRuleSchema.parse({
     id: 'assigned',
     source: { integration: 'github', output: 'issue.assigned', version: 1 },
@@ -967,7 +967,7 @@ test('failed native notifications remain retryable and reconciliation completes 
 
 test('Linear uses the same start-workstream action and attaches its own resource bindings', async () => {
   await withNativeRouting(async (connectionId) => {
-    const { squadEventRuleSchema } = await import('@tau/shared')
+    const { squadEventRuleSchema } = await import('@ficus/shared')
     const flow = definition()
     delete flow.subscriptions
     const rule = squadEventRuleSchema.parse({
@@ -990,7 +990,7 @@ test('Linear uses the same start-workstream action and attaches its own resource
       resourceKey: `${prefix}-linear-issue`,
       data: { issue: { id: `${prefix}-linear-issue` }, teamId: 'team', assignee: 'user' },
     })
-    const { previewSquadEventRules } = await import('@tau/shared')
+    const { previewSquadEventRules } = await import('@ficus/shared')
     expect(
       previewSquadEventRules({ integrationRules: { linear: [rule] } }, 'linear', assigned, '', connectionId).action
     ).toBe('start-workstream')
@@ -1060,7 +1060,7 @@ test('any-account rules perform one action when two authorized squad accounts ob
       const created = after.filter((agent) => !before.some((prior) => prior.id === agent.id))
       expect(created).toHaveLength(1)
       expect(await db.select().from(inbox).where(eq(inbox.recipientId, created[0]!.id))).toHaveLength(1)
-      const { squadEventRuleSchema } = await import('@tau/shared')
+      const { squadEventRuleSchema } = await import('@ficus/shared')
       const rule = squadEventRuleSchema.parse({
         id: 'start-on-assigned',
         source: { integration: 'github', output: 'issue.assigned', version: 1 },
@@ -1755,7 +1755,7 @@ test('pre-existing self-comment deliveries are fenced at worker and parked-owner
 
 for (const provider of ['github', 'linear'])
   test(`synthetic preview selects the same ${provider} action as authorized native dispatch`, async () => {
-    const { previewSquadEventRules, squadEventRuleSchema } = await import('@tau/shared')
+    const { previewSquadEventRules, squadEventRuleSchema } = await import('@ficus/shared')
     const { integrationOutputRegistry } = await import('./registry')
     await withNativeRouting(async (connectionId, managerId) => {
       const candidate = squadEventRuleSchema.parse({
@@ -2516,7 +2516,7 @@ function linearComment(issueId: string, changes: Partial<IntegrationOutputFact> 
   })
 }
 async function setLinearRule(action: Record<string, unknown>, output = 'issue.comment') {
-  const { squadEventRuleSchema } = await import('@tau/shared')
+  const { squadEventRuleSchema } = await import('@ficus/shared')
   const rule = squadEventRuleSchema.parse({
     id: `linear-${output.replaceAll('.', '-')}`,
     predicates: [{ field: 'teamId', op: 'in', value: ['team'] }],
@@ -2678,7 +2678,7 @@ test('only the squad whose connection observed a comment asks Linear about it', 
     await setLinearRule({ type: 'notify-manager' })
     const flow = definition()
     delete flow.subscriptions
-    const { squadEventRuleSchema } = await import('@tau/shared')
+    const { squadEventRuleSchema } = await import('@ficus/shared')
     const [other] = await db
       .insert(squads)
       .values({

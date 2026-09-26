@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import clsx from 'clsx'
-import type { ThemePreset } from '@tau/shared'
+import type { ThemePreset } from '@ficus/shared'
 import type { useTheme } from '../providers/ThemeProvider'
 import {
   BUILT_IN_THEMES,

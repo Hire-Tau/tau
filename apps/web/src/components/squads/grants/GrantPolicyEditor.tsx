@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import type { GrantPolicy, SensitivityTier } from '@tau/shared'
-import { MEMORY_SOURCE_TYPE_METADATA, SENSITIVITY_TIERS } from '@tau/shared'
+import type { GrantPolicy, SensitivityTier } from '@ficus/shared'
+import { MEMORY_SOURCE_TYPE_METADATA, SENSITIVITY_TIERS } from '@ficus/shared'
 import { evaluateGrantRisks } from './grantRisks'
 import { GrantRiskBadge } from './GrantRiskBadge'
 

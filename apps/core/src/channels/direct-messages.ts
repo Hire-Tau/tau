@@ -1,4 +1,4 @@
-import { squadSlugMap } from '@tau/shared'
+import { squadSlugMap } from '@ficus/shared'
 import { and, eq, isNull } from 'drizzle-orm'
 import { agents, channelDirectAgents, channelDirectChats, channelIdentityLinks, db, squads, users } from '../db'
 import { Agent } from '../entities/Agent'

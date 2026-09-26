@@ -28,7 +28,7 @@ import {
 } from '../services/integrations/authorization/service'
 import type { SafeOAuthAppSettings } from '../services/integrations/authorization/client-credentials'
 import { describeGitHubAuthorizationError } from '../services/integrations/authorization/github-errors'
-import { GitHubOAuthError } from '@tau/shared/oauth-providers/github/client'
+import { GitHubOAuthError } from '@ficus/shared/oauth-providers/github/client'
 import { createLogger } from '../lib/infra/logger'
 import { userSessionRequired } from '../services/auth/user-session-required'
 import { GitHubSignRefused, GitHubSigningError } from '../services/integrations/github/commit-signing'
@@ -39,7 +39,7 @@ import type {
   IntegrationDeviceAuthorizationStatus,
   GitHubCommitSigningStatus,
   GitHubRepositoryAccess,
-} from '@tau/shared'
+} from '@ficus/shared'
 
 const log = createLogger('integration-routes')
 

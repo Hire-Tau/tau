@@ -4,7 +4,7 @@ import {
   workflowDefinitionSchema,
   type WorkflowDefinition,
   type WorkflowSource,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { Modal } from '../Modal'
 import { WorkflowEditor } from './WorkflowEditor'
 

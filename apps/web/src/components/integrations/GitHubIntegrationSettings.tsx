@@ -4,8 +4,8 @@ import { GitHubRepositoryAccess } from './GitHubRepositoryAccess'
 import { GitHubCommitSigning } from './GitHubCommitSigning'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { IntegrationAuthorizationStart } from '@tau/shared'
-import { TAU_GITHUB_APP_CLIENT_ID } from '@tau/shared/github-app'
+import type { IntegrationAuthorizationStart } from '@ficus/shared'
+import { TAU_GITHUB_APP_CLIENT_ID } from '@ficus/shared/github-app'
 import {
   setIntegrationDefault,
   setIntegrationEnabled,

@@ -1,4 +1,4 @@
-import type { EntitySearchResult } from '@tau/shared'
+import type { EntitySearchResult } from '@ficus/shared'
 import { searchEntities } from '../api/search'
 import { assistantSearch } from './assistantSearch'
 import { settingMatchRank } from '../components/settings/settingsSearch'

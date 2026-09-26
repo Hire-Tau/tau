@@ -35,7 +35,7 @@ import type {
   WorkflowCommand,
   IntegrationOutputFact,
   IntegrationSubscription,
-} from '@tau/shared'
+} from '@ficus/shared'
 import type { GitHubIssueDispatchFact } from '../services/squad-activity/github-issue-fact'
 import type { GitHubPrDispatchFact } from '../services/squad-activity/github-pr-fact'
 import type { SandboxProvisionErrorCode } from '../services/sandbox/k8s/provision-errors'
@@ -721,7 +721,7 @@ export const squadActivity = pgTable(
     agentTypeRequiresAgentsRead: boolean('agent_type_requires_agents_read').notNull().default(false),
     kind: varchar('kind', { length: 32 }).$type<SquadActivityKind>().notNull(),
     summary: varchar('summary', { length: 512 }).notNull(),
-    preview: jsonb('preview').$type<import('@tau/shared').ActivityPreviewSpan[]>().notNull().default([]),
+    preview: jsonb('preview').$type<import('@ficus/shared').ActivityPreviewSpan[]>().notNull().default([]),
     ref: jsonb('ref').$type<SquadActivityRef>().notNull(),
     quietEligible: boolean('quiet_eligible').notNull(),
     accessScope: squadActivityAccessScopeEnum('access_scope').notNull(),
@@ -877,7 +877,7 @@ export const messageAgentFileAttachments = pgTable(
 
 // Squad Presets table
 export const squadPresets = pgTable('squad_presets', {
-  workflows: jsonb('workflows').$type<import('@tau/shared').SquadPresetWorkflows>(),
+  workflows: jsonb('workflows').$type<import('@ficus/shared').SquadPresetWorkflows>(),
   id: varchar('id', { length: 100 }).primaryKey(),
   name: varchar('name', { length: 200 }).notNull(),
   description: text('description'),
@@ -894,7 +894,7 @@ export const squadPresets = pgTable('squad_presets', {
 
 // Workflow catalog. Inline stream definitions do not create catalog entries.
 export const workflows = pgTable('workflows', {
-  scope: jsonb('scope').$type<import('@tau/shared').WorkflowScope>().notNull().default({ kind: 'instance' }),
+  scope: jsonb('scope').$type<import('@ficus/shared').WorkflowScope>().notNull().default({ kind: 'instance' }),
   id: varchar('id', { length: 100 }).primaryKey(),
   description: text('description'),
   definition: jsonb('definition').$type<WorkflowDefinition>().notNull(),
@@ -1189,7 +1189,7 @@ export const workStreams = pgTable(
     status: workStreamStatusEnum('status').notNull().default('active'),
     // Existing rows retain their worktree. New creation opts in explicitly.
     autoCleanupWorktree: boolean('auto_cleanup_worktree').notNull().default(false),
-    pause: jsonb('pause').$type<import('@tau/shared').WorkStreamPause>(),
+    pause: jsonb('pause').$type<import('@ficus/shared').WorkStreamPause>(),
     priority: workStreamPriorityEnum('priority').notNull().default('normal'),
     assigneeAgentId: uuid('assignee_agent_id').references(() => agents.id, { onDelete: 'set null' }),
     ownerAgentId: uuid('owner_agent_id').references(() => agents.id, { onDelete: 'set null' }),
@@ -3732,11 +3732,11 @@ export const assistantConversations = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     /** Which assistant this is: the app-wide Assistant, or a page editor bound to one draft. */
     kind: varchar('kind', { length: 20 })
-      .$type<import('@tau/shared').AssistantConversationKind>()
+      .$type<import('@ficus/shared').AssistantConversationKind>()
       .notNull()
       .default('assistant'),
     title: text('title').notNull().default('New conversation'),
-    editor: jsonb('editor').$type<import('@tau/shared').AssistantEditorState>(),
+    editor: jsonb('editor').$type<import('@ficus/shared').AssistantEditorState>(),
     /** Durable conversation agent. NULL until the owner first opens the agent-backed conversation. */
     agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
     inboxConsumerId: uuid('inbox_consumer_id'),
@@ -3809,10 +3809,10 @@ export const assistantTasks = pgTable(
       .references(() => assistantConversations.id, { onDelete: 'cascade' }),
     currentRequestId: uuid('current_request_id').notNull(),
     agentId: uuid('agent_id').references(() => agents.id, { onDelete: 'set null' }),
-    kind: varchar('kind', { length: 20 }).$type<import('@tau/shared').AssistantMessageTargetKind>().notNull(),
+    kind: varchar('kind', { length: 20 }).$type<import('@ficus/shared').AssistantMessageTargetKind>().notNull(),
     squadId: uuid('squad_id').references(() => squads.id, { onDelete: 'set null' }),
     label: text('label').notNull(),
-    status: varchar('status', { length: 20 }).$type<import('@tau/shared').AssistantTaskStatus>().notNull(),
+    status: varchar('status', { length: 20 }).$type<import('@ficus/shared').AssistantTaskStatus>().notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -3832,7 +3832,7 @@ export const assistantUpdates = pgTable(
     taskId: uuid('task_id').references(() => assistantTasks.id, { onDelete: 'set null' }),
     requestId: uuid('request_id'),
     sequence: integer('sequence').notNull(),
-    reportedStatus: varchar('reported_status', { length: 20 }).$type<import('@tau/shared').AssistantTaskStatus>(),
+    reportedStatus: varchar('reported_status', { length: 20 }).$type<import('@ficus/shared').AssistantTaskStatus>(),
     /** Durable inbox delivery to the conversational agent; separate from confirmed consumption. */
     forwardedMessageId: uuid('forwarded_message_id'),
     /** Assistant response that summarized the confirmed update. */
@@ -3857,16 +3857,16 @@ export const assistantUpdates = pgTable(
 // Latest scan, cross-process lease, and durable capacity-alert outbox.
 export const storageMonitor = pgTable('storage_monitor', {
   id: text('id').primaryKey(),
-  snapshot: jsonb('snapshot').$type<import('@tau/shared').StorageSnapshot>(),
+  snapshot: jsonb('snapshot').$type<import('@ficus/shared').StorageSnapshot>(),
   requestedAt: timestamp('requested_at', { withTimezone: true }),
   startedAt: timestamp('started_at', { withTimezone: true }),
   completedAt: timestamp('completed_at', { withTimezone: true }),
   leaseId: uuid('lease_id'),
   leaseUntil: timestamp('lease_until', { withTimezone: true }),
   error: text('error'),
-  levels: jsonb('levels').$type<Record<string, import('@tau/shared').StorageWarning>>().notNull().default({}),
+  levels: jsonb('levels').$type<Record<string, import('@ficus/shared').StorageWarning>>().notNull().default({}),
   pendingAlerts: jsonb('pending_alerts')
-    .$type<Array<{ id: string; warning: import('@tau/shared').StorageWarning }>>()
+    .$type<Array<{ id: string; warning: import('@ficus/shared').StorageWarning }>>()
     .notNull()
     .default([]),
 })

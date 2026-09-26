@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { OperationsRecommendationStatus } from '@tau/shared'
+import type { OperationsRecommendationStatus } from '@ficus/shared'
 import { queries } from '../queryOptions'
 import { queryKeys } from '../queryKeys'
 import { isRecommendationCursorReset, updateRecommendationStatus } from '../api/recommendations'

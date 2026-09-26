@@ -5,8 +5,8 @@ import {
   workflowLimitsSchema,
   workflowStepSchema,
   workflowTransitionSchema,
-} from '@tau/shared'
-import type { AuthIdentity } from '@tau/client-core'
+} from '@ficus/shared'
+import type { AuthIdentity } from '@ficus/client-core'
 import { getApiUrl } from '../api/client'
 
 // Drafts may have incomplete names, limits, or connections while being edited.

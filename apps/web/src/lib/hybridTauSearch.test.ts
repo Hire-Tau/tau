@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'bun:test'
-import type { EntitySearchResult } from '@tau/shared'
+import type { EntitySearchResult } from '@ficus/shared'
 import { hybridTauSearch } from './hybridTauSearch'
 
 const entity: EntitySearchResult = {

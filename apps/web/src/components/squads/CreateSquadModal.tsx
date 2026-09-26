@@ -1,4 +1,4 @@
-import type { WorkflowSource } from '@tau/shared'
+import type { WorkflowSource } from '@ficus/shared'
 import { WorkflowPicker } from './WorkflowPicker'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'

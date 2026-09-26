@@ -1,4 +1,4 @@
-import type { ProviderHealthKind } from '@tau/shared/provider-health'
+import type { ProviderHealthKind } from '@ficus/shared/provider-health'
 import type { ExhaustionReason } from '../services/provider-health/registry'
 
 export interface CaughtProviderErrorClassification {

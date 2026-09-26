@@ -9,7 +9,7 @@ import { ThemeAccountSyncSession } from './ThemeAccountSync'
 import { ThemeControl } from '../components/settings/ThemeControl'
 import { themePresetQueryKeys } from '../queryKeys'
 import type { ThemeSyncStore, ThemeSyncApi, ThemePresetLiveLinkApi } from '../theme/sync'
-import type { ThemePreference, ThemePreset } from '@tau/shared'
+import type { ThemePreference, ThemePreset } from '@ficus/shared'
 
 function queryClient() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })

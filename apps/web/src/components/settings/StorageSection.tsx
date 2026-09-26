@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { StorageFolder, StorageMachine } from '@tau/shared'
+import type { StorageFolder, StorageMachine } from '@ficus/shared'
 import { refreshStorage } from '../../api/system'
 import { queryKeys } from '../../queryKeys'
 import { queries } from '../../queryOptions'

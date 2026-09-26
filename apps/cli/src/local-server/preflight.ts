@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs'
 import { join } from 'path'
 import { homedir, userInfo } from 'os'
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 import { DEFAULT_INSTANCE } from './instance'
 import type { Runner } from './runner'
 import type { SetupOptions } from './types'

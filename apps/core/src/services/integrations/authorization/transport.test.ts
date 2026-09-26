@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test'
-import type { OAuthProviderAdapter, OAuthProviderGrant } from '@tau/shared/oauth-providers/types'
-import { registerOAuthProviderAdapterForTest } from '@tau/shared/oauth-providers'
+import type { OAuthProviderAdapter, OAuthProviderGrant } from '@ficus/shared/oauth-providers/types'
+import { registerOAuthProviderAdapterForTest } from '@ficus/shared/oauth-providers'
 import { createLocalTransport } from './transport'
 
 const grant: OAuthProviderGrant = {

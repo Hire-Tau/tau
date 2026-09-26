@@ -4,7 +4,7 @@ import {
   squadEventRuleSchema,
   type EventPredicate,
   type SquadEventRule,
-} from '@tau/shared'
+} from '@ficus/shared'
 
 export function EventRulePredicates({
   rule,

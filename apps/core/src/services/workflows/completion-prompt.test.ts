@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import { deliveryBindingSelfCheck, deliveryInstructionsForRun, flowCompletionInstructions } from './completion-prompt'
-import { createBlankWorkflow, createWorkflowRun } from '@tau/shared'
+import { createBlankWorkflow, createWorkflowRun } from '@ficus/shared'
 
 const stream = (id: string, metadata?: unknown) => ({ id, metadata })
 const run = (mode: 'pr-merge' | 'pr-auto-merge' | 'deliverable') => {

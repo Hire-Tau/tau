@@ -12,14 +12,14 @@ import {
   type ApnsAlertPayload,
   type ApnsSendResult,
   type LiveActivityPushInput,
-} from '@tau/shared/apns'
+} from '@ficus/shared/apns'
 export {
   normalizePemKey,
   buildApnsHeaders,
   buildApnsJwt,
   buildApnsPayload,
   buildLiveActivityPayload,
-} from '@tau/shared/apns'
+} from '@ficus/shared/apns'
 export type {
   ApnsConfig,
   ApnsEnvironment,
@@ -27,7 +27,7 @@ export type {
   ApnsSendResult,
   LiveActivityEvent,
   LiveActivityPushInput,
-} from '@tau/shared/apns'
+} from '@ficus/shared/apns'
 const log = createLogger('apns')
 
 /**

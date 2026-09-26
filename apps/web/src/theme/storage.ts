@@ -3,7 +3,7 @@ import {
   type AppearanceSetting,
   type EffectiveAppearance,
   type StoredThemeSelection,
-} from '@tau/shared/theme-schema'
+} from '@ficus/shared/theme-schema'
 import { KNOWN_THEME_IDS } from './registry'
 
 /**

@@ -37,7 +37,7 @@ Example original source: `See [**#241**](tau:ws:241) and [Ada](tau:agent:deadbee
 ]
 ```
 
-`parseEntityReference` and `EntityReference` are exported from `@tau/shared`.
+`parseEntityReference` and `EntityReference` are exported from `@ficus/shared`.
 They retain the existing web grammar: explicit `tau:ws:` numbers, UUIDs and UUID
 prefixes, and `tau:agent:` UUIDs/prefixes. Parsing does not establish access or resolve
 ambiguity: clients must use the existing authorized resolvers and generic error UI.

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Window } from 'happy-dom'
-import { resolveThemeSelection } from '@tau/shared'
+import { resolveThemeSelection } from '@ficus/shared'
 import { installDomHarness } from '../test/domHarness'
 import {
   APPEARANCE_KEY,
@@ -377,7 +377,7 @@ describe('pre-paint flash script: persisted resolved snapshot (palette presets p
     const { hashCustomThemeDocument } = await import('./custom')
     const { computeBuiltinCssFingerprint } = await import('../../scripts/generate-theme-flash')
     const BUILTIN_CSS_FINGERPRINT = await computeBuiltinCssFingerprint()
-    const { validateCustomTheme } = await import('@tau/shared')
+    const { validateCustomTheme } = await import('@ficus/shared')
     const rawDoc = {
       format: 'tau-custom-theme',
       version: 2,
@@ -420,7 +420,7 @@ describe('pre-paint flash script: persisted resolved snapshot (palette presets p
     const { hashCustomThemeDocument } = await import('./custom')
     const { computeBuiltinCssFingerprint } = await import('../../scripts/generate-theme-flash')
     const BUILTIN_CSS_FINGERPRINT = await computeBuiltinCssFingerprint()
-    const { validateCustomTheme } = await import('@tau/shared')
+    const { validateCustomTheme } = await import('@ficus/shared')
     const doc = {
       format: 'tau-custom-theme',
       version: 2,
@@ -476,7 +476,7 @@ describe('pre-paint flash script: persisted resolved snapshot (palette presets p
 
   test('a full palette+harmonized-status resolved snapshot stays well under the pre-paint flash budget', async () => {
     const { hashCustomThemeDocument, RESOLVED_SNAPSHOT_MAX_BYTES, applyCustomTheme } = await import('./custom')
-    const { validateCustomTheme } = await import('@tau/shared')
+    const { validateCustomTheme } = await import('@ficus/shared')
     const { acquireDomHarness } = await import('../test/domHarness')
     const doc = {
       format: 'tau-custom-theme',

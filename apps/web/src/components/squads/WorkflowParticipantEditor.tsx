@@ -3,7 +3,7 @@ import { queries } from '../../queryOptions'
 import { useState } from 'react'
 import clsx from 'clsx'
 import { separateWorkflowParticipant } from '../../lib/workflowEditing'
-import { isWorkerAgentType, type WorkflowDefinition } from '@tau/shared'
+import { isWorkerAgentType, type WorkflowDefinition } from '@ficus/shared'
 
 const field = 'tau-field w-full min-w-0 rounded-md border border-th-border bg-surface px-3 py-2 text-sm'
 

@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
-import type { Agent, Squad, WorkStream } from '@tau/shared'
+import type { Agent, Squad, WorkStream } from '@ficus/shared'
 import { WorkStreamList } from './WorkStreamList'
 
 function squad(overrides: Partial<Squad> = {}): Squad {

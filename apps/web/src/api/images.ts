@@ -1,10 +1,10 @@
-// Hybrid shim: signing + simple upload come from @tau/client-core; the XHR upload-with-progress
+// Hybrid shim: signing + simple upload come from @ficus/client-core; the XHR upload-with-progress
 // (uploadImages) stays here because per-image progress needs XMLHttpRequest, not fetch.
 import { apiUrl } from './client'
 import { client } from './clientInstance'
-import type { ImageContent, ImageUploadTarget, UploadProgress } from '@tau/client-core'
+import type { ImageContent, ImageUploadTarget, UploadProgress } from '@ficus/client-core'
 
-export type { ImageContent, UploadProgress } from '@tau/client-core'
+export type { ImageContent, UploadProgress } from '@ficus/client-core'
 
 type ImageUploadScope = ImageUploadTarget | { agentId?: never; squadId?: never }
 export type ImageUploadOptions = ImageUploadScope & {

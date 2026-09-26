@@ -1,4 +1,4 @@
-import type { MessageToolCall } from '@tau/shared'
+import type { MessageToolCall } from '@ficus/shared'
 import { getToolInlineActions, type ToolInlineAction } from '../lib/tool-inline-actions'
 
 export function ToolInlineActions({

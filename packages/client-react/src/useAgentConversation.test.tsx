@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, mock, setSystemTime, spyOn, test } from 'bun:test'
 import { act, renderHook as renderHookBase, waitFor } from './test-utils'
 import { focusManager, onlineManager, QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { TauClient } from '@tau/client-core'
-import { createClient, queryKeys, type Transport } from '@tau/client-core'
+import type { TauClient } from '@ficus/client-core'
+import { createClient, queryKeys, type Transport } from '@ficus/client-core'
 import { ConversationClientProvider, type SubscribeToAgentEvents } from './ConversationClientProvider'
 import { useAgentConversation } from './useAgentConversation'
-import type { Message, StreamEvent } from '@tau/shared'
+import type { Message, StreamEvent } from '@ficus/shared'
 
 // Every mounted fixture owns its timers and focus/online subscriptions. Earlier
 // tests omitted unmount, letting later focus events wake unrelated conversations.
@@ -1152,7 +1152,7 @@ describe('useAgentConversation', () => {
     })
     await waitFor(() => expect(result.current.agentId).toBe('dedup-agent-1'))
 
-    const doneEvent: import('@tau/shared').StreamEvent = {
+    const doneEvent: import('@ficus/shared').StreamEvent = {
       type: 'done',
       response: 'Dedup response',
       metadata: { model: 'z' } as any,

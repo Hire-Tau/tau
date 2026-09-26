@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, spyOn } from 'bun:test'
 import { SystemManagerRunner } from './system-manager-runner'
 import { AgentSession } from '../AgentSession'
 import * as tools from '../../tools'
-import { assistantEditorInstructionsByKind } from '@tau/shared'
+import { assistantEditorInstructionsByKind } from '@ficus/shared'
 
 class TestSystemManagerRunner extends SystemManagerRunner {
   protected override async getPageEditorConversation() {

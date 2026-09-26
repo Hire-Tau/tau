@@ -1,5 +1,5 @@
-import type { RenderItem } from '@tau/client-core'
-import type { MessageMetadata } from '@tau/shared'
+import type { RenderItem } from '@ficus/client-core'
+import type { MessageMetadata } from '@ficus/shared'
 import type { VoiceAssistantController } from './useRealtimeVoiceAssistant'
 
 /** Receipt identity, not transport completion, decides which answer belongs to a voice request. */

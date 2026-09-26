@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { MEMORY_SOURCE_TYPE_METADATA } from '@tau/shared'
+import { MEMORY_SOURCE_TYPE_METADATA } from '@ficus/shared'
 import { useQuery } from '@tanstack/react-query'
 import { queries } from '../../queryOptions'
 import type { SearchMemoryParams } from '../../api/memory'

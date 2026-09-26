@@ -1,4 +1,4 @@
-import { isWorkerAgentType } from '@tau/shared'
+import { isWorkerAgentType } from '@ficus/shared'
 import clsx from 'clsx'
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'

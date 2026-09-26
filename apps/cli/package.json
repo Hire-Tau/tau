@@ -11,8 +11,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@tau/client-core": "workspace:*",
-    "@tau/shared": "workspace:*",
+    "@ficus/client-core": "workspace:*",
+    "@ficus/shared": "workspace:*",
     "commander": "^12.0.0",
     "yaml": "^2.9.0"
   },

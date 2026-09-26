@@ -7,7 +7,7 @@ import {
   type IntegrationOutputDescriptor,
   type SquadEventRule,
   type SquadEventRulePreview,
-} from '@tau/shared'
+} from '@ficus/shared'
 
 export function EventRulePreview({
   provider,

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { githubOutputCatalog, isGitHubSelfComment, type IntegrationOutputFact } from '@tau/shared'
+import { githubOutputCatalog, isGitHubSelfComment, type IntegrationOutputFact } from '@ficus/shared'
 import type { IntegrationOutputAdapter } from './types'
 
 const outputTitles = Object.fromEntries(githubOutputCatalog.map((event) => [event.output, event.title]))

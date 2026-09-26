@@ -1,4 +1,4 @@
-import type { ProviderHealthKind } from '@tau/shared'
+import type { ProviderHealthKind } from '@ficus/shared'
 import { apiFetch } from './client'
 
 export interface ProviderAccountEntry {

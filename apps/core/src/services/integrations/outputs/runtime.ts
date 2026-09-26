@@ -11,7 +11,7 @@ import {
   integrationSubscriptionMatches,
   type IntegrationSubscription,
   type IntegrationOutputFact,
-} from '@tau/shared'
+} from '@ficus/shared'
 import {
   db,
   workStreams,

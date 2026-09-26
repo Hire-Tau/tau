@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { createBlankWorkflow, createWorkflowRun, workflowCommandSchema } from '@tau/shared'
+import { createBlankWorkflow, createWorkflowRun, workflowCommandSchema } from '@ficus/shared'
 import { flowMessage } from './handoff-prompt'
 import { deliveryInstructionsForRun } from './completion-prompt'
 

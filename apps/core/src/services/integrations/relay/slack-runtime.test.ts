@@ -24,7 +24,7 @@ import {
   type SlackRelayDispatchDependencies,
   type SlackRelayInterest,
 } from './slack-runtime'
-import type { SlackRelayDelivery } from '@tau/shared/integration-relay'
+import type { SlackRelayDelivery } from '@ficus/shared/integration-relay'
 
 const TEAM_ID = 'T12345678'
 

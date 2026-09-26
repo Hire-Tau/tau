@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test, spyOn } from 'bun:test'
 import { eq, inArray } from 'drizzle-orm'
-import { squadSlugMap } from '@tau/shared'
+import { squadSlugMap } from '@ficus/shared'
 import {
   agents,
   channelDirectAgents,

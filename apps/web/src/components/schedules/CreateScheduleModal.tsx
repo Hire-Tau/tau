@@ -1,6 +1,6 @@
 import { WorkflowPicker } from '../squads/WorkflowPicker'
 import { WorkflowEditorModal } from '../squads/WorkflowEditorModal'
-import { isWorkerAgentType, type WorkflowDefinition, type WorkflowSource } from '@tau/shared'
+import { isWorkerAgentType, type WorkflowDefinition, type WorkflowSource } from '@ficus/shared'
 import { useState } from 'react'
 import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { schedulesApi } from '../../api/schedules'
@@ -8,7 +8,7 @@ import { queryKeys } from '../../queryKeys'
 import { queries } from '../../queryOptions'
 import { Modal } from '../Modal'
 import { ClipboardIcon } from '../icons'
-import type { ScheduleScopeType, ScheduleAction, CreateScheduleInput, WebhookEnableResult } from '@tau/shared'
+import type { ScheduleScopeType, ScheduleAction, CreateScheduleInput, WebhookEnableResult } from '@ficus/shared'
 
 type ScheduleActionType = ScheduleAction['type']
 

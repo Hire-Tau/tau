@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { configureGitHubApp, resolveGitHubAppCredentials } from './github-app'
-import { TAU_GITHUB_APP_CLIENT_ID } from '@tau/shared/oauth-providers/github/app'
+import { TAU_GITHUB_APP_CLIENT_ID } from '@ficus/shared/oauth-providers/github/app'
 
 test('public device login needs no private credential and old grants retain their issuing app', async () => {
   const values = new Map<string, string>()

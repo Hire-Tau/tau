@@ -8,7 +8,7 @@ import {
   createAmtpAllowRuleSchema,
   formatAmtpAddress,
   amtpSignedAgentCardSchema,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { verifyAgentCard, signedCardByteSize, SIGNED_CARD_MAX_BYTES } from 'amtp-protocol'
 import { requirePermission } from '../middleware/require-permission'
 import { requirePeerSignature } from '../middleware/require-peer-signature'

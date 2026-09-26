@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { dirname, isAbsolute, join, resolve } from 'path'
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 import { DEFAULT_INSTANCE, normalizeLabel } from './instance'
 import { LOCAL_SUPERVISORS, type LocalSupervisor } from './types'
 

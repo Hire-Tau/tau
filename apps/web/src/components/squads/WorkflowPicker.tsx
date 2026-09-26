@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { resolveWorkflow, type WorkflowDefinition, type WorkflowSource } from '@tau/shared'
+import { resolveWorkflow, type WorkflowDefinition, type WorkflowSource } from '@ficus/shared'
 import { queries } from '../../queryOptions'
 import { WorkflowGraph } from '../WorkflowGraph'
 

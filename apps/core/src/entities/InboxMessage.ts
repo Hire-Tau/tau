@@ -1,4 +1,4 @@
-import { isUserAssistantAgentType } from '@tau/shared'
+import { isUserAssistantAgentType } from '@ficus/shared'
 import { eq, and, isNull, isNotNull, desc, sql, inArray, or, ilike, type SQL } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { db, uuidPrefixCondition, varcharPrefixCondition, AmbiguousPrefixError } from '../db'
@@ -10,13 +10,13 @@ import type {
   InboxMessageSenderType,
   InboxRecipientType,
   DeliveryMode,
-} from '@tau/shared'
+} from '@ficus/shared'
 import {
   isWorkspaceVoiceRecipient,
   parseAssistantInboxConversationId,
   SYSTEM_RECIPIENT_ID,
   type ReportableAssistantTaskStatus,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { validateAssistantInboxReply } from '../services/assistant-inbox'
 import {
   ASSISTANT_REQUEST_KEY,

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { GitHubCommitSigningErrorCode } from '@tau/shared'
+import type { GitHubCommitSigningErrorCode } from '@ficus/shared'
 import { setGitHubCommitSigning } from '../../api/integrations'
 import { ApiError } from '../../api/client'
 import { integrationQueries } from '../../queryOptions'

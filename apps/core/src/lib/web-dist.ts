@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 
 function findRepoRoot(start: string): string | undefined {
   let dir = start

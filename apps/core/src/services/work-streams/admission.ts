@@ -7,7 +7,7 @@ import {
   isLiveAgentStatus,
   type AgentStatus,
   type ExecutionStatus,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { db } from '../../db'
 import { executions, squads, workStreams, workStreamWaits } from '../../db/schema'
 import { WorkStream, type WorkStreamRow } from '../../entities/WorkStream'

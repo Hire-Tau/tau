@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { SquadMemoryGrantDTO } from '@tau/shared'
+import type { SquadMemoryGrantDTO } from '@ficus/shared'
 import { deleteGrant } from '../../../api/grants'
 import { queries } from '../../../queryOptions'
 import { queryKeys } from '../../../queryKeys'

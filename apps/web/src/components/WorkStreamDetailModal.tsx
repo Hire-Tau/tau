@@ -1,6 +1,6 @@
 import { WorktreeCleanupSettings } from './WorktreeCleanupSettings'
-import { workStreamTitle, workStreamWaitDisplayType } from '@tau/shared'
-import { WORK_STREAM_STATUS_ROLE } from '@tau/shared'
+import { workStreamTitle, workStreamWaitDisplayType } from '@ficus/shared'
+import { WORK_STREAM_STATUS_ROLE } from '@ficus/shared'
 import { webStatus } from '../lib/statusPresentation'
 import { WorkStreamStatusBadges } from './WorkStreamStatusBadges'
 import { getWsDisplayState, WS_STATUS_LABELS } from '../lib/workStreamStatusPresentation'
@@ -24,7 +24,7 @@ import { Badge, type BadgeColor } from './Badge'
 import { WorkStreamFileList } from './WorkStreamFileCard'
 import { GitHubIcon, PullRequestIcon } from './icons'
 import { AttentionMenu } from './AttentionMenu'
-import type { WorkStream, WorkStreamPriority, WorkStreamWaitType, Squad, Agent } from '@tau/shared'
+import type { WorkStream, WorkStreamPriority, WorkStreamWaitType, Squad, Agent } from '@ficus/shared'
 import { getAgentPrimaryLabel } from '../lib/agentDisplay'
 import { computeWorkStreamElapsedMs } from '../lib/workStreamRuntime'
 import { useTick } from '../hooks/useTick'
@@ -257,7 +257,7 @@ export function WorkStreamDetailModal({
     onSuccess: (_result, variables) => {
       const actionType = variables.resolution === 'cleared' ? 'workstream-blocked' : 'workstream-review'
       const actionId = `${actionType}:${workStream.id}:${variables.waitId}`
-      queryClient.setQueryData<import('@tau/shared').PendingAction[]>(queryKeys.actions.pending(), (current) =>
+      queryClient.setQueryData<import('@ficus/shared').PendingAction[]>(queryKeys.actions.pending(), (current) =>
         current?.filter((action) => action.id !== actionId)
       )
       queryClient.invalidateQueries({ queryKey: queryKeys.actions.pending() })

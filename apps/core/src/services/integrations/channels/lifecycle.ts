@@ -1,4 +1,4 @@
-import { TAU_DISCORD_COMMANDS, TAU_DISCORD_DM_COMMANDS, discordCommandsPath } from '@tau/shared/discord-commands'
+import { TAU_DISCORD_COMMANDS, TAU_DISCORD_DM_COMMANDS, discordCommandsPath } from '@ficus/shared/discord-commands'
 import { createLogger } from '../../../lib/infra/logger'
 import type { ChannelConnections, ChannelConnectionState } from './connections'
 

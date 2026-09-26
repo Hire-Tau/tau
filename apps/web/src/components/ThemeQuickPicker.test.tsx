@@ -1,7 +1,7 @@
 import { afterEach, expect, spyOn, test } from 'bun:test'
 import { act } from 'react'
 import { fireEvent, getAllByRole, getByRole, queryByRole } from '@testing-library/dom'
-import type { ThemePreset } from '@tau/shared'
+import type { ThemePreset } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import { useHoverTimer } from '../test/hoverTimer'
 import { ThemeProvider, useTheme, useThemeSyncStore } from '../providers/ThemeProvider'
@@ -537,7 +537,7 @@ test('a palette-only preset circle resolves a real derived color, not an empty/u
   const resolvedPrimary = window.getComputedStyle(swatch).getPropertyValue('--color-primary').trim()
   expect(resolvedPrimary).not.toBe('')
   expect(resolvedPrimary).not.toBe('14 95 109') // not the plain Harbor base primary
-  const { srgbToOklch } = await import('@tau/shared/color-oklch')
+  const { srgbToOklch } = await import('@ficus/shared/color-oklch')
   const [r, g, b] = resolvedPrimary.split(/\s+/).map(Number)
   const oklch = srgbToOklch([r!, g!, b!])
   expect(oklch.h).toBeGreaterThan(200)

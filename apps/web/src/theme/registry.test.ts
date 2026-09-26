@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { validateThemeRegistry } from '@tau/shared'
+import { validateThemeRegistry } from '@ficus/shared'
 import {
   BUILT_IN_THEMES,
   KNOWN_THEME_IDS,

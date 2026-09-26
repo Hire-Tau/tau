@@ -232,7 +232,7 @@ The full web gate includes `src/no-server-only-imports.test.ts`. It rejects
 server-only OAuth provider and broker subpaths in browser source, excluding
 conventionally named test files so fixture references are not mistaken for
 shipped code. Import the public GitHub App client ID from
-`@tau/shared/github-app`, a dependency-free module containing no credentials;
+`@ficus/shared/github-app`, a dependency-free module containing no credentials;
 the old provider subpath remains a compatibility re-export for server callers.
 
 Use the package test runner for acceptance. Core isolates files that replace

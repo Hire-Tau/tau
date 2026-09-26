@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import { isGrantablePermission } from '@tau/shared'
+import { isGrantablePermission } from '@ficus/shared'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import { createRole, updateRole, deleteRole } from '../../api/roles'

@@ -1,8 +1,8 @@
 import { expect, spyOn, test } from 'bun:test'
 import { MemoryRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { createWorkflowRun, workflowPresetSchema, type WorkStream } from '@tau/shared'
-import type { WorkflowRunDetail } from '@tau/client-core'
+import { createWorkflowRun, workflowPresetSchema, type WorkStream } from '@ficus/shared'
+import type { WorkflowRunDetail } from '@ficus/client-core'
 import { acquireDomHarness } from '../test/domHarness'
 import { client } from '../api/clientInstance'
 import { modelTierQueryKeys, queryKeys } from '../queryKeys'
@@ -275,7 +275,7 @@ test('an action-center wait opens the matching parallel human attempt', async ()
   }
   value.state.attempts.push(second)
   value.openWaits = [
-    { id: 'focused', flowAttemptId: 2, resolutionHandler: 'workflow' } as import('@tau/shared').WorkStreamWait,
+    { id: 'focused', flowAttemptId: 2, resolutionHandler: 'workflow' } as import('@ficus/shared').WorkStreamWait,
   ]
   const f = await fixture(value, ['workstreams:review'])
   try {
