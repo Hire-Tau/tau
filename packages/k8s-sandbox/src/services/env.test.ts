@@ -34,7 +34,7 @@ describe('buildSandboxChildEnv', () => {
     expect(env.SSL_CERT_FILE).toBe('/etc/ssl/cert.pem')
   })
 
-  it('forwards prefix-matched keys (TAU_, NIX_, DEVBOX_, XDG_, LC_)', () => {
+  it('forwards prefix-matched keys (FICUS_, TAU_, NIX_, DEVBOX_, XDG_, LC_)', () => {
     const env = buildSandboxChildEnv({
       FICUS_SANDBOX_ID: 'sb1',
       FICUS_API_URL: 'http://tau-api:3000',
@@ -51,6 +51,23 @@ describe('buildSandboxChildEnv', () => {
     expect(env.DEVBOX_SHELL_ENABLED).toBe('1')
     expect(env.XDG_CONFIG_HOME).toBe('/root/.config')
     expect(env.LC_CTYPE).toBe('C.UTF-8')
+  })
+
+  it('keeps both FICUS_ and TAU_ spellings for one release', () => {
+    const env = buildSandboxChildEnv({ FICUS_BOX_HOME: '/h', TAU_BOX_HOME: '/h' })
+    expect(env.FICUS_BOX_HOME).toBe('/h')
+    expect(env.TAU_BOX_HOME).toBe('/h')
+  })
+
+  it('emits a TAU_ alias for every FICUS_ key, overrides included (dual-emit, one release)', () => {
+    const env = buildSandboxChildEnv(
+      { FICUS_API_URL: 'http://tau-api:3000', FICUS_SANDBOX_ID: 'sb1' },
+      { FICUS_TOKEN: 'agent-token', FICUS_API_URL: 'http://override:3000' }
+    )
+    expect(env.TAU_TOKEN).toBe('agent-token')
+    expect(env.FICUS_API_URL).toBe('http://override:3000')
+    expect(env.TAU_API_URL).toBe('http://override:3000')
+    expect(env.TAU_SANDBOX_ID).toBe('sb1')
   })
 
   it('excludes KUBERNETES_* and other non-allowlisted keys', () => {

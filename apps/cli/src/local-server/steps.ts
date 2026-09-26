@@ -257,7 +257,13 @@ export function buildSteps(opts: SetupOptions, deps: StepDeps): Step[] {
     id: 'migrate',
     title: 'Database migrations',
     plan: () => ['bun run db:migrate (FICUS_MIGRATE_LIVE=1, DATABASE_URL explicit)'],
-    run: () => run(deps, root, ['bun', 'run', 'db:migrate'], { DATABASE_URL: opts.databaseUrl, FICUS_MIGRATE_LIVE: '1' }),
+    run: () =>
+      run(deps, root, ['bun', 'run', 'db:migrate'], {
+        DATABASE_URL: opts.databaseUrl,
+        FICUS_MIGRATE_LIVE: '1',
+        // One release (Ficus rename): a checkout that predates the rename reads TAU_MIGRATE_LIVE.
+        TAU_MIGRATE_LIVE: '1',
+      }),
   })
 
   steps.push({

@@ -11,6 +11,7 @@
 import { randomBytes, randomUUID } from 'crypto'
 import { chmodSync, existsSync, mkdirSync, renameSync, writeFileSync } from 'fs'
 import { join } from 'path'
+import { ENV_PREFIX, LEGACY_ENV_PREFIX } from '@ficus/shared/legacy-env'
 import { getHomeDir } from '../../../lib/utils/home'
 import { getCliHostPath } from '../../../lib/utils/cli-help'
 import { getSquadSshPath } from '../../squad/ssh'
@@ -276,6 +277,24 @@ export const IDENTITY_ENV_KEYS = [
   'FICUS_PASSWORD',
 ] as const
 
+/**
+ * One release (Ficus rename): the legacy spelling of a `FICUS_` name. Older `tau`
+ * CLIs, user scripts and ssh shims written by an older Core read these.
+ */
+function legacyName(key: string): string {
+  return `${LEGACY_ENV_PREFIX}${key.slice(ENV_PREFIX.length)}`
+}
+
+/** Runtime-injected names that are also emitted under their legacy `TAU_` spelling this release. */
+const LEGACY_ALIASED_KEYS = [
+  'FICUS_API_URL',
+  'FICUS_TOKEN',
+  'FICUS_AUTH_STORE',
+  'FICUS_AGENT_CONTEXT',
+  'FICUS_AGENT_ID',
+  'FICUS_SQUAD_SSH_DIR',
+] as const
+
 /** Identity of the shell being built: which agent it is and which instance/credential it uses. */
 export interface HostIdentityOptions {
   tauToken?: string
@@ -327,6 +346,9 @@ export function buildHostCommandEnv(
       env.GIT_SSH_COMMAND = `ssh -F ${shellQuote(sshConfig)}${knownHostsOpt}`
     }
   }
+  // Dual-emit, overwriting whatever the operator's login env carried under the
+  // legacy name, so an older `tau` CLI resolves the same instance and identity.
+  for (const key of LEGACY_ALIASED_KEYS) if (env[key] !== undefined) env[legacyName(key)] = env[key]
   return env
 }
 
@@ -402,6 +424,12 @@ export function buildHostPreamble(opts: HostIdentityOptions & { squadId?: string
   lines.push(`export ${[...set].map(([key, value]) => `${key}="${value}"`).join(' ')}`)
   const unmanaged = IDENTITY_ENV_KEYS.filter((key) => !set.has(key))
   if (unmanaged.length > 0) lines.push(`unset ${unmanaged.join(' ')}`)
+  // One release (Ficus rename): re-assert the legacy spellings from the restored
+  // values and unset the legacy spelling of every name this shell was not given,
+  // so neither an older CLI nor the new CLI's TAU_→FICUS_ bridge picks up a
+  // squad env's TAU_TOKEN or TAU_PASSWORD.
+  lines.push(`export ${[...set.keys()].map((key) => `${legacyName(key)}="$${key}"`).join(' ')}`)
+  if (unmanaged.length > 0) lines.push(`unset ${unmanaged.map(legacyName).join(' ')}`)
   lines.push(`export PATH="$${binVar}:$PATH"`)
   lines.push(`unset ${locals.join(' ')} ${IDENTITY_ALIAS_KEYS.join(' ')}`)
   return `${lines.join('\n')}\n`

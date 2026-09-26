@@ -125,7 +125,8 @@ export async function runOfflineUpdate(args: OfflineUpdateArgs): Promise<{ befor
   const update = await runner(['bun', 'run', 'update:offline', '--', '--from', before], {
     cwd: root,
     inherit: true,
-    env: { FICUS_UPDATE_SUPERVISOR: args.context.supervisor },
+    // Both spellings for one release (Ficus rename): the checked-out ref may predate the rename.
+    env: { FICUS_UPDATE_SUPERVISOR: args.context.supervisor, TAU_UPDATE_SUPERVISOR: args.context.supervisor },
   })
   if (update.code !== 0) throw new Error(`bun run update:offline exited with ${update.code}`)
 

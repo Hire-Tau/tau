@@ -15,6 +15,7 @@ import { spawn as ptySpawn, type IPty } from 'bun-pty'
 import { randomBytes } from 'node:crypto'
 import * as fs from 'fs'
 import * as path from 'path'
+import { withLegacyEnvAliases } from '@ficus/shared/legacy-env'
 import { MONOREPO_ROOT } from '../../../lib/paths'
 import { createLogger } from '../../../lib/infra/logger'
 import { getHomeDir } from '../../../lib/utils/home'
@@ -54,6 +55,16 @@ import { computeDockerSpecDigest, validateDockerHealthContract } from './runtime
 export type { SandboxOptions, SandboxRuntime } from '../types'
 
 const log = createLogger('sandbox')
+
+/**
+ * Append `-e KEY=value` pairs for a container env. One release (Ficus rename):
+ * every FICUS_X also goes in as TAU_X, because the sandbox image's startup
+ * script, user scripts and older `tau` CLIs in an existing container still read
+ * the legacy names.
+ */
+function pushEnvArgs(args: string[], env: Record<string, string | undefined>): void {
+  for (const [key, value] of Object.entries(withLegacyEnvAliases(env))) args.push('-e', `${key}=${value}`)
+}
 
 const SANDBOX_IMAGE = process.env.FICUS_SANDBOX_IMAGE || 'tau-sandbox:latest'
 const DOCKER_SANDBOX_MEMORY_LIMIT = '2g'
@@ -1155,7 +1166,7 @@ export class DockerSandboxManager implements ISandboxManager {
       hostUid !== 65534 &&
       hostGid !== 65534
     ) {
-      args.push('-e', `FICUS_HOST_UID=${hostUid}`, '-e', `FICUS_HOST_GID=${hostGid}`)
+      pushEnvArgs(args, { FICUS_HOST_UID: String(hostUid), FICUS_HOST_GID: String(hostGid) })
     }
 
     // Mount per-agent private volume when provided
@@ -1243,7 +1254,7 @@ export class DockerSandboxManager implements ISandboxManager {
       hostUid !== 65534 &&
       hostGid !== 65534
     ) {
-      args.push('-e', `FICUS_HOST_UID=${hostUid}`, '-e', `FICUS_HOST_GID=${hostGid}`)
+      pushEnvArgs(args, { FICUS_HOST_UID: String(hostUid), FICUS_HOST_GID: String(hostGid) })
     }
 
     // Mount per-agent private volume when provided
@@ -1292,11 +1303,7 @@ export class DockerSandboxManager implements ISandboxManager {
     }
 
     // Extra environment variables
-    if (opts.env) {
-      for (const [key, value] of Object.entries(opts.env)) {
-        args.push('-e', `${key}=${value}`)
-      }
-    }
+    if (opts.env) pushEnvArgs(args, opts.env)
 
     // Extra volume mounts
     if (opts.volumes) {
@@ -1373,16 +1380,18 @@ export class DockerSandboxManager implements ISandboxManager {
       // Inject the per-agent scoped token so `tau` CLI calls inside the sandbox
       // authenticate AS this agent (RBAC squad-scoped) rather than via the shared
       // FICUS_PASSWORD. Tokens are `tau_agent_<uuid>` (no shell metacharacters).
-      const tokenArgs = tauToken ? ['-e', `FICUS_TOKEN=${tauToken}`] : []
       // Re-inject the live Core URL so the CLI reaches the current Core even if the
       // container baked a now-stale dynamic port at creation (matches k8s behavior).
-      const apiUrlArgs = ['-e', `FICUS_API_URL=${resolveDockerApiUrl()}`]
+      const identityArgs: string[] = []
+      pushEnvArgs(identityArgs, {
+        ...(tauToken ? { FICUS_TOKEN: tauToken } : {}),
+        FICUS_API_URL: resolveDockerApiUrl(),
+      })
       const execArgs = [
         'docker',
         'exec',
         ...userArgs,
-        ...tokenArgs,
-        ...apiUrlArgs,
+        ...identityArgs,
         '-w',
         sandbox.workspaceMount,
         sandbox.containerId,

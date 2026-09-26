@@ -131,6 +131,8 @@ describe('runSetup', () => {
     expect(migrate.options.env).toEqual({
       DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/tau',
       FICUS_MIGRATE_LIVE: '1',
+      // One release (Ficus rename): a checkout that predates the rename reads the legacy name.
+      TAU_MIGRATE_LIVE: '1',
     })
     expect(migrate.options.cwd).toBe(root)
     const env = readFileSync(join(root, '.env'), 'utf8')

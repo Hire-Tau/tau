@@ -1,3 +1,4 @@
+import { withLegacyAppAliases } from '@ficus/shared/legacy-env'
 import type { ISandboxManager } from '../sandbox'
 import { getSandboxManager } from '../sandbox'
 import { resolveWorkspaceLayout } from '../sandbox/workspace-layout'
@@ -68,20 +69,35 @@ export class LocalDeploymentProcessSupervisor {
     const dir = localDeploymentDir(args.sandboxId, args.localDeploymentId)
     const script = `${dir}/run.sh`
     const cwd = args.cwd?.trim() || workspaceMount
+    // User apps read these names, so for one release (Ficus rename) each FICUS_
+    // name also goes out under its TAU_ spelling.
+    const appEnv = withLegacyAppAliases(
+      {
+        FICUS_LOCAL_DEPLOYMENT_ID: args.localDeploymentId,
+        FICUS_LOCAL_DEPLOYMENT_PORT: String(args.port),
+        // The conventional name. Tau assigns the port now, so an app that reads
+        // $PORT needs no configuration and cannot collide with a sibling box on
+        // the same machine; FICUS_LOCAL_DEPLOYMENT_PORT stays for existing commands.
+        PORT: String(args.port),
+        // Hosted apps occupy their origin root; self-hosted apps keep the legacy
+        // proxy prefix. Passing both through one variable lets framework config
+        // stay portable without hardcoding a deployment id.
+        FICUS_APP_BASE_PATH: getHostedAppsDomain() ? '/' : localDeploymentProxyPath(args.localDeploymentId),
+        FICUS_LOCAL_DEPLOYMENT_CWD: cwd,
+        FICUS_LOCAL_DEPLOYMENT_DIR: dir,
+        FICUS_LOCAL_DEPLOYMENT_COMMAND: args.command,
+      },
+      [
+        'FICUS_APP_BASE_PATH',
+        'FICUS_LOCAL_DEPLOYMENT_ID',
+        'FICUS_LOCAL_DEPLOYMENT_PORT',
+        'FICUS_LOCAL_DEPLOYMENT_CWD',
+        'FICUS_LOCAL_DEPLOYMENT_DIR',
+        'FICUS_LOCAL_DEPLOYMENT_COMMAND',
+      ]
+    )
     const launchCommand = [
-      `FICUS_LOCAL_DEPLOYMENT_ID=${shellQuote(args.localDeploymentId)}`,
-      `FICUS_LOCAL_DEPLOYMENT_PORT=${shellQuote(args.port)}`,
-      // The conventional name. Tau assigns the port now, so an app that reads
-      // $PORT needs no configuration and cannot collide with a sibling box on
-      // the same machine; FICUS_LOCAL_DEPLOYMENT_PORT stays for existing commands.
-      `PORT=${shellQuote(args.port)}`,
-      // Hosted apps occupy their origin root; self-hosted apps keep the legacy
-      // proxy prefix. Passing both through one variable lets framework config
-      // stay portable without hardcoding a deployment id.
-      `FICUS_APP_BASE_PATH=${shellQuote(getHostedAppsDomain() ? '/' : localDeploymentProxyPath(args.localDeploymentId))}`,
-      `FICUS_LOCAL_DEPLOYMENT_CWD=${shellQuote(cwd)}`,
-      `FICUS_LOCAL_DEPLOYMENT_DIR=${shellQuote(dir)}`,
-      `FICUS_LOCAL_DEPLOYMENT_COMMAND=${shellQuote(args.command)}`,
+      ...Object.entries(appEnv).map(([key, value]) => `${key}=${shellQuote(value)}`),
       `bash ${shellQuote(script)}`,
     ].join(' ')
 

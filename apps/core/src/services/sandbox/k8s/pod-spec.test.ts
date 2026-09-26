@@ -83,9 +83,14 @@ describe('image and API URL resolution', () => {
   // every manager eagerly — so a stale FICUS_K8S_LOCAL=true left in a .env that
   // now says host/docker must not flip this module into local-k3d mode.
   test('the isLocalDev default follows the runtime, not a bare FICUS_K8S_LOCAL', () => {
-    expect(getSandboxImage({ env: { FICUS_SANDBOX_RUNTIME: 'host', FICUS_K8S_LOCAL: 'true' } })).toBe('tau-sandbox:latest')
+    expect(getSandboxImage({ env: { FICUS_SANDBOX_RUNTIME: 'host', FICUS_K8S_LOCAL: 'true' } })).toBe(
+      'tau-sandbox:latest'
+    )
     expect(
-      getSandboxImage({ sandboxType: 'agent', env: { FICUS_SANDBOX_RUNTIME: 'docker-socket', FICUS_K8S_LOCAL: 'true' } })
+      getSandboxImage({
+        sandboxType: 'agent',
+        env: { FICUS_SANDBOX_RUNTIME: 'docker-socket', FICUS_K8S_LOCAL: 'true' },
+      })
     ).toBe('tau-sandbox-agent:latest')
     // Under the k8s runtime the key is honoured, as always.
     expect(getSandboxImage({ env: { FICUS_SANDBOX_RUNTIME: 'k8s', FICUS_K8S_LOCAL: 'true' } })).toBe(
@@ -338,6 +343,10 @@ describe('buildSandboxPodSpec', () => {
     const env = Object.fromEntries((c.env ?? []).map((e: any) => [e.name, e.value]))
     expect(env.FICUS_SANDBOX_ROLE).toBe('agent')
     expect(env.FICUS_DEVBOX_DIR).toBe('/private')
+    // One release (Ficus rename): every FICUS_ var is also emitted as TAU_ for old images and CLIs.
+    expect(env.TAU_SANDBOX_ROLE).toBe('agent')
+    expect(env.TAU_DEVBOX_DIR).toBe('/private')
+    expect(env.TAU_SANDBOX_ID).toBe(env.FICUS_SANDBOX_ID)
     expect((c.volumeMounts ?? []).some((m: any) => m.mountPath === '/nix-cache')).toBe(false)
     // memory + ssh mounts remain for squad members
     expect((c.volumeMounts ?? []).some((m: any) => m.mountPath === '/var/lib/tau/ssh-source')).toBe(true)

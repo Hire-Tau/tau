@@ -97,12 +97,19 @@ describe('LocalDeploymentProcessSupervisor', () => {
       expect(launchCommand).toBe(
         [
           "FICUS_LOCAL_DEPLOYMENT_ID='abcdef12-1234-1234-1234-123456789abc'",
-          'FICUS_LOCAL_DEPLOYMENT_PORT=5173',
-          'PORT=5173',
+          "FICUS_LOCAL_DEPLOYMENT_PORT='5173'",
+          "PORT='5173'",
           "FICUS_APP_BASE_PATH='/'",
           "FICUS_LOCAL_DEPLOYMENT_CWD='/workspace/1/my app'",
           "FICUS_LOCAL_DEPLOYMENT_DIR='/workspace/1/.tau/local-deployments/abcdef12-1234-1234-1234-123456789abc'",
           `FICUS_LOCAL_DEPLOYMENT_COMMAND='bun run dev -- --title '"'"'Tau app'"'"''`,
+          // One release (Ficus rename): user apps still get the legacy TAU_ spellings.
+          "TAU_APP_BASE_PATH='/'",
+          "TAU_LOCAL_DEPLOYMENT_ID='abcdef12-1234-1234-1234-123456789abc'",
+          "TAU_LOCAL_DEPLOYMENT_PORT='5173'",
+          "TAU_LOCAL_DEPLOYMENT_CWD='/workspace/1/my app'",
+          "TAU_LOCAL_DEPLOYMENT_DIR='/workspace/1/.tau/local-deployments/abcdef12-1234-1234-1234-123456789abc'",
+          `TAU_LOCAL_DEPLOYMENT_COMMAND='bun run dev -- --title '"'"'Tau app'"'"''`,
           "bash '/workspace/1/.tau/local-deployments/abcdef12-1234-1234-1234-123456789abc/run.sh'",
         ].join(' ')
       )
@@ -204,7 +211,9 @@ describe('LocalDeploymentProcessSupervisor', () => {
     const command = manager.execCalls[0].args.join(' ')
     expect(result.processId).toBe('tau-local-deployment-abcdef12')
     expect(command).toContain("tmux new-session -d -s 'tau-local-deployment-abcdef12'")
-    expect(command).toContain('FICUS_LOCAL_DEPLOYMENT_PORT=5173')
+    // The launch command is itself single-quoted for tmux, so each quote is escaped.
+    expect(command).toContain(`FICUS_LOCAL_DEPLOYMENT_PORT='"'"'5173'"'"'`)
+    expect(command).toContain(`TAU_LOCAL_DEPLOYMENT_PORT='"'"'5173'"'"'`)
   })
 
   it('kills the tmux session when stopping', async () => {
