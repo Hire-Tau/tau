@@ -34,3 +34,11 @@ test('the CLI bridge is silent on stderr when nothing moved', () => {
   expect(result.stdout.trim()).toBe('[] new')
   expect(result.stderr).toBe('')
 })
+
+test('the CLI bridge reports a conflict by name and never prints either value', () => {
+  const result = runBoot({ TAU_ENCRYPTION_KEY: 'legacy-key-value', FICUS_ENCRYPTION_KEY: 'stray-key-value' })
+  expect(result.exitCode).toBe(0)
+  expect(result.stderr).toContain('legacy TAU_* and FICUS_* disagree for: TAU_ENCRYPTION_KEY')
+  expect(result.stderr).not.toContain('legacy-key-value')
+  expect(result.stderr).not.toContain('stray-key-value')
+})
