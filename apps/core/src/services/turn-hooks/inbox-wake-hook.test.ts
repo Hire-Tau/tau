@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test'
 import { eq } from 'drizzle-orm'
-import { workspaceVoiceRecipientId } from '@tau/shared'
+import { workspaceVoiceRecipientId } from '@ficus/shared'
 import { db } from '../../db'
 import { agents, agentTypes, executions, inbox } from '../../db/schema'
 import { AgentType } from '../../entities/AgentType'

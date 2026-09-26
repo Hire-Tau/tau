@@ -10,8 +10,8 @@ import {
   type WorkflowStep,
   type WorkflowTransition,
   type WorkStream,
-} from '@tau/shared'
-import type { WorkflowRunDetail as RunDetail } from '@tau/client-core'
+} from '@ficus/shared'
+import type { WorkflowRunDetail as RunDetail } from '@ficus/client-core'
 import { client } from '../api/clientInstance'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { usePermissions } from '../hooks/usePermissions'

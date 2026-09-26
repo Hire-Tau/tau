@@ -7,7 +7,7 @@ import type { Identity } from '../services/rbac'
 import { createIntegrationsRouter, createSquadIntegrationsRouter } from './integrations'
 import type { SafeOAuthAppSettings } from '../services/integrations/authorization/client-credentials'
 import { AuthorizationFlowError } from '../services/integrations/authorization/service'
-import { GitHubOAuthError } from '@tau/shared/oauth-providers/github/client'
+import { GitHubOAuthError } from '@ficus/shared/oauth-providers/github/client'
 import { GitHubSignRefused, GitHubSigningError } from '../services/integrations/github/commit-signing'
 
 const summary = {
@@ -1067,7 +1067,7 @@ test('output catalog exposes event-specific predicate types only to authenticate
   const { app, calls } = createApp({ type: 'system', systemTokenId: 'token-1', name: 'test', scopes: [] })
   const response = await app.request('/api/integrations/outputs')
   expect(response.status).toBe(200)
-  const catalog: import('@tau/shared').IntegrationOutputDescriptor[] = await response.json()
+  const catalog: import('@ficus/shared').IntegrationOutputDescriptor[] = await response.json()
   const assigned = catalog.find((event) => event.integration === 'github' && event.output === 'issue.assigned')!
   expect(assigned.predicateFields!['issue.number'].type).toBe('number')
   expect(assigned.predicateFields!.labels.type).toBe('string[]')

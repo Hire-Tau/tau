@@ -51,9 +51,9 @@
 //    and status metadata) is outside BigBrain's own palette scope, so it is
 //    copied verbatim from Tau's matching-scheme block, unchanged.
 import { resolve } from 'node:path'
-import { BIGBRAIN_PALETTES, mixSrgb, type BigBrainPalette } from '@tau/shared/bigbrain-palettes'
-import { deriveThemeOverrides } from '@tau/shared/theme-derivation'
-import { customColorChannels } from '@tau/shared/theme-schema'
+import { BIGBRAIN_PALETTES, mixSrgb, type BigBrainPalette } from '@ficus/shared/bigbrain-palettes'
+import { deriveThemeOverrides } from '@ficus/shared/theme-derivation'
+import { customColorChannels } from '@ficus/shared/theme-schema'
 import { cssBlockDeclarations, DERIVABLE_TOKENS, repairContrastPairs } from './theme-builtin-shared'
 
 export const GENERATED_START =

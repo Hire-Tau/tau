@@ -1,6 +1,6 @@
 import { useCallback, type ReactNode } from 'react'
-import type { TauClient } from '@tau/client-core'
-import { ConversationClientProvider, type AgentEventEntry } from '@tau/client-react'
+import type { TauClient } from '@ficus/client-core'
+import { ConversationClientProvider, type AgentEventEntry } from '@ficus/client-react'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { retainLiveConversation } from '../lib/messageInvalidationSuppression'
 

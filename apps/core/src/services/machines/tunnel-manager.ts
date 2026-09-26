@@ -1,4 +1,4 @@
-import { advisoryLock } from '@tau/shared/advisory-lock'
+import { advisoryLock } from '@ficus/shared/advisory-lock'
 import { createHash, randomUUID } from 'crypto'
 import { access, chmod, mkdir, open, readFile, readdir, rename, stat, unlink, writeFile } from 'fs/promises'
 import { createConnection, createServer } from 'net'

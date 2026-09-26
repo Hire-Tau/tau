@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { workStreamTitle, type Agent, type WorkStream } from '@tau/shared'
+import { workStreamTitle, type Agent, type WorkStream } from '@ficus/shared'
 import { useLayoutEffect, useRef, useState, type RefObject, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useStableRef } from '../hooks/useStableRef'

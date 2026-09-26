@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'bun:test'
-import { SYNC_THEME_DESCRIPTORS, type MyThemePreferences, type ThemePreference, type ThemePreset } from '@tau/shared'
-import { HttpResponseError } from '@tau/client-core'
+import { SYNC_THEME_DESCRIPTORS, type MyThemePreferences, type ThemePreference, type ThemePreset } from '@ficus/shared'
+import { HttpResponseError } from '@ficus/client-core'
 import { ThemeSyncStore, LEGACY_LOCAL_OVERRIDE_KEY, type ThemeSyncApi, type ThemePresetLiveLinkApi } from './sync'
 import { BUILT_IN_THEMES } from './registry'
 

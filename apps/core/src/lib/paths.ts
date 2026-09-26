@@ -1,5 +1,5 @@
 import { join, resolve } from 'path'
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 
 // During tests run from the monorepo root, process.cwd() is the monorepo root,
 // while during normal operation, process.cwd() is the core app root.

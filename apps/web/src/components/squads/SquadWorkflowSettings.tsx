@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { type WorkflowSource } from '@tau/shared'
+import { type WorkflowSource } from '@ficus/shared'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import { updateSquad } from '../../api/squads'

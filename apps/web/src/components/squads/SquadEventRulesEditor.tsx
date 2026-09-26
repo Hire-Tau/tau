@@ -2,7 +2,7 @@ import { EventRulePredicates } from './EventRulePredicates'
 import { EventRulePreview } from './EventRulePreview'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { SquadEventRule } from '@tau/shared'
+import type { SquadEventRule } from '@ficus/shared'
 import { integrationQueries } from '../../queryOptions'
 import { WorkflowPicker } from './WorkflowPicker'
 

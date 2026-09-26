@@ -73,7 +73,7 @@ describe('readApiErrorMessage', () => {
 
 test('proxy HTML errors are concise through both API clients without losing JSON validation details', async () => {
   const { readApiErrorMessage: legacy } = await import('./client')
-  const { readApiErrorMessage: shared } = await import('@tau/client-core')
+  const { readApiErrorMessage: shared } = await import('@ficus/client-core')
   expect(legacy).toBe(shared)
   for (const contentType of ['text/html', 'text/plain']) {
     const response = new Response('<!DOCTYPE html><html><body>Bad gateway ' + 'x'.repeat(6000) + '</body></html>', {
@@ -93,7 +93,7 @@ test('proxy HTML errors are concise through both API clients without losing JSON
 })
 
 test('schema validation errors preserve nested issue paths for assistant tool retries', async () => {
-  const { readApiErrorMessage } = await import('@tau/client-core')
+  const { readApiErrorMessage } = await import('@ficus/client-core')
   const issues = [
     {
       code: 'invalid_string',

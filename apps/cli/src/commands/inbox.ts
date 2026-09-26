@@ -7,7 +7,7 @@ import {
   parseAmtpAddress,
   type InboxMessage,
   type AgentFederationStatusResponse,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { requireMatchingSigningIdentity } from '../amtp/identity'
 import { buildFederatedSendBody, type FederatedAttachmentRef } from '../amtp/sign'
 

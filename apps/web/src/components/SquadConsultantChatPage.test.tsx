@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { queryKeys } from '../queryKeys'
-import type { Squad } from '@tau/shared'
+import type { Squad } from '@ficus/shared'
 
 import { SquadConsultantChatPage } from './SquadConsultantChatPage'
 

@@ -4,7 +4,7 @@ import { actionErrorMessage } from '../lib/actionError'
 import { ActionCenterContext } from './ActionCenterContext'
 import { continueHaltedAgents } from '../api/agents'
 import { queryKeys } from '../queryKeys'
-import type { PendingAction } from '@tau/shared'
+import type { PendingAction } from '@ficus/shared'
 import { useLoadingShapeCount } from '../hooks/useLoadingShapeCount'
 import { LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from './loading/Skeleton'
 

@@ -1,5 +1,5 @@
 import { createHash } from 'crypto'
-import type { SandboxToolchainConfig } from '@tau/shared'
+import type { SandboxToolchainConfig } from '@ficus/shared'
 
 const MANAGED_DEVBOX_SCHEMA = 'https://raw.githubusercontent.com/jetify-com/devbox/0.14.0/.schema/devbox.schema.json'
 

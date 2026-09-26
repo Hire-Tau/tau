@@ -1,4 +1,4 @@
-import type { StatusRole } from '@tau/shared'
+import type { StatusRole } from '@ficus/shared'
 import clsx from 'clsx'
 import { Link } from 'react-router-dom'
 

@@ -7,7 +7,7 @@ import {
   isTerminalAssistantTaskStatus,
   reportableAssistantTaskStatusSchema,
   type AssistantTaskSummary,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { agents, assistantTasks, db } from '../db'
 import { InboxMessage } from '../entities/InboxMessage'
 import type { Identity } from '../services/rbac'

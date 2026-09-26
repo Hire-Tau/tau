@@ -11,13 +11,13 @@ bun install --frozen-lockfile --ignore-scripts
 bun run dev:docs
 ```
 
-Open `http://127.0.0.1:4321`. The scripts bind to loopback by default. To preview from another device on your network, use `bun run --filter @tau/docs preview --host 0.0.0.0 --port 4321`; restrict access to your trusted network. No Tau backend, database, provider credentials, submodules, or root postinstall hooks are needed.
+Open `http://127.0.0.1:4321`. The scripts bind to loopback by default. To preview from another device on your network, use `bun run --filter @ficus/docs preview --host 0.0.0.0 --port 4321`; restrict access to your trusted network. No Tau backend, database, provider credentials, submodules, or root postinstall hooks are needed.
 
 To check and preview the production build:
 
 ```sh
 bun run check:docs
-bun run --filter @tau/docs preview --port 4321
+bun run --filter @ficus/docs preview --port 4321
 ```
 
 With this Astro version, preview starts a background server. To inspect or stop it, from `apps/docs`:

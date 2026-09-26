@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
-import type { SquadPresetWorkflows } from '@tau/shared'
+import type { SquadPresetWorkflows } from '@ficus/shared'
 import { queries } from '../../queryOptions'
 import { WorkflowPicker } from '../squads/WorkflowPicker'
 

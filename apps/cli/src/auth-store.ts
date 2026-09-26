@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'fs'
 import { homedir } from 'os'
 import { dirname, join } from 'path'
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 
 export interface AuthBackend {
   apiUrl: string

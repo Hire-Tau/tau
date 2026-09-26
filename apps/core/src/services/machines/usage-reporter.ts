@@ -1,4 +1,4 @@
-import { MAX_INGEST_MACHINES, type IngestMachine } from '@tau/shared/platform-usage'
+import { MAX_INGEST_MACHINES, type IngestMachine } from '@ficus/shared/platform-usage'
 /**
  * Platform usage-sample reporter — the tau-instance side of the shadow-
  * metering loop. Every 5 minutes, samples the
@@ -45,7 +45,7 @@ const REPORT_INTERVAL_MS = 5 * 60_000
 const MAX_MACHINES = MAX_INGEST_MACHINES
 
 /** The shared ingest contract keeps client and server payloads aligned. */
-export type { IngestMachine } from '@tau/shared/platform-usage'
+export type { IngestMachine } from '@ficus/shared/platform-usage'
 
 export interface UsageReportPayload {
   sampledAt: string

@@ -8,7 +8,7 @@ import {
   type AssistantEditorSync,
   type AssistantEditorProposal,
   type assistantEditorToolDefinitions,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { assistantApi } from '../api/assistant'
 import { assistantQueries } from '../queryOptions'
 import { useStableRef } from '../hooks/useStableRef'
@@ -22,7 +22,7 @@ import { MicIcon } from './icons'
  * authorization and proposals. The host supplies its page kind's title, help
  * copy, conversation title, and model-facing instructions/tools (see
  * `assistantEditorInstructionsByKind` / `assistantEditorToolDefinitionsByKind`
- * in `@tau/shared`) so this component stays kind-agnostic. */
+ * in `@ficus/shared`) so this component stays kind-agnostic. */
 export function PageEditorAssistant({
   draft,
   onProposal,

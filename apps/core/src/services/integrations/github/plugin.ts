@@ -1,6 +1,9 @@
-import { GitHubOAuthClient } from '@tau/shared/oauth-providers/github/client'
-import { parseGitHubConfiguration, type GitHubConnectionConfiguration } from '@tau/shared/oauth-providers/github/config'
-import { classifyGitHubOAuthError } from '@tau/shared/oauth-providers'
+import { GitHubOAuthClient } from '@ficus/shared/oauth-providers/github/client'
+import {
+  parseGitHubConfiguration,
+  type GitHubConnectionConfiguration,
+} from '@ficus/shared/oauth-providers/github/config'
+import { classifyGitHubOAuthError } from '@ficus/shared/oauth-providers'
 import type { IntegrationPluginV1, OAuth2Authorization } from '../plugin'
 import {
   parseOAuthCredential,

@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from 'bun:test'
 import { renderHook } from './test-utils'
-import type { TauClient } from '@tau/client-core'
+import type { TauClient } from '@ficus/client-core'
 import {
   ConversationClientProvider,
   useConversationClient,

@@ -15,7 +15,7 @@ import {
   messages,
 } from '../db/schema'
 import { getSettingsStore } from '../services/settings'
-import { agentAttachmentRoot } from '@tau/shared'
+import { agentAttachmentRoot } from '@ficus/shared'
 import { vmWorkspaceLayout } from '../services/sandbox/workspace-layout'
 import { boxHome } from '../services/machines/box-paths'
 import { AgentFileAttachment } from './AgentFileAttachment'

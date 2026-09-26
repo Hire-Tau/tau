@@ -6,7 +6,7 @@ import {
   relayInstanceTokenPattern,
   relayRoutingSchema,
   type RelayRouting,
-} from '@tau/shared/push-relay'
+} from '@ficus/shared/push-relay'
 
 const log = createLogger('push-relay')
 
@@ -136,5 +136,5 @@ export async function enrollInstancePro(input: { publicKey: string; label: strin
     await response.body?.cancel()
     throw new Error('Cloud enrollment is unavailable')
   }
-  return (await response.json()) as import('@tau/shared/push-relay').ActivationChallenge
+  return (await response.json()) as import('@ficus/shared/push-relay').ActivationChallenge
 }

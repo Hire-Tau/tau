@@ -11,7 +11,7 @@ import type {
   WorkStream,
   WorkStreamStatus,
   WorkStreamWait,
-} from '@tau/shared'
+} from '@ficus/shared'
 import type { ImageContent } from './images'
 
 export const WS_ACTIVE_STATUSES = ['queued', 'active'] as const satisfies readonly WorkStreamStatus[]

@@ -1,5 +1,5 @@
-import type { ArtifactEntry, Presentation } from '@tau/shared'
-import { presentationSchema } from '@tau/shared'
+import type { ArtifactEntry, Presentation } from '@ficus/shared'
+import { presentationSchema } from '@ficus/shared'
 import clsx from 'clsx'
 import { MarkdownContent } from '../MarkdownContent'
 import { PresentationRenderer } from './PresentationRenderer'

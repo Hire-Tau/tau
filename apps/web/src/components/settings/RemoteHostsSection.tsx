@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import type { Squad } from '@tau/shared'
+import type { Squad } from '@ficus/shared'
 import { queryKeys } from '../../queryKeys'
 import { listSquads } from '../../api/squads'
 import {

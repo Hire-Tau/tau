@@ -1,6 +1,6 @@
 import { Command } from 'commander'
 import { readFileSync } from 'fs'
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 import { apiGet, apiPost, apiPatch, apiPut, apiDelete, apiGetRaw } from '../client'
 import { output, outputTable, outputError, isJsonMode } from '../output'
 import { WorkStream } from './workstream'

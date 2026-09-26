@@ -24,7 +24,7 @@ import {
   type CredentialInfo,
   type CredentialStore,
 } from '@earendil-works/pi-ai'
-import { providerLabel, resolveProviderHealthRecord, type ProviderHealthKind } from '@tau/shared'
+import { providerLabel, resolveProviderHealthRecord, type ProviderHealthKind } from '@ficus/shared'
 import { db, modelTiers } from '../db'
 import { detectLocalServers, probeOpenAICompatible } from '../services/model-selection/openai-compatible'
 import { getModelRuntime, refreshModelRuntime, tryGetModelRuntime } from '../services/agent/auth-backend'

@@ -5,7 +5,7 @@ import {
   type StoredThemeSelection,
   type ThemeDescriptor,
   type ThemeKind,
-} from '@tau/shared/theme-schema'
+} from '@ficus/shared/theme-schema'
 
 /** Built-in values live in CSS, never in a second runtime JS palette.
  * Tau is the existing pair; additional complete scopes live in builtins.css.

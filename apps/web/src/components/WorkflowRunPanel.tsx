@@ -5,13 +5,13 @@ import { WorkStreamReviewers } from './WorkStreamReviewers'
 import { WorkflowGraph } from './WorkflowGraph'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { WorkStream, WorkflowCommand, WorkflowSource } from '@tau/shared'
+import type { WorkStream, WorkflowCommand, WorkflowSource } from '@ficus/shared'
 import {
   activeWorkflowAttempts,
   formatWorkflowUsage,
   workflowRevisionOperations,
   workflowDefinitionSchema,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { queries } from '../queryOptions'
 import { queryKeys } from '../queryKeys'
 import { client } from '../api/clientInstance'

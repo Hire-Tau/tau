@@ -1,6 +1,6 @@
 import { createHash } from 'crypto'
 
-export { encrypt, decrypt } from '@tau/shared/crypto'
+export { encrypt, decrypt } from '@ficus/shared/crypto'
 
 /**
  * Get the encryption key from environment.

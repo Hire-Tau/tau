@@ -4,7 +4,7 @@ import { ToolInlineActions } from './ToolInlineActions'
 import type { ToolInlineAction } from '../lib/tool-inline-actions'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { MarkdownContent } from './MarkdownContent'
-import { extractInboxBodies } from '@tau/shared'
+import { extractInboxBodies } from '@ficus/shared'
 import { parseMessageContent } from '../lib/message-parser'
 import {
   isWorkspaceVoiceRecipient,
@@ -12,7 +12,7 @@ import {
   type MessageToolCall,
   type ContentBlock,
   type MonitorMessageKind,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { ToolSummary, ToolArgsView, ToolResultView } from '../lib/tool-renderers'
 import { ChevronRightIcon, MailIcon, WorkStreamIcon } from './icons'
 import { WorkStreamViewModal } from './WorkStreamViewModal'

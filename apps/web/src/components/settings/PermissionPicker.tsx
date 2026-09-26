@@ -1,6 +1,6 @@
 import { useId, useState } from 'react'
 import clsx from 'clsx'
-import { PERMISSION_CATALOG, permissionMatches } from '@tau/shared'
+import { PERMISSION_CATALOG, permissionMatches } from '@ficus/shared'
 import { ChevronDownIcon, SearchIcon } from '../icons'
 
 interface Props {

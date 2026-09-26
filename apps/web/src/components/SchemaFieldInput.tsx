@@ -1,8 +1,8 @@
 import clsx from 'clsx'
 import { useId } from 'react'
-import type { SchemaFieldDef } from '@tau/shared'
+import type { SchemaFieldDef } from '@ficus/shared'
 
-export type { SchemaFieldDef } from '@tau/shared'
+export type { SchemaFieldDef } from '@ficus/shared'
 
 interface SchemaFieldInputProps {
   name: string

@@ -1,5 +1,5 @@
-import { workStreamRef } from '@tau/shared'
-import { workStreamTitle } from '@tau/shared'
+import { workStreamRef } from '@ficus/shared'
+import { workStreamTitle } from '@ficus/shared'
 import { WorkStreamStatusBadges } from '../WorkStreamStatusBadges'
 import { WS_STATUS_LABELS } from '../../lib/workStreamStatusPresentation'
 import { CreateFlowWorkStream } from './CreateFlowWorkStream'
@@ -30,7 +30,7 @@ import {
   type WorkStreamPresentationState,
   type Agent,
   type Squad,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { getAgentPrimaryLabel } from '../../lib/agentDisplay'
 import { webStatus } from '../../lib/statusPresentation'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'

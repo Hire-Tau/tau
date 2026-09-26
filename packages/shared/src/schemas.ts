@@ -525,11 +525,11 @@ export const createAmtpAllowRuleSchema = z.object({
 })
 
 // The envelope schema + its attachment-ref schema live in amtp-protocol; re-exported here so
-// existing `@tau/shared` importers keep working.
+// existing `@ficus/shared` importers keep working.
 export { amtpAttachmentRefSchema, amtpEnvelopeSchema } from 'amtp-protocol/envelope'
 
 // The agent card schemas live in amtp-protocol (browser-safe: zod + ./jcs only); re-exported
-// here so existing `@tau/shared` importers keep working. Import from the `/card` submodule, NOT
+// here so existing `@ficus/shared` importers keep working. Import from the `/card` submodule, NOT
 // the barrel `amtp-protocol`, so the browser bundle never pulls in ./crypto (node:crypto).
 export { amtpAgentCardSchema, amtpSignedAgentCardSchema } from 'amtp-protocol/card'
 

@@ -6,7 +6,7 @@ import type {
   GlobalSquadActivityItem,
   NormalizedSquadActivityFilters,
   SquadActivityKind,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { queries } from '../queryOptions'
 import { useSquadSlugs } from '../hooks/useSquadSlugs'
 import { ActivityFeedView } from './squads/ActivityFeedView'

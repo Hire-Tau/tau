@@ -1,5 +1,5 @@
 import { describe, expect, it, spyOn } from 'bun:test'
-import type { AgentStatus } from '@tau/shared'
+import type { AgentStatus } from '@ficus/shared'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { boxUnixUser } from './box-paths'
 import {

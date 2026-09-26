@@ -11,7 +11,7 @@
 
 import { EventEmitter } from 'events'
 import { randomUUID } from 'node:crypto'
-import type { SandboxPressure, SandboxProcesses, SandboxProcessSignal } from '@tau/shared'
+import type { SandboxPressure, SandboxProcesses, SandboxProcessSignal } from '@ficus/shared'
 
 export type SandboxTransportKind = 'connection_refused' | 'connection_reset' | 'timeout' | 'network' | 'socket_closed'
 

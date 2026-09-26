@@ -1,7 +1,7 @@
 import postcss from 'postcss'
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
-import { ACTIVE_THEME_TOKENS, type CustomThemeDocument } from '@tau/shared'
+import { ACTIVE_THEME_TOKENS, type CustomThemeDocument } from '@ficus/shared'
 import { acquireDomHarness } from '../test/domHarness'
 import {
   applyCustomTheme,

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import clsx from 'clsx'
-import type { ProviderHealthKind } from '@tau/shared'
+import type { ProviderHealthKind } from '@ficus/shared'
 import { queries } from '../../queryOptions'
 import { queryKeys } from '../../queryKeys'
 import {

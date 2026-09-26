@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import type { WorkflowSource } from '@tau/shared'
+import type { WorkflowSource } from '@ficus/shared'
 import { client } from '../../api/clientInstance'
 import { queryKeys } from '../../queryKeys'
 import { usePermissions } from '../../hooks/usePermissions'

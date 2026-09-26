@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import type { WorkStreamDeliveryExplanation } from '@tau/shared'
+import type { WorkStreamDeliveryExplanation } from '@ficus/shared'
 import { WorkStreamDeliverySetupCallout } from './WorkStreamDeliverySetupCallout'
 
 type Stream = Parameters<typeof WorkStreamDeliverySetupCallout>[0]['stream']

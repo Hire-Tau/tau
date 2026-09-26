@@ -46,7 +46,7 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
 } from '../icons'
-import type { Agent, WorkStream } from '@tau/shared'
+import type { Agent, WorkStream } from '@ficus/shared'
 import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { ChatSkeleton, LoadingSurface, SkeletonBlock, SkeletonLine, SkeletonRows } from '../loading/Skeleton'
 import { getAgentName, getAgentPrimaryLabel, agentMatchesQuery } from '../../lib/agentDisplay'

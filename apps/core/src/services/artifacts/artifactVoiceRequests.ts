@@ -6,7 +6,7 @@ import type {
   ArtifactRequest,
   ArtifactRequestAction,
   Presentation,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { Buffer } from 'node:buffer'
 import { lstat, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'

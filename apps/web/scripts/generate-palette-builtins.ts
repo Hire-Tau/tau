@@ -36,9 +36,9 @@
 // built-in (including the BigBrain ports) already makes — to keep that gate
 // green without weakening it.
 import { resolve } from 'node:path'
-import { deriveThemeOverrides, type ThemePalette } from '@tau/shared/theme-derivation'
-import { customColorChannels } from '@tau/shared/theme-schema'
-import type { ResolvedAppearance } from '@tau/shared/theme-schema'
+import { deriveThemeOverrides, type ThemePalette } from '@ficus/shared/theme-derivation'
+import { customColorChannels } from '@ficus/shared/theme-schema'
+import type { ResolvedAppearance } from '@ficus/shared/theme-schema'
 import { cssBlockDeclarations, DERIVABLE_TOKENS, repairContrastPairs } from './theme-builtin-shared'
 
 export const GENERATED_START =

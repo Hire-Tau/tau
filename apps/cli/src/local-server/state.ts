@@ -1,7 +1,8 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { dirname, isAbsolute, join, resolve } from 'path'
-import { expandTilde } from '@tau/shared/node'
+import { CORE_ROOT_PACKAGE_NAMES, type CoreRootPackageName } from '@ficus/shared/identity'
+import { expandTilde } from '@ficus/shared/node'
 import { DEFAULT_INSTANCE, normalizeLabel } from './instance'
 import { LOCAL_SUPERVISORS, type LocalSupervisor } from './types'
 
@@ -267,7 +268,7 @@ export function isCheckout(dir: string): boolean {
   try {
     if (!existsSync(join(dir, '.git'))) return false
     const pkg = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as { name?: string }
-    return pkg.name === 'tau'
+    return CORE_ROOT_PACKAGE_NAMES.includes(pkg.name as CoreRootPackageName)
   } catch {
     return false
   }

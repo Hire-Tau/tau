@@ -6,7 +6,7 @@ import {
   LOCAL_INSTANCE_LABEL_RE,
   localProcessNames,
   normalizeLocalInstanceLabel,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { SetupOptionsError } from './types'
 
 /** The label of the instance every existing checkout already is: its names are today's names. */

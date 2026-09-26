@@ -1,4 +1,4 @@
-import type { TauClient } from '@tau/client-core'
+import type { TauClient } from '@ficus/client-core'
 import { createContext, useContext, useMemo, type ReactNode } from 'react'
 
 export type AgentEventEntry = { event: string; data: unknown }

@@ -1,5 +1,5 @@
-import { providerLabel, type InboxPushPresentation } from '@tau/shared'
-import type { ProviderHealthKind } from '@tau/shared/provider-health'
+import { providerLabel, type InboxPushPresentation } from '@ficus/shared'
+import type { ProviderHealthKind } from '@ficus/shared/provider-health'
 import { SANDBOX_OVERLOAD_STALE_MS } from './audience-policy'
 import type { FleetIncidentNotificationClaim } from './store'
 

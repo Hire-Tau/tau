@@ -1,5 +1,5 @@
-import { TAU_GITHUB_APP_CLIENT_ID } from '@tau/shared/oauth-providers/github/app'
-import type { OAuthClientBinding } from '@tau/shared/oauth-providers/types'
+import { TAU_GITHUB_APP_CLIENT_ID } from '@ficus/shared/oauth-providers/github/app'
+import type { OAuthClientBinding } from '@ficus/shared/oauth-providers/types'
 import { parseOAuthClientBinding } from './credential-bundle'
 
 const SETTINGS_KEY = '__integration-oauth-app:github'

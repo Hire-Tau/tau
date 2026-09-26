@@ -1,7 +1,7 @@
 import clsx from 'clsx'
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { Agent } from '@tau/shared'
+import type { Agent } from '@ficus/shared'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useURLStringState } from '../hooks/useURLState'
 import { queries } from '../queryOptions'

@@ -1,5 +1,5 @@
 import { isAbsolute } from 'node:path'
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 import { SystemLogProviderError, type SystemLogComponent, type SystemLogProviderId } from './types'
 
 type Targets = Record<SystemLogComponent, string>

@@ -9,7 +9,7 @@ import {
   type CodeHostReference,
   type IntegrationSubscription,
   type WorkflowDefinition,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { subscriptionTargetsResource, trackedResourceRegistry } from '../tracked-resources'
 
 export interface CodeHostingAdapter {

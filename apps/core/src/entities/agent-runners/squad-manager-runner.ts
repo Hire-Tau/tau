@@ -1,4 +1,4 @@
-import type { SessionUsage, MessageMetadata, Squad as SquadJson } from '@tau/shared'
+import type { SessionUsage, MessageMetadata, Squad as SquadJson } from '@ficus/shared'
 import { AgentRunner } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
 import { Squad } from '../Squad'

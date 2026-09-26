@@ -4,7 +4,7 @@ import {
   workStreamTitle,
   type AttentionKind,
   type InboxPushPresentation,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { agents, inbox, squads } from '../../db/schema'

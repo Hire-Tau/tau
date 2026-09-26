@@ -7,7 +7,7 @@ import { useLoadingShapeCount } from '../../hooks/useLoadingShapeCount'
 import { CollectionSkeleton } from '../loading/Skeleton'
 import { MarkdownContent } from '../MarkdownContent'
 import { CloseIcon } from '../icons'
-import { isWorkspaceVoiceRecipient, type Agent, type InboxMessage, type InboxMessageSenderType } from '@tau/shared'
+import { isWorkspaceVoiceRecipient, type Agent, type InboxMessage, type InboxMessageSenderType } from '@ficus/shared'
 
 interface Props {
   agent: Agent

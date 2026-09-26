@@ -25,7 +25,7 @@ import { attemptPickup, pickupQueuedExecutions, getMaxConcurrentAgents } from '.
 import { scheduler, scheduleHealthNotifier } from './services/scheduling'
 import { reconcileSchedulesOnStartup } from './services/scheduling/reconciliation'
 import { streamManager } from './services/streaming/buffer'
-import type { StreamEvent } from '@tau/shared'
+import type { StreamEvent } from '@ficus/shared'
 import { Execution } from './entities/Execution'
 import type { Machine } from './services/machines/queries'
 import { ensureSessionDataDir } from './lib/infra/session-files'

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { apiFetch } from '../api/client'
-import type { PushSubscription } from '@tau/shared'
+import type { PushSubscription } from '@ficus/shared'
 import { desktopBridge } from '../lib/desktop'
 
 const SUBSCRIPTION_ID_KEY = 'tau_push_subscription_id'

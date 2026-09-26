@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import type { AgentTypeIntegrationPolicyV1 } from '@tau/shared'
+import type { AgentTypeIntegrationPolicyV1 } from '@ficus/shared'
 import { IntegrationRuntimeGate } from '../../services/integrations/runtime-gate'
 import { allowsBigbrainIntegrationTools, deploymentOAuthAuthorityForProvider } from './base'
 

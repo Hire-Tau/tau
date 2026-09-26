@@ -1,4 +1,4 @@
-import { isUserAssistantAgentType } from '@tau/shared'
+import { isUserAssistantAgentType } from '@ficus/shared'
 import { consultantSandboxSquadId } from './consultant-sandbox'
 import { sandboxHasActiveExecution } from '../machines/sandbox-activity'
 import { RECENT_ACTIVITY_WINDOW_MS } from './squad-activity'

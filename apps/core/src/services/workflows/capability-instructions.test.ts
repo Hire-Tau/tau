@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { advanceWorkflowRun, createBlankWorkflow, createWorkflowRun, workflowCommandSchema } from '@tau/shared'
+import { advanceWorkflowRun, createBlankWorkflow, createWorkflowRun, workflowCommandSchema } from '@ficus/shared'
 import { flowCapabilityInstructions } from './capability-instructions'
 
 test('Solo assignments explicitly disable delegation and require management for live revisions', () => {

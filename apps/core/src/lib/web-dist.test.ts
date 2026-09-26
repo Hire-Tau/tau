@@ -54,6 +54,17 @@ describe('resolveWebDist', () => {
     expect(resolveWebDist(join(repoRoot, 'apps', 'core', 'src', 'lib'))).toBe(dist)
   })
 
+  it('finds a repo root whose package.json is named ficus', () => {
+    delete process.env.TAU_WEB_DIST
+    const repoRoot = join(tmp, 'repo')
+    const dist = join(repoRoot, 'apps', 'web', 'dist')
+    mkdirSync(dist, { recursive: true })
+    writeFileSync(join(repoRoot, 'package.json'), JSON.stringify({ name: 'ficus' }))
+    // cwd deliberately elsewhere: only the walk-up can produce this answer.
+    process.chdir(tmp)
+    expect(resolveWebDist(join(repoRoot, 'apps', 'core', 'src', 'lib'))).toBe(dist)
+  })
+
   it('falls back to <cwd>/apps/web/dist', () => {
     delete process.env.TAU_WEB_DIST
     const repoRoot = join(tmp, 'repo')

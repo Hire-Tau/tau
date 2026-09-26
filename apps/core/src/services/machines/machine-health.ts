@@ -1,5 +1,5 @@
 import { consultantSandboxSquadId } from '../sandbox/consultant-sandbox'
-import type { AgentStatus } from '@tau/shared'
+import type { AgentStatus } from '@ficus/shared'
 import { Agent } from '../../entities/Agent'
 import { Squad } from '../../entities/Squad'
 import { eventEmitter } from '../../lib/infra/event-emitter'

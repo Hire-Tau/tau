@@ -3,7 +3,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import { randomUUID } from 'node:crypto'
 import { Hono } from 'hono'
 import { eq, like } from 'drizzle-orm'
-import { type WorkflowDefinition } from '@tau/shared'
+import { type WorkflowDefinition } from '@ficus/shared'
 import { db, agentTypes, squads, workflows, workStreamFlowRuns, workStreams } from '../db'
 import { identityMiddleware } from '../middleware/identity'
 import {

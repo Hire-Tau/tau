@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test'
 import { eq, like, sql } from 'drizzle-orm'
-import type { StorageSnapshot } from '@tau/shared'
+import type { StorageSnapshot } from '@ficus/shared'
 import { db } from '../../db'
 import { storageMonitor, inbox } from '../../db/schema'
 import { InboxMessage } from '../../entities/InboxMessage'

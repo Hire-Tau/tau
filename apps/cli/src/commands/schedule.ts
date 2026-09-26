@@ -2,7 +2,7 @@ import { addStructuredInputOptions, readWorkflowSource } from '../structured-inp
 import { Command } from 'commander'
 import { apiGet, apiPost, apiPatch, apiDelete } from '../client'
 import { output, outputTable, outputError, isJsonMode } from '../output'
-import { workflowSourceSchema } from '@tau/shared'
+import { workflowSourceSchema } from '@ficus/shared'
 
 interface Schedule {
   id: string

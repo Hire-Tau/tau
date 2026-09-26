@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname, join } from 'path'
-import { SYSTEM_RECIPIENT_ID } from '@tau/shared'
+import { SYSTEM_RECIPIENT_ID } from '@ficus/shared'
 import { InboxMessage } from '../../entities/InboxMessage'
 import { requireSandboxRuntime } from '../sandbox/runtime'
 import { CommandRunner, isKilledByOwnRestart } from './command-runner'

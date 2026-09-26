@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import type { StorageSnapshot } from '@tau/shared'
+import type { StorageSnapshot } from '@ficus/shared'
 import { apiGet, apiPost, apiPut } from '../client'
 import { config } from '../config'
 import { output, outputError } from '../output'

@@ -8,7 +8,7 @@ import { SandboxStatusBadge } from './sandbox/SandboxStatusBadge'
 import { resolveVmChainDisplay } from './sandbox/vmChainHealth'
 import { HOST_RUNTIME_NOTE } from './sandbox/hostRuntime'
 import { webStatus } from '../lib/statusPresentation'
-import { isSandboxOverloaded } from '@tau/shared'
+import { isSandboxOverloaded } from '@ficus/shared'
 import { PressureSummary, SandboxProcesses } from './sandbox/SandboxProcesses'
 
 interface AgentSandboxControlsProps {

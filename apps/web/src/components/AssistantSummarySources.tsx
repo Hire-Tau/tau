@@ -1,7 +1,7 @@
 import { assistantSummaryUpdateIds } from '../lib/assistantSummarySources'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { RenderItem } from '@tau/client-core'
+import type { RenderItem } from '@ficus/client-core'
 import { assistantQueries } from '../queryOptions'
 import { assistantApi } from '../api/assistant'
 import clsx from 'clsx'

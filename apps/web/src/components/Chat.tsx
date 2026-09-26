@@ -10,7 +10,7 @@ import { queries } from '../queryOptions'
 import { AgentChat } from './AgentChat'
 import { ConfirmButton } from './ConfirmButton'
 import { SANDBOX_STATUS_POLL_MS } from './sandbox/sandboxStatusStyles'
-import type { ChatScope, MessageMetadata } from '@tau/shared'
+import type { ChatScope, MessageMetadata } from '@ficus/shared'
 
 interface ChatDependencies {
   AgentChatComponent?: typeof AgentChat

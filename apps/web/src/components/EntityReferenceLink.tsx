@@ -1,4 +1,4 @@
-import type { Agent } from '@tau/shared'
+import type { Agent } from '@ficus/shared'
 import { QueryClientContext } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { lazy, Suspense, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'

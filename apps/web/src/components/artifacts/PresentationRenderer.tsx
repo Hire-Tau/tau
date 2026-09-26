@@ -10,7 +10,7 @@ import type {
   PresentationTone,
   TableBlock,
   TimelineBlock,
-} from '@tau/shared'
+} from '@ficus/shared'
 import clsx from 'clsx'
 import { Component, useEffect, useId, useMemo, useRef, useState, type ErrorInfo, type ReactNode } from 'react'
 import type { VegaEmbedProps } from 'react-vega'

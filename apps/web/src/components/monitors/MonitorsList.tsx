@@ -1,4 +1,4 @@
-import type { Monitor } from '@tau/shared'
+import type { Monitor } from '@ficus/shared'
 import { ConfirmButton } from '../ConfirmButton'
 
 const ACTIVE = new Set(['starting', 'running', 'canceling'])

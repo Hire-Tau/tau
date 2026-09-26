@@ -1,4 +1,4 @@
-import { isLiveAgentStatus, type SessionUsage, type MessageMetadata } from '@tau/shared'
+import { isLiveAgentStatus, type SessionUsage, type MessageMetadata } from '@ficus/shared'
 import { AgentRunner } from './base'
 import type { AdmissionScope } from '../../services/maintenance/admission-reservation'
 import { AgentSession } from '../AgentSession'

@@ -2,7 +2,7 @@ import type { IPty } from 'bun-pty'
 import type { AgentTool } from '@earendil-works/pi-agent-core'
 // Type-only import (erased at runtime) — workspace-layout imports constants
 // from this module, so a value import here would create a cycle.
-import type { SandboxToolchainConfig, SandboxToolchainStatus } from '@tau/shared'
+import type { SandboxToolchainConfig, SandboxToolchainStatus } from '@ficus/shared'
 import type { WorkspaceLayout, WorkspaceLayoutContext } from './workspace-layout'
 import type { BrowserBackend } from './browser-backend'
 

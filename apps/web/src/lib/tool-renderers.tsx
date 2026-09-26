@@ -1,4 +1,4 @@
-import { SUBAGENT_STATUS_ROLE } from '@tau/shared'
+import { SUBAGENT_STATUS_ROLE } from '@ficus/shared'
 import { extractToolResultDetails } from './tool-inline-actions'
 import { webStatus } from './statusPresentation'
 import clsx from 'clsx'

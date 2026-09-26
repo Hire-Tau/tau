@@ -1,7 +1,7 @@
 import { Command } from 'commander'
 import { apiDelete, apiGet, apiPost } from '../client'
 import { output, outputTable, outputError, isJsonMode, setOutputOptions } from '../output'
-import type { AgentQuestion } from '@tau/shared'
+import type { AgentQuestion } from '@ficus/shared'
 
 function questionText(q: AgentQuestion): string {
   return q.questionData.questions.map((x) => x.question).join(' | ')

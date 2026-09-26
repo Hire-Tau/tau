@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { Attention } from '@tau/shared'
+import type { Attention } from '@ficus/shared'
 import { queryKeys } from '../queryKeys'
 import { AttentionMenu } from './AttentionMenu'
 import { acquireDomHarness } from '../test/domHarness'

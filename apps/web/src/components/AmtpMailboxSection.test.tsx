@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { queryKeys } from '../queryKeys'
 import type { AgentFederationStatus } from '../api/amtp'
-import type { AmtpSignedAgentCard } from '@tau/shared'
+import type { AmtpSignedAgentCard } from '@ficus/shared'
 import { AmtpMailboxSection } from './AmtpMailboxSection'
 
 function render(opts: { status: AgentFederationStatus; permissions?: string[] }): string {

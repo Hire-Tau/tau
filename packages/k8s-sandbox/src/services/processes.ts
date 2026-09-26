@@ -12,14 +12,14 @@
 
 import { execFile, execSync } from 'child_process'
 import { readdirSync, readFileSync } from 'fs'
-// Type-only: the server bundle must not pull in @tau/shared's runtime.
+// Type-only: the server bundle must not pull in @ficus/shared's runtime.
 import type {
   SandboxContainer,
   SandboxContainers,
   SandboxPressure,
   SandboxProcess,
   SandboxProcessSignal,
-} from '@tau/shared'
+} from '@ficus/shared'
 
 export type BoxPressure = SandboxPressure
 export type BoxProcess = SandboxProcess

@@ -4,12 +4,14 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'bun:test'
 import { Hono } from 'hono'
+import { CORE_ROOT_PACKAGE_NAMES } from '@ficus/shared/identity'
 import { mountCoreDocs } from '../../lib/docs-serve'
 import { resolveCoreDocsDist } from '../../lib/web-dist'
 import {
   assembleCoreArtifact,
   defaultRun,
   formatTrailer,
+  GENERATED_ROOT_MARKER,
   type Run,
   type RunResult,
 } from '../../../../../scripts/artifact/lib/assemble-core-artifact'
@@ -343,11 +345,11 @@ describe('assembleCoreArtifact', () => {
     // Generated, NOT copied: the fixture checkout's own root package.json has
     // devDependencies and a real workspaces list.
     const marker = await readFile(join(tree, 'package.json'), 'utf8')
-    expect(marker.trim()).toBe('{"name":"tau","private":true,"workspaces":[]}')
+    expect(marker.trim()).toBe('{"name":"ficus","private":true,"workspaces":[]}')
 
     // apps/core/src/lib/web-dist.ts walks UP from the running bundle's
-    // directory looking for a package.json named "tau" (or carrying a
-    // workspaces array) and then expects <root>/apps/web/dist. Without the
+    // directory looking for a package.json named "ficus" or "tau" (or carrying
+    // a workspaces array) and then expects <root>/apps/web/dist. Without the
     // marker the search falls off the top of the tree and the API mounts no
     // web UI at all. This mirrors that walk.
     let dir = join(tree, 'apps/core/dist')
@@ -356,7 +358,7 @@ describe('assembleCoreArtifact', () => {
       const candidate = join(dir, 'package.json')
       if (await pathExists(candidate)) {
         const json = JSON.parse(await readFile(candidate, 'utf8'))
-        if (json.name === 'tau' || Array.isArray(json.workspaces)) found = dir
+        if (CORE_ROOT_PACKAGE_NAMES.includes(json.name) || Array.isArray(json.workspaces)) found = dir
       }
       const parent = dirname(dir)
       if (parent === dir) break
@@ -364,6 +366,16 @@ describe('assembleCoreArtifact', () => {
     }
     expect(found).toBe(tree)
     expect(await pathExists(join(found!, 'apps/web/dist/index.html'))).toBe(true)
+  })
+
+  it('marks the artifact as a Ficus release (the toolkit keys the env rename on it)', async () => {
+    const rootPackage = JSON.parse(await readFile(join(import.meta.dir, '../../../../../package.json'), 'utf8'))
+    expect(JSON.parse(GENERATED_ROOT_MARKER).name).toBe(rootPackage.name)
+    const { result } = await assemble()
+    const tree = await extract(result.tarballPath)
+    expect(JSON.parse(await readFile(join(tree, 'package.json'), 'utf8')).name).toBe('ficus')
+    expect(JSON.parse(await readFile(result.manifestPath, 'utf8')).envPrefix).toBe('FICUS')
+    expect(JSON.parse(await readFile(join(tree, 'artifact.json'), 'utf8')).envPrefix).toBe('FICUS')
   })
 
   it('drops node_modules/.bin directories, whose shims cannot survive materialization', async () => {

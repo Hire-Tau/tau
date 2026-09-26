@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import postcss from 'postcss'
-import { ACTIVE_THEME_TOKENS, validateThemeTokenSet } from '@tau/shared'
+import { ACTIVE_THEME_TOKENS, validateThemeTokenSet } from '@ficus/shared'
 import { palettes, resolveToken, contrastPairs, pairRatio, contrast, composite } from './test/builtins'
 
 test('contrast math uses sRGB luminance, fractional channels, and alpha compositing', () => {

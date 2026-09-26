@@ -2,7 +2,7 @@ import {
   PLATFORM_MAINTENANCE_HEADERS,
   PLATFORM_MAINTENANCE_PROTOCOL_VERSION,
   type PlatformMaintenanceCompatibilityContext,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { z } from 'zod'
 
 export type LegacyUpgradePolicy = 'observe' | 'enforce' | 'disabled'

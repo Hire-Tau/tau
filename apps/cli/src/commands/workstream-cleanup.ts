@@ -1,5 +1,5 @@
 import type { Command } from 'commander'
-import type { WorktreeCleanupInspection } from '@tau/shared'
+import type { WorktreeCleanupInspection } from '@ficus/shared'
 import { apiGet, apiPatch } from '../client'
 import { isJsonMode, output, outputError } from '../output'
 

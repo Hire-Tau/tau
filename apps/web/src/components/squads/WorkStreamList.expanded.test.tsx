@@ -1,7 +1,7 @@
 import { expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter, useLocation } from 'react-router-dom'
-import type { Squad, WorkStream } from '@tau/shared'
+import type { Squad, WorkStream } from '@ficus/shared'
 import { queries } from '../../queryOptions'
 import { acquireDomHarness } from '../../test/domHarness'
 import { SquadHomeTab } from './SquadHomeTab'

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { PLATFORM_MAINTENANCE_HEADERS } from '@tau/shared'
+import { PLATFORM_MAINTENANCE_HEADERS } from '@ficus/shared'
 import {
   decidePlatformMaintenanceCompatibility,
   legacyUpgradePolicy,

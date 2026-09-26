@@ -1,4 +1,4 @@
-import type { GitHubCommitSigningErrorCode, GitHubCommitSigningStatus } from '@tau/shared'
+import type { GitHubCommitSigningErrorCode, GitHubCommitSigningStatus } from '@ficus/shared'
 import { createLogger } from '../../../lib/infra/logger'
 import { generateSshSigningKey, signSshSig, sshKeyFingerprint } from './ssh-signature'
 import { parseGitSigningPayload } from './signing-payload'

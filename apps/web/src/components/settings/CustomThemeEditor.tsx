@@ -16,9 +16,9 @@ import {
   type ThemeInsightsVariant,
   type ThemePalette,
   type ThemePreset,
-} from '@tau/shared'
-import { isHttpResponseError } from '@tau/client-core'
-import { suggestPaletteSeeds } from '@tau/shared/theme-derivation'
+} from '@ficus/shared'
+import { isHttpResponseError } from '@ficus/client-core'
+import { suggestPaletteSeeds } from '@ficus/shared/theme-derivation'
 import type { useTheme } from '../../providers/ThemeProvider'
 import { useThemePreview } from '../../providers/ThemeProvider'
 import { usePermissions } from '../../hooks/usePermissions'

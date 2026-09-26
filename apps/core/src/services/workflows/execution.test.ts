@@ -12,7 +12,7 @@ import {
   workflowStepSchema,
   activeWorkflowAttempts,
   workflowReworkAttempt,
-} from '@tau/shared'
+} from '@ficus/shared'
 import {
   db,
   agents,
@@ -1254,7 +1254,7 @@ describe('attempt-scoped waits', () => {
     })
     expect(wait.flowAttemptId).toBe(security.id)
     const action = (await listPendingActions()).find((a) => 'waitId' in a.data && a.data.waitId === wait.id)!
-    expect((action.data as import('@tau/shared').WorkStreamActionData).assigneeAgentId).toBe(securityAgent)
+    expect((action.data as import('@ficus/shared').WorkStreamActionData).assigneeAgentId).toBe(securityAgent)
     expect(await admissionBlockingWaits(db, id)).toHaveLength(0)
     expect(await waitsForAgent(db, id, qaAgent)).toHaveLength(0)
     expect(await waitsForAgent(db, id, securityAgent)).toHaveLength(1)

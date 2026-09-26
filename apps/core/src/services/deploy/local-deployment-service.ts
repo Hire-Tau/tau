@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'crypto'
 import { and, desc, eq, inArray, isNull, ne } from 'drizzle-orm'
-import type { CreateLocalDeploymentInput, LocalDeployment, LocalDeploymentStatus } from '@tau/shared'
+import type { CreateLocalDeploymentInput, LocalDeployment, LocalDeploymentStatus } from '@ficus/shared'
 import { eventEmitter } from '../../lib/infra/event-emitter'
 import { db, localDeployments } from '../../db'
 import { AmbiguousPrefixError, uuidPrefixCondition } from '../../db/prefix-match'

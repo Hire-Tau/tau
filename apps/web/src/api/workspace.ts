@@ -4,10 +4,10 @@
  * API functions for the task workspace file browser and terminal sessions.
  */
 
-import type { LocalDeployment, SandboxPressure, SandboxProcesses, SandboxProcessSignal } from '@tau/shared'
+import type { LocalDeployment, SandboxPressure, SandboxProcesses, SandboxProcessSignal } from '@ficus/shared'
 import { apiFetch, apiUrl, authFetch } from './client'
 
-export type { LocalDeployment, LocalDeploymentStatus } from '@tau/shared'
+export type { LocalDeployment, LocalDeploymentStatus } from '@ficus/shared'
 
 export interface TreeNode {
   name: string

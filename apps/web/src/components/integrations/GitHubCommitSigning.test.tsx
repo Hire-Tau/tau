@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, waitFor } from '@testing-library/dom'
-import type { GitHubCommitSigningStatus } from '@tau/shared'
+import type { GitHubCommitSigningStatus } from '@ficus/shared'
 import { acquireDomHarness } from '../../test/domHarness'
 import { integrationQueryKeys } from '../../queryKeys'
 import { GitHubCommitSigning } from './GitHubCommitSigning'

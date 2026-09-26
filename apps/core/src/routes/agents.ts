@@ -1,6 +1,6 @@
-import { isUserAssistantAgentType } from '@tau/shared'
+import { isUserAssistantAgentType } from '@ficus/shared'
 import { listActiveSlotWaits } from '../services/slots/active-waits'
-import { chatPagePathSchema } from '@tau/shared'
+import { chatPagePathSchema } from '@ficus/shared'
 import { getModelCatalog } from '../services/model-selection/model-catalog'
 import { withChatQueueState } from '../services/chat/queued-messages'
 import { withDeviceStreamRevocation } from '../services/streaming/device-revocation'

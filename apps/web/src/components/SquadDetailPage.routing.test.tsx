@@ -2,7 +2,7 @@ import { afterEach, describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { acquireDomHarness } from '../test/domHarness'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
-import type { Agent, Squad, WorkStream } from '@tau/shared'
+import type { Agent, Squad, WorkStream } from '@ficus/shared'
 import { queryKeys } from '../queryKeys'
 
 import { SquadDetailPage } from './SquadDetailPage'

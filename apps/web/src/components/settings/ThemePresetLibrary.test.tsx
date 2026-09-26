@@ -2,7 +2,7 @@ import { afterEach, expect, spyOn, test } from 'bun:test'
 import { act } from 'react'
 import { fireEvent, getAllByRole, getByRole, queryByRole } from '@testing-library/dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import type { ThemePreset } from '@tau/shared'
+import type { ThemePreset } from '@ficus/shared'
 import { acquireDomHarness } from '../../test/domHarness'
 import { ThemeProvider, useTheme } from '../../providers/ThemeProvider'
 import { ThemePresetLibrary } from './ThemePresetLibrary'
@@ -289,7 +289,7 @@ test('a palette-only preset (no explicit overrides) still resolves a real swatch
   // ...and recognizably derived FROM the seed (#0ea5e9): a blue hue, not the
   // exact seed necessarily (a contrast pass may nudge lightness), but well
   // within the blue family, never a neutral/gray/other-hue washout.
-  const { srgbToOklch } = await import('@tau/shared/color-oklch')
+  const { srgbToOklch } = await import('@ficus/shared/color-oklch')
   const [r, g, b] = resolvedPrimary.split(/\s+/).map(Number)
   const oklch = srgbToOklch([r!, g!, b!])
   expect(oklch.h).toBeGreaterThan(200)

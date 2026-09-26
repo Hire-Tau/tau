@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { MemoryRouter } from 'react-router-dom'
 import { acquireDomHarness } from '../test/domHarness'
-import type { PendingAction } from '@tau/shared'
+import type { PendingAction } from '@ficus/shared'
 import { ActionItem } from './ActionItem'
 import { ActionCenterContent } from './ActionCenterContent'
 import { queryKeys } from '../queryKeys'
@@ -674,7 +674,7 @@ test('ActionItem keeps a review mutation pending until authoritative invalidatio
 
 test('a flow-owned wait opens its decision controls instead of exposing generic unblock', async () => {
   const flowAction = manualAction('flow-wait', 'Approve the design')
-  ;(flowAction.data as import('@tau/shared').WorkStreamActionData).wait.resolutionHandler = 'workflow'
+  ;(flowAction.data as import('@ficus/shared').WorkStreamActionData).wait.resolutionHandler = 'workflow'
   const dom = await acquireDomHarness({ url: 'http://localhost/' })
   const rendered = dom.createRoot()
   const cache = new QueryClient()

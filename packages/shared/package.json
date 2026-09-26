@@ -1,5 +1,5 @@
 {
-  "name": "@tau/shared",
+  "name": "@ficus/shared",
   "version": "0.0.1",
   "license": "AGPL-3.0-only",
   "type": "module",
@@ -40,7 +40,8 @@
     "./apns": "./src/apns.ts",
     "./push-relay": "./src/push-relay.ts",
     "./platform-usage": "./src/platform-usage.ts",
-    "./testDbUp": "./src/testDbUp.ts"
+    "./testDbUp": "./src/testDbUp.ts",
+    "./identity": "./src/identity.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

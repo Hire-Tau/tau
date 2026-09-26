@@ -1,7 +1,7 @@
 import { Command } from 'commander'
 import { outputError } from '../output'
 
-import { TAU_DISCORD_COMMANDS } from '@tau/shared/discord-commands'
+import { TAU_DISCORD_COMMANDS } from '@ficus/shared/discord-commands'
 
 // The command set is shared with the server, which registers it whenever a
 // Discord connection is saved; these CLI commands remain as diagnostics.

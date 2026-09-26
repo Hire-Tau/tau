@@ -1,4 +1,4 @@
-import { isWorkerAgentType } from '@tau/shared'
+import { isWorkerAgentType } from '@ficus/shared'
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { updateSquad } from '../../api/squads'

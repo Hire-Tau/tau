@@ -7,13 +7,13 @@ import {
   parseTrackedResourceReference,
   parseTrackedResourceUrl,
   trackedResourceLabel,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { addStructuredInputOptions, readWorkflowSource } from '../structured-input'
 import { registerWorkstreamFlowCommands, type WorkstreamFlowDependencies } from './workstream-flow'
 import { Command } from 'commander'
 import { apiGet, apiPost, apiPatch, apiDelete } from '../client'
 import { output, outputTable, outputError, isJsonMode, setOutputOptions } from '../output'
-import { WORK_STREAM_COMPLETION_MODES, WORK_STREAM_PRIORITIES } from '@tau/shared'
+import { WORK_STREAM_COMPLETION_MODES, WORK_STREAM_PRIORITIES } from '@ficus/shared'
 import { buildMetadataDelta, getMetadataValue, parseMetadataPath, parseMetadataValue } from '../metadata'
 import { selectOpenWait } from './workstream-wait-selection'
 import { describeAttention, performAttentionSubscribe, type SubscriptionResponse } from './attention'
@@ -28,7 +28,7 @@ import type {
   WorkStreamPriority,
   WorkStreamSourceLink,
   WorkStreamAgentSummary as WorkStreamSpawnedAgentSummary,
-} from '@tau/shared'
+} from '@ficus/shared'
 
 export interface WorkStream {
   number?: number

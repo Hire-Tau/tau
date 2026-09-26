@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent } from '@testing-library/dom'
-import type { GitHubRepositoryAccess as Access } from '@tau/shared'
+import type { GitHubRepositoryAccess as Access } from '@ficus/shared'
 import { acquireDomHarness } from '../../test/domHarness'
 import { integrationQueryKeys } from '../../queryKeys'
 import { palettes } from '../../theme/test/builtins'

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { expandTilde } from '@tau/shared/node'
+import { expandTilde } from '@ficus/shared/node'
 import { randomUUID } from 'crypto'
 import { mkdtempSync } from 'fs'
 import { Hono } from 'hono'

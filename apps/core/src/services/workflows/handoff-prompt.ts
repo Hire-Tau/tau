@@ -4,7 +4,7 @@ import {
   activeWorkflowAttempts,
   type WorkflowAttempt,
   type WorkflowRun,
-} from '@tau/shared'
+} from '@ficus/shared'
 import { flowCapabilityInstructions } from './capability-instructions'
 
 type HandoffStream = {

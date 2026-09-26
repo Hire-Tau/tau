@@ -1,4 +1,4 @@
-import type { ServerInfo } from '@tau/shared'
+import type { ServerInfo } from '@ficus/shared'
 /**
  * `tau whoami` — where this CLI is pointed and as whom.
  *

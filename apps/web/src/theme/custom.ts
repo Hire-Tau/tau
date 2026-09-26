@@ -1,10 +1,10 @@
-import { ACTIVE_THEME_TOKENS, type EffectiveAppearance, type StoredThemeSelection } from '@tau/shared/theme-schema'
+import { ACTIVE_THEME_TOKENS, type EffectiveAppearance, type StoredThemeSelection } from '@ficus/shared/theme-schema'
 import {
   CUSTOM_THEME_MAX_BYTES,
   compileCustomTheme,
   validateCustomTheme,
   type CustomThemeDocument,
-} from '@tau/shared/custom-theme'
+} from '@ficus/shared/custom-theme'
 import { applyResolvedTheme } from './apply'
 import { BUILTIN_CSS_FINGERPRINT } from './builtinFingerprint'
 import { fnv1a } from './fnv'
