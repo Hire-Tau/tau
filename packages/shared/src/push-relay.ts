@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 export const PUSH_RELAY_PROTOCOL = 1 as const
-export const PUSH_RELAY_BASE_URL = 'https://hiretau.ai'
+export const PUSH_RELAY_BASE_URL = 'https://ficus.sh'
 export const relayInstanceTokenPattern =
   /^tau_pri_([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})_[A-Za-z0-9_-]{43}$/
 export const relayBindingTokenSchema = z.string().regex(/^tau_prd_[A-Za-z0-9_-]{43}$/)

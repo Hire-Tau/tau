@@ -96,7 +96,7 @@ test('resolvePushRelayBaseUrl prefers TAU_PUSH_RELAY_URL, then TAU_PLATFORM_BASE
   expect(resolvePushRelayBaseUrl({ TAU_PLATFORM_BASE_URL: 'https://platform.example' })).toBe(
     'https://platform.example'
   )
-  expect(resolvePushRelayBaseUrl({})).toBe('https://hiretau.ai')
+  expect(resolvePushRelayBaseUrl({})).toBe('https://ficus.sh')
 })
 
 test('resolvePushRelayBaseUrl trims whitespace and a trailing slash', () => {
@@ -110,7 +110,7 @@ test('resolvePushRelayBaseUrl allows http only for localhost origins', () => {
 
   const warn = spyOn(console, 'warn').mockImplementation(() => {})
   try {
-    expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: 'http://relay.example' })).toBe('https://hiretau.ai')
+    expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: 'http://relay.example' })).toBe('https://ficus.sh')
   } finally {
     warn.mockRestore()
   }
@@ -125,13 +125,13 @@ test('resolvePushRelayBaseUrl rejects a path, query, fragment, or malformed valu
       'https://relay.example#frag',
       'not a url',
     ]) {
-      expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: bad })).toBe('https://hiretau.ai')
+      expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: bad })).toBe('https://ficus.sh')
     }
     expect(warn).toHaveBeenCalledTimes(4)
 
     warn.mockClear()
-    expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: 'https://relay.example/api' })).toBe('https://hiretau.ai')
-    expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: 'https://relay.example/api' })).toBe('https://hiretau.ai')
+    expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: 'https://relay.example/api' })).toBe('https://ficus.sh')
+    expect(resolvePushRelayBaseUrl({ TAU_PUSH_RELAY_URL: 'https://relay.example/api' })).toBe('https://ficus.sh')
     expect(warn).not.toHaveBeenCalled()
   } finally {
     warn.mockRestore()

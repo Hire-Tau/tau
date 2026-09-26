@@ -106,6 +106,13 @@ describe('CLI publish gate', () => {
     expect(strict.length).toBe(releaseStepIndexes.length)
   })
 
+  test('the CLI manifest and installer URLs point at the live control plane, not a redirecting host', () => {
+    const run = String(steps[indexOfStep('Collect release assets')]?.run ?? '')
+    expect(run).not.toContain('hiretau.ai')
+    expect(run).toContain('"baseUrl": "https://ficus.sh/cli"')
+    expect(JSON.stringify(workflow)).not.toContain('hiretau.ai')
+  })
+
   test('Collect release assets copies install.sh and setup.sh into the published set', () => {
     const run = String(steps[indexOfStep('Collect release assets')]?.run ?? '')
     expect(run).toContain('scripts/install.sh')
