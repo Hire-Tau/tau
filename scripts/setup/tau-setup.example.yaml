@@ -83,7 +83,7 @@ core:
   # Example:
   #   env:
   #     TAU_MAX_MACHINES: '10'
-  #     TAU_PLATFORM_INGEST_URL: https://ingest.hiretau.ai
+  #     TAU_PLATFORM_INGEST_URL: https://ingest.ficus.sh
   #     TAU_PLATFORM_USAGE_TOKEN_ENV: PLATFORM_USAGE_TOKEN
   env: {}
 
@@ -341,4 +341,4 @@ dns:
   provider: cloudflare
   # Zone that owns core.origin's host. provision.sh upserts an unproxied A
   # record: <host of core.origin> → <provisioned server's IP>.
-  zone: hiretau.ai
+  zone: ficus.sh

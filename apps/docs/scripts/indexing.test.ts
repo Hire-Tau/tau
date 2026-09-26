@@ -17,7 +17,7 @@ describe('hosted docs are indexable', () => {
   test('robots.txt allows everything and names the sitemap the site config produces', () => {
     expect(robots).toMatch(/^User-agent: \*\nAllow: \/\n/)
     expect(robots).not.toContain('Disallow')
-    expect(robots).toContain('Sitemap: https://docs.hiretau.ai/sitemap-index.xml')
-    expect(config).toContain("site: embedded ? undefined : 'https://docs.hiretau.ai'")
+    expect(robots).toContain('Sitemap: https://docs.ficus.sh/sitemap-index.xml')
+    expect(config).toContain("site: embedded ? undefined : 'https://docs.ficus.sh'")
   })
 })

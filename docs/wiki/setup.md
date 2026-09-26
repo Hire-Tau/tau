@@ -7,7 +7,7 @@ How to get a running Tau. Pick your path:
 | **Local install**       | Your laptop or a dev box — nothing → running tau in one command, no root              | [Local setup](#local-setup) below              |
 | **Production Linux VM** | A fresh Ubuntu 24.04 host you own (root + systemd), or a cloud VM provisioned for you | [Setup toolkit](../../scripts/setup/README.md) |
 | **Kubernetes**          | Multi-tenant cluster deployments                                                      | [K8s Deployment Guide](k8s/deployment.md)      |
-| **Hosted**              | Let us run it                                                                         | [hiretau.ai](https://hiretau.ai)               |
+| **Hosted**              | Let us run it                                                                         | [ficus.sh](https://ficus.sh)                   |
 
 Every path needs a sandbox runtime (`TAU_SANDBOX_RUNTIME`, required, no
 default) — [docs/wiki/sandbox-runtimes.md](sandbox-runtimes.md) compares them.
@@ -28,13 +28,13 @@ set yourself unless you pass the matching flag (see
 ### One command
 
 ```bash
-curl -fsSL https://hiretau.ai/cli/setup.sh | bash
+curl -fsSL https://ficus.sh/cli/setup.sh | bash
 ```
 
 Fully headless (no prompt at all):
 
 ```bash
-curl -fsSL https://hiretau.ai/cli/setup.sh | bash -s -- --runtime host --yes
+curl -fsSL https://ficus.sh/cli/setup.sh | bash -s -- --runtime host --yes
 ```
 
 Everything after `bash -s --` goes to `tau server install`. It consumes
@@ -48,7 +48,7 @@ What the one-liner does, in order:
    directory (both the one-liner and the CLI installer honour it). The install
    is skipped when `~/.tau/bin/tau` already exists **and**
    `TAU_SETUP_SKIP_CLI_INSTALL=1`; the installer URL comes from
-   `TAU_INSTALL_URL`, default `https://hiretau.ai/cli/install.sh`.
+   `TAU_INSTALL_URL`, default `https://ficus.sh/cli/install.sh`.
 2. Runs `tau server install`, which installs bun with the official installer if
    it is missing, then clones `https://github.com/ficushq/tau.git` into
    `~/.tau/tau` (`--root <dir>` to clone elsewhere; an existing checkout there
@@ -682,7 +682,7 @@ end-to-end proof.
 | `TAU_SANDBOX_RUNTIME must be one of …`                                              | The value is unset or an old spelling. Old spellings were removed, not aliased: `sysbox` → `docker-sysbox`, `socket` → `docker-socket`, `auto` / `docker` → choose `docker-sysbox` or `docker-socket` explicitly. Fix `.env`, then `tau server restart`.                                                                                |
 | `bun: command not found`                                                            | `curl -fsSL https://bun.sh/install \| bash`, then re-open the shell.                                                                                                                                                                                                                                                                    |
 | Preflight says bun is older than the pinned version                                 | `bun upgrade` (the pin is the checkout's `.bun-version`).                                                                                                                                                                                                                                                                               |
-| `This installer supports macOS or Linux (got win32)`                                | Windows runs through WSL 2: from PowerShell run `wsl --install -d Ubuntu-24.04`, reboot, then inside WSL run the installer (`curl -fsSL https://hiretau.ai/cli/setup.sh \| bash`).                                                                                                                                                      |
+| `This installer supports macOS or Linux (got win32)`                                | Windows runs through WSL 2: from PowerShell run `wsl --install -d Ubuntu-24.04`, reboot, then inside WSL run the installer (`curl -fsSL https://ficus.sh/cli/setup.sh \| bash`).                                                                                                                                                        |
 | Warning: `tmux is not installed — agents cannot run local deployments until it is`  | A `host`-runtime warning, not a failure: setup continues, but agents cannot run local deployments until tmux is installed (macOS: `brew install tmux`; Debian/Ubuntu: `sudo apt install tmux`).                                                                                                                                         |
 | `docker-sysbox requested but the sysbox runtime is not installed`                   | Run `tau server bootstrap-sysbox` (consent-gated automation; inside WSL enable systemd first — see [docs/wiki/sandbox-runtimes.md](sandbox-runtimes.md#installing-sysbox)), or choose `docker-socket`.                                                                                                                                  |
 | `k3d is required for the k3d runtime`                                               | `brew install k3d kubectl` (or see [k3d.io](https://k3d.io)), then re-run setup.                                                                                                                                                                                                                                                        |

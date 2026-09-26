@@ -128,7 +128,7 @@ deploy_web() {
 
   echo "=== Invalidate CloudFront ==="
   DIST_IDS=$(aws cloudfront list-distributions \
-    --query "DistributionList.Items[?contains(Comment, \`Tau web SPA — version $VERSION\`) || Comment==\`Tau splash page — hiretau.ai\`].Id" \
+    --query "DistributionList.Items[?contains(Comment, \`Tau web SPA — version $VERSION\`) || Comment==\`Tau splash page — ficus.sh\`].Id" \
     --output text)
 
   if [[ -z "$DIST_IDS" ]]; then

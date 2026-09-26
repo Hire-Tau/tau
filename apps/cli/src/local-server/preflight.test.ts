@@ -89,7 +89,7 @@ describe('runPreflight', () => {
     const failures = (await runPreflight(opts({}), d)).failures.join('\n')
     expect(failures).toMatch(/macOS or Linux/)
     expect(failures).toMatch(/wsl --install -d Ubuntu-24\.04/)
-    expect(failures).toMatch(/hiretau\.ai\/cli\/setup\.sh/)
+    expect(failures).toMatch(/ficus\.sh\/cli\/setup\.sh/)
   })
   it('requires docker for the compose database and skips it for an external one', async () => {
     const { d } = deps({ which: (c) => (c === 'docker' ? null : `/usr/bin/${c}`) })

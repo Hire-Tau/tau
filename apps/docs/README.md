@@ -1,6 +1,6 @@
 # Tau documentation
 
-Private user documentation for `docs.hiretau.ai`, built with Astro Starlight. The initial 21-page guide set covers Cloud and self-hosted setup, a first completed task, the Assistant, work, configuration, integrations, and maintenance.
+Private user documentation for `docs.ficus.sh`, built with Astro Starlight. The initial 21-page guide set covers Cloud and self-hosted setup, a first completed task, the Assistant, work, configuration, integrations, and maintenance.
 
 ## Local development
 
@@ -46,7 +46,7 @@ The sidebar lists the curated guide set explicitly in `astro.config.mjs`; avoid 
 
 ## Validation
 
-`bun run check:docs` runs Astro type/content checks, link-checker tests, a static build with Pagefind search, and the generated-site link check. The checker validates local routes, fragments and linked resources, including absolute links to `docs.hiretau.ai`. It does not make external requests or validate third-party sites.
+`bun run check:docs` runs Astro type/content checks, link-checker tests, a static build with Pagefind search, and the generated-site link check. The checker validates local routes, fragments and linked resources, including absolute links to `docs.ficus.sh`. It does not make external requests or validate third-party sites.
 
 The `Documentation` GitHub Actions workflow runs the same checks for relevant changes. It has read-only repository access and does not upload or deploy anything.
 

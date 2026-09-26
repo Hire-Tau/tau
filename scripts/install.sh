@@ -6,7 +6,7 @@ INSTALL_DIR="${TAU_INSTALL_DIR:-$HOME/.tau/bin}"
 SHARE_DIR="${TAU_SHARE_DIR:-$HOME/.tau/share}"
 BIN_NAME="tau"
 API_URL="${GITHUB_API_URL:-https://api.github.com}"
-DOWNLOAD_BASE_URL="${TAU_DOWNLOAD_BASE_URL:-https://hiretau.ai/cli}"
+DOWNLOAD_BASE_URL="${TAU_DOWNLOAD_BASE_URL:-https://ficus.sh/cli}"
 
 if [ -t 1 ] && [ "${NO_COLOR:-}" = "" ]; then
   ESC=$(printf '\033')

@@ -1,12 +1,12 @@
 #!/usr/bin/env sh
 # scripts/setup.sh — nothing → a running tau on this machine.
-#   curl -fsSL https://hiretau.ai/cli/setup.sh | bash
-#   curl -fsSL https://hiretau.ai/cli/setup.sh | bash -s -- --runtime host --yes
+#   curl -fsSL https://ficus.sh/cli/setup.sh | bash
+#   curl -fsSL https://ficus.sh/cli/setup.sh | bash -s -- --runtime host --yes
 # Installs the tau CLI (if missing), then hands off to `tau server install`,
 # which clones the source into ~/.tau/tau and runs the checkout's own setup.
 set -eu
 
-INSTALLER_URL="${TAU_INSTALL_URL:-https://hiretau.ai/cli/install.sh}"
+INSTALLER_URL="${TAU_INSTALL_URL:-https://ficus.sh/cli/install.sh}"
 TAU_BIN="${TAU_INSTALL_DIR:-$HOME/.tau/bin}/tau"
 
 err() { printf '\n✗ error: %s\n' "$*" >&2; exit 1; }

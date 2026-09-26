@@ -201,7 +201,7 @@ export async function runPreflight(opts: SetupOptions, deps: PreflightDeps): Pro
     failures.push(
       `This installer supports macOS or Linux (got ${deps.platform}). ` +
         `Windows runs through WSL 2: from PowerShell run \`wsl --install -d Ubuntu-24.04\`, reboot, then inside WSL: ` +
-        '`curl -fsSL https://hiretau.ai/cli/setup.sh | bash`. See docs/wiki/sandbox-runtimes.md.'
+        '`curl -fsSL https://ficus.sh/cli/setup.sh | bash`. See docs/wiki/sandbox-runtimes.md.'
     )
     return { failures, warnings }
   }

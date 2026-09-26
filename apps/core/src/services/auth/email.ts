@@ -175,7 +175,7 @@ export async function sendVerificationEmail(email: string, opts: { ttlMs?: numbe
     return code
   }
 
-  const fromAddress = process.env.SES_FROM_ADDRESS ?? 'noreply@hiretau.ai'
+  const fromAddress = process.env.SES_FROM_ADDRESS ?? 'noreply@ficus.sh'
   const command = new SendEmailCommand({
     Source: fromAddress,
     Destination: { ToAddresses: [email] },
@@ -499,7 +499,7 @@ export function buildPasskeyRecoveryMessage(link: string, instance: InstanceIden
 }
 
 async function sendMail(email: string, message: ReturnType<typeof buildInviteMessage>): Promise<void> {
-  const fromAddress = process.env.SES_FROM_ADDRESS ?? 'noreply@hiretau.ai'
+  const fromAddress = process.env.SES_FROM_ADDRESS ?? 'noreply@ficus.sh'
   await ses.send(
     new SendEmailCommand({
       Source: fromAddress,

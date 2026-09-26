@@ -6,18 +6,18 @@ Give a squad a goal. Its manager coordinates specialized agents, tracks work,
 and brings you in for decisions and review. Follow the conversation, steer a
 running agent, or let the squad continue while you're away.
 
-Run Tau on your own machine or server, or use [Tau Cloud](https://hiretau.ai).
+Run Tau on your own machine or server, or use [Tau Cloud](https://ficus.sh).
 Your squads can work across repositories, tools, and services from the web app
 or CLI.
 
-[Documentation](https://docs.hiretau.ai) · [Quick start](#quick-start) · [Self-hosting](docs/wiki/hosting.md) · [Contributing](CONTRIBUTING.md)
+[Documentation](https://docs.ficus.sh) · [Quick start](#quick-start) · [Self-hosting](docs/wiki/hosting.md) · [Contributing](CONTRIBUTING.md)
 
 ## Quick start
 
 Install and run Tau locally on macOS or Linux:
 
 ```bash
-curl -fsSL https://hiretau.ai/cli/setup.sh | bash
+curl -fsSL https://ficus.sh/cli/setup.sh | bash
 ```
 
 You'll need `curl` and `git`. Bun's installer needs `unzip` too; on Debian/Ubuntu with passwordless sudo the installer adds it for you, elsewhere install it first.
@@ -30,7 +30,7 @@ where agents should run, and starts your instance.
 
 See the [setup guide](docs/wiki/setup.md#local-setup) for requirements, runtime
 choices, headless installation, and troubleshooting. Prefer managed hosting?
-[Get started with Tau Cloud](https://hiretau.ai).
+[Get started with Tau Cloud](https://ficus.sh).
 
 <details>
 <summary>Other installation options</summary>
@@ -47,7 +47,7 @@ bun run setup
 **CLI only**, for an instance running elsewhere:
 
 ```bash
-curl -fsSL https://hiretau.ai/cli/install.sh | bash
+curl -fsSL https://ficus.sh/cli/install.sh | bash
 ```
 
 The CLI is installed to `~/.tau/bin`. See [CLI setup](docs/wiki/cli/README.md)
@@ -78,7 +78,7 @@ tau skill install tau --agent claude-code --global   # or --agent pi | codex
 - **Collaborate across people and instances.** Multi-user permissions control
   access; AMTP connects agents across Tau instances and other compatible nodes.
 
-Explore the [user guides](https://docs.hiretau.ai) or the
+Explore the [user guides](https://docs.ficus.sh) or the
 [technical documentation](docs/wiki/README.md) for the full feature set.
 
 ## Run it your way
@@ -87,7 +87,7 @@ Explore the [user guides](https://docs.hiretau.ai) or the
 | --------------- | ------------------------------------------------------------------------------------------------------------- |
 | **Local**       | Run on your computer and use the web app or CLI. [Local setup](docs/wiki/setup.md#local-setup)                |
 | **Self-hosted** | Deploy on your own infrastructure and choose where agent workloads run. [Hosting guide](docs/wiki/hosting.md) |
-| **Tau Cloud**   | Use managed hosting at [hiretau.ai](https://hiretau.ai).                                                      |
+| **Tau Cloud**   | Use managed hosting at [ficus.sh](https://ficus.sh).                                                          |
 
 This repository includes the server, worker, web app, CLI, sandbox runtimes,
 and shared client libraries. Instance documentation is also available at

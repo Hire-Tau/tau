@@ -66,7 +66,7 @@ describe('scripts/setup.sh', () => {
     const r = run(['--runtime', 'host', '--yes'])
     expect(r.exitCode).toBe(0)
     const lines = readFileSync(log, 'utf8').trim().split('\n')
-    expect(lines[0]).toBe('curl -fsSL https://hiretau.ai/cli/install.sh TAU_INSTALL_AUTH=0')
+    expect(lines[0]).toBe('curl -fsSL https://ficus.sh/cli/install.sh TAU_INSTALL_AUTH=0')
     expect(lines[1]).toBe('tau server install --runtime host --yes')
   })
   it('honours TAU_INSTALL_URL', () => {
