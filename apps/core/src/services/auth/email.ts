@@ -32,9 +32,9 @@ function hashCode(code: string): string {
 }
 
 interface InstanceIdentity {
-  /** Full public origin, e.g. https://demo.hiretau.ai — named ONCE in the body. */
+  /** Full public origin, e.g. https://demo.ficus.sh — named ONCE in the body. */
   url: string
-  /** Bare host, e.g. demo.hiretau.ai — the short label for the subject line. */
+  /** Bare host, e.g. demo.ficus.sh — the short label for the subject line. */
   host: string
 }
 
