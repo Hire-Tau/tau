@@ -443,7 +443,7 @@ OUT=$(bash -x "${RETARGET}" "${ARGS[@]}" --dry-run 2>&1) || RC=$?
 expect_eq 'bash -x --dry-run: exits zero' "${RC}" 0
 assert_no_secrets 'bash -x --dry-run' "${OUT}"
 RC=0
-OUT=$(SHELLOPTS=xtrace "${RETARGET}" "${ARGS[@]}" --dry-run 2>&1) || RC=$?
+OUT=$(env SHELLOPTS=xtrace "${RETARGET}" "${ARGS[@]}" --dry-run 2>&1) || RC=$?
 expect_eq 'SHELLOPTS=xtrace --dry-run: exits zero' "${RC}" 0
 assert_no_secrets 'SHELLOPTS=xtrace --dry-run' "${OUT}"
 
