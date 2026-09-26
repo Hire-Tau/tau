@@ -103,7 +103,8 @@
     "test:core:fifo-restart": "bun --config=./bunfig.fifo-restart.toml test ./apps/core/src/db/message-enqueue-order-restart.standalone.ts",
     "dev:docs": "bun run --filter @tau/docs dev",
     "build:docs": "bun run --filter @tau/docs build",
-    "check:docs": "bun run --filter @tau/docs check"
+    "check:docs": "bun run --filter @tau/docs check",
+    "brand:generate": "bun run scripts/brand/generate.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9",
