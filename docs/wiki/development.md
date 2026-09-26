@@ -115,7 +115,7 @@ To iterate on the local web UI against a paired remote instance, first add that
 instance to the CLI auth store, then select its label when starting Vite:
 
 ```bash
-tau auth login cloud --api-url https://your-instance.hiretau.ai
+tau auth login cloud --api-url https://your-instance.ficus.sh
 TAU_DEV_BACKEND=cloud bun run dev:web
 ```
 

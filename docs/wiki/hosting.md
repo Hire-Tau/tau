@@ -68,7 +68,7 @@ start without one of these five values.
 
 ## Managed hosting
 
-[Tau Cloud](https://hiretau.ai) provides managed instances. For your own deployment,
+[Tau Cloud](https://ficus.sh) provides managed instances. For your own deployment,
 use the setup toolkit and choose a sandbox runtime appropriate for your workload
 and isolation requirements.
 

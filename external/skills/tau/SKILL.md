@@ -22,7 +22,7 @@ stored auth backend for one command.
 ## Installing the CLI (if `tau` is missing)
 
 ```bash
-curl -fsSL https://hiretau.ai/cli/install.sh | bash
+curl -fsSL https://ficus.sh/cli/install.sh | bash
 export PATH="$HOME/.tau/bin:$PATH"   # add to the shell profile too
 tau --version                        # verify
 ```

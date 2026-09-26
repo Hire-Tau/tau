@@ -32,9 +32,9 @@ function hashCode(code: string): string {
 }
 
 interface InstanceIdentity {
-  /** Full public origin, e.g. https://demo.hiretau.ai — named ONCE in the body. */
+  /** Full public origin, e.g. https://demo.ficus.sh — named ONCE in the body. */
   url: string
-  /** Bare host, e.g. demo.hiretau.ai — the short label for the subject line. */
+  /** Bare host, e.g. demo.ficus.sh — the short label for the subject line. */
   host: string
 }
 
@@ -175,7 +175,7 @@ export async function sendVerificationEmail(email: string, opts: { ttlMs?: numbe
     return code
   }
 
-  const fromAddress = process.env.SES_FROM_ADDRESS ?? 'noreply@hiretau.ai'
+  const fromAddress = process.env.SES_FROM_ADDRESS ?? 'noreply@ficus.sh'
   const command = new SendEmailCommand({
     Source: fromAddress,
     Destination: { ToAddresses: [email] },
@@ -499,7 +499,7 @@ export function buildPasskeyRecoveryMessage(link: string, instance: InstanceIden
 }
 
 async function sendMail(email: string, message: ReturnType<typeof buildInviteMessage>): Promise<void> {
-  const fromAddress = process.env.SES_FROM_ADDRESS ?? 'noreply@hiretau.ai'
+  const fromAddress = process.env.SES_FROM_ADDRESS ?? 'noreply@ficus.sh'
   await ses.send(
     new SendEmailCommand({
       Source: fromAddress,

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { parse } from 'parse5'
 import type { DefaultTreeAdapterMap } from 'parse5'
 
-const origin = 'https://docs.hiretau.ai'
+const origin = 'https://docs.ficus.sh'
 type Node = DefaultTreeAdapterMap['node']
 
 async function filesUnder(directory: string): Promise<string[]> {

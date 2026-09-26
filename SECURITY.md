@@ -7,7 +7,7 @@ Please do not open a public issue for a security problem.
 - Preferred: use GitHub's private vulnerability reporting on this repository
   (Security → Report a vulnerability). It opens a private advisory thread
   with the maintainers.
-- Or email **contact@hiretau.ai** with "security" in the subject.
+- Or email **contact@ficus.sh** with "security" in the subject.
 
 Include what you found, how to reproduce it, and the version or commit you
 tested against. You will get an acknowledgement within three business days

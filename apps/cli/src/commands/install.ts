@@ -3,8 +3,8 @@ import { Command } from 'commander'
 import { buildInfo } from '../build-info'
 import { output, outputError } from '../output'
 
-const DEFAULT_INSTALLER_URL = 'https://hiretau.ai/cli/install.sh'
-const DEFAULT_MANIFEST_URL = 'https://hiretau.ai/cli/manifest.json'
+const DEFAULT_INSTALLER_URL = 'https://ficus.sh/cli/install.sh'
+const DEFAULT_MANIFEST_URL = 'https://ficus.sh/cli/manifest.json'
 
 interface InstallOptions {
   url?: string

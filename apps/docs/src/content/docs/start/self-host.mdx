@@ -41,7 +41,7 @@ For a first personal install, `host` has the fewest agent-runtime components. Re
 In your terminal, run:
 
 ```sh
-curl -fsSL https://hiretau.ai/cli/setup.sh | bash
+curl -fsSL https://ficus.sh/cli/setup.sh | bash
 ```
 
 Choose your runtime, review the printed plan, then confirm. Setup installs the Tau CLI, installs Bun if needed, and places the source checkout at `~/.tau/tau`. It creates configuration, starts PostgreSQL, builds Tau, prepares the selected runtime, and starts the API and worker processes.
@@ -51,7 +51,7 @@ The first database image download and builds can take several minutes. Keep the 
 For a noninteractive installation, supply the runtime explicitly:
 
 ```sh
-curl -fsSL https://hiretau.ai/cli/setup.sh | bash -s -- --runtime host --yes
+curl -fsSL https://ficus.sh/cli/setup.sh | bash -s -- --runtime host --yes
 ```
 
 `--yes` accepts the plan; it does not choose a runtime. To use another directory, put installer options before setup options:

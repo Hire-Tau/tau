@@ -27,7 +27,7 @@ made by the maintainers and are final.
 
 ## Reporting
 
-Email **contact@hiretau.ai**. Reports are handled privately and you will get
+Email **contact@ficus.sh**. Reports are handled privately and you will get
 a reply. If the report concerns a maintainer, say so and it will be handled
 by someone else.
 

@@ -12,7 +12,7 @@ export default defineConfig({
   // Core and platform builds may run concurrently in the monorepo.
   cacheDir: embedded ? './node_modules/.astro-embedded' : './node_modules/.astro',
   markdown: { processor: unified({ remarkPlugins: embedded ? [prefixDocsLinks] : [] }) },
-  site: embedded ? undefined : 'https://docs.hiretau.ai',
+  site: embedded ? undefined : 'https://docs.ficus.sh',
   output: 'static',
   trailingSlash: 'always',
   integrations: [
@@ -88,7 +88,7 @@ export default defineConfig({
           ],
         },
       ],
-      // The hosted site (docs.hiretau.ai) is public and indexable; the copy
+      // The hosted site (docs.ficus.sh) is public and indexable; the copy
       // embedded in each instance under /docs sits behind that instance's
       // sign-in and is kept out of search.
       head: embedded ? [{ tag: 'meta', attrs: { name: 'robots', content: 'noindex, nofollow' } }] : [],

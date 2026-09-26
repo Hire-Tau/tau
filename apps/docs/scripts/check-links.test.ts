@@ -20,7 +20,7 @@ test('checks relative and canonical links, encoded anchors, and local assets', a
   await fixture(async (root) => {
     await writeFile(
       join(root, 'index.html'),
-      '<a href="guide/#first%2Dtask">Guide</a><a href="https://docs.hiretau.ai/guide/?from=home#first-task">Canonical</a><img src="/logo.svg"><a href="https://example.com/remote/">External</a>'
+      '<a href="guide/#first%2Dtask">Guide</a><a href="https://docs.ficus.sh/guide/?from=home#first-task">Canonical</a><img src="/logo.svg"><a href="https://example.com/remote/">External</a>'
     )
     expect(await checkLinks(root)).toEqual([])
   })
@@ -52,7 +52,7 @@ test('checks resource links without treating the generated 404 canonical URL as 
   await fixture(async (root) => {
     await writeFile(
       join(root, '404.html'),
-      '<link rel="canonical" href="https://docs.hiretau.ai/404/"><link rel="icon" href="/logo.svg"><link rel="stylesheet" href="/missing.css">'
+      '<link rel="canonical" href="https://docs.ficus.sh/404/"><link rel="icon" href="/logo.svg"><link rel="stylesheet" href="/missing.css">'
     )
     expect(await checkLinks(root)).toEqual(['404.html: missing target /missing.css'])
   })
