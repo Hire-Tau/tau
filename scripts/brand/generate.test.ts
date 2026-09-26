@@ -20,6 +20,38 @@ function hex(color: string): [number, number, number] {
   return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff]
 }
 
+/**
+ * Scans every pixel of a rendered PNG and returns the farthest "content"
+ * pixel's distance from the canvas center, as a fraction of the canvas
+ * diameter (`2 * maxRadius / width`) — the same measure a circular OS mask
+ * or safe-zone spec cares about, computed straight from rendered pixels
+ * rather than from the generator's own placement math.
+ */
+async function measureRadialDiameterFraction(
+  path: string,
+  isContentPixel: (r: number, g: number, b: number, a: number) => boolean
+): Promise<number> {
+  const { data, info } = await sharp(path).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  const cx = info.width / 2
+  const cy = info.height / 2
+  let maxRadiusSq = 0
+  for (let y = 0; y < info.height; y++) {
+    for (let x = 0; x < info.width; x++) {
+      const idx = (y * info.width + x) * info.channels
+      const r = data[idx]
+      const g = data[idx + 1]
+      const b = data[idx + 2]
+      const a = data[idx + 3]
+      if (!isContentPixel(r, g, b, a)) continue
+      const dx = x + 0.5 - cx
+      const dy = y + 0.5 - cy
+      const distSq = dx * dx + dy * dy
+      if (distSq > maxRadiusSq) maxRadiusSq = distSq
+    }
+  }
+  return (2 * Math.sqrt(maxRadiusSq)) / info.width
+}
+
 let tmpDir: string
 
 beforeEach(() => {
@@ -135,44 +167,38 @@ describe('brand icon generator', () => {
     expect(sawOpaquePixel).toBe(true)
   })
 
-  describe('maskable icons keep the mark inside the central 60% safe zone', () => {
-    for (const rel of ['web/icon-maskable-192x192.png', 'web/icon-maskable-512x512.png']) {
-      it(rel, async () => {
-        const { data, info } = await sharp(join(OUT_DIR, rel)).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
-        const [lr, lg, lb] = hex(COLORS.linen)
+  describe('circular safe zones: content stays within the platform circle, measured radially from rendered pixels', () => {
+    it("mobile/adaptive-icon.png (Android foreground) stays under Android's 66.67% (72dp/108dp) safe-zone diameter", async () => {
+      const fraction = await measureRadialDiameterFraction(
+        join(OUT_DIR, 'mobile', 'adaptive-icon.png'),
+        (_r, _g, _b, a) => a > 0
+      )
+      const pixelMargin = 2 / 1024 // a couple of px of antialiasing bleed beyond the exact vector edge
+      // The real constraint is Android's hard limit; our own target (0.64)
+      // keeps a deliberate margin under it.
+      expect(fraction).toBeLessThan(72 / 108)
+      expect(fraction).toBeLessThanOrEqual(0.64 + pixelMargin)
+    })
+
+    const maskableCases = [
+      { rel: 'web/icon-maskable-192x192.png', background: COLORS.linen, size: 192 },
+      { rel: 'web/icon-maskable-512x512.png', background: COLORS.linen, size: 512 },
+      { rel: 'web/dark/icon-maskable-192x192.png', background: COLORS.soil, size: 192 },
+      { rel: 'web/dark/icon-maskable-512x512.png', background: COLORS.soil, size: 512 },
+    ] as const
+
+    for (const { rel, background, size } of maskableCases) {
+      it(`${rel} stays under the W3C 80% maskable safe-zone diameter`, async () => {
+        const [br, bg, bb] = hex(background)
         const threshold = 6
-
-        let minX = info.width
-        let minY = info.height
-        let maxX = -1
-        let maxY = -1
-        for (let y = 0; y < info.height; y++) {
-          for (let x = 0; x < info.width; x++) {
-            const idx = (y * info.width + x) * info.channels
-            const r = data[idx]
-            const g = data[idx + 1]
-            const b = data[idx + 2]
-            const isBackground =
-              Math.abs(r - lr) <= threshold && Math.abs(g - lg) <= threshold && Math.abs(b - lb) <= threshold
-            if (!isBackground) {
-              if (x < minX) minX = x
-              if (x > maxX) maxX = x
-              if (y < minY) minY = y
-              if (y > maxY) maxY = y
-            }
-          }
-        }
-
-        expect(maxX).toBeGreaterThan(minX)
-        const safeMin = info.width * 0.2
-        const safeMax = info.width * 0.8
-        // Allow a small antialiasing margin (a couple of px) outside the
-        // theoretical safe-zone edge.
-        const margin = 3
-        expect(minX).toBeGreaterThanOrEqual(safeMin - margin)
-        expect(maxX).toBeLessThanOrEqual(safeMax + margin)
-        expect(minY).toBeGreaterThanOrEqual(safeMin - margin)
-        expect(maxY).toBeLessThanOrEqual(safeMax + margin)
+        const fraction = await measureRadialDiameterFraction(
+          join(OUT_DIR, rel),
+          (r, g, b) =>
+            !(Math.abs(r - br) <= threshold && Math.abs(g - bg) <= threshold && Math.abs(b - bb) <= threshold)
+        )
+        const pixelMargin = 2 / size
+        expect(fraction).toBeLessThan(0.8)
+        expect(fraction).toBeLessThanOrEqual(0.76 + pixelMargin)
       })
     }
   })

@@ -54,14 +54,32 @@ const MARK_VIEWBOX_SIZE = 64
 // task report for the reasoning).
 const FILL = {
   webIcon: 0.7, // brief: "mark centered ~70% of the canvas"
-  webMaskable: 0.6, // brief: "within the central 60% safe zone"
   appleTouch: 1 - 2 * 0.12, // brief: "~12% padding" => 0.76
   desktopTile: 0.7, // chosen: same ratio as webIcon, applied to the tile
   mobileIcon: 0.7, // chosen: same ratio as webIcon (iOS full-bleed square)
-  mobileAdaptive: 0.66, // brief: "central 66% safe zone"
   mobileSplash: 0.6, // brief: "mark ~60%"
   mobileNotification: 0.7, // chosen: same ratio as webIcon
 } as const
+
+// For genuinely *circular* safe zones (an OS/spec crops or masks to a
+// circle, not just "somewhere inside a square"), a bbox-fraction fill isn't
+// the right measure: it bounds the mark's width/height, not its distance
+// from the centre, so an off-centre-heavy shape (like the mark, whose pot
+// sits well below its optical centre) can still poke outside a circular
+// mask even while comfortably within a square fill fraction. These targets
+// instead scale so the mark's measured maximum *radius* from its own centre
+// - as a fraction of the canvas diameter - stays under the platform's
+// circle, with a deliberate margin:
+const RADIAL_DIAMETER_FRACTION = {
+  // Android's adaptive-icon foreground safe zone is a 72dp circle inside a
+  // 108dp canvas (72/108 = 66.67%); keep a margin under it.
+  mobileAdaptive: 0.64,
+  // The W3C maskable-icon safe zone is an 80% circle; keep a margin under it.
+  webMaskable: 0.76,
+} as const
+
+const WEB_STANDARD_SIZES = [72, 96, 128, 144, 152, 192, 384, 512]
+const WEB_MASKABLE_SIZES = [192, 512]
 
 const DESKTOP_CANVAS = 1024
 const DESKTOP_TILE = 824
@@ -105,48 +123,87 @@ interface BBox {
   height: number
 }
 
+interface ContentMetrics extends BBox {
+  /**
+   * The farthest distance, in the mark's own 0..64 user-unit space, that any
+   * opaque pixel sits from the content's bbox center (`x + width/2`,
+   * `y + height/2`). Used to fit circular safe zones by true radial extent
+   * rather than by bbox width/height.
+   */
+  maxRadius: number
+}
+
 /**
- * Measures the visible content's bounding box of a mark SVG, in the mark's
- * own 0..64 user-unit space, by rasterizing at a calibration resolution and
- * trimming the transparent margin. This is computed from the source file
- * itself (not hardcoded) so the generator stays correct if the mark artwork
- * ever changes.
+ * Measures a mark SVG's visible content: its bounding box (via a calibration
+ * render + `sharp`'s `.trim()`) and the maximum radial distance any opaque
+ * pixel sits from that bbox's center (via a raw alpha-channel scan of the
+ * same render). Both are computed from the source file itself (not
+ * hardcoded) so the generator stays correct if the mark artwork ever
+ * changes.
  */
-async function measureContentBBox(svg: string): Promise<BBox> {
+async function measureContent(svg: string): Promise<ContentMetrics> {
   const calibrationSize = 2048
-  const rendered = await sharp(Buffer.from(svg), { density: (calibrationSize / MARK_VIEWBOX_SIZE) * 96 })
+  const pxPerUnit = calibrationSize / MARK_VIEWBOX_SIZE
+  const rendered = await sharp(Buffer.from(svg), { density: pxPerUnit * 96 })
     .resize(calibrationSize, calibrationSize)
     .png()
     .toBuffer()
-  const { info } = await sharp(rendered).trim().toBuffer({ resolveWithObject: true })
-  const pxPerUnit = calibrationSize / MARK_VIEWBOX_SIZE
-  const trimOffsetLeft = info.trimOffsetLeft ?? 0
-  const trimOffsetTop = info.trimOffsetTop ?? 0
-  return {
-    x: -trimOffsetLeft / pxPerUnit,
-    y: -trimOffsetTop / pxPerUnit,
-    width: info.width / pxPerUnit,
-    height: info.height / pxPerUnit,
+
+  const { info: trimInfo } = await sharp(rendered).trim().toBuffer({ resolveWithObject: true })
+  const bbox: BBox = {
+    x: -(trimInfo.trimOffsetLeft ?? 0) / pxPerUnit,
+    y: -(trimInfo.trimOffsetTop ?? 0) / pxPerUnit,
+    width: trimInfo.width / pxPerUnit,
+    height: trimInfo.height / pxPerUnit,
   }
+  const centerXPx = (bbox.x + bbox.width / 2) * pxPerUnit
+  const centerYPx = (bbox.y + bbox.height / 2) * pxPerUnit
+
+  const { data, info } = await sharp(rendered).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  let maxRadiusSqPx = 0
+  for (let y = 0; y < info.height; y++) {
+    const dy = y + 0.5 - centerYPx
+    const dySq = dy * dy
+    const rowOffset = y * info.width * info.channels
+    for (let x = 0; x < info.width; x++) {
+      const alpha = data[rowOffset + x * info.channels + 3]
+      if (alpha === 0) continue
+      const dx = x + 0.5 - centerXPx
+      const distSq = dx * dx + dySq
+      if (distSq > maxRadiusSqPx) maxRadiusSqPx = distSq
+    }
+  }
+
+  return { ...bbox, maxRadius: Math.sqrt(maxRadiusSqPx) / pxPerUnit }
 }
+
+type FillSpec =
+  | { fill: number; radial?: undefined }
+  | { fill?: undefined; radial: { maxRadius: number; diameterFraction: number } }
 
 /**
  * Builds a self-contained composite SVG: an optional background (full-canvas
  * or a centered rounded tile) plus the mark's inner markup, scaled and
- * centered so its content's longest dimension is `fill` of the effective
- * canvas (the tile, when one is given; otherwise the full canvas).
+ * centered on the content's bbox center. Either `fill` (the content's
+ * longest bbox dimension, as a fraction of the effective canvas) or
+ * `radial` (the content's measured max radius, scaled so its diameter is a
+ * given fraction of the canvas diameter — for circular safe zones) controls
+ * the scale.
  */
-function buildCompositeSVG(opts: {
-  size: number
-  markup: string
-  bbox: BBox
-  fill: number
-  background?: string
-  tile?: { size: number; cornerRadius: number }
-}): string {
-  const { size, markup, bbox, fill, background, tile } = opts
+function buildCompositeSVG(
+  opts: {
+    size: number
+    markup: string
+    bbox: BBox
+    background?: string
+    tile?: { size: number; cornerRadius: number }
+  } & FillSpec
+): string {
+  const { size, markup, bbox, background, tile, fill, radial } = opts
   const effectiveSize = tile?.size ?? size
-  const scale = (fill * effectiveSize) / Math.max(bbox.width, bbox.height)
+  const scale = radial
+    ? (radial.diameterFraction * effectiveSize) / (2 * radial.maxRadius)
+    : (fill * effectiveSize) / Math.max(bbox.width, bbox.height)
   const contentCenterX = bbox.x + bbox.width / 2
   const contentCenterY = bbox.y + bbox.height / 2
   const tx = size / 2 - contentCenterX * scale
@@ -173,6 +230,65 @@ async function renderPng(svg: string, outPath: string, opts: { removeAlpha?: boo
   await writeFile(outPath, buffer)
 }
 
+interface WebVariant {
+  /** Subdirectory of outDir, e.g. 'web' or 'web/dark'. */
+  dir: string
+  markMarkup: string
+  faviconMarkup: string
+  background: string
+}
+
+/**
+ * Renders the full "web" icon set (favicons, apple-touch-icon, the standard
+ * PWA icon-*.png sizes and the maskable icon-maskable-*.png sizes) for one
+ * variant (light-on-linen or dark-on-soil). Core web and Platform web share
+ * this exact set.
+ */
+async function generateWebIconSet(
+  outDir: string,
+  variant: WebVariant,
+  markMetrics: ContentMetrics,
+  favicon16BBox: BBox
+): Promise<void> {
+  const { dir, markMarkup, faviconMarkup, background } = variant
+
+  await renderPng(
+    buildCompositeSVG({ size: 16, markup: faviconMarkup, bbox: favicon16BBox, fill: 1, background }),
+    join(outDir, dir, 'favicon-16x16.png'),
+    { removeAlpha: true }
+  )
+  await renderPng(
+    buildCompositeSVG({ size: 32, markup: markMarkup, bbox: markMetrics, fill: FILL.webIcon, background }),
+    join(outDir, dir, 'favicon-32x32.png'),
+    { removeAlpha: true }
+  )
+  await renderPng(
+    buildCompositeSVG({ size: 180, markup: markMarkup, bbox: markMetrics, fill: FILL.appleTouch, background }),
+    join(outDir, dir, 'apple-touch-icon.png'),
+    { removeAlpha: true }
+  )
+  for (const size of WEB_STANDARD_SIZES) {
+    await renderPng(
+      buildCompositeSVG({ size, markup: markMarkup, bbox: markMetrics, fill: FILL.webIcon, background }),
+      join(outDir, dir, `icon-${size}x${size}.png`),
+      { removeAlpha: true }
+    )
+  }
+  for (const size of WEB_MASKABLE_SIZES) {
+    await renderPng(
+      buildCompositeSVG({
+        size,
+        markup: markMarkup,
+        bbox: markMetrics,
+        radial: { maxRadius: markMetrics.maxRadius, diameterFraction: RADIAL_DIAMETER_FRACTION.webMaskable },
+        background,
+      }),
+      join(outDir, dir, `icon-maskable-${size}x${size}.png`),
+      { removeAlpha: true }
+    )
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -194,55 +310,26 @@ export async function generate(outDir: string = OUT_DIR): Promise<void> {
   const favicon16Dark = toDark(favicon16Light)
   const markLightWhite = toWhiteSilhouette(markLight)
 
-  const [markBBox, favicon16BBox] = await Promise.all([
-    measureContentBBox(markLightSvg),
-    measureContentBBox(favicon16Svg),
-  ])
+  const [markMetrics, favicon16BBox] = await Promise.all([measureContent(markLightSvg), measureContent(favicon16Svg)])
   // ficus-mark.svg and ficus-mark-dark.svg share identical geometry (only
-  // colors differ), so the same bounding box applies to both.
+  // colors differ), so the same metrics apply to both.
 
-  const webStandardSizes = [72, 96, 128, 144, 152, 192, 384, 512]
-  const webMaskableSizes = [192, 512]
-
-  // --- web/ (Core web + Platform web share this set) -----------------------
+  // --- web/ + web/dark/ (Core web + Platform web share this set) -----------
 
   await writeFile(join(outDir, 'web', 'favicon.svg'), `${favicon16Svg.trim()}\n`)
 
-  await renderPng(
-    buildCompositeSVG({ size: 16, markup: favicon16Light, bbox: favicon16BBox, fill: 1, background: COLORS.linen }),
-    join(outDir, 'web', 'favicon-16x16.png'),
-    { removeAlpha: true }
+  await generateWebIconSet(
+    outDir,
+    { dir: 'web', markMarkup: markLight, faviconMarkup: favicon16Light, background: COLORS.linen },
+    markMetrics,
+    favicon16BBox
   )
-  await renderPng(
-    buildCompositeSVG({ size: 32, markup: markLight, bbox: markBBox, fill: FILL.webIcon, background: COLORS.linen }),
-    join(outDir, 'web', 'favicon-32x32.png'),
-    { removeAlpha: true }
+  await generateWebIconSet(
+    outDir,
+    { dir: 'web/dark', markMarkup: markDark, faviconMarkup: favicon16Dark, background: COLORS.soil },
+    markMetrics,
+    favicon16BBox
   )
-  await renderPng(
-    buildCompositeSVG({
-      size: 180,
-      markup: markLight,
-      bbox: markBBox,
-      fill: FILL.appleTouch,
-      background: COLORS.linen,
-    }),
-    join(outDir, 'web', 'apple-touch-icon.png'),
-    { removeAlpha: true }
-  )
-  for (const size of webStandardSizes) {
-    await renderPng(
-      buildCompositeSVG({ size, markup: markLight, bbox: markBBox, fill: FILL.webIcon, background: COLORS.linen }),
-      join(outDir, 'web', `icon-${size}x${size}.png`),
-      { removeAlpha: true }
-    )
-  }
-  for (const size of webMaskableSizes) {
-    await renderPng(
-      buildCompositeSVG({ size, markup: markLight, bbox: markBBox, fill: FILL.webMaskable, background: COLORS.linen }),
-      join(outDir, 'web', `icon-maskable-${size}x${size}.png`),
-      { removeAlpha: true }
-    )
-  }
 
   // Existing apps/web/public/icons/ also ships two manifest "shortcuts" icons
   // (shortcut-chat.png, shortcut-tasks.png, 96x96) that the brief's list
@@ -251,40 +338,14 @@ export async function generate(outDir: string = OUT_DIR): Promise<void> {
   // later swap is a straight copy.
   for (const name of ['shortcut-chat', 'shortcut-tasks']) {
     await renderPng(
-      buildCompositeSVG({ size: 96, markup: markLight, bbox: markBBox, fill: FILL.webIcon, background: COLORS.linen }),
+      buildCompositeSVG({
+        size: 96,
+        markup: markLight,
+        bbox: markMetrics,
+        fill: FILL.webIcon,
+        background: COLORS.linen,
+      }),
       join(outDir, 'web', `${name}.png`),
-      { removeAlpha: true }
-    )
-  }
-
-  // --- web/dark/ (same sizes, dark mark on soil, for future use) ----------
-
-  await renderPng(
-    buildCompositeSVG({ size: 16, markup: favicon16Dark, bbox: favicon16BBox, fill: 1, background: COLORS.soil }),
-    join(outDir, 'web', 'dark', 'favicon-16x16.png'),
-    { removeAlpha: true }
-  )
-  await renderPng(
-    buildCompositeSVG({ size: 32, markup: markDark, bbox: markBBox, fill: FILL.webIcon, background: COLORS.soil }),
-    join(outDir, 'web', 'dark', 'favicon-32x32.png'),
-    { removeAlpha: true }
-  )
-  await renderPng(
-    buildCompositeSVG({ size: 180, markup: markDark, bbox: markBBox, fill: FILL.appleTouch, background: COLORS.soil }),
-    join(outDir, 'web', 'dark', 'apple-touch-icon.png'),
-    { removeAlpha: true }
-  )
-  for (const size of webStandardSizes) {
-    await renderPng(
-      buildCompositeSVG({ size, markup: markDark, bbox: markBBox, fill: FILL.webIcon, background: COLORS.soil }),
-      join(outDir, 'web', 'dark', `icon-${size}x${size}.png`),
-      { removeAlpha: true }
-    )
-  }
-  for (const size of webMaskableSizes) {
-    await renderPng(
-      buildCompositeSVG({ size, markup: markDark, bbox: markBBox, fill: FILL.webMaskable, background: COLORS.soil }),
-      join(outDir, 'web', 'dark', `icon-maskable-${size}x${size}.png`),
       { removeAlpha: true }
     )
   }
@@ -295,7 +356,7 @@ export async function generate(outDir: string = OUT_DIR): Promise<void> {
     buildCompositeSVG({
       size: DESKTOP_CANVAS,
       markup: markLight,
-      bbox: markBBox,
+      bbox: markMetrics,
       fill: FILL.desktopTile,
       background: COLORS.linen,
       tile: { size: DESKTOP_TILE, cornerRadius: DESKTOP_CORNER_RADIUS },
@@ -306,7 +367,7 @@ export async function generate(outDir: string = OUT_DIR): Promise<void> {
     buildCompositeSVG({
       size: DESKTOP_CANVAS,
       markup: markDark,
-      bbox: markBBox,
+      bbox: markMetrics,
       fill: FILL.desktopTile,
       background: COLORS.soil,
       tile: { size: DESKTOP_TILE, cornerRadius: DESKTOP_CORNER_RADIUS },
@@ -320,7 +381,7 @@ export async function generate(outDir: string = OUT_DIR): Promise<void> {
     buildCompositeSVG({
       size: 1024,
       markup: markLight,
-      bbox: markBBox,
+      bbox: markMetrics,
       fill: FILL.mobileIcon,
       background: COLORS.linen,
     }),
@@ -328,7 +389,12 @@ export async function generate(outDir: string = OUT_DIR): Promise<void> {
     { removeAlpha: true }
   )
   await renderPng(
-    buildCompositeSVG({ size: 1024, markup: markLight, bbox: markBBox, fill: FILL.mobileAdaptive }),
+    buildCompositeSVG({
+      size: 1024,
+      markup: markLight,
+      bbox: markMetrics,
+      radial: { maxRadius: markMetrics.maxRadius, diameterFraction: RADIAL_DIAMETER_FRACTION.mobileAdaptive },
+    }),
     join(outDir, 'mobile', 'adaptive-icon.png')
   )
   await renderPng(
@@ -343,11 +409,11 @@ export async function generate(outDir: string = OUT_DIR): Promise<void> {
     { removeAlpha: true }
   )
   await renderPng(
-    buildCompositeSVG({ size: 1024, markup: markLight, bbox: markBBox, fill: FILL.mobileSplash }),
+    buildCompositeSVG({ size: 1024, markup: markLight, bbox: markMetrics, fill: FILL.mobileSplash }),
     join(outDir, 'mobile', 'splash-icon.png')
   )
   await renderPng(
-    buildCompositeSVG({ size: 96, markup: markLightWhite, bbox: markBBox, fill: FILL.mobileNotification }),
+    buildCompositeSVG({ size: 96, markup: markLightWhite, bbox: markMetrics, fill: FILL.mobileNotification }),
     join(outDir, 'mobile', 'notification-icon.png')
   )
 
