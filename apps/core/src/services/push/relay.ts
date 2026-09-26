@@ -1,5 +1,6 @@
 import { getSecretStore } from '../secrets'
 import { randomUUID } from 'node:crypto'
+import { createLogger } from '../../lib/infra/logger'
 import {
   PUSH_RELAY_BASE_URL,
   relayInstanceTokenPattern,
@@ -7,13 +8,61 @@ import {
   type RelayRouting,
 } from '@tau/shared/push-relay'
 
+const log = createLogger('push-relay')
+
+// Misconfiguration warnings are gated once per distinct bad value per process,
+// so a broken override warns on discovery but does not spam logs on every send.
+const warnedInvalidBaseUrl = new Set<string>()
+
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '[::1]'
+}
+
+/**
+ * Accept only an https origin (or http on localhost, for local dev) with no
+ * path, query, fragment, or embedded credentials. Returns the URL's origin,
+ * which trims any trailing slash. Anything else is rejected so a
+ * misconfigured value can never redirect push-relay traffic to another host.
+ */
+function validateRelayBaseUrl(candidate: string): string | null {
+  let url: URL
+  try {
+    url = new URL(candidate)
+  } catch {
+    return null
+  }
+  if (url.username || url.password || url.search || url.hash) return null
+  if (url.pathname !== '/' && url.pathname !== '') return null
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && isLoopbackHost(url.hostname))) return null
+  return url.origin
+}
+
+/**
+ * Resolve the push-relay origin: `TAU_PUSH_RELAY_URL` (Core-specific override)
+ * → `TAU_PLATFORM_BASE_URL` (the same fleet artifact the OAuth broker already
+ * reuses on hosted tenants) → the built-in default. Whichever candidate wins
+ * is validated; an invalid value is logged once and the built-in default is
+ * used rather than silently trying the next tier or an unverifiable origin.
+ */
+export function resolvePushRelayBaseUrl(env: NodeJS.ProcessEnv = process.env): string {
+  const candidate = env.TAU_PUSH_RELAY_URL?.trim() || env.TAU_PLATFORM_BASE_URL?.trim()
+  if (!candidate) return PUSH_RELAY_BASE_URL
+  const validated = validateRelayBaseUrl(candidate)
+  if (validated) return validated
+  if (!warnedInvalidBaseUrl.has(candidate)) {
+    warnedInvalidBaseUrl.add(candidate)
+    log.warn(`Ignoring invalid push-relay base URL '${candidate}'; falling back to the default relay`)
+  }
+  return PUSH_RELAY_BASE_URL
+}
+
 /** Runtime-only credential; never a Secret Store value or squad environment input. */
 export function pushRelayConfig(env?: NodeJS.ProcessEnv) {
   const token = (env ? env.TAU_PUSH_RELAY_TOKEN : getSecretStore().get('TAU_PUSH_RELAY_TOKEN'))?.trim()
   if (!token) return null
   const match = relayInstanceTokenPattern.exec(token)
   if (!match) throw new Error('TAU_PUSH_RELAY_TOKEN must be a push-only instance credential')
-  return { token, instanceId: match[1], baseUrl: PUSH_RELAY_BASE_URL }
+  return { token, instanceId: match[1], baseUrl: resolvePushRelayBaseUrl(env) }
 }
 
 export async function sendRelayAlert(
