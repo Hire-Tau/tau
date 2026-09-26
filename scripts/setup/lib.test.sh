@@ -5007,5 +5007,384 @@ expect_eq 'check_host_runtime_gh: missing gh does not fail the caller' \
   "$(check_host_runtime_gh host >/dev/null 2>&1 && echo ok || echo died)" 'ok'
 unset -f have
 
+# =============================================================================
+# Backup render extraction + retarget-backup.sh helpers
+# =============================================================================
+
+# --- render_backup_script_content: setup-host.sh's render is byte-identical --
+# The golden reference is a VERBATIM copy of setup-host.sh's
+# render_backup_script body from before the sed program moved into lib.sh.
+# setup-host.sh's CURRENT render_backup_script (a wrapper now) is lifted out
+# of the file and run with the same globals phase_backup sees; both must
+# produce the same bytes, for both database modes.
+RBS_TMP=$(mktemp -d)
+_legacy_render_backup_script() {
+  sed -e "s|@DEST@|${SRC_DEST}|g" \
+    -e "s|@HOME_DIR@|${BACKUP_HOME_DIR}|g" \
+    -e "s|@DB_MODE@|${DB_MODE}|g" \
+    -e "s|@DB_CONTAINER@|${DB_CONTAINER}|g" \
+    -e "s|@S3_ENDPOINT@|${BACKUP_S3_ENDPOINT}|g" \
+    -e "s|@S3_REGION@|${BACKUP_S3_REGION}|g" \
+    -e "s|@S3_BUCKET@|${BACKUP_S3_BUCKET}|g" \
+    -e "s|@S3_PREFIX@|${BACKUP_S3_PREFIX}|g" \
+    -e "s|@BACKUP_ENV_FILE@|${BACKUP_ENV_TARGET_LEGACY}|g" \
+    "${SCRIPT_DIR}/tau-backup.sh.tmpl"
+}
+for rbs_mode in container external; do
+  (
+    unset BACKUP_SCRIPT_PATH BACKUP_ENV_TARGET
+    source "${SCRIPT_DIR}/lib.sh"
+    SRC_DEST=/opt/tau-core BACKUP_HOME_DIR=/home/tau/.tau DB_MODE=${rbs_mode} DB_CONTAINER=tau-postgres
+    BACKUP_S3_ENDPOINT=https://nyc3.digitaloceanspaces.com BACKUP_S3_REGION=nyc3
+    BACKUP_S3_BUCKET=tau-backups BACKUP_S3_PREFIX=tenants/acct-1/acme
+    BACKUP_ENV_TARGET_LEGACY='/etc/tau/backup.env' # setup-host.sh's old literal
+    eval "$(sed -n '/^render_backup_script() {$/,/^}$/p' "${SCRIPT_DIR}/setup-host.sh")"
+    declare -F render_backup_script >/dev/null && : >"${RBS_TMP}/${rbs_mode}.found"
+    _legacy_render_backup_script >"${RBS_TMP}/${rbs_mode}.legacy"
+    render_backup_script >"${RBS_TMP}/${rbs_mode}.new"
+  )
+  expect_eq "setup-host.sh's render_backup_script is still defined (${rbs_mode})" \
+    "$([[ -e ${RBS_TMP}/${rbs_mode}.found ]] && echo yes || echo no)" 'yes'
+  expect_eq "setup-host.sh renders tau-backup.sh byte-identically after the extraction (${rbs_mode})" \
+    "$(cmp -s "${RBS_TMP}/${rbs_mode}.legacy" "${RBS_TMP}/${rbs_mode}.new" && echo same || echo differs)" 'same'
+  expect_eq "the extracted render is non-trivial (${rbs_mode}: no @TOKEN@ left, bucket substituted)" \
+    "$(grep -c '@[A-Z_]*@' "${RBS_TMP}/${rbs_mode}.new" || true) $(grep -c "^S3_BUCKET='tau-backups'\$" "${RBS_TMP}/${rbs_mode}.new")" '0 1'
+done
+expect_eq 'backup paths default to what setup-host.sh always used' \
+  "$(
+    unset BACKUP_SCRIPT_PATH BACKUP_ENV_TARGET
+    source "${SCRIPT_DIR}/lib.sh"
+    printf '%s %s' "${BACKUP_SCRIPT_PATH}" "${BACKUP_ENV_TARGET}"
+  )" '/usr/local/bin/tau-backup.sh /etc/tau/backup.env'
+expect_eq 'setup-host.sh no longer defines the backup paths itself (one definition, in lib.sh)' \
+  "$(grep -cE '^BACKUP_(SCRIPT_PATH|ENV_TARGET)=' "${SCRIPT_DIR}/setup-host.sh" || true)" '0'
+# phase_backup's backup.env render is unchanged (render_backup_env_content was
+# already in lib.sh and has its own golden test above): same call, same args.
+expect_eq "phase_backup still renders backup.env with the same call" \
+  "$(grep -cF 'render_backup_env_content real "${BACKUP_S3_ACCESS_KEY_VALUE}" "${BACKUP_S3_SECRET_KEY_VALUE}" "${BACKUP_PASSPHRASE_VALUE}"' "${SCRIPT_DIR}/setup-host.sh")" '1'
+expect_eq "phase_backup still installs backup.env 0600 root and tau-backup.sh 0755 root at the lib.sh paths" \
+  "$(grep -cF 'install_rendered 0600 root root "${BACKUP_ENV_TARGET}"' "${SCRIPT_DIR}/setup-host.sh") $(grep -cF 'install_rendered --check-placeholders 0755 root root "${BACKUP_SCRIPT_PATH}"' "${SCRIPT_DIR}/setup-host.sh")" '1 1'
+
+# setup-host.sh --dry-run with backups on still plans the same files.
+if yq_is_mikefarah; then
+  cat >"${RBS_TMP}/backup.yaml" <<'EOF'
+source:
+  mode: git-https
+  repo: https://github.com/ficushq/tau.git
+  ref: main
+core:
+  origin: https://acme.ficus.sh
+  env:
+    HOME_DIR: /home/tau/.tau
+database:
+  mode: external
+runtime:
+  sandbox: docker-socket
+secrets:
+  password_env: PLATFORM_TAU_PASSWORD
+backup:
+  enabled: true
+  s3_endpoint: https://nyc3.digitaloceanspaces.com
+  s3_region: nyc3
+  s3_bucket: tau-backups
+  s3_prefix: tenants/acct-1/acme
+EOF
+  rbs_dry=$(TAU_SETUP_DATABASE_DSN='postgres://u:p@h:5432/tau' TAU_BACKUP_S3_ACCESS_KEY='AKIADRYRUN123' \
+    TAU_BACKUP_S3_SECRET_KEY='dry-run-secret-value' TAU_BACKUP_PASSPHRASE='dry-run-passphrase' \
+    bash "${SCRIPT_DIR}/setup-host.sh" --config "${RBS_TMP}/backup.yaml" --dry-run 2>/dev/null) || true
+  expect_contains_line() { # DESCRIPTION CONTENT LINE
+    if grep -qxF -- "$3" <<<"$2"; then
+      PASS=$((PASS + 1))
+    else
+      FAIL=$((FAIL + 1))
+      log_error "FAIL: $1 — no line exactly '$3'"
+    fi
+  }
+  expect_contains_line 'setup-host --dry-run (backup on): plans the script render at the same path' "${rbs_dry}" \
+    '  render /usr/local/bin/tau-backup.sh from tau-backup.sh.tmpl (dest=/opt/tau-core, db.mode=external, s3=https://nyc3.digitaloceanspaces.com/tau-backups)'
+  expect_contains_line 'setup-host --dry-run (backup on): plans backup.env at the same path' "${rbs_dry}" \
+    '  write /etc/tau/backup.env (0600 root-owned; secrets redacted below):'
+  unset -f expect_contains_line
+else
+  log_warn "mikefarah yq not on PATH — skipping setup-host.sh backup dry-run test"
+fi
+rm -rf "${RBS_TMP}"
+
+# --- helper-injection harness ---------------------------------------------------
+# Each failure case runs a helper in BOTH contexts:
+#   plain      — `( set -e; setup; helper … )` as a bare statement (errexit live)
+#   suppressed — the same subshell as an `if` condition, where bash ignores
+#                errexit for everything inside it (the retarget scripts' shape)
+# HI_RC is the subshell's status; HI_OUT is what the subshell printed after
+# the helper returned (only reached when errexit did not abort it) — so the
+# suppressed context proves the helper RETURNS non-zero on its own, without
+# errexit's help.
+HI_OUT_FILE=$(mktemp)
+hi_invoke() { # CTX SETUP_FN CMD...
+  local ctx=$1 setup=$2
+  shift 2
+  # A ( … ) subshell, not $( … ): the suppression under test is the one a
+  # subshell used as an if-condition gets (bash 3.2 does not extend it into a
+  # command substitution the same way).
+  if [[ ${ctx} == plain ]]; then
+    set +e
+    (
+      set -e
+      "${setup}"
+      "$@" 2>/dev/null
+      printf 'returned=0'
+    ) >"${HI_OUT_FILE}"
+    HI_RC=$?
+    set -e
+  elif (
+    set -e
+    "${setup}"
+    "$@" 2>/dev/null
+    printf 'returned=%s' "$?"
+  ) >"${HI_OUT_FILE}"; then
+    HI_RC=0
+  else
+    HI_RC=$?
+  fi
+  HI_OUT=$(cat "${HI_OUT_FILE}")
+}
+hi_expect_failed() { # LABEL — the helper failed in HI's last context
+  expect_eq "$1: fails" "$([[ ${HI_RC} -ne 0 || ${HI_OUT} == *returned=[1-9]* ]] && echo failed || echo "succeeded (${HI_OUT})")" 'failed'
+}
+hi_none() { :; }
+
+# --- read_file_exact ------------------------------------------------------------
+RFE_TMP=$(mktemp -d)
+printf 'a\nb\n\n' >"${RFE_TMP}/nl"
+printf 'no-newline' >"${RFE_TMP}/nonl"
+: >"${RFE_TMP}/empty"
+printf 'caf\xc3\xa9 \xe2\x9c\x93\n' >"${RFE_TMP}/utf8"
+for rfe_f in nl nonl empty utf8; do
+  rfe_v='unset'
+  read_file_exact "${RFE_TMP}/${rfe_f}" rfe_v
+  expect_eq "read_file_exact: exact bytes (${rfe_f}), trailing newlines kept" \
+    "$(printf '%s' "${rfe_v}" | od -An -tx1 | tr -d ' \n')" "$(od -An -tx1 "${RFE_TMP}/${rfe_f}" | tr -d ' \n')"
+done
+# shellcheck disable=SC2030,SC2031 # the locale change is meant to stay inside each subshell
+for rfe_locale in C en_US.UTF-8 C.UTF-8; do
+  expect_eq "read_file_exact: a UTF-8 file is not mistaken for a short read (LC_ALL=${rfe_locale})" \
+    "$(
+      export LC_ALL=${rfe_locale}
+      read_file_exact "${RFE_TMP}/utf8" rfe_v 2>/dev/null && echo ok || echo refused
+    )" 'ok'
+done
+printf 'first\nsecond\nthird\n' >"${RFE_TMP}/f"
+printf 'A=1\0B=2\n' >"${RFE_TMP}/nul"
+RFE_FILE="${RFE_TMP}/f"
+rfe_short_read() { cat() { command head -n 1 "${RFE_FILE}"; return 0; }; }
+rfe_read_error() { cat() { command head -n 1 "${RFE_FILE}"; return 1; }; }
+rfe_case() { # LABEL SETUP FILE
+  local ctx
+  for ctx in plain suppressed; do
+    hi_invoke "${ctx}" "$2" rfe_check "$3"
+    hi_expect_failed "read_file_exact (${1}, ${ctx})"
+    [[ ${ctx} == suppressed ]] &&
+      expect_eq "read_file_exact (${1}, ${ctx}): leaves VAR untouched" "${HI_OUT}" 'VAR=untouched returned=1'
+  done
+}
+rfe_check() { # FILE — prints VAR after the call, then lets hi_invoke print the status
+  local VAR=untouched rc=0
+  read_file_exact "$1" VAR || rc=$?
+  printf 'VAR=%s ' "${VAR}"
+  return "${rc}"
+}
+rfe_case 'missing file' hi_none "${RFE_TMP}/nope"
+if [[ ${EUID} -eq 0 ]]; then
+  printf 'SKIP: read_file_exact unreadable-file injection (root ignores mode 000; covered by the unprivileged run)\n' >&2
+else
+  cp "${RFE_TMP}/f" "${RFE_TMP}/locked"
+  chmod 000 "${RFE_TMP}/locked"
+  rfe_case 'unreadable file' hi_none "${RFE_TMP}/locked"
+  chmod 600 "${RFE_TMP}/locked"
+fi
+rfe_case 'read returns only part of the file, exit 0' rfe_short_read "${RFE_TMP}/f"
+rfe_case 'read errors mid-file' rfe_read_error "${RFE_TMP}/f"
+rfe_case 'file contains a NUL byte' hi_none "${RFE_TMP}/nul"
+rm -rf "${RFE_TMP}"
+
+# --- stage_file_replacement --------------------------------------------------------
+SFR_TMP=$(mktemp -d)
+SFR_DEST="${SFR_TMP}/target.env"
+sfr_reset() {
+  printf 'OLD=1\n' >"${SFR_DEST}"
+  chmod 640 "${SFR_DEST}"
+}
+sfr_reset
+sfr_staged=''
+sfr_content="NEW='it'\\''s \$(x)'"$'\n\n'
+stage_file_replacement "${SFR_DEST}" "${sfr_content}" sfr_staged
+expect_eq 'stage_file_replacement: stages next to DEST (same directory, hidden name)' \
+  "$([[ $(dirname "${sfr_staged}") == "${SFR_TMP}" && $(basename "${sfr_staged}") == .target.env.?????? ]] && echo yes || echo "no: ${sfr_staged}")" 'yes'
+expect_eq 'stage_file_replacement: the staged file holds exactly CONTENT (trailing newlines too)' \
+  "$(od -An -tx1 "${sfr_staged}" | tr -d ' \n')" "$(printf '%s' "${sfr_content}" | od -An -tx1 | tr -d ' \n')"
+expect_eq "stage_file_replacement: the staged file carries DEST's mode and owner" \
+  "$(_file_mode_owner_group "${sfr_staged}")" "$(_file_mode_owner_group "${SFR_DEST}")"
+expect_eq 'stage_file_replacement: DEST itself is untouched' "$(cat "${SFR_DEST}")" 'OLD=1'
+rm -f "${sfr_staged}"
+sfr_mktemp_fails() { mktemp() { return 1; }; }
+sfr_write_fails() {
+  printf() {
+    [[ $# -eq 2 && $1 == '%s' ]] && return 1
+    # shellcheck disable=SC2059 # pass-through shim: forwards the caller's own format
+    builtin printf "$@"
+  }
+}
+sfr_chmod_fails() { chmod() { return 1; }; }
+sfr_chown_fails() { chown() { return 1; }; }
+sfr_check() { # DEST — prints VAR after the call
+  local VAR=untouched rc=0
+  stage_file_replacement "$1" 'NEW=2' VAR || rc=$?
+  builtin printf 'VAR=%s ' "${VAR}"
+  return "${rc}"
+}
+sfr_case() { # LABEL SETUP [DEST]
+  local ctx dest=${3:-${SFR_DEST}}
+  for ctx in plain suppressed; do
+    sfr_reset
+    hi_invoke "${ctx}" "$2" sfr_check "${dest}"
+    hi_expect_failed "stage_file_replacement (${1}, ${ctx})"
+    [[ ${ctx} == suppressed ]] &&
+      expect_eq "stage_file_replacement (${1}, ${ctx}): leaves VAR empty" "${HI_OUT}" 'VAR= returned=1'
+    expect_eq "stage_file_replacement (${1}, ${ctx}): DEST is byte-identical" "$(cat "${SFR_DEST}")" 'OLD=1'
+    expect_eq "stage_file_replacement (${1}, ${ctx}): no staged file is left behind" \
+      "$(find "${SFR_TMP}" -maxdepth 1 -name '.target.env.*' | wc -l | tr -d ' ')" '0'
+  done
+}
+sfr_case 'DEST missing' hi_none "${SFR_TMP}/nope.env"
+sfr_case 'mktemp fails' sfr_mktemp_fails
+sfr_case 'the staged write fails' sfr_write_fails
+sfr_case 'chmod fails' sfr_chmod_fails
+sfr_case 'chown fails' sfr_chown_fails
+rm -rf "${SFR_TMP}"
+
+# --- sh_single_unquote / sh_env_parse ------------------------------------------------
+for ssu_v in '' 'plain' "it's" "a'b'c" "''" ' spaced out ' '$(x) `y` "z" \ end' $'tab\there' 'AKIA/abc+def='; do
+  ssu_out='unset'
+  sh_single_unquote "$(sh_single_quote "${ssu_v}")" ssu_out
+  expect_eq "sh_single_unquote inverts sh_single_quote: $(printf '%q' "${ssu_v}")" "${ssu_out}" "${ssu_v}"
+done
+ssu_out='unset'
+sh_single_unquote 'DO00ABC/def+ghi=' ssu_out
+expect_eq 'sh_single_unquote: a bare shell-inert word reads as itself' "${ssu_out}" 'DO00ABC/def+ghi='
+# shellcheck disable=SC2016,SC2088 # literal shell syntax the parser must refuse
+for ssu_bad in '"dq"' '$HOME' "'unterminated" "bare'quoted'" 'two words' '`id`' '~/x' "'a'b"; do
+  ssu_out=untouched
+  ssu_rc=0
+  sh_single_unquote "${ssu_bad}" ssu_out || ssu_rc=$?
+  expect_eq "sh_single_unquote refuses $(printf '%q' "${ssu_bad}") (and leaves VAR alone)" "${ssu_rc}:${ssu_out}" '1:untouched'
+done
+
+sep_raw="# comment
+
+A='first'
+B=bare-word
+A='it'\\''s last'
+"
+sep_a='' sep_b='' sep_c=''
+sh_env_parse "${sep_raw}" 'test file' A:sep_a B:sep_b C:sep_c
+expect_eq 'sh_env_parse: last assignment wins, quotes decoded' "${sep_a}" "it's last"
+expect_eq 'sh_env_parse: bare value' "${sep_b}" 'bare-word'
+expect_eq 'sh_env_parse: an absent key reads as empty' "${sep_c}" ''
+sep_err=$(sh_env_parse "A='x'
+SNEAKY='hunter2-value'
+" 'test file' A:sep_a 2>&1) && sep_rc=0 || sep_rc=$?
+expect_eq 'sh_env_parse: an unexpected key fails' "${sep_rc}" '1'
+expect_match 'sh_env_parse: names the line of the unexpected key' "${sep_err}" 'test file line 2: unexpected key'
+expect_not_match 'sh_env_parse: never prints the unexpected key text (it may be secret bytes)' "${sep_err}" 'SNEAKY'
+# A passphrase spanning lines: its continuation looks like KEY=VALUE, and the
+# "key" is part of the secret — only the line number may be printed.
+sep_err=$(sh_env_parse "A='x'
+PASS='first half
+HUNTER2PART='second half'
+" 'test file' A:sep_a PASS:sep_b 2>&1) && sep_rc=0 || sep_rc=$?
+expect_eq 'sh_env_parse: a multi-line quoted value fails' "${sep_rc}" '1'
+expect_not_match 'sh_env_parse: a multi-line value leaks none of its continuation' "${sep_err}" 'HUNTER2PART|second half|first half'
+
+expect_not_match 'sh_env_parse: never prints the value' "${sep_err}" 'hunter2'
+sep_err=$(sh_env_parse "A=\"hunter2-value\"" 'test file' A:sep_a 2>&1) && sep_rc=0 || sep_rc=$?
+expect_eq 'sh_env_parse: a double-quoted (shell-evaluated) value fails' "${sep_rc}" '1'
+expect_not_match 'sh_env_parse: a bad value is not printed' "${sep_err}" 'hunter2'
+sep_err=$(sh_env_parse "export A='hunter2-value'" 'test file' A:sep_a 2>&1) && sep_rc=0 || sep_rc=$?
+expect_eq 'sh_env_parse: a non-assignment line fails' "${sep_rc}" '1'
+expect_not_match 'sh_env_parse: a bad line is not printed' "${sep_err}" 'hunter2'
+# Non-ASCII bytes (valid UTF-8, and an invalid lone 0xff) inside single
+# quotes are passed through byte-for-byte under LC_ALL=C — what
+# retarget-backup.sh runs with.
+sep_bytes=$'p\xc3\xa4ss \xe2\x9c\x93 \xff end'
+sep_bytes_raw="PASS=$(sh_single_quote "${sep_bytes}")"
+sep_b=''
+# shellcheck disable=SC2030,SC2031 # the locale change is meant to stay inside the subshell
+(
+  export LC_ALL=C
+  sh_env_parse "${sep_bytes_raw}" 'test file' PASS:sep_b &&
+    printf '%s' "${sep_b}" >"${HI_OUT_FILE}.bytes"
+) 2>/dev/null || true
+expect_eq 'sh_env_parse under LC_ALL=C: a non-ASCII single-quoted value round-trips byte-exactly' \
+  "$(od -An -tx1 "${HI_OUT_FILE}.bytes" 2>/dev/null | tr -d ' \n')" "$(printf '%s' "${sep_bytes}" | od -An -tx1 | tr -d ' \n')"
+rm -f "${HI_OUT_FILE}.bytes"
+# In a suppressed context it must still RETURN non-zero on its own.
+if sh_env_parse "BAD LINE" 'test file' A:sep_a 2>/dev/null; then sep_rc=0; else sep_rc=$?; fi
+expect_eq 'sh_env_parse: returns non-zero in an if-condition too' "${sep_rc}" '1'
+
+# --- s3_list_probe ---------------------------------------------------------------
+S3P_TMP=$(mktemp -d)
+s3p_run() { # STATUS|exit:N — runs the probe against a curl function; sets S3P_RC and S3P_ERR
+  S3P_RC=0
+  S3P_ERR=$(
+    curl() {
+      local a prev=''
+      builtin printf '%s\n' "$@" >"${S3P_TMP}/argv"
+      for a in "$@"; do
+        [[ ${prev} == --config ]] && command cat "${a}" >"${S3P_TMP}/config"
+        prev=${a}
+      done
+      [[ ${S3P_ANSWER} == exit:* ]] && return "${S3P_ANSWER#exit:}"
+      builtin printf '%s' "${S3P_ANSWER}"
+    }
+    s3_list_probe https://sfo3.example.com sfo3 ficus-backups tenants/a/b 'AKIA-ID' 'se"cr\et-VALUE' 2>&1
+  ) || S3P_RC=$?
+}
+S3P_ANSWER=200 s3p_run
+expect_eq 's3_list_probe: HTTP 200 passes' "${S3P_RC}" '0'
+expect_eq 's3_list_probe: one ListObjectsV2 of the bucket under the prefix, max-keys=1' \
+  "$(tail -n 1 "${S3P_TMP}/argv")" 'https://sfo3.example.com/ficus-backups?list-type=2&max-keys=1&prefix=tenants/a/b/'
+expect_eq 's3_list_probe: SigV4 for the given region' "$(grep -cxF 'aws:amz:sfo3:s3' "${S3P_TMP}/argv")" '1'
+expect_eq 's3_list_probe: the secret is not on argv' "$(grep -c 'VALUE' "${S3P_TMP}/argv" || true)" '0'
+expect_eq 's3_list_probe: credentials travel in the curl config, escaped' "$(cat "${S3P_TMP}/config")" 'user = "AKIA-ID:se\"cr\\et-VALUE"'
+S3P_ANSWER=403 s3p_run
+expect_eq 's3_list_probe: HTTP 403 fails' "${S3P_RC}" '1'
+expect_match 's3_list_probe: HTTP 403 names the status' "${S3P_ERR}" 'returned HTTP 403'
+expect_not_match 's3_list_probe: never prints the secret' "${S3P_ERR}" 'VALUE'
+S3P_ANSWER=exit:6 s3p_run
+expect_eq 's3_list_probe: a curl failure fails' "${S3P_RC}" '1'
+expect_match 's3_list_probe: a curl failure names the curl exit' "${S3P_ERR}" 'curl exit 6'
+# The REAL curl must accept the argv (a typo'd option would exit 2 before
+# connecting): against a closed local port it must get as far as connecting.
+if have curl; then
+  s3p_real=$(s3_list_probe https://127.0.0.1:9 us-east-1 b p 'AKIA' 'secret' 2>&1) && s3p_real_rc=0 || s3p_real_rc=$?
+  expect_eq 's3_list_probe (real curl): a closed port fails' "${s3p_real_rc}" '1'
+  expect_match 's3_list_probe (real curl): the argv is valid — it fails connecting (exit 7), not parsing (exit 2)' "${s3p_real}" 'curl exit 7'
+fi
+rm -rf "${S3P_TMP}"
+
+# --- backup_file ------------------------------------------------------------------
+BF_TMP=$(mktemp -d)
+printf 'secret\n' >"${BF_TMP}/x.env"
+chmod 600 "${BF_TMP}/x.env"
+bf_one=$(backup_file "${BF_TMP}/x.env" 2>/dev/null)
+bf_two=$(backup_file "${BF_TMP}/x.env" 2>/dev/null)
+expect_eq 'backup_file: prints a backup path next to the file' \
+  "$([[ ${bf_one} == "${BF_TMP}/x.env.bak-"* && -f ${bf_one} ]] && echo yes || echo no)" 'yes'
+expect_eq 'backup_file: two backups in the same second get distinct names' "$([[ ${bf_one} != "${bf_two}" ]] && echo yes || echo no)" 'yes'
+expect_eq 'backup_file: keeps the mode (a 0600 secret stays 0600)' "$(_file_mode_owner_group "${bf_one}" | cut -d' ' -f1)" '600'
+expect_eq 'backup_file: a missing file is a silent no-op' "$(backup_file "${BF_TMP}/nope" 2>/dev/null; echo "rc=$?")" 'rc=0'
+rm -rf "${BF_TMP}"
+rm -f "${HI_OUT_FILE}"
+
 printf '\n%d passed, %d failed\n' "${PASS}" "${FAIL}"
 [[ ${FAIL} -eq 0 ]]

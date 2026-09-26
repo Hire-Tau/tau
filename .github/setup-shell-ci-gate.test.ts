@@ -50,6 +50,20 @@ describe('setup helper CI gate', () => {
     expect(step).not.toContain('continue-on-error')
     expect(step).not.toContain('if:')
   })
+
+  test('runs the retarget-backup mutation-phase suite AS ROOT so its real run and failure injection execute, gated on its summary line', () => {
+    const start = workflow.indexOf('- name: Run retarget-backup mutation-phase suite (root)')
+    expect(start).toBeGreaterThan(-1)
+    const nextStep = workflow.indexOf('\n      - name:', start + 1)
+    const step = workflow.slice(start, nextStep === -1 ? undefined : nextStep)
+    expect(step).toContain('sudo env "PATH=$PATH" bash scripts/setup/retarget-backup.test.sh')
+    expect(step).toContain('passed, 0 failed') // summary-line gate
+    // retarget-backup.sh has no sudo fallback either, so a green summary alone
+    // cannot tell "executed" from "self-skipped again".
+    expect(step).toContain('TAU retarget-backup mutation-phase section: ENABLED')
+    expect(step).not.toContain('continue-on-error')
+    expect(step).not.toContain('if:')
+  })
 })
 
 describe('lib.test.sh root-install marker', () => {
@@ -99,6 +113,27 @@ describe('retarget-origin.test.sh mutation-phase marker', () => {
     // skip-and-exit-0 path prints the same-shaped line first, and checking
     // the first occurrence here would wrongly fail against that path.
     const summaryAt = retargetTest.lastIndexOf('passed, %d failed')
+    expect(summaryAt).toBeGreaterThan(markerAt)
+  })
+})
+
+describe('retarget-backup.test.sh mutation-phase marker', () => {
+  const backupTest = readFileSync(join(import.meta.dir, '../scripts/setup/retarget-backup.test.sh'), 'utf8')
+
+  // Same contract as retarget-origin's marker: emitted exactly once, only
+  // inside the real-root branch, and before the final summary line.
+  test('emits the exact token the root gate greps, only inside the real-root branch', () => {
+    const marker = "echo 'TAU retarget-backup mutation-phase section: ENABLED'"
+    expect(backupTest).toContain(marker)
+    expect(backupTest.split(marker).length - 1).toBe(1) // exactly once
+    const gate = backupTest.indexOf(
+      "if [[ ${EUID} -eq 0 ]]; then\n  echo 'TAU retarget-backup mutation-phase section: ENABLED'"
+    )
+    expect(gate).toBeGreaterThan(-1)
+    const markerAt = backupTest.indexOf(marker)
+    expect(markerAt).toBeGreaterThan(gate)
+    // LAST summary: the "yq missing" skip path prints the same-shaped line first.
+    const summaryAt = backupTest.lastIndexOf('passed, %d failed')
     expect(summaryAt).toBeGreaterThan(markerAt)
   })
 })

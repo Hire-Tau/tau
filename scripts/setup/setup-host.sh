@@ -602,20 +602,14 @@ EOF
 # They read SRC_DEST / RUN_USER / BUN_BIN / DB_MODE as caller globals, exactly
 # as this script's other lib.sh calls do.
 
-BACKUP_SCRIPT_PATH='/usr/local/bin/tau-backup.sh'
-BACKUP_ENV_TARGET='/etc/tau/backup.env'
-
+# BACKUP_SCRIPT_PATH / BACKUP_ENV_TARGET and the template render itself live
+# in lib.sh, shared with retarget-backup.sh (which re-renders a live host's
+# backup target without re-running this script).
 render_backup_script() {
-  sed -e "s|@DEST@|${SRC_DEST}|g" \
-    -e "s|@HOME_DIR@|${BACKUP_HOME_DIR}|g" \
-    -e "s|@DB_MODE@|${DB_MODE}|g" \
-    -e "s|@DB_CONTAINER@|${DB_CONTAINER}|g" \
-    -e "s|@S3_ENDPOINT@|${BACKUP_S3_ENDPOINT}|g" \
-    -e "s|@S3_REGION@|${BACKUP_S3_REGION}|g" \
-    -e "s|@S3_BUCKET@|${BACKUP_S3_BUCKET}|g" \
-    -e "s|@S3_PREFIX@|${BACKUP_S3_PREFIX}|g" \
-    -e "s|@BACKUP_ENV_FILE@|${BACKUP_ENV_TARGET}|g" \
-    "${SCRIPT_DIR}/tau-backup.sh.tmpl"
+  render_backup_script_content "${SCRIPT_DIR}/tau-backup.sh.tmpl" \
+    "${SRC_DEST}" "${BACKUP_HOME_DIR}" "${DB_MODE}" "${DB_CONTAINER}" \
+    "${BACKUP_S3_ENDPOINT}" "${BACKUP_S3_REGION}" "${BACKUP_S3_BUCKET}" "${BACKUP_S3_PREFIX}" \
+    "${BACKUP_ENV_TARGET}"
 }
 
 render_backup_unit() { # TEMPLATE_FILE
