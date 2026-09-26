@@ -33,21 +33,28 @@
 # the same cert bytes, and re-rendering the same Caddyfile are all no-ops on
 # a second run.
 #
-# FAILURE BEHAVIOR: steps 1-4 (backups, yaml rewrite, cert install) either
-# fully apply or die() before touching anything past that point. If step 5
-# (caddy re-render/reload) fails, the PREVIOUS origin certificate is
-# restored to the canonical Caddy TLS paths before this script dies — so a
-# failed run leaves the host serving ITS OWN (old) cert against whatever
-# Caddyfile caddy_write_and_reload's own internal rollback left live,
-# instead of the new cert with no matching live config. The yaml/.env
-# rewrites from steps 2 and 4 are NOT rolled back on a step-5 failure (they
-# are already-correct forward progress for a retry); the timestamped backups
-# from step 1 are there if an operator needs to revert them by hand. Step 6
-# (restart + health wait) failing after a successful caddy reload means the
-# new origin/cert/Caddyfile are live but tau-api/tau-worker are not
-# confirmed healthy — rerun this script (idempotent) or investigate the
-# units directly; nothing here rolls the cert back at that point since the
-# new Caddyfile is already the one Caddy is serving.
+# FAILURE BEHAVIOR, exact: steps 1 (backups) and 2 (yaml rewrite) either
+# fully apply or die() before touching anything past that point — nothing
+# to roll back yet. Steps 3 (cert install), 4 (.env rewrite) and 5 (caddy
+# re-render/reload) run as ONE unit: a failure ANYWHERE in that span (not
+# only the caddy step) restores the PREVIOUS origin cert/key to the
+# canonical Caddy TLS paths — backed up right before step 3 installed the
+# new pair — before this script dies. So a failed run in steps 3-5 leaves
+# the host serving ITS OWN (old) cert against whatever Caddyfile ends up
+# live (caddy_write_and_reload's own internal rollback restores its prior
+# Caddyfile bytes on a validate/reload failure specifically; an earlier
+# failure in step 3 or 4 leaves the previous, still-untouched Caddyfile
+# live), instead of the new cert against no matching config or a stale one.
+# The yaml rewrite (step 2) is NOT rolled back on a steps-3-5 failure — it
+# is already-correct forward progress for a retry — and the .env rewrite
+# (step 4) may be partial (some keys written, some not) depending on
+# exactly where in that span the failure landed; the timestamped backups
+# from step 1 are there if an operator needs to revert either by hand.
+# Step 6 (restart + health wait) failing after a successful caddy reload
+# means the new origin/cert/Caddyfile are live but tau-api/tau-worker are
+# not confirmed healthy — rerun this script (idempotent) or investigate the
+# units directly; nothing rolls the cert back at that point since the new
+# Caddyfile is already the one Caddy is serving.
 #
 # Run as root on the tenant VM (EUID 0 — sudo is not supported: see the
 # EUID check below), from the directory holding the copied toolkit (next to
@@ -249,7 +256,13 @@ backup_file() { # FILE
   local file=$1 ts dest
   [[ -f ${file} ]] || return 0
   ts=$(date -u '+%Y%m%dT%H%M%SZ')
-  dest="${file}.bak-${ts}"
+  # The XXXXXX suffix (via `mktemp -u` — a dry run, no file created by this
+  # call) makes the name unique even when two backups of the same file land
+  # in the same wall-clock SECOND (this timestamp has no finer resolution),
+  # e.g. a quick re-run right after a failure — without it, the second
+  # backup would silently overwrite the first, destroying the only copy of
+  # what was there before this run started.
+  dest=$(mktemp -u "${file}.bak-${ts}-XXXXXX") || die "backup_file: failed to compute a unique backup name for ${file}"
   cp -p "${file}" "${dest}"
   log_info "backed up ${file} -> ${dest}"
   printf '%s' "${dest}"
@@ -273,46 +286,61 @@ cfg_set '.ingress.tls_key_path' "${TLS_KEY}"
 [[ -n ${INGEST_URL} ]] && cfg_set '.core.env.TAU_PLATFORM_INGEST_URL' "${INGEST_URL}"
 log_info "wrote core.origin=${ORIGIN} ingress.tls_cert_path=${TLS_CERT} ingress.tls_key_path=${TLS_KEY}${DNS_ZONE:+ dns.zone=${DNS_ZONE}}${INGEST_URL:+ core.env.TAU_PLATFORM_INGEST_URL=${INGEST_URL}}"
 
-# ==================================================== 3. install the cert
+# ================================================ 3-5. cert, .env, caddy
 #
 # Back up whatever cert/key are CURRENTLY at the canonical paths before
-# overwriting them — if the caddy step below fails, these are what let this
-# script put the host back to serving its own (old) cert instead of the
-# new one against a rolled-back Caddyfile (see the FAILURE BEHAVIOR note at
-# the top of this file).
+# overwriting them — if ANYTHING from here through the caddy step fails,
+# this is what lets this script put the host back to serving its own (old)
+# cert instead of a new one that may not match whatever ends up live (see
+# the FAILURE BEHAVIOR note at the top of this file).
 
 log_step '3/6: install the origin certificate'
 PREV_CERT_BACKUP=$(backup_file "${CADDY_TLS_CERT_PATH}")
 PREV_KEY_BACKUP=$(backup_file "${CADDY_TLS_KEY_PATH}")
-install_origin_cert "${TLS_CERT}" "${TLS_KEY}"
 
-# ============================================================ 4. rewrite .env
+# Steps 3 (cert install), 4 (.env rewrite) and 5 (caddy re-render/reload) run
+# together in ONE subshell, guarded by ONE cert-restore-on-failure handler —
+# a failure anywhere in this span (not just the caddy step) leaves the
+# cert/key inconsistent with whatever ends up live, so all three are covered.
 #
-# Preserves every other line byte-for-byte — this is a targeted patch, not a
-# re-render: a re-render would need secrets (TAU_ENCRYPTION_KEY,
-# TAU_PASSWORD, ...) that are deliberately unavailable off-box on a hosted
-# tenant.
+# `set -euo pipefail` is restated as the FIRST thing INSIDE the subshell,
+# deliberately: bash suppresses errexit for the entire dynamic extent of
+# evaluating an `if`/`!`/`&&`/`||` condition — which is exactly what
+# `if ! ( ... ); then` is — and that suppression reaches into every function
+# called from inside the subshell too, INCLUDING lib.sh's own
+# caddy_write_and_reload. Its Caddyfile-backup line
+# (`[[ ${had_current} -eq 1 ]] && as_root cat "${CADDYFILE_PATH}" >"${backup}"`)
+# has no explicit `|| die` and relies on errexit alone — under the ambient
+# suppression, a failed backup `cat` would be silently ignored, leaving
+# `${backup}` a 0-byte file that a later failed reload would then "roll
+# back" to, taking Caddy down with an EMPTY config instead of the real prior
+# one. Restating `set -e` here, freshly, inside the subshell overrides that
+# suppression for everything the subshell runs — install_origin_cert,
+# envfile_set, and every line of caddy_write_and_reload alike.
+if ! (
+  set -euo pipefail
+  install_origin_cert "${TLS_CERT}" "${TLS_KEY}"
 
-log_step "4/6: rewrite ${ENV_FILE}"
-envfile_set "${ENV_FILE}" APP_URL "${ORIGIN}"
-envfile_set "${ENV_FILE}" TAU_WEB_ORIGIN "${ORIGIN}"
-[[ -n ${INGEST_URL} ]] && envfile_set "${ENV_FILE}" TAU_PLATFORM_INGEST_URL "${INGEST_URL}"
-log_info "wrote APP_URL=TAU_WEB_ORIGIN=${ORIGIN} to ${ENV_FILE}${INGEST_URL:+ (+ TAU_PLATFORM_INGEST_URL)}"
+  # ============================================================ 4. rewrite .env
+  #
+  # Preserves every other line byte-for-byte — this is a targeted patch, not
+  # a re-render: a re-render would need secrets (TAU_ENCRYPTION_KEY,
+  # TAU_PASSWORD, ...) that are deliberately unavailable off-box on a hosted
+  # tenant.
+  log_step "4/6: rewrite ${ENV_FILE}"
+  envfile_set "${ENV_FILE}" APP_URL "${ORIGIN}"
+  envfile_set "${ENV_FILE}" TAU_WEB_ORIGIN "${ORIGIN}"
+  [[ -n ${INGEST_URL} ]] && envfile_set "${ENV_FILE}" TAU_PLATFORM_INGEST_URL "${INGEST_URL}"
+  log_info "wrote APP_URL=TAU_WEB_ORIGIN=${ORIGIN} to ${ENV_FILE}${INGEST_URL:+ (+ TAU_PLATFORM_INGEST_URL)}"
 
-# ============================================================ 5. caddy
-
-log_step "5/6: re-render + reload caddy (host ${CADDY_HOST})"
-# Run in a subshell: caddy_write_and_reload die()s (exit 1) on a validation
-# or reload failure, and a bare `exit` inside a function called directly
-# would end this whole script before the certificate rollback below ever
-# ran. `( ... )` contains that exit to the subshell; every FILE it writes
-# (the real Caddyfile, via as_root) still lands for real — only the process
-# exit is scoped.
-if ! ( caddy_write_and_reload "$(render_caddyfile "${CADDY_HOST}" "${CORE_PORT}" "${CADDY_TLS_CERT_PATH}" "${CADDY_TLS_KEY_PATH}")" ); then
-  log_error "caddy re-render/reload failed — restoring the previous origin certificate (caddy_write_and_reload already restored its own prior Caddyfile bytes on this failure path, so the host keeps serving ITS OWN cert against ITS OWN prior config)"
+  # ============================================================ 5. caddy
+  log_step "5/6: re-render + reload caddy (host ${CADDY_HOST})"
+  caddy_write_and_reload "$(render_caddyfile "${CADDY_HOST}" "${CORE_PORT}" "${CADDY_TLS_CERT_PATH}" "${CADDY_TLS_KEY_PATH}")"
+); then
+  log_error "steps 3-5 failed — restoring the previous origin certificate (if the failure was caddy_write_and_reload's own validate/reload check, it already restored its own prior Caddyfile bytes on that path, so the host keeps serving ITS OWN cert against ITS OWN prior config)"
   [[ -n ${PREV_CERT_BACKUP} ]] && cp -p "${PREV_CERT_BACKUP}" "${CADDY_TLS_CERT_PATH}"
   [[ -n ${PREV_KEY_BACKUP} ]] && cp -p "${PREV_KEY_BACKUP}" "${CADDY_TLS_KEY_PATH}"
-  die "retarget-origin.sh: caddy step failed — origin certificate rolled back to its previous value. The yaml (step 2) and .env (step 4) rewrites are still in place (see ${CONFIG}.bak-*/${ENV_FILE}.bak-* from step 1 to revert those by hand); tau-api/tau-worker were NOT restarted."
+  die "retarget-origin.sh: steps 3-5 failed — origin certificate rolled back to its previous value. The yaml (step 2) rewrite is still in place (see ${CONFIG}.bak-* from step 1 to revert it by hand); the .env rewrite (step 4) may be partial or complete depending on where this failed (see ${ENV_FILE}.bak-*); tau-api/tau-worker were NOT restarted."
 fi
 
 # ============================================================ 6. restart

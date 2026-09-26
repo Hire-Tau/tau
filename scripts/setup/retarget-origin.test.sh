@@ -87,7 +87,13 @@ cat >"${SHIM_DIR}/id" <<'SHIM'
 if [[ $1 == -u && $2 == caddy ]]; then
   exit 0
 fi
-exec command -p id "$@"
+# NOT `exec command -p id "$@"`: `command` is a shell BUILTIN, not an
+# executable, and `exec` can only replace the process image with a real
+# program — it cannot exec a builtin at all. Hardcode the real binary's
+# path instead of a PATH-based lookup (`env id`/bare `id` would just find
+# THIS shim again, since it's ahead of the real id on PATH — infinite
+# recursion).
+exec /usr/bin/id "$@"
 SHIM
 
 cat >"${SHIM_DIR}/systemctl" <<SHIM
@@ -262,12 +268,37 @@ expect_eq 'missing --tls-key flag entirely: exits non-zero' \
 expect_eq '--help exits zero' "$(run_rc --help)" '0'
 expect_eq 'an unknown flag exits non-zero' "$(run_rc --config "${CONFIG}" --wat)" '1'
 
-# --- caddy/id preflight: exits non-zero when caddy is missing -----------------
-# Point PATH somewhere with none of our shims (only the bare system PATH) so
-# `have caddy` genuinely fails, proving the preflight actually runs before
-# any mutation rather than being silently satisfied by the shim.
-expect_eq 'no caddy on PATH: exits non-zero' \
-  "$(PATH=/usr/bin:/bin run_rc --config "${CONFIG}" --origin https://acme.ficus.sh --tls-cert "${CERT}" --tls-key "${KEY}" --dry-run)" '1'
+# --- caddy/id preflight: exits non-zero (naming the reason) when caddy is
+# missing ------------------------------------------------------------------
+# A naively narrowed PATH like /usr/bin:/bin is NOT enough: confirmed by
+# hand, a fresh ubuntu:24.04 image installs openssl/curl via apt to
+# /usr/local/bin, and this repo's own macOS dev setup has yq (Homebrew)
+# under /opt/homebrew/bin — either would make retarget-origin.sh die on an
+# unrelated "command not found" before ever reaching the caddy check, and
+# the exit code alone (1, identical to the real failure) would never reveal
+# it. And on THIS machine specifically, caddy itself is ALSO real and
+# installed (Homebrew, /opt/homebrew/bin) — disabling only our shim's
+# caddy would still find that real one. So: build a PATH that keeps every
+# directory needed for openssl/curl/yq/id/etc, MINUS every directory that
+# resolves an actual `caddy` executable (ours or a real one) — and assert
+# the actual failure MESSAGE, not just the exit code, so a die() for some
+# other missing command can never be mistaken for this one.
+path_without_caddy() {
+  local dir result=()
+  local -a dirs
+  IFS=':' read -ra dirs <<<"${PATH}"
+  for dir in "${dirs[@]}"; do
+    [[ -n ${dir} && -x "${dir}/caddy" ]] && continue
+    result+=("${dir}")
+  done
+  local IFS=':'
+  printf '%s' "${result[*]}"
+}
+NO_CADDY_PATH=$(path_without_caddy)
+no_caddy_rc=$(PATH="${NO_CADDY_PATH}" run_rc --config "${CONFIG}" --origin https://acme.ficus.sh --tls-cert "${CERT}" --tls-key "${KEY}" --dry-run)
+no_caddy_err=$(PATH="${NO_CADDY_PATH}" run_err --config "${CONFIG}" --origin https://acme.ficus.sh --tls-cert "${CERT}" --tls-key "${KEY}" --dry-run)
+expect_eq 'no caddy on PATH: exits non-zero' "${no_caddy_rc}" '1'
+expect_match 'no caddy on PATH: names the missing caddy ingress' "${no_caddy_err}" 'no caddy ingress to retarget'
 
 # =============================================================================
 # Mutation phase (steps 1-6), run TWICE, end to end — needs real root

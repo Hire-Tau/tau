@@ -741,11 +741,19 @@ cfg_env_forward_names() { # .dotted.path
 
 # Read KEY=VALUE from an env file (no interpolation; last assignment wins).
 envfile_get() { # FILE KEY
-  local file=$1 key=$2
+  local file=$1 key=$2 line last='' found=0
   [[ -f ${file} ]] || return 1
-  local line
-  line=$(grep -E "^${key}=" "${file}" | tail -n 1) || return 1
-  printf '%s' "${line#"${key}"=}"
+  while IFS= read -r line || [[ -n ${line} ]]; do
+    # KEY is quoted in the regex so a metacharacter in it is matched
+    # literally, not as regex syntax — same reasoning as envfile_set's
+    # quoted match (its write-side counterpart).
+    if [[ ${line} =~ ^"${key}"= ]]; then
+      last=${line#"${key}"=}
+      found=1
+    fi
+  done <"${file}"
+  [[ ${found} -eq 1 ]] || return 1
+  printf '%s' "${last}"
 }
 
 # Portable "MODE OWNER:GROUP" of FILE (GNU stat, then BSD/macOS stat) — used
@@ -785,24 +793,35 @@ envfile_set() { # FILE KEY VALUE
   owner_group=${mog#* }
   tmp=$(mktemp "${dir}/.$(basename -- "${file}").XXXXXX") ||
     die "envfile_set: failed to create a staging file next to ${file}"
-  while IFS= read -r line || [[ -n ${line} ]]; do
-    # KEY is quoted in the regex so a metacharacter in it (only ever a
-    # SCREAMING_SNAKE_CASE identifier in every real caller, but defense in
-    # depth costs nothing here) is matched literally, not as regex syntax.
-    if [[ ${line} =~ ^"${key}"= ]]; then
-      printf '%s=%s\n' "${key}" "${value}" >>"${tmp}"
-      found=1
-    else
-      printf '%s\n' "${line}" >>"${tmp}"
-    fi
-  done <"${file}"
-  [[ ${found} -eq 1 ]] || printf '%s=%s\n' "${key}" "${value}" >>"${tmp}"
-  chmod "${mode}" "${tmp}" 2>/dev/null || log_warn "envfile_set: could not chmod the staged replacement for ${file} to ${mode}"
-  chown "${owner_group}" "${tmp}" 2>/dev/null || log_warn "envfile_set: could not chown the staged replacement for ${file} to ${owner_group} (needs root)"
-  mv -f "${tmp}" "${file}" || {
+  # Everything from here through the final `mv` runs in a subshell under its
+  # OWN `set -e`, so the `if ! ( ... )` below catches ANY failure in that
+  # span — not just a failed `mv` — and removes the staged file either way.
+  # Without this, a failure that killed the surrounding script via ITS OWN
+  # errexit (e.g. a disk-full write mid-loop) before reaching an explicit
+  # `mv`-failure handler would leave ${tmp} behind, with live .env content
+  # in it, forever.
+  if ! (
+    set -euo pipefail
+    while IFS= read -r line || [[ -n ${line} ]]; do
+      # KEY is quoted in the regex so a metacharacter in it (only ever a
+      # SCREAMING_SNAKE_CASE identifier in every real caller, but defense
+      # in depth costs nothing here) is matched literally, not as regex
+      # syntax.
+      if [[ ${line} =~ ^"${key}"= ]]; then
+        printf '%s=%s\n' "${key}" "${value}" >>"${tmp}"
+        found=1
+      else
+        printf '%s\n' "${line}" >>"${tmp}"
+      fi
+    done <"${file}"
+    [[ ${found} -eq 1 ]] || printf '%s=%s\n' "${key}" "${value}" >>"${tmp}"
+    chmod "${mode}" "${tmp}" 2>/dev/null || log_warn "envfile_set: could not chmod the staged replacement for ${file} to ${mode}"
+    chown "${owner_group}" "${tmp}" 2>/dev/null || log_warn "envfile_set: could not chown the staged replacement for ${file} to ${owner_group} (needs root)"
+    mv -f "${tmp}" "${file}"
+  ); then
     rm -f "${tmp}"
-    die "envfile_set: failed to atomically replace ${file}"
-  }
+    die "envfile_set: failed to build or install the replacement for ${file}"
+  fi
 }
 
 # ------------------------------------------------------------------ origin/host
