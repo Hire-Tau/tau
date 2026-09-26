@@ -380,11 +380,15 @@ printf 'A=1\nSECRET=keep\nC=3\n' >"${tmp_env}"
 envfile_set_before=$(cat "${tmp_env}")
 envfile_set_inject_rc=0
 (
-  # Shadow the printf BUILTIN so envfile_set's checked write
-  # (`printf '%s' "${content}" >"${tmp}"`) fails — everything else in this
-  # subshell (mktemp, chmod, chown, mv, and die()'s own log_error) is
-  # unaffected by the FILE outcome we're checking, only by this call.
-  printf() { return 1; }
+  # Shadow the printf BUILTIN so ONLY envfile_set's checked staged write
+  # (`printf '%s' "${content}" >"${tmp}"` — the one two-argument '%s' call)
+  # fails; every other printf (the read's sentinel, die()'s log_error) runs
+  # the real builtin, so this reaches — and exercises — the write check.
+  printf() {
+    [[ $# -eq 2 && $1 == '%s' ]] && return 1
+    # shellcheck disable=SC2059 # pass-through shim: forwards the caller's own format
+    builtin printf "$@"
+  }
   envfile_set "${tmp_env}" A 9
 ) >/dev/null 2>&1 || envfile_set_inject_rc=$?
 expect_eq 'envfile_set failure injection: a failing write returns non-zero' "${envfile_set_inject_rc}" '1'
@@ -392,6 +396,114 @@ expect_eq 'envfile_set failure injection: the live .env is byte-identical to bef
   "$(cat "${tmp_env}")" "${envfile_set_before}"
 expect_eq 'envfile_set failure injection: no staged temp file is left behind' \
   "$(find "$(dirname "${tmp_env}")" -maxdepth 1 -name ".$(basename "${tmp_env}").??????" 2>/dev/null | wc -l | tr -d ' ')" '0'
+rm -f "${tmp_env}"
+
+# --- envfile_set: READ-SIDE FAILURE INJECTION ---------------------------------
+# A round-4 review found the input read (`while read …; done <FILE`) was
+# unchecked: inside retarget-origin.sh's errexit-suppressed span, a FILE that
+# could not be opened left the rebuilt content as just `KEY=value`, which was
+# then mv'd over the live .env with rc=0 — every other line (secrets
+# included) gone. Each case below runs envfile_set in BOTH contexts:
+#   plain      — `( set -e; envfile_set … )` as a bare statement (errexit live)
+#   suppressed — the same subshell as an `if` condition, where bash ignores
+#                errexit for everything inside it (retarget-origin.sh's shape)
+# and asserts: non-zero exit, the .env byte-identical (cmp, so trailing
+# newlines/NULs count), and no staging file left next to it.
+efs_setup_none() { :; }
+efs_setup_short_read_exit0() {
+  # A read that "succeeds" (exit 0) but returns only the first line — what a
+  # file truncated mid-read looks like to the reader.
+  cat() {
+    local a
+    for a in "$@"; do
+      [[ ${a} == "${EFS_FILE}" ]] && {
+        command head -n 1 "${a}"
+        return 0
+      }
+    done
+    command cat "$@"
+  }
+}
+efs_setup_read_error_midfile() {
+  # A read that errors partway: first line delivered, then a non-zero exit.
+  cat() {
+    local a
+    for a in "$@"; do
+      [[ ${a} == "${EFS_FILE}" ]] && {
+        command head -n 1 "${a}"
+        return 1
+      }
+    done
+    command cat "$@"
+  }
+}
+efs_invoke() { # CONTEXT SETUP_FN — runs envfile_set "${EFS_FILE}" A 9; sets EFS_RC
+  EFS_RC=0
+  if [[ $1 == plain ]]; then
+    set +e
+    (
+      set -e
+      "$2"
+      envfile_set "${EFS_FILE}" A 9
+    ) >/dev/null 2>&1
+    EFS_RC=$?
+    set -e
+  elif (
+    set -e
+    "$2"
+    envfile_set "${EFS_FILE}" A 9
+  ) >/dev/null 2>&1; then
+    EFS_RC=0
+  else
+    EFS_RC=$?
+  fi
+}
+efs_case() { # LABEL SETUP_FN CONTENT_PRINTF_FORMAT [chmod-000]
+  local ctx dir
+  for ctx in plain suppressed; do
+    dir=$(mktemp -d)
+    EFS_FILE="${dir}/.env"
+    # shellcheck disable=SC2059 # the format IS the fixture (may carry \0)
+    printf "$3" >"${EFS_FILE}"
+    cp -p "${EFS_FILE}" "${dir}/pristine"
+    [[ ${4:-} == chmod-000 ]] && chmod 000 "${EFS_FILE}"
+    efs_invoke "${ctx}" "$2"
+    chmod 600 "${EFS_FILE}"
+    expect_eq "envfile_set read injection (${1}, ${ctx}): returns non-zero" \
+      "$([[ ${EFS_RC} -ne 0 ]] && echo nonzero || echo "zero")" 'nonzero'
+    expect_eq "envfile_set read injection (${1}, ${ctx}): the live .env is byte-identical" \
+      "$(cmp -s "${EFS_FILE}" "${dir}/pristine" && echo same || echo differs)" 'same'
+    expect_eq "envfile_set read injection (${1}, ${ctx}): no staging file is left behind" \
+      "$(find "${dir}" -maxdepth 1 -name '..env.??????' | wc -l | tr -d ' ')" '0'
+    rm -rf "${dir}"
+  done
+}
+EFS_FIXTURE='A=1\nSECRET=keep\nC=3\n'
+if [[ ${EUID} -eq 0 ]]; then
+  # Root reads a mode-000 file regardless, so the file cannot be made
+  # unreadable here; CI's unprivileged lib.test.sh run executes this case.
+  printf 'SKIP: envfile_set unreadable-.env injection (root ignores mode 000; covered by the unprivileged run)\n' >&2
+else
+  efs_case 'unreadable .env' efs_setup_none "${EFS_FIXTURE}" chmod-000
+fi
+efs_case 'read returns only part of the file, exit 0' efs_setup_short_read_exit0 "${EFS_FIXTURE}"
+efs_case 'read errors mid-file' efs_setup_read_error_midfile "${EFS_FIXTURE}"
+efs_case 'file contains a NUL byte the shell cannot hold' efs_setup_none 'A=1\nSEC\0RET=keep\nC=3\n'
+
+# The byte-count check must count BYTES: a multi-byte UTF-8 value must not
+# look like a short read, in either the C locale or a UTF-8 one.
+tmp_env=$(mktemp)
+printf 'A=1\nNAME=caf\xc3\xa9 \xe2\x9c\x93\nC=3\n' >"${tmp_env}"
+for efs_locale in C en_US.UTF-8 C.UTF-8; do
+  (
+    export LC_ALL=${efs_locale}
+    envfile_set "${tmp_env}" A 2
+  ) 2>/dev/null || true
+  expect_eq "envfile_set: a UTF-8 value is not mistaken for a short read (LC_ALL=${efs_locale})" \
+    "$(od -An -tx1 "${tmp_env}" | tr -d ' \n')" \
+    "$(printf 'A=2\nNAME=caf\xc3\xa9 \xe2\x9c\x93\nC=3\n' | od -An -tx1 | tr -d ' \n')"
+  printf 'A=1\nNAME=caf\xc3\xa9 \xe2\x9c\x93\nC=3\n' >"${tmp_env}"
+done
 rm -f "${tmp_env}"
 
 # --- caddy_write_and_reload: FAILURE INJECTION --------------------------------
@@ -411,6 +523,23 @@ cwr_inject_rc=0
   as_root() { "$@"; }
   caddy() { return 0; } # caddy validate always "passes" in this test
   systemctl() { return 0; }
+  # Drop -o/-g so caddy_install_atomically's `install -o root -g root`
+  # SUCCEEDS unprivileged too — otherwise an unprivileged run would die
+  # there (can't chown to root) and pass even without the backup-write
+  # check this test is about.
+  install() {
+    local a=()
+    while [[ $# -gt 0 ]]; do
+      case $1 in
+        -o | -g) shift 2 ;;
+        *)
+          a+=("$1")
+          shift
+          ;;
+      esac
+    done
+    command install "${a[@]}"
+  }
   cat() {
     # Fail only reads/backups of CWR_CADDYFILE — never `cat` in general.
     for a in "$@"; do [[ ${a} == "${CWR_CADDYFILE}" ]] && return 1; done
@@ -420,6 +549,47 @@ cwr_inject_rc=0
 ) >/dev/null 2>&1 || cwr_inject_rc=$?
 expect_eq 'caddy_write_and_reload failure injection: a failing backup write dies (non-zero)' "${cwr_inject_rc}" '1'
 expect_eq 'caddy_write_and_reload failure injection: the live Caddyfile is completely untouched' \
+  "$(cat "${CWR_CADDYFILE}")" "${cwr_before}"
+rm -rf "${cwr_tmp}"
+
+# A failed STAGED write must die before anything is installed — with
+# `caddy validate` mocked to always pass, so the write check itself (not
+# validate as a backstop) is what is under test. Same -o/-g-dropping
+# install shim as above, so an unprivileged run cannot pass by dying at
+# the install instead.
+cwr_tmp=$(mktemp -d)
+CWR_CADDYFILE="${cwr_tmp}/Caddyfile"
+printf 'old-content\n' >"${CWR_CADDYFILE}"
+cwr_before=$(cat "${CWR_CADDYFILE}")
+cwr_inject_rc=0
+(
+  CADDYFILE_PATH="${CWR_CADDYFILE}"
+  as_root() { "$@"; }
+  caddy() { return 0; }
+  systemctl() { return 0; }
+  install() {
+    local a=()
+    while [[ $# -gt 0 ]]; do
+      case $1 in
+        -o | -g) shift 2 ;;
+        *)
+          a+=("$1")
+          shift
+          ;;
+      esac
+    done
+    command install "${a[@]}"
+  }
+  # Fail only the staged write (`printf '%s' "${rendered}" >"${staged}"`).
+  printf() {
+    [[ $# -eq 2 && $1 == '%s' && $2 == 'new-content' ]] && return 1
+    # shellcheck disable=SC2059 # pass-through shim: forwards the caller's own format
+    builtin printf "$@"
+  }
+  caddy_write_and_reload 'new-content'
+) >/dev/null 2>&1 || cwr_inject_rc=$?
+expect_eq 'caddy_write_and_reload failure injection: a failing staged write dies (non-zero)' "${cwr_inject_rc}" '1'
+expect_eq 'caddy_write_and_reload failure injection: a failing staged write leaves the live Caddyfile untouched' \
   "$(cat "${CWR_CADDYFILE}")" "${cwr_before}"
 rm -rf "${cwr_tmp}"
 

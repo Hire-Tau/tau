@@ -785,40 +785,85 @@ _file_mode_owner_group() { # FILE
 # half-written .env), copy FILE's mode/owner onto it, then `mv -f` it over
 # FILE in one syscall.
 envfile_set() { # FILE KEY VALUE
-  local file=$1 key=$2 value=$3 dir tmp found=0 line mog mode owner_group content=''
+  local file=$1 key=$2 value=$3 dir tmp found=0 line mog mode owner_group content='' raw rest size
   [[ -f ${file} ]] || die "envfile_set: file not found: ${file}"
   dir=$(dirname -- "${file}")
   mog=$(_file_mode_owner_group "${file}") || die "envfile_set: could not stat ${file}"
   mode=${mog%% *}
   owner_group=${mog#* }
 
-  # Build the WHOLE replacement content in a variable first — nothing has
-  # touched disk yet, so there is nothing to clean up if this part fails.
-  # KEY is quoted in the regex so a metacharacter in it (only ever a
-  # SCREAMING_SNAKE_CASE identifier in every real caller, but defense in
-  # depth costs nothing here) is matched literally, not as regex syntax.
-  while IFS= read -r line || [[ -n ${line} ]]; do
+  # Read FILE, and prove the read got ALL of it, before building anything —
+  # the replacement is built from what was read, so a read that silently
+  # came up short would drop every line after that point from the live .env
+  # (secrets included) while "succeeding". What is checked, exactly:
+  #   1. the size probe (`wc -c <FILE`) must succeed — this fails if FILE
+  #      cannot be opened (e.g. unreadable);
+  #   2. `cat` must exit 0 — it exits non-zero if FILE cannot be opened or
+  #      if any read(2) on it returns an error, so a mid-file I/O error is
+  #      NOT mistaken for EOF (a bare `while read …; done <FILE` cannot tell
+  #      the two apart: `read` returns non-zero for both);
+  #   3. the sentinel `x` printed after cat must be present (it also keeps
+  #      the command substitution from stripping FILE's trailing newlines);
+  #   4. the byte length of what was read must equal the probed size — this
+  #      catches FILE changing size between the probe and the read, and any
+  #      bytes the shell cannot hold (a command substitution drops NUL
+  #      bytes), so such a file is refused rather than rewritten without them.
+  # Each is an explicit `|| die`/`if`, never errexit (see the write-side note
+  # below for why).
+  size=$(wc -c <"${file}") || die "envfile_set: could not read ${file}"
+  size=${size//[[:space:]]/}
+  [[ ${size} =~ ^[0-9]+$ ]] || die "envfile_set: could not determine the size of ${file}"
+  raw=$(cat -- "${file}" && printf x) || die "envfile_set: failed to read ${file}"
+  [[ ${raw} == *x ]] || die "envfile_set: failed to read ${file}"
+  raw=${raw%x}
+  # Byte length, not character length: a UTF-8 value would otherwise count
+  # short. LC_ALL is switched only inside this `( … )` subshell, whose exit
+  # status carries the comparison result.
+  if ! (
+    LC_ALL=C
+    [[ ${#raw} -eq ${size} ]]
+  ); then
+    die "envfile_set: read of ${file} came up short or contained bytes the shell cannot hold (NUL) — refusing to rewrite it"
+  fi
+
+  # Build the WHOLE replacement content in a variable — nothing has touched
+  # disk yet, so there is nothing to clean up if this part fails. Lines are
+  # split with parameter expansion rather than `read <<<"${raw}"`: a
+  # here-string may be backed by a temp file (in $TMPDIR, i.e. usually
+  # /tmp — no place for this file's secrets) and would be one more redirect
+  # to check. Every line is re-emitted with a trailing newline (a final line
+  # that lacked one gains it). KEY is quoted in the regex so a metacharacter
+  # in it (only ever a SCREAMING_SNAKE_CASE identifier in every real caller,
+  # but defense in depth costs nothing here) is matched literally, not as
+  # regex syntax.
+  rest=${raw}
+  while [[ -n ${rest} ]]; do
+    line=${rest%%$'\n'*}
+    if [[ ${line} == "${rest}" ]]; then rest=''; else rest=${rest#*$'\n'}; fi
     if [[ ${line} =~ ^"${key}"= ]]; then
       content+="${key}=${value}"$'\n'
       found=1
     else
       content+="${line}"$'\n'
     fi
-  done <"${file}"
+  done
   [[ ${found} -eq 1 ]] || content+="${key}=${value}"$'\n'
 
   tmp=$(mktemp "${dir}/.$(basename -- "${file}").XXXXXX") ||
     die "envfile_set: failed to create a staging file next to ${file}"
 
-  # From here on, EVERY command that can fail is checked explicitly — never
-  # errexit. A caller that invokes this from inside a subshell being used
-  # as an if/&&/||-condition (retarget-origin.sh's cert-restore span does
-  # exactly that) runs with -e silently suppressed for the entire dynamic
-  # extent of evaluating that condition, INCLUDING a `set -e` restated
-  # inside the subshell — that suppression cannot be un-suppressed from
-  # within. A single unchecked write in that context would not abort;
-  # it would just silently produce a truncated/wrong file that then gets
-  # `mv`'d into place as if nothing were wrong.
+  # The staged write and the final mv are checked explicitly (die on
+  # failure, removing the staging file); chmod/chown failures only warn —
+  # mktemp created the staging file 0600 and owned by the caller, so a
+  # failure there leaves it more restrictive, never less. Never errexit, here
+  # or in the read above: a caller that invokes this from inside a subshell
+  # being used as an if/&&/||-condition (retarget-origin.sh's cert-restore
+  # span does exactly that) runs with -e silently suppressed for the entire
+  # dynamic extent of evaluating that condition, INCLUDING a `set -e`
+  # restated inside the subshell — that suppression cannot be un-suppressed
+  # from within. A single unchecked read or write in that context would not
+  # abort; it would just silently produce a truncated/wrong file that then
+  # gets `mv`'d into place as if nothing were wrong.
   if ! printf '%s' "${content}" >"${tmp}"; then
     rm -f "${tmp}"
     die "envfile_set: failed to write the staged replacement for ${file}"
@@ -1412,10 +1457,23 @@ caddy_write_and_reload() { # CONTENT
     current=$(as_root cat "${CADDYFILE_PATH}")
   fi
   if [[ ${rendered} != "${current}" ]]; then
-    staged=$(mktemp)
-    backup=$(mktemp)
-    chmod 600 "${staged}" "${backup}"
-    printf '%s' "${rendered}" >"${staged}"
+    # Staging-file setup and the staged write are each checked explicitly,
+    # never left to errexit (see the backup-write note below for why) —
+    # `caddy validate` is NOT relied on as a backstop for them: a staging
+    # file that silently came out empty or short could still validate.
+    staged=$(mktemp) || die "failed to create a staging file for ${CADDYFILE_PATH}"
+    if ! backup=$(mktemp); then
+      rm -f "${staged}"
+      die "failed to create a backup file for ${CADDYFILE_PATH}"
+    fi
+    if ! chmod 600 "${staged}" "${backup}"; then
+      rm -f "${staged}" "${backup}"
+      die "failed to restrict the permissions of the staged ${CADDYFILE_PATH}"
+    fi
+    if ! printf '%s' "${rendered}" >"${staged}"; then
+      rm -f "${staged}" "${backup}"
+      die "failed to write the staged ${CADDYFILE_PATH}; the live Caddyfile was not changed"
+    fi
     if ! caddy_validate_file "${staged}"; then
       rm -f "${staged}" "${backup}"
       die "Caddy rejected the staged configuration; the live Caddyfile was not changed"

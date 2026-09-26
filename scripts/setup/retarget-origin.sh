@@ -39,7 +39,9 @@
 # re-render/reload) run as ONE unit: a failure ANYWHERE in that span (not
 # only the caddy step) restores the PREVIOUS origin cert/key to the
 # canonical Caddy TLS paths — backed up right before step 3 installed the
-# new pair — before this script dies. So a failed run in steps 3-5 leaves
+# new pair — before this script dies (each restore copy is checked; if one
+# fails, the die message says so and names the backup to copy back by hand,
+# instead of claiming a rollback). So a failed run in steps 3-5 leaves
 # the host serving ITS OWN (old) cert against whatever Caddyfile ends up
 # live (caddy_write_and_reload's own internal rollback restores its prior
 # Caddyfile bytes on a validate/reload failure specifically; an earlier
@@ -263,7 +265,11 @@ backup_file() { # FILE
   # backup would silently overwrite the first, destroying the only copy of
   # what was there before this run started.
   dest=$(mktemp -u "${file}.bak-${ts}-XXXXXX") || die "backup_file: failed to compute a unique backup name for ${file}"
-  cp -p "${file}" "${dest}"
+  # Explicit check: callers capture this function's output with `$(...)`,
+  # and bash does not carry errexit into a command substitution (no
+  # inherit_errexit here), so an unchecked failed copy would still print
+  # a backup path that does not hold the original.
+  cp -p "${file}" "${dest}" || die "backup_file: failed to back up ${file} to ${dest}"
   log_info "backed up ${file} -> ${dest}"
   printf '%s' "${dest}"
 }
@@ -311,13 +317,27 @@ PREV_KEY_BACKUP=$(backup_file "${CADDY_TLS_KEY_PATH}")
 # bash suppresses errexit for the WHOLE dynamic extent of evaluating an
 # if/!/&&/||-condition, including inside a nested subshell that IS that
 # condition, and a `set -e` restated inside it cannot un-suppress that).
-# What actually makes this safe: install_origin_cert, envfile_set, and
-# caddy_write_and_reload each check every one of their own risky commands
-# EXPLICITLY and call die() on failure — die() runs a literal `exit`, which
-# terminates the current (sub)shell unconditionally, independent of the -e
-# option entirely. So a failure anywhere in this span dies for real,
-# regardless of the ambient errexit suppression, and the `if !` here
-# catches exactly that.
+# What actually makes this safe is explicit checks that call die() — die()
+# runs a literal `exit`, which terminates the current (sub)shell
+# unconditionally, independent of the -e option — in the three helpers this
+# span calls:
+#   - install_origin_cert: each of its three `install` calls (TLS dir, cert,
+#     key) is `|| die`.
+#   - envfile_set: the read of the .env (size probe, `cat` exit status, and
+#     a byte-count match against the probed size — so an unreadable file or
+#     a read that errors or comes up short dies instead of being rewritten
+#     from partial content), the staging mktemp, the staged write, and the
+#     final mv each die on failure; chmod/chown of the staging file only
+#     warn (it is created 0600, so that fails closed).
+#   - caddy_write_and_reload: an empty render, the staging/backup mktemps,
+#     their chmod, the staged write, `caddy validate`, the backup of the
+#     live Caddyfile, the atomic install, and `systemctl enable`/`reload`
+#     each die on failure (the last two after restoring the prior
+#     Caddyfile).
+# A failure at any of those checked points dies for real, regardless of the
+# ambient errexit suppression, and the `if !` here catches exactly that. The
+# log_step/log_info lines in the span are unchecked on purpose (a failed
+# log write must not abort a retarget).
 if ! (
   install_origin_cert "${TLS_CERT}" "${TLS_KEY}"
 
@@ -338,9 +358,31 @@ if ! (
   caddy_write_and_reload "$(render_caddyfile "${CADDY_HOST}" "${CORE_PORT}" "${CADDY_TLS_CERT_PATH}" "${CADDY_TLS_KEY_PATH}")"
 ); then
   log_error "steps 3-5 failed — restoring the previous origin certificate (if the failure was caddy_write_and_reload's own validate/reload check, it already restored its own prior Caddyfile bytes on that path, so the host keeps serving ITS OWN cert against ITS OWN prior config)"
-  [[ -n ${PREV_CERT_BACKUP} ]] && cp -p "${PREV_CERT_BACKUP}" "${CADDY_TLS_CERT_PATH}"
-  [[ -n ${PREV_KEY_BACKUP} ]] && cp -p "${PREV_KEY_BACKUP}" "${CADDY_TLS_KEY_PATH}"
-  die "retarget-origin.sh: steps 3-5 failed — origin certificate rolled back to its previous value. The yaml (step 2) rewrite is still in place (see ${CONFIG}.bak-* from step 1 to revert it by hand); the .env rewrite (step 4) may be partial or complete depending on where this failed (see ${ENV_FILE}.bak-*); tau-api/tau-worker were NOT restarted."
+  # Each restore is checked, and the final message says exactly which ones
+  # happened — a failed restore must never be reported as "rolled back".
+  cert_restore='' restore_failed=''
+  if [[ -n ${PREV_CERT_BACKUP} ]]; then
+    if cp -p "${PREV_CERT_BACKUP}" "${CADDY_TLS_CERT_PATH}"; then
+      cert_restore='restored'
+    else
+      restore_failed+=" ${CADDY_TLS_CERT_PATH} (from ${PREV_CERT_BACKUP})"
+    fi
+  fi
+  if [[ -n ${PREV_KEY_BACKUP} ]]; then
+    if cp -p "${PREV_KEY_BACKUP}" "${CADDY_TLS_KEY_PATH}"; then
+      cert_restore='restored'
+    else
+      restore_failed+=" ${CADDY_TLS_KEY_PATH} (from ${PREV_KEY_BACKUP})"
+    fi
+  fi
+  if [[ -n ${restore_failed} ]]; then
+    cert_restore="FAILED to restore the previous origin certificate/key:${restore_failed} — the host may now hold a cert/key pair that does not match each other or the live Caddyfile; copy those backups into place by hand (cp -p) and reload caddy BEFORE retrying"
+  elif [[ ${cert_restore} == restored ]]; then
+    cert_restore='origin certificate/key restored to their previous values'
+  else
+    cert_restore='no previous origin certificate/key existed to restore, so whatever step 3 installed (if anything) is still in place'
+  fi
+  die "retarget-origin.sh: steps 3-5 failed — ${cert_restore}. The yaml (step 2) rewrite is still in place (see ${CONFIG}.bak-* from step 1 to revert it by hand); the .env rewrite (step 4) may be partial or complete depending on where this failed (see ${ENV_FILE}.bak-*); tau-api/tau-worker were NOT restarted."
 fi
 
 # ============================================================ 6. restart

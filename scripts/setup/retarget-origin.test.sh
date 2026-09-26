@@ -133,7 +133,20 @@ fi
 exec /usr/bin/install "$@"
 SHIM
 
-chmod +x "${SHIM_DIR}"/sudo "${SHIM_DIR}"/caddy "${SHIM_DIR}"/id "${SHIM_DIR}"/systemctl "${SHIM_DIR}"/curl "${SHIM_DIR}"/journalctl "${SHIM_DIR}"/install
+# Passes through to the real cp unless TAU_TEST_FAIL_KEY_RESTORE is set, in
+# which case it fails ONLY a copy whose destination is named exactly
+# `origin.key` — retarget-origin.sh's post-failure key RESTORE. The
+# pre-install backup (destination origin.key.bak-…) is unaffected. Off by
+# default.
+cat >"${SHIM_DIR}/cp" <<'SHIM'
+#!/usr/bin/env bash
+if [[ -n ${TAU_TEST_FAIL_KEY_RESTORE:-} && $(basename -- "${@: -1}") == origin.key ]]; then
+  exit 1
+fi
+exec /bin/cp "$@"
+SHIM
+
+chmod +x "${SHIM_DIR}"/sudo "${SHIM_DIR}"/caddy "${SHIM_DIR}"/id "${SHIM_DIR}"/systemctl "${SHIM_DIR}"/curl "${SHIM_DIR}"/journalctl "${SHIM_DIR}"/install "${SHIM_DIR}"/cp
 export PATH="${SHIM_DIR}:${PATH}"
 
 # --- scratch Caddy paths (overridable in lib.sh; see its CADDY_TLS_DIR /
@@ -517,6 +530,7 @@ TAU_PLATFORM_INGEST_URL=https://ficus.sh'
 
   expect_eq 'failure injection: a failing key install exits non-zero' "${fail_rc}" '1'
   expect_match 'failure injection: names the failure and the rollback' "${fail_out}" 'steps 3-5 failed'
+  expect_match 'failure injection: reports the cert/key restore as done' "${fail_out}" 'origin certificate/key restored to their previous values'
   expect_eq 'failure injection: the PREVIOUS cert bytes are restored (not the failed attempt, not empty)' \
     "$(cat "${CADDY_TLS_DIR}/origin.crt")" "${before_fail_cert}"
   expect_eq 'failure injection: the PREVIOUS key bytes are restored (not the failed attempt, not empty)' \
@@ -532,6 +546,29 @@ TAU_PLATFORM_INGEST_URL=https://ficus.sh'
   # a retry, not rolled back on a steps-3-5 failure).
   expect_eq 'failure injection: the yaml rewrite (step 2, before the failure) is still forward progress, not rolled back' \
     "$(yq -r '.ingress.tls_cert_path' "${MUT_CONFIG}")" "${FAIL_NEW_CERT}"
+
+  # ===========================================================================
+  # FAILURE INJECTION (c): the same failing key install, AND the key RESTORE
+  # afterwards fails too. The die message must say the restore FAILED and
+  # name the key path — never claim the certificate was rolled back.
+  # ===========================================================================
+  : >"${SHIM_LOG}"
+  export TAU_TEST_FAIL_KEY_INSTALL=1 TAU_TEST_FAIL_KEY_RESTORE=1
+  restore_fail_rc=0
+  restore_fail_out=$(
+    "${RETARGET}" --config "${MUT_CONFIG}" --origin https://acme.ficus.sh \
+      --tls-cert "${FAIL_NEW_CERT}" --tls-key "${FAIL_NEW_KEY}" 2>&1
+  ) || restore_fail_rc=$?
+  unset TAU_TEST_FAIL_KEY_INSTALL TAU_TEST_FAIL_KEY_RESTORE
+
+  expect_eq 'restore-failure injection: exits non-zero' "${restore_fail_rc}" '1'
+  expect_match 'restore-failure injection: says the restore FAILED' "${restore_fail_out}" 'FAILED to restore the previous origin certificate/key'
+  expect_eq 'restore-failure injection: names the key path it could not restore' \
+    "$([[ ${restore_fail_out} == *"${CADDY_TLS_DIR}/origin.key (from "* ]] && echo named || echo missing)" 'named'
+  expect_eq 'restore-failure injection: does not claim a rollback' \
+    "$([[ ${restore_fail_out} == *'restored to their previous values'* ]] && echo claims || echo no-claim)" 'no-claim'
+  expect_eq 'restore-failure injection: the cert restore that did succeed still happened' \
+    "$(cat "${CADDY_TLS_DIR}/origin.crt")" "${before_fail_cert}"
 else
   if [[ ${EUID} -ne 0 ]]; then
     printf 'SKIP: not running as root (EUID=%s) — the mutation-phase end-to-end test needs this whole test process to be real root (retarget-origin.sh has no sudo fallback); run via `sudo env "PATH=$PATH" bash scripts/setup/retarget-origin.test.sh` (as CI does) to execute it\n' "${EUID}" >&2
