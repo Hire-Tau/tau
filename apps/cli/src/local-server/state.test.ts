@@ -294,6 +294,13 @@ describe('resolveRoot', () => {
     writeFileSync(join(tmp, 'package.json'), JSON.stringify({ name: 'other' }))
     expect(isCheckout(tmp)).toBe(false)
   })
+  it('isCheckout accepts a checkout whose package.json is named ficus, and still accepts tau', () => {
+    mkdirSync(join(tmp, '.git'), { recursive: true })
+    writeFileSync(join(tmp, 'package.json'), JSON.stringify({ name: 'ficus' }))
+    expect(isCheckout(tmp)).toBe(true)
+    writeFileSync(join(tmp, 'package.json'), JSON.stringify({ name: 'tau' }))
+    expect(isCheckout(tmp)).toBe(true)
+  })
 })
 
 describe('resolveSetupRoot', () => {

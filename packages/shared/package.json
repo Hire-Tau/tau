@@ -40,7 +40,8 @@
     "./apns": "./src/apns.ts",
     "./push-relay": "./src/push-relay.ts",
     "./platform-usage": "./src/platform-usage.ts",
-    "./testDbUp": "./src/testDbUp.ts"
+    "./testDbUp": "./src/testDbUp.ts",
+    "./identity": "./src/identity.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

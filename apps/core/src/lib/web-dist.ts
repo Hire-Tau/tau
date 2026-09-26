@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
+import { CORE_ROOT_PACKAGE_NAMES, type CoreRootPackageName } from '@ficus/shared/identity'
 import { expandTilde } from '@ficus/shared/node'
 
 function findRepoRoot(start: string): string | undefined {
@@ -13,7 +14,8 @@ function findRepoRoot(start: string): string | undefined {
           name?: string
           workspaces?: unknown
         }
-        if (json.name === 'tau' || Array.isArray(json.workspaces)) return dir
+        if (CORE_ROOT_PACKAGE_NAMES.includes(json.name as CoreRootPackageName) || Array.isArray(json.workspaces))
+          return dir
       } catch {
         // Keep walking if this package.json is unreadable or invalid.
       }

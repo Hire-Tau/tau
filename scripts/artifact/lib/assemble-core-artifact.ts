@@ -90,6 +90,14 @@ export const RUNTIME_EXTERNALS = [
 ] as const
 
 /**
+ * The artifact's root `package.json`, generated rather than copied. It names the
+ * tree `ficus` — the checkout root's own package name — so the release is
+ * recognizably a post-rename Ficus build to anything that keys on the root
+ * name (the web UI resolver, the host toolkit's env-prefix fallback).
+ */
+export const GENERATED_ROOT_MARKER = '{"name":"ficus","private":true,"workspaces":[]}\n'
+
+/**
  * Everything copied out of the checkout, in artifact-relative order. `file`
  * entries are copied individually because their directory holds things the
  * artifact must not carry (`dist/tsconfig.tsbuildinfo`, the sandbox
@@ -98,12 +106,12 @@ export const RUNTIME_EXTERNALS = [
 const LAYOUT: { path: string; kind: 'file' | 'dir' | 'generated'; contents?: string }[] = [
   // GENERATED, never copied from the checkout. `apps/core/src/lib/web-dist.ts`
   // finds the web UI by walking up from the running bundle until it hits a
-  // package.json named "tau" (or one carrying a `workspaces` array) and then
-  // looking for <root>/apps/web/dist. An artifact with no package.json
-  // anywhere fails that walk, `maybeMountWebUi` mounts nothing, and the box
+  // package.json named "ficus" or "tau" (`CORE_ROOT_PACKAGE_NAMES`, or one
+  // carrying a `workspaces` array) and then looking for <root>/apps/web/dist.
+  // An artifact with no package.json anywhere fails that walk, `maybeMountWebUi` mounts nothing, and the box
   // comes up with a healthy API and a 404 for every page. The marker is
   // deliberately minimal — it is a root anchor, not a manifest of anything.
-  { path: 'package.json', kind: 'generated', contents: '{"name":"tau","private":true,"workspaces":[]}\n' },
+  { path: 'package.json', kind: 'generated', contents: GENERATED_ROOT_MARKER },
   { path: 'apps/core/dist/index.js', kind: 'file' },
   { path: 'apps/core/dist/worker.js', kind: 'file' },
   { path: 'apps/core/dist/migrate.js', kind: 'file' },
