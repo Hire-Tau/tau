@@ -10,7 +10,12 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react'
-import { type CustomThemeDocument, type ThemePreset, type ThemePresetOwner, type AppearanceSetting } from '@ficus/shared'
+import {
+  type CustomThemeDocument,
+  type ThemePreset,
+  type ThemePresetOwner,
+  type AppearanceSetting,
+} from '@ficus/shared'
 import { findWebTheme, resolveWebTheme, type WebThemeDefinition } from '../theme/registry'
 import { tokenColor } from '../theme/tokenReader'
 import { applyResolvedTheme } from '../theme/apply'
