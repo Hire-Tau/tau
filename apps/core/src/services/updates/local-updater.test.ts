@@ -708,6 +708,11 @@ describe('sandboxRuntimeRestartBlocker', () => {
     expect(sandboxRuntimeRestartBlocker(join(dir, '.env'), {})).toBeNull()
   })
 
+  it('reads a pre-rename TAU_SANDBOX_RUNTIME line for one release', () => {
+    writeFileSync(join(dir, '.env'), 'DATABASE_URL=postgres://x\nTAU_SANDBOX_RUNTIME=vm\n')
+    expect(sandboxRuntimeRestartBlocker(join(dir, '.env'), {})).toBeNull()
+  })
+
   it('blocks a legacy spelling, quoting the value and naming the file', () => {
     writeFileSync(join(dir, '.env'), 'FICUS_SANDBOX_RUNTIME=sysbox\n')
     const blocker = sandboxRuntimeRestartBlocker(join(dir, '.env'), {})

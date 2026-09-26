@@ -542,10 +542,12 @@ export function roleWantsDocker(role: EnsureBoxOpts['role']): boolean {
  * Parse the box user's uid from box-provision.sh's stdout. The script prints
  * exactly one `FICUS_BOX_UID=<uid>` line (the useradd-assigned, non-deterministic
  * login uid) so box-manager can bake the rootless docker socket path. Returns
- * null when no valid marker is present.
+ * null when no valid marker is present. The legacy `TAU_BOX_UID=` spelling is
+ * accepted for one release (Ficus rename): a machine may still run an older
+ * box-provision.sh.
  */
 export function parseBoxUid(stdout: string): number | null {
-  const match = stdout.match(/^FICUS_BOX_UID=(\d+)$/m)
+  const match = stdout.match(/^(?:FICUS|TAU)_BOX_UID=(\d+)$/m)
   if (!match) return null
   const uid = Number(match[1])
   return Number.isInteger(uid) ? uid : null
@@ -720,9 +722,32 @@ async function recheckBoxHealth(endpoint: string, deps: BoxManagerDeps): Promise
   return (await recheckBoxHealthWithEvidence(endpoint, deps)).healthy
 }
 
+/**
+ * One `<P>_<name>_BEGIN … <P>_<name>_END` block of a machine snapshot. `<P>` is
+ * `FICUS` or, for one release (Ficus rename), the legacy `TAU`; both ends must
+ * use the same spelling.
+ */
 function section(stdout: string, name: string): string | undefined {
-  const match = stdout.match(new RegExp(`TAU_${name}_BEGIN\\n([\\s\\S]*?)\\nTAU_${name}_END`))
-  return match?.[1]?.trim() || undefined
+  const match = stdout.match(new RegExp(`(FICUS|TAU)_${name}_BEGIN\\n([\\s\\S]*?)\\n\\1_${name}_END`))
+  return match?.[2]?.trim() || undefined
+}
+
+/** The liveness marker and evidence sections of {@link buildMachineSnapshotCommand}'s output. */
+export function parseMachineSnapshotOutput(stdout: string): {
+  liveness: 'running' | 'idle' | 'exited' | undefined
+  containerStates: string | undefined
+  logTail: string | undefined
+} {
+  const liveness = stdout.match(/^(?:FICUS|TAU)_BOX_LIVENESS=(running|idle|exited)$/m)?.[1] as
+    | 'running'
+    | 'idle'
+    | 'exited'
+    | undefined
+  return {
+    liveness,
+    containerStates: section(stdout, 'CONTAINER_STATES'),
+    logTail: section(stdout, 'BOX_LOGS'),
+  }
 }
 
 /**
@@ -742,18 +767,9 @@ async function inspectEstablishedBox(
     if (result.exitCode !== 0) {
       return { observedAt, error: `machine snapshot exited ${result.exitCode}: ${result.stderr.trim()}` }
     }
-    const liveness = result.stdout.match(/^FICUS_BOX_LIVENESS=(running|idle|exited)$/m)?.[1] as
-      | 'running'
-      | 'idle'
-      | 'exited'
-      | undefined
+    const { liveness, containerStates, logTail } = parseMachineSnapshotOutput(result.stdout)
     if (!liveness) return { observedAt, error: 'machine snapshot returned no liveness marker' }
-    return {
-      observedAt,
-      liveness,
-      containerStates: section(result.stdout, 'CONTAINER_STATES'),
-      logTail: section(result.stdout, 'BOX_LOGS'),
-    }
+    return { observedAt, liveness, containerStates, logTail }
   } catch (error) {
     return { observedAt, error: error instanceof Error ? error.message : String(error) }
   }

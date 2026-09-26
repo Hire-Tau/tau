@@ -1,3 +1,5 @@
+import { bridgeLegacyEnv } from '@ficus/shared/legacy-env'
+
 export interface EnvUpdate {
   key: string
   value: string
@@ -19,12 +21,20 @@ function unquote(raw: string): string {
   return v
 }
 
+/**
+ * The key/value pairs of a .env file. One release (Ficus rename): a legacy
+ * `TAU_X` line reads as `FICUS_X` (a `FICUS_X` line in the same file wins), so
+ * an install whose .env predates the rename is still read correctly — for
+ * example its `TAU_INSTANCE` label, where the wrong answer acts on another
+ * instance.
+ */
 export function parseEnvFile(text: string): Record<string, string> {
   const out: Record<string, string> = {}
   for (const line of text.split('\n')) {
     const m = LINE_RE.exec(line.trim())
     if (m) out[m[1]] = unquote(m[2])
   }
+  bridgeLegacyEnv(out)
   return out
 }
 

@@ -38,6 +38,8 @@ import {
   buildMachineSnapshotCommand,
   measureBoxStateDirs,
   parseListeningLoopbackPorts,
+  parseBoxUid,
+  parseMachineSnapshotOutput,
   parseStateDirFacts,
   pullPrivateArchive,
   removeBox,
@@ -274,6 +276,30 @@ function happyDeps(events: string[], machine: Machine, box: MachineBox) {
 // ---------------------------------------------------------------------------
 // boxUnixUser
 // ---------------------------------------------------------------------------
+
+describe('legacy TAU_ output markers (one release)', () => {
+  it('parses the box uid from either marker spelling', () => {
+    expect(parseBoxUid('noise\nFICUS_BOX_UID=1001\n')).toBe(1001)
+    expect(parseBoxUid('noise\nTAU_BOX_UID=1001\n')).toBe(1001)
+    expect(parseBoxUid('BOX_UID=1001\n')).toBeNull()
+  })
+
+  it('parses machine snapshot liveness and sections from either marker spelling', () => {
+    for (const prefix of ['FICUS', 'TAU']) {
+      expect(
+        parseMachineSnapshotOutput(
+          `${prefix}_BOX_LIVENESS=idle\n${prefix}_CONTAINER_STATES_BEGIN\nworker Up\n${prefix}_CONTAINER_STATES_END\n` +
+            `${prefix}_BOX_LOGS_BEGIN\nloaded\n${prefix}_BOX_LOGS_END\n`
+        )
+      ).toEqual({ liveness: 'idle', containerStates: 'worker Up', logTail: 'loaded' })
+    }
+    expect(parseMachineSnapshotOutput('FICUS_STATE_BEGIN\nx\nTAU_STATE_END\n')).toEqual({
+      liveness: undefined,
+      containerStates: undefined,
+      logTail: undefined,
+    })
+  })
+})
 
 describe('boxUnixUser', () => {
   it('is box_ + first 12 hex of sha256(sandboxId)', () => {

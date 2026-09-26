@@ -38,8 +38,8 @@ services:
       # gets that mount today; the worker is given the same runtime so it boots
       # and agrees with the api about which runtime is configured.
       FICUS_SANDBOX_RUNTIME: docker-socket
-      FICUS_PASSWORD: ${FICUS_PASSWORD:?set FICUS_PASSWORD}
-      FICUS_ENCRYPTION_KEY: ${FICUS_ENCRYPTION_KEY:?set FICUS_ENCRYPTION_KEY}
+      FICUS_PASSWORD: ${FICUS_PASSWORD:-${TAU_PASSWORD:?set FICUS_PASSWORD}}
+      FICUS_ENCRYPTION_KEY: ${FICUS_ENCRYPTION_KEY:-${TAU_ENCRYPTION_KEY:?set FICUS_ENCRYPTION_KEY}}
       # api -> worker events (see the header note)
       FICUS_WORKER_EVENT_URL: http://tau-worker:3003/internal/events
     volumes:
@@ -52,8 +52,8 @@ services:
     command: bun run apps/core/dist/worker.js
     environment:
       DATABASE_URL: postgres://tau:${POSTGRES_PASSWORD:-tau}@postgres:5432/tau
-      FICUS_PASSWORD: ${FICUS_PASSWORD:?set FICUS_PASSWORD}
-      FICUS_ENCRYPTION_KEY: ${FICUS_ENCRYPTION_KEY:?set FICUS_ENCRYPTION_KEY}
+      FICUS_PASSWORD: ${FICUS_PASSWORD:-${TAU_PASSWORD:?set FICUS_PASSWORD}}
+      FICUS_ENCRYPTION_KEY: ${FICUS_ENCRYPTION_KEY:-${TAU_ENCRYPTION_KEY:?set FICUS_ENCRYPTION_KEY}}
       # The worker's stream server binds loopback by default (#1348); the api
       # reaches it over the container network, so bind all interfaces here.
       HOST: 0.0.0.0

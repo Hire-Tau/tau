@@ -26,6 +26,16 @@ describe('parseEnvFile', () => {
   })
 })
 
+describe('parseEnvFile legacy TAU_ lines (one release)', () => {
+  it('reads a TAU_X line as FICUS_X, and a FICUS_X line in the same file wins', () => {
+    expect(parseEnvFile('TAU_INSTANCE=smoke\nTAU_PASSWORD=old\nFICUS_PASSWORD=new\nPORT=3100\n')).toEqual({
+      FICUS_INSTANCE: 'smoke',
+      FICUS_PASSWORD: 'new',
+      PORT: '3100',
+    })
+  })
+})
+
 describe('mergeEnvFile', () => {
   it('fills an empty managed key in place and keeps everything else byte-identical', () => {
     const out = mergeEnvFile(base, [{ key: 'FICUS_ENCRYPTION_KEY', value: 'abc', explicit: false }])

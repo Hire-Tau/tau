@@ -29,6 +29,8 @@ describe('getSecretGroups (default config)', () => {
   test('categorizes every current known key intentionally and non-overlapping', () => {
     const expected = new Map<string, string[]>([
       ['FICUS_PASSWORD', ['system']],
+      // The retained TAU_ secret rows stay authorized until the bridge is removed (Task 36).
+      ['TAU_PASSWORD', ['system']],
       ['VAPID_SUBJECT', ['notification']],
       ['OPENAI_API_KEY', ['provider']],
       ['GITHUB_TOKEN', ['integration']],

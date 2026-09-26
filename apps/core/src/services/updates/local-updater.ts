@@ -85,7 +85,9 @@ export function sandboxRuntimeRestartBlocker(
   envFilePath: string,
   env: Record<string, string | undefined> = process.env
 ): string | null {
-  const declared = envFileValue(envFilePath, 'FICUS_SANDBOX_RUNTIME')
+  // The legacy spelling is read for one release (Ficus rename): the install's .env may predate it.
+  const declared =
+    envFileValue(envFilePath, 'FICUS_SANDBOX_RUNTIME') ?? envFileValue(envFilePath, 'TAU_SANDBOX_RUNTIME')
   const effective = declared ?? env.FICUS_SANDBOX_RUNTIME
   try {
     requireSandboxRuntime({ FICUS_SANDBOX_RUNTIME: effective })
