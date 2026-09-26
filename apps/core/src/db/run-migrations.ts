@@ -1,3 +1,4 @@
+import '../boot/legacy-env'
 import { MONOREPO_ROOT } from '../lib/paths'
 import { loadRootEnvForStandaloneScript, resolveRootEnvDatabaseUrl } from './load-root-env'
 import { runGuardedMigration } from './run-migrations-guard'

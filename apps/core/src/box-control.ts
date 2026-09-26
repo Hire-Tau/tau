@@ -9,6 +9,7 @@
  *
  * The platform's `scripts/box-control.ts` is the usual caller.
  */
+import './boot/legacy-env'
 import { parseBoxControlRequest, runBoxControl } from './services/machines/box-control'
 
 async function main(): Promise<number> {
