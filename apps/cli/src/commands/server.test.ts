@@ -17,7 +17,7 @@ beforeEach(() => {
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'tau' }))
   writeFileSync(
     join(root, '.env'),
-    'PORT=3000\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/tau\nTAU_SANDBOX_RUNTIME=host\n'
+    'PORT=3000\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/tau\nFICUS_SANDBOX_RUNTIME=host\n'
   )
   statePath = join(root, 'state.json')
   upsertInstance(
@@ -101,7 +101,7 @@ describe('tau server', () => {
   it('start creates the instance container, volume and port when it does not exist yet', async () => {
     writeFileSync(
       join(root, '.env'),
-      'TAU_INSTANCE=smoke\nPORT=3100\nDATABASE_URL=postgres://postgres:postgres@localhost:5433/tau\n'
+      'FICUS_INSTANCE=smoke\nPORT=3100\nDATABASE_URL=postgres://postgres:postgres@localhost:5433/tau\n'
     )
     const { run, calls } = make({ 'docker inspect': { code: 1, stderr: 'Error: No such object' } })
     await run(['server', 'start'])
@@ -235,7 +235,7 @@ describe('tau server', () => {
     })
   })
   it('status reports the instance label and its pm2 apps', async () => {
-    writeFileSync(join(root, '.env'), 'TAU_INSTANCE=smoke\nPORT=3100\n')
+    writeFileSync(join(root, '.env'), 'FICUS_INSTANCE=smoke\nPORT=3100\n')
     const { run, calls } = make()
     await run(['server', 'status'])
     const [data, text] = (output as ReturnType<typeof mock>).mock.calls.at(-1) as [Record<string, unknown>, string]
@@ -315,7 +315,7 @@ describe('tau server', () => {
     expect(message).toContain('docker rm -f postgres-tau && docker volume rm tau_postgres-data')
   })
   it('uninstall names the labelled instance own container, volume and data directory', async () => {
-    writeFileSync(join(root, '.env'), 'TAU_INSTANCE=smoke\nHOME_DIR=~/.tau-smoke\n')
+    writeFileSync(join(root, '.env'), 'FICUS_INSTANCE=smoke\nHOME_DIR=~/.tau-smoke\n')
     const { run, calls } = make()
     await run(['server', 'uninstall', '--yes'])
     // The registry resolves the default instance's names; the volume probe
@@ -473,9 +473,9 @@ describe('tau server', () => {
     const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-other-')))
     mkdirSync(join(other, '.git'))
     writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'tau' }))
-    // The pm2/container names come from the checkout's own TAU_INSTANCE, so a
+    // The pm2/container names come from the checkout's own FICUS_INSTANCE, so a
     // labelled instance has to look like one on disk too.
-    writeFileSync(join(other, '.env'), 'TAU_INSTANCE=lab\n')
+    writeFileSync(join(other, '.env'), 'FICUS_INSTANCE=lab\n')
     const { run, deps, calls } = make({ 'docker inspect': { stdout: 'true\n' } })
     upsertInstance(
       'lab',
@@ -622,13 +622,13 @@ describe('tau server', () => {
       'bunx pm2 restart tau-worker --update-env',
       'bunx pm2 restart tau-api --update-env',
     ])
-    expect(calls.find((call) => call.command.includes('update:offline'))?.options.env?.TAU_UPDATE_SUPERVISOR).toBe(
+    expect(calls.find((call) => call.command.includes('update:offline'))?.options.env?.FICUS_UPDATE_SUPERVISOR).toBe(
       'pm2'
     )
     expect(calls.every((c) => c.options.cwd === root)).toBe(true)
   })
   it('setup re-run keeps the checkout own instance label and port when no flag says otherwise', async () => {
-    writeFileSync(join(root, '.env'), 'TAU_INSTANCE=smoke\nPORT=3100\nTAU_SANDBOX_RUNTIME=host\n')
+    writeFileSync(join(root, '.env'), 'FICUS_INSTANCE=smoke\nPORT=3100\nFICUS_SANDBOX_RUNTIME=host\n')
     const seen: unknown[] = []
     const { run, deps } = make()
     deps.cwd = root
@@ -692,7 +692,7 @@ describe('tau server list', () => {
     const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-smoke-')))
     mkdirSync(join(other, '.git'))
     writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'tau' }))
-    writeFileSync(join(other, '.env'), 'TAU_INSTANCE=smoke\nPORT=3100\n')
+    writeFileSync(join(other, '.env'), 'FICUS_INSTANCE=smoke\nPORT=3100\n')
     upsertInstance(
       'smoke',
       { root: other, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },
@@ -819,7 +819,7 @@ describe('tau server <cmd> --instance', () => {
     const other = realpathSync(mkdtempSync(join(tmpdir(), 'tau-smoke-')))
     mkdirSync(join(other, '.git'))
     writeFileSync(join(other, 'package.json'), JSON.stringify({ name: 'tau' }))
-    writeFileSync(join(other, '.env'), 'TAU_INSTANCE=smoke\nPORT=3100\n')
+    writeFileSync(join(other, '.env'), 'FICUS_INSTANCE=smoke\nPORT=3100\n')
     upsertInstance(
       'smoke',
       { root: other, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't' },

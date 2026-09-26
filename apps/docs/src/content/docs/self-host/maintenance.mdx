@@ -97,7 +97,7 @@ Read the failed step before retrying. A source download alone is not proof that 
 A local install does not become recoverable just because its source is in Git. Preserve these together:
 
 - A PostgreSQL backup of the instance database.
-- The checkout's `.env`, including the existing `TAU_ENCRYPTION_KEY`. Database secrets cannot be recovered by generating a different key.
+- The checkout's `.env`, including the existing `FICUS_ENCRYPTION_KEY`. Database secrets cannot be recovered by generating a different key.
 - The instance's data directory, selected by `HOME_DIR` and normally `~/.tau` for the default instance.
 - Any workspace data stored outside that directory, including remote VM boxes or cluster volumes used by your runtime.
 

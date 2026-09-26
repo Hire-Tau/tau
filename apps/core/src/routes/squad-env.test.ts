@@ -258,7 +258,7 @@ describe('squad-env routes', () => {
     })
 
     it('still saves an ordinary key', async () => {
-      const content = 'TAU_SQUAD_ID_LOOKALIKE=1\nORDINARY=2\nPATH=$PATH:/opt/toolchain'
+      const content = 'FICUS_SQUAD_ID_LOOKALIKE=1\nORDINARY=2\nPATH=$PATH:/opt/toolchain'
       const res = await app.request(`/api/squads/workspace/${squadId}/env`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders(admin.token) },

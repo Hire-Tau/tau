@@ -6,15 +6,15 @@ import { attachPeerAddress } from '../lib/client-address'
 
 const prefix = 'device-auth-route'
 
-/** Run `fn` with TAU_WEB_ORIGIN pinned, restoring the ambient value afterwards. */
+/** Run `fn` with FICUS_WEB_ORIGIN pinned, restoring the ambient value afterwards. */
 async function withWebOrigin(origin: string, fn: () => Promise<void>): Promise<void> {
-  const previous = process.env.TAU_WEB_ORIGIN
-  process.env.TAU_WEB_ORIGIN = origin
+  const previous = process.env.FICUS_WEB_ORIGIN
+  process.env.FICUS_WEB_ORIGIN = origin
   try {
     await fn()
   } finally {
-    if (previous === undefined) delete process.env.TAU_WEB_ORIGIN
-    else process.env.TAU_WEB_ORIGIN = previous
+    if (previous === undefined) delete process.env.FICUS_WEB_ORIGIN
+    else process.env.FICUS_WEB_ORIGIN = previous
   }
 }
 

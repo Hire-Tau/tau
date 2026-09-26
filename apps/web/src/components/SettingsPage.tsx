@@ -86,7 +86,7 @@ export function SettingsPage({ dependencies = {} }: SettingsPageProps) {
   // route non-admins can't act on. useOnboarding() already runs app-wide via
   // OnboardingBanner in App.tsx, so this is a cache read, not an extra query.
   const { isAdmin: showOnboardingLink } = useOnboarding()
-  // On a platform-managed instance (TAU_MANAGED=1) self-updates cannot work —
+  // On a platform-managed instance (FICUS_MANAGED=1) self-updates cannot work —
   // the checkout has no GitHub credentials and the hosting platform's upgrade
   // job owns the lifecycle — so the Updates tab disappears entirely. Only
   // queried when the viewer could see the tab at all; `managed` is absent from

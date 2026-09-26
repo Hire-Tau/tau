@@ -164,15 +164,15 @@ describe('defaultUpdateDeps localPort', () => {
       statePath
     )
     upsertInstance('smoke', { root, port: 3100, supervisor: 'pm2', createdAt: 't', updatedAt: 't' }, {}, statePath)
-    const saved = process.env.TAU_LOCAL_SERVER_STATE
-    process.env.TAU_LOCAL_SERVER_STATE = statePath
+    const saved = process.env.FICUS_LOCAL_SERVER_STATE
+    process.env.FICUS_LOCAL_SERVER_STATE = statePath
     try {
       expect(defaultUpdateDeps().localPort(root)).toBe(3100)
       expect(defaultUpdateDeps().localPort(other)).toBe(4321)
       expect(defaultUpdateDeps().localPort(join(tmp, 'nope'))).toBeUndefined()
     } finally {
-      if (saved === undefined) delete process.env.TAU_LOCAL_SERVER_STATE
-      else process.env.TAU_LOCAL_SERVER_STATE = saved
+      if (saved === undefined) delete process.env.FICUS_LOCAL_SERVER_STATE
+      else process.env.FICUS_LOCAL_SERVER_STATE = saved
       rmSync(tmp, { recursive: true, force: true })
     }
   })

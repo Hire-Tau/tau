@@ -28,8 +28,8 @@ export const DEFAULT_WEBHOOK_SCOPES = [
 ]
 
 /**
- * Auth env for spawned webhook scripts: the long-lived webhook system token as TAU_TOKEN (the CLI
- * prefers it), falling back to the legacy TAU_PASSWORD during bootstrap (before any admin user exists,
+ * Auth env for spawned webhook scripts: the long-lived webhook system token as FICUS_TOKEN (the CLI
+ * prefers it), falling back to the legacy FICUS_PASSWORD during bootstrap (before any admin user exists,
  * where the secret store can't persist a token).
  */
 export async function webhookScriptAuthEnv(): Promise<Record<string, string>> {
@@ -38,10 +38,10 @@ export async function webhookScriptAuthEnv(): Promise<Record<string, string>> {
     // Scripts execute beside Core, so use its listener, not a CLI login or a
     // public reverse-proxy base path. Explicit context also bypasses Bun's
     // dotenv heuristic when the injected URL happens to match the .env file.
-    TAU_WEBHOOK_CONTEXT: '1',
-    TAU_API_URL: `http://127.0.0.1:${process.env.PORT || '3000'}`,
-    TAU_TOKEN: token ?? '',
-    TAU_PASSWORD: token ? '' : (getSecretStore().get('TAU_PASSWORD') ?? ''),
+    FICUS_WEBHOOK_CONTEXT: '1',
+    FICUS_API_URL: `http://127.0.0.1:${process.env.PORT || '3000'}`,
+    FICUS_TOKEN: token ?? '',
+    FICUS_PASSWORD: token ? '' : (getSecretStore().get('FICUS_PASSWORD') ?? ''),
   }
 }
 
@@ -245,7 +245,7 @@ export async function resolveSystemToken(
 /**
  * Ensure the long-lived webhook automation token exists and return its raw value. Self-heals: if the
  * stored secret is missing/stale/revoked, a fresh token is minted and persisted. Returns null if the
- * secret store can't persist it (e.g. no TAU_ENCRYPTION_KEY) — callers fall back to legacy auth.
+ * secret store can't persist it (e.g. no FICUS_ENCRYPTION_KEY) — callers fall back to legacy auth.
  */
 export async function ensureWebhookToken(): Promise<string | null> {
   const store = getSecretStore()

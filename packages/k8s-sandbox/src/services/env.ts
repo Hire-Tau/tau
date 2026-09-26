@@ -22,7 +22,7 @@
  */
 
 const EXACT_ALLOW = new Set<string>([
-  // Build-parallelism knobs: box-provision.sh derives defaults from TAU_BOX_CPUS
+  // Build-parallelism knobs: box-provision.sh derives defaults from FICUS_BOX_CPUS
   // (applyParallelismDefaults); an operator may pin them explicitly in host.env.
   'CARGO_BUILD_JOBS',
   'MAKEFLAGS',
@@ -116,15 +116,15 @@ export function buildSandboxChildEnv(
 }
 
 /**
- * Build-parallelism defaults derived from TAU_BOX_CPUS (written by
+ * Build-parallelism defaults derived from FICUS_BOX_CPUS (written by
  * box-provision.sh into ~/.tau/host.env as half the host's cores, matching the
  * slice's CPUQuota). Without these, one box's `cargo test` spawns a rustc per
  * core and pins the whole machine host. Applied last and only where nothing
  * (source env or caller overrides) already set a value, so explicit choices
- * always win. Ignored when TAU_BOX_CPUS is absent or not a positive integer.
+ * always win. Ignored when FICUS_BOX_CPUS is absent or not a positive integer.
  */
 function applyParallelismDefaults(out: Record<string, string>): void {
-  const raw = out.TAU_BOX_CPUS
+  const raw = out.FICUS_BOX_CPUS
   if (!raw || !/^[1-9][0-9]*$/.test(raw)) return
   const defaults: Record<string, string> = {
     CARGO_BUILD_JOBS: raw,

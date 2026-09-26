@@ -155,7 +155,7 @@ let loggedResolution = false
 
 // Misconfiguration warnings are gated to once per message per process:
 // `call()` re-resolves the browser on every 502 to distinguish "restarted"
-// from "unavailable", so an operator with a bad TAU_BROWSER_* value would
+// from "unavailable", so an operator with a bad FICUS_BROWSER_* value would
 // otherwise see the same warning on every failing request.
 const warnedOnce = new Set<string>()
 
@@ -169,7 +169,7 @@ function warnMisconfigOnce(message: string): void {
  * Which locally installed browser the host runtime should drive, or null when
  * the machine has none.
  *
- * Order: `TAU_BROWSER_EXECUTABLE_PATH` → `TAU_BROWSER_CHANNEL` → the
+ * Order: `FICUS_BROWSER_EXECUTABLE_PATH` → `FICUS_BROWSER_CHANNEL` → the
  * well-known install locations for this platform. There is deliberately NO
  * blind `{ channel: 'chrome' }` last resort: Playwright's channel resolution
  * probes the very paths this function already probes, so the only thing such
@@ -194,30 +194,30 @@ export function resolveHostChromium(
     // environment (bun's dotenv loader, systemd's EnvironmentFile=) expands
     // it — so expand BEFORE the absolute check, or `~/chrome` is rejected as
     // "not an absolute path" and the operator's setting silently does nothing.
-    const configured = env.TAU_BROWSER_EXECUTABLE_PATH?.trim()
-      ? expandTilde(env.TAU_BROWSER_EXECUTABLE_PATH.trim())
+    const configured = env.FICUS_BROWSER_EXECUTABLE_PATH?.trim()
+      ? expandTilde(env.FICUS_BROWSER_EXECUTABLE_PATH.trim())
       : undefined
     if (configured) {
       // A macOS ".app" is a DIRECTORY — the single most likely thing an
       // operator points this at — so name the real binary rather than just
       // saying "not executable".
       if (!isAbsolute(configured)) {
-        warnMisconfigOnce(`TAU_BROWSER_EXECUTABLE_PATH=${configured} is not an absolute path; ignoring it`)
+        warnMisconfigOnce(`FICUS_BROWSER_EXECUTABLE_PATH=${configured} is not an absolute path; ignoring it`)
       } else if (exists(configured) && !isFile(configured)) {
         warnMisconfigOnce(
-          `TAU_BROWSER_EXECUTABLE_PATH=${configured} is a directory, not a browser binary; point it at the executable inside it (e.g. "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"); ignoring it`
+          `FICUS_BROWSER_EXECUTABLE_PATH=${configured} is a directory, not a browser binary; point it at the executable inside it (e.g. "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"); ignoring it`
         )
       } else if (!usable(configured)) {
-        warnMisconfigOnce(`TAU_BROWSER_EXECUTABLE_PATH=${configured} is not an executable file; ignoring it`)
+        warnMisconfigOnce(`FICUS_BROWSER_EXECUTABLE_PATH=${configured} is not an executable file; ignoring it`)
       } else {
         return { executablePath: configured }
       }
     }
 
-    const channel = env.TAU_BROWSER_CHANNEL?.trim()
+    const channel = env.FICUS_BROWSER_CHANNEL?.trim()
     if (channel) {
       if (SUPPORTED_CHANNELS.has(channel)) return { channel }
-      warnMisconfigOnce(`TAU_BROWSER_CHANNEL=${channel} is not a Chromium-family Playwright channel; ignoring it`)
+      warnMisconfigOnce(`FICUS_BROWSER_CHANNEL=${channel} is not a Chromium-family Playwright channel; ignoring it`)
     }
 
     for (const candidate of probeCandidates(platform, home, listDir)) {
@@ -232,7 +232,7 @@ export function resolveHostChromium(
       log.info(`Host browser: using ${resolved.executablePath ?? `channel ${resolved.channel}`}`)
     } else {
       log.warn(
-        'Host browser: no Chrome/Chromium/Edge found on this machine; browser tools will report the browser as unavailable (install Google Chrome, or set TAU_BROWSER_EXECUTABLE_PATH)'
+        'Host browser: no Chrome/Chromium/Edge found on this machine; browser tools will report the browser as unavailable (install Google Chrome, or set FICUS_BROWSER_EXECUTABLE_PATH)'
       )
     }
   }
@@ -336,7 +336,7 @@ export interface HostBrowserOptions {
   launch?: () => Promise<unknown>
   /** Directory holding the per-box token digests (default `<HOME_DIR>/host/browser-tokens/<pid>`). */
   tokensDir?: string
-  /** Page-budget input, in MB (default: `TAU_BROWSER_MEMORY_HIGH_MB`, else a quarter of RAM capped at 4G). */
+  /** Page-budget input, in MB (default: `FICUS_BROWSER_MEMORY_HIGH_MB`, else a quarter of RAM capped at 4G). */
   memoryHighMb?: number
   /** Register the process-exit shutdown hooks (default true; tests opt out).
    *
@@ -392,7 +392,7 @@ function sha256Hex(value: string): string {
 
 function resolveMemoryHighMb(explicit?: number): number {
   if (explicit && explicit > 0) return explicit
-  const fromEnv = Number(process.env.TAU_BROWSER_MEMORY_HIGH_MB)
+  const fromEnv = Number(process.env.FICUS_BROWSER_MEMORY_HIGH_MB)
   if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv
   const share = Math.floor((totalmem() * MEMORY_HIGH_RAM_FRACTION) / (1024 * 1024))
   return Math.max(256, Math.min(share, MAX_MEMORY_HIGH_MB))

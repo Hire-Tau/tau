@@ -43,18 +43,18 @@ const TIMESTAMP = `date -u '+%Y-%m-%dT%H:%M:%SZ'`
 
 const LAUNCHER_SCRIPT = `#!/usr/bin/env bash
 set -euo pipefail
-mkdir -p "$TAU_LOCAL_DEPLOYMENT_DIR/logs"
-${TIMESTAMP} > "$TAU_LOCAL_DEPLOYMENT_DIR/startedAt" || true
-cd "$TAU_LOCAL_DEPLOYMENT_CWD"
+mkdir -p "$FICUS_LOCAL_DEPLOYMENT_DIR/logs"
+${TIMESTAMP} > "$FICUS_LOCAL_DEPLOYMENT_DIR/startedAt" || true
+cd "$FICUS_LOCAL_DEPLOYMENT_CWD"
 set +e
 {
-  echo "[tau] starting localDeployment $TAU_LOCAL_DEPLOYMENT_ID on port $TAU_LOCAL_DEPLOYMENT_PORT"
-  bash -lc "$TAU_LOCAL_DEPLOYMENT_COMMAND"
-} 2>&1 | tee -a "$TAU_LOCAL_DEPLOYMENT_DIR/logs/current.log"
+  echo "[tau] starting localDeployment $FICUS_LOCAL_DEPLOYMENT_ID on port $FICUS_LOCAL_DEPLOYMENT_PORT"
+  bash -lc "$FICUS_LOCAL_DEPLOYMENT_COMMAND"
+} 2>&1 | tee -a "$FICUS_LOCAL_DEPLOYMENT_DIR/logs/current.log"
 status=\${PIPESTATUS[0]}
 set -e
-echo "$status" > "$TAU_LOCAL_DEPLOYMENT_DIR/exitCode"
-${TIMESTAMP} > "$TAU_LOCAL_DEPLOYMENT_DIR/exitedAt" || true
+echo "$status" > "$FICUS_LOCAL_DEPLOYMENT_DIR/exitCode"
+${TIMESTAMP} > "$FICUS_LOCAL_DEPLOYMENT_DIR/exitedAt" || true
 exit "$status"
 `
 
@@ -69,19 +69,19 @@ export class LocalDeploymentProcessSupervisor {
     const script = `${dir}/run.sh`
     const cwd = args.cwd?.trim() || workspaceMount
     const launchCommand = [
-      `TAU_LOCAL_DEPLOYMENT_ID=${shellQuote(args.localDeploymentId)}`,
-      `TAU_LOCAL_DEPLOYMENT_PORT=${shellQuote(args.port)}`,
+      `FICUS_LOCAL_DEPLOYMENT_ID=${shellQuote(args.localDeploymentId)}`,
+      `FICUS_LOCAL_DEPLOYMENT_PORT=${shellQuote(args.port)}`,
       // The conventional name. Tau assigns the port now, so an app that reads
       // $PORT needs no configuration and cannot collide with a sibling box on
-      // the same machine; TAU_LOCAL_DEPLOYMENT_PORT stays for existing commands.
+      // the same machine; FICUS_LOCAL_DEPLOYMENT_PORT stays for existing commands.
       `PORT=${shellQuote(args.port)}`,
       // Hosted apps occupy their origin root; self-hosted apps keep the legacy
       // proxy prefix. Passing both through one variable lets framework config
       // stay portable without hardcoding a deployment id.
-      `TAU_APP_BASE_PATH=${shellQuote(getHostedAppsDomain() ? '/' : localDeploymentProxyPath(args.localDeploymentId))}`,
-      `TAU_LOCAL_DEPLOYMENT_CWD=${shellQuote(cwd)}`,
-      `TAU_LOCAL_DEPLOYMENT_DIR=${shellQuote(dir)}`,
-      `TAU_LOCAL_DEPLOYMENT_COMMAND=${shellQuote(args.command)}`,
+      `FICUS_APP_BASE_PATH=${shellQuote(getHostedAppsDomain() ? '/' : localDeploymentProxyPath(args.localDeploymentId))}`,
+      `FICUS_LOCAL_DEPLOYMENT_CWD=${shellQuote(cwd)}`,
+      `FICUS_LOCAL_DEPLOYMENT_DIR=${shellQuote(dir)}`,
+      `FICUS_LOCAL_DEPLOYMENT_COMMAND=${shellQuote(args.command)}`,
       `bash ${shellQuote(script)}`,
     ].join(' ')
 

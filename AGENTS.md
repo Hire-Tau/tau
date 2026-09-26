@@ -46,7 +46,7 @@ bun db:generate      # generates migration SQL from schema diff
 Migrations run automatically on API startup. To run manually:
 
 ```bash
-TAU_MIGRATE_LIVE=1 bun db:migrate  # deliberately migrate the root .env database
+FICUS_MIGRATE_LIVE=1 bun db:migrate  # deliberately migrate the root .env database
 DATABASE_URL=postgres://... bun db:migrate  # migrate an explicit test/scratch database
 bun db:push                         # push schema directly (dev only, no migration files)
 ```
@@ -64,7 +64,7 @@ Tests use an isolated Postgres instance running in Docker (separate from the dev
 When Docker cannot start the test DB, a direct local `bun test` still runs
 database-free files; every database use fails with `Core test database
 unavailable (...)`. CI and `bun run --filter core test` (via
-`TAU_TEST_REQUIRE_DB=1`) keep exiting instead.
+`FICUS_TEST_REQUIRE_DB=1`) keep exiting instead.
 
 For the full Core suite (including its isolated subprocess files), run:
 
@@ -120,7 +120,7 @@ bun run test:db:down && bun run --filter core test
   children, and await cleanup even on assertion failure. Never use broad
   process-name kills, fixed shared output paths, or another worktree's database.
   Reset only this worktree's disposable test DB after an interrupted DB suite;
-  orphan sweeping is explicit maintenance (`TAU_TEST_SWEEP_ORPHANS=1`), not a
+  orphan sweeping is explicit maintenance (`FICUS_TEST_SWEEP_ORPHANS=1`), not a
   normal test side effect.
 - Stress/load generators are owned fixtures too. Bound their worker count and
   runtime, retain every PID, and terminate/reap them in `finally` or a shell
@@ -134,7 +134,7 @@ bun run test:db:down && bun run --filter core test
   unbounded parallelism or concurrent cases that mutate one database/global.
   Core's sequential isolated runner reuses schema setup only while both source
   inputs and the live PostgreSQL DDL fingerprint match; do not bypass its drift
-  check or manually set `TAU_TEST_SCHEMA_CACHE_FILE` in fixtures.
+  check or manually set `FICUS_TEST_SCHEMA_CACHE_FILE` in fixtures.
 - The default timeout is a budget, not a contention workaround. Longer genuine
   integration budgets need a reason at the test site. No blanket retries,
   timeout increases, broad platform skips, or weakened assertions to turn red

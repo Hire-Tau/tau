@@ -112,10 +112,10 @@ export class MonitorSupervisor {
     const script = `${dir}/run.sh`
     const cwd = monitor.cwd?.trim() || workRoot
     const launchCommand = [
-      `TAU_MONITOR_ID=${shellQuote(monitor.id)}`,
-      `TAU_MONITOR_CWD=${shellQuote(cwd)}`,
-      `TAU_MONITOR_DIR=${shellQuote(dir)}`,
-      `TAU_MONITOR_COMMAND=${shellQuote(monitor.command)}`,
+      `FICUS_MONITOR_ID=${shellQuote(monitor.id)}`,
+      `FICUS_MONITOR_CWD=${shellQuote(cwd)}`,
+      `FICUS_MONITOR_DIR=${shellQuote(dir)}`,
+      `FICUS_MONITOR_COMMAND=${shellQuote(monitor.command)}`,
       `bash ${shellQuote(script)}`,
     ].join(' ')
     const command = [

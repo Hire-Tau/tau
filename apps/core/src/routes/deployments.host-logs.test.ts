@@ -79,9 +79,9 @@ describe('local deployment logs over HTTP on the host runtime', () => {
     testPrefix = `deploy-host-logs-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     home = mkdtempSync(join(tmpdir(), 'tau-route-host-logs-'))
     prevHome = process.env.HOME_DIR
-    prevRuntime = process.env.TAU_SANDBOX_RUNTIME
+    prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
     process.env.HOME_DIR = home
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     clearHostWorkspaceOverrides()
     // Production wiring: no supervisor override at all, so the route builds the
     // real LocalDeploymentProcessSupervisor over the factory's host manager.
@@ -94,8 +94,8 @@ describe('local deployment logs over HTTP on the host runtime', () => {
     clearHostWorkspaceOverrides()
     if (prevHome === undefined) delete process.env.HOME_DIR
     else process.env.HOME_DIR = prevHome
-    if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+    if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
     rmSync(home, { recursive: true, force: true })
   })
 

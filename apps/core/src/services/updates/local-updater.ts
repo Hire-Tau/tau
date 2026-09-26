@@ -65,7 +65,7 @@ function envFileValue(path: string, key: string): string | null {
  * update, or returns the operator-facing reason it is not.
  *
  * An update rewrites no environment: it merges, builds, and restarts. Since
- * TAU_SANDBOX_RUNTIME became mandatory and explicit, an install whose
+ * FICUS_SANDBOX_RUNTIME became mandatory and explicit, an install whose
  * environment never named a runtime (or still names a retired spelling) comes
  * back from that restart with BOTH services dead — with the new code already
  * checked out, which is the worst possible moment to find out.
@@ -85,16 +85,16 @@ export function sandboxRuntimeRestartBlocker(
   envFilePath: string,
   env: Record<string, string | undefined> = process.env
 ): string | null {
-  const declared = envFileValue(envFilePath, 'TAU_SANDBOX_RUNTIME')
-  const effective = declared ?? env.TAU_SANDBOX_RUNTIME
+  const declared = envFileValue(envFilePath, 'FICUS_SANDBOX_RUNTIME')
+  const effective = declared ?? env.FICUS_SANDBOX_RUNTIME
   try {
-    requireSandboxRuntime({ TAU_SANDBOX_RUNTIME: effective })
+    requireSandboxRuntime({ FICUS_SANDBOX_RUNTIME: effective })
     return null
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error)
     return (
       `${reason} Refusing to update: restarting tau-api and tau-worker with this configuration would bring them ` +
-      `back down. Set TAU_SANDBOX_RUNTIME in ${envFilePath} and retry.`
+      `back down. Set FICUS_SANDBOX_RUNTIME in ${envFilePath} and retry.`
     )
   }
 }
@@ -160,7 +160,7 @@ export class LocalUpdateManager {
 
   /**
    * Refuses an update that would restart the services into an environment
-   * naming no supported TAU_SANDBOX_RUNTIME — they would come back dead.
+   * naming no supported FICUS_SANDBOX_RUNTIME — they would come back dead.
    *
    * `willRestart` is supplied by the caller because the two paths know it at
    * different times: runTargeted has its plan in hand, while runApply has to

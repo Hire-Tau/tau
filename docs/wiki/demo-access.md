@@ -15,14 +15,14 @@ downstream is the normal pairing flow.
   holding the `demo-reviewer` role (viewer permissions plus chat, answering
   questions, and resolving review requests). Rotating the secret or disabling
   the demo user fails every device it ever paired.
-- Not present unless configured: without `TAU_DEMO_REVIEWER_ACCESS` the route
+- Not present unless configured: without `FICUS_DEMO_REVIEWER_ACCESS` the route
   answers 404, the page redirects home, and `/api/demo/*` does not exist.
 
 ## Enable it on the demo instance
 
 | Setting                     | Where                                     | Purpose                                                                                                                            |
 | --------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `TAU_DEMO_REVIEWER_ACCESS`  | server environment (`1`, `true`, `yes`)   | Serves the `/demo` page, `POST /api/auth/demo/pair`, and the admin `/api/demo/*` routes. Off by default.                            |
+| `FICUS_DEMO_REVIEWER_ACCESS`  | server environment (`1`, `true`, `yes`)   | Serves the `/demo` page, `POST /api/auth/demo/pair`, and the admin `/api/demo/*` routes. Off by default.                            |
 | `DEMO_REVIEWER_SECRET`      | secret store (env at first boot, or Settings → Secrets) | The reviewer access code. At least 16 characters. Rotate or delete it to stop new pairings; existing devices need `tau demo revoke`. |
 
 Then seed the world the reviewer will see, as an admin of that instance:

@@ -23,7 +23,7 @@ export function getSquadIdFromSandbox(sandboxId: string): string | null {
 }
 
 /**
- * Supported sandbox runtime types — the same closed set TAU_SANDBOX_RUNTIME
+ * Supported sandbox runtime types — the same closed set FICUS_SANDBOX_RUNTIME
  * must name (see ./runtime's SANDBOX_RUNTIME_VALUES, the runtime-side source
  * of truth; this alias exists so manager modules can type their state without
  * importing a value from a module that imports back).

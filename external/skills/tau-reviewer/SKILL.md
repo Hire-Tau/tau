@@ -90,15 +90,15 @@ PR activity is not in Tau. Poll it beside `tau watch` with `gh` using the
 filters below — they exist because CI counters, bot chatter, and your own
 comments woke reviewers dozens of times a day for nothing.
 
-Configure: `TAU_REVIEW_REPO` (`owner/name`), `TAU_REVIEW_AUTHOR` (the
+Configure: `FICUS_REVIEW_REPO` (`owner/name`), `FICUS_REVIEW_AUTHOR` (the
 squad's GitHub login, e.g. the bot account agents push as),
-`TAU_REVIEW_SELF` (your own login; your comments are never events).
+`FICUS_REVIEW_SELF` (your own login; your comments are never events).
 
 ```bash
 # Normalize open PRs to {number, head, state, draft, ready, failed{}, comments{}}
-gh pr list --repo "$TAU_REVIEW_REPO" --author "$TAU_REVIEW_AUTHOR" --state open --limit 200 \
+gh pr list --repo "$FICUS_REVIEW_REPO" --author "$FICUS_REVIEW_AUTHOR" --state open --limit 200 \
   --json number,headRefOid,state,isDraft,statusCheckRollup,comments,reviews |
-jq --arg self "$TAU_REVIEW_SELF" --arg author "$TAU_REVIEW_AUTHOR" '
+jq --arg self "$FICUS_REVIEW_SELF" --arg author "$FICUS_REVIEW_AUTHOR" '
   def relevant: (.statusCheckRollup // [])
     | (map(.name // "") | any(startswith("test / "))) as $lanes
     | map(select(
@@ -127,7 +127,7 @@ condition is met), `draft` → not draft (ready for review), `ready` false →
 true (CI green), a `failed` entry new or with a new URL (a check failed —
 send-back with the URL), a `comments` entry new or changed (someone other
 than you wrote or edited something — read it). Inline review comments
-(`gh api repos/$TAU_REVIEW_REPO/pulls/<n>/comments`) count as comments too.
+(`gh api repos/$FICUS_REVIEW_REPO/pulls/<n>/comments`) count as comments too.
 A previously open PR missing from the list may have merged: `gh pr view <n>`
 before deciding.
 

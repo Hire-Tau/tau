@@ -68,8 +68,8 @@ export function handoffLines(opts: SetupOptions, password?: string): string[] {
     'Next steps:',
     password
       ? `  1. Open ${bootstrapLoginUrl(opts.appUrl, password)} — it signs you in with the instance password`
-      : `  1. Open ${opts.appUrl} and sign in with the instance password (TAU_PASSWORD in ${opts.root}/.env)`,
-    '     (TAU_PASSWORD in .env; it stops working once an admin exists), then create your account —',
+      : `  1. Open ${opts.appUrl} and sign in with the instance password (FICUS_PASSWORD in ${opts.root}/.env)`,
+    '     (FICUS_PASSWORD in .env; it stops working once an admin exists), then create your account —',
     '     the first passkey becomes the admin. Email is not configured, so the verification code is shown in the page.',
     '  2. Sign in to an AI provider: Settings > AI Providers.',
     `  3. CLI: \`tau auth login local --api-url ${opts.apiUrl}\` (after step 1; until then \`tau\` works from ${opts.root}).`,
@@ -245,7 +245,7 @@ export async function runSetup(options: SetupOptions, deps: SetupDeps): Promise<
   // Refresh updatedAt after a successful start (or write for the first time when --no-start).
   persistState()
 
-  const password = parseEnvFile(readFileSync(join(opts.root, '.env'), 'utf8')).TAU_PASSWORD || undefined
+  const password = parseEnvFile(readFileSync(join(opts.root, '.env'), 'utf8')).FICUS_PASSWORD || undefined
   const handoff = opts.start
     ? handoffLines(opts, password)
     : ['', `Setup complete (not started). Start it with: tau server start --root ${opts.root}`]

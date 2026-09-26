@@ -18,7 +18,7 @@ Before starting, confirm with the human:
 
 1. **Tau is deployed and running** — API, worker, and web are healthy
 2. **Platform URLs are available** — your system prompt includes the Web UI and API URLs (auto-configured in K8s)
-3. **Database is connected** — `DATABASE_URL` and `TAU_ENCRYPTION_KEY` are set
+3. **Database is connected** — `DATABASE_URL` and `FICUS_ENCRYPTION_KEY` are set
 4. The human has access to the platforms they want to integrate (GitHub, Linear,
    Discord, Slack, Telegram)
 
@@ -47,7 +47,7 @@ Configure the essential secrets first, since everything else depends on them.
 
 **Minimum required:**
 
-1. `TAU_PASSWORD` — authentication for the web UI and API
+1. `FICUS_PASSWORD` — authentication for the web UI and API
 2. AI provider credentials (at least one) — for agent execution
 3. GitHub account connection in Settings → Integrations — assign it to the squad for repository access
 4. `OPENAI_API_KEY` — for memory embeddings and voice (recommended)
@@ -193,7 +193,7 @@ tau channel list                      # Channel instances exist
 
 | Secret                              | Required    | Purpose                                                                          |
 | ----------------------------------- | ----------- | -------------------------------------------------------------------------------- |
-| `TAU_PASSWORD`                      | Yes         | Web UI / API authentication                                                      |
+| `FICUS_PASSWORD`                      | Yes         | Web UI / API authentication                                                      |
 | GitHub integration connection       | If GitHub   | Authorize an account and assign it to the squad                                  |
 | GitHub integration webhook settings | Optional    | Direct webhook signature verification                                            |
 | Linear integration webhook settings | If Linear   | Webhook signature verification (legacy `LINEAR_WEBHOOK_SECRET` is imported once) |

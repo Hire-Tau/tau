@@ -10,7 +10,7 @@ import {
 /**
  * Operator side of reviewer access (`tau demo …`). Everything here is admin
  * only (`system:demo`) and answers 404 unless the instance opted in with
- * TAU_DEMO_REVIEWER_ACCESS, so an ordinary instance has no demo surface at all.
+ * FICUS_DEMO_REVIEWER_ACCESS, so an ordinary instance has no demo surface at all.
  */
 export function createDemoRouter(
   deps: {

@@ -198,10 +198,10 @@ describe('host env', () => {
     writeFileSync(join(home, 'ssh', SQUAD, 'config'), '')
     const env = buildHostCommandEnv({ base: { PATH: '/bin', HOME: home }, tauToken: 'tok', squadId: SQUAD })
     expect(env.PATH).toBe(`${hostBinDir()}:/bin`)
-    expect(env.TAU_TOKEN).toBe('tok')
-    expect(env.TAU_API_URL).toBe(resolveHostApiUrl())
+    expect(env.FICUS_TOKEN).toBe('tok')
+    expect(env.FICUS_API_URL).toBe(resolveHostApiUrl())
     expect(env.GIT_SSH_COMMAND).toBe(`ssh -F '${join(home, 'ssh', SQUAD, 'config')}'`)
-    expect(env.TAU_SQUAD_SSH_DIR).toBe(join(home, 'ssh', SQUAD))
+    expect(env.FICUS_SQUAD_SSH_DIR).toBe(join(home, 'ssh', SQUAD))
     expect(env.HOME).toBe(home)
   })
 
@@ -217,17 +217,17 @@ describe('host env', () => {
     )
   })
 
-  test('buildHostCommandEnv omits GIT_SSH_COMMAND and TAU_TOKEN when absent', () => {
+  test('buildHostCommandEnv omits GIT_SSH_COMMAND and FICUS_TOKEN when absent', () => {
     const env = buildHostCommandEnv({ base: { PATH: '/bin' } })
     expect(env.GIT_SSH_COMMAND).toBeUndefined()
-    expect(env.TAU_TOKEN).toBeUndefined()
-    expect(env.TAU_SQUAD_SSH_DIR).toBeUndefined()
+    expect(env.FICUS_TOKEN).toBeUndefined()
+    expect(env.FICUS_SQUAD_SSH_DIR).toBeUndefined()
   })
 
   test('buildHostCommandEnv omits GIT_SSH_COMMAND when the squad has no ssh config yet', () => {
     const env = buildHostCommandEnv({ base: { PATH: '/bin' }, squadId: SQUAD })
     expect(env.GIT_SSH_COMMAND).toBeUndefined()
-    expect(env.TAU_SQUAD_SSH_DIR).toBeUndefined()
+    expect(env.FICUS_SQUAD_SSH_DIR).toBeUndefined()
   })
 
   test('buildHostCommandEnv passes through APP_URL when set', () => {
@@ -255,7 +255,7 @@ describe('host env', () => {
       expect(env.DATABASE_URL).toBeUndefined()
       expect(env.ANTHROPIC_API_KEY).toBeUndefined()
       expect(env.SANDBOX_CALLBACK_SECRET).toBeUndefined()
-      expect(env.TAU_TOKEN).toBe('tok')
+      expect(env.FICUS_TOKEN).toBe('tok')
     } finally {
       if (prevDb === undefined) delete process.env.DATABASE_URL
       else process.env.DATABASE_URL = prevDb
@@ -269,50 +269,50 @@ describe('host env', () => {
 
   test('buildHostCommandEnv gives each agent its own CLI auth store and marks the shell as an agent', () => {
     const env = buildHostCommandEnv({ base: { PATH: '/bin' }, tauToken: 'tok', agentId: 'agent-1' })
-    expect(env.TAU_AUTH_STORE).toBe(join(home, 'host', 'cli-auth', 'agent-1.json'))
+    expect(env.FICUS_AUTH_STORE).toBe(join(home, 'host', 'cli-auth', 'agent-1.json'))
     // A missing store reads as empty: the operator's ~/.tau/cli/auth.json is never the fallback.
-    expect(existsSync(env.TAU_AUTH_STORE!)).toBe(false)
-    expect(env.TAU_AGENT_CONTEXT).toBe('1')
-    expect(env.TAU_AGENT_ID).toBe('agent-1')
+    expect(existsSync(env.FICUS_AUTH_STORE!)).toBe(false)
+    expect(env.FICUS_AGENT_CONTEXT).toBe('1')
+    expect(env.FICUS_AGENT_ID).toBe('agent-1')
   })
 
   test('buildHostCommandEnv uses the anonymous store for a tokened shell with no agent id', () => {
     const env = buildHostCommandEnv({ base: { PATH: '/bin' }, tauToken: 'tok', squadId: SQUAD })
-    expect(env.TAU_AUTH_STORE).toBe(join(home, 'host', 'cli-auth', 'anonymous.json'))
-    expect(env.TAU_AGENT_CONTEXT).toBe('1')
-    expect(env.TAU_AGENT_ID).toBeUndefined()
+    expect(env.FICUS_AUTH_STORE).toBe(join(home, 'host', 'cli-auth', 'anonymous.json'))
+    expect(env.FICUS_AGENT_CONTEXT).toBe('1')
+    expect(env.FICUS_AGENT_ID).toBeUndefined()
   })
 
   test('buildHostCommandEnv leaves an operator shell (no injected token) exactly as it was', () => {
     // Web terminals and `exec` get no token: overriding their auth store would
     // only break the human's own `tau`, and protects nothing.
     const env = buildHostCommandEnv({ base: { PATH: '/bin' }, squadId: SQUAD, agentId: 'agent-1' })
-    expect(env.TAU_AUTH_STORE).toBeUndefined()
-    expect(env.TAU_AGENT_CONTEXT).toBeUndefined()
-    expect(env.TAU_AGENT_ID).toBeUndefined()
-    expect(env.TAU_API_URL).toBe(resolveHostApiUrl())
+    expect(env.FICUS_AUTH_STORE).toBeUndefined()
+    expect(env.FICUS_AGENT_CONTEXT).toBeUndefined()
+    expect(env.FICUS_AGENT_ID).toBeUndefined()
+    expect(env.FICUS_API_URL).toBe(resolveHostApiUrl())
   })
 
   test('buildHostCommandEnv ignores a malformed agent id rather than building a path from it', () => {
     const env = buildHostCommandEnv({ base: { PATH: '/bin' }, tauToken: 'tok', agentId: '../../etc/passwd' })
-    expect(env.TAU_AUTH_STORE).toBe(join(home, 'host', 'cli-auth', 'anonymous.json'))
-    expect(env.TAU_AGENT_ID).toBeUndefined()
+    expect(env.FICUS_AUTH_STORE).toBe(join(home, 'host', 'cli-auth', 'anonymous.json'))
+    expect(env.FICUS_AGENT_ID).toBeUndefined()
   })
 
-  test('buildHostCommandEnv passes the identity through the TAU_IDENTITY_* aliases too', () => {
+  test('buildHostCommandEnv passes the identity through the FICUS_IDENTITY_* aliases too', () => {
     const env = buildHostCommandEnv({ base: { PATH: '/bin' }, tauToken: 'tok', agentId: 'agent-1' })
-    expect(env.TAU_IDENTITY_API_URL).toBe(resolveHostApiUrl())
-    expect(env.TAU_IDENTITY_TOKEN).toBe('tok')
-    expect(env.TAU_IDENTITY_AUTH_STORE).toBe(join(home, 'host', 'cli-auth', 'agent-1.json'))
-    expect(env.TAU_IDENTITY_AGENT_ID).toBe('agent-1')
+    expect(env.FICUS_IDENTITY_API_URL).toBe(resolveHostApiUrl())
+    expect(env.FICUS_IDENTITY_TOKEN).toBe('tok')
+    expect(env.FICUS_IDENTITY_AUTH_STORE).toBe(join(home, 'host', 'cli-auth', 'agent-1.json'))
+    expect(env.FICUS_IDENTITY_AGENT_ID).toBe('agent-1')
   })
 
   test('buildHostCommandEnv aliases mirror only the names it actually set', () => {
     const env = buildHostCommandEnv({ base: { PATH: '/bin' } })
-    expect(env.TAU_IDENTITY_TOKEN).toBeUndefined()
-    expect(env.TAU_IDENTITY_AUTH_STORE).toBeUndefined()
-    expect(env.TAU_IDENTITY_AGENT_ID).toBeUndefined()
-    expect(env.TAU_IDENTITY_API_URL).toBe(resolveHostApiUrl())
+    expect(env.FICUS_IDENTITY_TOKEN).toBeUndefined()
+    expect(env.FICUS_IDENTITY_AUTH_STORE).toBeUndefined()
+    expect(env.FICUS_IDENTITY_AGENT_ID).toBeUndefined()
+    expect(env.FICUS_IDENTITY_API_URL).toBe(resolveHostApiUrl())
   })
 
   /** The snapshot names carry a per-command random suffix, so tests read them back. */
@@ -328,20 +328,20 @@ describe('host env', () => {
     const pre = buildHostPreamble({ squadId: SQUAD, tauToken: 'tok', agentId: 'agent-1' })
     const envPath = join(home, 'workspaces', 'squads', SQUAD, '.tau', '.env')
     const names = snapshotNames(pre)
-    const snapshotIndex = pre.indexOf(`${names.url}="$TAU_IDENTITY_API_URL"`)
+    const snapshotIndex = pre.indexOf(`${names.url}="$FICUS_IDENTITY_API_URL"`)
     const sourceIndex = pre.indexOf(`. "${envPath}"`)
-    const exportIndex = pre.indexOf(`export TAU_API_URL="$${names.url}"`)
+    const exportIndex = pre.indexOf(`export FICUS_API_URL="$${names.url}"`)
     // The aliases are ordinary variables, so a squad env can overwrite THEM too:
     // reading them after the source line is exactly the bug this ordering closes.
     expect(snapshotIndex).toBeGreaterThanOrEqual(0)
     expect(sourceIndex).toBeGreaterThan(snapshotIndex)
     expect(exportIndex).toBeGreaterThan(sourceIndex)
-    expect(pre).toContain(`TAU_TOKEN="$${names.tok}"`)
-    expect(pre).toContain(`TAU_AUTH_STORE="$${names.store}"`)
-    expect(pre).toContain('TAU_AGENT_CONTEXT="1"')
-    expect(pre).toContain(`TAU_AGENT_ID="$${names.agent}"`)
+    expect(pre).toContain(`FICUS_TOKEN="$${names.tok}"`)
+    expect(pre).toContain(`FICUS_AUTH_STORE="$${names.store}"`)
+    expect(pre).toContain('FICUS_AGENT_CONTEXT="1"')
+    expect(pre).toContain(`FICUS_AGENT_ID="$${names.agent}"`)
     expect(pre.indexOf(`unset ${names.url}`)).toBeGreaterThan(exportIndex)
-    expect(pre).toContain('TAU_IDENTITY_API_URL TAU_IDENTITY_TOKEN TAU_IDENTITY_AUTH_STORE TAU_IDENTITY_AGENT_ID')
+    expect(pre).toContain('FICUS_IDENTITY_API_URL FICUS_IDENTITY_TOKEN FICUS_IDENTITY_AUTH_STORE FICUS_IDENTITY_AGENT_ID')
   })
 
   test('buildHostPreamble uses fresh snapshot names on every command', () => {
@@ -370,14 +370,14 @@ describe('host env', () => {
   test('buildHostPreamble unsets every identity name it was not given', () => {
     // A stale squad env must not be able to hand a credential to a shell that has none.
     const pre = buildHostPreamble({ squadId: SQUAD })
-    expect(pre).toContain('unset TAU_TOKEN TAU_AUTH_STORE TAU_AGENT_CONTEXT TAU_AGENT_ID')
-    expect(pre).toContain(`export TAU_API_URL="$${snapshotNames(pre).url}"`)
+    expect(pre).toContain('unset FICUS_TOKEN FICUS_AUTH_STORE FICUS_AGENT_CONTEXT FICUS_AGENT_ID')
+    expect(pre).toContain(`export FICUS_API_URL="$${snapshotNames(pre).url}"`)
   })
 
   test('buildHostPreamble unsets the agent id when the shell has a token but no agent id', () => {
     const pre = buildHostPreamble({ squadId: SQUAD, tauToken: 'tok' })
-    expect(pre).toContain('unset TAU_AGENT_ID')
-    expect(pre).toContain(`TAU_TOKEN="$${snapshotNames(pre).tok}"`)
+    expect(pre).toContain('unset FICUS_AGENT_ID')
+    expect(pre).toContain(`FICUS_TOKEN="$${snapshotNames(pre).tok}"`)
   })
 
   test('buildHostPreamble never puts the token in the command string', () => {
@@ -390,8 +390,8 @@ describe('host env', () => {
     const pre = buildHostPreamble({ tauToken: 'tok', agentId: 'agent-1' })
     const names = snapshotNames(pre)
     expect(pre).not.toContain('set -a')
-    expect(pre).toContain(`export TAU_API_URL="$${names.url}"`)
-    expect(pre).toContain(`TAU_TOKEN="$${names.tok}"`)
+    expect(pre).toContain(`export FICUS_API_URL="$${names.url}"`)
+    expect(pre).toContain(`FICUS_TOKEN="$${names.tok}"`)
     expect(pre).toContain(`export PATH="$${names.bin}:$PATH"`)
   })
 })

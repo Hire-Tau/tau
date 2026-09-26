@@ -50,10 +50,10 @@ Users, Roles, System Tokens, and Sign-up appear according to the caller's permis
 
 Connect agent-model accounts via API key or supported subscription OAuth. Provider cards show accounts, enable state, and connection status; model-provider enable states control selection and fallback. OpenAI API services for voice and embeddings are configured separately in Integrations.
 
-> **Requires `TAU_ENCRYPTION_KEY`.** Credentials are written to the encrypted
+> **Requires `FICUS_ENCRYPTION_KEY`.** Credentials are written to the encrypted
 > secret store, so without the key credential mutations fail with
-> `Cannot mutate secrets: TAU_ENCRYPTION_KEY not configured`. Generate one with
-> `echo "TAU_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env` and restart the
+> `Cannot mutate secrets: FICUS_ENCRYPTION_KEY not configured`. Generate one with
+> `echo "FICUS_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env` and restart the
 > api + worker. There is no file-based alternative.
 
 Built-in subscription providers include:

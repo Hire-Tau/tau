@@ -135,7 +135,7 @@ export async function bootstrap(options: BootstrapOptions, deps: BootstrapDeps):
 
   deps.log('Handing off to the checkout: bun run setup')
   // Pass --root explicitly: setup resolves its root from cwd, and an inherited
-  // TAU_SERVER_ROOT (or a future resolution change) must not retarget the
+  // FICUS_SERVER_ROOT (or a future resolution change) must not retarget the
   // checkout we just cloned.
   const setup = await deps.runner([bun, 'run', 'setup', '--', '--root', root, ...options.setupArgs], {
     cwd: root,

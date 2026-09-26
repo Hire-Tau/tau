@@ -64,15 +64,15 @@ async function cleanupHosts() {
 }
 
 beforeAll(async () => {
-  priorEncryptionKey = process.env.TAU_ENCRYPTION_KEY
-  process.env.TAU_ENCRYPTION_KEY = priorEncryptionKey ?? '0'.repeat(64)
+  priorEncryptionKey = process.env.FICUS_ENCRYPTION_KEY
+  process.env.FICUS_ENCRYPTION_KEY = priorEncryptionKey ?? '0'.repeat(64)
   resetSecretStore()
   await getSecretStore().initialize()
 })
 
 afterAll(async () => {
-  if (priorEncryptionKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-  else process.env.TAU_ENCRYPTION_KEY = priorEncryptionKey
+  if (priorEncryptionKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+  else process.env.FICUS_ENCRYPTION_KEY = priorEncryptionKey
   resetSecretStore()
 })
 
@@ -265,8 +265,8 @@ describe('materializeSquadRemoteHosts', () => {
   })
 
   it('host runtime: the written block points at the squad ssh dir by absolute path', async () => {
-    const prevRuntime = process.env.TAU_SANDBOX_RUNTIME
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    const prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     try {
       const squadId = `${prefix}-squad-hostrt`
       const host = await createGrantedHost('hostrt', squadId, 'PRIVATE-KEY-CONTENT')
@@ -283,8 +283,8 @@ describe('materializeSquadRemoteHosts', () => {
         `IdentityFile ${join(sshPath, `tau_remote_${host.name}`)}`
       )
     } finally {
-      if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+      if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
     }
   })
 

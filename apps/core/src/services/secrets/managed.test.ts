@@ -7,18 +7,18 @@ import {
   readManagedSecretValue,
 } from './managed'
 
-const originalManaged = process.env.TAU_MANAGED
-const originalKeys = process.env.TAU_MANAGED_SECRET_KEYS
+const originalManaged = process.env.FICUS_MANAGED
+const originalKeys = process.env.FICUS_MANAGED_SECRET_KEYS
 
 function setManagedKeys(value: string | undefined) {
-  if (value === undefined) delete process.env.TAU_MANAGED_SECRET_KEYS
-  else process.env.TAU_MANAGED_SECRET_KEYS = value
+  if (value === undefined) delete process.env.FICUS_MANAGED_SECRET_KEYS
+  else process.env.FICUS_MANAGED_SECRET_KEYS = value
 }
 
 describe('platform-managed secret keys', () => {
   afterEach(() => {
-    if (originalManaged === undefined) delete process.env.TAU_MANAGED
-    else process.env.TAU_MANAGED = originalManaged
+    if (originalManaged === undefined) delete process.env.FICUS_MANAGED
+    else process.env.FICUS_MANAGED = originalManaged
     setManagedKeys(originalKeys)
   })
 
@@ -137,21 +137,21 @@ describe('platform-managed secret keys', () => {
   })
 
   test('platform identity and usage tokens are never public managed-key names', () => {
-    setManagedKeys('TAU_PLATFORM_INSTANCE_TOKEN,TAU_PLATFORM_USAGE_TOKEN,SES_ACCESS_KEY_ID')
+    setManagedKeys('FICUS_PLATFORM_INSTANCE_TOKEN,FICUS_PLATFORM_USAGE_TOKEN,SES_ACCESS_KEY_ID')
     const publicKeys = [...getPublicManagedSecretKeys()]
-    expect(publicKeys).not.toContain('TAU_PLATFORM_INSTANCE_TOKEN')
-    expect(publicKeys).not.toContain('TAU_PLATFORM_USAGE_TOKEN')
+    expect(publicKeys).not.toContain('FICUS_PLATFORM_INSTANCE_TOKEN')
+    expect(publicKeys).not.toContain('FICUS_PLATFORM_USAGE_TOKEN')
     expect(publicKeys).toContain('SES_ACCESS_KEY_ID')
   })
 
   test('relay credentials remain Core-only on a self-hosted instance', () => {
     setManagedKeys(undefined)
-    expect(isManagedSecretKey('TAU_PUSH_RELAY_TOKEN')).toBe(true)
-    expect([...getPublicManagedSecretKeys()]).not.toContain('TAU_PUSH_RELAY_TOKEN')
+    expect(isManagedSecretKey('FICUS_PUSH_RELAY_TOKEN')).toBe(true)
+    expect([...getPublicManagedSecretKeys()]).not.toContain('FICUS_PUSH_RELAY_TOKEN')
   })
 
-  test('self-hosted (no TAU_MANAGED_SECRET_KEYS): nothing is managed, superseded keys included', () => {
-    delete process.env.TAU_MANAGED
+  test('self-hosted (no FICUS_MANAGED_SECRET_KEYS): nothing is managed, superseded keys included', () => {
+    delete process.env.FICUS_MANAGED
     setManagedKeys(undefined)
     expect(isPlatformManaged()).toBe(false)
     expect(getManagedSecretKeys().size).toBe(0)

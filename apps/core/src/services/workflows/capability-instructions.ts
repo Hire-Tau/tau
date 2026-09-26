@@ -34,7 +34,7 @@ export function flowCapabilityInstructions(state: WorkflowRun, attempt: Workflow
       'Use a worker agent type from tau agent-type list (exclude systemOnly or disabled types). Set agentTypeId to its agent-type ID. A new participant starts on demand; its result returns to this step. Do not manually spawn an untracked helper.',
       'Prefer --content with single-quoted JSON for short commands, or --stdin with a quoted heredoc for longer JSON/YAML; no temporary file is needed. Replace STREAM_ID with this work stream ID, agentTypeId with the chosen worker type, and task with a self-contained request:',
       '```bash',
-      "tau workstream advance STREAM_ID --stdin <<'TAU_COMMAND'",
+      "tau workstream advance STREAM_ID --stdin <<'FICUS_COMMAND'",
       JSON.stringify(
         {
           expectedVersion: version,
@@ -46,7 +46,7 @@ export function flowCapabilityInstructions(state: WorkflowRun, attempt: Workflow
         null,
         2
       ),
-      'TAU_COMMAND',
+      'FICUS_COMMAND',
       '```'
     )
   } else

@@ -53,7 +53,7 @@ export function canonicalRoot(dir: string): string {
 export class NoRootError extends Error {
   constructor(detail: string) {
     super(
-      `No local tau checkout found (${detail}). Run \`tau server install\`, pass --root <dir>, set TAU_SERVER_ROOT, or run from inside a checkout.`
+      `No local tau checkout found (${detail}). Run \`tau server install\`, pass --root <dir>, set FICUS_SERVER_ROOT, or run from inside a checkout.`
     )
     this.name = 'NoRootError'
   }
@@ -71,7 +71,7 @@ export class UnknownInstanceError extends Error {
 }
 
 export function getStatePath(env: Record<string, string | undefined> = process.env): string {
-  return expandTilde(env.TAU_LOCAL_SERVER_STATE || join(homedir(), '.tau', 'cli', 'local-server.json'))
+  return expandTilde(env.FICUS_LOCAL_SERVER_STATE || join(homedir(), '.tau', 'cli', 'local-server.json'))
 }
 
 function emptyRegistry(): LocalServerRegistry {
@@ -293,12 +293,12 @@ function optionalLabel(raw: string): string | undefined {
   }
 }
 
-/** --root, then TAU_SERVER_ROOT. Either, when given, must be a checkout. */
+/** --root, then FICUS_SERVER_ROOT. Either, when given, must be a checkout. */
 function explicitRoot(flag: string | undefined, env: Record<string, string | undefined>): string | null {
   const candidates: { source: string; dir: string }[] = []
   if (flag) candidates.push({ source: '--root', dir: resolve(expandTilde(flag)) })
-  if (env.TAU_SERVER_ROOT)
-    candidates.push({ source: 'TAU_SERVER_ROOT', dir: resolve(expandTilde(env.TAU_SERVER_ROOT)) })
+  if (env.FICUS_SERVER_ROOT)
+    candidates.push({ source: 'FICUS_SERVER_ROOT', dir: resolve(expandTilde(env.FICUS_SERVER_ROOT)) })
   for (const c of candidates) {
     if (isCheckout(c.dir)) return canonicalRoot(c.dir)
     throw new NoRootError(`${c.source}=${c.dir} is not a tau checkout`)
@@ -307,7 +307,7 @@ function explicitRoot(flag: string | undefined, env: Record<string, string | und
 }
 
 /**
- * --root > TAU_SERVER_ROOT > --instance / TAU_INSTANCE > the checkout the cwd
+ * --root > FICUS_SERVER_ROOT > --instance / FICUS_INSTANCE > the checkout the cwd
  * is in > the registry default. A named instance outranks the cwd (you asked
  * for it by name), and the cwd outranks the default (the checkout you are
  * standing in is the one you mean). Flag/env roots must be checkouts.
@@ -322,12 +322,12 @@ export function resolveRoot(options: {
   const explicit = explicitRoot(options.flag, options.env)
   if (explicit) return explicit
   const registry = readRegistryStrict(options.statePath ?? getStatePath(options.env))
-  // --instance is a request: honour it or refuse. TAU_INSTANCE is ambient — a
+  // --instance is a request: honour it or refuse. FICUS_INSTANCE is ambient — a
   // checkout's own .env puts it in the environment — so a label it names that
   // this machine cannot use is ignored rather than turned into a failure of an
   // otherwise perfectly answerable command.
   const fromFlag = options.instance !== undefined
-  const asked = options.instance ?? options.env.TAU_INSTANCE
+  const asked = options.instance ?? options.env.FICUS_INSTANCE
   if (asked) {
     const label = fromFlag ? normalizeLabel(asked) : optionalLabel(asked)
     const record = label === undefined ? undefined : registry.instances[label]
@@ -335,7 +335,7 @@ export function resolveRoot(options: {
     // Only the flag reports why it could not be honoured. Every way the
     // environment's label can fail — unparsable, unregistered, or registered
     // at a checkout that has since been deleted — leaves resolution to carry
-    // on as if TAU_INSTANCE had not been set at all.
+    // on as if FICUS_INSTANCE had not been set at all.
     if (fromFlag) {
       if (!record) throw new UnknownInstanceError(label as string, Object.keys(registry.instances).sort())
       throw new NoRootError(`instance "${label}" is registered at ${record.root}, which is not a checkout`)
@@ -352,7 +352,7 @@ export function resolveRoot(options: {
 }
 
 /**
- * Root resolution for `setup` only: --root > TAU_SERVER_ROOT > walk up from cwd.
+ * Root resolution for `setup` only: --root > FICUS_SERVER_ROOT > walk up from cwd.
  * The registry is deliberately NOT consulted — once an install exists, using it
  * would make `bun run setup` inside a second checkout configure, migrate and
  * pm2-start the FIRST one. Management commands (start/stop/status/…) act on "the

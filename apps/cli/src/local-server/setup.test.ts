@@ -33,7 +33,7 @@ beforeEach(() => {
   writeFileSync(join(root, '.bun-version'), '1.3.8\n')
   writeFileSync(
     join(root, '.env.example'),
-    'TAU_SERVE_WEB=1\nTAU_ENCRYPTION_KEY=\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/tau\nTAU_SANDBOX_RUNTIME=\n'
+    'FICUS_SERVE_WEB=1\nFICUS_ENCRYPTION_KEY=\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/tau\nFICUS_SANDBOX_RUNTIME=\n'
   )
   // The real example: the config-files step generates a per-instance config from it.
   copyFileSync(join(__dirname, '../../../../ecosystem.config.example.js'), join(root, 'ecosystem.config.example.js'))
@@ -130,13 +130,13 @@ describe('runSetup', () => {
     const migrate = calls.find((c) => c.command.join(' ') === 'bun run db:migrate')!
     expect(migrate.options.env).toEqual({
       DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/tau',
-      TAU_MIGRATE_LIVE: '1',
+      FICUS_MIGRATE_LIVE: '1',
     })
     expect(migrate.options.cwd).toBe(root)
     const env = readFileSync(join(root, '.env'), 'utf8')
-    expect(env).toContain('TAU_SANDBOX_RUNTIME=host\n')
-    expect(env).toContain(`TAU_ENCRYPTION_KEY=${'ab'.repeat(32)}\n`)
-    expect(env).toContain('TAU_PASSWORD=bootstrap-token\n')
+    expect(env).toContain('FICUS_SANDBOX_RUNTIME=host\n')
+    expect(env).toContain(`FICUS_ENCRYPTION_KEY=${'ab'.repeat(32)}\n`)
+    expect(env).toContain('FICUS_PASSWORD=bootstrap-token\n')
     expect(statSync(join(root, '.env')).mode & 0o777).toBe(0o600)
     expect(existsSync(join(root, 'ecosystem.config.js'))).toBe(true)
     expect(readRegistry(join(root, 'state.json')).instances.tau?.root).toBe(root)
@@ -146,10 +146,10 @@ describe('runSetup', () => {
     expect(lines.some((l) => l.includes('Preflight'))).toBe(true)
   })
   it('keeps an existing encryption key on re-run', async () => {
-    writeFileSync(join(root, '.env'), 'TAU_ENCRYPTION_KEY=keep-me\n')
+    writeFileSync(join(root, '.env'), 'FICUS_ENCRYPTION_KEY=keep-me\n')
     const { d } = deps()
     await runSetup(opts(), d)
-    expect(readFileSync(join(root, '.env'), 'utf8')).toContain('TAU_ENCRYPTION_KEY=keep-me\n')
+    expect(readFileSync(join(root, '.env'), 'utf8')).toContain('FICUS_ENCRYPTION_KEY=keep-me\n')
   })
   it('dry run touches nothing and prints the plan with secrets redacted', async () => {
     const { d, calls, lines } = deps()
@@ -158,7 +158,7 @@ describe('runSetup', () => {
     // makes the printed plan name the port this instance would really use.
     expect(calls.map((c) => c.command.join(' '))).toEqual(['docker info', 'docker inspect -f {{json .}} postgres-tau'])
     expect(existsSync(join(root, '.env'))).toBe(false)
-    expect(lines.join('\n')).toContain('TAU_ENCRYPTION_KEY=<redacted>')
+    expect(lines.join('\n')).toContain('FICUS_ENCRYPTION_KEY=<redacted>')
     expect(lines.join('\n')).toContain('bun run db:migrate')
     expect(lines.join('\n')).not.toContain('ab'.repeat(32))
   })
@@ -353,7 +353,7 @@ describe('runSetup', () => {
     // and 5432 is never probed — its occupant is not this run's business.
     writeFileSync(
       join(root, '.env'),
-      'TAU_INSTANCE=smoke\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/tau\n'
+      'FICUS_INSTANCE=smoke\nDATABASE_URL=postgres://postgres:postgres@localhost:5432/tau\n'
     )
     const { d, calls } = deps({
       [PORT_INSPECT]: {
@@ -380,7 +380,7 @@ describe('runSetup', () => {
     // 5433 is another container-shaped install — sharing it would corrupt both.
     writeFileSync(
       join(root, '.env'),
-      'TAU_INSTANCE=smoke\nDATABASE_URL=postgres://postgres:postgres@localhost:5433/tau\n'
+      'FICUS_INSTANCE=smoke\nDATABASE_URL=postgres://postgres:postgres@localhost:5433/tau\n'
     )
     const { d, calls } = deps()
     d.connect = async (_host, port) => {
@@ -394,7 +394,7 @@ describe('runSetup', () => {
   it('manages the container normally when it is the one publishing that port', async () => {
     writeFileSync(
       join(root, '.env'),
-      'TAU_INSTANCE=smoke\nDATABASE_URL=postgres://postgres:postgres@localhost:5433/tau\n'
+      'FICUS_INSTANCE=smoke\nDATABASE_URL=postgres://postgres:postgres@localhost:5433/tau\n'
     )
     const { d, calls } = deps({
       [PORT_INSPECT]: {
@@ -548,7 +548,7 @@ describe('runSetup', () => {
     d.fetch = async () => new Response('', { status: 503 })
     await expect(runSetup(opts(), d)).rejects.toThrow(/health/)
   })
-  it('treats a 401 health probe as up (auth-gated /api/*, TAU_PASSWORD is set by this same run)', async () => {
+  it('treats a 401 health probe as up (auth-gated /api/*, FICUS_PASSWORD is set by this same run)', async () => {
     const { d } = deps()
     d.fetch = async () => new Response('', { status: 401 })
     await expect(runSetup(opts(), d)).resolves.toBeTruthy()
@@ -571,7 +571,7 @@ describe('runSetup', () => {
     // the container port lookup) and before any step ran
     expect(confirms).toEqual(['Proceed with setup? @2'])
     // plan-only lines (the run loop logs titles, never the plan bodies)
-    expect(lines).toContain('    bun run db:migrate (TAU_MIGRATE_LIVE=1, DATABASE_URL explicit)')
+    expect(lines).toContain('    bun run db:migrate (FICUS_MIGRATE_LIVE=1, DATABASE_URL explicit)')
     expect(lines).toContain(
       '    docker run paradedb/paradedb:latest as postgres-tau on 127.0.0.1:5432 (or start the existing container)'
     )

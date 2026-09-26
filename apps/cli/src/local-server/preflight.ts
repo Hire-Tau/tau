@@ -159,15 +159,15 @@ export function defaultPreflightDeps(
       const paths: string[] = []
 
       // Order per core's resolveHostChromium (lines ~179-213):
-      // 1. TAU_BROWSER_EXECUTABLE_PATH (with tilde expansion)
-      const configured = env.TAU_BROWSER_EXECUTABLE_PATH?.trim()
+      // 1. FICUS_BROWSER_EXECUTABLE_PATH (with tilde expansion)
+      const configured = env.FICUS_BROWSER_EXECUTABLE_PATH?.trim()
       const expanded = configured ? expandTilde(configured) : undefined
       if (expanded && getExists(expanded) && isFile(expanded) && isExecutable(expanded)) {
         return [expanded]
       }
 
-      // 2. TAU_BROWSER_CHANNEL (validate against SUPPORTED_CHANNELS)
-      const channel = env.TAU_BROWSER_CHANNEL?.trim()
+      // 2. FICUS_BROWSER_CHANNEL (validate against SUPPORTED_CHANNELS)
+      const channel = env.FICUS_BROWSER_CHANNEL?.trim()
       if (channel && SUPPORTED_CHANNELS.has(channel)) {
         return [`channel:${channel}`]
       }
@@ -298,7 +298,7 @@ export async function runPreflight(opts: SetupOptions, deps: PreflightDeps): Pro
       )
     if (deps.browserPaths().length === 0) {
       warnings.push(
-        'No Chrome/Chromium/Edge/Brave found — browser tools will answer "unavailable" until one is installed or TAU_BROWSER_EXECUTABLE_PATH is set (docs/wiki/host-runtime.md#browser-tools).'
+        'No Chrome/Chromium/Edge/Brave found — browser tools will answer "unavailable" until one is installed or FICUS_BROWSER_EXECUTABLE_PATH is set (docs/wiki/host-runtime.md#browser-tools).'
       )
     }
   }

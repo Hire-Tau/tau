@@ -98,18 +98,18 @@ describe('resolveToken — disabled agent-token owner', () => {
   })
 })
 
-describe('resolveToken — TAU_PASSWORD gated on admin passkey', () => {
-  const originalPassword = process.env.TAU_PASSWORD
+describe('resolveToken — FICUS_PASSWORD gated on admin passkey', () => {
+  const originalPassword = process.env.FICUS_PASSWORD
   const testPassword = `resolve-token-pw-${randomUUID()}`
 
   beforeEach(() => {
-    process.env.TAU_PASSWORD = testPassword
+    process.env.FICUS_PASSWORD = testPassword
     resetSecretStore()
   })
 
   afterEach(() => {
-    if (originalPassword !== undefined) process.env.TAU_PASSWORD = originalPassword
-    else delete process.env.TAU_PASSWORD
+    if (originalPassword !== undefined) process.env.FICUS_PASSWORD = originalPassword
+    else delete process.env.FICUS_PASSWORD
     resetSecretStore()
   })
 

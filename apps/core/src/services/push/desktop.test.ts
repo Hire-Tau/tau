@@ -47,7 +47,7 @@ test('desktop alerts are user scoped, bounded by retention, and obey current pri
   expect(await db.select().from(desktopNotifications).where(eq(desktopNotifications.userId, user.id))).toHaveLength(2)
 })
 test('enqueue targets managed desktop homes and users with a paired desktop device, once per event', async () => {
-  const previous = process.env.TAU_DESKTOP_MANAGED
+  const previous = process.env.FICUS_DESKTOP_MANAGED
   const event = (title: string) => ({
     type: 'inbox',
     messageId: crypto.randomUUID(),
@@ -60,7 +60,7 @@ test('enqueue targets managed desktop homes and users with a paired desktop devi
     // The previous test left user.id's push preferences disabled; restore defaults so
     // listDesktopNotifications actually reflects what this test enqueues.
     await UserNotificationPreferences.upsert(user.id, { pushEnabled: true, mutedEvents: [], showPreviews: true })
-    delete process.env.TAU_DESKTOP_MANAGED
+    delete process.env.FICUS_DESKTOP_MANAGED
     await enqueueDesktopNotifications([user.id, other.id], event('Unpaired'), 'inbox.messageReceived', 'message')
     expect(await titles(user.id)).not.toContain('Unpaired')
 
@@ -76,12 +76,12 @@ test('enqueue targets managed desktop homes and users with a paired desktop devi
     await enqueueDesktopNotifications([user.id], event('Revoked'), 'inbox.messageReceived', 'message')
     expect(await titles(user.id)).not.toContain('Revoked')
 
-    process.env.TAU_DESKTOP_MANAGED = '1'
+    process.env.FICUS_DESKTOP_MANAGED = '1'
     await enqueueDesktopNotifications([other.id], event('Managed'), 'inbox.messageReceived', 'message')
     expect(await titles(other.id)).toContain('Managed')
   } finally {
-    if (previous === undefined) delete process.env.TAU_DESKTOP_MANAGED
-    else process.env.TAU_DESKTOP_MANAGED = previous
+    if (previous === undefined) delete process.env.FICUS_DESKTOP_MANAGED
+    else process.env.FICUS_DESKTOP_MANAGED = previous
     await db.delete(deviceTokens).where(inArray(deviceTokens.userId, [user.id, other.id]))
   }
 })

@@ -53,14 +53,14 @@ Use provider ignore files only as a fallback; they do not replace deploying from
 2. Run dev servers on `0.0.0.0`.
 3. Prefer managed local apps so Tau can restart and stop them. This supervision is a convenience for apps, not a durability boundary for one-shot builds, migrations, tests, or generation jobs; keep those in one foreground Bash invocation.
 4. **Do not pass `--port`.** Tau assigns a free port and exports it as `$PORT`.
-5. **Always honor `$TAU_APP_BASE_PATH`**. Tau supplies the correct root or path prefix for the instance.
+5. **Always honor `$FICUS_APP_BASE_PATH`**. Tau supplies the correct root or path prefix for the instance.
 
 ```bash
 # Managed local app: Tau owns the tmux process, assigns the port, and exposes it.
 tau deploy local start <squad-id> \
   --name web \
   --cwd <workspace-root>/my-app \
-  --command "bun run dev -- --host 0.0.0.0 --port \$PORT --base \$TAU_APP_BASE_PATH"
+  --command "bun run dev -- --host 0.0.0.0 --port \$PORT --base \$FICUS_APP_BASE_PATH"
 
 # Attached local app: the server is ALREADY listening, so Tau cannot choose —
 # pass the port it is on. Rejected if another live app already holds it.
@@ -91,9 +91,9 @@ Archive old or superseded local apps once they are no longer useful. Archiving s
 resource: on the VM runtime every squad's box runs as a user on ONE host sharing
 one loopback, so two squads asking for 5173 collide. Tau assigns a free port and
 rejects an explicit one that another live app already holds. Read `$PORT`;
-`$TAU_LOCAL_DEPLOYMENT_PORT` is the same value under Tau's own name.
+`$FICUS_LOCAL_DEPLOYMENT_PORT` is the same value under Tau's own name.
 
-**`$TAU_APP_BASE_PATH` — always honor the value Tau supplies.** On hosted
+**`$FICUS_APP_BASE_PATH` — always honor the value Tau supplies.** On hosted
 instances it is `/`: each app is served at its own origin root, so default
 root-absolute asset URLs work by default. On a self-hosted instance or the path
 fallback it is `/api/app/<id>/`; without that prefix, root-absolute assets such
@@ -102,9 +102,9 @@ modes so the project remains portable. Tell the framework:
 
 | Framework           | Setting                                                                                              |
 | ------------------- | ---------------------------------------------------------------------------------------------------- |
-| Vite                | `base` — flag `--base $TAU_APP_BASE_PATH`, or `base: process.env.TAU_APP_BASE_PATH` in `vite.config` |
-| Next.js             | `basePath: process.env.TAU_APP_BASE_PATH?.replace(/\/$/, '')`                                        |
-| Create React App    | `PUBLIC_URL=$TAU_APP_BASE_PATH`                                                                      |
+| Vite                | `base` — flag `--base $FICUS_APP_BASE_PATH`, or `base: process.env.FICUS_APP_BASE_PATH` in `vite.config` |
+| Next.js             | `basePath: process.env.FICUS_APP_BASE_PATH?.replace(/\/$/, '')`                                        |
+| Create React App    | `PUBLIC_URL=$FICUS_APP_BASE_PATH`                                                                      |
 | Plain static/server | emit RELATIVE asset URLs (`./assets/…`), or prefix them with the base path                           |
 
 Symptom when this is wrong: the app's root URL returns 200 and renders a blank

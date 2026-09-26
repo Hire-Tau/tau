@@ -116,7 +116,7 @@ instance to the CLI auth store, then select its label when starting Vite:
 
 ```bash
 tau auth login cloud --api-url https://your-instance.ficus.sh
-TAU_DEV_BACKEND=cloud bun run dev:web
+FICUS_DEV_BACKEND=cloud bun run dev:web
 ```
 
 The dev server keeps the paired device token on the server side and proxies both
@@ -128,14 +128,14 @@ to off whenever the backend changes or Vite restarts.
 
 `bun run dev:web` also prints a one-time dev access token. The browser prompts
 for it before serving the app or proxying any API or WebSocket traffic, then
-stores it in an HttpOnly session cookie. Set `TAU_DEV_ACCESS_TOKEN` to a value of
+stores it in an HttpOnly session cookie. Set `FICUS_DEV_ACCESS_TOKEN` to a value of
 at least 16 characters when a stable shared token is needed. The Vite server
 serves plain HTTP, so only expose it through an encrypted transport. Do not use
 `VITE_TAU_API_URL` for this workflow; a direct browser connection cannot safely
 reuse the production instance's cookie/passkey session.
 
 To serve the UI from the core itself instead, run `bun run build:web` and start
-the core with `TAU_SERVE_WEB=1`; the app, `/api/*` and `/ws` are then all on
+the core with `FICUS_SERVE_WEB=1`; the app, `/api/*` and `/ws` are then all on
 `PORT` (this is what setup configures).
 
 The installed services and the foreground dev processes are separate.
@@ -156,7 +156,7 @@ ports.
 | `bun run build`                         | Build all packages                                                            |
 | `bun run build:cli`                     | Compile the CLI binary                                                        |
 | `bun run test`                          | Prepare this worktree’s test DB, then run configured package test entrypoints |
-| `TAU_MIGRATE_LIVE=1 bun run db:migrate` | Deliberately migrate the root `.env` database                                 |
+| `FICUS_MIGRATE_LIVE=1 bun run db:migrate` | Deliberately migrate the root `.env` database                                 |
 | `bun run db:generate`                   | Generate migration files from schema changes                                  |
 | `bun run logs`                          | Tail pm2 service logs                                                         |
 | `bun run pm2:status`                    | Show pm2 process status                                                       |
@@ -193,8 +193,8 @@ serves the built web app through Core.
 
 The pm2 scripts (`start:core`, `stop:core`, `reload:api`, `reload:worker`) do not
 hard-code `tau-api` / `tau-worker`: they resolve this checkout's app names with
-`$(bun scripts/pm2-name.ts api|worker)`, which reads `TAU_PM2_API_NAME` /
-`TAU_PM2_WORKER_NAME` from the checkout's `.env`, so they address the right
+`$(bun scripts/pm2-name.ts api|worker)`, which reads `FICUS_PM2_API_NAME` /
+`FICUS_PM2_WORKER_NAME` from the checkout's `.env`, so they address the right
 instance when several are installed
 ([docs/wiki/setup.md → Multiple instances](setup.md#multiple-instances)).
 
@@ -281,12 +281,12 @@ replace validation on the deployment topology you are changing.
 bun run k3d:setup
 
 # Add to your .env:
-TAU_SANDBOX_RUNTIME=k8s
-TAU_K8S_LOCAL=true
-TAU_K8S_NAMESPACE=tau-sandboxes-dev
-TAU_K8S_RUNTIME_CLASS=
+FICUS_SANDBOX_RUNTIME=k8s
+FICUS_K8S_LOCAL=true
+FICUS_K8S_NAMESPACE=tau-sandboxes-dev
+FICUS_K8S_RUNTIME_CLASS=
 # Optional: override sandbox pod memory limit (local default is 8Gi)
-# TAU_SANDBOX_MEMORY_LIMIT=8Gi
+# FICUS_SANDBOX_MEMORY_LIMIT=8Gi
 
 # Installed build: restart using its recorded supervisor
 tau server restart
@@ -338,7 +338,7 @@ bun run docker:gc -- --install  # Install/refresh a daily 13:00 launchd agent
 
 Normal test runs do not sweep other worktrees' database projects. Orphan
 cleanup is explicit through `bun run docker:gc`; the test preload also supports
-the opt-in `TAU_TEST_SWEEP_ORPHANS=1` maintenance path, throttled to at most once
+the opt-in `FICUS_TEST_SWEEP_ORPHANS=1` maintenance path, throttled to at most once
 an hour. A project is eligible only after its owning worktree no longer exists.
 
 For installations that explicitly use PM2, its logs can grow without a

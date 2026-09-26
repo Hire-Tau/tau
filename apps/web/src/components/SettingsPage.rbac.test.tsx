@@ -63,7 +63,7 @@ const defaultSquads: SquadFixture[] = [{ id: 'squad-1', name: 'Research', purpos
 function seedSettingsQueries(queryClient: QueryClient, permissions: string[], options: RenderSettingsOptions = {}) {
   // Seed the updates-settings query (fetched whenever the viewer holds
   // updates:read) so no test depends on a live fetch; `managed` mirrors the
-  // server's TAU_MANAGED flag.
+  // server's FICUS_MANAGED flag.
   queryClient.setQueryData(queryKeys.updates.settings(), {
     settings: { enabled: false, intervalMinutes: 30, remote: 'origin', branch: 'main' },
     status: { active: false, latest: null },

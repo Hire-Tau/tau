@@ -75,7 +75,7 @@ export interface SandboxStatus {
   startedAt?: string
   devboxReady?: boolean
   /**
-   * Server-driven runtime this sandbox runs under (TAU_SANDBOX_RUNTIME) — never
+   * Server-driven runtime this sandbox runs under (FICUS_SANDBOX_RUNTIME) — never
    * inferred client-side. On `host` there is no sandbox at all, so clients must
    * not offer start/stop.
    */

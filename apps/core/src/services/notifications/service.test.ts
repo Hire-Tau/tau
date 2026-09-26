@@ -317,7 +317,7 @@ describe('NotificationService', () => {
     test('a newly registered push event reaches web, APNs, and desktop through shared recipient preferences', async () => {
       const prefix = `notification-fanout-${crypto.randomUUID()}`
       const eventType = `${prefix}.created`
-      const previousDesktop = process.env.TAU_DESKTOP_MANAGED
+      const previousDesktop = process.env.FICUS_DESKTOP_MANAGED
       const configureSpy = spyOn(service, 'configureVapid').mockResolvedValue()
       const webSpy = spyOn(service as any, 'sendWebPush').mockImplementation(async () => {})
       const apnsSpy = spyOn(service as any, 'sendApnsPush').mockImplementation(async () => {})
@@ -331,7 +331,7 @@ describe('NotificationService', () => {
       }
       try {
         const user = await createTestUser({ prefix })
-        process.env.TAU_DESKTOP_MANAGED = '1'
+        process.env.FICUS_DESKTOP_MANAGED = '1'
         eventBuilders[eventType] = async () => event
         service.setConfig({ rules: [{ event: eventType, channels: ['push'] }], channels: { push: { enabled: true } } })
         const data = { recipientType: 'user', recipientId: user.id }
@@ -365,8 +365,8 @@ describe('NotificationService', () => {
         ).toHaveLength(0)
       } finally {
         delete eventBuilders[eventType]
-        if (previousDesktop === undefined) delete process.env.TAU_DESKTOP_MANAGED
-        else process.env.TAU_DESKTOP_MANAGED = previousDesktop
+        if (previousDesktop === undefined) delete process.env.FICUS_DESKTOP_MANAGED
+        else process.env.FICUS_DESKTOP_MANAGED = previousDesktop
         configureSpy.mockRestore()
         webSpy.mockRestore()
         apnsSpy.mockRestore()

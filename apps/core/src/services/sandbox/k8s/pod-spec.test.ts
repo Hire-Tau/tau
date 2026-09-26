@@ -72,26 +72,26 @@ describe('image and API URL resolution', () => {
     )
     expect(getSandboxImage({ sandboxType: 'agent', isLocalDev: false, env: {} })).toBe('tau-sandbox-agent:latest')
     expect(
-      getSandboxImage({ sandboxType: 'agent', isLocalDev: false, env: { TAU_SANDBOX_AGENT_IMAGE: 'x/y:z' } })
+      getSandboxImage({ sandboxType: 'agent', isLocalDev: false, env: { FICUS_SANDBOX_AGENT_IMAGE: 'x/y:z' } })
     ).toBe('x/y:z')
     expect(getSandboxImage({ sandboxType: 'squad', isLocalDev: true, env: {} })).toBe(
       'tau-registry:5000/tau-sandbox:latest'
     )
   })
 
-  // TAU_K8S_* only applies to the k8s runtime, and the sandbox factory imports
-  // every manager eagerly — so a stale TAU_K8S_LOCAL=true left in a .env that
+  // FICUS_K8S_* only applies to the k8s runtime, and the sandbox factory imports
+  // every manager eagerly — so a stale FICUS_K8S_LOCAL=true left in a .env that
   // now says host/docker must not flip this module into local-k3d mode.
-  test('the isLocalDev default follows the runtime, not a bare TAU_K8S_LOCAL', () => {
-    expect(getSandboxImage({ env: { TAU_SANDBOX_RUNTIME: 'host', TAU_K8S_LOCAL: 'true' } })).toBe('tau-sandbox:latest')
+  test('the isLocalDev default follows the runtime, not a bare FICUS_K8S_LOCAL', () => {
+    expect(getSandboxImage({ env: { FICUS_SANDBOX_RUNTIME: 'host', FICUS_K8S_LOCAL: 'true' } })).toBe('tau-sandbox:latest')
     expect(
-      getSandboxImage({ sandboxType: 'agent', env: { TAU_SANDBOX_RUNTIME: 'docker-socket', TAU_K8S_LOCAL: 'true' } })
+      getSandboxImage({ sandboxType: 'agent', env: { FICUS_SANDBOX_RUNTIME: 'docker-socket', FICUS_K8S_LOCAL: 'true' } })
     ).toBe('tau-sandbox-agent:latest')
     // Under the k8s runtime the key is honoured, as always.
-    expect(getSandboxImage({ env: { TAU_SANDBOX_RUNTIME: 'k8s', TAU_K8S_LOCAL: 'true' } })).toBe(
+    expect(getSandboxImage({ env: { FICUS_SANDBOX_RUNTIME: 'k8s', FICUS_K8S_LOCAL: 'true' } })).toBe(
       'tau-registry:5000/tau-sandbox:latest'
     )
-    expect(getSandboxImage({ env: { TAU_SANDBOX_RUNTIME: 'k8s' } })).toBe('tau-sandbox:latest')
+    expect(getSandboxImage({ env: { FICUS_SANDBOX_RUNTIME: 'k8s' } })).toBe('tau-sandbox:latest')
   })
 
   test('resolveSandboxApiUrl: local dev points at host.k3d.internal on the live port', () => {
@@ -336,8 +336,8 @@ describe('buildSandboxPodSpec', () => {
     })
     const c = podSpec.spec!.containers![0]
     const env = Object.fromEntries((c.env ?? []).map((e: any) => [e.name, e.value]))
-    expect(env.TAU_SANDBOX_ROLE).toBe('agent')
-    expect(env.TAU_DEVBOX_DIR).toBe('/private')
+    expect(env.FICUS_SANDBOX_ROLE).toBe('agent')
+    expect(env.FICUS_DEVBOX_DIR).toBe('/private')
     expect((c.volumeMounts ?? []).some((m: any) => m.mountPath === '/nix-cache')).toBe(false)
     // memory + ssh mounts remain for squad members
     expect((c.volumeMounts ?? []).some((m: any) => m.mountPath === '/var/lib/tau/ssh-source')).toBe(true)
@@ -359,7 +359,7 @@ describe('buildSandboxPodSpec', () => {
     const env = Object.fromEntries((c.env ?? []).map((e: any) => [e.name, e.value]))
     // Solo agents work in /private — no /workspace at all.
     expect(env.WORKSPACE_PATH).toBe('/private')
-    expect(env.TAU_DEVBOX_DIR).toBe('/private')
+    expect(env.FICUS_DEVBOX_DIR).toBe('/private')
     const mountPaths = (c.volumeMounts ?? []).map((m: any) => m.mountPath)
     expect(mountPaths).toContain('/private')
     expect(mountPaths.some((p: string) => p === '/workspace' || p.startsWith('/workspace/'))).toBe(false)
@@ -376,7 +376,7 @@ describe('buildSandboxPodSpec', () => {
     })
     const c = podSpec.spec!.containers![0]
     const env = Object.fromEntries((c.env ?? []).map((e: any) => [e.name, e.value]))
-    expect(env.TAU_SANDBOX_ROLE).toBe('squad')
+    expect(env.FICUS_SANDBOX_ROLE).toBe('squad')
     expect((c.volumeMounts ?? []).some((m: any) => m.mountPath === '/nix-cache')).toBe(true)
   })
 })

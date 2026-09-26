@@ -36,17 +36,17 @@ describe('buildSandboxChildEnv', () => {
 
   it('forwards prefix-matched keys (TAU_, NIX_, DEVBOX_, XDG_, LC_)', () => {
     const env = buildSandboxChildEnv({
-      TAU_SANDBOX_ID: 'sb1',
-      TAU_API_URL: 'http://tau-api:3000',
-      TAU_PASSWORD: 's3cret',
+      FICUS_SANDBOX_ID: 'sb1',
+      FICUS_API_URL: 'http://tau-api:3000',
+      FICUS_PASSWORD: 's3cret',
       NIX_PROFILES: '/nix/var/nix/profiles/default /root/.nix-profile',
       DEVBOX_SHELL_ENABLED: '1',
       XDG_CONFIG_HOME: '/root/.config',
       LC_CTYPE: 'C.UTF-8',
     })
-    expect(env.TAU_SANDBOX_ID).toBe('sb1')
-    expect(env.TAU_API_URL).toBe('http://tau-api:3000')
-    expect(env.TAU_PASSWORD).toBe('s3cret')
+    expect(env.FICUS_SANDBOX_ID).toBe('sb1')
+    expect(env.FICUS_API_URL).toBe('http://tau-api:3000')
+    expect(env.FICUS_PASSWORD).toBe('s3cret')
     expect(env.NIX_PROFILES).toContain('/nix')
     expect(env.DEVBOX_SHELL_ENABLED).toBe('1')
     expect(env.XDG_CONFIG_HOME).toBe('/root/.config')
@@ -147,9 +147,9 @@ describe("git's own identity variables reach the agent's git", () => {
   })
 })
 
-describe('build parallelism defaults from TAU_BOX_CPUS', () => {
-  it('derives CARGO_BUILD_JOBS / MAKEFLAGS / GOMAXPROCS / CMAKE_BUILD_PARALLEL_LEVEL from TAU_BOX_CPUS', () => {
-    const env = buildSandboxChildEnv({ TAU_BOX_CPUS: '2' })
+describe('build parallelism defaults from FICUS_BOX_CPUS', () => {
+  it('derives CARGO_BUILD_JOBS / MAKEFLAGS / GOMAXPROCS / CMAKE_BUILD_PARALLEL_LEVEL from FICUS_BOX_CPUS', () => {
+    const env = buildSandboxChildEnv({ FICUS_BOX_CPUS: '2' })
     expect(env.CARGO_BUILD_JOBS).toBe('2')
     expect(env.MAKEFLAGS).toBe('-j2')
     expect(env.GOMAXPROCS).toBe('2')
@@ -157,15 +157,15 @@ describe('build parallelism defaults from TAU_BOX_CPUS', () => {
   })
 
   it('never overrides an explicit value from the source env or the caller', () => {
-    const env = buildSandboxChildEnv({ TAU_BOX_CPUS: '2', MAKEFLAGS: '-j8' }, { GOMAXPROCS: '1' })
+    const env = buildSandboxChildEnv({ FICUS_BOX_CPUS: '2', MAKEFLAGS: '-j8' }, { GOMAXPROCS: '1' })
     expect(env.MAKEFLAGS).toBe('-j8')
     expect(env.GOMAXPROCS).toBe('1')
     expect(env.CARGO_BUILD_JOBS).toBe('2')
   })
 
-  it('sets nothing when TAU_BOX_CPUS is absent or malformed', () => {
+  it('sets nothing when FICUS_BOX_CPUS is absent or malformed', () => {
     expect(buildSandboxChildEnv({}).CARGO_BUILD_JOBS).toBeUndefined()
-    expect(buildSandboxChildEnv({ TAU_BOX_CPUS: '0' }).CARGO_BUILD_JOBS).toBeUndefined()
-    expect(buildSandboxChildEnv({ TAU_BOX_CPUS: 'lots' }).MAKEFLAGS).toBeUndefined()
+    expect(buildSandboxChildEnv({ FICUS_BOX_CPUS: '0' }).CARGO_BUILD_JOBS).toBeUndefined()
+    expect(buildSandboxChildEnv({ FICUS_BOX_CPUS: 'lots' }).MAKEFLAGS).toBeUndefined()
   })
 })

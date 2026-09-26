@@ -86,10 +86,10 @@ type SlotUnsubscribeResponse =
       claimStatus?: 'active' | 'released' | 'expired'
     }
 
-export function resolveSlotSquadId(explicit?: string, environment = process.env.TAU_SQUAD_ID): string {
+export function resolveSlotSquadId(explicit?: string, environment = process.env.FICUS_SQUAD_ID): string {
   const squadId = explicit ?? environment
   if (!squadId) {
-    throw new Error('No squad context: pass --squad <id> or run in a squad agent box with TAU_SQUAD_ID.')
+    throw new Error('No squad context: pass --squad <id> or run in a squad agent box with FICUS_SQUAD_ID.')
   }
   return squadId
 }
@@ -135,7 +135,7 @@ function resourcePath(suffix: string): string {
 }
 
 function withSquad(command: Command): Command {
-  return command.option('--squad <id>', 'Squad ID (defaults to TAU_SQUAD_ID)')
+  return command.option('--squad <id>', 'Squad ID (defaults to FICUS_SQUAD_ID)')
 }
 
 export function renderSlotPools(result: SlotPoolProjection | SlotPoolProjection[], _squadId: string): string {

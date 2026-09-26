@@ -21,7 +21,7 @@ import { memoizeBuild, resolveRepoRoot } from './server-bundle'
  *
  * Determinism vs. an informative `tau --version`: the CLI's normal package
  * build (`apps/cli/package.json`) generates `src/build-info.generated.ts`
- * from TAU_CLI_BUILD_DATE — WALL-CLOCK content that `bun build` INLINES into
+ * from FICUS_CLI_BUILD_DATE — WALL-CLOCK content that `bun build` INLINES into
  * the bundle whenever the file exists (`--external './build-info.generated'`
  * does NOT prevent the inlining — verified), which would change the bundle
  * hash on every build of unchanged code and re-push forever. This pipeline

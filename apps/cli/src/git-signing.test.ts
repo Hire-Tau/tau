@@ -12,7 +12,7 @@ function fakeDeps(overrides: Partial<GitSigningDependencies> = {}) {
   }
   const written = new Map<string, string>()
   const deps: GitSigningDependencies = {
-    env: { TAU_GIT_SIGNING_SQUAD: 'squad-1' },
+    env: { FICUS_GIT_SIGNING_SQUAD: 'squad-1' },
     readFile: async (path) => Buffer.from(`payload of ${path}`),
     writeFile: async (path, content) => {
       written.set(path, content)
@@ -62,8 +62,8 @@ describe('tau as gpg.ssh.program', () => {
 
   it('refuses other namespaces, missing buffers and use outside the squad wrapper', async () => {
     for (const [args, env] of [
-      [['-Y', 'sign', '-n', 'file', '-f', 'k', 'buf'], { TAU_GIT_SIGNING_SQUAD: 's' }],
-      [['-Y', 'sign', '-n', 'git', '-f', 'k'], { TAU_GIT_SIGNING_SQUAD: 's' }],
+      [['-Y', 'sign', '-n', 'file', '-f', 'k', 'buf'], { FICUS_GIT_SIGNING_SQUAD: 's' }],
+      [['-Y', 'sign', '-n', 'git', '-f', 'k'], { FICUS_GIT_SIGNING_SQUAD: 's' }],
       [['-Y', 'sign', '-n', 'git', '-f', 'k', 'buf'], {}],
     ] as const) {
       const { deps, calls } = fakeDeps({ env })
@@ -156,11 +156,11 @@ describe('git signing through the real tau entrypoint', () => {
       GIT_AUTHOR_EMAIL: 'agent@example.com',
       GIT_COMMITTER_NAME: 'Agent',
       GIT_COMMITTER_EMAIL: 'agent@example.com',
-      TAU_AGENT_CONTEXT: '1',
-      TAU_API_URL: `http://127.0.0.1:${server.port}`,
-      TAU_TOKEN: 'tau_agent_e2e',
-      TAU_AUTH_STORE: join(dir, 'auth.json'),
-      TAU_GIT_SIGNING_SQUAD: 'squad-e2e',
+      FICUS_AGENT_CONTEXT: '1',
+      FICUS_API_URL: `http://127.0.0.1:${server.port}`,
+      FICUS_TOKEN: 'tau_agent_e2e',
+      FICUS_AUTH_STORE: join(dir, 'auth.json'),
+      FICUS_GIT_SIGNING_SQUAD: 'squad-e2e',
     }
     const signing = [
       '-c',

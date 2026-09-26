@@ -9,7 +9,7 @@ How to get a running Tau. Pick your path:
 | **Kubernetes**          | Multi-tenant cluster deployments                                                      | [K8s Deployment Guide](k8s/deployment.md)      |
 | **Hosted**              | Let us run it                                                                         | [ficus.sh](https://ficus.sh)                   |
 
-Every path needs a sandbox runtime (`TAU_SANDBOX_RUNTIME`, required, no
+Every path needs a sandbox runtime (`FICUS_SANDBOX_RUNTIME`, required, no
 default) — [docs/wiki/sandbox-runtimes.md](sandbox-runtimes.md) compares them.
 
 Developing tau itself (git identity, commit signing, `bun run dev`) is a
@@ -44,11 +44,11 @@ forwards everything else verbatim to setup, so any other flag from the
 
 What the one-liner does, in order:
 
-1. Installs the `tau` CLI into `~/.tau/bin` — `TAU_INSTALL_DIR` overrides that
+1. Installs the `tau` CLI into `~/.tau/bin` — `FICUS_INSTALL_DIR` overrides that
    directory (both the one-liner and the CLI installer honour it). The install
    is skipped when `~/.tau/bin/tau` already exists **and**
-   `TAU_SETUP_SKIP_CLI_INSTALL=1`; the installer URL comes from
-   `TAU_INSTALL_URL`, default `https://ficus.sh/cli/install.sh`.
+   `FICUS_SETUP_SKIP_CLI_INSTALL=1`; the installer URL comes from
+   `FICUS_INSTALL_URL`, default `https://ficus.sh/cli/install.sh`.
 2. Runs `tau server install`, which installs bun with the official installer if
    it is missing, then clones `https://github.com/ficushq/tau.git` into
    `~/.tau/tau` (`--root <dir>` to clone elsewhere; an existing checkout there
@@ -90,7 +90,7 @@ bun run setup -- --runtime host --port 3000
 ### What setup asks
 
 Up to two things. First the runtime, and only when neither `--runtime` nor
-`TAU_SETUP_RUNTIME` is set:
+`FICUS_SETUP_RUNTIME` is set:
 
 ```
 Where should agents run?
@@ -115,7 +115,7 @@ Proceed with setup? [Y/n]
 Answering anything but yes cancels before a single step runs. `--yes` skips this
 confirmation, and a headless run (no terminal) never shows it. Note that `--yes`
 does **not** answer the runtime question: a headless run must pass `--runtime`
-(or `TAU_SETUP_RUNTIME`), otherwise setup exits 2 listing the flags.
+(or `FICUS_SETUP_RUNTIME`), otherwise setup exits 2 listing the flags.
 
 ### Flags
 
@@ -124,30 +124,30 @@ headless use; the flag wins when both are set.
 
 | Flag                                                  | Env mirror               | Default                                                          | Notes                                                                                                                             |
 | ----------------------------------------------------- | ------------------------ | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `--runtime <host\|docker-socket\|docker-sysbox\|k3d>` | `TAU_SETUP_RUNTIME`      | asked                                                            | `k8s` / `vm` exit with a pointer to the runtime doc                                                                               |
-| `--supervisor <pm2\|launchd\|systemd-user>`           | `TAU_SETUP_SUPERVISOR`   | macOS: `launchd`; Linux: `systemd-user`                          | `pm2` remains selectable; native supervisors are OS-specific                                                                      |
-| `--instance <label>`                                  | `TAU_SETUP_INSTANCE`     | the checkout's label, else `tau`                                 | names every per-instance resource — see [Multiple instances](#multiple-instances)                                                 |
-| `--home-dir <path>`                                   | `TAU_SETUP_HOME_DIR`     | `~/.tau`, or `~/.tau-<label>`                                    | written to `.env` when given, or when the instance is labelled; a leading `~` is expanded by the core                             |
-| `--port <n>`                                          | `TAU_SETUP_PORT`         | `3000` on a fresh checkout; a re-run keeps the checkout's `PORT` | sets `PORT`, derives `WORKER_PORT` (+2), `TAU_WORKER_EVENT_PORT` (+3), `TAU_API_URL`, `APP_URL`, `TAU_WEB_ORIGIN`; max `65532`    |
-| `--app-url <origin>`                                  | `TAU_SETUP_APP_URL`      | `http://localhost:<port>`                                        | must be a bare origin (`scheme://host[:port]`, no path) — a path breaks passkeys                                                  |
-| `--database-url <dsn>`                                | `TAU_SETUP_DATABASE_URL` | the managed container                                            | use an existing PostgreSQL; no container is then created or started                                                               |
-| `--db-name <name>`                                    | `TAU_SETUP_DB_NAME`      | `tau`                                                            | managed container only, created if missing; mutually exclusive with `--database-url`                                              |
-| `--db-port <n>`                                       | `TAU_SETUP_DB_PORT`      | `5432` for `tau`, else the first free port from 5433             | host port the managed PostgreSQL container publishes on loopback                                                                  |
+| `--runtime <host\|docker-socket\|docker-sysbox\|k3d>` | `FICUS_SETUP_RUNTIME`      | asked                                                            | `k8s` / `vm` exit with a pointer to the runtime doc                                                                               |
+| `--supervisor <pm2\|launchd\|systemd-user>`           | `FICUS_SETUP_SUPERVISOR`   | macOS: `launchd`; Linux: `systemd-user`                          | `pm2` remains selectable; native supervisors are OS-specific                                                                      |
+| `--instance <label>`                                  | `FICUS_SETUP_INSTANCE`     | the checkout's label, else `tau`                                 | names every per-instance resource — see [Multiple instances](#multiple-instances)                                                 |
+| `--home-dir <path>`                                   | `FICUS_SETUP_HOME_DIR`     | `~/.tau`, or `~/.tau-<label>`                                    | written to `.env` when given, or when the instance is labelled; a leading `~` is expanded by the core                             |
+| `--port <n>`                                          | `FICUS_SETUP_PORT`         | `3000` on a fresh checkout; a re-run keeps the checkout's `PORT` | sets `PORT`, derives `WORKER_PORT` (+2), `FICUS_WORKER_EVENT_PORT` (+3), `FICUS_API_URL`, `APP_URL`, `FICUS_WEB_ORIGIN`; max `65532`    |
+| `--app-url <origin>`                                  | `FICUS_SETUP_APP_URL`      | `http://localhost:<port>`                                        | must be a bare origin (`scheme://host[:port]`, no path) — a path breaks passkeys                                                  |
+| `--database-url <dsn>`                                | `FICUS_SETUP_DATABASE_URL` | the managed container                                            | use an existing PostgreSQL; no container is then created or started                                                               |
+| `--db-name <name>`                                    | `FICUS_SETUP_DB_NAME`      | `tau`                                                            | managed container only, created if missing; mutually exclusive with `--database-url`                                              |
+| `--db-port <n>`                                       | `FICUS_SETUP_DB_PORT`      | `5432` for `tau`, else the first free port from 5433             | host port the managed PostgreSQL container publishes on loopback                                                                  |
 | `--default`                                           | —                        | off                                                              | make this instance the fallback for bare `tau server …` commands run outside any checkout (inside a checkout, that checkout wins) |
 | `--no-start`                                          | —                        | starts                                                           | write configuration/registry only; do not register or start a supervisor                                                          |
 | `--dry-run`                                           | —                        | off                                                              | print the plan (secrets redacted), change nothing, exit 0                                                                         |
 | `--yes`                                               | —                        | off                                                              | skip the plan confirmation (the runtime question is still asked on a TTY)                                                         |
 | `--rebuild-image`                                     | —                        | off                                                              | rebuild `tau-sandbox:latest` even if it already exists                                                                            |
-| `--root <dir>`                                        | `TAU_SERVER_ROOT`        | resolved (see below)                                             | the checkout to operate on                                                                                                        |
+| `--root <dir>`                                        | `FICUS_SERVER_ROOT`        | resolved (see below)                                             | the checkout to operate on                                                                                                        |
 
 The checkout a `tau server` management command (`start`, `stop`, `restart`,
 `status`, `logs`, `update`, `uninstall`) acts on is resolved in this order:
-`--root` > `TAU_SERVER_ROOT` > `--instance <label>` (or `TAU_INSTANCE` in the
+`--root` > `FICUS_SERVER_ROOT` > `--instance <label>` (or `FICUS_INSTANCE` in the
 environment) looked up in the registry > the checkout you are standing in >
 the registry's default instance. A label you pass explicitly is honoured or
 refused; one that merely happens to be in the environment is ignored when the
 registry cannot use it. **Setup root resolution never selects a checkout from the registry**: `--root` >
-`TAU_SERVER_ROOT` > the checkout you are in — otherwise running setup in a
+`FICUS_SERVER_ROOT` > the checkout you are in — otherwise running setup in a
 second checkout would reconfigure the installed one.
 
 ### What it writes
@@ -169,24 +169,24 @@ The managed `.env` keys:
 
 | Key                                                           | Value                                                                                                                                                                            | Replaced when                              |
 | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| `TAU_SANDBOX_RUNTIME`                                         | the chosen runtime (`k3d` is written as `k8s`)                                                                                                                                   | `--runtime`                                |
-| `TAU_K8S_LOCAL`, `TAU_K8S_NAMESPACE`, `TAU_K8S_RUNTIME_CLASS` | `true`, `tau-sandboxes-dev`, empty — k3d only; otherwise a `TAU_K8S_LOCAL=true` already in .env is blanked (it applies only to the k8s runtime) and the other two are left alone | `--runtime`                                |
-| `TAU_ENCRYPTION_KEY`                                          | random 32-byte hex, only when empty                                                                                                                                              | never                                      |
-| `TAU_INTERNAL_EVENT_TOKEN`                                    | random 32-byte hex, only when empty                                                                                                                                              | never                                      |
-| `TAU_PASSWORD`                                                | random 24-byte token, only when empty                                                                                                                                            | never                                      |
-| `TAU_SERVE_WEB`                                               | `1` (the core serves the built web UI on `PORT`)                                                                                                                                 | never                                      |
-| `TAU_INSTANCE`                                                | the instance label (`tau` unless `--instance` says otherwise); a re-run with a _different_ `--instance` is refused, not replaced                                                 | `--instance`                               |
+| `FICUS_SANDBOX_RUNTIME`                                         | the chosen runtime (`k3d` is written as `k8s`)                                                                                                                                   | `--runtime`                                |
+| `FICUS_K8S_LOCAL`, `FICUS_K8S_NAMESPACE`, `FICUS_K8S_RUNTIME_CLASS` | `true`, `tau-sandboxes-dev`, empty — k3d only; otherwise a `FICUS_K8S_LOCAL=true` already in .env is blanked (it applies only to the k8s runtime) and the other two are left alone | `--runtime`                                |
+| `FICUS_ENCRYPTION_KEY`                                          | random 32-byte hex, only when empty                                                                                                                                              | never                                      |
+| `FICUS_INTERNAL_EVENT_TOKEN`                                    | random 32-byte hex, only when empty                                                                                                                                              | never                                      |
+| `FICUS_PASSWORD`                                                | random 24-byte token, only when empty                                                                                                                                            | never                                      |
+| `FICUS_SERVE_WEB`                                               | `1` (the core serves the built web UI on `PORT`)                                                                                                                                 | never                                      |
+| `FICUS_INSTANCE`                                                | the instance label (`tau` unless `--instance` says otherwise); a re-run with a _different_ `--instance` is refused, not replaced                                                 | `--instance`                               |
 | `PORT`                                                        | the port                                                                                                                                                                         | `--port`                                   |
 | `WORKER_PORT`                                                 | `PORT + 2`                                                                                                                                                                       | `--port`                                   |
-| `TAU_WORKER_EVENT_PORT`                                       | `PORT + 3`                                                                                                                                                                       | `--port`                                   |
-| `TAU_API_URL`                                                 | `http://localhost:<port>`                                                                                                                                                        | `--port`                                   |
-| `APP_URL`, `TAU_WEB_ORIGIN`                                   | the app URL                                                                                                                                                                      | `--app-url`, `--port`                      |
+| `FICUS_WORKER_EVENT_PORT`                                       | `PORT + 3`                                                                                                                                                                       | `--port`                                   |
+| `FICUS_API_URL`                                                 | `http://localhost:<port>`                                                                                                                                                        | `--port`                                   |
+| `APP_URL`, `FICUS_WEB_ORIGIN`                                   | the app URL                                                                                                                                                                      | `--app-url`, `--port`                      |
 | `DATABASE_URL`                                                | your DSN, or the managed container's URL with the database name                                                                                                                  | `--database-url`, `--db-name`, `--db-port` |
 | `HOME_DIR`                                                    | `--home-dir` when given; otherwise `~/.tau-<label>`, and nothing at all for the `tau` instance (the core's own default `~/.tau`)                                                 | `--home-dir`, `--instance`                 |
-| `TAU_UPDATE_SUPERVISOR`                                       | selected supervisor                                                                                                                                                              | always reconciled                          |
-| `TAU_SYSTEM_LOG_PROVIDER`                                     | `pm2` for PM2; `file` for native supervisors                                                                                                                                     | always reconciled                          |
-| `TAU_PM2_API_NAME`, `TAU_PM2_WORKER_NAME`                     | derived app names for PM2; cleared for native supervisors                                                                                                                        | always reconciled                          |
-| `TAU_LOG_FILE_API`, `TAU_LOG_FILE_WORKER`                     | absolute `~/.tau/logs/<process>.log` paths for native supervisors; cleared for PM2                                                                                               | always reconciled                          |
+| `FICUS_UPDATE_SUPERVISOR`                                       | selected supervisor                                                                                                                                                              | always reconciled                          |
+| `FICUS_SYSTEM_LOG_PROVIDER`                                     | `pm2` for PM2; `file` for native supervisors                                                                                                                                     | always reconciled                          |
+| `FICUS_PM2_API_NAME`, `FICUS_PM2_WORKER_NAME`                     | derived app names for PM2; cleared for native supervisors                                                                                                                        | always reconciled                          |
+| `FICUS_LOG_FILE_API`, `FICUS_LOG_FILE_WORKER`                     | absolute `~/.tau/logs/<process>.log` paths for native supervisors; cleared for PM2                                                                                               | always reconciled                          |
 
 "Replaced when" is the whole rule: an existing non-empty value is kept unless
 you passed the flag (or env mirror) that owns it. One exception is baked in —
@@ -195,7 +195,7 @@ so setup always replaces it. Secrets are generated once and
 never regenerated — re-running setup on a working install cannot lock you out.
 
 The steps, in order: preflight → config files → `.env` → PostgreSQL → migrate
-(`TAU_MIGRATE_LIVE=1`) → build core, CLI and web → sandbox image or k3d cluster
+(`FICUS_MIGRATE_LIVE=1`) → build core, CLI and web → sandbox image or k3d cluster
 → start worker first and API last under the selected supervisor and wait for the API → handoff. The registry entry is written
 **before** the start step — so `tau server logs` can reach the instance even if
 the health wait fails — and refreshed after it. Each step
@@ -275,11 +275,11 @@ tau update status --offline  # read the checkout's local update status file
 ```
 
 The two commands target different things. `tau server update` always acts on
-the checkout on this machine (`--root`, `TAU_SERVER_ROOT`, the local-server
+the checkout on this machine (`--root`, `FICUS_SERVER_ROOT`, the local-server
 record, or the checkout you are in) and never needs the API — use it for a
 local install. `tau update apply` posts to `/api/updates/apply` on whatever
 backend the CLI is pointed at (`--backend`, the active `tau auth login`
-backend, `TAU_API_URL`), which may be a cloud instance; it announces the
+backend, `FICUS_API_URL`), which may be a cloud instance; it announces the
 target first. It falls back to the offline path only when that target is
 unreachable at the transport level **and** is the local instance itself (a
 loopback address on this checkout's port) — an unreachable remote backend, an
@@ -342,7 +342,7 @@ rejected before setup touches the checkout.
 | ----------------------- | ------------------------------------------------------------------------------------------------- |
 | `PORT`                  | `--port` — default `3000` on a fresh checkout; a re-run keeps the checkout's `PORT` (max `65532`) |
 | `WORKER_PORT`           | `PORT + 2`                                                                                        |
-| `TAU_WORKER_EVENT_PORT` | `PORT + 3`                                                                                        |
+| `FICUS_WORKER_EVENT_PORT` | `PORT + 3`                                                                                        |
 | PostgreSQL host port    | `--db-port`; by default `5432` for `tau`, else the first free port from 5433                      |
 
 The default instance therefore keeps 3000/3002/3003 and 5432. For the database
@@ -365,7 +365,7 @@ tau server uninstall --instance smoke
 `tau server list` reads `~/.tau/cli/local-server.json`, the registry setup
 writes an entry into (`{ root, port, createdAt, updatedAt }` per label). Which
 instance a command acts on is decided in this order: `--root` >
-`TAU_SERVER_ROOT` > `--instance` (or `TAU_INSTANCE`) > the checkout you are
+`FICUS_SERVER_ROOT` > `--instance` (or `FICUS_INSTANCE`) > the checkout you are
 standing in > the registry's default instance — the first one installed, or
 whichever passed `--default` (also in [Flags](#flags)). `tau server uninstall`
 drops the entry and hands the default to a remaining instance; it deletes no
@@ -375,17 +375,17 @@ data.
 
 A re-run in a checkout that is already an instance keeps what that checkout is:
 its label and its port come from its own `.env` unless `--instance` / `--port`
-(or the `TAU_SETUP_*` mirrors) say otherwise. Passing a **different**
+(or the `FICUS_SETUP_*` mirrors) say otherwise. Passing a **different**
 `--instance` is refused —
 
 ```
-this checkout is instance "tau"; to relabel it, remove TAU_INSTANCE from .env (after unregistering its supervisor with tau server uninstall --root /path/to/checkout) — or set up a fresh checkout
+this checkout is instance "tau"; to relabel it, remove FICUS_INSTANCE from .env (after unregistering its supervisor with tau server uninstall --root /path/to/checkout) — or set up a fresh checkout
 ```
 
 — because relabelling would orphan the supervisor registrations, container,
 database and data directory the old label owns. The message is the whole recipe:
 `tau server uninstall` unregisters the supervisor but does **not**
-clear the label, so removing `TAU_INSTANCE` from `.env` is the part that
+clear the label, so removing `FICUS_INSTANCE` from `.env` is the part that
 actually relabels the checkout. A checkout with **no** label yet — an
 install made before labels existed, or a hand-copied `.env` — may take one: setup
 regenerates `ecosystem.config.js` for the new pm2 names, warning that hand edits
@@ -435,18 +435,18 @@ address bar. A fragment is never sent to the server, so it does not reach
 access logs.
 
 1. If you open the plain URL instead, the login page asks for the instance
-   password. Setup generated a random `TAU_PASSWORD` and wrote it to `.env`;
+   password. Setup generated a random `FICUS_PASSWORD` and wrote it to `.env`;
    read it with:
 
    ```bash
-   grep '^TAU_PASSWORD=' ~/.tau/tau/.env   # or .env in your own checkout
+   grep '^FICUS_PASSWORD=' ~/.tau/tau/.env   # or .env in your own checkout
    ```
 
 2. Create your account. The **first passkey becomes the system admin**.
 3. Registration wants an email verification code. With no email provider
    configured, that first admin's code is shown in the page instead of being
    mailed.
-4. Once that admin holds a passkey, `TAU_PASSWORD` stops being accepted as a
+4. Once that admin holds a passkey, `FICUS_PASSWORD` stops being accepted as a
    login — human sign-in is passkeys only from then on.
 
 If the passkey step fails, the account is created but has no passkey. The
@@ -464,16 +464,16 @@ tau auth login local --api-url http://localhost:3000
 
 Until an admin has a passkey, `tau` can authenticate from inside the checkout
 using the bootstrap password in `.env`. After that, use browser-authorized CLI
-login. If you exported `TAU_PASSWORD` in your shell, unset it first so it does
+login. If you exported `FICUS_PASSWORD` in your shell, unset it first so it does
 not override browser authorization. `tau auth status` shows the active source.
 
 ### AI provider
 
 Sign in to a model provider in the web UI: **Settings > AI Providers** — API
 keys, or the OAuth logins for Claude Pro/Max, ChatGPT Plus/Pro and GitHub
-Copilot subscriptions. This needs `TAU_ENCRYPTION_KEY`, which setup wrote for
+Copilot subscriptions. This needs `FICUS_ENCRYPTION_KEY`, which setup wrote for
 you; without it saving credentials in AI Providers or Integrations fails with
-`Cannot mutate secrets: TAU_ENCRYPTION_KEY not configured`.
+`Cannot mutate secrets: FICUS_ENCRYPTION_KEY not configured`.
 From the CLI, `tau provider-auth set <provider> <key>` stores an API key
 (`list`, `get`, `delete` and `oauth-providers` round out the command); the OAuth
 subscription logins are web-UI only.
@@ -537,7 +537,7 @@ credential changes apply to new requests without a restart. Restart with
 
 On the **`host` runtime** nothing is downloaded: the core drives a
 Chrome/Chromium/Edge/Brave already installed on this machine, or the binary
-named by `TAU_BROWSER_EXECUTABLE_PATH` — see
+named by `FICUS_BROWSER_EXECUTABLE_PATH` — see
 [docs/wiki/host-runtime.md](host-runtime.md#browser-tools). Setup warns during
 preflight when it cannot find one.
 
@@ -553,23 +553,23 @@ Browser tools fail gracefully when no browser is available.
 ### Exposing it publicly
 
 The core serves the app, `/api/*`, `/ws` and `/ws/terminal` on one port
-(`TAU_SERVE_WEB=1`, which setup writes), so a reverse proxy only has to forward
+(`FICUS_SERVE_WEB=1`, which setup writes), so a reverse proxy only has to forward
 one origin. See
 [Single-origin and reverse proxy deployment](reverse-proxy.md) for Caddy,
 nginx, Traefik and Tailscale examples.
 
 Passkeys are strict about the origin, and this is the common footgun:
 
-- **`TAU_WEB_ORIGIN`** must be the **bare origin** — `scheme://host[:port]`,
+- **`FICUS_WEB_ORIGIN`** must be the **bare origin** — `scheme://host[:port]`,
   **no path**. If the app is served under a base path
   (`APP_URL=https://home.example.com/tau` with `APP_BASE_PATH=/tau`), set
-  `TAU_WEB_ORIGIN=https://home.example.com`. WebAuthn rejects an origin with a
+  `FICUS_WEB_ORIGIN=https://home.example.com`. WebAuthn rejects an origin with a
   path, which surfaces as a **500 on passkey registration**
   (`Unexpected registration response origin … expected …/tau`). It also drives
   the CORS allowlist and the session-cookie SameSite/Secure choice.
 - **`WEBAUTHN_RP_ID`** must be the **bare registrable domain**
   (`home.example.com` — no scheme, port or path). It defaults to the host of
-  `TAU_WEB_ORIGIN`, so set it only to pin a parent domain. A wrong RP ID makes
+  `FICUS_WEB_ORIGIN`, so set it only to pin a parent domain. A wrong RP ID makes
   registration fail.
 - `--app-url` validates this at setup time and refuses anything that is not a
   bare origin.
@@ -600,13 +600,13 @@ differently, or debug a step that failed:
    default instance's app names; for a labelled instance replace `tau-api` /
    `tau-worker` in it with `tau-<label>-api` / `tau-<label>-worker`, which is all
    setup's generation step does).
-3. **`.env`.** Set `TAU_SANDBOX_RUNTIME` (required — the api and worker refuse
-   to start without it), `TAU_ENCRYPTION_KEY` and `TAU_INTERNAL_EVENT_TOKEN`
-   (`openssl rand -hex 32` each), `TAU_PASSWORD`, `PORT`, `WORKER_PORT`,
-   `TAU_WORKER_EVENT_PORT`, `TAU_API_URL`, `APP_URL`, `TAU_WEB_ORIGIN`,
-   `DATABASE_URL`, `TAU_SERVE_WEB=1`, `TAU_UPDATE_SUPERVISOR`, the matching system-log provider/targets, and — for a
-   labelled instance — `TAU_INSTANCE`, `TAU_PM2_API_NAME`,
-   `TAU_PM2_WORKER_NAME` and `HOME_DIR`. See
+3. **`.env`.** Set `FICUS_SANDBOX_RUNTIME` (required — the api and worker refuse
+   to start without it), `FICUS_ENCRYPTION_KEY` and `FICUS_INTERNAL_EVENT_TOKEN`
+   (`openssl rand -hex 32` each), `FICUS_PASSWORD`, `PORT`, `WORKER_PORT`,
+   `FICUS_WORKER_EVENT_PORT`, `FICUS_API_URL`, `APP_URL`, `FICUS_WEB_ORIGIN`,
+   `DATABASE_URL`, `FICUS_SERVE_WEB=1`, `FICUS_UPDATE_SUPERVISOR`, the matching system-log provider/targets, and — for a
+   labelled instance — `FICUS_INSTANCE`, `FICUS_PM2_API_NAME`,
+   `FICUS_PM2_WORKER_NAME` and `HOME_DIR`. See
    [the managed-keys table](#what-it-writes) for the values setup picks.
 4. **PostgreSQL.**
    `docker run -d --name postgres-tau --restart unless-stopped -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=tau -p 127.0.0.1:5432:5432 -v tau_postgres-data:/var/lib/postgresql paradedb/paradedb:latest`
@@ -619,7 +619,7 @@ differently, or debug a step that failed:
    host port. Managed PostgreSQL works too — point `DATABASE_URL` at it and skip
    the container. pgvector, which memory search needs, is created by the
    migrations; nothing to install by hand.
-5. **Migrate.** `TAU_MIGRATE_LIVE=1 bun run db:migrate`. The flag is the
+5. **Migrate.** `FICUS_MIGRATE_LIVE=1 bun run db:migrate`. The flag is the
    explicit confirmation required to migrate the database configured by the
    repository-root `.env`; for a scratch database pass its `DATABASE_URL`
    inline instead.
@@ -656,10 +656,10 @@ tau auth login local --api-url http://localhost:3000
 tau squad list
 
 # 5. Integrations, if you configured them. These routes need the `webhooks:read`
-#    permission: the bootstrap TAU_PASSWORD works as a bearer token only until an
+#    permission: the bootstrap FICUS_PASSWORD works as a bearer token only until an
 #    admin holds a passkey — after that, check them from a signed-in browser session.
-curl -H "Authorization: Bearer $TAU_PASSWORD" https://YOUR-DOMAIN/api/webhooks/github/status
-curl -H "Authorization: Bearer $TAU_PASSWORD" https://YOUR-DOMAIN/api/webhooks/channels/discord/status
+curl -H "Authorization: Bearer $FICUS_PASSWORD" https://YOUR-DOMAIN/api/webhooks/github/status
+curl -H "Authorization: Bearer $FICUS_PASSWORD" https://YOUR-DOMAIN/api/webhooks/channels/discord/status
 ```
 
 Then open the app in a browser: the passkey flow, an AI provider signed in under
@@ -674,12 +674,12 @@ end-to-end proof.
 | `Docker is required for …` (preflight)                                              | Install it — macOS: [Docker Desktop](https://docs.docker.com/get-docker/); Linux: `curl -fsSL https://get.docker.com \| sh`, then `sudo usermod -aG docker $USER` and log out and back in for the group change to take effect.                                                                                                          |
 | `Preflight failed: docker info failed`                                              | Docker is installed but the daemon is not running — start Docker Desktop, or `sudo systemctl start docker`. Docker is only needed for the managed PostgreSQL container and the container runtimes; `--runtime host` with `--database-url` pointing at an existing PostgreSQL needs none.                                                |
 | `pm2 already runs tau-api for instance "<label>" from another checkout`             | Another checkout is running this instance's pm2 apps. Give this one its own label (`--instance <other-label>`), or unregister the other (`tau server uninstall --root <that checkout>`). Only online pm2 apps block; stopped ones are ignored. See [Multiple instances](#multiple-instances).                                           |
-| `this checkout is instance "<x>"; to relabel it, remove TAU_INSTANCE from .env`     | A checkout belongs to one instance. Re-run without `--instance` to keep it as it is, use a fresh checkout for the new label, or genuinely relabel this one: `tau server uninstall --root <root>` (supervisor registration + registry entry), then delete `TAU_INSTANCE` from its `.env`. See [Multiple instances](#multiple-instances). |
+| `this checkout is instance "<x>"; to relabel it, remove FICUS_INSTANCE from .env`     | A checkout belongs to one instance. Re-run without `--instance` to keep it as it is, use a fresh checkout for the new label, or genuinely relabel this one: `tau server uninstall --root <root>` (supervisor registration + registry entry), then delete `FICUS_INSTANCE` from its `.env`. See [Multiple instances](#multiple-instances). |
 | `this checkout's DATABASE_URL points at a Postgres the installer does not manage …` | The DSN in `.env` is on loopback but is not this instance's container (its credentials differ), so `--db-port` / `--db-name` cannot apply to it. Pass `--database-url` to point at the database you want, or remove `DATABASE_URL` from `.env` and let setup manage a container.                                                        |
-| `unknown instance "<label>" — known instances: …`                                   | `--instance` (or `TAU_INSTANCE`) names a label the registry does not hold. `tau server list` shows the labels it knows; run setup in that checkout to register it, or address it with `--root <dir>`. See [Multiple instances](#multiple-instances).                                                                                    |
+| `unknown instance "<label>" — known instances: …`                                   | `--instance` (or `FICUS_INSTANCE`) names a label the registry does not hold. `tau server list` shows the labels it knows; run setup in that checkout to register it, or address it with `--root <dir>`. See [Multiple instances](#multiple-instances).                                                                                    |
 | `port <n> is in use but is not container postgres-tau…`                             | The port this checkout's `DATABASE_URL` names is taken by something that is not this instance's container. Stop that listener, pass the `--db-port <n>` the message suggests, or point `--database-url` at the database you actually want.                                                                                              |
 | `container postgres-tau… publishes <x>, not <y>`                                    | A container's port mapping is fixed when it is created, so `--db-port` cannot move it. Re-run with `--db-port <x>`, or remove the container (`docker rm -f <container>`, keeping the volume) and let setup recreate it on the port you want.                                                                                            |
-| `TAU_SANDBOX_RUNTIME must be one of …`                                              | The value is unset or an old spelling. Old spellings were removed, not aliased: `sysbox` → `docker-sysbox`, `socket` → `docker-socket`, `auto` / `docker` → choose `docker-sysbox` or `docker-socket` explicitly. Fix `.env`, then `tau server restart`.                                                                                |
+| `FICUS_SANDBOX_RUNTIME must be one of …`                                              | The value is unset or an old spelling. Old spellings were removed, not aliased: `sysbox` → `docker-sysbox`, `socket` → `docker-socket`, `auto` / `docker` → choose `docker-sysbox` or `docker-socket` explicitly. Fix `.env`, then `tau server restart`.                                                                                |
 | `bun: command not found`                                                            | `curl -fsSL https://bun.sh/install \| bash`, then re-open the shell.                                                                                                                                                                                                                                                                    |
 | Preflight says bun is older than the pinned version                                 | `bun upgrade` (the pin is the checkout's `.bun-version`).                                                                                                                                                                                                                                                                               |
 | `This installer supports macOS or Linux (got win32)`                                | Windows runs through WSL 2: from PowerShell run `wsl --install -d Ubuntu-24.04`, reboot, then inside WSL run the installer (`curl -fsSL https://ficus.sh/cli/setup.sh \| bash`).                                                                                                                                                        |
@@ -689,10 +689,10 @@ end-to-end proof.
 | The API did not answer `/health` within 60s                                         | `tau server logs -c api -n 100` — a missing `.env` value or a failed migration is the usual cause.                                                                                                                                                                                                                                      |
 | Database connection error                                                           | `docker ps --filter name=postgres-tau` — this instance's container (`postgres-tau`, or `postgres-tau-<label>`) must be up on the port `DATABASE_URL` names. `tau server start` starts it for you when the DSN is one the installer wrote.                                                                                               |
 | Collation version mismatch                                                          | `docker exec postgres-tau psql -U postgres -d tau -c "ALTER DATABASE tau REFRESH COLLATION VERSION;"` (`postgres-tau-<label>` for a labelled instance) — happens when the Docker image updates glibc.                                                                                                                                   |
-| Migration fails                                                                     | PostgreSQL must be reachable and `DATABASE_URL` correct; migrating the root `.env` database needs `TAU_MIGRATE_LIVE=1`.                                                                                                                                                                                                                 |
-| `Cannot mutate secrets: TAU_ENCRYPTION_KEY not configured`                          | `.env` has no encryption key: `echo "TAU_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env`, then `tau server restart`.                                                                                                                                                                                                                   |
-| API returns 401 from the CLI                                                        | Run `tau auth status`, then `tau auth login local --api-url http://localhost:<port>`. Clear a stale shell `TAU_PASSWORD` for browser login; the checkout password works only before an admin has a passkey.                                                                                                                             |
-| Passkey registration returns 500                                                    | `TAU_WEB_ORIGIN` contains a path, or `WEBAUTHN_RP_ID` is wrong — see [Exposing it publicly](#exposing-it-publicly).                                                                                                                                                                                                                     |
+| Migration fails                                                                     | PostgreSQL must be reachable and `DATABASE_URL` correct; migrating the root `.env` database needs `FICUS_MIGRATE_LIVE=1`.                                                                                                                                                                                                                 |
+| `Cannot mutate secrets: FICUS_ENCRYPTION_KEY not configured`                          | `.env` has no encryption key: `echo "FICUS_ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env`, then `tau server restart`.                                                                                                                                                                                                                   |
+| API returns 401 from the CLI                                                        | Run `tau auth status`, then `tau auth login local --api-url http://localhost:<port>`. Clear a stale shell `FICUS_PASSWORD` for browser login; the checkout password works only before an admin has a passkey.                                                                                                                             |
+| Passkey registration returns 500                                                    | `FICUS_WEB_ORIGIN` contains a path, or `WEBAUTHN_RP_ID` is wrong — see [Exposing it publicly](#exposing-it-publicly).                                                                                                                                                                                                                     |
 | `<root> has uncommitted changes` from `tau update`                                  | The offline updater refuses a dirty tree. Commit or discard the changes, then retry.                                                                                                                                                                                                                                                    |
 | Webhook 401 / 404                                                                   | 401: the secret in `.env` and the one on the provider differ. 404: the provider is not registered — check that the api started cleanly.                                                                                                                                                                                                 |
 | Voice, memory search, or TTS not working                                            | Check Integrations > OpenAI API services and Assistant & Memory feature switches for voice/embeddings; check Integrations > Google Cloud and its JSON/ADC credentials for message read-aloud.                                                                                                                                           |

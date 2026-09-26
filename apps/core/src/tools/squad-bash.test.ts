@@ -115,9 +115,9 @@ describe('createSquadBashTool', () => {
   })
 
   it('(host runtime) builds the host bash tool bound to the shared squad workspace', () => {
-    const prevRuntime = process.env.TAU_SANDBOX_RUNTIME
+    const prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
     const prevHome = process.env.HOME_DIR
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     process.env.HOME_DIR = '/tmp/tau-squad-bash-host-test'
     const host = spyOn(hostTools, 'createHostBashTool').mockImplementation(fakeBashTool)
     spies.push(host)
@@ -137,8 +137,8 @@ describe('createSquadBashTool', () => {
       expect(tool.description).toContain('on this machine')
       expect(tool.description).toContain(expectedWorkspaceMount)
     } finally {
-      if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-      else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+      if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+      else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
       if (prevHome === undefined) delete process.env.HOME_DIR
       else process.env.HOME_DIR = prevHome
     }

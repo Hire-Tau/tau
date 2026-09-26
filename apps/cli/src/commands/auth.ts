@@ -32,17 +32,17 @@ export function registerAuthCommands(program: Command): void {
     .description('Add or update a labeled Tau backend')
     .option('--label <label>', 'Backend label (alternative to positional label)')
     .option('--api-url <url>', 'Tau Core base URL')
-    .option('--password <password>', 'Tau password/bearer token (prefer TAU_PASSWORD or prompt to avoid shell history)')
+    .option('--password <password>', 'Tau password/bearer token (prefer FICUS_PASSWORD or prompt to avoid shell history)')
     .option('--no-switch', 'Do not set this backend as active')
     .action(async (positionalLabel, options) => {
       try {
-        const apiUrl = options.apiUrl || getExplicitEnv('TAU_API_URL') || config.apiUrl
+        const apiUrl = options.apiUrl || getExplicitEnv('FICUS_API_URL') || config.apiUrl
         const parsedUrl = new URL(apiUrl)
         const defaultLabel = parsedUrl.port ? `${parsedUrl.hostname}-${parsedUrl.port}` : parsedUrl.hostname
         const label = options.label || positionalLabel || defaultLabel || 'local'
         requireValidLabel(label)
 
-        const explicitPassword = options.password || getExplicitEnv('TAU_PASSWORD')
+        const explicitPassword = options.password || getExplicitEnv('FICUS_PASSWORD')
         let password: string
         let deviceId: string | undefined
         let account: string | undefined
@@ -206,11 +206,11 @@ export function describeAuth(resolved: ResolvedAuth): string {
     case 'auth-store':
       return `Active Tau backend: ${resolved.label} (${resolved.apiUrl})`
     case 'env-token':
-      return `Authenticated via agent token (TAU_TOKEN) against ${resolved.apiUrl} — no stored backend needed.`
+      return `Authenticated via agent token (FICUS_TOKEN) against ${resolved.apiUrl} — no stored backend needed.`
     case 'env-password':
-      return `Authenticated via TAU_PASSWORD from the environment against ${resolved.apiUrl}.`
+      return `Authenticated via FICUS_PASSWORD from the environment against ${resolved.apiUrl}.`
     case 'dotenv':
-      return `Authenticated via TAU_PASSWORD from .env against ${resolved.apiUrl}.`
+      return `Authenticated via FICUS_PASSWORD from .env against ${resolved.apiUrl}.`
     case 'secret-file':
       return `Authenticated via the mounted /etc/tau/password secret against ${resolved.apiUrl}.`
     case 'none':

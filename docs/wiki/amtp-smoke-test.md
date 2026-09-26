@@ -24,7 +24,7 @@ Budget ~20 minutes for the happy path.
 | Actor        | How it acts                                                                                                                                                                                                                                                |
 | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Operator** | Web UI (**Settings → Federation**, and each agent's **Federation mailbox** card in the Agent Info panel) or an operator-authenticated `tau` CLI.                                                                                                           |
-| **Agent**    | Runs `tau …` **inside its own sandbox**. Drive it by asking the agent in chat, e.g. _"Run `tau remote register alice` and paste the output."_ The CLI is auto-authenticated in-sandbox via `TAU_TOKEN` and signs with the agent's `/private/identity.pem`. |
+| **Agent**    | Runs `tau …` **inside its own sandbox**. Drive it by asking the agent in chat, e.g. _"Run `tau remote register alice` and paste the output."_ The CLI is auto-authenticated in-sandbox via `FICUS_TOKEN` and signs with the agent's `/private/identity.pem`. |
 
 > **Sending is always agent-driven.** A `amtp://` message is signed with the
 > agent's private key, so only the agent (in its sandbox) can send. Registering

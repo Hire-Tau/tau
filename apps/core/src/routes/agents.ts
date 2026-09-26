@@ -1080,7 +1080,7 @@ export const agentsRouter = new Hono()
       }
     }
 
-    // `runtime` is server-driven config (TAU_SANDBOX_RUNTIME), never client-guessed.
+    // `runtime` is server-driven config (FICUS_SANDBOX_RUNTIME), never client-guessed.
     const provisioning = isK8sRuntime() ? await manager.getProvisionDiagnostics() : undefined
     return c.json(
       mergeSandboxStatus(

@@ -64,16 +64,16 @@ const IDENTITY_REASON =
   "the agent's identity is injected by tau; setting it here would make agents act as a different identity"
 
 export const RESERVED_SQUAD_ENV_KEYS: Readonly<Record<string, string>> = {
-  TAU_TOKEN: IDENTITY_REASON,
-  TAU_API_URL: IDENTITY_REASON,
-  TAU_PASSWORD: IDENTITY_REASON,
-  TAU_AUTH_STORE: IDENTITY_REASON,
-  TAU_AGENT_CONTEXT: IDENTITY_REASON,
-  TAU_AGENT_ID: IDENTITY_REASON,
-  TAU_IDENTITY_API_URL: IDENTITY_REASON,
-  TAU_IDENTITY_TOKEN: IDENTITY_REASON,
-  TAU_IDENTITY_AUTH_STORE: IDENTITY_REASON,
-  TAU_IDENTITY_AGENT_ID: IDENTITY_REASON,
+  FICUS_TOKEN: IDENTITY_REASON,
+  FICUS_API_URL: IDENTITY_REASON,
+  FICUS_PASSWORD: IDENTITY_REASON,
+  FICUS_AUTH_STORE: IDENTITY_REASON,
+  FICUS_AGENT_CONTEXT: IDENTITY_REASON,
+  FICUS_AGENT_ID: IDENTITY_REASON,
+  FICUS_IDENTITY_API_URL: IDENTITY_REASON,
+  FICUS_IDENTITY_TOKEN: IDENTITY_REASON,
+  FICUS_IDENTITY_AUTH_STORE: IDENTITY_REASON,
+  FICUS_IDENTITY_AGENT_ID: IDENTITY_REASON,
 }
 
 // PATH is deliberately NOT reserved: `PATH=$PATH:/opt/toolchain` is a legitimate
@@ -126,7 +126,7 @@ function normalizeSecretKeys(keys: string[]): string[] {
             key !== 'DEPLOY_GITHUB_PAGES_TOKEN'
         )
         // Same reasoning for the identity/PATH names: a Secret Store key called
-        // TAU_API_URL would otherwise be RENDERED into .tau/.env and sourced into
+        // FICUS_API_URL would otherwise be RENDERED into .tau/.env and sourced into
         // every agent shell, which is the very thing the write-time check refuses.
         .filter((key) => !(key in RESERVED_SQUAD_ENV_KEYS))
     )
@@ -363,7 +363,7 @@ export function renderEnvForSecrets(
  * With `signingPublicKey`, agents' commits and tags are also signed: git calls
  * `tau` as its `gpg.ssh.program`, which has Core sign with the connection's key
  * (the private half never enters the sandbox). Command-line `-c` outranks any
- * repo-local config. Signing applies only when `TAU_TOKEN` is set, i.e. to agent
+ * repo-local config. Signing applies only when `FICUS_TOKEN` is set, i.e. to agent
  * commands: a human terminal cannot reach the signer, and must not have every
  * commit fail.
  */
@@ -380,7 +380,7 @@ export function githubCommandBindings(squadId: string, signingPublicKey?: string
       ].join(' ')
     : undefined
   const git = signing
-    ? `git() { if [ -n "\${TAU_TOKEN:-}" ]; then TAU_GIT_SIGNING_SQUAD=${squad} command git ${credential} ${signing} "$@"; else command git ${credential} "$@"; fi; }`
+    ? `git() { if [ -n "\${FICUS_TOKEN:-}" ]; then FICUS_GIT_SIGNING_SQUAD=${squad} command git ${credential} ${signing} "$@"; else command git ${credential} "$@"; fi; }`
     : `git() { command git ${credential} "$@"; }`
   return (
     [

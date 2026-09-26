@@ -7,7 +7,7 @@ import { hasPermission } from '../services/rbac'
 import { createTestUser, createTestRole, assignRole, cleanupTestRbac } from '../test-utils'
 
 // Verifies the per-agent token wiring: an agent gets a scoped tau_agent_* token
-// (injected into its sandbox as TAU_TOKEN) that resolves to its squad-scoped
+// (injected into its sandbox as FICUS_TOKEN) that resolves to its squad-scoped
 // identity, and the default roles grant the CLI-driven permissions agents need.
 
 const PREFIX = 'agent-token-wiring'

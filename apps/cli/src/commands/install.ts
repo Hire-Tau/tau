@@ -38,8 +38,8 @@ function isCurrent(manifest: CliManifest): boolean {
 function runInstaller(url: string, options: InstallOptions): Promise<void> {
   return new Promise((resolve, reject) => {
     const env: NodeJS.ProcessEnv = { ...process.env }
-    if (options.auth === true) env.TAU_INSTALL_AUTH = '1'
-    if (options.noAuth === true) env.TAU_INSTALL_AUTH = '0'
+    if (options.auth === true) env.FICUS_INSTALL_AUTH = '1'
+    if (options.noAuth === true) env.FICUS_INSTALL_AUTH = '0'
 
     const child = spawn('sh', ['-c', `curl -fsSL "$1" | sh`, 'tau-install', url], {
       stdio: 'inherit',

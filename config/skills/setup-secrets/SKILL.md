@@ -5,7 +5,7 @@ description: "Help configure Tau credentials through their owning settings pages
 
 # Setting Up Credentials
 
-Tau encrypts stored secrets with AES-256-GCM. Server bootstrap requires `DATABASE_URL` and `TAU_ENCRYPTION_KEY`; provider and service credentials should normally be configured through the UI.
+Tau encrypts stored secrets with AES-256-GCM. Server bootstrap requires `DATABASE_URL` and `FICUS_ENCRYPTION_KEY`; provider and service credentials should normally be configured through the UI.
 
 This skill is for the System Manager helping a human configure their instance. Check existing configuration before suggesting changes:
 
@@ -51,7 +51,7 @@ The encryption key belongs in the server environment, not in the secret store. C
 
 | Problem | Check |
 | --- | --- |
-| Secret store unavailable | Server `TAU_ENCRYPTION_KEY` configuration |
+| Secret store unavailable | Server `FICUS_ENCRYPTION_KEY` configuration |
 | Agent-model authentication | AI Providers account, provider enable state, and `tau provider-auth get <provider>` |
 | Unexpected OpenAI fallback | AI Providers and legacy server environment credentials; API-services setup alone must not enroll a provider |
 | Voice/transcription/embeddings unavailable | OpenAI API services switch and key; Memory’s embeddings switch |

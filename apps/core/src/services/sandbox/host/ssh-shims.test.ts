@@ -23,7 +23,7 @@ describe('renderSshShimScript (unit)', () => {
   test.each([...SSH_FAMILY_TOOLS])('renders a %s shim with the shared skeleton', (tool) => {
     const script = renderSshShimScript(tool)
     expect(script.startsWith('#!/bin/sh\n')).toBe(true)
-    expect(script).toContain('TAU_SQUAD_SSH_DIR')
+    expect(script).toContain('FICUS_SQUAD_SSH_DIR')
     expect(script).toContain('# >>> tau remote hosts >>>')
     expect(script).toContain('# <<< tau remote hosts <<<')
     expect(script).toContain('-ef "$0"') // recursion guard
@@ -99,7 +99,7 @@ describe('ssh-family shims (functional matrix)', () => {
       HOME: t,
       RECORDER_OUT: join(t, 'out'),
     }
-    if (!opts.solo) env.TAU_SQUAD_SSH_DIR = join(t, 'squadssh')
+    if (!opts.solo) env.FICUS_SQUAD_SSH_DIR = join(t, 'squadssh')
     const result = Bun.spawnSync(['/bin/sh', '-c', command], {
       env,
       cwd: t,
@@ -160,7 +160,7 @@ describe('ssh-family shims (functional matrix)', () => {
     expect(run('ssh staging').lines).toEqual(['-F', CFG(), 'staging'])
   })
 
-  test('7. ssh with no TAU_SQUAD_SSH_DIR (solo agent): untouched', () => {
+  test('7. ssh with no FICUS_SQUAD_SSH_DIR (solo agent): untouched', () => {
     expect(run('ssh staging true', { solo: true }).lines).toEqual(['staging', 'true'])
   })
 

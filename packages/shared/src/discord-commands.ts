@@ -6,7 +6,7 @@
 
 export const DiscordOptionType = { SUB_COMMAND: 1, STRING: 3 } as const
 
-export const TAU_DISCORD_COMMANDS = [
+export const FICUS_DISCORD_COMMANDS = [
   {
     name: 'tau',
     description: 'Interact with Tau - your AI development assistant',
@@ -71,4 +71,4 @@ export function discordCommandsPath(applicationId: string, guildId?: string): st
 }
 
 /** Guild commands are not available in bot DMs; register a DM-only global copy too. */
-export const TAU_DISCORD_DM_COMMANDS = TAU_DISCORD_COMMANDS.map((command) => ({ ...command, contexts: [1] }))
+export const FICUS_DISCORD_DM_COMMANDS = FICUS_DISCORD_COMMANDS.map((command) => ({ ...command, contexts: [1] }))

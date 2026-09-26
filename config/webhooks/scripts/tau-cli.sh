@@ -5,8 +5,8 @@
 # every webhook notification silently no-op on the cloud tenant, 2026-08-23).
 #
 # Deliberately does NOT fall back to a `tau` on PATH: a webhook must talk to THIS
-# instance's API with the framework-injected TAU_WEBHOOK_CONTEXT, TAU_API_URL
-# and TAU_TOKEN, not whatever backend a
+# instance's API with the framework-injected FICUS_WEBHOOK_CONTEXT, FICUS_API_URL
+# and FICUS_TOKEN, not whatever backend a
 # globally installed tau happens to target.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"

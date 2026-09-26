@@ -101,7 +101,7 @@ async function executeRuleCommands(
     if (command.timeout) opts.timeout = command.timeout
     opts.env = {
       ...(resolvedEnv as Record<string, string>),
-      TAU_INTEGRATION_HANDLED_SQUADS_JSON: JSON.stringify(handledSquadIds),
+      FICUS_INTEGRATION_HANDLED_SQUADS_JSON: JSON.stringify(handledSquadIds),
     }
 
     const result = await execAsync(command.run, opts)

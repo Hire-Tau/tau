@@ -33,7 +33,7 @@ Run every command in this skill with `squad_bash` from the project worktree. Sta
 
 ## Steps 1–2: Start a managed Tau local app
 
-Use the project's server command, but let Tau supervise it and assign `$PORT`. The command must bind to `0.0.0.0` and honor `$TAU_APP_BASE_PATH`. Use a unique `RUN_NAME` per project.
+Use the project's server command, but let Tau supervise it and assign `$PORT`. The command must bind to `0.0.0.0` and honor `$FICUS_APP_BASE_PATH`. Use a unique `RUN_NAME` per project.
 
 ```bash
 SQUAD_ID=<your-squad-id> # from `tau workstream get <id> --json`
@@ -43,7 +43,7 @@ RUN_NAME=<unique-project-name>
 tau deploy local start "$SQUAD_ID" \
   --name "$RUN_NAME" \
   --cwd "$PWD" \
-  --command 'bun run dev -- --host 0.0.0.0 --port $PORT --base $TAU_APP_BASE_PATH' \
+  --command 'bun run dev -- --host 0.0.0.0 --port $PORT --base $FICUS_APP_BASE_PATH' \
   --json | jq '{id, name, status, port}'
 
 # Find an existing run without printing its credential URL.

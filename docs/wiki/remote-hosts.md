@@ -20,7 +20,7 @@ in-agent usage guide this document backs.
    ```
 
    This mints a fresh tau-owned ed25519 keypair, inserts a `remote_hosts`
-   row, grants the calling squad (`TAU_SQUAD_ID`, or `--squad <id>`) access,
+   row, grants the calling squad (`FICUS_SQUAD_ID`, or `--squad <id>`) access,
    materializes the squad's SSH directory, and prints the **public** key
    plus install instructions. Use `--global` to register without granting
    any squad yet (needs global `remote-hosts:write`); grant squads later
@@ -79,7 +79,7 @@ in-agent usage guide this document backs.
    before a host-mode switch come current without waiting for another grant
    mutation. The one remaining limitation: only aliases inside tau's managed
    block are shimmed — a user-added alias in the squad config's user section
-   still needs `ssh -F "$TAU_SQUAD_SSH_DIR/config" <alias>`. See
+   still needs `ssh -F "$FICUS_SQUAD_SSH_DIR/config" <alias>`. See
    [host-runtime.md](host-runtime.md).
 
    After that, it's plain SSH tooling, no wrapper:
@@ -187,7 +187,7 @@ the markers.
 
 | Command                                                                                                            | Surface                                             | Permission           | Notes                                                                                                                          |
 | ------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `tau remote-hosts list [--all] [--squad <id>]`                                                                     | squad (default) / global (`--all`)                  | `remote-hosts:read`  | Squad defaults to `TAU_SQUAD_ID`.                                                                                              |
+| `tau remote-hosts list [--all] [--squad <id>]`                                                                     | squad (default) / global (`--all`)                  | `remote-hosts:read`  | Squad defaults to `FICUS_SQUAD_ID`.                                                                                              |
 | `tau remote-hosts show <name> [--all] [--squad <id>]`                                                              | squad / global                                      | `remote-hosts:read`  | Re-prints install instructions.                                                                                                |
 | `tau remote-hosts add --name <n> --host <h> --user <u> [--port <p>] [--description <d>] [--squad <id>] [--global]` | squad add-and-grant (default) / global (`--global`) | `remote-hosts:write` | Prints the public key + install block.                                                                                         |
 | `tau remote-hosts grant <name> --squad <id>`                                                                       | global                                              | `remote-hosts:write` | Grant a squad access to an existing host.                                                                                      |

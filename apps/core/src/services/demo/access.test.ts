@@ -29,12 +29,12 @@ const request = (secret: string, address = '203.0.113.7') => ({
 describe('isDemoReviewerAccessEnabled', () => {
   it('is off unless the flag is explicitly on', () => {
     expect(isDemoReviewerAccessEnabled({})).toBe(false)
-    expect(isDemoReviewerAccessEnabled({ TAU_DEMO_REVIEWER_ACCESS: '' })).toBe(false)
-    expect(isDemoReviewerAccessEnabled({ TAU_DEMO_REVIEWER_ACCESS: '0' })).toBe(false)
-    expect(isDemoReviewerAccessEnabled({ TAU_DEMO_REVIEWER_ACCESS: 'false' })).toBe(false)
-    expect(isDemoReviewerAccessEnabled({ TAU_DEMO_REVIEWER_ACCESS: '1' })).toBe(true)
-    expect(isDemoReviewerAccessEnabled({ TAU_DEMO_REVIEWER_ACCESS: 'true' })).toBe(true)
-    expect(isDemoReviewerAccessEnabled({ TAU_DEMO_REVIEWER_ACCESS: 'YES' })).toBe(true)
+    expect(isDemoReviewerAccessEnabled({ FICUS_DEMO_REVIEWER_ACCESS: '' })).toBe(false)
+    expect(isDemoReviewerAccessEnabled({ FICUS_DEMO_REVIEWER_ACCESS: '0' })).toBe(false)
+    expect(isDemoReviewerAccessEnabled({ FICUS_DEMO_REVIEWER_ACCESS: 'false' })).toBe(false)
+    expect(isDemoReviewerAccessEnabled({ FICUS_DEMO_REVIEWER_ACCESS: '1' })).toBe(true)
+    expect(isDemoReviewerAccessEnabled({ FICUS_DEMO_REVIEWER_ACCESS: 'true' })).toBe(true)
+    expect(isDemoReviewerAccessEnabled({ FICUS_DEMO_REVIEWER_ACCESS: 'YES' })).toBe(true)
   })
 })
 

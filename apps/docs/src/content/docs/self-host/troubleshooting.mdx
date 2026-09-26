@@ -69,7 +69,7 @@ Setup also derives the worker and event ports from that base. To run a second pe
 
 If status reports stopped services, run `tau server start`, then inspect the API logs. If they exit again, fix the reported startup error before retrying.
 
-If `/health` responds but the browser page is absent, check `TAU_SERVE_WEB` and the web build. From the correct checkout:
+If `/health` responds but the browser page is absent, check `FICUS_SERVE_WEB` and the web build. From the correct checkout:
 
 ```sh
 bun run build:web
@@ -81,14 +81,14 @@ For remote access, confirm the proxy reaches the API and forwards `/ws` as well 
 ## Login or CLI authentication fails
 
 - **The initial password no longer works:** after an administrator registers a passkey, use passkey login. The setup password is a bootstrap credential.
-- **Passkey registration fails behind a proxy:** verify the HTTPS address and `TAU_WEB_ORIGIN`. The setting must contain an origin with no path.
+- **Passkey registration fails behind a proxy:** verify the HTTPS address and `FICUS_WEB_ORIGIN`. The setting must contain an origin with no path.
 - **The CLI returns 401:** run `tau auth status` to see its backend and credential source, then authorize a device again:
 
   ```sh
   tau auth login local --api-url http://localhost:3000
   ```
 
-  Use your actual instance URL. Clear an explicitly exported stale `TAU_PASSWORD` before browser authorization.
+  Use your actual instance URL. Clear an explicitly exported stale `FICUS_PASSWORD` before browser authorization.
 
 - **The CLI returns 403:** your account may be signed in but lack permission for that action. Reinstalling the server does not grant a user additional permissions.
 
@@ -98,9 +98,9 @@ Do not clear authentication variables or create another instance as a way to rec
 
 Check worker logs and the selected runtime. If the instance is under maintenance, inspect **Settings → System → Maintenance pause** or run `tau system pause-status`. Release only your administrator hold when its maintenance work is complete.
 
-If the agent reports a provider error, check **Settings → AI Providers** and [model setup](/configure/models/). Saving a provider credential requires the instance's encryption key. If logs say `TAU_ENCRYPTION_KEY not configured`, restore the installation's existing key from configuration or backup; do not generate a replacement for a database that already contains encrypted credentials.
+If the agent reports a provider error, check **Settings → AI Providers** and [model setup](/configure/models/). Saving a provider credential requires the instance's encryption key. If logs say `FICUS_ENCRYPTION_KEY not configured`, restore the installation's existing key from configuration or backup; do not generate a replacement for a database that already contains encrypted credentials.
 
-For host-mode browser errors, install a Chromium-family browser or set `TAU_BROWSER_EXECUTABLE_PATH` to its executable, then restart. Missing `tmux` affects host-mode local deployments. Container runtimes need their Docker image/runtime available independently of the web app.
+For host-mode browser errors, install a Chromium-family browser or set `FICUS_BROWSER_EXECUTABLE_PATH` to its executable, then restart. Missing `tmux` affects host-mode local deployments. Container runtimes need their Docker image/runtime available independently of the web app.
 
 ## An update failed
 

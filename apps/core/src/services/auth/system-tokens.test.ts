@@ -20,8 +20,8 @@ describe('system tokens', () => {
   let priorKey: string | undefined
 
   beforeAll(async () => {
-    priorKey = process.env.TAU_ENCRYPTION_KEY
-    process.env.TAU_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64) // 32-byte hex test key
+    priorKey = process.env.FICUS_ENCRYPTION_KEY
+    process.env.FICUS_ENCRYPTION_KEY = priorKey ?? '0'.repeat(64) // 32-byte hex test key
     resetSecretStore()
     await getSecretStore().initialize()
   })
@@ -34,8 +34,8 @@ describe('system tokens', () => {
   })
 
   afterAll(() => {
-    if (priorKey === undefined) delete process.env.TAU_ENCRYPTION_KEY
-    else process.env.TAU_ENCRYPTION_KEY = priorKey
+    if (priorKey === undefined) delete process.env.FICUS_ENCRYPTION_KEY
+    else process.env.FICUS_ENCRYPTION_KEY = priorKey
     resetSecretStore()
   })
 
@@ -90,21 +90,21 @@ describe('system tokens', () => {
 
   it('injects a scoped webhook identity bound to this Core listener', async () => {
     const previousPort = process.env.PORT
-    const previousUrl = process.env.TAU_API_URL
+    const previousUrl = process.env.FICUS_API_URL
     try {
       process.env.PORT = '39994'
-      process.env.TAU_API_URL = 'https://another-instance.example'
+      process.env.FICUS_API_URL = 'https://another-instance.example'
       const env = await webhookScriptAuthEnv()
-      expect(env.TAU_WEBHOOK_CONTEXT).toBe('1')
-      expect(env.TAU_API_URL).toBe('http://127.0.0.1:39994')
-      expect(env.TAU_PASSWORD).toBe('')
-      const identity = await resolveSystemToken(env.TAU_TOKEN!)
+      expect(env.FICUS_WEBHOOK_CONTEXT).toBe('1')
+      expect(env.FICUS_API_URL).toBe('http://127.0.0.1:39994')
+      expect(env.FICUS_PASSWORD).toBe('')
+      const identity = await resolveSystemToken(env.FICUS_TOKEN!)
       expect(identity?.scopes).toEqual(DEFAULT_WEBHOOK_SCOPES)
     } finally {
       if (previousPort === undefined) delete process.env.PORT
       else process.env.PORT = previousPort
-      if (previousUrl === undefined) delete process.env.TAU_API_URL
-      else process.env.TAU_API_URL = previousUrl
+      if (previousUrl === undefined) delete process.env.FICUS_API_URL
+      else process.env.FICUS_API_URL = previousUrl
     }
   })
 

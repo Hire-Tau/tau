@@ -1,6 +1,6 @@
 # Desktop notifications
 
-The desktop app consumes a bounded notification feed while its signed-in window remains alive, including when hidden or minimized. Core enqueues alerts for a user on a `TAU_DESKTOP_MANAGED=1` (Desktop-managed) instance, and independently for any user who holds a non-revoked `desktop` device token — so a Tau Desktop paired to any instance, not just one it manages, still gets native alerts. The existing notification service selects recipients using the same rules, work interests, categories, and per-user preferences as other push channels.
+The desktop app consumes a bounded notification feed while its signed-in window remains alive, including when hidden or minimized. Core enqueues alerts for a user on a `FICUS_DESKTOP_MANAGED=1` (Desktop-managed) instance, and independently for any user who holds a non-revoked `desktop` device token — so a Tau Desktop paired to any instance, not just one it manages, still gets native alerts. The existing notification service selects recipients using the same rules, work interests, categories, and per-user preferences as other push channels.
 
 New push notification types inherit desktop delivery through the shared fan-out. Follow [Adding a notification type](notifications.md#adding-a-notification-type); do not maintain a separate desktop event list. The notification service regression covers delivery of a newly registered event to Web Push, APNs, and desktop, and verifies that shared recipient mutes suppress all three.
 

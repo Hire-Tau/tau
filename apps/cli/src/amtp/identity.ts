@@ -5,20 +5,20 @@ import { createPrivateKey, createPublicKey, sign } from 'crypto'
 import { expandTilde } from '@ficus/shared/node'
 
 function privateRoot(): string {
-  const configured = process.env.TAU_PRIVATE_DIR
+  const configured = process.env.FICUS_PRIVATE_DIR
   if (configured) return expandTilde(configured)
   return existsSync('/private') ? '/private' : join(homedir(), '.private')
 }
 
 /** Path to this agent's PKCS8 Ed25519 private key (constant per-agent identity, mounted at /private). */
 export function identityPemPath(): string {
-  const configured = process.env.TAU_IDENTITY_PEM
+  const configured = process.env.FICUS_IDENTITY_PEM
   return configured ? expandTilde(configured) : join(privateRoot(), 'identity.pem')
 }
 
 /** Path to the small JSON cache holding the registered handle + full amtp:// address. */
 export function identityCachePath(): string {
-  const configured = process.env.TAU_IDENTITY_CACHE
+  const configured = process.env.FICUS_IDENTITY_CACHE
   return configured ? expandTilde(configured) : join(privateRoot(), '.tau', 'identity.json')
 }
 

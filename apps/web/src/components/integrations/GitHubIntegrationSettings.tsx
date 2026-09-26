@@ -5,7 +5,7 @@ import { GitHubCommitSigning } from './GitHubCommitSigning'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { IntegrationAuthorizationStart } from '@ficus/shared'
-import { TAU_GITHUB_APP_CLIENT_ID } from '@ficus/shared/github-app'
+import { FICUS_GITHUB_APP_CLIENT_ID } from '@ficus/shared/github-app'
 import {
   setIntegrationDefault,
   setIntegrationEnabled,
@@ -208,7 +208,7 @@ export function GitHubIntegrationSettings({
   )
   const hasAccounts = (pool.data?.length ?? 0) > 0
   const canConnect = canWrite && app.data?.configured && pool.isSuccess
-  const usesTauApp = app.data?.authority === 'platform_broker' || app.data?.clientId === TAU_GITHUB_APP_CLIENT_ID
+  const usesTauApp = app.data?.authority === 'platform_broker' || app.data?.clientId === FICUS_GITHUB_APP_CLIENT_ID
   const failure =
     error ||
     (app.isError && integrationErrorMessage(app.error, "Couldn't load the GitHub App settings.")) ||

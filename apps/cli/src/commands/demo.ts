@@ -1,6 +1,6 @@
 /**
  * `tau demo` — the operator side of app-store reviewer access on a designated
- * demo instance (TAU_DEMO_REVIEWER_ACCESS). Seeding is idempotent: run it after
+ * demo instance (FICUS_DEMO_REVIEWER_ACCESS). Seeding is idempotent: run it after
  * an upgrade or a partial failure and it only creates what is missing, leaving
  * whatever was curated on top in place.
  */
@@ -51,7 +51,7 @@ export function renderSeedSummary(summary: DemoSeedSummary): string {
 export function registerDemoCommands(program: Command, dependencies = defaultDependencies): void {
   const demo = program
     .command('demo')
-    .description('App-store reviewer access on a designated demo instance (requires TAU_DEMO_REVIEWER_ACCESS)')
+    .description('App-store reviewer access on a designated demo instance (requires FICUS_DEMO_REVIEWER_ACCESS)')
 
   // tau demo seed
   demo

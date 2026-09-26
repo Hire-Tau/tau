@@ -13,7 +13,7 @@ import { makeSupervisorContext } from '../local-server/supervisor'
 
 export interface UpdateDeps {
   resolveRoot(): string
-  /** The API the CLI is pointed at (--backend, active backend, TAU_API_URL, root .env). */
+  /** The API the CLI is pointed at (--backend, active backend, FICUS_API_URL, root .env). */
   apiUrl(): string
   /** The port the local checkout serves on (its registry entry, else its .env PORT), if known. */
   localPort(root: string): number | undefined

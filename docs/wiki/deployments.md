@@ -14,13 +14,13 @@ Tau-managed Kubernetes is not a production app host. Do not create app Deploymen
 
 Tau itself supports three common serving topologies:
 
-1. **Single-origin built-in:** build `apps/web/dist` and run Core with `TAU_SERVE_WEB=1` so `/`, `/api/*`, `/ws`, and `/ws/terminal` share port `3000`. This is best for self-hosted VMs and simple Docker deployments.
+1. **Single-origin built-in:** build `apps/web/dist` and run Core with `FICUS_SERVE_WEB=1` so `/`, `/api/*`, `/ws`, and `/ws/terminal` share port `3000`. This is best for self-hosted VMs and simple Docker deployments.
 2. **Split web/API:** serve the web UI separately (Vite, static files, or CDN) and route `/api/*`, `/ws`, and `/ws/*` to Core on `3000`.
-3. **Kubernetes/CDN:** use the dedicated `tau-api`, `tau-worker`, and `tau-web` deployments; leave `TAU_SERVE_WEB` unset unless intentionally changing that topology.
+3. **Kubernetes/CDN:** use the dedicated `tau-api`, `tau-worker`, and `tau-web` deployments; leave `FICUS_SERVE_WEB` unset unless intentionally changing that topology.
 
 In topologies 1–2 the worker's stream server (`WORKER_PORT`) binds `127.0.0.1`
 by default — the API reaches it over loopback on the same host. Reaching it from
-another host or container network requires `HOST` or `TAU_WORKER_BIND` (see
+another host or container network requires `HOST` or `FICUS_WORKER_BIND` (see
 [configuration](configuration.md)); Kubernetes is auto-detected and binds all
 interfaces for pod-IP probes.
 
@@ -78,7 +78,7 @@ Secret exposure storage model:
 - Selected key names are stored in Core's server-controlled database tables, not in the workspace.
 - Globally exposed keys are rendered into every existing squad env file immediately and into future squad env files when generated.
 - User-authored environment content is stored in `.tau/env.user`.
-- Reserved keys: squad env content may not assign `TAU_TOKEN`, `TAU_API_URL`, `TAU_PASSWORD`, `TAU_AUTH_STORE`, `TAU_AGENT_CONTEXT`, `TAU_AGENT_ID` or the `TAU_IDENTITY_*` aliases. The agent's identity is injected by tau; setting one in a squad env would make every agent in the squad act as a different identity, against a possibly different instance. Such a write is rejected with a 400 naming the key, and the same names are filtered out of Secret Store exposure rendering. `PATH` is not reserved — on the host runtime tau re-prepends its `tau` shim directory after the squad env is sourced, so PATH additions apply but cannot displace `tau`.
+- Reserved keys: squad env content may not assign `FICUS_TOKEN`, `FICUS_API_URL`, `FICUS_PASSWORD`, `FICUS_AUTH_STORE`, `FICUS_AGENT_CONTEXT`, `FICUS_AGENT_ID` or the `FICUS_IDENTITY_*` aliases. The agent's identity is injected by tau; setting one in a squad env would make every agent in the squad act as a different identity, against a possibly different instance. Such a write is rejected with a 400 naming the key, and the same names are filtered out of Secret Store exposure rendering. `PATH` is not reserved — on the host runtime tau re-prepends its `tau` shim directory after the squad env is sourced, so PATH additions apply but cannot displace `tau`.
 - The generated sandbox env file `.tau/.env` contains `.tau/env.user` content plus selected Secret Store values so shells, local app commands, and deployment CLIs can source them.
 - Normal APIs and UI responses return user-authored env content and key names/status only; they do not return generated plaintext Secret Store values.
 - Secret Store rotation/deletion regenerates affected squad `.tau/.env` files so stale selected or globally exposed values are updated or removed.

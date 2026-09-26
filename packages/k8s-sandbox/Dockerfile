@@ -110,7 +110,7 @@ FROM base AS agent
 
 # Empty default devbox template. In this image /opt/tau/defaults/devbox.json IS
 # the (package-less) template the entrypoint seeds as the agent's own devbox in
-# /private (TAU_DEVBOX_DIR). With no packages declared, the entrypoint's
+# /private (FICUS_DEVBOX_DIR). With no packages declared, the entrypoint's
 # `devbox install` is skipped — the comfort set already lives on PATH below.
 COPY packages/k8s-sandbox/sandbox/devbox.agent.json /opt/tau/defaults/devbox.json
 

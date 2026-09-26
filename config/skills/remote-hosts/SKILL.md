@@ -29,7 +29,7 @@ tau remote-hosts add --name staging --host 10.1.2.3 --user deploy
 ```
 
 This mints a fresh ed25519 keypair for this host, registers it, grants your
-squad (`TAU_SQUAD_ID`) access, and prints:
+squad (`FICUS_SQUAD_ID`) access, and prints:
 
 1. The **public key** (one line, ready to paste).
 2. Install instructions for the human who owns the box.

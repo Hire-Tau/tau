@@ -34,7 +34,7 @@ kubectl -n tau-sandboxes describe pod <pod-name>
 
 | Cause                  | Events Message                                    | Fix                                                               |
 | ---------------------- | ------------------------------------------------- | ----------------------------------------------------------------- |
-| No nodes with sysbox   | `RuntimeClass "sysbox-runc" not found`            | Install sysbox on worker nodes, or set `TAU_K8S_RUNTIME_CLASS=""` |
+| No nodes with sysbox   | `RuntimeClass "sysbox-runc" not found`            | Install sysbox on worker nodes, or set `FICUS_K8S_RUNTIME_CLASS=""` |
 | Insufficient resources | `Insufficient cpu` / `Insufficient memory`        | Scale nodes or reduce pod resource requests                       |
 | PVC not bound          | `persistentvolumeclaim "tau-core-data" not found` | Create the PVC (see [volumes.md](volumes.md))                     |
 | Node selector mismatch | `0/N nodes are available`                         | Check node labels match any node selectors                        |
@@ -188,7 +188,7 @@ kubectl -n tau-sandboxes get secret tau-sandbox-auth -o jsonpath='{.data.passwor
 
 If the secret is empty or missing:
 
-1. Set `TAU_PASSWORD` in the Settings UI
+1. Set `FICUS_PASSWORD` in the Settings UI
 2. The Core will sync it on next pod creation, or trigger sync manually by restarting the worker
 
 ### GitHub Token Not Working

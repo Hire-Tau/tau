@@ -445,7 +445,7 @@ describe('SquadWorkerRunner sandbox_status tool gating on runtime', () => {
   let squadFindSpy: any
   let squadWorkerResolveSkillPathsSpy: any
   let squadWorkerResolveExtensionPathsSpy: any
-  const prevRuntime = process.env.TAU_SANDBOX_RUNTIME
+  const prevRuntime = process.env.FICUS_SANDBOX_RUNTIME
 
   beforeEach(() => {
     squadSandboxCalls = []
@@ -488,12 +488,12 @@ describe('SquadWorkerRunner sandbox_status tool gating on runtime', () => {
     squadFindSpy?.mockRestore()
     squadWorkerResolveSkillPathsSpy?.mockRestore()
     squadWorkerResolveExtensionPathsSpy?.mockRestore()
-    if (prevRuntime === undefined) delete process.env.TAU_SANDBOX_RUNTIME
-    else process.env.TAU_SANDBOX_RUNTIME = prevRuntime
+    if (prevRuntime === undefined) delete process.env.FICUS_SANDBOX_RUNTIME
+    else process.env.FICUS_SANDBOX_RUNTIME = prevRuntime
   })
 
   it('does not include sandbox_status on the host runtime', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'host'
+    process.env.FICUS_SANDBOX_RUNTIME = 'host'
     const agent = makeTestAgent({ agentTypeId: 'worker', squadId: TEST_SQUAD_ID })
     const agentType = makeAgentType({ id: 'worker' }) as AgentType
     const runner = new TestableSquadWorkerRunner(makeExecution(agent.id), agent, agentType)
@@ -504,7 +504,7 @@ describe('SquadWorkerRunner sandbox_status tool gating on runtime', () => {
   })
 
   it('includes sandbox_status on docker-socket', async () => {
-    process.env.TAU_SANDBOX_RUNTIME = 'docker-socket'
+    process.env.FICUS_SANDBOX_RUNTIME = 'docker-socket'
     const agent = makeTestAgent({ agentTypeId: 'worker', squadId: TEST_SQUAD_ID })
     const agentType = makeAgentType({ id: 'worker' }) as AgentType
     const runner = new TestableSquadWorkerRunner(makeExecution(agent.id), agent, agentType)

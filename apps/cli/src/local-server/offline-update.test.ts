@@ -79,7 +79,7 @@ describe('runOfflineUpdate', () => {
   it('restarts the apps of the instance the checkout belongs to, not the default ones', async () => {
     const root = mkdtempSync(join(tmpdir(), 'tau-offline-'))
     try {
-      writeFileSync(join(root, '.env'), 'TAU_INSTANCE=smoke\n')
+      writeFileSync(join(root, '.env'), 'FICUS_INSTANCE=smoke\n')
       const rec = recordingRunner(base)
       await runTestOfflineUpdate({
         root,

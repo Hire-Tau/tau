@@ -15,7 +15,7 @@ describe('globToRegExp', () => {
   test('* matches any run, anchored', () => {
     expect(globToRegExp('GITHUB_*').test('GITHUB_TOKEN')).toBe(true)
     expect(globToRegExp('GITHUB_*').test('XGITHUB_TOKEN')).toBe(false)
-    expect(globToRegExp('*ENCRYPTION_KEY').test('TAU_ENCRYPTION_KEY')).toBe(true)
+    expect(globToRegExp('*ENCRYPTION_KEY').test('FICUS_ENCRYPTION_KEY')).toBe(true)
   })
 
   test('? matches exactly one char; regex specials are literal', () => {
@@ -28,7 +28,7 @@ describe('globToRegExp', () => {
 describe('getSecretGroups (default config)', () => {
   test('categorizes every current known key intentionally and non-overlapping', () => {
     const expected = new Map<string, string[]>([
-      ['TAU_PASSWORD', ['system']],
+      ['FICUS_PASSWORD', ['system']],
       ['VAPID_SUBJECT', ['notification']],
       ['OPENAI_API_KEY', ['provider']],
       ['GITHUB_TOKEN', ['integration']],
@@ -82,13 +82,13 @@ describe('secretAccessible / candidates', () => {
   })
 
   test('bare secrets:read reads everything incl. unmatched', () => {
-    expect(secretAccessible(['secrets:read'], 'TAU_PASSWORD', 'read')).toBe(true)
+    expect(secretAccessible(['secrets:read'], 'FICUS_PASSWORD', 'read')).toBe(true)
     expect(secretAccessible(['secrets:read'], 'SOME_RANDOM_KEY', 'read')).toBe(true)
   })
 
   test('wildcard admin reads everything', () => {
     expect(secretAccessible(['*'], 'SOME_RANDOM_KEY', 'read')).toBe(true)
-    expect(secretAccessible(['secrets:*'], 'TAU_PASSWORD', 'write')).toBe(true)
+    expect(secretAccessible(['secrets:*'], 'FICUS_PASSWORD', 'write')).toBe(true)
   })
 
   test('group-limited reads only its group, not others/unmatched', () => {
@@ -96,7 +96,7 @@ describe('secretAccessible / candidates', () => {
     expect(secretAccessible(held, 'GITHUB_TOKEN', 'read')).toBe(true)
     expect(secretAccessible(held, 'GITHUB_TOKEN', 'write')).toBe(true)
     expect(secretAccessible(held, 'OPENAI_API_KEY', 'read')).toBe(false)
-    expect(secretAccessible(held, 'TAU_PASSWORD', 'read')).toBe(false)
+    expect(secretAccessible(held, 'FICUS_PASSWORD', 'read')).toBe(false)
     expect(secretAccessible(held, 'SOME_RANDOM_KEY', 'read')).toBe(false)
   })
 

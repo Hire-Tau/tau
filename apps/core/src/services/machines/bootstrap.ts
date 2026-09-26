@@ -37,7 +37,7 @@ const BOOTSTRAP_REMOTE_PATH = '/tmp/tau-bootstrap.sh'
  * matches the gated integration test's per-flow budget.
  */
 const BOOTSTRAP_RUN_TIMEOUT_MS = 15 * 60_000
-const CAPS_PREFIX = 'TAU_CAPS_JSON:'
+const CAPS_PREFIX = 'FICUS_CAPS_JSON:'
 /**
  * Cap on the `lastError` bytes persisted to the row. `machines.lastError` is
  * returned on every list/detail fetch, and the message is built from raw
@@ -93,7 +93,7 @@ export interface BootstrapDeps {
   /**
    * The Core-reachable CIDR(s) allowed through the egress lockdown when the
    * machine opts in (`machine.egressPolicy`). Defaults to
-   * {@link parseCoreEgressCidrs} of `TAU_CORE_EGRESS_CIDR`. Each is passed as a
+   * {@link parseCoreEgressCidrs} of `FICUS_CORE_EGRESS_CIDR`. Each is passed as a
    * `--core-cidr` to bootstrap.sh, which re-validates it (strict IPv4 CIDR)
    * before interpolating it into the root nft ruleset.
    */
@@ -111,7 +111,7 @@ export interface BootstrapDeps {
    * or delay the ready transition. Injected so a unit test can spy on the kick
    * without pulling in the (heavy, cyclic) devbox-prewarm module. Defaults to a
    * dynamic-import background realize that is itself a no-op under
-   * `TAU_TEST_MODE=1`.
+   * `FICUS_TEST_MODE=1`.
    */
   prewarmDevbox?: (machineId: string) => void
   /**
@@ -127,18 +127,18 @@ export interface BootstrapDeps {
  * Default {@link BootstrapDeps.prewarmDevbox}: kick the machine-scoped devbox
  * pre-warm in the background. Dynamically imported so bootstrap.ts (pulled in by
  * placement.ts → box-manager.ts) does not statically depend on box-manager.ts —
- * that back-edge would be an import cycle. No-op under `TAU_TEST_MODE=1` (the
+ * that back-edge would be an import cycle. No-op under `FICUS_TEST_MODE=1` (the
  * background wrapper re-checks too); any import/kick error is swallowed.
  */
 function defaultPrewarmDevbox(machineId: string): void {
-  if (process.env.TAU_TEST_MODE === '1') return
+  if (process.env.FICUS_TEST_MODE === '1') return
   void import('./devbox-prewarm')
     .then((m) => m.prewarmMachineDevboxBackground(machineId))
     .catch((err) => log.warn(`devbox pre-warm kick failed to load for machine ${machineId} (non-fatal):`, err))
 }
 
 /**
- * Where the Core's reachable CIDR(s) come from: the `TAU_CORE_EGRESS_CIDR`
+ * Where the Core's reachable CIDR(s) come from: the `FICUS_CORE_EGRESS_CIDR`
  * env/config, a comma- or whitespace-separated list of IPv4 CIDRs (e.g.
  * `"10.20.0.0/16, 203.0.113.7/32"`). Empty/unset ⇒ no allow-exceptions: the
  * lockdown still applies and the box→core REVERSE tunnel keeps working, since it
@@ -156,7 +156,7 @@ export function parseCoreEgressCidrs(raw: string | undefined): string[] {
 
 /**
  * Extract the machine capabilities from bootstrap stdout. The script prints
- * exactly one `TAU_CAPS_JSON: {...}` marker as its final line, but this scans
+ * exactly one `FICUS_CAPS_JSON: {...}` marker as its final line, but this scans
  * from the end and tolerates arbitrary preceding chatter (and a malformed
  * earlier marker), returning the LAST valid one. Throws if none is present.
  */
@@ -291,7 +291,7 @@ export async function bootstrapMachine(machine: Machine, deps: BootstrapDeps = {
     //    defence-in-depth, not the sole guard.
     let runCommand = `bash ${shellQuote(BOOTSTRAP_REMOTE_PATH)} --version ${shellQuote(bootstrapVersion)}`
     if (machine.egressPolicy) {
-      const coreEgressCidrs = deps.coreEgressCidrs ?? parseCoreEgressCidrs(process.env.TAU_CORE_EGRESS_CIDR)
+      const coreEgressCidrs = deps.coreEgressCidrs ?? parseCoreEgressCidrs(process.env.FICUS_CORE_EGRESS_CIDR)
       runCommand += ' --egress-lockdown'
       for (const cidr of coreEgressCidrs) {
         runCommand += ` --core-cidr ${shellQuote(cidr)}`

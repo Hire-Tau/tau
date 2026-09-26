@@ -78,7 +78,7 @@ function LoginPageContent({ auth, dependencies }: { auth: LoginPageAuth; depende
   }
 
   // First-admin setup password gate. On hosted instances the API reports mode:'password'
-  // (a TAU_PASSWORD bootstrap credential is provisioned and no admin passkey exists yet),
+  // (a FICUS_PASSWORD bootstrap credential is provisioned and no admin passkey exists yet),
   // and the first-admin registration endpoints require that bootstrap session. We log in to
   // set the cookie WITHOUT flipping global auth state, so LoginPage stays mounted to run the
   // passkey setup authenticated. Only PasskeyRegister's success promotes to full auth.

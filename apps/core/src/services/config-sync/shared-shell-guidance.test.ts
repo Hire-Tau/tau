@@ -17,13 +17,13 @@ describe('local app deployment guidance', () => {
   test('deploy-app tells agents to let Tau assign the port and to set the base path', async () => {
     const skill = await readRepoFile('config/skills/deploy-app/SKILL.md')
 
-    expect(skill).toContain('TAU_APP_BASE_PATH')
+    expect(skill).toContain('FICUS_APP_BASE_PATH')
     expect(skill).toContain('$PORT')
     // The managed-start example must not hand back a hard-coded port.
     expect(skill).toContain('Do not pass `--port`')
     expect(skill).not.toContain('--port 5173 \\')
 
-    expect(skill).toContain('Always honor `$TAU_APP_BASE_PATH`')
+    expect(skill).toContain('Always honor `$FICUS_APP_BASE_PATH`')
     expect(skill).toMatch(/hosted[\s\S]*?`\/`/i)
     expect(skill).toContain('root-absolute asset URLs work by default')
     expect(skill).toMatch(/self-hosted[\s\S]*?`\/api\/app\/<id>\/`/i)
@@ -34,7 +34,7 @@ describe('local app deployment guidance', () => {
     // variable does not help an agent holding a Next app. Next rejects both `/`
     // and a trailing slash, so the documented expression must normalize them.
     for (const setting of ['base', 'basePath', 'PUBLIC_URL']) expect(skill).toContain(setting)
-    expect(skill).toContain("basePath: process.env.TAU_APP_BASE_PATH?.replace(/\\/$/, '')")
+    expect(skill).toContain("basePath: process.env.FICUS_APP_BASE_PATH?.replace(/\\/$/, '')")
 
     expect(skill).toContain('WebSocket upgrades are not supported')
     expect(skill).toMatch(/SSE|polling/)
@@ -44,7 +44,7 @@ describe('local app deployment guidance', () => {
     const skill = await readRepoFile('config/skills/frontend-visual-review/SKILL.md')
     expect(skill).toContain('tau deploy local start')
     expect(skill).toContain('$PORT')
-    expect(skill).toContain('$TAU_APP_BASE_PATH')
+    expect(skill).toContain('$FICUS_APP_BASE_PATH')
     expect(skill).not.toContain('nohup')
     expect(skill).not.toContain('tau deploy local attach')
   })

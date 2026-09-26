@@ -20,7 +20,7 @@ describe('legacy upgrade policy', () => {
     expect(legacyUpgradePolicy('')).toBe('observe')
     expect(legacyUpgradePolicy('enforce')).toBe('enforce')
     expect(legacyUpgradePolicy('disabled')).toBe('disabled')
-    expect(() => legacyUpgradePolicy('allow')).toThrow('TAU_LEGACY_PLATFORM_MAINTENANCE_UPGRADE')
+    expect(() => legacyUpgradePolicy('allow')).toThrow('FICUS_LEGACY_PLATFORM_MAINTENANCE_UPGRADE')
   })
 })
 
