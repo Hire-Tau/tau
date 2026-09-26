@@ -66,6 +66,40 @@ describeSubprocess('loadRootEnvForStandaloneScript', () => {
   })
 })
 
+describe('loadRootEnvForStandaloneScript legacy TAU_ keys (one release)', () => {
+  test("bridges the file's TAU_X to FICUS_X in its own record before merging", () => {
+    const suffix = `ROOT_ENV_BRIDGE_${process.pid}`
+    cleanups.push(() => {
+      delete process.env[`FICUS_${suffix}`]
+      delete process.env[`TAU_${suffix}`]
+    })
+    const root = tempRoot(`TAU_${suffix}=from-file\n`)
+
+    const loaded = loadRootEnvForStandaloneScript(root)
+
+    expect(process.env[`FICUS_${suffix}`]).toBe('from-file')
+    expect(process.env[`TAU_${suffix}`]).toBeUndefined()
+    expect(loaded).toEqual([`FICUS_${suffix}`])
+  })
+
+  test("never lets the file's legacy encryption key replace an explicit FICUS_ one", () => {
+    const key = `FICUS_ROOT_ENV_ENCRYPTION_KEY_${process.pid}`
+    const legacy = `TAU_ROOT_ENV_ENCRYPTION_KEY_${process.pid}`
+    process.env[key] = 'explicit'
+    cleanups.push(() => {
+      delete process.env[key]
+      delete process.env[legacy]
+    })
+    const root = tempRoot(`${legacy}=from-file\n`)
+
+    const loaded = loadRootEnvForStandaloneScript(root)
+
+    expect(process.env[key]).toBe('explicit')
+    expect(process.env[legacy]).toBeUndefined()
+    expect(loaded).toEqual([])
+  })
+})
+
 // ── The real seam: the ACTUAL `bun run db:migrate` entrypoint ────────────────
 //
 // Tenant VMs deliver DATABASE_URL only through the rendered repo-root .env;

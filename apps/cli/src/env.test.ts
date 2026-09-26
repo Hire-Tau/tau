@@ -31,6 +31,17 @@ describe('loadEnv', () => {
     expect(Object.values(env)).not.toContain('compiled-stale')
   })
 
+  it("bridges the file's legacy TAU_ keys without letting them replace explicit FICUS_ values", () => {
+    const root = mkdtempSync(join(tmpdir(), 'tau-env-'))
+    dirs.push(root)
+    writeFileSync(join(root, '.env'), 'TAU_API_URL=https://file.example\nTAU_PASSWORD=from-file\n')
+    const env: NodeJS.ProcessEnv = { FICUS_PASSWORD: 'explicit' }
+
+    loadEnv({ cwd: root, env })
+
+    expect(env).toEqual({ FICUS_API_URL: 'https://file.example', FICUS_PASSWORD: 'explicit' })
+  })
+
   it('does not replace explicit values', () => {
     const root = mkdtempSync(join(tmpdir(), 'tau-env-'))
     dirs.push(root)
