@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { pushAlertText, relayRoutingSchema, type RelayRouting } from './push-relay'
+import { PUSH_RELAY_BASE_URL, pushAlertText, relayRoutingSchema, type RelayRouting } from './push-relay'
+
+test('push relay base URL is the live control plane, not a redirecting host', () => {
+  expect(PUSH_RELAY_BASE_URL).toBe('https://ficus.sh')
+})
 
 describe('relay routing presentation keys', () => {
   const routing = {
