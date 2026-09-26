@@ -564,6 +564,21 @@ cfg_bool() { # .dotted.path DEFAULT(true|false)
   esac
 }
 
+# Write a single scalar VALUE to PATH in CFG_FILE, in place — the write-side
+# counterpart to cfg_get, for tools (e.g. retarget-origin.sh) that mutate an
+# already-provisioned host's config rather than only reading it. VALUE is
+# passed through the environment (yq's strenv()), never spliced into the yq
+# expression string itself, so nothing the caller passes — quotes, colons,
+# a leading '-' — can be interpreted as yq syntax. Only ever assigns a
+# scalar; a map/array literal would need exactly that unsafe interpolation
+# and no caller needs one. Creates PATH (and any missing parent maps), same
+# as a normal yq assignment.
+cfg_set() { # .dotted.path VALUE
+  local path=$1
+  TAU_CFG_SET_VALUE=$2 yq -i "${path} = strenv(TAU_CFG_SET_VALUE)" "${CFG_FILE}" ||
+    die "failed to write ${path} to ${CFG_FILE}"
+}
+
 # ------------------------------------------------------------------ digitalocean fallbacks
 
 # Ordered (size, region) pairs from provision.digitalocean.fallbacks — one
@@ -733,6 +748,33 @@ envfile_get() { # FILE KEY
   printf '%s' "${line#"${key}"=}"
 }
 
+# Update (or append) KEY=VALUE in FILE in place — the write-side counterpart
+# to envfile_get, for tools (e.g. retarget-origin.sh) that patch a couple of
+# keys in an already-rendered .env without re-rendering the whole file (which
+# would need secrets that may no longer be available off-box). Preserves
+# every OTHER line byte-for-byte: comments, ordering, blank lines, and any
+# secret already sitting in the file. Every existing assignment of KEY is
+# rewritten in place (matching envfile_get's "last assignment wins" read
+# semantics — a file with a duplicate key keeps having a duplicate key, both
+# updated, rather than being silently collapsed to one); if KEY is absent,
+# one line is appended. FILE must already exist.
+envfile_set() { # FILE KEY VALUE
+  local file=$1 key=$2 value=$3 tmp found=0 line
+  [[ -f ${file} ]] || die "envfile_set: file not found: ${file}"
+  tmp=$(mktemp)
+  while IFS= read -r line || [[ -n ${line} ]]; do
+    if [[ ${line} =~ ^${key}= ]]; then
+      printf '%s=%s\n' "${key}" "${value}" >>"${tmp}"
+      found=1
+    else
+      printf '%s\n' "${line}" >>"${tmp}"
+    fi
+  done <"${file}"
+  [[ ${found} -eq 1 ]] || printf '%s=%s\n' "${key}" "${value}" >>"${tmp}"
+  cat "${tmp}" >"${file}"
+  rm -f "${tmp}"
+}
+
 # ------------------------------------------------------------------ origin/host
 
 # Bare host (no scheme, no port) of an origin like https://acme.example.com or
@@ -803,6 +845,20 @@ preflight_tls_source() { # CONFIG_KEY PATH
   local config_key=$1 path=$2
   [[ -f ${path} ]] || die "${config_key}: file not found: ${path}"
   [[ -r ${path} ]] || die "${config_key}: file is not readable: ${path}"
+}
+
+# True (exit 0) iff CERT's public key matches KEY's — i.e. this certificate
+# and private key are actually a pair. Compares derived public keys
+# (openssl pkey -pubout), not moduli, so it works for RSA and EC certificates
+# alike — a Cloudflare Origin CA cert can be either. Callers that want a
+# distinct "file not found"/"not readable" error should run
+# preflight_tls_source first: a missing or malformed file here just reads as
+# a mismatch (return 1), not a die.
+tls_pair_matches() { # CERT KEY
+  local cert=$1 key=$2 cert_pub key_pub
+  cert_pub=$(openssl x509 -in "${cert}" -noout -pubkey 2>/dev/null) || return 1
+  key_pub=$(openssl pkey -in "${key}" -pubout 2>/dev/null) || return 1
+  [[ -n ${cert_pub} && ${cert_pub} == "${key_pub}" ]]
 }
 
 preflight_public_certificate() { # CONFIG_KEY PATH

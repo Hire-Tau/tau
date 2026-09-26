@@ -313,6 +313,53 @@ expect_eq 'envfile_get: a later STRIPE_WEBHOOK_SECRET wins over an earlier one' 
   "$(envfile_get "${tmp_env}" 'STRIPE_WEBHOOK_SECRET')" 'whsec_registered'
 rm -f "${tmp_env}"
 
+# --- envfile_set --------------------------------------------------------------
+# The write-side counterpart, used by retarget-origin.sh to patch APP_URL /
+# TAU_WEB_ORIGIN / TAU_PLATFORM_INGEST_URL in an already-rendered .env
+# without re-rendering the whole file (which would need secrets that are
+# deliberately unavailable off-box on a hosted tenant).
+tmp_env=$(mktemp)
+printf '# a comment\nAPP_URL=https://old.hiretau.ai\n\nTAU_WEB_ORIGIN=https://old.hiretau.ai\nTAU_ENCRYPTION_KEY=deadbeef\n' >"${tmp_env}"
+envfile_set "${tmp_env}" APP_URL 'https://acme.ficus.sh'
+envfile_set "${tmp_env}" TAU_WEB_ORIGIN 'https://acme.ficus.sh'
+expect_eq 'envfile_set: updates the targeted keys' \
+  "$(envfile_get "${tmp_env}" APP_URL)/$(envfile_get "${tmp_env}" TAU_WEB_ORIGIN)" \
+  'https://acme.ficus.sh/https://acme.ficus.sh'
+expect_eq 'envfile_set: preserves every other line byte-for-byte (comment, blank line, secret, ordering)' \
+  "$(cat "${tmp_env}")" \
+  '# a comment
+APP_URL=https://acme.ficus.sh
+
+TAU_WEB_ORIGIN=https://acme.ficus.sh
+TAU_ENCRYPTION_KEY=deadbeef'
+after_first=$(cat "${tmp_env}")
+envfile_set "${tmp_env}" APP_URL 'https://acme.ficus.sh'
+envfile_set "${tmp_env}" TAU_WEB_ORIGIN 'https://acme.ficus.sh'
+expect_eq 'envfile_set: re-running with the same values is a no-op (idempotent)' "$(cat "${tmp_env}")" "${after_first}"
+rm -f "${tmp_env}"
+
+tmp_env=$(mktemp)
+printf 'A=1\n' >"${tmp_env}"
+envfile_set "${tmp_env}" TAU_PLATFORM_INGEST_URL 'https://ficus.sh'
+expect_eq 'envfile_set: appends a key that is not already present' \
+  "$(cat "${tmp_env}")" $'A=1\nTAU_PLATFORM_INGEST_URL=https://ficus.sh'
+envfile_set "${tmp_env}" TAU_PLATFORM_INGEST_URL 'https://ficus.sh'
+expect_eq 'envfile_set: re-running an appended key is still a no-op (idempotent)' \
+  "$(cat "${tmp_env}")" $'A=1\nTAU_PLATFORM_INGEST_URL=https://ficus.sh'
+rm -f "${tmp_env}"
+
+tmp_env=$(mktemp)
+printf 'TAU_PASSWORD=first\nTAU_PASSWORD=second\n' >"${tmp_env}"
+envfile_set "${tmp_env}" TAU_PASSWORD 'third'
+expect_eq 'envfile_set: rewrites every existing assignment of a duplicated key, not just the last' \
+  "$(cat "${tmp_env}")" $'TAU_PASSWORD=third\nTAU_PASSWORD=third'
+rm -f "${tmp_env}"
+
+# envfile_set dies (exit 1) on a missing file — die() is `exit 1`, so this
+# MUST run inside a subshell, or it would end the whole runner right here.
+expect_eq 'envfile_set: a missing file dies (non-zero)' \
+  "$( (envfile_set '/nonexistent-file' A 1) >/dev/null 2>&1 && echo zero || echo nonzero)" 'nonzero'
+
 # --- retry_until ------------------------------------------------------------
 expect_eq 'retry_until immediate success' "$(retry_until 5 1 'true' true && echo ok)" 'ok'
 marker=$(mktemp -u)
@@ -379,6 +426,37 @@ if [[ ! -r ${tls_preflight_tmp}/unreadable.key ]]; then
     "${tls_preflight_err}" 'ingress\.apps_tls_key_path: file is not readable'
 fi
 chmod 600 "${tls_preflight_tmp}/unreadable.key"
+
+# --- tls_pair_matches ---------------------------------------------------------
+# retarget-origin.sh's key/cert-mismatch validation: catches a pushed origin
+# cert paired with the WRONG key (or vice versa) before anything on the host
+# is touched. Compares derived public keys, not moduli, so it holds for RSA
+# and EC pairs alike.
+tls_pair_a_key="${tls_preflight_tmp}/pair-a.key"
+tls_pair_a_crt="${tls_preflight_tmp}/pair-a.crt"
+tls_pair_b_key="${tls_preflight_tmp}/pair-b.key"
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=pair-a' \
+  -keyout "${tls_pair_a_key}" -out "${tls_pair_a_crt}" >/dev/null 2>&1
+openssl genrsa -out "${tls_pair_b_key}" 2048 >/dev/null 2>&1
+expect_eq 'tls_pair_matches: a certificate matches its own key' \
+  "$(tls_pair_matches "${tls_pair_a_crt}" "${tls_pair_a_key}" && echo match || echo mismatch)" 'match'
+expect_eq 'tls_pair_matches: a certificate does NOT match an unrelated key' \
+  "$(tls_pair_matches "${tls_pair_a_crt}" "${tls_pair_b_key}" && echo match || echo mismatch)" 'mismatch'
+expect_eq 'tls_pair_matches: a missing certificate is a mismatch, not a die' \
+  "$(tls_pair_matches "${tls_preflight_tmp}/nope.crt" "${tls_pair_a_key}" && echo match || echo mismatch)" 'mismatch'
+expect_eq 'tls_pair_matches: a missing key is a mismatch, not a die' \
+  "$(tls_pair_matches "${tls_pair_a_crt}" "${tls_preflight_tmp}/nope.key" && echo match || echo mismatch)" 'mismatch'
+ec_key="${tls_preflight_tmp}/ec.key"
+ec_crt="${tls_preflight_tmp}/ec.crt"
+if openssl ecparam -name prime256v1 -genkey -noout -out "${ec_key}" >/dev/null 2>&1 &&
+  openssl req -x509 -new -key "${ec_key}" -days 1 -subj '/CN=ec-pair' -out "${ec_crt}" >/dev/null 2>&1; then
+  expect_eq 'tls_pair_matches: also holds for an EC certificate/key pair' \
+    "$(tls_pair_matches "${ec_crt}" "${ec_key}" && echo match || echo mismatch)" 'match'
+  expect_eq 'tls_pair_matches: an EC certificate does not match an RSA key' \
+    "$(tls_pair_matches "${ec_crt}" "${tls_pair_a_key}" && echo match || echo mismatch)" 'mismatch'
+else
+  printf 'SKIP: openssl ecparam unavailable — skipping EC tls_pair_matches cases\n' >&2
+fi
 rm -rf "${tls_preflight_tmp}"
 
 cert_install_tmp=$(mktemp -d)
@@ -617,6 +695,51 @@ EOF
   expect_eq 'cfg_get empty string → default' "$(cfg_get '.database.dsn' 'dflt')" 'dflt'
   expect_eq 'cfg_get missing section → default' "$(cfg_get '.runtime.exe.ssh_key_path' '')" ''
   rm -f "${tmp_cfg}"
+
+  # --- cfg_set (write-side counterpart, used by retarget-origin.sh) ---------
+  cfg_set_tmp=$(mktemp)
+  cat >"${cfg_set_tmp}" <<'EOF'
+source:
+  repo: git@example.com:acme/tau.git
+  dest: /opt/tau-core
+core:
+  origin: https://old.hiretau.ai
+  port: 3000
+  env: {}
+ingress:
+  tls_cert_path: /etc/caddy/tls/origin.crt
+  tls_key_path: /etc/caddy/tls/origin.key
+EOF
+  cfg_load "${cfg_set_tmp}"
+  cfg_set '.core.origin' 'https://acme.ficus.sh'
+  cfg_set '.ingress.tls_cert_path' '/etc/caddy/tls/new.crt'
+  cfg_set '.ingress.tls_key_path' '/etc/caddy/tls/new.key'
+  cfg_set '.core.env.TAU_PLATFORM_INGEST_URL' 'https://ficus.sh'
+  expect_eq 'cfg_set: rewrote core.origin' "$(cfg_get '.core.origin')" 'https://acme.ficus.sh'
+  expect_eq 'cfg_set: rewrote ingress.tls_cert_path' "$(cfg_get '.ingress.tls_cert_path')" '/etc/caddy/tls/new.crt'
+  expect_eq 'cfg_set: rewrote ingress.tls_key_path' "$(cfg_get '.ingress.tls_key_path')" '/etc/caddy/tls/new.key'
+  expect_eq 'cfg_set: created a NEW key under an existing empty map (core.env.TAU_PLATFORM_INGEST_URL)' \
+    "$(cfg_get '.core.env.TAU_PLATFORM_INGEST_URL')" 'https://ficus.sh'
+  expect_eq 'cfg_set: touched NOTHING else — source.repo untouched' \
+    "$(cfg_get '.source.repo')" 'git@example.com:acme/tau.git'
+  expect_eq 'cfg_set: touched NOTHING else — source.dest untouched' \
+    "$(cfg_get '.source.dest')" '/opt/tau-core'
+  expect_eq 'cfg_set: touched NOTHING else — core.port untouched' "$(cfg_get '.core.port')" '3000'
+  cfg_set '.core.origin' 'https://acme.ficus.sh'
+  cfg_set '.ingress.tls_cert_path' '/etc/caddy/tls/new.crt'
+  cfg_set '.ingress.tls_key_path' '/etc/caddy/tls/new.key'
+  cfg_set '.core.env.TAU_PLATFORM_INGEST_URL' 'https://ficus.sh'
+  expect_eq 'cfg_set: re-running with the same values is idempotent (core.origin still correct)' \
+    "$(cfg_get '.core.origin')" 'https://acme.ficus.sh'
+  expect_eq 'cfg_set: idempotent re-run still touched nothing else' "$(cfg_get '.core.port')" '3000'
+  # A value carrying yq-expression-looking characters must land LITERALLY —
+  # it travels through the environment (strenv()), never spliced into the yq
+  # expression string, precisely so a cert PATH (or any future caller's
+  # value) can never be read as yq syntax.
+  cfg_set '.dns.zone' "weird'value.with:colons"
+  expect_eq "cfg_set: a value containing quotes/colons is written literally, not interpreted as yq syntax" \
+    "$(cfg_get '.dns.zone')" "weird'value.with:colons"
+  rm -f "${cfg_set_tmp}"
 
   # --- cfg_has (structural presence, unlike cfg_get's "empty means unset") --
   # do-machine-mode-part2 Task 7: provision.sh must only call
