@@ -8,6 +8,7 @@ import {
   secretAccessible,
   secretPermissionCandidates,
 } from './groups'
+import { COPIED_LEGACY_SECRET_ROW_KEYS } from '../../db/legacy-secret-rows'
 
 afterEach(() => resetSecretGroups())
 
@@ -100,6 +101,28 @@ describe('secretAccessible / candidates', () => {
     expect(secretAccessible(held, 'OPENAI_API_KEY', 'read')).toBe(false)
     expect(secretAccessible(held, 'FICUS_PASSWORD', 'read')).toBe(false)
     expect(secretAccessible(held, 'SOME_RANDOM_KEY', 'read')).toBe(false)
+  })
+
+  test('each FICUS_ row the rename migration copies is authorized exactly like its retained TAU_ source', () => {
+    for (const legacy of COPIED_LEGACY_SECRET_ROW_KEYS) {
+      const current = `FICUS_${legacy.slice('TAU_'.length)}`
+      expect(getSecretGroups(current), current).toEqual(['system'])
+      expect(getSecretGroups(legacy), legacy).toEqual(['system'])
+      for (const action of ['read', 'write'] as const) {
+        expect(secretPermissionCandidates(current, action)).toEqual(secretPermissionCandidates(legacy, action))
+        for (const key of [current, legacy]) {
+          expect(secretAccessible([`secrets:${action}:system`], key, action), key).toBe(true)
+          expect(
+            secretAccessible(
+              [`secrets:${action}:integration`, `secrets:${action}:provider`, `secrets:${action}:notification`],
+              key,
+              action
+            ),
+            key
+          ).toBe(false)
+        }
+      }
+    }
   })
 
   test('read grant does not imply write', () => {
