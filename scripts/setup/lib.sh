@@ -785,42 +785,53 @@ _file_mode_owner_group() { # FILE
 # half-written .env), copy FILE's mode/owner onto it, then `mv -f` it over
 # FILE in one syscall.
 envfile_set() { # FILE KEY VALUE
-  local file=$1 key=$2 value=$3 dir tmp found=0 line mog mode owner_group
+  local file=$1 key=$2 value=$3 dir tmp found=0 line mog mode owner_group content=''
   [[ -f ${file} ]] || die "envfile_set: file not found: ${file}"
   dir=$(dirname -- "${file}")
   mog=$(_file_mode_owner_group "${file}") || die "envfile_set: could not stat ${file}"
   mode=${mog%% *}
   owner_group=${mog#* }
+
+  # Build the WHOLE replacement content in a variable first — nothing has
+  # touched disk yet, so there is nothing to clean up if this part fails.
+  # KEY is quoted in the regex so a metacharacter in it (only ever a
+  # SCREAMING_SNAKE_CASE identifier in every real caller, but defense in
+  # depth costs nothing here) is matched literally, not as regex syntax.
+  while IFS= read -r line || [[ -n ${line} ]]; do
+    if [[ ${line} =~ ^"${key}"= ]]; then
+      content+="${key}=${value}"$'\n'
+      found=1
+    else
+      content+="${line}"$'\n'
+    fi
+  done <"${file}"
+  [[ ${found} -eq 1 ]] || content+="${key}=${value}"$'\n'
+
   tmp=$(mktemp "${dir}/.$(basename -- "${file}").XXXXXX") ||
     die "envfile_set: failed to create a staging file next to ${file}"
-  # Everything from here through the final `mv` runs in a subshell under its
-  # OWN `set -e`, so the `if ! ( ... )` below catches ANY failure in that
-  # span — not just a failed `mv` — and removes the staged file either way.
-  # Without this, a failure that killed the surrounding script via ITS OWN
-  # errexit (e.g. a disk-full write mid-loop) before reaching an explicit
-  # `mv`-failure handler would leave ${tmp} behind, with live .env content
-  # in it, forever.
-  if ! (
-    set -euo pipefail
-    while IFS= read -r line || [[ -n ${line} ]]; do
-      # KEY is quoted in the regex so a metacharacter in it (only ever a
-      # SCREAMING_SNAKE_CASE identifier in every real caller, but defense
-      # in depth costs nothing here) is matched literally, not as regex
-      # syntax.
-      if [[ ${line} =~ ^"${key}"= ]]; then
-        printf '%s=%s\n' "${key}" "${value}" >>"${tmp}"
-        found=1
-      else
-        printf '%s\n' "${line}" >>"${tmp}"
-      fi
-    done <"${file}"
-    [[ ${found} -eq 1 ]] || printf '%s=%s\n' "${key}" "${value}" >>"${tmp}"
-    chmod "${mode}" "${tmp}" 2>/dev/null || log_warn "envfile_set: could not chmod the staged replacement for ${file} to ${mode}"
-    chown "${owner_group}" "${tmp}" 2>/dev/null || log_warn "envfile_set: could not chown the staged replacement for ${file} to ${owner_group} (needs root)"
-    mv -f "${tmp}" "${file}"
-  ); then
+
+  # From here on, EVERY command that can fail is checked explicitly — never
+  # errexit. A caller that invokes this from inside a subshell being used
+  # as an if/&&/||-condition (retarget-origin.sh's cert-restore span does
+  # exactly that) runs with -e silently suppressed for the entire dynamic
+  # extent of evaluating that condition, INCLUDING a `set -e` restated
+  # inside the subshell — that suppression cannot be un-suppressed from
+  # within. A single unchecked write in that context would not abort;
+  # it would just silently produce a truncated/wrong file that then gets
+  # `mv`'d into place as if nothing were wrong.
+  if ! printf '%s' "${content}" >"${tmp}"; then
     rm -f "${tmp}"
-    die "envfile_set: failed to build or install the replacement for ${file}"
+    die "envfile_set: failed to write the staged replacement for ${file}"
+  fi
+  if ! chmod "${mode}" "${tmp}" 2>/dev/null; then
+    log_warn "envfile_set: could not chmod the staged replacement for ${file} to ${mode}"
+  fi
+  if ! chown "${owner_group}" "${tmp}" 2>/dev/null; then
+    log_warn "envfile_set: could not chown the staged replacement for ${file} to ${owner_group} (needs root)"
+  fi
+  if ! mv -f "${tmp}" "${file}"; then
+    rm -f "${tmp}"
+    die "envfile_set: failed to atomically replace ${file}"
   fi
 }
 
@@ -941,9 +952,21 @@ install_origin_cert() { # CERT_SRC KEY_SRC [CERT_DEST KEY_DEST]
     die "origin certificate destinations must be inside ${CADDY_TLS_DIR}"
   id -u caddy >/dev/null 2>&1 ||
     die "the 'caddy' service user does not exist — install caddy before the origin certificate"
-  as_root install -d -m 0755 -o root -g root "${CADDY_TLS_DIR}"
-  as_root install -m 0644 -o root -g root "${cert}" "${cert_dest}"
-  as_root install -m 0600 -o caddy -g caddy "${key}" "${key_dest}"
+  # Explicit `|| die` on each — never left to errexit. A caller that
+  # invokes this from inside a subshell being used as an if/&&/||
+  # condition (retarget-origin.sh's cert-restore span does exactly that,
+  # to contain a die()'s exit to the subshell) runs with errexit silently
+  # suppressed for everything in that subshell, INCLUDING a `set -e`
+  # restated inside it — bash disables -e for the whole dynamic extent of
+  # evaluating such a condition and that suppression is NOT one a nested
+  # `set -e` can undo. A failed install here would otherwise be silently
+  # ignored, continuing as if the cert/key had been installed.
+  as_root install -d -m 0755 -o root -g root "${CADDY_TLS_DIR}" ||
+    die "failed to create ${CADDY_TLS_DIR}"
+  as_root install -m 0644 -o root -g root "${cert}" "${cert_dest}" ||
+    die "failed to install the origin certificate to ${cert_dest}"
+  as_root install -m 0600 -o caddy -g caddy "${key}" "${key_dest}" ||
+    die "failed to install the origin private key to ${key_dest}"
   log_info "installed origin certificate ${cert_dest} (0644) + key ${key_dest} (0600, caddy-owned)"
 }
 
@@ -1397,7 +1420,17 @@ caddy_write_and_reload() { # CONTENT
       rm -f "${staged}" "${backup}"
       die "Caddy rejected the staged configuration; the live Caddyfile was not changed"
     fi
-    [[ ${had_current} -eq 1 ]] && as_root cat "${CADDYFILE_PATH}" >"${backup}"
+    # Explicit check, never left to errexit (same reasoning as
+    # install_origin_cert above: a caller running this from inside an
+    # if/&&/||-condition subshell has errexit silently suppressed for
+    # everything in it, unrecoverably by a nested `set -e`). Without this
+    # check, a failed backup write here would leave `${backup}` a 0-byte
+    # file that a later failed enable/reload below would then "restore",
+    # taking Caddy down with an EMPTY config instead of the real prior one.
+    if [[ ${had_current} -eq 1 ]] && ! as_root cat "${CADDYFILE_PATH}" >"${backup}"; then
+      rm -f "${staged}" "${backup}"
+      die "failed to back up the current ${CADDYFILE_PATH} before installing the new one — refusing to proceed without a valid rollback target"
+    fi
     caddy_install_atomically "${staged}"
     changed=1
   fi

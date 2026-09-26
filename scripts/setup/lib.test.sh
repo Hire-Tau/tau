@@ -360,6 +360,69 @@ rm -f "${tmp_env}"
 expect_eq 'envfile_set: a missing file dies (non-zero)' \
   "$( (envfile_set '/nonexistent-file' A 1) >/dev/null 2>&1 && echo zero || echo nonzero)" 'nonzero'
 
+# --- envfile_set: FAILURE INJECTION -------------------------------------------
+# A round-3 regression review found the previous implementation relied on
+# errexit to catch a failing write inside a span that can be called from a
+# subshell used as an if/&&/||-condition (retarget-origin.sh's cert-restore
+# span does exactly that) — bash suppresses -e for the WHOLE dynamic extent
+# of evaluating such a condition, including a `set -e` restated inside a
+# nested subshell, so a failing write there was SILENTLY IGNORED and the
+# function returned success with a truncated file installed. Reproduced
+# before the fix: input `A=1/SECRET=keep/C=3`, the write forced to fail,
+# result was a TRUNCATED file with no error. envfile_set now builds the
+# whole replacement in memory and checks the write/mv explicitly — this
+# proves that fix holds, standing in for the `if !( … )`-suppressed-errexit
+# scenario without needing to reconstruct that exact calling context here
+# (retarget-origin.test.sh's own mutation-phase failure injection covers
+# the real end-to-end path).
+tmp_env=$(mktemp)
+printf 'A=1\nSECRET=keep\nC=3\n' >"${tmp_env}"
+envfile_set_before=$(cat "${tmp_env}")
+envfile_set_inject_rc=0
+(
+  # Shadow the printf BUILTIN so envfile_set's checked write
+  # (`printf '%s' "${content}" >"${tmp}"`) fails — everything else in this
+  # subshell (mktemp, chmod, chown, mv, and die()'s own log_error) is
+  # unaffected by the FILE outcome we're checking, only by this call.
+  printf() { return 1; }
+  envfile_set "${tmp_env}" A 9
+) >/dev/null 2>&1 || envfile_set_inject_rc=$?
+expect_eq 'envfile_set failure injection: a failing write returns non-zero' "${envfile_set_inject_rc}" '1'
+expect_eq 'envfile_set failure injection: the live .env is byte-identical to before (not truncated)' \
+  "$(cat "${tmp_env}")" "${envfile_set_before}"
+expect_eq 'envfile_set failure injection: no staged temp file is left behind' \
+  "$(find "$(dirname "${tmp_env}")" -maxdepth 1 -name ".$(basename "${tmp_env}").??????" 2>/dev/null | wc -l | tr -d ' ')" '0'
+rm -f "${tmp_env}"
+
+# --- caddy_write_and_reload: FAILURE INJECTION --------------------------------
+# Same round-3 finding, different call site: caddy_write_and_reload's own
+# Caddyfile-backup line (`[[ ${had_current} -eq 1 ]] && as_root cat
+# "${CADDYFILE_PATH}" >"${backup}"`) had no explicit check either. A failed
+# backup write there must die WITHOUT installing the new Caddyfile — not
+# silently proceed with a 0-byte backup that a later failed reload would
+# then "restore".
+cwr_tmp=$(mktemp -d)
+CWR_CADDYFILE="${cwr_tmp}/Caddyfile"
+printf 'old-content\n' >"${CWR_CADDYFILE}"
+cwr_before=$(cat "${CWR_CADDYFILE}")
+cwr_inject_rc=0
+(
+  CADDYFILE_PATH="${CWR_CADDYFILE}"
+  as_root() { "$@"; }
+  caddy() { return 0; } # caddy validate always "passes" in this test
+  systemctl() { return 0; }
+  cat() {
+    # Fail only reads/backups of CWR_CADDYFILE — never `cat` in general.
+    for a in "$@"; do [[ ${a} == "${CWR_CADDYFILE}" ]] && return 1; done
+    command cat "$@"
+  }
+  caddy_write_and_reload 'new-content'
+) >/dev/null 2>&1 || cwr_inject_rc=$?
+expect_eq 'caddy_write_and_reload failure injection: a failing backup write dies (non-zero)' "${cwr_inject_rc}" '1'
+expect_eq 'caddy_write_and_reload failure injection: the live Caddyfile is completely untouched' \
+  "$(cat "${CWR_CADDYFILE}")" "${cwr_before}"
+rm -rf "${cwr_tmp}"
+
 # --- retry_until ------------------------------------------------------------
 expect_eq 'retry_until immediate success' "$(retry_until 5 1 'true' true && echo ok)" 'ok'
 marker=$(mktemp -u)

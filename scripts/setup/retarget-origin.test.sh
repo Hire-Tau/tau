@@ -115,7 +115,25 @@ cat >"${SHIM_DIR}/journalctl" <<'SHIM'
 exit 0
 SHIM
 
-chmod +x "${SHIM_DIR}"/sudo "${SHIM_DIR}"/caddy "${SHIM_DIR}"/id "${SHIM_DIR}"/systemctl "${SHIM_DIR}"/curl "${SHIM_DIR}"/journalctl
+# Passes through to the REAL install(1) unless TAU_TEST_FAIL_KEY_INSTALL is
+# set, in which case it fails ONLY a call installing a file named
+# `origin.key` — the failure-injection case below (install_origin_cert's
+# SECOND `as_root install` call, lib.sh's key install). Everything else
+# (the cert install, caddy_install_atomically's own Caddyfile install) must
+# keep working even during that test, or this shim would fail the run for
+# an unrelated reason. Off by default, so every OTHER invocation in this
+# file (dry-run, validation, and mutation runs 1-2) is unaffected.
+cat >"${SHIM_DIR}/install" <<'SHIM'
+#!/usr/bin/env bash
+if [[ -n ${TAU_TEST_FAIL_KEY_INSTALL:-} ]]; then
+  for arg in "$@"; do
+    [[ $(basename -- "${arg}") == origin.key ]] && exit 1
+  done
+fi
+exec /usr/bin/install "$@"
+SHIM
+
+chmod +x "${SHIM_DIR}"/sudo "${SHIM_DIR}"/caddy "${SHIM_DIR}"/id "${SHIM_DIR}"/systemctl "${SHIM_DIR}"/curl "${SHIM_DIR}"/journalctl "${SHIM_DIR}"/install
 export PATH="${SHIM_DIR}:${PATH}"
 
 # --- scratch Caddy paths (overridable in lib.sh; see its CADDY_TLS_DIR /
@@ -469,6 +487,51 @@ TAU_PLATFORM_INGEST_URL=https://ficus.sh'
   after_run2_backup_count=$(compgen -G "${MUT_CONFIG}.bak-*" | wc -l | tr -d ' ')
   expect_eq 'run 2 adds its own backup rather than skipping it' \
     "$([[ ${after_run2_backup_count} -gt ${after_run1_backup_count} ]] && echo more || echo same)" 'more'
+
+  # ===========================================================================
+  # FAILURE INJECTION (b): install_origin_cert's KEY install fails partway
+  # through steps 3-5 — the previous cert/key must be restored, the
+  # Caddyfile must be untouched (the caddy step is never reached), and the
+  # script must exit non-zero. This is exactly the scenario the round-3
+  # regression review found unprotected: a failing `as_root install` with
+  # no explicit check used to be silently ignored inside the guarding
+  # subshell, and this run would have reported SUCCESS.
+  # ===========================================================================
+  before_fail_cert=$(cat "${CADDY_TLS_DIR}/origin.crt")
+  before_fail_key=$(cat "${CADDY_TLS_DIR}/origin.key")
+  before_fail_caddyfile=$(cat "${CADDYFILE_PATH}")
+
+  FAIL_NEW_CERT="${MUT}/fail-new-origin.crt"
+  FAIL_NEW_KEY="${MUT}/fail-new-origin.key"
+  openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=should-never-install' \
+    -keyout "${FAIL_NEW_KEY}" -out "${FAIL_NEW_CERT}" >/dev/null 2>&1
+
+  : >"${SHIM_LOG}"
+  export TAU_TEST_FAIL_KEY_INSTALL=1
+  fail_rc=0
+  fail_out=$(
+    "${RETARGET}" --config "${MUT_CONFIG}" --origin https://acme.ficus.sh \
+      --tls-cert "${FAIL_NEW_CERT}" --tls-key "${FAIL_NEW_KEY}" 2>&1
+  ) || fail_rc=$?
+  unset TAU_TEST_FAIL_KEY_INSTALL
+
+  expect_eq 'failure injection: a failing key install exits non-zero' "${fail_rc}" '1'
+  expect_match 'failure injection: names the failure and the rollback' "${fail_out}" 'steps 3-5 failed'
+  expect_eq 'failure injection: the PREVIOUS cert bytes are restored (not the failed attempt, not empty)' \
+    "$(cat "${CADDY_TLS_DIR}/origin.crt")" "${before_fail_cert}"
+  expect_eq 'failure injection: the PREVIOUS key bytes are restored (not the failed attempt, not empty)' \
+    "$(cat "${CADDY_TLS_DIR}/origin.key")" "${before_fail_key}"
+  expect_eq 'failure injection: the failed attempt cert bytes were NOT installed' \
+    "$([[ $(cat "${CADDY_TLS_DIR}/origin.crt") == "$(cat "${FAIL_NEW_CERT}")" ]] && echo installed || echo not-installed)" 'not-installed'
+  expect_eq 'failure injection: the Caddyfile is completely untouched (the caddy step was never reached)' \
+    "$(cat "${CADDYFILE_PATH}")" "${before_fail_caddyfile}"
+  expect_match 'failure injection: tau-api/tau-worker were never restarted' \
+    "$([[ $(cat "${SHIM_LOG}") == *'systemctl restart tau-api tau-worker'* ]] && echo restarted || echo not-restarted)" 'not-restarted'
+  # The yaml IS updated with the new (unreachable, install failed) paths —
+  # documented, deliberate FAILURE BEHAVIOR (step 2 is forward progress for
+  # a retry, not rolled back on a steps-3-5 failure).
+  expect_eq 'failure injection: the yaml rewrite (step 2, before the failure) is still forward progress, not rolled back' \
+    "$(yq -r '.ingress.tls_cert_path' "${MUT_CONFIG}")" "${FAIL_NEW_CERT}"
 else
   if [[ ${EUID} -ne 0 ]]; then
     printf 'SKIP: not running as root (EUID=%s) — the mutation-phase end-to-end test needs this whole test process to be real root (retarget-origin.sh has no sudo fallback); run via `sudo env "PATH=$PATH" bash scripts/setup/retarget-origin.test.sh` (as CI does) to execute it\n' "${EUID}" >&2

@@ -303,22 +303,22 @@ PREV_KEY_BACKUP=$(backup_file "${CADDY_TLS_KEY_PATH}")
 # a failure anywhere in this span (not just the caddy step) leaves the
 # cert/key inconsistent with whatever ends up live, so all three are covered.
 #
-# `set -euo pipefail` is restated as the FIRST thing INSIDE the subshell,
-# deliberately: bash suppresses errexit for the entire dynamic extent of
-# evaluating an `if`/`!`/`&&`/`||` condition — which is exactly what
-# `if ! ( ... ); then` is — and that suppression reaches into every function
-# called from inside the subshell too, INCLUDING lib.sh's own
-# caddy_write_and_reload. Its Caddyfile-backup line
-# (`[[ ${had_current} -eq 1 ]] && as_root cat "${CADDYFILE_PATH}" >"${backup}"`)
-# has no explicit `|| die` and relies on errexit alone — under the ambient
-# suppression, a failed backup `cat` would be silently ignored, leaving
-# `${backup}` a 0-byte file that a later failed reload would then "roll
-# back" to, taking Caddy down with an EMPTY config instead of the real prior
-# one. Restating `set -e` here, freshly, inside the subshell overrides that
-# suppression for everything the subshell runs — install_origin_cert,
-# envfile_set, and every line of caddy_write_and_reload alike.
+# The subshell's ONLY job is to contain a die()'s `exit` to itself, so the
+# `if !` below can catch it and run the cert-restore-then-die logic — it is
+# NOT what makes failures inside this span detected, and restating
+# `set -e`/`set -euo pipefail` as its first line would NOT do that either
+# (verified: `if ! ( set -e; false; echo x ); then ...` still prints `x` —
+# bash suppresses errexit for the WHOLE dynamic extent of evaluating an
+# if/!/&&/||-condition, including inside a nested subshell that IS that
+# condition, and a `set -e` restated inside it cannot un-suppress that).
+# What actually makes this safe: install_origin_cert, envfile_set, and
+# caddy_write_and_reload each check every one of their own risky commands
+# EXPLICITLY and call die() on failure — die() runs a literal `exit`, which
+# terminates the current (sub)shell unconditionally, independent of the -e
+# option entirely. So a failure anywhere in this span dies for real,
+# regardless of the ambient errexit suppression, and the `if !` here
+# catches exactly that.
 if ! (
-  set -euo pipefail
   install_origin_cert "${TLS_CERT}" "${TLS_KEY}"
 
   # ============================================================ 4. rewrite .env
