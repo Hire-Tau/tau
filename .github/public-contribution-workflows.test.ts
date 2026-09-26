@@ -53,8 +53,8 @@ describe('external contribution boundaries', () => {
   })
 })
 
-describe('theme initiative PR verification triggers', () => {
-  const themePrBases = ['main', 'initiative/color-themes']
+describe('non-default PR bases', () => {
+  const themePrBases = ['main', 'initiative/color-themes', 'ficus/rename']
 
   for (const file of ['ci.yml', 'lint.yml']) {
     const workflow = workflows.find((entry) => entry.file === file)!.workflow

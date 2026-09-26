@@ -1,33 +1,33 @@
 name: core-artifact
-"on": 
-  push: 
-    branches: 
+'on':
+  push:
+    branches:
       - main
-  pull_request: 
-    branches: 
+  pull_request:
+    branches:
       - main
-  workflow_dispatch: 
-    {}
-permissions: 
+      - ficus/rename
+  workflow_dispatch: {}
+permissions:
   contents: read
-jobs: 
-  build: 
+jobs:
+  build:
     runs-on: ubuntu-24.04
-    steps: 
+    steps:
       - uses: actions/checkout@v7
-        with: 
+        with:
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@v4
-        with: 
+        with:
           node-version: 24
       - uses: oven-sh/setup-bun@v2
-        with: 
+        with:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile --ignore-scripts
       - name: Build unsigned self-hostable release
-        run: "bash scripts/artifact/build-core-artifact.sh --smoke --out-dir \"$RUNNER_TEMP/core-artifact\""
+        run: 'bash scripts/artifact/build-core-artifact.sh --smoke --out-dir "$RUNNER_TEMP/core-artifact"'
       - uses: actions/upload-artifact@v7
-        with: 
-          name: "core-artifact-${{ github.sha }}"
-          path: "${{ runner.temp }}/core-artifact/"
+        with:
+          name: 'core-artifact-${{ github.sha }}'
+          path: '${{ runner.temp }}/core-artifact/'
